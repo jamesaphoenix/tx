@@ -1,0 +1,460 @@
+# DD-004: Ready Detection Algorithm
+
+**Status**: Draft
+**Implements**: [PRD-003](../prd/PRD-003-dependency-blocking-system.md), [PRD-004](../prd/PRD-004-task-scoring-prioritization.md)
+**Last Updated**: 2025-01-28
+
+---
+
+## Overview
+
+This document describes **how** the ready detection algorithm works: the definition of readiness, the query strategy, score calculation, and edge case handling.
+
+---
+
+## Definition of Ready
+
+A task is **ready** when ALL of these conditions are true:
+
+1. **Status is workable**: `backlog`, `ready`, or `planning`
+2. **No open blockers**: All tasks in its `blocked_by` list have status `done`
+3. **Not explicitly blocked**: Status is not `blocked` or `human_needs_to_review`
+
+---
+
+## Algorithm
+
+### Step-by-Step
+
+```
+1. Query tasks with workable status
+2. For each candidate:
+   a. Get blocker IDs from task_dependencies
+   b. Get blocking IDs (what this task blocks)
+   c. Get child IDs
+   d. If no blockers → ready
+   e. If blockers exist → check all have status "done"
+   f. If all done → ready
+3. Sort by final score (base + adjustments)
+4. Return with full dependency info (TaskWithDeps)
+```
+
+### Implementation
+
+```typescript
+getReady: (limit = 100) =>
+  Effect.gen(function* () {
+    // Step 1: Get candidate tasks
+    const candidates = yield* taskRepo.findAll({
+      status: ["backlog", "ready", "planning"]
+    })
+
+    // Step 2: Filter and enrich
+    const ready: TaskWithDeps[] = []
+    for (const task of candidates) {
+      const blockerIds = yield* depRepo.getBlockerIds(task.id)
+      const blockingIds = yield* depRepo.getBlockingIds(task.id)
+      const childIds = yield* taskRepo.getChildIds(task.id)
+
+      if (blockerIds.length === 0) {
+        ready.push({
+          ...task,
+          blockedBy: [],
+          blocks: blockingIds,
+          children: childIds,
+          isReady: true
+        })
+        continue
+      }
+
+      // Check if all blockers are done
+      const blockers = yield* taskRepo.findByIds(blockerIds)
+      const allDone = blockers.every((b) => b.status === "done")
+
+      if (allDone) {
+        ready.push({
+          ...task,
+          blockedBy: blockerIds,
+          blocks: blockingIds,
+          children: childIds,
+          isReady: true
+        })
+      }
+    }
+
+    // Step 3: Sort by final score
+    ready.sort((a, b) => calculateFinalScore(b) - calculateFinalScore(a))
+
+    // Step 4: Limit
+    return ready.slice(0, limit)
+  })
+```
+
+---
+
+## Optimized SQL Query (Primary Implementation)
+
+The optimized single-query approach is the **primary implementation**, not a fallback. The N+1 algorithm in the previous section is for illustration only. Always use this query in production:
+
+```sql
+SELECT t.*,
+       (SELECT COUNT(*) FROM task_dependencies d2
+        WHERE d2.blocker_id = t.id) as blocking_count,
+       (SELECT GROUP_CONCAT(d3.blocker_id)
+        FROM task_dependencies d3
+        WHERE d3.blocked_id = t.id) as blocker_ids,
+       (SELECT GROUP_CONCAT(d4.blocked_id)
+        FROM task_dependencies d4
+        WHERE d4.blocker_id = t.id) as blocking_ids,
+       (SELECT GROUP_CONCAT(c.id)
+        FROM tasks c
+        WHERE c.parent_id = t.id) as child_ids
+FROM tasks t
+WHERE t.status IN ('backlog', 'ready', 'planning')
+  AND NOT EXISTS (
+    SELECT 1 FROM task_dependencies d
+    JOIN tasks blocker ON d.blocker_id = blocker.id
+    WHERE d.blocked_id = t.id
+      AND blocker.status != 'done'
+  )
+ORDER BY t.score DESC, blocking_count DESC, t.created_at ASC
+LIMIT ?;
+```
+
+This returns all needed info in one query instead of N+1.
+
+---
+
+## Score Calculation
+
+### Base Score
+Stored in the database, set by users/agents (0-1000).
+
+### Dynamic Adjustments
+Computed at query time:
+
+```typescript
+function calculateFinalScore(task: TaskWithDeps): number {
+  let score = task.score
+
+  // Blocking bonus: tasks that unblock others are more valuable
+  score += task.blocks.length * 25
+
+  // Age bonus: don't let old tasks rot
+  const ageHours = (Date.now() - task.createdAt.getTime()) / (1000 * 60 * 60)
+  if (ageHours > 48) {
+    score += 100
+  } else if (ageHours > 24) {
+    score += 50
+  }
+
+  // Depth penalty: prefer root tasks over deep subtasks
+  // (depth computed from ancestors count or parent chain)
+  // score -= depth * 10
+
+  return score
+}
+```
+
+### Score Breakdown Example
+
+```
+Task: tx-a1b2c3 "Implement JWT validation"
+  Base score:     800
+  Blocking bonus: +50 (blocks 2 tasks)
+  Age bonus:      +100 (>48h old)
+  Depth penalty:  -10 (depth 1)
+  ─────────────────
+  Final score:    940
+```
+
+---
+
+## Edge Cases
+
+### Circular Dependencies
+
+Prevented at insert time with BFS cycle detection:
+
+```typescript
+async function wouldCreateCycle(taskId: string, newBlockerId: string): Promise<boolean> {
+  // BFS from newBlockerId - can we reach taskId?
+  const visited = new Set<string>()
+  const queue = [newBlockerId]
+
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    if (current === taskId) return true  // Cycle detected
+    if (visited.has(current)) continue
+    visited.add(current)
+
+    const blockers = await getBlockerIds(current)
+    queue.push(...blockers)
+  }
+
+  return false
+}
+```
+
+### Orphaned Blockers
+
+When a blocker is deleted, CASCADE DELETE removes the dependency:
+
+```sql
+FOREIGN KEY (blocker_id) REFERENCES tasks(id) ON DELETE CASCADE
+```
+
+### Completed Blockers
+
+When marking a task done, check for newly unblocked tasks:
+
+```typescript
+async function markDone(taskId: TaskId): Promise<{ task: TaskWithDeps; nowReady: TaskId[] }> {
+  const task = await update(taskId, { status: "done" })
+
+  // Find tasks that were blocked by this one
+  const wasBlocking = await getBlockingIds(taskId)
+  const nowReady: TaskId[] = []
+
+  for (const blockedId of wasBlocking) {
+    if (await isReady(blockedId)) {
+      nowReady.push(blockedId)
+    }
+  }
+
+  return { task, nowReady }
+}
+```
+
+### Self-Blocking
+
+Prevented by CHECK constraint:
+
+```sql
+CHECK (blocker_id != blocked_id)
+```
+
+---
+
+## Testing Strategy
+
+### Ready Detection Tests (Integration)
+
+These tests verify the core algorithm against real data in an in-memory SQLite database:
+
+```typescript
+describe("Ready Detection", () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+  })
+
+  // === Status Filtering ===
+
+  it("only returns tasks with workable status (backlog, ready, planning)", async () => {
+    const result = await runReady(db)
+    for (const task of result) {
+      expect(["backlog", "ready", "planning"]).toContain(task.status)
+    }
+  })
+
+  it("excludes tasks with status: done", async () => {
+    const result = await runReady(db)
+    expect(result.find(t => t.id === FIXTURES.TASK_DONE)).toBeUndefined()
+  })
+
+  it("excludes tasks with status: blocked", async () => {
+    // Set a task to explicitly blocked
+    db.prepare("UPDATE tasks SET status = 'blocked' WHERE id = ?").run(FIXTURES.TASK_LOGIN)
+    const result = await runReady(db)
+    expect(result.find(t => t.id === FIXTURES.TASK_LOGIN)).toBeUndefined()
+  })
+
+  it("excludes tasks with status: human_needs_to_review", async () => {
+    db.prepare("UPDATE tasks SET status = 'human_needs_to_review' WHERE id = ?").run(FIXTURES.TASK_LOGIN)
+    const result = await runReady(db)
+    expect(result.find(t => t.id === FIXTURES.TASK_LOGIN)).toBeUndefined()
+  })
+
+  // === Blocker Filtering ===
+
+  it("excludes tasks with open (non-done) blockers", async () => {
+    const result = await runReady(db)
+    // TASK_BLOCKED is blocked by TASK_JWT and TASK_LOGIN (both not done)
+    expect(result.find(t => t.id === FIXTURES.TASK_BLOCKED)).toBeUndefined()
+  })
+
+  it("includes tasks when ALL blockers are done", async () => {
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(FIXTURES.TASK_JWT)
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(FIXTURES.TASK_LOGIN)
+
+    const result = await runReady(db)
+    const nowReady = result.find(t => t.id === FIXTURES.TASK_BLOCKED)
+    expect(nowReady).toBeDefined()
+    expect(nowReady!.isReady).toBe(true)
+  })
+
+  it("still excludes if only SOME blockers are done", async () => {
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(FIXTURES.TASK_JWT)
+    // TASK_LOGIN still not done
+
+    const result = await runReady(db)
+    expect(result.find(t => t.id === FIXTURES.TASK_BLOCKED)).toBeUndefined()
+  })
+
+  it("includes tasks with zero blockers", async () => {
+    const result = await runReady(db)
+    // TASK_JWT has no blockers and is ready status
+    const jwt = result.find(t => t.id === FIXTURES.TASK_JWT)
+    expect(jwt).toBeDefined()
+    expect(jwt!.blockedBy).toEqual([])
+  })
+
+  // === Dependency Info ===
+
+  it("populates blockedBy with actual blocker IDs", async () => {
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id IN (?, ?)").run(FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN)
+
+    const result = await runReady(db)
+    const task = result.find(t => t.id === FIXTURES.TASK_BLOCKED)!
+    expect(task.blockedBy).toEqual(
+      expect.arrayContaining([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+    )
+  })
+
+  it("populates blocks with tasks this one blocks", async () => {
+    const result = await runReady(db)
+    const jwt = result.find(t => t.id === FIXTURES.TASK_JWT)!
+    expect(jwt.blocks).toContain(FIXTURES.TASK_BLOCKED)
+  })
+
+  it("populates children with child IDs", async () => {
+    // TASK_AUTH has children: TASK_LOGIN, TASK_JWT, TASK_BLOCKED, TASK_DONE
+    db.prepare("UPDATE tasks SET status = 'backlog' WHERE id = ?").run(FIXTURES.TASK_AUTH)
+    const result = await runReady(db)
+    const auth = result.find(t => t.id === FIXTURES.TASK_AUTH)
+    if (auth) {
+      expect(auth.children.length).toBeGreaterThan(0)
+    }
+  })
+
+  // === Sorting ===
+
+  it("sorts by score descending", async () => {
+    const result = await runReady(db)
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i - 1].score).toBeGreaterThanOrEqual(result[i].score)
+    }
+  })
+
+  it("respects limit parameter", async () => {
+    const result = await runReady(db, 1)
+    expect(result).toHaveLength(1)
+  })
+})
+```
+
+### Score Calculation Tests (Unit)
+
+```typescript
+describe("Score Calculation", () => {
+  it("adds blocking bonus (+25 per blocked task)", () => {
+    const task = makeTask({ score: 500, blocks: ["tx-a", "tx-b"] })
+    expect(calculateFinalScore(task)).toBe(500 + 50)
+  })
+
+  it("adds age bonus (+100 for >48h)", () => {
+    const task = makeTask({ score: 500, createdAt: hoursAgo(49) })
+    const score = calculateFinalScore(task)
+    expect(score).toBeGreaterThanOrEqual(600)
+  })
+
+  it("adds mild age bonus (+50 for >24h)", () => {
+    const task = makeTask({ score: 500, createdAt: hoursAgo(25) })
+    const score = calculateFinalScore(task)
+    expect(score).toBeGreaterThanOrEqual(550)
+    expect(score).toBeLessThan(600)
+  })
+
+  it("applies depth penalty (-10 per level)", () => {
+    const score = calculateFinalScore(makeTask({ score: 500 }), { depth: 3 })
+    expect(score).toBe(500 - 30)
+  })
+
+  it("combines all adjustments correctly", () => {
+    const task = makeTask({ score: 500, blocks: ["tx-a"], createdAt: hoursAgo(49) })
+    const score = calculateFinalScore(task, { depth: 2 })
+    // 500 + 25 (blocking) + 100 (age) - 20 (depth) = 605
+    expect(score).toBe(605)
+  })
+})
+```
+
+### Cycle Detection Tests (Integration)
+
+```typescript
+describe("Circular Dependency Prevention", () => {
+  it("detects direct cycle (A blocks B, B blocks A)", async () => {
+    const db = createTestDb()
+    seedTasks(db, ["tx-aaaaaa", "tx-bbbbbb"])
+    addDep(db, "tx-aaaaaa", "tx-bbbbbb")  // A blocks B
+
+    const result = await addBlocker(db, "tx-bbbbbb", "tx-aaaaaa")  // B blocks A
+    expect(result._tag).toBe("Left")
+  })
+
+  it("detects indirect cycle (A→B→C→A)", async () => {
+    const db = createTestDb()
+    seedTasks(db, ["tx-aaaaaa", "tx-bbbbbb", "tx-cccccc"])
+    addDep(db, "tx-aaaaaa", "tx-bbbbbb")  // A blocks B
+    addDep(db, "tx-bbbbbb", "tx-cccccc")  // B blocks C
+
+    const result = await addBlocker(db, "tx-cccccc", "tx-aaaaaa")  // C blocks A
+    expect(result._tag).toBe("Left")
+  })
+
+  it("allows valid dependency chains", async () => {
+    const db = createTestDb()
+    seedTasks(db, ["tx-aaaaaa", "tx-bbbbbb", "tx-cccccc"])
+    addDep(db, "tx-aaaaaa", "tx-bbbbbb")  // A blocks B
+
+    const result = await addBlocker(db, "tx-aaaaaa", "tx-cccccc")  // A also blocks C
+    expect(result._tag).toBe("Right")
+  })
+})
+```
+
+### Test Helpers
+
+```typescript
+async function runReady(db: Database.Database, limit = 100): Promise<TaskWithDeps[]> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const svc = yield* ReadyService
+      return yield* svc.getReady(limit)
+    }).pipe(Effect.provide(TestLayer(db)))
+  )
+}
+
+function hoursAgo(hours: number): Date {
+  return new Date(Date.now() - hours * 60 * 60 * 1000)
+}
+```
+
+---
+
+## Status Transition Validation in Ready Detection
+
+Ready detection respects the status transition state machine defined in DD-001. A task is only considered "workable" if its status is one of: `backlog`, `ready`, `planning`. Tasks in `active`, `blocked`, `review`, `human_needs_to_review`, and `done` are never returned by the ready query.
+
+---
+
+## Related Documents
+
+- [PRD-003: Dependency & Blocking System](../prd/PRD-003-dependency-blocking-system.md)
+- [PRD-004: Task Scoring](../prd/PRD-004-task-scoring-prioritization.md)
+- [DD-001: Data Model](./DD-001-data-model-storage.md)
+- [DD-002: Service Layer](./DD-002-effect-ts-service-layer.md)
+- [DD-008: OpenTelemetry Integration](./DD-008-opentelemetry-integration.md)

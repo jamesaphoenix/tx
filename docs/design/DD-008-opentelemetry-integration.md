@@ -1,0 +1,610 @@
+# DD-008: OpenTelemetry Integration
+
+**Status**: Draft
+**Implements**: [PRD-008](../prd/PRD-008-observability-opentelemetry.md)
+**Last Updated**: 2025-01-28
+
+---
+
+## Overview
+
+This document describes **how** OpenTelemetry (OTEL) is integrated into `tx`: the Effect-TS telemetry layer, span instrumentation, metrics collection, and configuration strategy.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Application Layer                         │
+│  CLI Commands    │   MCP Server   │   TypeScript API            │
+├─────────────────────────────────────────────────────────────────┤
+│                     Telemetry Middleware                          │
+│  ┌───────────┐ ┌───────────┐ ┌──────────────┐                  │
+│  │  Tracer   │ │  Metrics  │ │   Logger     │                  │
+│  └───────────┘ └───────────┘ └──────────────┘                  │
+├─────────────────────────────────────────────────────────────────┤
+│                        Service Layer                             │
+│  TaskService  │ ReadyService │ DependencyService │ ...          │
+├─────────────────────────────────────────────────────────────────┤
+│                      Infrastructure Layer                        │
+│  SqliteClient │ AnthropicClient │ TelemetryClient              │
+└─────────────────────────────────────────────────────────────────┘
+         │                               │
+         ▼                               ▼
+   SQLite Database              OTLP Exporter (optional)
+                                    │
+                                    ▼
+                            Jaeger / Grafana / etc.
+```
+
+---
+
+## Effect-TS Telemetry Service
+
+### TelemetryService Definition
+
+```typescript
+// src/services/TelemetryService.ts
+import { Effect, Context, Layer } from "effect"
+
+export interface SpanOptions {
+  name: string
+  attributes?: Record<string, string | number | boolean>
+}
+
+export interface TelemetryService {
+  readonly withSpan: <A, E>(
+    options: SpanOptions,
+    effect: Effect.Effect<A, E>
+  ) => Effect.Effect<A, E>
+  readonly incrementCounter: (name: string, value?: number, attributes?: Record<string, string>) => Effect.Effect<void>
+  readonly recordHistogram: (name: string, value: number, attributes?: Record<string, string>) => Effect.Effect<void>
+  readonly setGauge: (name: string, value: number, attributes?: Record<string, string>) => Effect.Effect<void>
+  readonly log: (level: "info" | "warn" | "error", message: string, attributes?: Record<string, unknown>) => Effect.Effect<void>
+}
+
+export class Telemetry extends Context.Tag("Telemetry")<
+  Telemetry,
+  TelemetryService
+>() {}
+```
+
+### Live Implementation (OTEL Enabled)
+
+```typescript
+// src/layers/TelemetryLayer.ts
+import { NodeSDK } from "@opentelemetry/sdk-node"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http"
+import { ConsoleSpanExporter } from "@opentelemetry/sdk-trace-node"
+import { trace, metrics, SpanStatusCode } from "@opentelemetry/api"
+
+export const TelemetryLive = Layer.effect(
+  Telemetry,
+  Effect.gen(function* () {
+    const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+    const exporterType = process.env.OTEL_EXPORTER || "otlp"
+    const serviceName = process.env.OTEL_SERVICE_NAME || "tx"
+
+    // Initialize OTEL SDK if configured
+    if (endpoint || exporterType === "console") {
+      const traceExporter = exporterType === "console"
+        ? new ConsoleSpanExporter()
+        : new OTLPTraceExporter({ url: `${endpoint}/v1/traces` })
+
+      const sdk = new NodeSDK({
+        serviceName,
+        traceExporter,
+        metricReader: endpoint
+          ? new OTLPMetricExporter({ url: `${endpoint}/v1/metrics` })
+          : undefined
+      })
+
+      sdk.start()
+
+      // Graceful shutdown
+      Effect.addFinalizer(() => Effect.promise(() => sdk.shutdown()))
+    }
+
+    const tracer = trace.getTracer(serviceName)
+    const meter = metrics.getMeter(serviceName)
+
+    // Pre-create metrics instruments
+    const counters = new Map<string, ReturnType<typeof meter.createCounter>>()
+    const histograms = new Map<string, ReturnType<typeof meter.createHistogram>>()
+    const gauges = new Map<string, ReturnType<typeof meter.createUpDownCounter>>()
+
+    const getCounter = (name: string) => {
+      if (!counters.has(name)) counters.set(name, meter.createCounter(name))
+      return counters.get(name)!
+    }
+
+    const getHistogram = (name: string) => {
+      if (!histograms.has(name)) histograms.set(name, meter.createHistogram(name))
+      return histograms.get(name)!
+    }
+
+    const getGauge = (name: string) => {
+      if (!gauges.has(name)) gauges.set(name, meter.createUpDownCounter(name))
+      return gauges.get(name)!
+    }
+
+    return {
+      withSpan: (options, effect) =>
+        Effect.gen(function* () {
+          const span = tracer.startSpan(options.name, {
+            attributes: options.attributes
+          })
+
+          try {
+            const result = yield* effect
+            span.setStatus({ code: SpanStatusCode.OK })
+            return result
+          } catch (error) {
+            span.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: error instanceof Error ? error.message : String(error)
+            })
+            throw error
+          } finally {
+            span.end()
+          }
+        }),
+
+      incrementCounter: (name, value = 1, attributes) =>
+        Effect.sync(() => getCounter(name).add(value, attributes)),
+
+      recordHistogram: (name, value, attributes) =>
+        Effect.sync(() => getHistogram(name).record(value, attributes)),
+
+      setGauge: (name, value, attributes) =>
+        Effect.sync(() => getGauge(name).add(value, attributes)),
+
+      log: (level, message, attributes) =>
+        Effect.sync(() => {
+          const entry = {
+            timestamp: new Date().toISOString(),
+            level,
+            message,
+            ...attributes,
+            traceId: trace.getActiveSpan()?.spanContext().traceId
+          }
+          if (level === "error") console.error(JSON.stringify(entry))
+          else if (level === "warn") console.warn(JSON.stringify(entry))
+          else console.log(JSON.stringify(entry))
+        })
+    }
+  })
+)
+```
+
+### Noop Implementation (OTEL Disabled)
+
+```typescript
+// Zero-cost when OTEL is not configured
+export const TelemetryNoop = Layer.succeed(
+  Telemetry,
+  {
+    withSpan: (_options, effect) => effect,  // Pass-through
+    incrementCounter: () => Effect.void,
+    recordHistogram: () => Effect.void,
+    setGauge: () => Effect.void,
+    log: (level, message, attributes) =>
+      Effect.sync(() => {
+        // Still log to stderr for basic observability
+        if (level === "error") console.error(message, attributes)
+      })
+  }
+)
+```
+
+### Auto-Detection Layer
+
+```typescript
+// Automatically choose implementation based on environment
+export const TelemetryAuto = Layer.unwrapEffect(
+  Effect.sync(() => {
+    const hasOtel = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || process.env.OTEL_EXPORTER
+    return hasOtel ? TelemetryLive : TelemetryNoop
+  })
+)
+```
+
+---
+
+## Service Instrumentation
+
+### TaskService with Telemetry
+
+```typescript
+// Wrap service methods with spans and metrics
+export const TaskServiceLive = Layer.effect(
+  TaskService,
+  Effect.gen(function* () {
+    const repo = yield* TaskRepository
+    const depRepo = yield* DependencyRepository
+    const idGen = yield* IdGenerator
+    const telemetry = yield* Telemetry
+
+    return {
+      create: (input) =>
+        telemetry.withSpan(
+          { name: "task.create", attributes: { "task.title": input.title } },
+          Effect.gen(function* () {
+            const task = yield* createTaskImpl(repo, idGen, input)
+
+            yield* telemetry.incrementCounter("task.created.total")
+            yield* telemetry.log("info", "Task created", {
+              taskId: task.id,
+              title: task.title,
+              score: task.score,
+              parentId: task.parentId
+            })
+
+            return task
+          })
+        ),
+
+      update: (id, input) =>
+        telemetry.withSpan(
+          { name: "task.update", attributes: { "task.id": id } },
+          Effect.gen(function* () {
+            const task = yield* updateTaskImpl(repo, id, input)
+
+            if (input.status === "done") {
+              yield* telemetry.incrementCounter("task.completed.total")
+
+              // Record completion duration
+              const durationMs = task.completedAt
+                ? task.completedAt.getTime() - task.createdAt.getTime()
+                : 0
+              yield* telemetry.recordHistogram("task.completion.duration_ms", durationMs)
+
+              yield* telemetry.log("info", "Task completed", {
+                taskId: task.id,
+                durationMs
+              })
+            }
+
+            return task
+          })
+        ),
+
+      delete: (id) =>
+        telemetry.withSpan(
+          { name: "task.delete", attributes: { "task.id": id } },
+          Effect.gen(function* () {
+            yield* repo.delete(id)
+            yield* telemetry.incrementCounter("task.deleted.total")
+            yield* telemetry.log("info", "Task deleted", { taskId: id })
+          })
+        ),
+
+      // ... other methods similarly instrumented
+    }
+  })
+)
+```
+
+### DependencyService with Telemetry
+
+```typescript
+addBlocker: (taskId, blockerId) =>
+  telemetry.withSpan(
+    {
+      name: "dependency.add",
+      attributes: { "task.id": taskId, "blocker.id": blockerId }
+    },
+    Effect.gen(function* () {
+      // Self-blocking check
+      if (taskId === blockerId) {
+        yield* telemetry.incrementCounter("dependency.self_block_attempt.total")
+        yield* Effect.fail(new ValidationError({ reason: "Task cannot block itself" }))
+      }
+
+      // Cycle detection
+      const wouldCycle = yield* telemetry.withSpan(
+        { name: "dependency.cycle_check" },
+        checkForCycle(depRepo, taskId, blockerId)
+      )
+
+      if (wouldCycle) {
+        yield* telemetry.incrementCounter("dependency.cycle_detected.total")
+        yield* Effect.fail(new CircularDependencyError({ taskId, blockerId }))
+      }
+
+      yield* depRepo.insert(blockerId, taskId)
+      yield* telemetry.log("info", "Dependency added", { taskId, blockerId })
+    })
+  )
+```
+
+### ReadyService with Telemetry
+
+```typescript
+getReady: (limit = 100) =>
+  telemetry.withSpan(
+    { name: "ready.query", attributes: { "query.limit": limit } },
+    Effect.gen(function* () {
+      const tasks = yield* getReadyImpl(taskRepo, depRepo, limit)
+
+      // Update gauge with current ready queue depth
+      yield* telemetry.setGauge("task.ready.count", tasks.length)
+      yield* telemetry.log("info", "Ready query executed", {
+        resultCount: tasks.length,
+        limit
+      })
+
+      return tasks
+    })
+  )
+```
+
+### MCP Tool with Telemetry
+
+```typescript
+server.tool("tx_ready", "Get ready tasks", { limit: z.number().default(5) },
+  async (args) => {
+    return await Effect.runPromise(
+      Effect.gen(function* () {
+        const telemetry = yield* Telemetry
+
+        return yield* telemetry.withSpan(
+          {
+            name: "mcp.tool.tx_ready",
+            attributes: { "interface.type": "mcp", "tool.name": "tx_ready" }
+          },
+          Effect.gen(function* () {
+            yield* telemetry.incrementCounter("mcp.tool.calls.total", 1, { tool: "tx_ready" })
+
+            const svc = yield* ReadyService
+            const tasks = yield* svc.getReady(args.limit)
+
+            return formatMcpResponse(tasks)
+          })
+        )
+      }).pipe(Effect.provide(AppLive))
+    ).catch(async (error) => {
+      // Also track errors
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const telemetry = yield* Telemetry
+          yield* telemetry.incrementCounter("mcp.tool.errors.total", 1, { tool: "tx_ready" })
+        }).pipe(Effect.provide(AppLive))
+      )
+      throw error
+    })
+  }
+)
+```
+
+---
+
+## Layer Composition
+
+```typescript
+// Updated AppLayer.ts
+export const InfraLive = Layer.mergeAll(
+  SqliteClientLive,
+  IdGeneratorLive,
+  TelemetryAuto  // Auto-detect OTEL configuration
+)
+
+// Core services get telemetry injected
+export const CoreServiceLive = Layer.mergeAll(
+  TaskServiceLive,       // Uses Telemetry
+  DependencyServiceLive, // Uses Telemetry
+  ReadyServiceLive,      // Uses Telemetry
+  HierarchyServiceLive,
+  ScoreServiceLive
+).pipe(Layer.provide(InfraLive), Layer.provide(RepositoryLive))
+
+// Full app layer
+export const AppLive = Layer.mergeAll(
+  CoreServiceLive,
+  LlmServiceLive,
+  MigrationLive
+)
+
+// Minimal layer (no LLM, still has telemetry)
+export const AppMinimalLive = Layer.mergeAll(
+  CoreServiceLive,
+  MigrationLive
+)
+```
+
+---
+
+## Dependencies
+
+| Package | Version | Required |
+|---------|---------|----------|
+| `@opentelemetry/api` | ^1.7 | Optional peer dep |
+| `@opentelemetry/sdk-node` | ^0.48 | Optional peer dep |
+| `@opentelemetry/exporter-trace-otlp-http` | ^0.48 | Optional peer dep |
+| `@opentelemetry/exporter-metrics-otlp-http` | ^0.48 | Optional peer dep |
+| `@opentelemetry/sdk-trace-node` | ^1.20 | Optional peer dep (console exporter) |
+
+All OTEL packages are **optional peer dependencies**. When not installed, the `TelemetryNoop` layer is used automatically.
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+
+```typescript
+describe("TelemetryNoop", () => {
+  it("withSpan passes through effect unchanged", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const telemetry = yield* Telemetry
+        return yield* telemetry.withSpan(
+          { name: "test.span" },
+          Effect.succeed(42)
+        )
+      }).pipe(Effect.provide(TelemetryNoop))
+    )
+
+    expect(result).toBe(42)
+  })
+
+  it("incrementCounter is noop", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const telemetry = yield* Telemetry
+        yield* telemetry.incrementCounter("test.counter")
+      }).pipe(Effect.provide(TelemetryNoop))
+    )
+    // Should not throw
+  })
+})
+```
+
+### Integration Tests
+
+```typescript
+describe("Telemetry Instrumented Services", () => {
+  it("TaskService.create emits task.created.total counter", async () => {
+    const counters: Array<{ name: string; value: number }> = []
+
+    const TestTelemetry = Layer.succeed(Telemetry, {
+      withSpan: (_opts, effect) => effect,
+      incrementCounter: (name, value) =>
+        Effect.sync(() => counters.push({ name, value: value ?? 1 })),
+      recordHistogram: () => Effect.void,
+      setGauge: () => Effect.void,
+      log: () => Effect.void
+    })
+
+    const db = createTestDb()
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        yield* svc.create({ title: "Telemetry test" })
+      }).pipe(Effect.provide(TestLayer(db).pipe(Layer.provideMerge(TestTelemetry))))
+    )
+
+    expect(counters).toContainEqual({ name: "task.created.total", value: 1 })
+  })
+
+  it("TaskService.update emits completion metrics when done", async () => {
+    const histograms: Array<{ name: string; value: number }> = []
+
+    const TestTelemetry = Layer.succeed(Telemetry, {
+      withSpan: (_opts, effect) => effect,
+      incrementCounter: () => Effect.void,
+      recordHistogram: (name, value) =>
+        Effect.sync(() => histograms.push({ name, value })),
+      setGauge: () => Effect.void,
+      log: () => Effect.void
+    })
+
+    const db = createTestDb()
+    seedFixtures(db)
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        yield* svc.update(FIXTURES.TASK_LOGIN, { status: "done" })
+      }).pipe(Effect.provide(TestLayer(db).pipe(Layer.provideMerge(TestTelemetry))))
+    )
+
+    expect(histograms.some(h => h.name === "task.completion.duration_ms")).toBe(true)
+  })
+
+  it("DependencyService.addBlocker emits cycle_detected counter on failure", async () => {
+    const counters: Array<{ name: string }> = []
+
+    const TestTelemetry = Layer.succeed(Telemetry, {
+      withSpan: (_opts, effect) => effect,
+      incrementCounter: (name) =>
+        Effect.sync(() => counters.push({ name })),
+      recordHistogram: () => Effect.void,
+      setGauge: () => Effect.void,
+      log: () => Effect.void
+    })
+
+    const db = createTestDb()
+    seedFixtures(db)
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DependencyService
+        yield* svc.addBlocker(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED)
+      }).pipe(
+        Effect.provide(TestLayer(db).pipe(Layer.provideMerge(TestTelemetry))),
+        Effect.either
+      )
+    )
+
+    expect(counters.some(c => c.name === "dependency.cycle_detected.total")).toBe(true)
+  })
+
+  it("ReadyService.getReady updates ready.count gauge", async () => {
+    const gauges: Array<{ name: string; value: number }> = []
+
+    const TestTelemetry = Layer.succeed(Telemetry, {
+      withSpan: (_opts, effect) => effect,
+      incrementCounter: () => Effect.void,
+      recordHistogram: () => Effect.void,
+      setGauge: (name, value) =>
+        Effect.sync(() => gauges.push({ name, value })),
+      log: () => Effect.void
+    })
+
+    const db = createTestDb()
+    seedFixtures(db)
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        yield* svc.getReady(10)
+      }).pipe(Effect.provide(TestLayer(db).pipe(Layer.provideMerge(TestTelemetry))))
+    )
+
+    expect(gauges.some(g => g.name === "task.ready.count")).toBe(true)
+  })
+})
+```
+
+### Auto-Detection Tests
+
+```typescript
+describe("TelemetryAuto", () => {
+  it("uses TelemetryNoop when OTEL is not configured", async () => {
+    delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+    delete process.env.OTEL_EXPORTER
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const telemetry = yield* Telemetry
+        return yield* telemetry.withSpan({ name: "test" }, Effect.succeed("ok"))
+      }).pipe(Effect.provide(TelemetryAuto))
+    )
+
+    expect(result).toBe("ok")
+  })
+})
+```
+
+---
+
+## Configuration Reference
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector endpoint (e.g., `http://localhost:4318`) |
+| `OTEL_EXPORTER` | `otlp` | Exporter type: `otlp` or `console` |
+| `OTEL_SERVICE_NAME` | `tx` | Service name in traces/metrics |
+| `OTEL_LOG_LEVEL` | `info` | Minimum log level for OTEL logger |
+
+---
+
+## Related Documents
+
+- [PRD-008: Observability & OpenTelemetry](../prd/PRD-008-observability-opentelemetry.md)
+- [DD-002: Effect-TS Service Layer](./DD-002-effect-ts-service-layer.md)
+- [DD-005: MCP Server & Agent SDK](./DD-005-mcp-agent-sdk-integration.md)
+- [DD-007: Testing Strategy](./DD-007-testing-strategy.md)
