@@ -35,6 +35,12 @@ export interface TaskTree {
   readonly children: readonly TaskTree[]
 }
 
+export interface TaskDependency {
+  readonly blockerId: TaskId
+  readonly blockedId: TaskId
+  readonly createdAt: Date
+}
+
 export interface CreateTaskInput {
   readonly title: string
   readonly description?: string
@@ -101,4 +107,17 @@ export const rowToTask = (row: TaskRow): Task => ({
   updatedAt: new Date(row.updated_at),
   completedAt: row.completed_at ? new Date(row.completed_at) : null,
   metadata: JSON.parse(row.metadata || "{}")
+})
+
+// DB row type for dependencies (snake_case from SQLite)
+export interface DependencyRow {
+  blocker_id: string
+  blocked_id: string
+  created_at: string
+}
+
+export const rowToDependency = (row: DependencyRow): TaskDependency => ({
+  blockerId: row.blocker_id as TaskId,
+  blockedId: row.blocked_id as TaskId,
+  createdAt: new Date(row.created_at)
 })

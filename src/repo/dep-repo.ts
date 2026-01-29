@@ -1,7 +1,8 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
-import type { TaskId } from "../schema.js"
+import type { TaskId, TaskDependency, DependencyRow } from "../schema.js"
+import { rowToDependency } from "../schema.js"
 
 export class DependencyRepository extends Context.Tag("DependencyRepository")<
   DependencyRepository,
@@ -11,6 +12,7 @@ export class DependencyRepository extends Context.Tag("DependencyRepository")<
     readonly getBlockerIds: (blockedId: string) => Effect.Effect<readonly TaskId[], DatabaseError>
     readonly getBlockingIds: (blockerId: string) => Effect.Effect<readonly TaskId[], DatabaseError>
     readonly hasPath: (fromId: string, toId: string) => Effect.Effect<boolean, DatabaseError>
+    readonly getAll: () => Effect.Effect<readonly TaskDependency[], DatabaseError>
   }
 >() {}
 
@@ -82,6 +84,17 @@ export const DependencyRepositoryLive = Layer.effect(
             }
 
             return false
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getAll: () =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              "SELECT blocker_id, blocked_id, created_at FROM task_dependencies"
+            ).all() as DependencyRow[]
+            return rows.map(rowToDependency)
           },
           catch: (cause) => new DatabaseError({ cause })
         })
