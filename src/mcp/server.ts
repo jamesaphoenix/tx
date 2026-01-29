@@ -531,6 +531,7 @@ export const createMcpServer = (): McpServer => {
 /**
  * Start the MCP server with stdio transport.
  * Initializes runtime and begins accepting tool calls.
+ * Registers graceful shutdown handlers for SIGINT/SIGTERM.
  */
 export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => {
   // Initialize runtime (runs migrations, builds service layer ONCE)
@@ -538,5 +539,36 @@ export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => 
 
   const server = createMcpServer()
   const transport = new StdioServerTransport()
+
+  // Track shutdown state to prevent multiple cleanup attempts
+  let isShuttingDown = false
+
+  const gracefulShutdown = async (signal: string): Promise<void> => {
+    if (isShuttingDown) {
+      return
+    }
+    isShuttingDown = true
+
+    try {
+      // Close the MCP server connection
+      await server.close()
+    } catch {
+      // Ignore close errors during shutdown
+    }
+
+    try {
+      // Dispose of the Effect runtime (releases database connections)
+      await disposeRuntime()
+    } catch {
+      // Ignore dispose errors during shutdown
+    }
+
+    process.exit(0)
+  }
+
+  // Register shutdown handlers
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"))
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"))
+
   await server.connect(transport)
 }
