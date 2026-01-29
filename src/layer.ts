@@ -6,6 +6,7 @@ import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
 import { HierarchyServiceLive } from "./services/hierarchy-service.js"
+import { SyncServiceLive } from "./services/sync-service.js"
 
 export const makeAppLayer = (dbPath: string) => {
   const infra = SqliteClientLive(dbPath)
@@ -23,5 +24,10 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(repos)
   )
 
-  return services
+  // SyncServiceLive needs TaskService (from services) and DependencyRepository (from repos)
+  const syncService = SyncServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, services))
+  )
+
+  return Layer.merge(services, syncService)
 }
