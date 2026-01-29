@@ -17,7 +17,7 @@ import { ReadyService } from "../services/ready-service.js"
 import { DependencyService } from "../services/dep-service.js"
 import { HierarchyService } from "../services/hierarchy-service.js"
 import { makeAppLayer } from "../layer.js"
-import type { TaskStatus, TaskWithDeps } from "../schema.js"
+import type { TaskId, TaskStatus, TaskWithDeps } from "../schema.js"
 import { TASK_STATUSES } from "../schema.js"
 
 // -----------------------------------------------------------------------------
@@ -192,7 +192,7 @@ export const createMcpServer = (): McpServer => {
         const task = await runEffect(
           Effect.gen(function* () {
             const taskService = yield* TaskService
-            return yield* taskService.getWithDeps(id as any)
+            return yield* taskService.getWithDeps(id as TaskId)
           })
         )
         const serialized = serializeTask(task)
@@ -340,7 +340,7 @@ export const createMcpServer = (): McpServer => {
         const task = await runEffect(
           Effect.gen(function* () {
             const taskService = yield* TaskService
-            yield* taskService.update(id as any, {
+            yield* taskService.update(id as TaskId, {
               title: title ?? undefined,
               description: description ?? undefined,
               status: status as TaskStatus | undefined,
@@ -348,7 +348,7 @@ export const createMcpServer = (): McpServer => {
               score: score ?? undefined
             })
             // Return with deps after update
-            return yield* taskService.getWithDeps(id as any)
+            return yield* taskService.getWithDeps(id as TaskId)
           })
         )
         const serialized = serializeTask(task)
@@ -381,13 +381,13 @@ export const createMcpServer = (): McpServer => {
             const readyService = yield* ReadyService
 
             // Get tasks that this task blocks (before completing)
-            const blocking = yield* readyService.getBlocking(id as any)
+            const blocking = yield* readyService.getBlocking(id as TaskId)
 
             // Mark the task as done
-            yield* taskService.update(id as any, { status: "done" })
+            yield* taskService.update(id as TaskId, { status: "done" })
 
             // Get the updated task with deps
-            const completedTask = yield* taskService.getWithDeps(id as any)
+            const completedTask = yield* taskService.getWithDeps(id as TaskId)
 
             // Check which previously blocked tasks are now ready
             const nowReady: TaskWithDeps[] = []
@@ -432,7 +432,7 @@ export const createMcpServer = (): McpServer => {
         await runEffect(
           Effect.gen(function* () {
             const taskService = yield* TaskService
-            yield* taskService.remove(id as any)
+            yield* taskService.remove(id as TaskId)
           })
         )
         return {
@@ -467,10 +467,10 @@ export const createMcpServer = (): McpServer => {
             const taskService = yield* TaskService
 
             // Add the blocker relationship
-            yield* depService.addBlocker(taskId as any, blockerId as any)
+            yield* depService.addBlocker(taskId as TaskId, blockerId as TaskId)
 
             // Return the updated task with deps
-            return yield* taskService.getWithDeps(taskId as any)
+            return yield* taskService.getWithDeps(taskId as TaskId)
           })
         )
         const serialized = serializeTask(task)
@@ -506,10 +506,10 @@ export const createMcpServer = (): McpServer => {
             const taskService = yield* TaskService
 
             // Remove the blocker relationship
-            yield* depService.removeBlocker(taskId as any, blockerId as any)
+            yield* depService.removeBlocker(taskId as TaskId, blockerId as TaskId)
 
             // Return the updated task with deps
-            return yield* taskService.getWithDeps(taskId as any)
+            return yield* taskService.getWithDeps(taskId as TaskId)
           })
         )
         const serialized = serializeTask(task)
