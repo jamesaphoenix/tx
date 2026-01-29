@@ -1,11 +1,19 @@
-import { Context, Effect, Layer } from "effect"
-import { writeFileSync, renameSync, existsSync, mkdirSync } from "node:fs"
+import { Context, Effect, Layer, Schema } from "effect"
+import { writeFileSync, renameSync, existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { DatabaseError, ValidationError } from "../errors.js"
 import { TaskService } from "./task-service.js"
+import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import type { Task, TaskDependency } from "../schema.js"
-import type { TaskUpsertOp, DepAddOp, SyncOperation } from "../schemas/sync.js"
+import type { Task, TaskDependency, TaskId, TaskStatus } from "../schema.js"
+import {
+  type TaskUpsertOp,
+  type TaskDeleteOp,
+  type DepAddOp,
+  type DepRemoveOp,
+  SyncOperation as SyncOperationSchema,
+  type SyncOperation
+} from "../schemas/sync.js"
 
 /**
  * Result of an export operation.
@@ -110,6 +118,7 @@ export const SyncServiceLive = Layer.effect(
   SyncService,
   Effect.gen(function* () {
     const taskService = yield* TaskService
+    const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
 
     return {
@@ -145,14 +154,135 @@ export const SyncServiceLive = Layer.effect(
           }
         }),
 
-      import: (_path?: string) =>
+      import: (path?: string) =>
         Effect.gen(function* () {
-          // TODO: Implement in future task
-          return yield* Effect.succeed({
-            imported: 0,
-            skipped: 0,
-            conflicts: 0
+          const filePath = resolve(path ?? DEFAULT_JSONL_PATH)
+
+          // Check if file exists
+          if (!existsSync(filePath)) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          // Read and parse JSONL file
+          const content = yield* Effect.try({
+            try: () => readFileSync(filePath, "utf-8"),
+            catch: (cause) => new DatabaseError({ cause })
           })
+
+          const lines = content.trim().split("\n").filter(Boolean)
+          if (lines.length === 0) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          // Parse all operations with Schema validation
+          const ops: SyncOperation[] = []
+          for (const line of lines) {
+            const parsed = yield* Effect.try({
+              try: () => JSON.parse(line),
+              catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+            })
+
+            const op = yield* Schema.decodeUnknown(SyncOperationSchema)(parsed).pipe(
+              Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+            )
+            ops.push(op)
+          }
+
+          // Group by entity and find latest state per entity (timestamp wins)
+          const taskStates = new Map<string, { op: TaskUpsertOp | TaskDeleteOp; ts: string }>()
+          const depStates = new Map<string, { op: DepAddOp | DepRemoveOp; ts: string }>()
+
+          for (const op of ops) {
+            if (op.op === "upsert" || op.op === "delete") {
+              const existing = taskStates.get(op.id)
+              if (!existing || op.ts > existing.ts) {
+                taskStates.set(op.id, { op: op as TaskUpsertOp | TaskDeleteOp, ts: op.ts })
+              }
+            } else if (op.op === "dep_add" || op.op === "dep_remove") {
+              const key = `${op.blockerId}:${op.blockedId}`
+              const existing = depStates.get(key)
+              if (!existing || op.ts > existing.ts) {
+                depStates.set(key, { op: op as DepAddOp | DepRemoveOp, ts: op.ts })
+              }
+            }
+          }
+
+          let imported = 0
+          let skipped = 0
+          let conflicts = 0
+
+          // Apply task operations
+          for (const [id, { op }] of taskStates) {
+            if (op.op === "upsert") {
+              const existing = yield* taskRepo.findById(id)
+
+              if (!existing) {
+                // Create new task with the specified ID
+                const now = new Date()
+                const task: Task = {
+                  id: id as TaskId,
+                  title: op.data.title,
+                  description: op.data.description,
+                  status: op.data.status as TaskStatus,
+                  parentId: op.data.parentId as TaskId | null,
+                  score: op.data.score,
+                  createdAt: new Date(op.ts),
+                  updatedAt: new Date(op.ts),
+                  completedAt: op.data.status === "done" ? now : null,
+                  metadata: op.data.metadata as Record<string, unknown>
+                }
+                yield* taskRepo.insert(task)
+                imported++
+              } else {
+                // Update if JSONL timestamp is newer than existing
+                const existingTs = existing.updatedAt.toISOString()
+                if (op.ts > existingTs) {
+                  const updated: Task = {
+                    ...existing,
+                    title: op.data.title,
+                    description: op.data.description,
+                    status: op.data.status as TaskStatus,
+                    parentId: op.data.parentId as TaskId | null,
+                    score: op.data.score,
+                    updatedAt: new Date(op.ts),
+                    completedAt: op.data.status === "done" ? (existing.completedAt ?? new Date()) : null,
+                    metadata: op.data.metadata as Record<string, unknown>
+                  }
+                  yield* taskRepo.update(updated)
+                  imported++
+                } else if (op.ts === existingTs) {
+                  // Same timestamp - skip
+                  skipped++
+                } else {
+                  // Local is newer - conflict
+                  conflicts++
+                }
+              }
+            } else if (op.op === "delete") {
+              const existing = yield* taskRepo.findById(id)
+              if (existing) {
+                yield* taskRepo.remove(id)
+                imported++
+              }
+            }
+          }
+
+          // Apply dependency operations
+          for (const [_key, { op }] of depStates) {
+            if (op.op === "dep_add") {
+              // Add dependency, ignore if already exists
+              yield* depRepo.insert(op.blockerId, op.blockedId).pipe(
+                Effect.catchAll(() => Effect.void)
+              )
+            } else if (op.op === "dep_remove") {
+              // Remove dependency, ignore if doesn't exist
+              yield* depRepo.remove(op.blockerId, op.blockedId).pipe(
+                Effect.catchAll(() => Effect.void)
+              )
+            }
+          }
+
+          return { imported, skipped, conflicts }
         }),
 
       status: () =>
