@@ -6,6 +6,7 @@ import { makeAppLayer } from "./layer.js"
 import { TaskService } from "./services/task-service.js"
 import { DependencyService } from "./services/dep-service.js"
 import { ReadyService } from "./services/ready-service.js"
+import { startMcpServer } from "./mcp/server.js"
 import type { TaskId, TaskWithDeps } from "./schema.js"
 
 // --- Argv parsing helpers ---
@@ -409,6 +410,7 @@ Commands:
   unblock <id> <blocker>  Remove blocking dependency
   children <id>           List child tasks
   tree <id>               Show task subtree
+  mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
   --json                  Output as JSON
@@ -448,6 +450,7 @@ Commands:
   unblock <id> <blocker>  Remove blocking dependency
   children <id>           List child tasks
   tree <id>               Show task subtree
+  mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
   --json                  Output as JSON
@@ -470,6 +473,18 @@ if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
   console.log("tx v0.1.0")
   process.exit(0)
 }
+
+// Handle mcp-server separately (it manages its own runtime)
+if (command === "mcp-server") {
+  const dbPath = typeof parsedFlags.db === "string"
+    ? resolve(parsedFlags.db)
+    : resolve(process.cwd(), ".tx", "tasks.db")
+
+  startMcpServer(dbPath).catch((err: unknown) => {
+    console.error(`MCP server error: ${err}`)
+    process.exit(1)
+  })
+} else {
 
 const handler = commands[command]
 if (!handler) {
@@ -526,3 +541,4 @@ Effect.runPromise(
   console.error(`Fatal: ${err}`)
   process.exit(1)
 })
+}
