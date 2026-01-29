@@ -8,6 +8,7 @@ import { TaskServiceLive, TaskService } from "../../src/services/task-service.js
 import { DependencyServiceLive, DependencyService } from "../../src/services/dep-service.js"
 import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service.js"
 import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
+import { ScoreServiceLive, ScoreService } from "../../src/services/score-service.js"
 import type { TaskId } from "../../src/schema.js"
 import type Database from "better-sqlite3"
 
@@ -16,9 +17,16 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
   )
-  return Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
+  // Base services that only depend on repos
+  const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
     Layer.provide(repos)
   )
+  // ScoreService depends on HierarchyService, so it needs baseServices
+  const scoreService = ScoreServiceLive.pipe(
+    Layer.provide(baseServices),
+    Layer.provide(repos)
+  )
+  return Layer.mergeAll(baseServices, scoreService)
 }
 
 describe("Schema constraints", () => {
@@ -637,5 +645,194 @@ describe("Hierarchy operations", () => {
 
     expect(roots).toHaveLength(1)
     expect(roots[0].id).toBe(FIXTURES.TASK_ROOT)
+  })
+})
+
+describe("Score calculations", () => {
+  let db: InstanceType<typeof Database>
+  let layer: ReturnType<typeof makeTestLayer>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    layer = makeTestLayer(db)
+  })
+
+  it("calculate returns base score for root task with no blockers", async () => {
+    const score = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_ROOT)
+        return yield* scoreSvc.calculate(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // ROOT: base=1000, depth=0 (no penalty), no blocking bonus, fresh task
+    // Expected: 1000 + 0 + 0 - 0 = 1000
+    expect(score).toBe(1000)
+  })
+
+  it("calculate adds blocking bonus for tasks that block others", async () => {
+    const score = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_JWT)
+        return yield* scoreSvc.calculate(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // JWT: base=700, depth=2 (penalty=20), blocks BLOCKED (+25), fresh
+    // Expected: 700 + 25 - 20 = 705
+    expect(score).toBe(705)
+  })
+
+  it("calculate applies depth penalty for nested tasks", async () => {
+    const score = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_LOGIN)
+        return yield* scoreSvc.calculate(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // LOGIN: base=600, depth=2 (penalty=20), blocks BLOCKED (+25), fresh
+    // Expected: 600 + 25 - 20 = 605
+    expect(score).toBe(605)
+  })
+
+  it("calculate applies blocked penalty for blocked status", async () => {
+    // Update a task to blocked status
+    db.prepare("UPDATE tasks SET status = 'blocked' WHERE id = ?").run(FIXTURES.TASK_JWT)
+
+    const score = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_JWT)
+        return yield* scoreSvc.calculate(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // JWT: base=700, depth=2 (penalty=20), blocks BLOCKED (+25), blocked (-1000), fresh
+    // Expected: 700 + 25 - 20 - 1000 = -295
+    expect(score).toBe(-295)
+  })
+
+  it("calculateById returns score by task ID", async () => {
+    const score = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scoreSvc = yield* ScoreService
+        return yield* scoreSvc.calculateById(FIXTURES.TASK_ROOT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(score).toBe(1000)
+  })
+
+  it("calculateById fails with TaskNotFoundError for nonexistent ID", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scoreSvc = yield* ScoreService
+        return yield* scoreSvc.calculateById("tx-nonexist" as TaskId)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
+  })
+
+  it("getBreakdown returns detailed score breakdown", async () => {
+    const breakdown = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_JWT)
+        return yield* scoreSvc.getBreakdown(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(breakdown.baseScore).toBe(700)
+    expect(breakdown.blockingCount).toBe(1) // blocks BLOCKED
+    expect(breakdown.blockingBonus).toBe(25)
+    expect(breakdown.depth).toBe(2) // JWT -> AUTH -> ROOT
+    expect(breakdown.depthPenalty).toBe(20)
+    expect(breakdown.blockedPenalty).toBe(0)
+    expect(breakdown.finalScore).toBe(705)
+  })
+
+  it("getBreakdownById returns breakdown by task ID", async () => {
+    const breakdown = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scoreSvc = yield* ScoreService
+        return yield* scoreSvc.getBreakdownById(FIXTURES.TASK_ROOT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(breakdown.baseScore).toBe(1000)
+    expect(breakdown.depth).toBe(0)
+    expect(breakdown.finalScore).toBe(1000)
+  })
+
+  it("getBreakdownById fails with TaskNotFoundError for nonexistent ID", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scoreSvc = yield* ScoreService
+        return yield* scoreSvc.getBreakdownById("tx-nonexist" as TaskId)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
+  })
+
+  it("calculate handles task with multiple blocking relationships", async () => {
+    // LOGIN blocks BLOCKED (in addition to JWT)
+    const score = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_LOGIN)
+        return yield* scoreSvc.calculate(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // LOGIN: base=600, depth=2 (penalty=20), blocks BLOCKED (+25), fresh
+    // Expected: 600 + 25 - 20 = 605
+    expect(score).toBe(605)
+  })
+
+  it("calculate gives higher score to tasks blocking more work", async () => {
+    // TASK_AUTH has children but doesn't block anything
+    // TASK_JWT blocks TASK_BLOCKED
+    const authScore = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_AUTH)
+        return yield* scoreSvc.calculate(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    const jwtScore = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const scoreSvc = yield* ScoreService
+        const task = yield* taskSvc.get(FIXTURES.TASK_JWT)
+        return yield* scoreSvc.calculate(task)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // AUTH: base=800, depth=1 (penalty=10), blocks nothing, fresh = 790
+    // JWT: base=700, depth=2 (penalty=20), blocks 1 (+25), fresh = 705
+    expect(authScore).toBe(790)
+    expect(jwtScore).toBe(705)
+    // AUTH has higher score due to higher base score despite no blocking bonus
   })
 })
