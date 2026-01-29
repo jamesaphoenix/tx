@@ -54,60 +54,40 @@ function parseArgs(argv: string[]): { command: string; positional: string[]; fla
   const positional: string[] = []
   const flags: Record<string, string | boolean> = {}
 
-  // Find the command (first non-flag argument)
+  // Parse a flag at index idx, using valueCheckPrefix to determine if next arg is a value
+  // Returns number of args consumed (1 for boolean flag, 2 for flag with value)
+  function consumeFlag(idx: number, valueCheckPrefix: string): number {
+    const arg = args[idx]
+    const key = arg.startsWith("--") ? arg.slice(2) : arg.slice(1)
+    const next = args[idx + 1]
+    if (next && !next.startsWith(valueCheckPrefix)) {
+      flags[key] = next
+      return 2
+    }
+    flags[key] = true
+    return 1
+  }
+
+  // Find the command (first non-flag argument), parsing any leading flags
   let command = "help"
   let startIdx = 0
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-    if (arg.startsWith("-")) {
-      // Parse flag before command
-      if (arg.startsWith("--")) {
-        const key = arg.slice(2)
-        const next = args[i + 1]
-        if (next && !next.startsWith("-")) {
-          flags[key] = next
-          i++
-        } else {
-          flags[key] = true
-        }
-      } else {
-        const key = arg.slice(1)
-        const next = args[i + 1]
-        if (next && !next.startsWith("-")) {
-          flags[key] = next
-          i++
-        } else {
-          flags[key] = true
-        }
-      }
+    if (args[i].startsWith("-")) {
+      i += consumeFlag(i, "-") - 1
     } else {
-      // Found command
-      command = arg
+      command = args[i]
       startIdx = i + 1
       break
     }
   }
 
+  // Parse remaining args: positional arguments and flags after command
   for (let i = startIdx; i < args.length; i++) {
     const arg = args[i]
     if (arg.startsWith("--")) {
-      const key = arg.slice(2)
-      const next = args[i + 1]
-      if (next && !next.startsWith("--")) {
-        flags[key] = next
-        i++
-      } else {
-        flags[key] = true
-      }
+      i += consumeFlag(i, "--") - 1
     } else if (arg.startsWith("-")) {
-      const key = arg.slice(1)
-      const next = args[i + 1]
-      if (next && !next.startsWith("-")) {
-        flags[key] = next
-        i++
-      } else {
-        flags[key] = true
-      }
+      i += consumeFlag(i, "-") - 1
     } else {
       positional.push(arg)
     }
