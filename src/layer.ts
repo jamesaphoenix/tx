@@ -6,7 +6,10 @@ import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
 import { HierarchyServiceLive } from "./services/hierarchy-service.js"
-import { SyncServiceLive } from "./services/sync-service.js"
+import { SyncService, SyncServiceLive } from "./services/sync-service.js"
+
+// Re-export SyncService for cleaner imports
+export { SyncService }
 
 export const makeAppLayer = (dbPath: string) => {
   const infra = SqliteClientLive(dbPath)
