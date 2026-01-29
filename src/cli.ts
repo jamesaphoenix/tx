@@ -13,11 +13,44 @@ import type { TaskId, TaskStatus, TaskWithDeps } from "./schema.js"
 
 function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Record<string, string | boolean> } {
   const args = argv.slice(2)
-  const command = args[0] ?? "help"
   const positional: string[] = []
   const flags: Record<string, string | boolean> = {}
 
-  for (let i = 1; i < args.length; i++) {
+  // Find the command (first non-flag argument)
+  let command = "help"
+  let startIdx = 0
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg.startsWith("-")) {
+      // Parse flag before command
+      if (arg.startsWith("--")) {
+        const key = arg.slice(2)
+        const next = args[i + 1]
+        if (next && !next.startsWith("-")) {
+          flags[key] = next
+          i++
+        } else {
+          flags[key] = true
+        }
+      } else {
+        const key = arg.slice(1)
+        const next = args[i + 1]
+        if (next && !next.startsWith("-")) {
+          flags[key] = next
+          i++
+        } else {
+          flags[key] = true
+        }
+      }
+    } else {
+      // Found command
+      command = arg
+      startIdx = i + 1
+      break
+    }
+  }
+
+  for (let i = startIdx; i < args.length; i++) {
     const arg = args[i]
     if (arg.startsWith("--")) {
       const key = arg.slice(2)
@@ -87,6 +120,256 @@ function jsonReplacer(_key: string, value: unknown): unknown {
 
 function toJson(data: unknown): string {
   return JSON.stringify(data, jsonReplacer, 2)
+}
+
+// --- Command Help ---
+
+const commandHelp: Record<string, string> = {
+  init: `tx init - Initialize task database
+
+Usage: tx init [--db <path>]
+
+Initializes the tx database and required tables. Creates .tx/tasks.db
+by default. Safe to run multiple times (idempotent).
+
+Options:
+  --db <path>   Database path (default: .tx/tasks.db)
+  --help        Show this help
+
+Examples:
+  tx init                     # Initialize in .tx/tasks.db
+  tx init --db ~/my-tasks.db  # Use custom path`,
+
+  add: `tx add - Create a new task
+
+Usage: tx add <title> [options]
+
+Creates a new task with the given title. Tasks start with status "backlog"
+and default score 500.
+
+Arguments:
+  <title>         Required. The task title (use quotes for multi-word titles)
+
+Options:
+  --parent, -p <id>       Parent task ID (for subtasks)
+  --score, -s <n>         Priority score 0-1000 (default: 500, higher = more important)
+  --description, -d <text> Task description
+  --json                  Output as JSON
+  --help                  Show this help
+
+Examples:
+  tx add "Implement auth"
+  tx add "Login page" --parent tx-a1b2c3d4 --score 600
+  tx add "Fix bug" -s 800 -d "Urgent fix for login"`,
+
+  list: `tx list - List tasks
+
+Usage: tx list [options]
+
+Lists all tasks, optionally filtered by status. Shows task ID, status,
+score, title, and ready indicator (+).
+
+Options:
+  --status <s>     Filter by status (comma-separated: backlog,ready,active,done)
+  --limit, -n <n>  Maximum tasks to show
+  --json           Output as JSON
+  --help           Show this help
+
+Examples:
+  tx list                          # List all tasks
+  tx list --status backlog,ready   # Only backlog and ready tasks
+  tx list -n 10 --json             # Top 10 as JSON`,
+
+  ready: `tx ready - List ready tasks
+
+Usage: tx ready [options]
+
+Lists tasks that are ready to work on (status is workable and all blockers
+are done). Sorted by score, highest first.
+
+Options:
+  --limit, -n <n>  Maximum tasks to show (default: 10)
+  --json           Output as JSON
+  --help           Show this help
+
+Examples:
+  tx ready             # Top 10 ready tasks
+  tx ready -n 5        # Top 5 ready tasks
+  tx ready --json      # Output as JSON for scripting`,
+
+  show: `tx show - Show task details
+
+Usage: tx show <id> [options]
+
+Shows full details for a single task including title, status, score,
+description, parent, blockers, blocks, children, and timestamps.
+
+Arguments:
+  <id>    Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx show tx-a1b2c3d4
+  tx show tx-a1b2c3d4 --json`,
+
+  update: `tx update - Update a task
+
+Usage: tx update <id> [options]
+
+Updates one or more fields on an existing task.
+
+Arguments:
+  <id>    Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --status <s>          New status (backlog|ready|planning|active|blocked|review|human_needs_to_review|done)
+  --title <t>           New title
+  --score <n>           New score (0-1000)
+  --description, -d <text>  New description
+  --parent, -p <id>     New parent task ID
+  --json                Output as JSON
+  --help                Show this help
+
+Examples:
+  tx update tx-a1b2c3d4 --status active
+  tx update tx-a1b2c3d4 --score 900 --title "High priority bug"`,
+
+  done: `tx done - Mark task complete
+
+Usage: tx done <id> [options]
+
+Marks a task as complete (status = done). Also reports any tasks
+that become unblocked as a result.
+
+Arguments:
+  <id>    Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json  Output as JSON (includes task and newly unblocked task IDs)
+  --help  Show this help
+
+Examples:
+  tx done tx-a1b2c3d4
+  tx done tx-a1b2c3d4 --json`,
+
+  delete: `tx delete - Delete a task
+
+Usage: tx delete <id> [options]
+
+Permanently deletes a task. Also removes any dependencies involving
+this task.
+
+Arguments:
+  <id>    Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx delete tx-a1b2c3d4`,
+
+  block: `tx block - Add blocking dependency
+
+Usage: tx block <task-id> <blocker-id> [options]
+
+Makes one task block another. The blocked task cannot be ready until
+the blocker is marked done. Circular dependencies are not allowed.
+
+Arguments:
+  <task-id>     Required. The task that will be blocked
+  <blocker-id>  Required. The task that blocks it
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx block tx-abc123 tx-def456   # tx-def456 blocks tx-abc123`,
+
+  unblock: `tx unblock - Remove blocking dependency
+
+Usage: tx unblock <task-id> <blocker-id> [options]
+
+Removes a blocking dependency between two tasks.
+
+Arguments:
+  <task-id>     Required. The task that was blocked
+  <blocker-id>  Required. The task that was blocking it
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx unblock tx-abc123 tx-def456`,
+
+  children: `tx children - List child tasks
+
+Usage: tx children <id> [options]
+
+Lists all direct children of a task (tasks with this task as parent).
+Shows task ID, status, score, title, and ready indicator (+).
+
+Arguments:
+  <id>    Required. Parent task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx children tx-a1b2c3d4
+  tx children tx-a1b2c3d4 --json`,
+
+  tree: `tx tree - Show task subtree
+
+Usage: tx tree <id> [options]
+
+Shows a task and all its descendants in a tree view. Useful for
+visualizing task hierarchy.
+
+Arguments:
+  <id>    Required. Root task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json  Output as JSON (nested structure with childTasks array)
+  --help  Show this help
+
+Examples:
+  tx tree tx-a1b2c3d4
+  tx tree tx-a1b2c3d4 --json`,
+
+  "mcp-server": `tx mcp-server - Start MCP server
+
+Usage: tx mcp-server [options]
+
+Starts the Model Context Protocol (MCP) server for integration with
+AI agents. Communicates via JSON-RPC over stdio.
+
+Options:
+  --db <path>  Database path (default: .tx/tasks.db)
+  --help       Show this help
+
+Examples:
+  tx mcp-server
+  tx mcp-server --db ~/project/.tx/tasks.db`,
+
+  help: `tx help - Show help
+
+Usage: tx help [command]
+       tx --help
+       tx <command> --help
+
+Shows general help or help for a specific command.
+
+Examples:
+  tx help           # General help
+  tx help add       # Help for 'add' command
+  tx add --help     # Same as above`
 }
 
 // --- Commands ---
@@ -393,8 +676,13 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       yield* buildTree(id, 0)
     }),
 
-  help: () =>
+  help: (pos) =>
     Effect.sync(() => {
+      const subcommand = pos[0]
+      if (subcommand && commandHelp[subcommand]) {
+        console.log(commandHelp[subcommand])
+        return
+      }
       console.log(`tx v0.1.0 - Task management for AI agents and humans
 
 Usage: tx <command> [arguments] [options]
@@ -419,6 +707,8 @@ Global Options:
   --db <path>             Database path (default: .tx/tasks.db)
   --help                  Show help
 
+Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
+
 Examples:
   tx init
   tx add "Implement auth" --score 800
@@ -434,7 +724,14 @@ Examples:
 
 const { command, positional, flags: parsedFlags } = parseArgs(process.argv)
 
-if (flag(parsedFlags, "help") || flag(parsedFlags, "h") || command === "help") {
+// Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
+if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
+  // Check if we have a command with specific help
+  if (command !== "help" && commandHelp[command]) {
+    console.log(commandHelp[command])
+    process.exit(0)
+  }
+  // Fall through to general help
   console.log(`tx v0.1.0 - Task management for AI agents and humans
 
 Usage: tx <command> [arguments] [options]
@@ -460,6 +757,8 @@ Global Options:
   --help                  Show help
   --version               Show version
 
+Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
+
 Examples:
   tx init
   tx add "Implement auth" --score 800
@@ -468,6 +767,51 @@ Examples:
   tx ready --json
   tx block <task-id> <blocker-id>
   tx done <task-id>`)
+  process.exit(0)
+}
+
+// Handle 'tx help' and 'tx help <command>'
+if (command === "help") {
+  const subcommand = positional[0]
+  if (subcommand && commandHelp[subcommand]) {
+    console.log(commandHelp[subcommand])
+  } else {
+    console.log(`tx v0.1.0 - Task management for AI agents and humans
+
+Usage: tx <command> [arguments] [options]
+
+Commands:
+  init                    Initialize task database
+  add <title>             Create a new task
+  list                    List tasks
+  ready                   List ready tasks (no blockers)
+  show <id>               Show task details
+  update <id>             Update task
+  done <id>               Mark task complete
+  delete <id>             Delete task
+  block <id> <blocker>    Add blocking dependency
+  unblock <id> <blocker>  Remove blocking dependency
+  children <id>           List child tasks
+  tree <id>               Show task subtree
+  mcp-server              Start MCP server (JSON-RPC over stdio)
+
+Global Options:
+  --json                  Output as JSON
+  --db <path>             Database path (default: .tx/tasks.db)
+  --help                  Show help
+  --version               Show version
+
+Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
+
+Examples:
+  tx init
+  tx add "Implement auth" --score 800
+  tx add "Login page" --parent tx-a1b2c3d4 --score 600
+  tx list --status backlog,ready
+  tx ready --json
+  tx block <task-id> <blocker-id>
+  tx done <task-id>`)
+  }
   process.exit(0)
 }
 

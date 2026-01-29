@@ -255,6 +255,7 @@ This is iteration $iteration of the RALPH loop."
     git add -A
     git commit -m "ralph: review cycle at iteration $iteration
 
+Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
 Co-Authored-By: Claude <noreply@anthropic.com>" 2>>"$LOG_FILE" || true
     log "Review changes committed"
   fi
@@ -327,6 +328,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     git add -A
     git commit -m "ralph: $AGENT completed $TASK_ID — $TASK_TITLE
 
+Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
 Co-Authored-By: Claude <noreply@anthropic.com>" 2>>"$LOG_FILE" || true
     log "Changes committed"
   fi
