@@ -1,11 +1,29 @@
 {
-  "name": "tx",
+  "name": "@jamesaphoenix/tx",
   "version": "0.1.0",
   "description": "A lean task management system for AI agents and humans",
   "type": "module",
   "bin": {
     "tx": "./dist/cli.js"
   },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jamesaphoenix/tx.git"
+  },
+  "keywords": [
+    "task-management",
+    "ai-agents",
+    "cli",
+    "effect-ts",
+    "mcp"
+  ],
+  "author": "James Phoenix",
+  "license": "MIT",
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
