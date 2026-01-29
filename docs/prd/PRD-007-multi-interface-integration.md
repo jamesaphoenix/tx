@@ -1,0 +1,286 @@
+# PRD-007: Multi-Interface Integration
+
+**Status**: Draft
+**Priority**: P0 (Must Have)
+**Owner**: TBD
+**Last Updated**: 2025-01-28
+
+---
+
+## Problem Statement
+
+Different consumers need different interfaces:
+- **Humans** want CLI for quick commands
+- **Claude Code** needs MCP tools
+- **Agent SDK** needs programmatic API
+- **Scripts** need JSON output
+
+We need **multiple interfaces** that all use the same core logic:
+- CLI for human interaction
+- TypeScript API for embedding
+- MCP server for Claude Code
+- JSON mode for scripting
+
+---
+
+## Interface Matrix
+
+| Interface | Consumer | Protocol | Output Format |
+|-----------|----------|----------|---------------|
+| CLI (`tx`) | Humans, scripts | stdin/stdout | Text or JSON |
+| TypeScript API | Custom agents | Function calls | Effect types |
+| MCP Server | Claude Code | JSON-RPC over stdio | MCP format |
+| Agent SDK | Anthropic SDK | Tool definitions | SDK format |
+
+---
+
+## CLI Design
+
+### Human-Friendly Output (Default)
+```bash
+$ tx ready
+3 ready tasks:
+  tx-a1b2 [850] Implement JWT validation (unblocks 2)
+    blocked by: (none)
+    blocks: tx-c3d4, tx-e5f6
+  tx-c3d4 [720] Add login endpoint
+    blocked by: (none)
+    blocks: tx-g7h8
+  tx-e5f6 [650] Write auth tests
+    blocked by: (none)
+    blocks: (none)
+```
+
+### JSON Output for Scripts
+```bash
+$ tx ready --json
+[
+  {
+    "id": "tx-a1b2",
+    "title": "Implement JWT validation",
+    "score": 850,
+    "blockedBy": [],
+    "blocks": ["tx-c3d4", "tx-e5f6"],
+    "isReady": true
+  }
+]
+```
+
+### Pipe-Friendly
+```bash
+$ tx ready --json | jq '.[0].id' | xargs tx show
+```
+
+---
+
+## MCP Tools
+
+### Core Tools (Phase 2)
+
+| Tool | Description | Agent Use Case |
+|------|-------------|----------------|
+| `tx_ready` | Get ready tasks | "What should I work on?" |
+| `tx_add` | Create task | Decomposing work |
+| `tx_done` | Complete task | Marking progress |
+| `tx_update` | Update task | Changing status/score |
+| `tx_list` | List tasks | Understanding scope |
+| `tx_show` | Get task details | Reading requirements |
+| `tx_block` | Add dependency | Structuring work order |
+| `tx_unblock` | Remove dependency | Adjusting work order |
+| `tx_children` | List child tasks | Understanding subtask structure |
+| `tx_tree` | Show task subtree | Seeing full decomposition |
+| `tx_delete` | Delete a task | Cleanup |
+
+### Extended Tools (Phase 3+)
+
+| Tool | Description | Agent Use Case |
+|------|-------------|----------------|
+| `tx_blockers` | Show what blocks a task | Understanding blockers |
+| `tx_blocking` | Show what task blocks | Understanding impact |
+| `tx_score` | Get/set task score | Prioritization |
+| `tx_path` | Show ancestors to root | Understanding context |
+| `tx_dedupe` | Find duplicate tasks | Cleanup |
+| `tx_compact` | Compact completed tasks | Maintenance |
+
+**CRITICAL**: All tools returning tasks MUST include full dependency info (`blockedBy`, `blocks`, `children`, `isReady`).
+
+**CRITICAL**: The MCP server MUST NOT require `ANTHROPIC_API_KEY`. Core tools (ready, add, done, update, list, show, block, etc.) use `AppMinimalLive` which has no LLM dependency. Only dedupe/compact tools need the API key and should fail gracefully without it.
+
+---
+
+## Requirements
+
+### CLI Requirements
+
+| ID | Requirement | Implementation |
+|----|-------------|----------------|
+| I-001 | All commands support `--json` flag | Global option |
+| I-002 | Exit codes: 0 = success, 1 = error, 2 = not found | Consistent |
+| I-003 | Consistent argument patterns | `tx <verb> <id> [options]` |
+| I-004 | Help text for all commands | `tx <command> --help` |
+
+### API Requirements
+
+| ID | Requirement | Implementation |
+|----|-------------|----------------|
+| I-005 | All operations return `Effect<T, E>` | Effect-TS |
+| I-006 | Errors are typed | Tagged errors |
+| I-007 | Composable with Effect Layer system | Layer pattern |
+| I-008 | Tree-shakeable exports | ESM modules |
+
+### MCP Requirements
+
+| ID | Requirement | Implementation |
+|----|-------------|----------------|
+| I-009 | Tools have clear descriptions for LLM | Detailed docs |
+| I-010 | Input validation with helpful errors | Zod schemas |
+| I-011 | Structured output for parsing | JSON responses |
+| I-012 | Text output for human readability | Formatted text |
+| I-013 | **All dependency info returned** | `blockedBy`, `blocks`, `children`, `isReady` |
+
+### Agent SDK Requirements
+
+| ID | Requirement | Implementation |
+|----|-------------|----------------|
+| I-014 | Compatible with `@anthropic-ai/claude-agent-sdk` | Tool format |
+| I-015 | Tools follow SDK naming conventions | `tx_*` prefix |
+| I-016 | Supports tool confirmation patterns | Async handlers |
+
+---
+
+## MCP Tool Schema
+
+All tools that return task data use `TaskWithDeps`:
+
+```typescript
+const TaskWithDepsSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  status: z.string(),
+  score: z.number(),
+  parentId: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  completedAt: z.string().nullable(),
+  blockedBy: z.array(z.string()).describe("Task IDs that block this task"),
+  blocks: z.array(z.string()).describe("Task IDs this task blocks"),
+  children: z.array(z.string()).describe("Child task IDs"),
+  isReady: z.boolean().describe("Whether task can be worked on")
+})
+```
+
+---
+
+## Claude Code Configuration
+
+Add to `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "tx": {
+      "command": "npx",
+      "args": ["tx", "mcp-server"],
+      "env": {
+        "TX_DB": ".tx/tasks.db"
+      }
+    }
+  }
+}
+```
+
+---
+
+## API Examples
+
+### TypeScript API
+```typescript
+import { Effect } from "effect"
+import { TaskService, ReadyService, AppLive } from "tx"
+
+const program = Effect.gen(function* () {
+  const taskService = yield* TaskService
+  const readyService = yield* ReadyService
+
+  // Create task
+  const task = yield* taskService.create({
+    title: "Implement feature",
+    score: 700
+  })
+
+  // Get ready tasks (includes deps)
+  const ready = yield* readyService.getReady(5)
+  // ready[0].blockedBy, ready[0].blocks, ready[0].isReady
+
+  // Get task with deps
+  const full = yield* taskService.getWithDeps(task.id)
+  // full.blockedBy, full.blocks, full.children, full.isReady
+})
+
+Effect.runPromise(program.pipe(Effect.provide(AppLive)))
+```
+
+### MCP Tool Response
+
+MCP tools return `content` array only (per MCP spec). Structured data is embedded as JSON within the text content:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "3 ready task(s):\n- tx-a1b2 [850]: Implement JWT validation\n  blocked by: (none)\n  blocks: tx-c3d4, tx-e5f6"
+    },
+    {
+      "type": "text",
+      "text": "{\"tasks\":[{\"id\":\"tx-a1b2\",\"title\":\"Implement JWT validation\",\"score\":850,\"blockedBy\":[],\"blocks\":[\"tx-c3d4\",\"tx-e5f6\"],\"children\":[],\"isReady\":true}]}"
+    }
+  ]
+}
+```
+
+**Note**: `structuredContent` is NOT part of the MCP specification. Data is returned as a second text content block containing JSON for programmatic parsing, plus a human-readable first block.
+```
+
+---
+
+## Exit Codes
+
+| Code | Meaning | Example |
+|------|---------|---------|
+| 0 | Success | `tx done tx-123` |
+| 1 | Error (validation, runtime) | Invalid input |
+| 2 | Not found | `tx show tx-nonexistent` |
+
+---
+
+## Initialization (`tx init`)
+
+The `tx init` command creates the project workspace:
+
+```bash
+$ tx init
+Initialized tx database at .tx/tasks.db
+```
+
+### What `tx init` Does
+
+1. Creates `.tx/` directory
+2. Creates `tasks.db` SQLite database with WAL mode enabled
+3. Runs all migrations (creates tables, indexes)
+4. Creates `.tx/.gitignore` (ignores `tasks.db` by default)
+5. Optionally creates `.tx/config.json` for project-specific settings
+
+### Idempotency
+
+Running `tx init` on an existing project is safe — migrations are versioned and skip already-applied steps.
+
+---
+
+## Related Documents
+
+- [PRD-001: Core Task Management](./PRD-001-core-task-management.md)
+- [PRD-008: Observability & OpenTelemetry](./PRD-008-observability-opentelemetry.md)
+- [DD-003: CLI Implementation](../design/DD-003-cli-implementation.md)
+- [DD-005: MCP Server & Agent SDK](../design/DD-005-mcp-agent-sdk-integration.md)

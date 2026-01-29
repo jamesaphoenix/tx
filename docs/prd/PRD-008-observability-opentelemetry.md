@@ -1,0 +1,183 @@
+# PRD-008: Observability & OpenTelemetry
+
+**Status**: Draft
+**Priority**: P1 (Should Have)
+**Owner**: TBD
+**Last Updated**: 2025-01-28
+
+---
+
+## Problem Statement
+
+Task management systems operate as black boxes without observability. When agents create, update, or complete tasks, there's no telemetry to answer:
+
+1. **How many tasks are created per session?** No metrics.
+2. **What's the average time from creation to completion?** No tracing.
+3. **Are there error spikes in dependency operations?** No alerting.
+4. **Which MCP tools are called most frequently?** No usage data.
+
+We need **OpenTelemetry (OTEL) integration** that emits traces, metrics, and logs for all task lifecycle events, enabling monitoring, debugging, and usage analytics.
+
+---
+
+## Target Users
+
+| User Type | Primary Use | Value |
+|-----------|-------------|-------|
+| Platform Engineers | Monitor agent task throughput | Capacity planning |
+| AI Agent Developers | Debug failed task operations | Faster debugging |
+| Team Leads | Understand task completion patterns | Process improvement |
+| SRE/DevOps | Alert on error rates | Reliability |
+
+---
+
+## Goals
+
+1. **Trace all task lifecycle events**: create, update, delete, done, block, unblock
+2. **Emit metrics**: task counts, ready queue depth, completion latency, error rates
+3. **Structured logging**: Every operation logs context-rich structured data
+4. **Zero-cost when disabled**: OTEL is optional — no overhead when not configured
+5. **Standard protocol**: Use OpenTelemetry SDK for vendor-neutral export
+
+---
+
+## Non-Goals
+
+- Custom dashboards or visualization (use Grafana, Jaeger, etc.)
+- Real-time streaming of events (batch export is fine)
+- Distributed tracing across multiple tx instances (single process)
+
+---
+
+## Requirements
+
+### Tracing
+
+| ID | Requirement | Event |
+|----|-------------|-------|
+| OT-001 | Span for task creation | `task.create` |
+| OT-002 | Span for task update (includes status changes) | `task.update` |
+| OT-003 | Span for task deletion | `task.delete` |
+| OT-004 | Span for task completion (done) | `task.done` |
+| OT-005 | Span for dependency operations | `dependency.add`, `dependency.remove` |
+| OT-006 | Span for ready detection query | `ready.query` |
+| OT-007 | Span for MCP tool execution | `mcp.tool.<name>` |
+| OT-008 | Span for LLM operations (dedupe, compact) | `llm.dedupe`, `llm.compact` |
+| OT-009 | Span for CLI command execution | `cli.command.<name>` |
+
+### Metrics
+
+| ID | Metric | Type | Description |
+|----|--------|------|-------------|
+| OM-001 | `task.created.total` | Counter | Total tasks created |
+| OM-002 | `task.completed.total` | Counter | Total tasks completed |
+| OM-003 | `task.deleted.total` | Counter | Total tasks deleted |
+| OM-004 | `task.ready.count` | Gauge | Current ready queue depth |
+| OM-005 | `task.completion.duration_ms` | Histogram | Time from creation to done |
+| OM-006 | `dependency.cycle_detected.total` | Counter | Circular dependency attempts |
+| OM-007 | `mcp.tool.calls.total` | Counter | MCP tool invocations (by tool name) |
+| OM-008 | `mcp.tool.errors.total` | Counter | MCP tool errors (by tool name) |
+| OM-009 | `llm.tokens.used.total` | Counter | LLM tokens consumed |
+| OM-010 | `db.query.duration_ms` | Histogram | Database query latency |
+
+### Structured Logging
+
+| ID | Requirement |
+|----|-------------|
+| OL-001 | All operations emit structured log entries with trace context |
+| OL-002 | Log level: INFO for lifecycle events, WARN for degraded, ERROR for failures |
+| OL-003 | Include task ID, operation type, duration, and outcome in every log |
+| OL-004 | Correlate logs with OTEL trace IDs |
+
+### Configuration
+
+| ID | Requirement |
+|----|-------------|
+| OC-001 | OTEL is disabled by default (zero overhead) |
+| OC-002 | Enable via `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable |
+| OC-003 | Support console exporter for development (`OTEL_EXPORTER=console`) |
+| OC-004 | Service name configurable via `OTEL_SERVICE_NAME` (default: `tx`) |
+| OC-005 | No code changes needed to enable/disable — purely configuration |
+
+### Constraints
+
+| ID | Constraint | Rationale |
+|----|------------|-----------|
+| OC-006 | OTEL packages are optional peer dependencies | Don't bloat core install |
+| OC-007 | No performance impact when disabled | Check once at startup |
+| OC-008 | Works with any OTLP-compatible backend | Vendor neutral |
+
+---
+
+## Span Attributes
+
+Every span includes these base attributes:
+
+| Attribute | Example | Description |
+|-----------|---------|-------------|
+| `task.id` | `tx-a1b2c3` | Task identifier |
+| `task.status` | `ready` | Task status after operation |
+| `task.score` | `800` | Task score |
+| `task.parent_id` | `tx-parent1` | Parent task ID (if any) |
+| `operation.type` | `create` | Operation name |
+| `interface.type` | `cli` / `mcp` / `api` | Calling interface |
+
+---
+
+## API Examples
+
+### Tracing a Task Lifecycle
+
+```
+Trace: task.create (tx-a1b2c3)
+  ├── db.query (INSERT INTO tasks)
+  └── otel.emit (task.created.total++)
+
+Trace: dependency.add (tx-a1b2c3 blocked by tx-d4e5f6)
+  ├── dependency.cycle_check
+  └── db.query (INSERT INTO task_dependencies)
+
+Trace: task.done (tx-a1b2c3)
+  ├── db.query (UPDATE tasks SET status='done')
+  ├── ready.cascade_check
+  │   ├── ready.check (tx-g7h8i9) → now ready
+  │   └── ready.check (tx-j0k1l2) → still blocked
+  └── otel.emit (task.completed.total++, task.completion.duration_ms)
+```
+
+### Environment Configuration
+
+```bash
+# Development: log to console
+export OTEL_EXPORTER=console
+
+# Production: send to OTLP endpoint
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_SERVICE_NAME=tx
+
+# Disable (default)
+# Just don't set any OTEL_ variables
+```
+
+---
+
+## Integration Points
+
+| Component | OTEL Integration |
+|-----------|-----------------|
+| TaskService | Spans for create, get, update, delete |
+| ReadyService | Spans for getReady; gauge for queue depth |
+| DependencyService | Spans for add/remove; counter for cycle detection |
+| CompactionService | Spans for compact; counter for tokens used |
+| CLI Commands | Root span per command execution |
+| MCP Tools | Root span per tool call |
+| SQLite queries | Child spans for database operations |
+
+---
+
+## Related Documents
+
+- [PRD-001: Core Task Management](./PRD-001-core-task-management.md)
+- [PRD-007: Multi-Interface Integration](./PRD-007-multi-interface-integration.md)
+- [DD-008: OpenTelemetry Integration](../design/DD-008-opentelemetry-integration.md)
+- [DD-002: Effect-TS Service Layer](../design/DD-002-effect-ts-service-layer.md)
