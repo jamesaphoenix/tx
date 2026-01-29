@@ -552,15 +552,17 @@ export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => 
     try {
       // Close the MCP server connection
       await server.close()
-    } catch {
-      // Ignore close errors during shutdown
+    } catch (error) {
+      // Log error but continue shutdown
+      console.error(`MCP server close error during ${signal}:`, error)
     }
 
     try {
       // Dispose of the Effect runtime (releases database connections)
       await disposeRuntime()
-    } catch {
-      // Ignore dispose errors during shutdown
+    } catch (error) {
+      // Log error but continue shutdown
+      console.error(`Runtime dispose error during ${signal}:`, error)
     }
 
     process.exit(0)
