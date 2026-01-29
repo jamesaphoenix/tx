@@ -449,6 +449,84 @@ export const createMcpServer = (): McpServer => {
     }
   )
 
+  // ---------------------------------------------------------------------------
+  // tx_block - Add a dependency (blocker blocks taskId)
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_block",
+    "Add a dependency: blockerId blocks taskId (taskId cannot start until blockerId is done). Rejects circular dependencies.",
+    {
+      taskId: z.string().describe("Task ID that will be blocked"),
+      blockerId: z.string().describe("Task ID that blocks the other task")
+    },
+    async ({ taskId, blockerId }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const task = await runEffect(
+          Effect.gen(function* () {
+            const depService = yield* DependencyService
+            const taskService = yield* TaskService
+
+            // Add the blocker relationship
+            yield* depService.addBlocker(taskId as any, blockerId as any)
+
+            // Return the updated task with deps
+            return yield* taskService.getWithDeps(taskId as any)
+          })
+        )
+        const serialized = serializeTask(task)
+        return {
+          content: [
+            { type: "text", text: `Added dependency: ${blockerId} blocks ${taskId}` },
+            { type: "text", text: JSON.stringify({ success: true, task: serialized }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_unblock - Remove a dependency
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_unblock",
+    "Remove a dependency: blockerId no longer blocks taskId",
+    {
+      taskId: z.string().describe("Task ID that is currently blocked"),
+      blockerId: z.string().describe("Task ID to remove as a blocker")
+    },
+    async ({ taskId, blockerId }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const task = await runEffect(
+          Effect.gen(function* () {
+            const depService = yield* DependencyService
+            const taskService = yield* TaskService
+
+            // Remove the blocker relationship
+            yield* depService.removeBlocker(taskId as any, blockerId as any)
+
+            // Return the updated task with deps
+            return yield* taskService.getWithDeps(taskId as any)
+          })
+        )
+        const serialized = serializeTask(task)
+        return {
+          content: [
+            { type: "text", text: `Removed dependency: ${blockerId} no longer blocks ${taskId}` },
+            { type: "text", text: JSON.stringify({ success: true, task: serialized }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
   return server
 }
 
