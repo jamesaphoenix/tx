@@ -2,7 +2,7 @@
 import { Effect } from "effect"
 import { resolve } from "path"
 import { existsSync, mkdirSync, writeFileSync } from "fs"
-import { makeAppLayer } from "./layer.js"
+import { makeAppLayer, SyncService } from "./layer.js"
 import { TaskService } from "./services/task-service.js"
 import { DependencyService } from "./services/dep-service.js"
 import { ReadyService } from "./services/ready-service.js"
@@ -28,6 +28,9 @@ Commands:
   unblock <id> <blocker>  Remove blocking dependency
   children <id>           List child tasks
   tree <id>               Show task subtree
+  sync export             Export tasks to JSONL file
+  sync import             Import tasks from JSONL file
+  sync status             Show sync status
   mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
@@ -376,6 +379,73 @@ Examples:
   tx mcp-server
   tx mcp-server --db ~/project/.tx/tasks.db`,
 
+  sync: `tx sync - Manage JSONL sync for git-based task sharing
+
+Usage: tx sync <subcommand> [options]
+
+Subcommands:
+  export    Export all tasks and dependencies to JSONL file
+  import    Import tasks from JSONL file (timestamp-based merge)
+  status    Show sync status and whether database has unexported changes
+
+Run 'tx sync <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx sync export               # Export to .tx/tasks.jsonl
+  tx sync import               # Import from .tx/tasks.jsonl
+  tx sync status               # Show sync status`,
+
+  "sync export": `tx sync export - Export tasks to JSONL
+
+Usage: tx sync export [--path <path>] [--json]
+
+Exports all tasks and dependencies from the database to a JSONL file.
+The file can be committed to git for sharing tasks across machines.
+
+Options:
+  --path <p>  Output file path (default: .tx/tasks.jsonl)
+  --json      Output result as JSON
+  --help      Show this help
+
+Examples:
+  tx sync export                           # Export to default path
+  tx sync export --path ~/backup.jsonl     # Export to custom path
+  tx sync export --json                    # JSON output for scripting`,
+
+  "sync import": `tx sync import - Import tasks from JSONL
+
+Usage: tx sync import [--path <path>] [--json]
+
+Imports tasks from a JSONL file into the database. Uses timestamp-based
+conflict resolution: newer records win. Safe to run multiple times.
+
+Options:
+  --path <p>  Input file path (default: .tx/tasks.jsonl)
+  --json      Output result as JSON
+  --help      Show this help
+
+Examples:
+  tx sync import                           # Import from default path
+  tx sync import --path ~/shared.jsonl     # Import from custom path
+  tx sync import --json                    # JSON output for scripting`,
+
+  "sync status": `tx sync status - Show sync status
+
+Usage: tx sync status [--json]
+
+Shows the current sync status including:
+- Number of tasks in database
+- Number of operations in JSONL file
+- Whether database has unexported changes (dirty)
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx sync status
+  tx sync status --json`,
+
   help: `tx help - Show help
 
 Usage: tx help [command]
@@ -702,6 +772,63 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         return
       }
       console.log(HELP_TEXT)
+    }),
+
+  sync: (pos, flags) =>
+    Effect.gen(function* () {
+      const subcommand = pos[0]
+
+      if (!subcommand || subcommand === "help") {
+        console.log(commandHelp["sync"])
+        return
+      }
+
+      // Check for --help on subcommand
+      if (flag(flags, "help", "h")) {
+        const helpKey = `sync ${subcommand}`
+        if (commandHelp[helpKey]) {
+          console.log(commandHelp[helpKey])
+          return
+        }
+      }
+
+      const syncSvc = yield* SyncService
+
+      if (subcommand === "export") {
+        const path = opt(flags, "path")
+        const result = yield* syncSvc.export(path)
+
+        if (flag(flags, "json")) {
+          console.log(toJson(result))
+        } else {
+          console.log(`Exported ${result.opCount} operation(s) to ${result.path}`)
+        }
+      } else if (subcommand === "import") {
+        const path = opt(flags, "path")
+        const result = yield* syncSvc.import(path)
+
+        if (flag(flags, "json")) {
+          console.log(toJson(result))
+        } else {
+          console.log(`Imported: ${result.imported}, Skipped: ${result.skipped}, Conflicts: ${result.conflicts}`)
+        }
+      } else if (subcommand === "status") {
+        const status = yield* syncSvc.status()
+
+        if (flag(flags, "json")) {
+          console.log(toJson(status))
+        } else {
+          console.log(`Sync Status:`)
+          console.log(`  Tasks in database: ${status.dbTaskCount}`)
+          console.log(`  Operations in JSONL: ${status.jsonlOpCount}`)
+          console.log(`  Last export: ${status.lastExport ? status.lastExport.toISOString() : "(never)"}`)
+          console.log(`  Dirty (unexported changes): ${status.isDirty ? "yes" : "no"}`)
+        }
+      } else {
+        console.error(`Unknown sync subcommand: ${subcommand}`)
+        console.error(`Run 'tx sync --help' for usage information`)
+        process.exit(1)
+      }
     })
 }
 
@@ -717,6 +844,14 @@ if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
 
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
 if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
+  // Check for subcommand help (e.g., tx sync export --help)
+  if (command === "sync" && positional[0]) {
+    const subcommandKey = `sync ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   // Check if we have a command with specific help
   if (command !== "help" && commandHelp[command]) {
     console.log(commandHelp[command])
@@ -730,6 +865,14 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
 // Handle 'tx help' and 'tx help <command>'
 if (command === "help") {
   const subcommand = positional[0]
+  // Check for compound command help (e.g., tx help sync export)
+  if (subcommand === "sync" && positional[1]) {
+    const subcommandKey = `sync ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   if (subcommand && commandHelp[subcommand]) {
     console.log(commandHelp[subcommand])
   } else {
