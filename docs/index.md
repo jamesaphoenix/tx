@@ -4,69 +4,73 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 
 ## Product Requirements Documents (PRDs)
 
-| PRD | Title | Status |
-|-----|-------|--------|
-| [PRD-001](prd/PRD-001-core-task-management.md) | Core Task Management System | Phase 1 |
-| [PRD-002](prd/PRD-002-hierarchical-task-structure.md) | Hierarchical Task Structure | Phase 1 |
-| [PRD-003](prd/PRD-003-dependency-blocking-system.md) | Dependency & Blocking System | Phase 1 |
+| PRD                                                   | Title                         | Status  |
+| ----------------------------------------------------- | ----------------------------- | ------- |
+| [PRD-001](prd/PRD-001-core-task-management.md)        | Core Task Management System   | Phase 1 |
+| [PRD-002](prd/PRD-002-hierarchical-task-structure.md) | Hierarchical Task Structure   | Phase 1 |
+| [PRD-003](prd/PRD-003-dependency-blocking-system.md)  | Dependency & Blocking System  | Phase 1 |
 | [PRD-004](prd/PRD-004-task-scoring-prioritization.md) | Task Scoring & Prioritization | Phase 1 |
-| [PRD-005](prd/PRD-005-llm-deduplication.md) | LLM-Powered Deduplication | Phase 3 |
-| [PRD-006](prd/PRD-006-task-compaction-learnings.md) | Task Compaction & Learnings | Phase 3 |
-| [PRD-007](prd/PRD-007-multi-interface-integration.md) | Multi-Interface Integration | Phase 2 |
+| [PRD-005](prd/PRD-005-llm-deduplication.md)           | LLM-Powered Deduplication     | Phase 3 |
+| [PRD-006](prd/PRD-006-task-compaction-learnings.md)   | Task Compaction & Learnings   | Phase 3 |
+| [PRD-007](prd/PRD-007-multi-interface-integration.md) | Multi-Interface Integration   | Phase 2 |
 | [PRD-008](prd/PRD-008-observability-opentelemetry.md) | Observability & OpenTelemetry | Phase 1 |
-| [PRD-009](prd/PRD-009-jsonl-git-sync.md) | JSONL Git-Backed Sync | Phase 2 |
+| [PRD-009](prd/PRD-009-jsonl-git-sync.md)              | JSONL Git-Backed Sync         | Phase 2 |
 
 ## Design Documents (DDs)
 
-| DD | Title | Implements |
-|----|-------|------------|
-| [DD-001](design/DD-001-data-model-storage.md) | Data Model & Storage | PRD-001, PRD-002 |
-| [DD-002](design/DD-002-effect-ts-service-layer.md) | Effect-TS Service Layer | All |
-| [DD-003](design/DD-003-cli-implementation.md) | CLI Implementation | PRD-007 |
-| [DD-004](design/DD-004-ready-detection-algorithm.md) | Ready Detection Algorithm | PRD-003 |
-| [DD-005](design/DD-005-mcp-agent-sdk-integration.md) | MCP & Agent SDK Integration | PRD-007 |
-| [DD-006](design/DD-006-llm-integration.md) | LLM Integration | PRD-005, PRD-006 |
-| [DD-007](design/DD-007-testing-strategy.md) | Testing Strategy | All |
-| [DD-008](design/DD-008-opentelemetry-integration.md) | OpenTelemetry Integration | PRD-008 |
-| [DD-009](design/DD-009-jsonl-git-sync.md) | JSONL Git Sync | PRD-009 |
+| DD                                                   | Title                       | Implements       |
+| ---------------------------------------------------- | --------------------------- | ---------------- |
+| [DD-001](design/DD-001-data-model-storage.md)        | Data Model & Storage        | PRD-001, PRD-002 |
+| [DD-002](design/DD-002-effect-ts-service-layer.md)   | Effect-TS Service Layer     | All              |
+| [DD-003](design/DD-003-cli-implementation.md)        | CLI Implementation          | PRD-007          |
+| [DD-004](design/DD-004-ready-detection-algorithm.md) | Ready Detection Algorithm   | PRD-003          |
+| [DD-005](design/DD-005-mcp-agent-sdk-integration.md) | MCP & Agent SDK Integration | PRD-007          |
+| [DD-006](design/DD-006-llm-integration.md)           | LLM Integration             | PRD-005, PRD-006 |
+| [DD-007](design/DD-007-testing-strategy.md)          | Testing Strategy            | All              |
+| [DD-008](design/DD-008-opentelemetry-integration.md) | OpenTelemetry Integration   | PRD-008          |
+| [DD-009](design/DD-009-jsonl-git-sync.md)            | JSONL Git Sync              | PRD-009          |
 
 ## Implementation Phases
 
 ### Phase 1 (v0.1.0) - MVP
+
 - Core CRUD + hierarchy + dependencies
 - CLI with JSON output
 - Integration tests with SHA256 fixtures
 - OpenTelemetry foundation (optional)
 
 ### Phase 2 (v0.2.0) - Integrations
+
 - MCP server with full dependency info
 - JSONL git-backed sync
 - JSON/JSONL export
 - Agent SDK integration
 
 ### Phase 3 (v0.3.0) - LLM Features
+
 - Deduplication (requires ANTHROPIC_API_KEY)
 - Compaction with learnings export
 - LLM-based reprioritization
 
 ### Phase 4 (v1.0.0) - Polish
+
 - Performance optimization
 - Full test coverage (80%+)
 - Documentation
 
 ## Key Technical Decisions
 
-| Decision | Choice | Reference |
-|----------|--------|-----------|
-| Storage | SQLite via better-sqlite3 (WAL mode) | DD-001 |
-| Sync | JSONL git-backed (bidirectional) | DD-009 |
-| Framework | Effect-TS | DD-002 |
-| CLI | @effect/cli | DD-003 |
-| MCP | @modelcontextprotocol/sdk | DD-005 |
-| IDs | SHA256-based `tx-[a-z0-9]{6,8}` | DD-001 |
-| Testing | Vitest + SHA256 fixtures | DD-007 |
-| LLM | Anthropic Claude (optional) | DD-006 |
-| Telemetry | OpenTelemetry (optional) | DD-008 |
+| Decision  | Choice                               | Reference |
+| --------- | ------------------------------------ | --------- |
+| Storage   | SQLite via better-sqlite3 (WAL mode) | DD-001    |
+| Sync      | JSONL git-backed (bidirectional)     | DD-009    |
+| Framework | Effect-TS                            | DD-002    |
+| CLI       | @effect/cli                          | DD-003    |
+| MCP       | @modelcontextprotocol/sdk            | DD-005    |
+| IDs       | SHA256-based `tx-[a-z0-9]{6,8}`      | DD-001    |
+| Testing   | Vitest + SHA256 fixtures             | DD-007    |
+| LLM       | Anthropic Claude (optional)          | DD-006    |
+| Telemetry | OpenTelemetry (optional)             | DD-008    |
 
 ## Dependency Graph
 
