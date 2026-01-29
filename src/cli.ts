@@ -724,6 +724,12 @@ Examples:
 
 const { command, positional, flags: parsedFlags } = parseArgs(process.argv)
 
+// Handle --version early, before any command processing
+if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
+  console.log("tx v0.1.0")
+  process.exit(0)
+}
+
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
 if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
   // Check if we have a command with specific help
@@ -812,11 +818,6 @@ Examples:
   tx block <task-id> <blocker-id>
   tx done <task-id>`)
   }
-  process.exit(0)
-}
-
-if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
-  console.log("tx v0.1.0")
   process.exit(0)
 }
 
