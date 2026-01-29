@@ -1,0 +1,5 @@
+# Only show TypeScript and Shell in GitHub language stats
+*.js linguist-generated=true
+*.js.map linguist-generated=true
+*.json linguist-generated=true
+dist/** linguist-generated=true
