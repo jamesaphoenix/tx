@@ -30,6 +30,11 @@ export interface TaskWithDeps extends Task {
   readonly isReady: boolean
 }
 
+export interface TaskTree {
+  readonly task: Task
+  readonly children: readonly TaskTree[]
+}
+
 export interface CreateTaskInput {
   readonly title: string
   readonly description?: string

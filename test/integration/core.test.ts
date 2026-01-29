@@ -7,6 +7,7 @@ import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
 import { TaskServiceLive, TaskService } from "../../src/services/task-service.js"
 import { DependencyServiceLive, DependencyService } from "../../src/services/dep-service.js"
 import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service.js"
+import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
 import type { TaskId } from "../../src/schema.js"
 import type Database from "better-sqlite3"
 
@@ -15,7 +16,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
   )
-  return Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive).pipe(
+  return Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
     Layer.provide(repos)
   )
 }
@@ -453,5 +454,188 @@ describe("Dependency operations", () => {
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_AUTH, FIXTURES.TASK_ROOT) as any[]
     expect(rows.length).toBe(1)
+  })
+})
+
+describe("Hierarchy operations", () => {
+  let db: InstanceType<typeof Database>
+  let layer: ReturnType<typeof makeTestLayer>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    layer = makeTestLayer(db)
+  })
+
+  it("getChildren returns direct children", async () => {
+    const children = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getChildren(FIXTURES.TASK_AUTH)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // AUTH has children: LOGIN, JWT, BLOCKED, DONE
+    expect(children).toHaveLength(4)
+    const ids = children.map(c => c.id)
+    expect(ids).toContain(FIXTURES.TASK_LOGIN)
+    expect(ids).toContain(FIXTURES.TASK_JWT)
+    expect(ids).toContain(FIXTURES.TASK_BLOCKED)
+    expect(ids).toContain(FIXTURES.TASK_DONE)
+  })
+
+  it("getChildren returns empty array for leaf nodes", async () => {
+    const children = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getChildren(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(children).toHaveLength(0)
+  })
+
+  it("getChildren fails for nonexistent task", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getChildren("tx-nonexist" as TaskId)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
+  })
+
+  it("getAncestors returns path from task to root", async () => {
+    const ancestors = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getAncestors(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // JWT -> AUTH -> ROOT
+    expect(ancestors).toHaveLength(2)
+    expect(ancestors[0].id).toBe(FIXTURES.TASK_AUTH)
+    expect(ancestors[1].id).toBe(FIXTURES.TASK_ROOT)
+  })
+
+  it("getAncestors returns empty array for root task", async () => {
+    const ancestors = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getAncestors(FIXTURES.TASK_ROOT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(ancestors).toHaveLength(0)
+  })
+
+  it("getAncestors fails for nonexistent task", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getAncestors("tx-nonexist" as TaskId)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
+  })
+
+  it("getTree returns full subtree structure", async () => {
+    const tree = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getTree(FIXTURES.TASK_AUTH)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(tree.task.id).toBe(FIXTURES.TASK_AUTH)
+    expect(tree.children).toHaveLength(4)
+    // All children should be leaf nodes (no grandchildren in test data)
+    for (const child of tree.children) {
+      expect(child.children).toHaveLength(0)
+    }
+  })
+
+  it("getTree returns single node for leaf task", async () => {
+    const tree = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getTree(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(tree.task.id).toBe(FIXTURES.TASK_JWT)
+    expect(tree.children).toHaveLength(0)
+  })
+
+  it("getTree fails for nonexistent task", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getTree("tx-nonexist" as TaskId)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
+  })
+
+  it("getDepth returns 0 for root task", async () => {
+    const depth = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getDepth(FIXTURES.TASK_ROOT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(depth).toBe(0)
+  })
+
+  it("getDepth returns correct depth for nested task", async () => {
+    const depth = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getDepth(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // JWT -> AUTH -> ROOT (depth of 2)
+    expect(depth).toBe(2)
+  })
+
+  it("getDepth fails for nonexistent task", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getDepth("tx-nonexist" as TaskId)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
+  })
+
+  it("getRoots returns tasks with no parent", async () => {
+    const roots = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getRoots()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(roots).toHaveLength(1)
+    expect(roots[0].id).toBe(FIXTURES.TASK_ROOT)
   })
 })
