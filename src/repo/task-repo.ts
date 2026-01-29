@@ -11,6 +11,7 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
     readonly findAll: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
     readonly findByParent: (parentId: string | null) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getChildIds: (id: string) => Effect.Effect<readonly TaskId[], DatabaseError>
+    readonly getChildIdsForMany: (ids: readonly string[]) => Effect.Effect<Map<string, readonly TaskId[]>, DatabaseError>
     readonly insert: (task: Task) => Effect.Effect<void, DatabaseError>
     readonly update: (task: Task) => Effect.Effect<void, DatabaseError>
     readonly remove: (id: string) => Effect.Effect<void, DatabaseError>
@@ -95,6 +96,33 @@ export const TaskRepositoryLive = Layer.effect(
           try: () => {
             const rows = db.prepare("SELECT id FROM tasks WHERE parent_id = ?").all(id) as Array<{ id: string }>
             return rows.map(r => r.id as TaskId)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getChildIdsForMany: (ids) =>
+        Effect.try({
+          try: () => {
+            const result = new Map<string, readonly TaskId[]>()
+            if (ids.length === 0) return result
+
+            const placeholders = ids.map(() => "?").join(",")
+            const rows = db.prepare(
+              `SELECT id, parent_id FROM tasks WHERE parent_id IN (${placeholders})`
+            ).all(...ids) as Array<{ id: string; parent_id: string }>
+
+            // Initialize all requested IDs with empty arrays
+            for (const id of ids) {
+              result.set(id, [])
+            }
+
+            // Group by parent_id
+            for (const row of rows) {
+              const existing = result.get(row.parent_id) ?? []
+              result.set(row.parent_id, [...existing, row.id as TaskId])
+            }
+
+            return result
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

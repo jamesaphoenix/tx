@@ -389,15 +389,13 @@ export const createMcpServer = (): McpServer => {
             // Get the updated task with deps
             const completedTask = yield* taskService.getWithDeps(id as TaskId)
 
-            // Check which previously blocked tasks are now ready
-            const nowReady: TaskWithDeps[] = []
-            for (const blockedTask of blocking) {
-              if (blockedTask.status === "done") continue // Already done, skip
-              const isNowReady = yield* readyService.isReady(blockedTask.id)
-              if (isNowReady) {
-                nowReady.push(yield* taskService.getWithDeps(blockedTask.id))
-              }
-            }
+            // Find newly unblocked tasks using batch query
+            // Filter to workable statuses (skip done tasks) and get their full deps info in one batch
+            const candidateIds = blocking
+              .filter(t => ["backlog", "ready", "planning"].includes(t.status))
+              .map(t => t.id)
+            const candidatesWithDeps = yield* taskService.getWithDepsBatch(candidateIds)
+            const nowReady = candidatesWithDeps.filter(t => t.isReady)
 
             return { completedTask, nowReady }
           })

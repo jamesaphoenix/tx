@@ -233,17 +233,19 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       const taskSvc = yield* TaskService
       const readySvc = yield* ReadyService
 
+      // Get tasks blocked by this one BEFORE marking complete
+      const blocking = yield* readySvc.getBlocking(id as TaskId)
+
       yield* taskSvc.update(id as TaskId, { status: "done" })
       const task = yield* taskSvc.getWithDeps(id as TaskId)
 
-      // Find newly unblocked tasks
-      const blocking = yield* readySvc.getBlocking(id as TaskId)
-      const nowReady: string[] = []
-      for (const blocked of blocking) {
-        if (yield* readySvc.isReady(blocked.id)) {
-          nowReady.push(blocked.id)
-        }
-      }
+      // Find newly unblocked tasks using batch query
+      // Filter to workable statuses and get their full deps info in one batch
+      const candidateIds = blocking
+        .filter(t => ["backlog", "ready", "planning"].includes(t.status))
+        .map(t => t.id)
+      const candidatesWithDeps = yield* taskSvc.getWithDepsBatch(candidateIds)
+      const nowReady = candidatesWithDeps.filter(t => t.isReady).map(t => t.id)
 
       if (flag(flags, "json")) {
         console.log(toJson({ task, nowReady }))
