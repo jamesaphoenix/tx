@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Schema } from "effect"
-import { writeFileSync, renameSync, existsSync, mkdirSync, readFileSync } from "node:fs"
+import { writeFileSync, renameSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { DatabaseError, ValidationError } from "../errors.js"
 import { TaskService } from "./task-service.js"
@@ -287,14 +287,52 @@ export const SyncServiceLive = Layer.effect(
 
       status: () =>
         Effect.gen(function* () {
-          // TODO: Implement in future task
-          return yield* Effect.succeed({
-            dbTaskCount: 0,
-            jsonlOpCount: 0,
-            lastExport: null,
-            lastImport: null,
-            isDirty: false
-          })
+          const filePath = resolve(DEFAULT_JSONL_PATH)
+
+          // Count tasks in database
+          const tasks = yield* taskService.list()
+          const dbTaskCount = tasks.length
+
+          // Count operations in JSONL file and get file info
+          let jsonlOpCount = 0
+          let lastExport: Date | null = null
+
+          if (existsSync(filePath)) {
+            // Get file modification time as lastExport
+            const stats = yield* Effect.try({
+              try: () => statSync(filePath),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            lastExport = stats.mtime
+
+            // Count non-empty lines (each line is one operation)
+            const content = yield* Effect.try({
+              try: () => readFileSync(filePath, "utf-8"),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            const lines = content.trim().split("\n").filter(Boolean)
+            jsonlOpCount = lines.length
+          }
+
+          // Determine if dirty: DB has changes not in JSONL
+          // Dirty if:
+          // 1. JSONL doesn't exist and DB has tasks, OR
+          // 2. Any task's updatedAt is newer than JSONL file mtime
+          let isDirty = false
+          if (dbTaskCount > 0 && !existsSync(filePath)) {
+            isDirty = true
+          } else if (lastExport !== null && tasks.length > 0) {
+            // Check if any task was updated after the last export
+            isDirty = tasks.some(task => task.updatedAt > lastExport!)
+          }
+
+          return {
+            dbTaskCount,
+            jsonlOpCount,
+            lastExport,
+            lastImport: null, // Would require additional state tracking
+            isDirty
+          }
         })
     }
   })
