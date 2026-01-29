@@ -279,6 +279,176 @@ export const createMcpServer = (): McpServer => {
     }
   )
 
+  // ---------------------------------------------------------------------------
+  // tx_add - Create a new task
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_add",
+    "Create a new task",
+    {
+      title: z.string().describe("Task title (required)"),
+      description: z.string().optional().describe("Task description"),
+      parentId: z.string().optional().describe("Parent task ID for subtasks"),
+      score: z.number().int().optional().describe("Priority score (higher = more important)")
+    },
+    async ({ title, description, parentId, score }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const task = await runEffect(
+          Effect.gen(function* () {
+            const taskService = yield* TaskService
+            const created = yield* taskService.create({
+              title,
+              description: description ?? undefined,
+              parentId: parentId ?? undefined,
+              score: score ?? undefined
+            })
+            // Return with deps (new task will have no deps, but we follow the pattern)
+            return yield* taskService.getWithDeps(created.id)
+          })
+        )
+        const serialized = serializeTask(task)
+        return {
+          content: [
+            { type: "text", text: `Created task: ${task.id}` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_update - Update an existing task
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_update",
+    "Update an existing task",
+    {
+      id: z.string().describe("Task ID to update"),
+      title: z.string().optional().describe("New title"),
+      description: z.string().optional().describe("New description"),
+      status: z.string().optional().describe(`New status: ${TASK_STATUSES.join(", ")}`),
+      parentId: z.string().nullable().optional().describe("New parent ID (null to remove parent)"),
+      score: z.number().int().optional().describe("New priority score")
+    },
+    async ({ id, title, description, status, parentId, score }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const task = await runEffect(
+          Effect.gen(function* () {
+            const taskService = yield* TaskService
+            yield* taskService.update(id as any, {
+              title: title ?? undefined,
+              description: description ?? undefined,
+              status: status as TaskStatus | undefined,
+              parentId: parentId,
+              score: score ?? undefined
+            })
+            // Return with deps after update
+            return yield* taskService.getWithDeps(id as any)
+          })
+        )
+        const serialized = serializeTask(task)
+        return {
+          content: [
+            { type: "text", text: `Updated task: ${task.id}` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_done - Mark a task as complete
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_done",
+    "Mark a task as complete and return any tasks that are now ready",
+    { id: z.string().describe("Task ID to complete") },
+    async ({ id }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const result = await runEffect(
+          Effect.gen(function* () {
+            const taskService = yield* TaskService
+            const readyService = yield* ReadyService
+
+            // Get tasks that this task blocks (before completing)
+            const blocking = yield* readyService.getBlocking(id as any)
+
+            // Mark the task as done
+            yield* taskService.update(id as any, { status: "done" })
+
+            // Get the updated task with deps
+            const completedTask = yield* taskService.getWithDeps(id as any)
+
+            // Check which previously blocked tasks are now ready
+            const nowReady: TaskWithDeps[] = []
+            for (const blockedTask of blocking) {
+              if (blockedTask.status === "done") continue // Already done, skip
+              const isNowReady = yield* readyService.isReady(blockedTask.id)
+              if (isNowReady) {
+                nowReady.push(yield* taskService.getWithDeps(blockedTask.id))
+              }
+            }
+
+            return { completedTask, nowReady }
+          })
+        )
+
+        const serializedTask = serializeTask(result.completedTask)
+        const serializedNowReady = result.nowReady.map(serializeTask)
+
+        return {
+          content: [
+            { type: "text", text: `Completed task: ${result.completedTask.id}${result.nowReady.length > 0 ? `. ${result.nowReady.length} task(s) now ready.` : ""}` },
+            { type: "text", text: JSON.stringify({ task: serializedTask, nowReady: serializedNowReady }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_delete - Delete a task
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_delete",
+    "Delete a task permanently",
+    { id: z.string().describe("Task ID to delete") },
+    async ({ id }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        await runEffect(
+          Effect.gen(function* () {
+            const taskService = yield* TaskService
+            yield* taskService.remove(id as any)
+          })
+        )
+        return {
+          content: [
+            { type: "text", text: `Deleted task: ${id}` },
+            { type: "text", text: JSON.stringify({ success: true, id }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
   return server
 }
 
