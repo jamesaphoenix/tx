@@ -9,6 +9,44 @@ import { ReadyService } from "./services/ready-service.js"
 import { startMcpServer } from "./mcp/server.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "./schema.js"
 
+// --- Help text constant ---
+
+const HELP_TEXT = `tx v0.1.0 - Task management for AI agents and humans
+
+Usage: tx <command> [arguments] [options]
+
+Commands:
+  init                    Initialize task database
+  add <title>             Create a new task
+  list                    List tasks
+  ready                   List ready tasks (no blockers)
+  show <id>               Show task details
+  update <id>             Update task
+  done <id>               Mark task complete
+  delete <id>             Delete task
+  block <id> <blocker>    Add blocking dependency
+  unblock <id> <blocker>  Remove blocking dependency
+  children <id>           List child tasks
+  tree <id>               Show task subtree
+  mcp-server              Start MCP server (JSON-RPC over stdio)
+
+Global Options:
+  --json                  Output as JSON
+  --db <path>             Database path (default: .tx/tasks.db)
+  --help                  Show help
+  --version               Show version
+
+Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
+
+Examples:
+  tx init
+  tx add "Implement auth" --score 800
+  tx add "Login page" --parent tx-a1b2c3d4 --score 600
+  tx list --status backlog,ready
+  tx ready --json
+  tx block <task-id> <blocker-id>
+  tx done <task-id>`
+
 // --- Argv parsing helpers ---
 
 function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Record<string, string | boolean> } {
@@ -683,40 +721,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         console.log(commandHelp[subcommand])
         return
       }
-      console.log(`tx v0.1.0 - Task management for AI agents and humans
-
-Usage: tx <command> [arguments] [options]
-
-Commands:
-  init                    Initialize task database
-  add <title>             Create a new task
-  list                    List tasks
-  ready                   List ready tasks (no blockers)
-  show <id>               Show task details
-  update <id>             Update task
-  done <id>               Mark task complete
-  delete <id>             Delete task
-  block <id> <blocker>    Add blocking dependency
-  unblock <id> <blocker>  Remove blocking dependency
-  children <id>           List child tasks
-  tree <id>               Show task subtree
-  mcp-server              Start MCP server (JSON-RPC over stdio)
-
-Global Options:
-  --json                  Output as JSON
-  --db <path>             Database path (default: .tx/tasks.db)
-  --help                  Show help
-
-Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
-
-Examples:
-  tx init
-  tx add "Implement auth" --score 800
-  tx add "Login page" --parent tx-a1b2c3d4 --score 600
-  tx list --status backlog,ready
-  tx ready --json
-  tx block <task-id> <blocker-id>
-  tx done <task-id>`)
+      console.log(HELP_TEXT)
     })
 }
 
@@ -738,41 +743,7 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
     process.exit(0)
   }
   // Fall through to general help
-  console.log(`tx v0.1.0 - Task management for AI agents and humans
-
-Usage: tx <command> [arguments] [options]
-
-Commands:
-  init                    Initialize task database
-  add <title>             Create a new task
-  list                    List tasks
-  ready                   List ready tasks (no blockers)
-  show <id>               Show task details
-  update <id>             Update task
-  done <id>               Mark task complete
-  delete <id>             Delete task
-  block <id> <blocker>    Add blocking dependency
-  unblock <id> <blocker>  Remove blocking dependency
-  children <id>           List child tasks
-  tree <id>               Show task subtree
-  mcp-server              Start MCP server (JSON-RPC over stdio)
-
-Global Options:
-  --json                  Output as JSON
-  --db <path>             Database path (default: .tx/tasks.db)
-  --help                  Show help
-  --version               Show version
-
-Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
-
-Examples:
-  tx init
-  tx add "Implement auth" --score 800
-  tx add "Login page" --parent tx-a1b2c3d4 --score 600
-  tx list --status backlog,ready
-  tx ready --json
-  tx block <task-id> <blocker-id>
-  tx done <task-id>`)
+  console.log(HELP_TEXT)
   process.exit(0)
 }
 
@@ -782,41 +753,7 @@ if (command === "help") {
   if (subcommand && commandHelp[subcommand]) {
     console.log(commandHelp[subcommand])
   } else {
-    console.log(`tx v0.1.0 - Task management for AI agents and humans
-
-Usage: tx <command> [arguments] [options]
-
-Commands:
-  init                    Initialize task database
-  add <title>             Create a new task
-  list                    List tasks
-  ready                   List ready tasks (no blockers)
-  show <id>               Show task details
-  update <id>             Update task
-  done <id>               Mark task complete
-  delete <id>             Delete task
-  block <id> <blocker>    Add blocking dependency
-  unblock <id> <blocker>  Remove blocking dependency
-  children <id>           List child tasks
-  tree <id>               Show task subtree
-  mcp-server              Start MCP server (JSON-RPC over stdio)
-
-Global Options:
-  --json                  Output as JSON
-  --db <path>             Database path (default: .tx/tasks.db)
-  --help                  Show help
-  --version               Show version
-
-Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
-
-Examples:
-  tx init
-  tx add "Implement auth" --score 800
-  tx add "Login page" --parent tx-a1b2c3d4 --score 600
-  tx list --status backlog,ready
-  tx ready --json
-  tx block <task-id> <blocker-id>
-  tx done <task-id>`)
+    console.log(HELP_TEXT)
   }
   process.exit(0)
 }
