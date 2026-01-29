@@ -50,6 +50,60 @@ export const TaskServiceLive = Layer.effect(
         }
       })
 
+    // Batch version of enrichWithDeps - avoids N+1 queries
+    const enrichWithDepsBatch = (tasks: readonly Task[]): Effect.Effect<readonly TaskWithDeps[], DatabaseError> =>
+      Effect.gen(function* () {
+        if (tasks.length === 0) return []
+
+        const taskIds = tasks.map(t => t.id)
+
+        // Batch fetch all dependency info (3 queries total instead of 3N)
+        const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(taskIds)
+        const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(taskIds)
+        const childIdsMap = yield* taskRepo.getChildIdsForMany(taskIds)
+
+        // Collect all unique blocker IDs to fetch their status
+        const allBlockerIds = new Set<TaskId>()
+        for (const blockerIds of blockerIdsMap.values()) {
+          for (const id of blockerIds) {
+            allBlockerIds.add(id)
+          }
+        }
+
+        // Fetch all blocker tasks to check their status (1 query instead of N)
+        const blockerTasks = allBlockerIds.size > 0
+          ? yield* taskRepo.findByIds([...allBlockerIds])
+          : []
+        const blockerStatusMap = new Map<string, string>()
+        for (const t of blockerTasks) {
+          blockerStatusMap.set(t.id, t.status)
+        }
+
+        // Build TaskWithDeps for each task
+        const results: TaskWithDeps[] = []
+        for (const task of tasks) {
+          const blockerIds = blockerIdsMap.get(task.id) ?? []
+          const blockingIds = blockingIdsMap.get(task.id) ?? []
+          const childIds = childIdsMap.get(task.id) ?? []
+
+          // Compute isReady
+          let isReady = ["backlog", "ready", "planning"].includes(task.status)
+          if (isReady && blockerIds.length > 0) {
+            isReady = blockerIds.every(bid => blockerStatusMap.get(bid) === "done")
+          }
+
+          results.push({
+            ...task,
+            blockedBy: blockerIds as TaskId[],
+            blocks: blockingIds as TaskId[],
+            children: childIds as TaskId[],
+            isReady
+          })
+        }
+
+        return results
+      })
+
     return {
       create: (input) =>
         Effect.gen(function* () {
@@ -104,58 +158,8 @@ export const TaskServiceLive = Layer.effect(
       getWithDepsBatch: (ids) =>
         Effect.gen(function* () {
           if (ids.length === 0) return []
-
-          // Fetch all tasks in one query
           const tasks = yield* taskRepo.findByIds(ids)
-          if (tasks.length === 0) return []
-
-          const taskIds = tasks.map(t => t.id)
-
-          // Batch fetch all dependency info
-          const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(taskIds)
-          const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(taskIds)
-          const childIdsMap = yield* taskRepo.getChildIdsForMany(taskIds)
-
-          // Collect all unique blocker IDs to fetch their status
-          const allBlockerIds = new Set<TaskId>()
-          for (const blockerIds of blockerIdsMap.values()) {
-            for (const id of blockerIds) {
-              allBlockerIds.add(id)
-            }
-          }
-
-          // Fetch all blocker tasks to check their status
-          const blockerTasks = allBlockerIds.size > 0
-            ? yield* taskRepo.findByIds([...allBlockerIds])
-            : []
-          const blockerStatusMap = new Map<string, string>()
-          for (const t of blockerTasks) {
-            blockerStatusMap.set(t.id, t.status)
-          }
-
-          // Build TaskWithDeps for each task
-          const results: TaskWithDeps[] = []
-          for (const task of tasks) {
-            const blockerIds = blockerIdsMap.get(task.id) ?? []
-            const blockingIds = blockingIdsMap.get(task.id) ?? []
-            const childIds = childIdsMap.get(task.id) ?? []
-
-            // Compute isReady
-            let isReady = ["backlog", "ready", "planning"].includes(task.status)
-            if (isReady && blockerIds.length > 0) {
-              isReady = blockerIds.every(bid => blockerStatusMap.get(bid) === "done")
-            }
-
-            results.push({
-              ...task,
-              blockedBy: blockerIds as TaskId[],
-              blocks: blockingIds as TaskId[],
-              children: childIds as TaskId[],
-              isReady
-            })
-          }
-
-          return results
+          return yield* enrichWithDepsBatch(tasks)
         }),
 
       update: (id, input) =>
@@ -216,11 +220,7 @@ export const TaskServiceLive = Layer.effect(
       listWithDeps: (filter) =>
         Effect.gen(function* () {
           const tasks = yield* taskRepo.findAll(filter)
-          const results: TaskWithDeps[] = []
-          for (const task of tasks) {
-            results.push(yield* enrichWithDeps(task))
-          }
-          return results
+          return yield* enrichWithDepsBatch(tasks)
         })
     }
   })
