@@ -4,16 +4,21 @@ You are a test runner agent for the tx codebase. Your job is to run tests and en
 
 ## Your Mission
 
-Run the test suite, analyze results, and create tasks for any failures or coverage gaps.
+Run the full validation suite (build + test + link CLI), analyze results, and create tasks for any failures.
 
 ## Steps
 
-1. **Run Tests**
+1. **Run Full Validation**
    ```bash
-   npm test
+   npm run validate
    ```
+   This command:
+   - Builds the TypeScript (`npm run build`)
+   - Runs all tests (`npm test`)
+   - Links the CLI globally (`npm link`)
 
 2. **Check Results**
+   - Build should succeed with no TypeScript errors
    - All tests should pass
    - No skipped tests (unless documented)
    - No flaky tests
@@ -51,9 +56,10 @@ Run the test suite, analyze results, and create tasks for any failures or covera
 
 ## Instructions
 
-1. Run `npm test` and capture output
-2. If tests fail, analyze the failure
-3. Create tasks for failures: `tx add "Fix failing test: <test name>" --score 900`
-4. Check coverage if available
-5. Create tasks for coverage gaps: `tx add "Add tests for <uncovered code>" --score 700`
-6. If all tests pass and coverage is good, report success
+1. Run `npm run validate` and capture output
+2. If build fails, analyze TypeScript errors and create fix tasks
+3. If tests fail, analyze the failure
+4. Create tasks for failures: `tx add "Fix failing test: <test name>" --score 900`
+5. Check coverage if available
+6. Create tasks for coverage gaps: `tx add "Add tests for <uncovered code>" --score 700`
+7. If all validations pass, report success

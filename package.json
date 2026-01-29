@@ -10,7 +10,8 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "test": "vitest --run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "validate": "npm run build && npm test && npm link"
   },
   "dependencies": {
     "@effect/cli": "^0.73.1",

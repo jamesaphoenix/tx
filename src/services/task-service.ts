@@ -104,6 +104,34 @@ export const TaskServiceLive = Layer.effect(
         return results
       })
 
+    // Auto-complete parent task when all children are done (recursive)
+    const autoCompleteParent = (parentId: TaskId, now: Date): Effect.Effect<void, DatabaseError> =>
+      Effect.gen(function* () {
+        const parent = yield* taskRepo.findById(parentId)
+        if (!parent || parent.status === "done") return
+
+        const childIds = yield* taskRepo.getChildIds(parentId)
+        if (childIds.length === 0) return
+
+        const children = yield* taskRepo.findByIds(childIds)
+        const allChildrenDone = children.every(c => c.status === "done")
+
+        if (allChildrenDone) {
+          const updatedParent: Task = {
+            ...parent,
+            status: "done",
+            updatedAt: now,
+            completedAt: now
+          }
+          yield* taskRepo.update(updatedParent)
+
+          // Recursively check grandparent
+          if (parent.parentId) {
+            yield* autoCompleteParent(parent.parentId, now)
+          }
+        }
+      })
+
     return {
       create: (input) =>
         Effect.gen(function* () {
@@ -203,6 +231,12 @@ export const TaskServiceLive = Layer.effect(
           }
 
           yield* taskRepo.update(updated)
+
+          // Auto-complete parent if all children are done
+          if (isDone && updated.parentId) {
+            yield* autoCompleteParent(updated.parentId, now)
+          }
+
           return updated
         }),
 
