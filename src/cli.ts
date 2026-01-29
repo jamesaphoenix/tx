@@ -7,7 +7,7 @@ import { TaskService } from "./services/task-service.js"
 import { DependencyService } from "./services/dep-service.js"
 import { ReadyService } from "./services/ready-service.js"
 import { startMcpServer } from "./mcp/server.js"
-import type { TaskId, TaskWithDeps } from "./schema.js"
+import type { TaskId, TaskStatus, TaskWithDeps } from "./schema.js"
 
 // --- Argv parsing helpers ---
 
@@ -136,7 +136,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       const statusFilter = opt(flags, "status")
       const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : undefined
       const tasks = yield* svc.listWithDeps({
-        status: statusFilter ? statusFilter.split(",") as any : undefined,
+        status: statusFilter ? statusFilter.split(",") as TaskStatus[] : undefined,
         limit
       })
 
