@@ -195,7 +195,7 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
 
   log "Dispatching to Claude..."
 
-  if claude --print "$prompt" 2>>"$LOG_FILE"; then
+  if claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE"; then
     return 0
   else
     return 1
@@ -219,7 +219,7 @@ Review recent changes and check for doctrine violations.
 This is iteration $iteration of the RALPH loop."
 
   if [ "$DRY_RUN" = false ]; then
-    claude --print "$doctrine_prompt" 2>>"$LOG_FILE" || log "doctrine-checker had issues"
+    claude --dangerously-skip-permissions --print "$doctrine_prompt" 2>>"$LOG_FILE" || log "doctrine-checker had issues"
   else
     log "[DRY RUN] Would run doctrine-checker"
   fi
@@ -232,7 +232,7 @@ Run the test suite and report results.
 This is iteration $iteration of the RALPH loop."
 
   if [ "$DRY_RUN" = false ]; then
-    claude --print "$test_prompt" 2>>"$LOG_FILE" || log "test-runner had issues"
+    claude --dangerously-skip-permissions --print "$test_prompt" 2>>"$LOG_FILE" || log "test-runner had issues"
   else
     log "[DRY RUN] Would run test-runner"
   fi
@@ -245,7 +245,7 @@ Review recent code changes for quality issues.
 This is iteration $iteration of the RALPH loop."
 
   if [ "$DRY_RUN" = false ]; then
-    claude --print "$quality_prompt" 2>>"$LOG_FILE" || log "quality-checker had issues"
+    claude --dangerously-skip-permissions --print "$quality_prompt" 2>>"$LOG_FILE" || log "quality-checker had issues"
   else
     log "[DRY RUN] Would run quality-checker"
   fi
