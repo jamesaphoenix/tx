@@ -1,4 +1,0 @@
-# Hide generated JavaScript from GitHub language stats
-*.js linguist-generated=true
-*.js.map linguist-generated=true
-dist/** linguist-generated=true
