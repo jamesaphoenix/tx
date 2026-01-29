@@ -10,12 +10,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Effect, ManagedRuntime } from "effect"
+import { z } from "zod"
 
 import { TaskService } from "../services/task-service.js"
 import { ReadyService } from "../services/ready-service.js"
 import { DependencyService } from "../services/dep-service.js"
 import { HierarchyService } from "../services/hierarchy-service.js"
 import { makeAppLayer } from "../layer.js"
+import type { TaskStatus, TaskWithDeps } from "../schema.js"
+import { TASK_STATUSES } from "../schema.js"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -110,12 +113,36 @@ export const mcpError = (error: unknown): McpResponse => ({
 })
 
 // -----------------------------------------------------------------------------
+// Serialization Helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Serialize a TaskWithDeps for JSON output.
+ * Converts Date objects to ISO strings for proper serialization.
+ */
+const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
+  id: task.id,
+  title: task.title,
+  description: task.description,
+  status: task.status,
+  parentId: task.parentId,
+  score: task.score,
+  createdAt: task.createdAt.toISOString(),
+  updatedAt: task.updatedAt.toISOString(),
+  completedAt: task.completedAt?.toISOString() ?? null,
+  metadata: task.metadata,
+  blockedBy: task.blockedBy,
+  blocks: task.blocks,
+  children: task.children,
+  isReady: task.isReady
+})
+
+// -----------------------------------------------------------------------------
 // Server Creation
 // -----------------------------------------------------------------------------
 
 /**
  * Create the MCP server with tool registrations.
- * Tools are registered here (will be expanded in subsequent tasks).
  */
 export const createMcpServer = (): McpServer => {
   const server = new McpServer({
@@ -123,8 +150,134 @@ export const createMcpServer = (): McpServer => {
     version: "0.1.0"
   })
 
-  // Tools will be registered here in subsequent tasks
-  // See: tx-5452e877 (Register core MCP tools)
+  // ---------------------------------------------------------------------------
+  // tx_ready - List tasks that are ready to work on
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_ready",
+    "List tasks ready to be worked on (no incomplete blockers)",
+    { limit: z.number().int().positive().optional().describe("Maximum number of tasks to return (default: 100)") },
+    async ({ limit }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const tasks = await runEffect(
+          Effect.gen(function* () {
+            const ready = yield* ReadyService
+            return yield* ready.getReady(limit ?? 100)
+          })
+        )
+        const serialized = tasks.map(serializeTask)
+        return {
+          content: [
+            { type: "text", text: `Found ${tasks.length} ready task(s)` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_show - Show a single task with full dependency info
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_show",
+    "Show detailed information about a task including dependencies",
+    { id: z.string().describe("Task ID to show") },
+    async ({ id }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const task = await runEffect(
+          Effect.gen(function* () {
+            const taskService = yield* TaskService
+            return yield* taskService.getWithDeps(id as any)
+          })
+        )
+        const serialized = serializeTask(task)
+        return {
+          content: [
+            { type: "text", text: `Task: ${task.title}` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_list - List tasks with optional filters
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_list",
+    "List tasks with optional filters for status, parent, and limit",
+    {
+      status: z.string().optional().describe(`Filter by status: ${TASK_STATUSES.join(", ")}`),
+      parentId: z.string().optional().describe("Filter by parent task ID"),
+      limit: z.number().int().positive().optional().describe("Maximum number of tasks to return")
+    },
+    async ({ status, parentId, limit }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const tasks = await runEffect(
+          Effect.gen(function* () {
+            const taskService = yield* TaskService
+            return yield* taskService.listWithDeps({
+              status: status as TaskStatus | undefined,
+              parentId: parentId ?? undefined,
+              limit: limit ?? undefined
+            })
+          })
+        )
+        const serialized = tasks.map(serializeTask)
+        return {
+          content: [
+            { type: "text", text: `Found ${tasks.length} task(s)` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_children - List children of a task
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_children",
+    "List direct children of a task",
+    { id: z.string().describe("Parent task ID") },
+    async ({ id }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const tasks = await runEffect(
+          Effect.gen(function* () {
+            const taskService = yield* TaskService
+            // Use listWithDeps with parentId filter to get TaskWithDeps[]
+            return yield* taskService.listWithDeps({ parentId: id })
+          })
+        )
+        const serialized = tasks.map(serializeTask)
+        return {
+          content: [
+            { type: "text", text: `Found ${tasks.length} child task(s)` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
 
   return server
 }
