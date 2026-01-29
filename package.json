@@ -16,6 +16,7 @@
     "@effect/cli": "^0.73.1",
     "@effect/platform": "^0.94.2",
     "@effect/platform-node": "^0.104.1",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "better-sqlite3": "^11.7.0",
     "effect": "^3.19.15"
   },
