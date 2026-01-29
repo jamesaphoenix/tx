@@ -2,6 +2,8 @@
 
 A lean task management system for AI agents and humans, built with Effect-TS.
 
+**Full documentation**: [docs/index.md](docs/index.md)
+
 ---
 
 ## DOCTRINE — INVIOLABLE RULES
@@ -10,161 +12,233 @@ These rules are non-negotiable. Any code that violates them is broken and must b
 
 ### RULE 1: Every API response MUST include full dependency information
 
-Every function, CLI command, MCP tool, and SDK method that returns task data MUST return `TaskWithDeps`, which includes:
+Every function, CLI command, MCP tool, and SDK method that returns task data MUST return `TaskWithDeps`:
 
-- `blockedBy: TaskId[]` — task IDs that block this task
-- `blocks: TaskId[]` — task IDs this task blocks
-- `children: TaskId[]` — direct child task IDs
-- `isReady: boolean` — whether this task can be worked on
+```typescript
+interface TaskWithDeps extends Task {
+  blockedBy: TaskId[]   // task IDs that block this task
+  blocks: TaskId[]      // task IDs this task blocks
+  children: TaskId[]    // direct child task IDs
+  isReady: boolean      // whether this task can be worked on
+}
+```
 
-**NEVER** return a bare `Task` to any external consumer. Internal service-to-service calls may use `Task`, but anything that exits the system (CLI output, MCP response, SDK return, JSON export) MUST use `TaskWithDeps`.
+**NEVER** return a bare `Task` to external consumers. Hardcoding `blocks: []` is a bug.
 
-Hardcoding dependency fields (e.g., `blocking: 0`) is a bug. Query the actual data.
-
-Reference: [DD-005](docs/design/DD-005-mcp-agent-sdk-integration.md), [PRD-007](docs/prd/PRD-007-multi-interface-integration.md)
+→ [DD-005](docs/design/DD-005-mcp-agent-sdk-integration.md), [PRD-007](docs/prd/PRD-007-multi-interface-integration.md)
 
 ### RULE 2: Compaction MUST export learnings to a file agents can read
 
-When `tx compact` runs, the generated learnings MUST be appended to a markdown file (default: `CLAUDE.md`, configurable via `--output`). Storing learnings only in the `compaction_log` database table is insufficient — no agent reads raw SQLite.
-
-The export format:
+`tx compact` MUST append learnings to a markdown file (default: `CLAUDE.md`). Storing only in `compaction_log` table is insufficient.
 
 ```markdown
 ## Agent Learnings (YYYY-MM-DD)
-
 - Learning bullet point 1
 - Learning bullet point 2
 ```
 
-The `compaction_log` table MUST also record `learnings_exported_to` so we can audit where learnings went.
-
-Reference: [PRD-006](docs/prd/PRD-006-task-compaction-learnings.md), [DD-006](docs/design/DD-006-llm-integration.md)
+→ [PRD-006](docs/prd/PRD-006-task-compaction-learnings.md), [DD-006](docs/design/DD-006-llm-integration.md)
 
 ### RULE 3: All core paths MUST have integration tests with SHA256 fixtures
 
-Unit tests are not sufficient. The following MUST have integration tests against a real in-memory SQLite database:
+Unit tests are insufficient. Integration tests MUST use:
+- Real in-memory SQLite database
+- Deterministic SHA256-based IDs via `fixtureId(name)`
+- Coverage: CRUD, ready detection, dependencies, hierarchy, MCP tools
 
-- Task CRUD (create, get, getWithDeps, update, delete)
-- Ready detection (correct filtering, blockedBy populated, blocks populated)
-- Dependency operations (add blocker, remove blocker, cycle prevention, self-block prevention)
-- Hierarchy operations (children, ancestors, tree)
-- MCP tool responses (every tool returns TaskWithDeps with correct data)
-
-Test fixtures MUST use deterministic SHA256-based IDs via `fixtureId(name)` so tests are reproducible across runs. Do not use random IDs in tests.
-
-Reference: [DD-007](docs/design/DD-007-testing-strategy.md)
+→ [DD-007](docs/design/DD-007-testing-strategy.md)
 
 ### RULE 4: No circular dependencies, no self-blocking
 
-The system MUST prevent:
-- A task blocking itself (`CHECK (blocker_id != blocked_id)`)
-- Circular dependency chains (A blocks B blocks A) — enforced via BFS cycle detection at insert time
+Enforce at database level:
+- `CHECK (blocker_id != blocked_id)` — no self-blocking
+- BFS cycle detection at insert time — no A→B→A chains
 
-If cycle detection is bypassed or missing, the ready detection algorithm will loop or return incorrect results.
-
-Reference: [DD-004](docs/design/DD-004-ready-detection-algorithm.md), [PRD-003](docs/prd/PRD-003-dependency-blocking-system.md)
+→ [DD-004](docs/design/DD-004-ready-detection-algorithm.md), [PRD-003](docs/prd/PRD-003-dependency-blocking-system.md)
 
 ### RULE 5: Effect-TS patterns are mandatory
 
 All business logic MUST use Effect-TS:
-- Services use `Context.Tag` + `Layer.effect`
-- Errors use `Data.TaggedError` with union types
-- All operations return `Effect<T, E>`
-- Layer composition follows the pattern in DD-002
+- Services: `Context.Tag` + `Layer.effect`
+- Errors: `Data.TaggedError` with union types
+- Operations: return `Effect<T, E>`
+- No raw try/catch or untyped Promises in service code
 
-Do not bypass Effect with raw try/catch or untyped Promises in service code.
-
-Reference: [DD-002](docs/design/DD-002-effect-ts-service-layer.md)
+→ [DD-002](docs/design/DD-002-effect-ts-service-layer.md)
 
 ### RULE 6: Telemetry MUST NOT block operations
 
-OpenTelemetry is optional. When OTEL is not configured, the system MUST use `TelemetryNoop` — a zero-cost passthrough that does nothing. When OTEL is configured, telemetry errors MUST be caught and logged, never propagated to the caller.
+- OTEL packages are **optional peer dependencies**
+- `TelemetryAuto`: auto-detect from `OTEL_EXPORTER_*` env vars
+- No config → `TelemetryNoop` (zero overhead)
+- Telemetry errors: catch and log, never propagate
 
-- `TelemetryAuto` auto-detects `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER` env vars
-- If neither is set → `TelemetryNoop` (zero overhead)
-- If set → `TelemetryLive` (full OTEL SDK)
-- OTEL packages (`@opentelemetry/*`) are **optional peer dependencies** — the system MUST work without them installed
-
-Reference: [PRD-008](docs/prd/PRD-008-observability-opentelemetry.md), [DD-008](docs/design/DD-008-opentelemetry-integration.md)
+→ [PRD-008](docs/prd/PRD-008-observability-opentelemetry.md), [DD-008](docs/design/DD-008-opentelemetry-integration.md)
 
 ### RULE 7: ANTHROPIC_API_KEY is optional for core commands
 
-The Anthropic API key is **only required for LLM-powered features** (`tx dedupe`, `tx compact`, `tx reprioritize`). All core commands (`tx add`, `tx list`, `tx ready`, `tx done`, `tx show`, `tx update`, `tx delete`, `tx block`, `tx unblock`, `tx children`, `tx tree`, `tx init`) MUST work without it.
+LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Core commands do not.
 
-- `AppMinimalLive`: No LLM — used by CLI core commands, MCP server, Agent SDK
-- `AppLive`: Includes LLM — used only by dedupe/compact/reprioritize commands
-- MCP server MUST start and serve core tools without `ANTHROPIC_API_KEY`
-- Agent SDK MUST use `AppMinimalLive` — never require the API key
-- LLM commands without the key MUST fail with a clear error message:
-  `"ANTHROPIC_API_KEY environment variable is not set. Set it to enable LLM-powered features: export ANTHROPIC_API_KEY=sk-ant-..."`
+| Layer | LLM | Used By |
+|-------|-----|---------|
+| `AppMinimalLive` | No | CLI core, MCP, Agent SDK |
+| `AppLive` | Yes | dedupe, compact, reprioritize |
 
-Reference: [DD-002](docs/design/DD-002-effect-ts-service-layer.md), [DD-006](docs/design/DD-006-llm-integration.md)
+→ [DD-002](docs/design/DD-002-effect-ts-service-layer.md), [DD-006](docs/design/DD-006-llm-integration.md)
 
 ---
 
-## Project Structure
+## Quick Reference
 
-```
-tx/
-├── CLAUDE.md              # This file — agent doctrine + instructions
-├── PLAN.md                # Full consolidated PRD + design documentation
-├── docs/
-│   ├── index.md           # Hierarchical index with dependency graph
-│   ├── prd/               # Product Requirements Documents (WHAT)
-│   │   ├── PRD-001-core-task-management.md
-│   │   ├── PRD-002-hierarchical-task-structure.md
-│   │   ├── PRD-003-dependency-blocking-system.md
-│   │   ├── PRD-004-task-scoring-prioritization.md
-│   │   ├── PRD-005-llm-deduplication.md
-│   │   ├── PRD-006-task-compaction-learnings.md
-│   │   ├── PRD-007-multi-interface-integration.md
-│   │   └── PRD-008-observability-opentelemetry.md
-│   └── design/            # Design Documents (HOW)
-│       ├── DD-001-data-model-storage.md
-│       ├── DD-002-effect-ts-service-layer.md
-│       ├── DD-003-cli-implementation.md
-│       ├── DD-004-ready-detection-algorithm.md
-│       ├── DD-005-mcp-agent-sdk-integration.md
-│       ├── DD-006-llm-integration.md
-│       ├── DD-007-testing-strategy.md
-│       └── DD-008-opentelemetry-integration.md
-└── src/                   # Implementation (to be created)
-```
-
-## Key Technical Decisions
-
-| Decision | Choice | Reference |
-|----------|--------|-----------|
-| Storage | SQLite via better-sqlite3 (WAL mode) | [DD-001](docs/design/DD-001-data-model-storage.md) |
-| Framework | Effect-TS (services, layers, errors) | [DD-002](docs/design/DD-002-effect-ts-service-layer.md) |
-| CLI | @effect/cli | [DD-003](docs/design/DD-003-cli-implementation.md) |
-| MCP | @modelcontextprotocol/sdk (text content only, no structuredContent) | [DD-005](docs/design/DD-005-mcp-agent-sdk-integration.md) |
-| IDs | `crypto.randomBytes` → SHA256 `tx-[a-z0-9]{8}` (32-bit entropy) | [DD-001](docs/design/DD-001-data-model-storage.md) |
-| Testing | Vitest + SHA256 deterministic fixtures | [DD-007](docs/design/DD-007-testing-strategy.md) |
-| LLM | Anthropic Claude Sonnet for dedupe/compact (optional) | [DD-006](docs/design/DD-006-llm-integration.md) |
-| ANTHROPIC_API_KEY | Optional — core commands work without it | [DD-002](docs/design/DD-002-effect-ts-service-layer.md), [DD-006](docs/design/DD-006-llm-integration.md) |
-| Telemetry | OpenTelemetry (optional peer deps, zero-cost when disabled) | [DD-008](docs/design/DD-008-opentelemetry-integration.md) |
-| Layer split | `AppMinimalLive` (no LLM) vs `AppLive` (with LLM) | [DD-002](docs/design/DD-002-effect-ts-service-layer.md) |
-
-## Status Lifecycle
+### Status Lifecycle
 
 ```
 backlog → ready → planning → active → blocked → review → human_needs_to_review → done
 ```
 
-A task is **ready** when: status is workable AND all blockers have status `done`. See [DD-004](docs/design/DD-004-ready-detection-algorithm.md).
+A task is **ready** when: status is workable AND all blockers have status `done`.
 
-## Implementation Phases
+### Key Technical Decisions
 
-1. **Phase 1 (v0.1.0)**: Core CRUD + hierarchy + dependencies + CLI + integration tests + OTEL foundation
-2. **Phase 2 (v0.2.0)**: MCP server (TaskWithDeps responses, text-only content) + JSON export + Agent SDK
-3. **Phase 3 (v0.3.0)**: LLM features (dedupe, compact with learnings export, scoring) — requires ANTHROPIC_API_KEY
-4. **Phase 4 (v1.0.0)**: Performance optimization + full test coverage + documentation
+| Decision | Choice | Doc |
+|----------|--------|-----|
+| Storage | SQLite (better-sqlite3, WAL) | [DD-001](docs/design/DD-001-data-model-storage.md) |
+| Sync | JSONL git-backed | [DD-009](docs/design/DD-009-jsonl-git-sync.md) |
+| Framework | Effect-TS | [DD-002](docs/design/DD-002-effect-ts-service-layer.md) |
+| CLI | @effect/cli | [DD-003](docs/design/DD-003-cli-implementation.md) |
+| MCP | @modelcontextprotocol/sdk | [DD-005](docs/design/DD-005-mcp-agent-sdk-integration.md) |
+| IDs | SHA256-based `tx-[a-z0-9]{6,8}` | [DD-001](docs/design/DD-001-data-model-storage.md) |
+| Testing | Vitest + SHA256 fixtures | [DD-007](docs/design/DD-007-testing-strategy.md) |
 
-## Package Info
+### Project Structure
 
-- **Name**: `tx`
-- **CLI Alias**: `tx`
-- **Entry**: `src/cli.ts`
-- **MCP Server**: `src/mcp/server.ts`
-- **DB Location**: `.tx/tasks.db`
+```
+tx/
+├── CLAUDE.md              # This file — doctrine + quick ref
+├── docs/
+│   ├── index.md           # Full documentation index
+│   ├── prd/               # PRD-001 through PRD-009
+│   └── design/            # DD-001 through DD-009
+├── src/
+│   ├── schemas/           # Effect Schema definitions
+│   ├── services/          # Business logic (Effect services)
+│   ├── repositories/      # Data access layer
+│   ├── cli/               # CLI commands
+│   ├── mcp/               # MCP server
+│   └── layers/            # Effect layer composition
+├── test/
+│   ├── fixtures/          # SHA256-based test fixtures
+│   ├── unit/              # Unit tests
+│   └── integration/       # Integration tests
+└── .tx/
+    ├── tasks.db           # SQLite database (gitignored)
+    └── tasks.jsonl        # Git-tracked sync file
+```
+
+### CLI Commands
+
+```bash
+# Core (no API key needed)
+tx init                    # Initialize database
+tx add <title>             # Create task
+tx list                    # List tasks
+tx ready                   # List ready tasks
+tx show <id>               # Show task details
+tx update <id>             # Update task
+tx done <id>               # Complete task
+tx delete <id>             # Delete task
+tx block <id> <blocker>    # Add dependency
+tx unblock <id> <blocker>  # Remove dependency
+tx children <id>           # List children
+tx tree <id>               # Show subtree
+
+# Sync (no API key needed)
+tx sync export             # Export to JSONL
+tx sync import             # Import from JSONL
+tx sync status             # Show sync state
+
+# LLM features (requires ANTHROPIC_API_KEY)
+tx dedupe                  # Find duplicates
+tx compact                 # Compact old tasks
+tx reprioritize            # LLM rescoring
+```
+
+### Implementation Phases
+
+1. **Phase 1 (v0.1.0)**: Core CRUD + hierarchy + CLI + tests
+2. **Phase 2 (v0.2.0)**: MCP + JSONL sync + Agent SDK
+3. **Phase 3 (v0.3.0)**: LLM features (dedupe, compact, scoring)
+4. **Phase 4 (v1.0.0)**: Polish + performance + full coverage
+
+---
+
+## Bootstrapping: tx Builds tx
+
+**Once Phase 1 CLI is stable**, all development on tx MUST use tx itself to manage work.
+
+### Pre-Bootstrap (Phase 1)
+Use Claude Code's built-in `TodoWrite` to track Phase 1 tasks until `tx init`, `tx add`, `tx ready`, and `tx done` are working.
+
+### Post-Bootstrap Workflow
+```bash
+# 1. Pick highest-priority unblocked task
+tx ready --json | head -1
+
+# 2. Read task details
+tx show <id>
+
+# 3. Do the work (implement, test, review)
+
+# 4. Mark complete (may unblock other tasks)
+tx done <id>
+
+# 5. If new work discovered, add subtasks
+tx add "New subtask" --parent <id> --score 700
+
+# 6. Sync for git backup
+tx sync export
+git add .tx/tasks.jsonl && git commit -m "Task updates"
+```
+
+### Why Bootstrap?
+- **Dogfooding** catches bugs before users do
+- **Memory persists** through `.tx/tasks.db` and git-tracked `.tx/tasks.jsonl`
+- **Fresh agent instances** avoid context pollution from failed attempts
+- Tasks survive across sessions; conversation history does not
+
+### RALPH Loop: Autonomous Development
+
+Run Claude as a subprocess to iterate on tasks automatically:
+
+```bash
+# scripts/ralph.sh - orchestrates the loop
+while true; do
+  # Get next task
+  TASK=$(tx ready --json --limit 1 | jq -r '.[0].id')
+  [ -z "$TASK" ] && break
+
+  # Spawn fresh Claude instance for this task
+  claude --print "$(cat <<EOF
+Read CLAUDE.md for doctrine rules.
+Your task: $TASK
+Run: tx show $TASK
+Implement it, run tests, then: tx done $TASK
+EOF
+)"
+
+  # Checkpoint
+  git add -A && git commit -m "Complete $TASK"
+done
+```
+
+**Key insight**: Each task gets a fresh Claude instance. No accumulated context pollution. Memory lives in files (CLAUDE.md, git, .tx/tasks.db), not conversation history.
+
+See `.claude/agents/` for specialized agent prompts (planner, implementer, reviewer, tester).
+
+---
+
+## For Detailed Information
+
+- **PRDs** (what to build): [docs/prd/](docs/prd/)
+- **Design Docs** (how to build): [docs/design/](docs/design/)
+- **Full index**: [docs/index.md](docs/index.md)

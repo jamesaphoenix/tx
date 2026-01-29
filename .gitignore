@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.tx/
+*.db
+*.db-wal
+*.db-shm
