@@ -189,14 +189,48 @@ tx uses the [RALPH pattern](https://ghuntley.com/ralph) for autonomous developme
 | `tx-tester` | Write integration tests |
 | `tx-decomposer` | Break large tasks into subtasks |
 
-### Claude Code Hooks
+### Claude Code Hooks — Dynamic Context Injection
 
-tx includes hooks for autonomous operation:
+tx hooks into Claude Code to automatically inject relevant knowledge:
 
-- **Stop hook** — Blocks exit until task is marked done + tests pass
-- **PostToolUse hook** — Injects recovery context on test/lint failures
-- **PreToolUse hook** — Blocks dangerous commands (rm -rf, force push)
-- **SessionStart hook** — Loads relevant task context and learnings
+```
+.claude/settings.json
+├── SessionStart     → Inject recent learnings on session start
+├── UserPromptSubmit → Search learnings based on prompt/task ID
+├── PostToolUse      → Capture learnings from failures
+├── Stop             → Extract learnings before session ends
+└── PreCompact       → Preserve context before summarization
+```
+
+**How it works:**
+
+```bash
+# 1. Session starts → recent learnings injected
+[Hook: SessionStart]
+$ tx learning:recent -n 5
+→ "## Recent Learnings from Past Sessions
+   - [manual] Use bcrypt for passwords
+   - [failure] Redis caching has race conditions"
+
+# 2. User mentions task → contextual learnings injected
+[Hook: UserPromptSubmit]
+User: "Work on tx-abc123"
+$ tx context tx-abc123
+→ "## Relevant Learnings for Task tx-abc123
+   - [manual] (score: 85%) Auth tokens expire in 24h
+   - [attempt] (score: 72%) JWT approach failed: no refresh"
+
+# 3. Command fails → learning captured
+[Hook: PostToolUse]
+$ npm test → FAIL
+→ tx learning:add --source failure "Test failed: missing mock for DB"
+
+# 4. Session ends → learnings extracted
+[Hook: Stop]
+→ tx learning:add "Completed auth flow using bcrypt + JWT refresh"
+```
+
+**The result:** Agents start each session with relevant context. Knowledge compounds across sessions. Failures become learnings.
 
 ### Context-Efficient Output
 

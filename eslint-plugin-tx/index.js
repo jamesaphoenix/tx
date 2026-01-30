@@ -27,6 +27,10 @@ const plugin = {
           cli: { src: 'src/cli.ts', test: 'test/integration/cli-*.test.ts', threshold: 70 },
           mcp: { src: 'src/mcp/server.ts', test: 'test/integration/mcp.test.ts', threshold: 80 },
           api: { src: 'apps/dashboard/server', test: 'test/integration/dashboard-api.test.ts', threshold: 80 }
+        }],
+        'tx/no-inline-sql': ['error', {
+          allowedPaths: ['migrations/', 'test/fixtures/'],
+          ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
         }]
       }
     }

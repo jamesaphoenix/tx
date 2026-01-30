@@ -3,28 +3,24 @@
  * @fileoverview ESLint flat config for tx project
  *
  * This configuration uses the modern ESLint flat config format (eslint.config.js)
- * and includes the custom tx plugin for enforcing integration test coverage.
+ * and includes the custom tx plugin for enforcing code quality rules.
  *
  * Rule: tx/require-integration-tests
  * Enforces that major components have corresponding integration tests with adequate coverage.
  *
- * Detection logic:
+ * Rule: tx/no-inline-sql
+ * Prevents SQL DDL statements (CREATE TABLE, etc.) from being defined inline in TypeScript code.
+ * SQL schema definitions should be in migrations/*.sql files.
+ *
+ * Detection logic for require-integration-tests:
  * - Parses source files for exported functions/classes
  * - Checks for corresponding describe() blocks in test files
  * - Reports error if coverage < threshold (default 80%)
  *
- * Config:
- * rules: {
- *   'tx/require-integration-tests': ['error', {
- *     services: { src: 'src/services', test: 'test/integration', threshold: 90 },
- *     repos: { src: 'src/repo', test: 'test/integration', threshold: 85 },
- *     cli: { src: 'src/cli.ts', test: 'test/integration/cli-*.test.ts', threshold: 70 },
- *     api: { src: 'apps/dashboard/server', test: 'test/integration/dashboard-api.test.ts', threshold: 80 }
- *   }]
- * }
- *
- * Error message:
- * 'Missing integration tests for {component}. Expected test file: {expected}. Coverage: {actual}% < {threshold}%'
+ * Detection logic for no-inline-sql:
+ * - Detects SQL DDL keywords in string/template literals
+ * - Allows in: migrations/*.sql, test/fixtures/*
+ * - Error message: 'SQL schema definitions must be in migrations/*.sql files'
  *
  * Reference: Agent swarm audit findings - services 93-98% covered, CLI 71% covered, dashboard API 0% covered
  */
@@ -66,6 +62,12 @@ export default [
         repos: { src: 'src/repo', test: 'test/integration', threshold: 85 },
         cli: { src: 'src/cli.ts', test: 'test/integration/cli-*.test.ts', threshold: 70 },
         mcp: { src: 'src/mcp/server.ts', test: 'test/integration/mcp.test.ts', threshold: 80 }
+      }],
+
+      // tx plugin rules - enforce SQL schema definitions in migrations/
+      'tx/no-inline-sql': ['error', {
+        allowedPaths: ['migrations/', 'test/fixtures/'],
+        ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
       }]
     }
   },
@@ -80,13 +82,20 @@ export default [
       }
     },
     plugins: {
-      '@typescript-eslint': tseslintPlugin
+      '@typescript-eslint': tseslintPlugin,
+      tx: txPlugin
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',
       'no-unused-vars': 'off',
-      'no-undef': 'off'
+      'no-undef': 'off',
+
+      // tx plugin rules - enforce SQL schema definitions in migrations/
+      'tx/no-inline-sql': ['error', {
+        allowedPaths: ['migrations/', 'test/fixtures/'],
+        ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
+      }]
     }
   },
   // Dashboard app files (with separate API test requirements)
@@ -113,6 +122,12 @@ export default [
       // Dashboard API integration test coverage
       'tx/require-integration-tests': ['warn', {
         api: { src: 'apps/dashboard/server', test: 'test/integration/dashboard-api.test.ts', threshold: 80 }
+      }],
+
+      // tx plugin rules - enforce SQL schema definitions in migrations/
+      'tx/no-inline-sql': ['error', {
+        allowedPaths: ['migrations/', 'test/fixtures/'],
+        ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
       }]
     }
   }
