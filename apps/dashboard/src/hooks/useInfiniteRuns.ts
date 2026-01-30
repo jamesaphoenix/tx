@@ -27,7 +27,7 @@ export function useInfiniteRuns(filters: RunFilters = {}): UseInfiniteRunsResult
 
       // Add cursor if present
       if (pageParam) {
-        params.set("cursor", pageParam)
+        params.set("cursor", pageParam as string)
       }
 
       // Add agent filter
