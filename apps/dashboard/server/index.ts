@@ -11,6 +11,21 @@ const projectRoot = resolve(__dirname, "../../..")
 const dbPath = resolve(projectRoot, ".tx/tasks.db")
 const ralphLogPath = resolve(projectRoot, ".tx/ralph-output.log")
 const ralphPidPath = resolve(projectRoot, ".tx/ralph.pid")
+const txDir = resolve(projectRoot, ".tx")
+
+/**
+ * Validate that a file path is within the allowed .tx directory.
+ * Prevents path traversal attacks (e.g., ../../etc/passwd).
+ * Returns the resolved absolute path if valid, null if invalid.
+ */
+const validatePathWithinTx = (filePath: string): string | null => {
+  const resolved = resolve(projectRoot, filePath)
+  // Check that resolved path starts with the .tx directory
+  if (!resolved.startsWith(txDir + "/") && resolved !== txDir) {
+    return null
+  }
+  return resolved
+}
 
 const app = new Hono()
 
@@ -365,10 +380,13 @@ app.get("/api/runs/:id", (c) => {
       return c.json({ error: "Run not found" }, 404)
     }
 
-    // Try to read transcript if it exists
+    // Try to read transcript if it exists and path is valid
     let transcript: string | null = null
-    if (run.transcript_path && existsSync(run.transcript_path)) {
-      transcript = readFileSync(run.transcript_path, "utf-8")
+    if (run.transcript_path) {
+      const validatedPath = validatePathWithinTx(run.transcript_path)
+      if (validatedPath && existsSync(validatedPath)) {
+        transcript = readFileSync(validatedPath, "utf-8")
+      }
     }
 
     return c.json({ run, transcript })

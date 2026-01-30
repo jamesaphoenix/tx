@@ -85,6 +85,15 @@ log() {
 }
 
 # ==============================================================================
+# SQL Escaping
+# ==============================================================================
+
+# Escape single quotes for SQL strings to prevent SQL injection
+sql_escape() {
+  echo "${1//\'/\'\'}"
+}
+
+# ==============================================================================
 # Time & State Helpers
 # ==============================================================================
 
@@ -190,9 +199,13 @@ create_run() {
 
   # Insert into database (if tx supports it, otherwise just track in file)
   if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    # Escape variables to prevent SQL injection
+    local escaped_task_id=$(sql_escape "$task_id")
+    local escaped_agent=$(sql_escape "$agent")
+    local escaped_metadata=$(sql_escape "$metadata")
     sqlite3 "$PROJECT_DIR/.tx/tasks.db" <<EOF
 INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
-VALUES ('$run_id', '$task_id', '$agent', '$now', 'running', $$, '$metadata');
+VALUES ('$run_id', '$escaped_task_id', '$escaped_agent', '$now', 'running', $$, '$escaped_metadata');
 EOF
   fi
 
@@ -212,13 +225,21 @@ complete_run() {
 
   local now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
+  # Validate exit_code is an integer
+  [[ $exit_code =~ ^[0-9]+$ ]] || exit_code=1
+
   if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    # Escape variables to prevent SQL injection
+    local escaped_run_id=$(sql_escape "$run_id")
+    local escaped_status=$(sql_escape "$status")
+    local escaped_error_message=$(sql_escape "$error_message")
+
     if [ -n "$error_message" ]; then
       sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
-        "UPDATE runs SET status='$status', ended_at='$now', exit_code=$exit_code, error_message='$error_message' WHERE id='$run_id';"
+        "UPDATE runs SET status='$escaped_status', ended_at='$now', exit_code=$exit_code, error_message='$escaped_error_message' WHERE id='$escaped_run_id';"
     else
       sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
-        "UPDATE runs SET status='$status', ended_at='$now', exit_code=$exit_code WHERE id='$run_id';"
+        "UPDATE runs SET status='$escaped_status', ended_at='$now', exit_code=$exit_code WHERE id='$escaped_run_id';"
     fi
   fi
 
