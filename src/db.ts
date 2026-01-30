@@ -123,6 +123,24 @@ CREATE INDEX IF NOT EXISTS idx_learnings_category ON learnings(category);
 INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (2, datetime('now'));
 `
 
+const MIGRATION_003 = `
+-- File learnings table (path-based knowledge storage)
+CREATE TABLE IF NOT EXISTS file_learnings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_pattern TEXT NOT NULL,
+    note TEXT NOT NULL,
+    task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Index for file pattern lookups
+CREATE INDEX IF NOT EXISTS idx_file_learnings_pattern ON file_learnings(file_pattern);
+CREATE INDEX IF NOT EXISTS idx_file_learnings_created ON file_learnings(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_file_learnings_task ON file_learnings(task_id);
+
+INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (3, datetime('now'));
+`
+
 const getSchemaVersion = (db: Database.Database): number => {
   try {
     const row = db.prepare("SELECT MAX(version) as version FROM schema_version").get() as { version: number } | undefined
@@ -140,6 +158,9 @@ const applyMigrations = (db: Database.Database): void => {
   }
   if (currentVersion < 2) {
     db.exec(MIGRATION_002)
+  }
+  if (currentVersion < 3) {
+    db.exec(MIGRATION_003)
   }
 }
 

@@ -2,7 +2,7 @@
 import { Effect } from "effect"
 import { resolve } from "path"
 import { existsSync, mkdirSync, writeFileSync } from "fs"
-import { makeAppLayer, SyncService, LearningService } from "./layer.js"
+import { makeAppLayer, SyncService, LearningService, FileLearningService } from "./layer.js"
 import { TaskService } from "./services/task-service.js"
 import { DependencyService } from "./services/dep-service.js"
 import { ReadyService } from "./services/ready-service.js"
@@ -37,6 +37,8 @@ Commands:
   learning:recent         List recent learnings
   learning:helpful        Record learning helpfulness
   context                 Get contextual learnings for a task
+  learn                   Attach a learning to file/glob pattern
+  recall                  Query learnings for a path
   mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
@@ -547,6 +549,47 @@ Examples:
   tx context tx-a1b2c3d4
   tx context tx-a1b2c3d4 --json
   tx context tx-a1b2c3d4 --inject`,
+
+  learn: `tx learn - Attach a learning to a file path or glob pattern
+
+Usage: tx learn <path> <note> [options]
+
+Stores a file-specific note that can be recalled when working on matching files.
+Supports glob patterns for matching multiple files.
+
+Arguments:
+  <path>    Required. File path or glob pattern (e.g., src/services/*.ts)
+  <note>    Required. The note/learning to attach
+
+Options:
+  --task <id>   Associate with a task ID
+  --json        Output as JSON
+  --help        Show this help
+
+Examples:
+  tx learn "src/db.ts" "Always run migrations in a transaction"
+  tx learn "src/services/*.ts" "Services must use Effect-TS patterns"
+  tx learn "*.test.ts" "Use vitest describe/it syntax" --task tx-abc123`,
+
+  recall: `tx recall - Query file learnings by path
+
+Usage: tx recall [path] [options]
+
+Retrieves file-specific learnings. If a path is provided, returns learnings
+matching that path (using glob patterns). Without a path, returns all learnings.
+
+Arguments:
+  [path]    Optional. File path to match against stored patterns
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx recall                           # List all file learnings
+  tx recall "src/db.ts"               # Learnings for specific file
+  tx recall "src/services/task.ts"    # Matches patterns like src/services/*.ts
+  tx recall --json`,
 
   help: `tx help - Show help
 
@@ -1068,6 +1111,76 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         for (const l of result.learnings) {
           const score = (l.relevanceScore * 100).toFixed(0)
           console.log(`    #${l.id} (${score}%) ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
+        }
+      }
+    }),
+
+  learn: (pos, flags) =>
+    Effect.gen(function* () {
+      const pattern = pos[0]
+      const note = pos[1]
+      if (!pattern || !note) {
+        console.error("Usage: tx learn <path> <note> [--task <id>] [--json]")
+        process.exit(1)
+      }
+
+      const svc = yield* FileLearningService
+      const learning = yield* svc.create({
+        filePattern: pattern,
+        note,
+        taskId: opt(flags, "task") ?? undefined
+      })
+
+      if (flag(flags, "json")) {
+        console.log(toJson(learning))
+      } else {
+        console.log(`Created file learning: #${learning.id}`)
+        console.log(`  Pattern: ${learning.filePattern}`)
+        console.log(`  Note: ${learning.note.slice(0, 80)}${learning.note.length > 80 ? "..." : ""}`)
+        if (learning.taskId) console.log(`  Task: ${learning.taskId}`)
+      }
+    }),
+
+  recall: (pos, flags) =>
+    Effect.gen(function* () {
+      const path = pos[0]
+      const svc = yield* FileLearningService
+
+      if (path) {
+        // Recall learnings for specific path
+        const learnings = yield* svc.recall(path)
+
+        if (flag(flags, "json")) {
+          console.log(toJson(learnings))
+        } else {
+          if (learnings.length === 0) {
+            console.log(`No learnings found for: ${path}`)
+          } else {
+            console.log(`${learnings.length} learning(s) for ${path}:`)
+            for (const l of learnings) {
+              const taskInfo = l.taskId ? ` [${l.taskId}]` : ""
+              console.log(`  #${l.id}${taskInfo} (${l.filePattern})`)
+              console.log(`    ${l.note}`)
+            }
+          }
+        }
+      } else {
+        // List all learnings
+        const learnings = yield* svc.getAll()
+
+        if (flag(flags, "json")) {
+          console.log(toJson(learnings))
+        } else {
+          if (learnings.length === 0) {
+            console.log("No file learnings found")
+          } else {
+            console.log(`${learnings.length} file learning(s):`)
+            for (const l of learnings) {
+              const taskInfo = l.taskId ? ` [${l.taskId}]` : ""
+              console.log(`  #${l.id}${taskInfo} ${l.filePattern}`)
+              console.log(`    ${l.note.slice(0, 60)}${l.note.length > 60 ? "..." : ""}`)
+            }
+          }
         }
       }
     })

@@ -17,16 +17,18 @@ import { ReadyService } from "../services/ready-service.js"
 import { DependencyService } from "../services/dep-service.js"
 import { HierarchyService } from "../services/hierarchy-service.js"
 import { LearningService } from "../services/learning-service.js"
+import { FileLearningService } from "../services/file-learning-service.js"
 import { SyncService } from "../services/sync-service.js"
 import { makeAppLayer } from "../layer.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "../schema.js"
 import { TASK_STATUSES } from "../schema.js"
+import type { FileLearning } from "../schemas/file-learning.js"
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
-export type McpServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService | SyncService
+export type McpServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService | FileLearningService | SyncService
 
 export interface McpContent {
   type: "text"
@@ -139,6 +141,17 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   blocks: task.blocks,
   children: task.children,
   isReady: task.isReady
+})
+
+/**
+ * Serialize a FileLearning for JSON output.
+ */
+const serializeFileLearning = (learning: FileLearning): Record<string, unknown> => ({
+  id: learning.id,
+  filePattern: learning.filePattern,
+  note: learning.note,
+  taskId: learning.taskId,
+  createdAt: learning.createdAt.toISOString()
 })
 
 // -----------------------------------------------------------------------------
@@ -519,6 +532,80 @@ export const createMcpServer = (): McpServer => {
           content: [
             { type: "text", text: `Removed dependency: ${blockerId} no longer blocks ${taskId}` },
             { type: "text", text: JSON.stringify({ success: true, task: serialized }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_learn - Attach a learning to a file path or glob pattern
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_learn",
+    "Attach a learning/note to a file path or glob pattern. Agents can query this when working on files.",
+    {
+      filePattern: z.string().describe("File path or glob pattern (e.g., src/services/*.ts)"),
+      note: z.string().describe("The learning/note to attach"),
+      taskId: z.string().optional().describe("Optional task ID to associate with")
+    },
+    async ({ filePattern, note, taskId }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const learning = await runEffect(
+          Effect.gen(function* () {
+            const fileLearningService = yield* FileLearningService
+            return yield* fileLearningService.create({
+              filePattern,
+              note,
+              taskId: taskId ?? undefined
+            })
+          })
+        )
+        const serialized = serializeFileLearning(learning)
+        return {
+          content: [
+            { type: "text", text: `Created file learning: #${learning.id} for pattern "${learning.filePattern}"` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_recall - Query file learnings by path
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_recall",
+    "Query file-specific learnings. If path is provided, returns learnings matching that path. Otherwise returns all file learnings.",
+    {
+      path: z.string().optional().describe("Optional file path to match against stored patterns")
+    },
+    async ({ path }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const learnings = await runEffect(
+          Effect.gen(function* () {
+            const fileLearningService = yield* FileLearningService
+            if (path) {
+              return yield* fileLearningService.recall(path)
+            }
+            return yield* fileLearningService.getAll()
+          })
+        )
+        const serialized = learnings.map(serializeFileLearning)
+        const pathInfo = path ? ` for "${path}"` : ""
+        return {
+          content: [
+            { type: "text", text: `Found ${learnings.length} file learning(s)${pathInfo}` },
+            { type: "text", text: JSON.stringify(serialized) }
           ]
         }
       } catch (error) {

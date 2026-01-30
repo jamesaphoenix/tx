@@ -16,6 +16,14 @@ export class LearningNotFoundError extends Data.TaggedError("LearningNotFoundErr
   }
 }
 
+export class FileLearningNotFoundError extends Data.TaggedError("FileLearningNotFoundError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `File learning not found: ${this.id}`
+  }
+}
+
 export class ValidationError extends Data.TaggedError("ValidationError")<{
   readonly reason: string
 }> {
