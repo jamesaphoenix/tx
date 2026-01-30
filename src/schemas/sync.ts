@@ -69,11 +69,137 @@ export const DepRemoveOp = Schema.Struct({
 })
 export type DepRemoveOp = Schema.Schema.Type<typeof DepRemoveOp>
 
-// Union of all sync operations
-export const SyncOperation = Schema.Union(
+// Union of task sync operations
+export const TaskSyncOperation = Schema.Union(
   TaskUpsertOp,
   TaskDeleteOp,
   DepAddOp,
   DepRemoveOp
 )
-export type SyncOperation = Schema.Schema.Type<typeof SyncOperation>
+export type TaskSyncOperation = Schema.Schema.Type<typeof TaskSyncOperation>
+
+// ----- Learning Sync Operations -----
+
+// Learning source type schema
+export const LearningSourceTypeSchema = Schema.Literal(
+  "compaction", "run", "manual", "claude_md"
+)
+
+// Learning data embedded in upsert operations
+export const LearningDataSchema = Schema.Struct({
+  content: Schema.String,
+  sourceType: LearningSourceTypeSchema,
+  sourceRef: Schema.NullOr(Schema.String),
+  keywords: Schema.Array(Schema.String),
+  category: Schema.NullOr(Schema.String)
+})
+
+// Learning upsert operation
+export const LearningUpsertOp = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("learning_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  data: LearningDataSchema
+})
+export type LearningUpsertOp = Schema.Schema.Type<typeof LearningUpsertOp>
+
+// Learning delete operation (tombstone)
+export const LearningDeleteOp = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("learning_delete"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int())
+})
+export type LearningDeleteOp = Schema.Schema.Type<typeof LearningDeleteOp>
+
+// Union of learning sync operations
+export const LearningSyncOperation = Schema.Union(
+  LearningUpsertOp,
+  LearningDeleteOp
+)
+export type LearningSyncOperation = Schema.Schema.Type<typeof LearningSyncOperation>
+
+// ----- File Learning Sync Operations -----
+
+// File learning data embedded in upsert operations
+export const FileLearningDataSchema = Schema.Struct({
+  filePattern: Schema.String,
+  note: Schema.String,
+  taskId: Schema.NullOr(Schema.String)
+})
+
+// File learning upsert operation
+export const FileLearningUpsertOp = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("file_learning_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  data: FileLearningDataSchema
+})
+export type FileLearningUpsertOp = Schema.Schema.Type<typeof FileLearningUpsertOp>
+
+// File learning delete operation (tombstone)
+export const FileLearningDeleteOp = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("file_learning_delete"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int())
+})
+export type FileLearningDeleteOp = Schema.Schema.Type<typeof FileLearningDeleteOp>
+
+// Union of file learning sync operations
+export const FileLearnningSyncOperation = Schema.Union(
+  FileLearningUpsertOp,
+  FileLearningDeleteOp
+)
+export type FileLearnningSyncOperation = Schema.Schema.Type<typeof FileLearnningSyncOperation>
+
+// ----- Attempt Sync Operations -----
+
+// Attempt outcome schema
+export const AttemptOutcomeSchema = Schema.Literal("failed", "succeeded")
+
+// Attempt data embedded in upsert operations
+export const AttemptDataSchema = Schema.Struct({
+  taskId: Schema.String,
+  approach: Schema.String,
+  outcome: AttemptOutcomeSchema,
+  reason: Schema.NullOr(Schema.String)
+})
+
+// Attempt upsert operation (attempts are immutable, no delete operation)
+export const AttemptUpsertOp = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("attempt_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  data: AttemptDataSchema
+})
+export type AttemptUpsertOp = Schema.Schema.Type<typeof AttemptUpsertOp>
+
+// Union of attempt sync operations
+export const AttemptSyncOperation = Schema.Union(
+  AttemptUpsertOp
+)
+export type AttemptSyncOperation = Schema.Schema.Type<typeof AttemptSyncOperation>
+
+// ----- Combined Sync Operations -----
+
+// Legacy alias for backward compatibility
+export const SyncOperation = TaskSyncOperation
+export type SyncOperation = TaskSyncOperation
+
+// All sync operations combined (for parsing any JSONL file)
+export const AnySyncOperation = Schema.Union(
+  TaskUpsertOp,
+  TaskDeleteOp,
+  DepAddOp,
+  DepRemoveOp,
+  LearningUpsertOp,
+  LearningDeleteOp,
+  FileLearningUpsertOp,
+  FileLearningDeleteOp,
+  AttemptUpsertOp
+)
+export type AnySyncOperation = Schema.Schema.Type<typeof AnySyncOperation>

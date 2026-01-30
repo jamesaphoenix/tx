@@ -21,6 +21,7 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
   {
     readonly insert: (input: CreateLearningInput) => Effect.Effect<Learning, DatabaseError>
     readonly findById: (id: number) => Effect.Effect<Learning | null, DatabaseError>
+    readonly findAll: () => Effect.Effect<readonly Learning[], DatabaseError>
     readonly findRecent: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly bm25Search: (query: string, limit: number) => Effect.Effect<readonly BM25Result[], DatabaseError>
     readonly incrementUsage: (id: number) => Effect.Effect<void, DatabaseError>

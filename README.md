@@ -4,7 +4,7 @@
 
 ## Why tx?
 
-Claude Code now has native task tools. Soon it'll have persistent tasks. Why build tx?
+Claude Code has native persistent tasks. Why build tx?
 
 | Native Tasks | tx |
 |--------------|-----|
