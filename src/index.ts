@@ -15,5 +15,8 @@ export { SyncService, SyncServiceLive } from "./services/sync-service.js"
 export { TaskRepository, TaskRepositoryLive } from "./repo/task-repo.js"
 export { DependencyRepository, DependencyRepositoryLive } from "./repo/dep-repo.js"
 
+// Embedding
+export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./services/embedding-service.js"
+
 // Database
 export { SqliteClient, SqliteClientLive } from "./db.js"

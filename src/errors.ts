@@ -57,8 +57,17 @@ export class DatabaseError extends Data.TaggedError("DatabaseError")<{
   }
 }
 
+export class EmbeddingUnavailableError extends Data.TaggedError("EmbeddingUnavailableError")<{
+  readonly reason: string
+}> {
+  get message() {
+    return `Embedding unavailable: ${this.reason}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
   | CircularDependencyError
   | DatabaseError
+  | EmbeddingUnavailableError

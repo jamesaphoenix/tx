@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { writeFileSync, renameSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { DatabaseError, ValidationError } from "../errors.js"
+import { SqliteClient } from "../db.js"
 import { TaskService } from "./task-service.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
@@ -41,6 +42,15 @@ export interface SyncStatus {
   readonly lastExport: Date | null
   readonly lastImport: Date | null
   readonly isDirty: boolean
+  readonly autoSyncEnabled: boolean
+}
+
+/**
+ * Result of a compact operation.
+ */
+export interface CompactResult {
+  readonly before: number
+  readonly after: number
 }
 
 /**
@@ -67,6 +77,39 @@ export class SyncService extends Context.Tag("SyncService")<
      * Get current sync status.
      */
     readonly status: () => Effect.Effect<SyncStatus, DatabaseError>
+
+    /**
+     * Enable auto-sync mode.
+     * When enabled, mutations trigger automatic export.
+     */
+    readonly enableAutoSync: () => Effect.Effect<void, DatabaseError>
+
+    /**
+     * Disable auto-sync mode.
+     */
+    readonly disableAutoSync: () => Effect.Effect<void, DatabaseError>
+
+    /**
+     * Check if auto-sync is enabled.
+     */
+    readonly isAutoSyncEnabled: () => Effect.Effect<boolean, DatabaseError>
+
+    /**
+     * Compact the JSONL file by deduplicating operations.
+     * Keeps only the latest state for each entity.
+     * @param path Optional path (default: .tx/tasks.jsonl)
+     */
+    readonly compact: (path?: string) => Effect.Effect<CompactResult, DatabaseError | ValidationError>
+
+    /**
+     * Set last export timestamp in config.
+     */
+    readonly setLastExport: (timestamp: Date) => Effect.Effect<void, DatabaseError>
+
+    /**
+     * Set last import timestamp in config.
+     */
+    readonly setLastImport: (timestamp: Date) => Effect.Effect<void, DatabaseError>
   }
 >() {}
 
@@ -120,6 +163,28 @@ export const SyncServiceLive = Layer.effect(
     const taskService = yield* TaskService
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
+    const db = yield* SqliteClient
+
+    // Helper: Get config value from sync_config table
+    const getConfig = (key: string): Effect.Effect<string | null, DatabaseError> =>
+      Effect.try({
+        try: () => {
+          const row = db.prepare("SELECT value FROM sync_config WHERE key = ?").get(key) as { value: string } | undefined
+          return row?.value ?? null
+        },
+        catch: (cause) => new DatabaseError({ cause })
+      })
+
+    // Helper: Set config value in sync_config table
+    const setConfig = (key: string, value: string): Effect.Effect<void, DatabaseError> =>
+      Effect.try({
+        try: () => {
+          db.prepare(
+            "INSERT OR REPLACE INTO sync_config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+          ).run(key, value)
+        },
+        catch: (cause) => new DatabaseError({ cause })
+      })
 
     return {
       export: (path?: string) =>
@@ -147,6 +212,9 @@ export const SyncServiceLive = Layer.effect(
             try: () => atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : "")),
             catch: (cause) => new DatabaseError({ cause })
           })
+
+          // Record export time
+          yield* setConfig("last_export", new Date().toISOString())
 
           return {
             opCount: allOps.length,
@@ -282,6 +350,9 @@ export const SyncServiceLive = Layer.effect(
             }
           }
 
+          // Record import time
+          yield* setConfig("last_import", new Date().toISOString())
+
           return { imported, skipped, conflicts }
         }),
 
@@ -314,26 +385,131 @@ export const SyncServiceLive = Layer.effect(
             jsonlOpCount = lines.length
           }
 
+          // Get last export/import timestamps from config
+          const lastExportConfig = yield* getConfig("last_export")
+          const lastImportConfig = yield* getConfig("last_import")
+          const lastExportDate = lastExportConfig && lastExportConfig !== "" ? new Date(lastExportConfig) : lastExport
+          const lastImportDate = lastImportConfig && lastImportConfig !== "" ? new Date(lastImportConfig) : null
+
+          // Get auto-sync status
+          const autoSyncConfig = yield* getConfig("auto_sync")
+          const autoSyncEnabled = autoSyncConfig === "true"
+
           // Determine if dirty: DB has changes not in JSONL
           // Dirty if:
           // 1. JSONL doesn't exist and DB has tasks, OR
-          // 2. Any task's updatedAt is newer than JSONL file mtime
+          // 2. Any task's updatedAt is newer than last export time
           let isDirty = false
           if (dbTaskCount > 0 && !existsSync(filePath)) {
             isDirty = true
-          } else if (lastExport !== null && tasks.length > 0) {
+          } else if (lastExportDate !== null && tasks.length > 0) {
             // Check if any task was updated after the last export
-            isDirty = tasks.some(task => task.updatedAt > lastExport!)
+            isDirty = tasks.some(task => task.updatedAt > lastExportDate!)
           }
 
           return {
             dbTaskCount,
             jsonlOpCount,
-            lastExport,
-            lastImport: null, // Would require additional state tracking
-            isDirty
+            lastExport: lastExportDate,
+            lastImport: lastImportDate,
+            isDirty,
+            autoSyncEnabled
           }
-        })
+        }),
+
+      enableAutoSync: () => setConfig("auto_sync", "true"),
+
+      disableAutoSync: () => setConfig("auto_sync", "false"),
+
+      isAutoSyncEnabled: () =>
+        Effect.gen(function* () {
+          const value = yield* getConfig("auto_sync")
+          return value === "true"
+        }),
+
+      compact: (path?: string) =>
+        Effect.gen(function* () {
+          const filePath = resolve(path ?? DEFAULT_JSONL_PATH)
+
+          // Check if file exists
+          if (!existsSync(filePath)) {
+            return { before: 0, after: 0 }
+          }
+
+          // Read and parse JSONL file
+          const content = yield* Effect.try({
+            try: () => readFileSync(filePath, "utf-8"),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          const lines = content.trim().split("\n").filter(Boolean)
+          if (lines.length === 0) {
+            return { before: 0, after: 0 }
+          }
+
+          const before = lines.length
+
+          // Parse and deduplicate - keep only latest state per entity
+          const taskStates = new Map<string, SyncOperation>()
+          const depStates = new Map<string, SyncOperation>()
+
+          for (const line of lines) {
+            const parsed = yield* Effect.try({
+              try: () => JSON.parse(line),
+              catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+            })
+
+            const op = yield* Schema.decodeUnknown(SyncOperationSchema)(parsed).pipe(
+              Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+            )
+
+            if (op.op === "upsert" || op.op === "delete") {
+              const existing = taskStates.get(op.id)
+              if (!existing || op.ts > (existing as { ts: string }).ts) {
+                taskStates.set(op.id, op)
+              }
+            } else if (op.op === "dep_add" || op.op === "dep_remove") {
+              const key = `${op.blockerId}:${op.blockedId}`
+              const existing = depStates.get(key)
+              if (!existing || op.ts > (existing as { ts: string }).ts) {
+                depStates.set(key, op)
+              }
+            }
+          }
+
+          // Rebuild compacted JSONL, excluding deleted tasks and removed deps
+          const compacted: SyncOperation[] = []
+
+          for (const op of taskStates.values()) {
+            // Only keep upserts, skip deletes (tombstones)
+            if (op.op === "upsert") {
+              compacted.push(op)
+            }
+          }
+
+          for (const op of depStates.values()) {
+            // Only keep dep_adds, skip dep_removes
+            if (op.op === "dep_add") {
+              compacted.push(op)
+            }
+          }
+
+          // Sort by timestamp for deterministic output
+          compacted.sort((a, b) => a.ts.localeCompare(b.ts))
+
+          // Write compacted JSONL atomically
+          const newContent = compacted.map(op => JSON.stringify(op)).join("\n")
+          yield* Effect.try({
+            try: () => atomicWrite(filePath, newContent + (newContent.length > 0 ? "\n" : "")),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          return { before, after: compacted.length }
+        }),
+
+      setLastExport: (timestamp: Date) => setConfig("last_export", timestamp.toISOString()),
+
+      setLastImport: (timestamp: Date) => setConfig("last_import", timestamp.toISOString())
     }
   })
 )

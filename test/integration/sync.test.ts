@@ -52,10 +52,9 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   ).pipe(
     Layer.provide(repos)
   )
-  // SyncService needs TaskService, TaskRepository, and DependencyRepository
+  // SyncService needs TaskService, TaskRepository, DependencyRepository, and SqliteClient
   const syncService = SyncServiceLive.pipe(
-    Layer.provide(baseServices),
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(infra, Layer.merge(repos, baseServices)))
   )
   return Layer.mergeAll(baseServices, syncService, repos)
 }
@@ -1079,5 +1078,295 @@ describe("SyncService Delete Operations", () => {
     )
 
     expect(blockerIds).not.toContain(SYNC_FIXTURES.SYNC_TASK_A)
+  })
+})
+
+// -----------------------------------------------------------------------------
+// Auto-Sync Tests
+// -----------------------------------------------------------------------------
+
+describe("SyncService Auto-Sync", () => {
+  let db: InstanceType<typeof Database>
+  let layer: ReturnType<typeof makeTestLayer>
+
+  beforeEach(() => {
+    db = createTestDb()
+    layer = makeTestLayer(db)
+  })
+
+  it("auto-sync is disabled by default", async () => {
+    const enabled = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.isAutoSyncEnabled()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(enabled).toBe(false)
+  })
+
+  it("can enable auto-sync", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.enableAutoSync()
+      }).pipe(Effect.provide(layer))
+    )
+
+    const enabled = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.isAutoSyncEnabled()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(enabled).toBe(true)
+  })
+
+  it("can disable auto-sync after enabling", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.enableAutoSync()
+        yield* sync.disableAutoSync()
+      }).pipe(Effect.provide(layer))
+    )
+
+    const enabled = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.isAutoSyncEnabled()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(enabled).toBe(false)
+  })
+
+  it("status includes autoSyncEnabled field", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.enableAutoSync()
+      }).pipe(Effect.provide(layer))
+    )
+
+    const status = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(status.autoSyncEnabled).toBe(true)
+  })
+})
+
+// -----------------------------------------------------------------------------
+// Compact Tests
+// -----------------------------------------------------------------------------
+
+describe("SyncService Compact", () => {
+  let db: InstanceType<typeof Database>
+  let layer: ReturnType<typeof makeTestLayer>
+  let tempPath: string
+
+  beforeEach(() => {
+    db = createTestDb()
+    layer = makeTestLayer(db)
+    tempPath = createTempJsonlPath()
+  })
+
+  afterEach(() => {
+    cleanupTempFile(tempPath)
+  })
+
+  it("returns zero counts for missing file", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.compact("/nonexistent/path/file.jsonl")
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.before).toBe(0)
+    expect(result.after).toBe(0)
+  })
+
+  it("compacts duplicate upserts for same task (keeps latest)", async () => {
+    const earlier = "2024-01-01T00:00:00.000Z"
+    const later = "2024-01-02T00:00:00.000Z"
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: earlier,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Old Title", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: later,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "New Title", description: "", status: "ready", score: 200, parentId: null, metadata: {} }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.compact(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.before).toBe(2)
+    expect(result.after).toBe(1)
+
+    // Verify compacted content has the newer version
+    const content = readFileSync(tempPath, "utf-8")
+    const lines = content.trim().split("\n")
+    expect(lines).toHaveLength(1)
+
+    const op = JSON.parse(lines[0])
+    expect(op.data.title).toBe("New Title")
+    expect(op.ts).toBe(later)
+  })
+
+  it("removes deleted tasks (tombstones) from compacted output", async () => {
+    const createTs = "2024-01-01T00:00:00.000Z"
+    const deleteTs = "2024-01-02T00:00:00.000Z"
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: createTs,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "delete",
+        ts: deleteTs,
+        id: SYNC_FIXTURES.SYNC_TASK_A
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.compact(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.before).toBe(2)
+    expect(result.after).toBe(0)
+
+    // Verify file is empty (deleted task is removed)
+    const content = readFileSync(tempPath, "utf-8")
+    expect(content.trim()).toBe("")
+  })
+
+  it("removes removed dependencies from compacted output", async () => {
+    const addTs = "2024-01-01T00:00:00.000Z"
+    const removeTs = "2024-01-02T00:00:00.000Z"
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: addTs,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: addTs,
+        id: SYNC_FIXTURES.SYNC_TASK_B,
+        data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_add",
+        ts: addTs,
+        blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+        blockedId: SYNC_FIXTURES.SYNC_TASK_B
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_remove",
+        ts: removeTs,
+        blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+        blockedId: SYNC_FIXTURES.SYNC_TASK_B
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.compact(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.before).toBe(4)
+    expect(result.after).toBe(2) // Only 2 task upserts remain
+
+    // Verify no dep_add operations remain
+    const content = readFileSync(tempPath, "utf-8")
+    const lines = content.trim().split("\n").filter(Boolean)
+    const ops = lines.map(line => JSON.parse(line))
+    const depOps = ops.filter(op => op.op === "dep_add" || op.op === "dep_remove")
+    expect(depOps).toHaveLength(0)
+  })
+
+  it("preserves active dependencies in compacted output", async () => {
+    const ts = "2024-01-01T00:00:00.000Z"
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: SYNC_FIXTURES.SYNC_TASK_B,
+        data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_add",
+        ts,
+        blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+        blockedId: SYNC_FIXTURES.SYNC_TASK_B
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.compact(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.before).toBe(3)
+    expect(result.after).toBe(3) // All preserved
+
+    // Verify dep_add is preserved
+    const content = readFileSync(tempPath, "utf-8")
+    const lines = content.trim().split("\n").filter(Boolean)
+    const ops = lines.map(line => JSON.parse(line))
+    const depOps = ops.filter(op => op.op === "dep_add")
+    expect(depOps).toHaveLength(1)
   })
 })

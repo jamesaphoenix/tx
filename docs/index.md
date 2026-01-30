@@ -18,6 +18,7 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [PRD-010](prd/PRD-010-contextual-learnings-system.md) | Contextual Learnings System   | Phase 2 |
 | [PRD-011](prd/PRD-011-claude-code-hooks.md)           | Claude Code Hooks Integration | Phase 2 |
 | [PRD-012](prd/PRD-012-bun-single-binary.md)           | Bun Single Binary Distribution| Phase 2 |
+| [PRD-013](prd/PRD-013-dashboard-ux.md)                | Dashboard UX Improvements     | Phase 2 |
 
 ## Design Documents (DDs)
 
@@ -34,6 +35,7 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [DD-009](design/DD-009-jsonl-git-sync.md)            | JSONL Git Sync              | PRD-009          |
 | [DD-010](design/DD-010-learnings-search-retrieval.md)| Learnings Search & Retrieval| PRD-010          |
 | [DD-011](design/DD-011-claude-code-hooks.md)         | Claude Code Hooks           | PRD-011          |
+| [DD-012](design/DD-012-dashboard-ux.md)              | Dashboard UX Architecture   | PRD-013          |
 
 ## Implementation Phases
 

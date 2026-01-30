@@ -64,68 +64,154 @@ interface TaskWithDeps extends TaskRow {
   isReady: boolean
 }
 
-// GET /api/tasks
+// Pagination helpers
+function parseTaskCursor(cursor: string): { score: number; id: string } {
+  const colonIndex = cursor.lastIndexOf(':')
+  return {
+    score: parseInt(cursor.slice(0, colonIndex), 10),
+    id: cursor.slice(colonIndex + 1),
+  }
+}
+
+function parseRunCursor(cursor: string): { startedAt: string; id: string } {
+  // Format: "2026-01-30T10:00:00Z:run-abc123"
+  // Find the last colon that separates timestamp from id
+  const match = cursor.match(/^(.+):(run-.+)$/)
+  if (!match) {
+    return { startedAt: cursor, id: '' }
+  }
+  return { startedAt: match[1]!, id: match[2]! }
+}
+
+function buildTaskCursor(task: TaskRow): string {
+  return `${task.score}:${task.id}`
+}
+
+function buildRunCursor(run: { started_at: string; id: string }): string {
+  return `${run.started_at}:${run.id}`
+}
+
+// Helper to enrich tasks with dependency info
+function enrichTasksWithDeps(
+  db: Database.Database,
+  tasks: TaskRow[],
+  allTasks?: TaskRow[]
+): TaskWithDeps[] {
+  // Get all dependencies
+  const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
+    blocker_id: string
+    blocked_id: string
+  }>
+
+  // Build maps
+  const blockedByMap = new Map<string, string[]>()
+  const blocksMap = new Map<string, string[]>()
+
+  for (const dep of deps) {
+    const existing = blockedByMap.get(dep.blocked_id) ?? []
+    blockedByMap.set(dep.blocked_id, [...existing, dep.blocker_id])
+
+    const existingBlocks = blocksMap.get(dep.blocker_id) ?? []
+    blocksMap.set(dep.blocker_id, [...existingBlocks, dep.blocked_id])
+  }
+
+  // Build children map from all tasks if provided, otherwise query
+  const tasksForChildren = allTasks ?? db.prepare("SELECT id, parent_id FROM tasks").all() as Array<{ id: string; parent_id: string | null }>
+  const childrenMap = new Map<string, string[]>()
+  for (const task of tasksForChildren) {
+    if (task.parent_id) {
+      const existing = childrenMap.get(task.parent_id) ?? []
+      childrenMap.set(task.parent_id, [...existing, task.id])
+    }
+  }
+
+  // Status of all tasks for ready check
+  const allTasksForStatus = allTasks ?? db.prepare("SELECT id, status FROM tasks").all() as Array<{ id: string; status: string }>
+  const statusMap = new Map(allTasksForStatus.map(t => [t.id, t.status]))
+
+  const workableStatuses = ["backlog", "ready", "planning"]
+
+  return tasks.map(task => {
+    const blockedBy = blockedByMap.get(task.id) ?? []
+    const blocks = blocksMap.get(task.id) ?? []
+    const children = childrenMap.get(task.id) ?? []
+    const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
+    const isReady = workableStatuses.includes(task.status) && allBlockersDone
+
+    return { ...task, blockedBy, blocks, children, isReady }
+  })
+}
+
+// GET /api/tasks - with cursor-based pagination
 app.get("/api/tasks", (c) => {
   try {
     const db = getDb()
-    const tasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
+    const cursor = c.req.query("cursor")
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100)
+    const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
+    const search = c.req.query("search")
 
-    // Get all dependencies
-    const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
-      blocker_id: string
-      blocked_id: string
-    }>
+    // Build WHERE clauses
+    const conditions: string[] = []
+    const params: (string | number)[] = []
 
-    // Build maps
-    const blockedByMap = new Map<string, string[]>()
-    const blocksMap = new Map<string, string[]>()
-
-    for (const dep of deps) {
-      // blocked_id is blocked BY blocker_id
-      const existing = blockedByMap.get(dep.blocked_id) ?? []
-      blockedByMap.set(dep.blocked_id, [...existing, dep.blocker_id])
-
-      // blocker_id BLOCKS blocked_id
-      const existingBlocks = blocksMap.get(dep.blocker_id) ?? []
-      blocksMap.set(dep.blocker_id, [...existingBlocks, dep.blocked_id])
+    if (statusFilter?.length) {
+      conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
+      params.push(...statusFilter)
     }
 
-    // Build children map
-    const childrenMap = new Map<string, string[]>()
-    for (const task of tasks) {
-      if (task.parent_id) {
-        const existing = childrenMap.get(task.parent_id) ?? []
-        childrenMap.set(task.parent_id, [...existing, task.id])
-      }
+    if (search) {
+      conditions.push("(title LIKE ? OR description LIKE ?)")
+      params.push(`%${search}%`, `%${search}%`)
     }
 
-    // Status of all tasks for ready check
-    const statusMap = new Map(tasks.map(t => [t.id, t.status]))
+    if (cursor) {
+      const { score, id } = parseTaskCursor(cursor)
+      conditions.push("(score < ? OR (score = ? AND id > ?))")
+      params.push(score, score, id)
+    }
 
-    // Enrich tasks
-    const enriched: TaskWithDeps[] = tasks.map(task => {
-      const blockedBy = blockedByMap.get(task.id) ?? []
-      const blocks = blocksMap.get(task.id) ?? []
-      const children = childrenMap.get(task.id) ?? []
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
 
-      // Ready if workable status and all blockers are done
-      const workableStatuses = ["backlog", "ready", "planning"]
-      const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
-      const isReady = workableStatuses.includes(task.status) && allBlockersDone
+    // Fetch limit + 1 to check hasMore
+    const sql = `
+      SELECT * FROM tasks
+      ${whereClause}
+      ORDER BY score DESC, id ASC
+      LIMIT ?
+    `
+    params.push(limit + 1)
 
-      return { ...task, blockedBy, blocks, children, isReady }
+    const rows = db.prepare(sql).all(...params) as TaskRow[]
+    const hasMore = rows.length > limit
+    const tasks = hasMore ? rows.slice(0, limit) : rows
+
+    // Get total count for display (without cursor condition)
+    const countConditions = conditions.filter((_, i) => {
+      // Remove cursor condition (last 3 params if cursor exists)
+      return !cursor || i < conditions.length - 1
     })
+    const countParams = cursor ? params.slice(0, -4) : params.slice(0, -1) // Remove limit and cursor params
+    const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
+    const total = (db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
 
-    // Summary
-    const summary = {
-      total: tasks.length,
-      byStatus: tasks.reduce((acc, t) => {
-        acc[t.status] = (acc[t.status] ?? 0) + 1
-        return acc
-      }, {} as Record<string, number>),
-    }
+    // Enrich with deps
+    const enriched = enrichTasksWithDeps(db, tasks)
 
-    return c.json({ tasks: enriched, summary })
+    // Summary (from all tasks matching filter, not just current page)
+    const summaryRows = db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
+    const byStatus = summaryRows.reduce((acc, r) => {
+      acc[r.status] = r.count
+      return acc
+    }, {} as Record<string, number>)
+
+    return c.json({
+      tasks: enriched,
+      nextCursor: hasMore && tasks.length ? buildTaskCursor(tasks[tasks.length - 1]!) : null,
+      hasMore,
+      total,
+      summary: { total, byStatus },
+    })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -308,11 +394,36 @@ app.get("/api/stats", (c) => {
   }
 })
 
-// GET /api/runs - List recent runs
+// GET /api/runs - List runs with cursor-based pagination
 app.get("/api/runs", (c) => {
   try {
     const db = getDb()
-    const limit = parseInt(c.req.query("limit") ?? "20")
+    const cursor = c.req.query("cursor")
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100)
+    const agentFilter = c.req.query("agent")
+    const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
+
+    // Build WHERE clauses
+    const conditions: string[] = []
+    const params: (string | number)[] = []
+
+    if (agentFilter) {
+      conditions.push("agent = ?")
+      params.push(agentFilter)
+    }
+
+    if (statusFilter?.length) {
+      conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
+      params.push(...statusFilter)
+    }
+
+    if (cursor) {
+      const { startedAt, id } = parseRunCursor(cursor)
+      conditions.push("(started_at < ? OR (started_at = ? AND id > ?))")
+      params.push(startedAt, startedAt, id)
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
 
     let runs: Array<{
       id: string
@@ -328,18 +439,25 @@ app.get("/api/runs", (c) => {
     }> = []
 
     try {
-      runs = db.prepare(`
+      const sql = `
         SELECT id, task_id, agent, started_at, ended_at, status, exit_code, transcript_path, summary, error_message
         FROM runs
-        ORDER BY started_at DESC
+        ${whereClause}
+        ORDER BY started_at DESC, id ASC
         LIMIT ?
-      `).all(limit) as typeof runs
+      `
+      params.push(limit + 1)
+      runs = db.prepare(sql).all(...params) as typeof runs
     } catch {
       // Table doesn't exist yet
+      return c.json({ runs: [], nextCursor: null, hasMore: false })
     }
 
+    const hasMore = runs.length > limit
+    const pagedRuns = hasMore ? runs.slice(0, limit) : runs
+
     // Enrich with task titles
-    const enriched = runs.map(run => {
+    const enriched = pagedRuns.map(run => {
       let taskTitle: string | null = null
       if (run.task_id) {
         const task = db.prepare("SELECT title FROM tasks WHERE id = ?").get(run.task_id) as { title: string } | undefined
@@ -348,7 +466,61 @@ app.get("/api/runs", (c) => {
       return { ...run, taskTitle }
     })
 
-    return c.json({ runs: enriched })
+    return c.json({
+      runs: enriched,
+      nextCursor: hasMore && pagedRuns.length ? buildRunCursor(pagedRuns[pagedRuns.length - 1]!) : null,
+      hasMore,
+    })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/tasks/:id - Get task detail with related tasks
+app.get("/api/tasks/:id", (c) => {
+  try {
+    const db = getDb()
+    const id = c.req.param("id")
+
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404)
+    }
+
+    // Get dependency info
+    const blockedByIds = db.prepare(
+      "SELECT blocker_id FROM task_dependencies WHERE blocked_id = ?"
+    ).all(id) as Array<{ blocker_id: string }>
+
+    const blocksIds = db.prepare(
+      "SELECT blocked_id FROM task_dependencies WHERE blocker_id = ?"
+    ).all(id) as Array<{ blocked_id: string }>
+
+    const childIds = db.prepare(
+      "SELECT id FROM tasks WHERE parent_id = ?"
+    ).all(id) as Array<{ id: string }>
+
+    // Fetch full task data for related tasks
+    const fetchTasksByIds = (ids: string[]): TaskWithDeps[] => {
+      if (ids.length === 0) return []
+      const placeholders = ids.map(() => "?").join(",")
+      const tasks = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
+      return enrichTasksWithDeps(db, tasks)
+    }
+
+    const blockedByTasks = fetchTasksByIds(blockedByIds.map(r => r.blocker_id))
+    const blocksTasks = fetchTasksByIds(blocksIds.map(r => r.blocked_id))
+    const childTasks = fetchTasksByIds(childIds.map(r => r.id))
+
+    // Enrich the main task
+    const [enrichedTask] = enrichTasksWithDeps(db, [task])
+
+    return c.json({
+      task: enrichedTask,
+      blockedByTasks,
+      blocksTasks,
+      childTasks,
+    })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

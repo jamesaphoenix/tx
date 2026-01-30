@@ -396,13 +396,17 @@ Subcommands:
   export    Export all tasks and dependencies to JSONL file
   import    Import tasks from JSONL file (timestamp-based merge)
   status    Show sync status and whether database has unexported changes
+  auto      Enable or disable automatic sync on mutations
+  compact   Compact JSONL file by deduplicating operations
 
 Run 'tx sync <subcommand> --help' for subcommand-specific help.
 
 Examples:
   tx sync export               # Export to .tx/tasks.jsonl
   tx sync import               # Import from .tx/tasks.jsonl
-  tx sync status               # Show sync status`,
+  tx sync status               # Show sync status
+  tx sync auto --enable        # Enable auto-sync
+  tx sync compact              # Compact JSONL file`,
 
   "sync export": `tx sync export - Export tasks to JSONL
 
@@ -446,6 +450,7 @@ Shows the current sync status including:
 - Number of tasks in database
 - Number of operations in JSONL file
 - Whether database has unexported changes (dirty)
+- Auto-sync enabled status
 
 Options:
   --json  Output as JSON
@@ -454,6 +459,47 @@ Options:
 Examples:
   tx sync status
   tx sync status --json`,
+
+  "sync auto": `tx sync auto - Manage automatic sync
+
+Usage: tx sync auto [--enable | --disable] [--json]
+
+Controls whether mutations automatically trigger JSONL export.
+When auto-sync is enabled, any task create/update/delete will
+automatically export to the JSONL file.
+
+Options:
+  --enable   Enable auto-sync
+  --disable  Disable auto-sync
+  --json     Output as JSON
+  --help     Show this help
+
+Without flags, shows current auto-sync status.
+
+Examples:
+  tx sync auto              # Show current status
+  tx sync auto --enable     # Enable auto-sync
+  tx sync auto --disable    # Disable auto-sync`,
+
+  "sync compact": `tx sync compact - Compact JSONL file
+
+Usage: tx sync compact [--path <path>] [--json]
+
+Compacts the JSONL file by:
+- Keeping only the latest state for each entity
+- Removing deleted tasks (tombstones)
+- Removing removed dependencies
+
+This reduces file size and improves import performance.
+
+Options:
+  --path <p>  JSONL file path (default: .tx/tasks.jsonl)
+  --json      Output as JSON
+  --help      Show this help
+
+Examples:
+  tx sync compact                       # Compact default file
+  tx sync compact --path ~/shared.jsonl # Compact specific file`,
 
   migrate: `tx migrate - Manage database schema migrations
 
@@ -996,7 +1042,49 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
           console.log(`  Tasks in database: ${status.dbTaskCount}`)
           console.log(`  Operations in JSONL: ${status.jsonlOpCount}`)
           console.log(`  Last export: ${status.lastExport ? status.lastExport.toISOString() : "(never)"}`)
+          console.log(`  Last import: ${status.lastImport ? status.lastImport.toISOString() : "(never)"}`)
           console.log(`  Dirty (unexported changes): ${status.isDirty ? "yes" : "no"}`)
+          console.log(`  Auto-sync: ${status.autoSyncEnabled ? "enabled" : "disabled"}`)
+        }
+      } else if (subcommand === "auto") {
+        const enableFlag = flag(flags, "enable")
+        const disableFlag = flag(flags, "disable")
+
+        if (enableFlag && disableFlag) {
+          console.error("Cannot specify both --enable and --disable")
+          process.exit(1)
+        }
+
+        if (enableFlag) {
+          yield* syncSvc.enableAutoSync()
+          if (flag(flags, "json")) {
+            console.log(toJson({ autoSync: true }))
+          } else {
+            console.log("Auto-sync enabled")
+          }
+        } else if (disableFlag) {
+          yield* syncSvc.disableAutoSync()
+          if (flag(flags, "json")) {
+            console.log(toJson({ autoSync: false }))
+          } else {
+            console.log("Auto-sync disabled")
+          }
+        } else {
+          const enabled = yield* syncSvc.isAutoSyncEnabled()
+          if (flag(flags, "json")) {
+            console.log(toJson({ autoSync: enabled }))
+          } else {
+            console.log(`Auto-sync: ${enabled ? "enabled" : "disabled"}`)
+          }
+        }
+      } else if (subcommand === "compact") {
+        const path = opt(flags, "path")
+        const result = yield* syncSvc.compact(path)
+
+        if (flag(flags, "json")) {
+          console.log(toJson(result))
+        } else {
+          console.log(`Compacted: ${result.before} → ${result.after} operations`)
         }
       } else {
         console.error(`Unknown sync subcommand: ${subcommand}`)

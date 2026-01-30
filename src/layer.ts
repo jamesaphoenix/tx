@@ -12,12 +12,14 @@ import { LearningServiceLive } from "./services/learning-service.js"
 import { FileLearningServiceLive } from "./services/file-learning-service.js"
 import { SyncService, SyncServiceLive } from "./services/sync-service.js"
 import { MigrationService, MigrationServiceLive } from "./services/migration-service.js"
+import { EmbeddingServiceAuto } from "./services/embedding-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService }
 export { MigrationService }
 export { LearningService } from "./services/learning-service.js"
 export { FileLearningService } from "./services/file-learning-service.js"
+export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./services/embedding-service.js"
 
 export const makeAppLayer = (dbPath: string) => {
   const infra = SqliteClientLive(dbPath)
@@ -37,14 +39,15 @@ export const makeAppLayer = (dbPath: string) => {
     ReadyServiceLive,
     HierarchyServiceLive,
     LearningServiceLive,
-    FileLearningServiceLive
+    FileLearningServiceLive,
+    EmbeddingServiceAuto
   ).pipe(
     Layer.provide(repos)
   )
 
-  // SyncServiceLive needs TaskService (from services) and DependencyRepository (from repos)
+  // SyncServiceLive needs TaskService (from services), DependencyRepository (from repos), and SqliteClient (from infra)
   const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.merge(repos, services))
+    Layer.provide(Layer.merge(infra, Layer.merge(repos, services)))
   )
 
   // MigrationService only needs SqliteClient
