@@ -5,6 +5,7 @@
  * Authentication is disabled by default; enable by setting TX_API_KEY env var.
  */
 
+import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto"
 import type { Context, Next } from "hono"
 import { HTTPException } from "hono/http-exception"
 
@@ -75,16 +76,18 @@ export const authMiddleware = async (c: Context, next: Next): Promise<void | Res
 
 /**
  * Constant-time string comparison to prevent timing attacks.
+ * Uses Node.js crypto.timingSafeEqual for proper constant-time comparison.
  */
-const timingSafeEqual = (a: string, b: string): boolean => {
-  if (a.length !== b.length) {
+const timingSafeEqual = (provided: string, expected: string): boolean => {
+  const providedBuf = Buffer.from(provided)
+  const expectedBuf = Buffer.from(expected)
+
+  // To avoid leaking length information, always perform a comparison.
+  // If lengths differ, compare expected against itself (still constant-time) then return false.
+  if (providedBuf.length !== expectedBuf.length) {
+    cryptoTimingSafeEqual(expectedBuf, expectedBuf)
     return false
   }
 
-  let result = 0
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  }
-
-  return result === 0
+  return cryptoTimingSafeEqual(providedBuf, expectedBuf)
 }
