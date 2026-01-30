@@ -2,7 +2,7 @@
 import { Effect } from "effect"
 import { resolve } from "path"
 import { existsSync, mkdirSync, writeFileSync } from "fs"
-import { makeAppLayer, SyncService, LearningService, FileLearningService, MigrationService } from "./layer.js"
+import { makeAppLayer, SyncService, LearningService, FileLearningService, MigrationService, AttemptService } from "./layer.js"
 import { TaskService } from "./services/task-service.js"
 import { DependencyService } from "./services/dep-service.js"
 import { ReadyService } from "./services/ready-service.js"
@@ -29,6 +29,7 @@ Commands:
   unblock <id> <blocker>  Remove blocking dependency
   children <id>           List child tasks
   tree <id>               Show task subtree
+  try <id> <approach>     Record an attempt on a task
   sync export             Export tasks to JSONL file
   sync import             Import tasks from JSONL file
   sync status             Show sync status
@@ -372,6 +373,32 @@ Options:
 Examples:
   tx tree tx-a1b2c3d4
   tx tree tx-a1b2c3d4 --json`,
+
+  try: `tx try - Record an attempt on a task
+
+Usage: tx try <task-id> <approach> --failed|--succeeded [reason]
+
+Records an attempt made on a task. Useful for tracking what approaches
+have been tried and their outcomes. Helps agents avoid repeating
+failed approaches.
+
+Arguments:
+  <task-id>    Required. Task ID (e.g., tx-a1b2c3d4)
+  <approach>   Required. Description of the approach tried
+
+Flags (mutually exclusive, one required):
+  --failed     Mark the attempt as failed
+  --succeeded  Mark the attempt as succeeded
+
+Options:
+  [reason]     Optional reason/explanation after the flag
+  --json       Output as JSON
+  --help       Show this help
+
+Examples:
+  tx try tx-abc123 "Used Redux" --failed "Too complex for this use case"
+  tx try tx-abc123 "Used Zustand" --succeeded
+  tx try tx-abc123 "Direct state prop drilling" --failed --json`,
 
   "mcp-server": `tx mcp-server - Start MCP server
 
@@ -982,6 +1009,65 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         })
 
       yield* buildTree(id, 0)
+    }),
+
+  try: (pos, flags) =>
+    Effect.gen(function* () {
+      const taskId = pos[0]
+      const approach = pos[1]
+
+      if (!taskId || !approach) {
+        console.error("Usage: tx try <task-id> <approach> --failed|--succeeded [reason]")
+        process.exit(1)
+      }
+
+      // Check for --failed and --succeeded flags
+      // The parser treats `--failed "reason"` as flags["failed"] = "reason"
+      // and `--failed` alone as flags["failed"] = true
+      const failedVal = flags["failed"]
+      const succeededVal = flags["succeeded"]
+
+      const hasFailedFlag = failedVal !== undefined
+      const hasSucceededFlag = succeededVal !== undefined
+
+      // Validate mutually exclusive flags
+      if (hasFailedFlag && hasSucceededFlag) {
+        console.error("Error: --failed and --succeeded are mutually exclusive")
+        process.exit(1)
+      }
+
+      if (!hasFailedFlag && !hasSucceededFlag) {
+        console.error("Error: Must specify either --failed or --succeeded")
+        process.exit(1)
+      }
+
+      const outcome = hasFailedFlag ? "failed" : "succeeded"
+
+      // Reason can be the value of the flag (if string) or positional arg
+      let reason: string | null = null
+      if (hasFailedFlag && typeof failedVal === "string") {
+        reason = failedVal
+      } else if (hasSucceededFlag && typeof succeededVal === "string") {
+        reason = succeededVal
+      } else if (pos[2]) {
+        reason = pos[2]
+      }
+
+      const attemptSvc = yield* AttemptService
+      const attempt = yield* attemptSvc.create(taskId, approach, outcome, reason)
+
+      if (flag(flags, "json")) {
+        console.log(toJson(attempt))
+      } else {
+        const outcomeSymbol = outcome === "succeeded" ? "✓" : "✗"
+        console.log(`Recorded attempt: ${attempt.id}`)
+        console.log(`  Task: ${attempt.taskId}`)
+        console.log(`  Approach: ${attempt.approach}`)
+        console.log(`  Outcome: ${outcomeSymbol} ${outcome}`)
+        if (attempt.reason) {
+          console.log(`  Reason: ${attempt.reason}`)
+        }
+      }
     }),
 
   help: (pos) =>

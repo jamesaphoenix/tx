@@ -15,18 +15,22 @@ import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
 import { SqliteClient } from "../../src/db.js"
 import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
 import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
+import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
 import { TaskServiceLive, TaskService } from "../../src/services/task-service.js"
 import { DependencyServiceLive, DependencyService } from "../../src/services/dep-service.js"
 import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service.js"
 import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
+import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
 import type { TaskId, TaskWithDeps } from "../../src/schema.js"
+import type { Learning, LearningWithScore } from "../../src/schemas/learning.js"
+import { LEARNING_SOURCE_TYPES } from "../../src/schemas/learning.js"
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
 /** Services required by MCP tools */
-export type McpTestServices = TaskService | ReadyService | DependencyService | HierarchyService
+export type McpTestServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService
 
 /** MCP tool response format */
 export interface McpToolResponse {
@@ -52,10 +56,11 @@ export interface ParsedMcpResponse<T = unknown> {
  * @param db - Pre-configured Database instance (from createTestDb)
  * @returns ManagedRuntime ready to execute MCP tool Effects
  */
-export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRuntime.ManagedRuntime<McpTestServices, never> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
   const infra = Layer.succeed(SqliteClient, db as Database.Database)
 
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, LearningRepositoryLive).pipe(
     Layer.provide(infra)
   )
 
@@ -63,7 +68,8 @@ export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRunti
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
-    HierarchyServiceLive
+    HierarchyServiceLive,
+    LearningServiceLive
   ).pipe(
     Layer.provide(repos)
   )
@@ -118,6 +124,28 @@ const toolSchemas = {
   tx_unblock: z.object({
     taskId: z.string(),
     blockerId: z.string()
+  }),
+  // Learning tools
+  tx_context: z.object({
+    taskId: z.string(),
+    maxTokens: z.number().int().positive().optional()
+  }),
+  tx_learning_add: z.object({
+    content: z.string(),
+    sourceType: z.enum(LEARNING_SOURCE_TYPES).optional(),
+    sourceRef: z.string().optional(),
+    category: z.string().optional(),
+    keywords: z.array(z.string()).optional()
+  }),
+  tx_learning_search: z.object({
+    query: z.string(),
+    limit: z.number().int().positive().optional(),
+    minScore: z.number().min(0).max(1).optional(),
+    category: z.string().optional()
+  }),
+  tx_learning_helpful: z.object({
+    id: z.number().int(),
+    score: z.number().min(0).max(1).optional()
   })
 } as const
 
@@ -146,6 +174,36 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   blocks: task.blocks,
   children: task.children,
   isReady: task.isReady
+})
+
+/**
+ * Serialize a Learning for JSON output.
+ * Matches the serialization used in the actual MCP server.
+ */
+const serializeLearning = (learning: Learning): Record<string, unknown> => ({
+  id: learning.id,
+  content: learning.content,
+  sourceType: learning.sourceType,
+  sourceRef: learning.sourceRef,
+  createdAt: learning.createdAt.toISOString(),
+  keywords: learning.keywords,
+  category: learning.category,
+  usageCount: learning.usageCount,
+  lastUsedAt: learning.lastUsedAt?.toISOString() ?? null,
+  outcomeScore: learning.outcomeScore,
+  embedding: learning.embedding ? Array.from(learning.embedding) : null
+})
+
+/**
+ * Serialize a LearningWithScore for JSON output.
+ * Extends serializeLearning with score fields.
+ */
+const serializeLearningWithScore = (learning: LearningWithScore): Record<string, unknown> => ({
+  ...serializeLearning(learning),
+  relevanceScore: learning.relevanceScore,
+  bm25Score: learning.bm25Score,
+  vectorScore: learning.vectorScore,
+  recencyScore: learning.recencyScore
 })
 
 /**
@@ -412,6 +470,111 @@ function createToolEffect(
           })
         )
       )
+
+    // ---------------------------------------------------------------------------
+    // Learning Tools
+    // ---------------------------------------------------------------------------
+
+    case "tx_context":
+      return Effect.gen(function* () {
+        const { taskId } = args as z.infer<typeof toolSchemas.tx_context>
+        const learningService = yield* LearningService
+        const result = yield* learningService.getContextForTask(taskId)
+        const serializedLearnings = result.learnings.map(serializeLearningWithScore)
+        return {
+          content: [
+            { type: "text" as const, text: `Found ${result.learnings.length} relevant learning(s) for task "${result.taskTitle}" (search: "${result.searchQuery}", ${result.searchDuration}ms)` },
+            { type: "text" as const, text: JSON.stringify({
+              taskId: result.taskId,
+              taskTitle: result.taskTitle,
+              searchQuery: result.searchQuery,
+              searchDuration: result.searchDuration,
+              learnings: serializedLearnings
+            }) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
+
+    case "tx_learning_add":
+      return Effect.gen(function* () {
+        const { content, sourceType, sourceRef, category, keywords } = args as z.infer<typeof toolSchemas.tx_learning_add>
+        const learningService = yield* LearningService
+        const learning = yield* learningService.create({
+          content,
+          sourceType: sourceType ?? "manual",
+          sourceRef: sourceRef ?? undefined,
+          category: category ?? undefined,
+          keywords: keywords ?? undefined
+        })
+        const serialized = serializeLearning(learning)
+        return {
+          content: [
+            { type: "text" as const, text: `Created learning: #${learning.id}` },
+            { type: "text" as const, text: JSON.stringify(serialized) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
+
+    case "tx_learning_search":
+      return Effect.gen(function* () {
+        const { query, limit, minScore, category } = args as z.infer<typeof toolSchemas.tx_learning_search>
+        const learningService = yield* LearningService
+        const learnings = yield* learningService.search({
+          query,
+          limit: limit ?? undefined,
+          minScore: minScore ?? undefined,
+          category: category ?? undefined
+        })
+        const serialized = learnings.map(serializeLearningWithScore)
+        return {
+          content: [
+            { type: "text" as const, text: `Found ${learnings.length} learning(s) matching "${query}"` },
+            { type: "text" as const, text: JSON.stringify(serialized) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
+
+    case "tx_learning_helpful":
+      return Effect.gen(function* () {
+        const { id, score } = args as z.infer<typeof toolSchemas.tx_learning_helpful>
+        const effectiveScore = score ?? 1.0
+        const learningService = yield* LearningService
+        yield* learningService.updateOutcome(id, effectiveScore)
+        return {
+          content: [
+            { type: "text" as const, text: `Updated learning #${id} with helpfulness score: ${effectiveScore}` },
+            { type: "text" as const, text: JSON.stringify({ success: true, id, score: effectiveScore }) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
   }
 }
 
@@ -432,8 +595,9 @@ function createToolEffect(
  * @param args - Tool arguments (will be validated against schema)
  * @returns Promise<McpToolResponse> - Raw MCP response with content array
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function callMcpTool<T extends ToolName>(
-  runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>,
+  runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>,
   toolName: T,
   args: z.infer<typeof toolSchemas[T]>
 ): Promise<McpToolResponse> {
@@ -453,8 +617,9 @@ export async function callMcpTool<T extends ToolName>(
  * @param args - Tool arguments (will be validated against schema)
  * @returns Promise<ParsedMcpResponse<T>> - Parsed response with typed data
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function callMcpToolParsed<T extends ToolName, R = unknown>(
-  runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>,
+  runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>,
   toolName: T,
   args: z.infer<typeof toolSchemas[T]>
 ): Promise<ParsedMcpResponse<R>> {
@@ -478,7 +643,7 @@ export async function callMcpToolParsed<T extends ToolName, R = unknown>(
 
 describe("MCP Test Infrastructure", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -571,7 +736,7 @@ describe("MCP Test Infrastructure", () => {
 
 describe("MCP tx_ready Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -702,7 +867,7 @@ describe("MCP tx_ready Tool", () => {
 
 describe("MCP tx_show Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -836,7 +1001,7 @@ describe("MCP tx_show Tool", () => {
 
 describe("MCP tx_list Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -944,7 +1109,7 @@ describe("MCP tx_list Tool", () => {
 
 describe("MCP tx_children Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -1025,7 +1190,7 @@ describe("MCP tx_children Tool", () => {
 
 describe("MCP tx_add Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -1149,7 +1314,7 @@ describe("MCP tx_add Tool", () => {
 
 describe("MCP tx_update Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -1266,7 +1431,7 @@ describe("MCP tx_update Tool", () => {
 
 describe("MCP tx_done Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -1387,7 +1552,7 @@ describe("MCP tx_done Tool", () => {
 
 describe("MCP tx_delete Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -1455,7 +1620,7 @@ describe("MCP tx_delete Tool", () => {
 
 describe("MCP tx_block Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
@@ -1581,7 +1746,7 @@ describe("MCP tx_block Tool", () => {
 
 describe("MCP tx_unblock Tool", () => {
   let db: InstanceType<typeof Database>
-  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, never>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
     db = createTestDb()
