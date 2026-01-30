@@ -32,6 +32,8 @@ LOCK_FILE="$PROJECT_DIR/.tx/ralph.lock"
 STATE_FILE="$PROJECT_DIR/.tx/ralph-state"
 FORCED_AGENT=""
 DRY_RUN=false
+CURRENT_RUN_ID=""
+CLAUDE_PID=""
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -72,8 +74,98 @@ cleanup() {
   rm -f "$LOCK_FILE"
   log "RALPH shutdown"
 }
+
+# Cancel current run if RALPH is terminated unexpectedly
+cancel_current_run() {
+  if [ -n "${CURRENT_RUN_ID:-}" ]; then
+    log "Cancelling current run $CURRENT_RUN_ID due to unexpected termination"
+    complete_run "$CURRENT_RUN_ID" "cancelled" 130 "RALPH process terminated"
+  fi
+  if [ -n "${CLAUDE_PID:-}" ] && kill -0 "$CLAUDE_PID" 2>/dev/null; then
+    log "Terminating Claude subprocess (PID $CLAUDE_PID)"
+    kill "$CLAUDE_PID" 2>/dev/null || true
+  fi
+}
+
+# Handle termination signals
+handle_signal() {
+  local signal=$1
+  log "Received $signal signal"
+  cancel_current_run
+  cleanup
+  exit 130
+}
+
+trap 'handle_signal SIGTERM' TERM
+trap 'handle_signal SIGINT' INT
+trap 'handle_signal SIGHUP' HUP
 trap cleanup EXIT
 echo $$ > "$LOCK_FILE"
+
+# ==============================================================================
+# Orphan Run Cleanup
+# ==============================================================================
+
+# Cancel runs from previous sessions where RALPH died unexpectedly
+cancel_orphaned_runs() {
+  if ! command -v sqlite3 >/dev/null 2>&1 || [ ! -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    return
+  fi
+
+  # Find all running runs and check if their PIDs are still alive
+  local orphaned_runs
+  orphaned_runs=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "SELECT id, pid FROM runs WHERE status = 'running' AND pid IS NOT NULL;" 2>/dev/null || echo "")
+
+  if [ -z "$orphaned_runs" ]; then
+    return
+  fi
+
+  local now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  local count=0
+
+  while IFS='|' read -r run_id pid; do
+    # Skip empty lines
+    [ -z "$run_id" ] && continue
+
+    if kill -0 "$pid" 2>/dev/null; then
+      # Process is still alive - check if it's an orphaned Claude process
+      # (parent ralph.sh died but Claude kept running)
+      local parent_pid
+      parent_pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+
+      # If parent is init (PID 1) or launchd, it's orphaned
+      if [ "$parent_pid" = "1" ]; then
+        log "Found orphaned Claude process $pid (parent died, run $run_id)"
+        log "Terminating orphaned Claude process..."
+        kill "$pid" 2>/dev/null || true
+        # Give it a moment to exit gracefully
+        sleep 1
+        # Force kill if still running
+        if kill -0 "$pid" 2>/dev/null; then
+          kill -9 "$pid" 2>/dev/null || true
+        fi
+        local escaped_run_id=$(sql_escape "$run_id")
+        sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+          "UPDATE runs SET status='cancelled', ended_at='$now', exit_code=137, error_message='Orphaned Claude process terminated (parent RALPH died)' WHERE id='$escaped_run_id';"
+        count=$((count + 1))
+      fi
+      # Otherwise it's a run from a different, still-active ralph instance - leave it
+      continue
+    fi
+
+    # PID is dead - this run is orphaned
+    log "Found orphaned run $run_id (PID $pid is dead)"
+    local escaped_run_id=$(sql_escape "$run_id")
+    sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "UPDATE runs SET status='cancelled', ended_at='$now', exit_code=137, error_message='RALPH process died unexpectedly (orphaned)' WHERE id='$escaped_run_id';"
+    count=$((count + 1))
+  done <<< "$orphaned_runs"
+
+  if [ $count -gt 0 ]; then
+    log "Cancelled $count orphaned run(s)"
+  fi
+}
 
 # ==============================================================================
 # Logging
@@ -272,13 +364,30 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
   CURRENT_RUN_ID=$(create_run "$task_id" "$agent" "$metadata")
   log "Run: $CURRENT_RUN_ID"
 
+  # Run Claude in background to capture its PID for signal handling
+  claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE" &
+  CLAUDE_PID=$!
+
+  # Update run record with Claude's PID for accurate orphan detection
+  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    local escaped_run_id=$(sql_escape "$CURRENT_RUN_ID")
+    sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "UPDATE runs SET pid=$CLAUDE_PID WHERE id='$escaped_run_id';"
+  fi
+  log "Claude PID: $CLAUDE_PID"
+
+  # Wait for Claude to complete
   local exit_code=0
-  if claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE"; then
+  if wait "$CLAUDE_PID"; then
+    CLAUDE_PID=""
     complete_run "$CURRENT_RUN_ID" "completed" 0
+    CURRENT_RUN_ID=""
     return 0
   else
     exit_code=$?
+    CLAUDE_PID=""
     complete_run "$CURRENT_RUN_ID" "failed" "$exit_code" "Claude exited with code $exit_code"
+    CURRENT_RUN_ID=""
     return 1
   fi
 }
@@ -356,6 +465,9 @@ log "Max iterations: $MAX_ITERATIONS"
 log "Max runtime: $MAX_HOURS hours"
 log "Review every: $REVIEW_EVERY iterations"
 log ""
+
+# Clean up any orphaned runs from previous crashed sessions
+cancel_orphaned_runs
 
 iteration=$(load_state)
 LAST_REVIEW=0
