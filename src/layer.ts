@@ -4,12 +4,14 @@ import { TaskRepositoryLive } from "./repo/task-repo.js"
 import { DependencyRepositoryLive } from "./repo/dep-repo.js"
 import { LearningRepositoryLive } from "./repo/learning-repo.js"
 import { FileLearningRepositoryLive } from "./repo/file-learning-repo.js"
+import { AttemptRepositoryLive } from "./repo/attempt-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
 import { HierarchyServiceLive } from "./services/hierarchy-service.js"
 import { LearningServiceLive } from "./services/learning-service.js"
 import { FileLearningServiceLive } from "./services/file-learning-service.js"
+import { AttemptServiceLive } from "./services/attempt-service.js"
 import { SyncService, SyncServiceLive } from "./services/sync-service.js"
 import { MigrationService, MigrationServiceLive } from "./services/migration-service.js"
 import { EmbeddingServiceAuto } from "./services/embedding-service.js"
@@ -20,6 +22,7 @@ export { MigrationService }
 export { LearningService } from "./services/learning-service.js"
 export { FileLearningService } from "./services/file-learning-service.js"
 export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./services/embedding-service.js"
+export { AttemptService } from "./services/attempt-service.js"
 
 export const makeAppLayer = (dbPath: string) => {
   const infra = SqliteClientLive(dbPath)
@@ -28,7 +31,8 @@ export const makeAppLayer = (dbPath: string) => {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     LearningRepositoryLive,
-    FileLearningRepositoryLive
+    FileLearningRepositoryLive,
+    AttemptRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -40,7 +44,8 @@ export const makeAppLayer = (dbPath: string) => {
     HierarchyServiceLive,
     LearningServiceLive,
     FileLearningServiceLive,
-    EmbeddingServiceAuto
+    EmbeddingServiceAuto,
+    AttemptServiceLive
   ).pipe(
     Layer.provide(repos)
   )
