@@ -34,6 +34,10 @@
     "test:watch": "vitest",
     "lint": "eslint src/ apps/",
     "lint:fix": "eslint src/ apps/ --fix",
+    "typecheck": "tsc --noEmit",
+    "check": "./scripts/check.sh --all",
+    "check:quick": "./scripts/check.sh --quick",
+    "check:ci": "./scripts/check-ci.sh",
     "validate": "npm run build && npm test && npm link"
   },
   "dependencies": {
