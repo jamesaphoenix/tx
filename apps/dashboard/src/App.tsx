@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { fetchers, type TaskWithDeps, type Run, type ChatMessage } from "./api/client"
+import { fetchers, type Run, type ChatMessage } from "./api/client"
+import { TaskCard } from "./components/tasks"
 
 // =============================================================================
 // Status Badges
@@ -32,36 +33,6 @@ function StatusBadge({ status }: { status: string }) {
 // =============================================================================
 // Task Components
 // =============================================================================
-
-function TaskCard({ task, onClick }: { task: TaskWithDeps; onClick?: () => void }) {
-  return (
-    <div
-      className={`p-3 rounded-lg border cursor-pointer hover:bg-gray-700/50 transition ${task.isReady ? "border-blue-500 bg-blue-500/10" : "border-gray-700 bg-gray-800"}`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <code className="text-xs text-gray-400">{task.id}</code>
-            <span className="text-sm font-medium text-amber-400">[{task.score}]</span>
-          </div>
-          <h3 className="text-sm font-medium text-white truncate">{task.title}</h3>
-        </div>
-        <StatusBadge status={task.status} />
-      </div>
-      {task.blockedBy.length > 0 && (
-        <div className="mt-2 text-xs text-gray-500">
-          Blocked by: {task.blockedBy.join(", ")}
-        </div>
-      )}
-      {task.blocks.length > 0 && (
-        <div className="mt-1 text-xs text-green-600">
-          Unblocks {task.blocks.length} task(s)
-        </div>
-      )}
-    </div>
-  )
-}
 
 function TaskList({ onSelectTask }: { onSelectTask: (taskId: string) => void }) {
   const { data, isLoading, error } = useQuery({
