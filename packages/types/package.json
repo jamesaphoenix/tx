@@ -1,7 +1,7 @@
 {
   "name": "@tx/types",
   "version": "0.1.0",
-  "description": "Shared types for tx",
+  "description": "Shared TypeScript types for tx - zero runtime dependencies",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,26 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./task": {
+      "types": "./dist/task.d.ts",
+      "import": "./dist/task.js"
+    },
+    "./learning": {
+      "types": "./dist/learning.d.ts",
+      "import": "./dist/learning.js"
+    },
+    "./file-learning": {
+      "types": "./dist/file-learning.d.ts",
+      "import": "./dist/file-learning.js"
+    },
+    "./attempt": {
+      "types": "./dist/attempt.d.ts",
+      "import": "./dist/attempt.js"
+    },
+    "./run": {
+      "types": "./dist/run.d.ts",
+      "import": "./dist/run.js"
     }
   },
   "files": [
@@ -18,12 +38,15 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "echo 'No tests yet'"
-  },
-  "dependencies": {
-    "effect": "^3.19.15"
+    "test": "echo 'Types-only package - no tests needed'"
   },
   "devDependencies": {
     "typescript": "^5.7.0"
-  }
+  },
+  "keywords": [
+    "tx",
+    "types",
+    "typescript"
+  ],
+  "sideEffects": false
 }
