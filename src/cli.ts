@@ -24,6 +24,7 @@ Commands:
   show <id>               Show task details
   update <id>             Update task
   done <id>               Mark task complete
+  reset <id>              Reset task to ready (recover from stuck)
   delete <id>             Delete task
   block <id> <blocker>    Add blocking dependency
   unblock <id> <blocker>  Remove blocking dependency
@@ -287,6 +288,24 @@ Options:
 Examples:
   tx done tx-a1b2c3d4
   tx done tx-a1b2c3d4 --json`,
+
+  reset: `tx reset - Reset task to ready status
+
+Usage: tx reset <id> [options]
+
+Resets a task back to ready status, regardless of current status.
+Use this to recover from stuck tasks (e.g., worker killed mid-task).
+
+Arguments:
+  <id>    Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx reset tx-a1b2c3d4              # Reset stuck active task
+  tx reset tx-a1b2c3d4 --json`,
 
   delete: `tx delete - Delete a task
 
@@ -921,6 +940,32 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         if (nowReady.length > 0) {
           console.log(`Now unblocked: ${nowReady.join(", ")}`)
         }
+      }
+    }),
+
+  reset: (pos, flags) =>
+    Effect.gen(function* () {
+      const id = pos[0]
+      if (!id) {
+        console.error("Usage: tx reset <id> [--json]")
+        process.exit(1)
+      }
+
+      const taskSvc = yield* TaskService
+
+      // Get current task to show what we're resetting from
+      const before = yield* taskSvc.getWithDeps(id as TaskId)
+      const oldStatus = before.status
+
+      // Force update to ready status (bypass normal validation)
+      yield* taskSvc.forceStatus(id as TaskId, "ready")
+      const task = yield* taskSvc.getWithDeps(id as TaskId)
+
+      if (flag(flags, "json")) {
+        console.log(toJson({ task, oldStatus }))
+      } else {
+        console.log(`Reset: ${task.id} - ${task.title}`)
+        console.log(`  ${oldStatus} -> ready`)
       }
     }),
 

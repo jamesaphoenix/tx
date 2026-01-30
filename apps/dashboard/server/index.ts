@@ -5,6 +5,7 @@ import Database from "better-sqlite3"
 import { readFileSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
 import { fileURLToPath } from "url"
+import type { TaskRow, DependencyRow } from "@tx/types"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(__dirname, "../../..")
@@ -43,21 +44,13 @@ const getDb = () => {
   return db
 }
 
-// Types
-interface TaskRow {
-  id: string
-  title: string
-  description: string
-  status: string
-  parent_id: string | null
-  score: number
-  created_at: string
-  updated_at: string
-  completed_at: string | null
-  metadata: string
-}
-
-interface TaskWithDeps extends TaskRow {
+/**
+ * Task row with dependency information for API responses.
+ * Extends TaskRow from @tx/types with computed dependency fields.
+ * Note: We use snake_case TaskRow (not camelCase Task) since this
+ * is a thin API layer that returns raw database rows.
+ */
+interface TaskRowWithDeps extends TaskRow {
   blockedBy: string[]
   blocks: string[]
   children: string[]
@@ -96,12 +89,9 @@ function enrichTasksWithDeps(
   db: Database.Database,
   tasks: TaskRow[],
   allTasks?: TaskRow[]
-): TaskWithDeps[] {
+): TaskRowWithDeps[] {
   // Get all dependencies
-  const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
-    blocker_id: string
-    blocked_id: string
-  }>
+  const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
 
   // Build maps
   const blockedByMap = new Map<string, string[]>()
@@ -224,10 +214,7 @@ app.get("/api/tasks/ready", (c) => {
 
     // Get all tasks and deps to compute ready
     const tasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
-    const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
-      blocker_id: string
-      blocked_id: string
-    }>
+    const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
 
     const blockedByMap = new Map<string, string[]>()
     for (const dep of deps) {
@@ -501,7 +488,7 @@ app.get("/api/tasks/:id", (c) => {
     ).all(id) as Array<{ id: string }>
 
     // Fetch full task data for related tasks
-    const fetchTasksByIds = (ids: string[]): TaskWithDeps[] => {
+    const fetchTasksByIds = (ids: string[]): TaskRowWithDeps[] => {
       if (ids.length === 0) return []
       const placeholders = ids.map(() => "?").join(",")
       const tasks = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]

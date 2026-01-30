@@ -5,7 +5,7 @@ import { AutoSyncService } from "./auto-sync-service.js"
 import { TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import { generateTaskId } from "../id.js"
 import {
-  type Task, type TaskId, type TaskWithDeps, type TaskFilter,
+  type Task, type TaskId, type TaskStatus, type TaskWithDeps, type TaskFilter,
   type CreateTaskInput, type UpdateTaskInput,
   isValidTransition, isValidStatus
 } from "../schema.js"
@@ -21,6 +21,7 @@ export class TaskService extends Context.Tag("TaskService")<
     readonly remove: (id: TaskId) => Effect.Effect<void, TaskNotFoundError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
     readonly listWithDeps: (filter?: TaskFilter) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
+    readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError>
   }
 >() {}
 
@@ -260,6 +261,31 @@ export const TaskServiceLive = Layer.effect(
         Effect.gen(function* () {
           const tasks = yield* taskRepo.findAll(filter)
           return yield* enrichWithDepsBatch(tasks)
+        }),
+
+      forceStatus: (id, status) =>
+        Effect.gen(function* () {
+          const existing = yield* taskRepo.findById(id)
+          if (!existing) {
+            return yield* Effect.fail(new TaskNotFoundError({ id }))
+          }
+
+          if (!isValidStatus(status)) {
+            return yield* Effect.fail(new ValidationError({ reason: `Invalid status: ${status}` }))
+          }
+
+          const now = new Date()
+          const isDone = status === "done" && existing.status !== "done"
+          const updated: Task = {
+            ...existing,
+            status,
+            updatedAt: now,
+            completedAt: isDone ? now : (status !== "done" ? null : existing.completedAt)
+          }
+
+          yield* taskRepo.update(updated)
+          yield* autoSync.afterTaskMutation()
+          return updated
         })
     }
   })
