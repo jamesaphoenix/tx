@@ -39,6 +39,7 @@ Commands:
   learning:search         Search learnings
   learning:recent         List recent learnings
   learning:helpful        Record learning helpfulness
+  learning:embed          Compute embeddings for learnings
   context                 Get contextual learnings for a task
   learn                   Attach a learning to file/glob pattern
   recall                  Query learnings for a path
@@ -661,6 +662,24 @@ Options:
 Examples:
   tx learning:helpful 42
   tx learning:helpful 42 --score 0.8`,
+
+  "learning:embed": `tx learning:embed - Compute embeddings for learnings
+
+Usage: tx learning:embed [options]
+
+Computes vector embeddings for learnings to enable semantic search.
+Requires TX_EMBEDDINGS=1 environment variable to be set.
+
+Options:
+  --all      Re-embed all learnings (default: only those without embeddings)
+  --status   Show embedding coverage status
+  --json     Output as JSON
+  --help     Show this help
+
+Examples:
+  TX_EMBEDDINGS=1 tx learning:embed           # Embed learnings without embeddings
+  TX_EMBEDDINGS=1 tx learning:embed --all     # Re-embed all learnings
+  tx learning:embed --status                   # Show embedding coverage`,
 
   context: `tx context - Get contextual learnings for a task
 
@@ -1463,6 +1482,47 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         console.log(`Recorded helpfulness for learning #${id}`)
         console.log(`  Score: ${(score * 100).toFixed(0)}%`)
         console.log(`  Content: ${learning.content.slice(0, 60)}${learning.content.length > 60 ? "..." : ""}`)
+      }
+    }),
+
+  "learning:embed": (_pos, flags) =>
+    Effect.gen(function* () {
+      const svc = yield* LearningService
+
+      // Status check doesn't require embeddings to be enabled
+      if (flag(flags, "status")) {
+        const status = yield* svc.embeddingStatus()
+
+        if (flag(flags, "json")) {
+          console.log(toJson(status))
+        } else {
+          console.log("Embedding Status:")
+          console.log(`  Total learnings: ${status.total}`)
+          console.log(`  With embeddings: ${status.withEmbeddings}`)
+          console.log(`  Without embeddings: ${status.withoutEmbeddings}`)
+          console.log(`  Coverage: ${status.coveragePercent.toFixed(1)}%`)
+        }
+        return
+      }
+
+      // Check if embeddings are enabled
+      if (process.env.TX_EMBEDDINGS !== "1") {
+        console.error("Error: Embeddings not enabled. Set TX_EMBEDDINGS=1 to enable.")
+        console.error("Example: TX_EMBEDDINGS=1 tx learning:embed")
+        process.exit(1)
+      }
+
+      const forceAll = flag(flags, "all")
+      const result = yield* svc.embedAll(forceAll)
+
+      if (flag(flags, "json")) {
+        console.log(toJson(result))
+      } else {
+        console.log("Embedding complete:")
+        console.log(`  Processed: ${result.processed}`)
+        console.log(`  Skipped: ${result.skipped}`)
+        console.log(`  Failed: ${result.failed}`)
+        console.log(`  Total: ${result.total}`)
       }
     }),
 

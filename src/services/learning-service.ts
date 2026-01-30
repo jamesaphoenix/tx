@@ -305,7 +305,54 @@ export const LearningServiceLive = Layer.effect(
           }
         }),
 
-      count: () => learningRepo.count()
+      count: () => learningRepo.count(),
+
+      embedAll: (forceAll = false) =>
+        Effect.gen(function* () {
+          // Get learnings to embed
+          const allLearnings = yield* learningRepo.findAll()
+          const toEmbed = forceAll
+            ? allLearnings
+            : allLearnings.filter(l => !l.embedding)
+
+          let processed = 0
+          let skipped = 0
+          let failed = 0
+
+          for (const learning of toEmbed) {
+            const result = yield* Effect.either(embeddingService.embed(learning.content))
+            if (result._tag === "Right") {
+              yield* learningRepo.updateEmbedding(learning.id, result.right)
+              processed++
+            } else {
+              failed++
+            }
+          }
+
+          skipped = allLearnings.length - toEmbed.length
+
+          return {
+            processed,
+            skipped,
+            failed,
+            total: allLearnings.length
+          }
+        }),
+
+      embeddingStatus: () =>
+        Effect.gen(function* () {
+          const total = yield* learningRepo.count()
+          const withEmbeddings = yield* learningRepo.countWithEmbeddings()
+          const withoutEmbeddings = total - withEmbeddings
+          const coveragePercent = total > 0 ? (withEmbeddings / total) * 100 : 0
+
+          return {
+            total,
+            withEmbeddings,
+            withoutEmbeddings,
+            coveragePercent
+          }
+        })
     }
   })
 )

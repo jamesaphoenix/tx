@@ -15,7 +15,7 @@ import { AttemptServiceLive } from "./services/attempt-service.js"
 import { SyncService, SyncServiceLive } from "./services/sync-service.js"
 import { AutoSyncServiceLive } from "./services/auto-sync-service.js"
 import { MigrationService, MigrationServiceLive } from "./services/migration-service.js"
-import { EmbeddingServiceAuto } from "./services/embedding-service.js"
+import { EmbeddingServiceAuto, EmbeddingServiceNoop } from "./services/embedding-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService }
@@ -49,6 +49,11 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(infra, syncService))
   )
 
+  // Use real embeddings if TX_EMBEDDINGS=1, otherwise noop (fast for tests)
+  const embeddingService = process.env.TX_EMBEDDINGS === "1"
+    ? EmbeddingServiceAuto
+    : EmbeddingServiceNoop
+
   // Services need repos, embedding, and autoSyncService
   const services = Layer.mergeAll(
     TaskServiceLive,
@@ -59,7 +64,7 @@ export const makeAppLayer = (dbPath: string) => {
     FileLearningServiceLive,
     AttemptServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceAuto, autoSyncService))
+    Layer.provide(Layer.mergeAll(repos, embeddingService, autoSyncService))
   )
 
   // MigrationService only needs SqliteClient
