@@ -13,9 +13,9 @@ interface ExecResult {
   status: number
 }
 
-function runTx(args: string, dbPath: string): ExecResult {
+function runTx(args: string[], dbPath: string): ExecResult {
   try {
-    const result = spawnSync("node", [TX_BIN, ...args.split(" "), "--db", dbPath], {
+    const result = spawnSync("node", [TX_BIN, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd()
@@ -43,7 +43,7 @@ describe("CLI learning:add", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "tx-test-"))
     dbPath = join(tmpDir, "test.db")
     // Initialize the database
-    runTx("init", dbPath)
+    runTx(["init"], dbPath)
   })
 
   afterEach(() => {
@@ -53,32 +53,32 @@ describe("CLI learning:add", () => {
   })
 
   it("creates a learning with content", () => {
-    const result = runTx('learning:add "Always use transactions"', dbPath)
+    const result = runTx(["learning:add", "Always use transactions"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Created learning: #1")
     expect(result.stdout).toContain("Content: Always use transactions")
   })
 
   it("creates a learning with category flag", () => {
-    const result = runTx('learning:add "DB tip" -c database', dbPath)
+    const result = runTx(["learning:add", "DB tip", "-c", "database"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Category: database")
   })
 
   it("creates a learning with --category flag", () => {
-    const result = runTx('learning:add "API tip" --category api', dbPath)
+    const result = runTx(["learning:add", "API tip", "--category", "api"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Category: api")
   })
 
   it("creates a learning with source-ref flag", () => {
-    const result = runTx('learning:add "From task" --source-ref tx-abc123', dbPath)
+    const result = runTx(["learning:add", "From task", "--source-ref", "tx-abc123"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Source: tx-abc123")
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx('learning:add "JSON test" --json', dbPath)
+    const result = runTx(["learning:add", "JSON test", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.id).toBe(1)
@@ -87,14 +87,14 @@ describe("CLI learning:add", () => {
   })
 
   it("handles source-type flag", () => {
-    const result = runTx('learning:add "Compaction note" --source-type compaction --json', dbPath)
+    const result = runTx(["learning:add", "Compaction note", "--source-type", "compaction", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.sourceType).toBe("compaction")
   })
 
   it("shows error when content is missing", () => {
-    const result = runTx("learning:add", dbPath)
+    const result = runTx(["learning:add"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
@@ -107,11 +107,11 @@ describe("CLI learning:search", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "tx-test-"))
     dbPath = join(tmpDir, "test.db")
-    runTx("init", dbPath)
+    runTx(["init"], dbPath)
     // Seed some learnings
-    runTx('learning:add "Database transactions are essential for consistency"', dbPath)
-    runTx('learning:add "API rate limiting prevents abuse"', dbPath)
-    runTx('learning:add "PostgreSQL supports ACID transactions"', dbPath)
+    runTx(["learning:add", "Database transactions are essential for consistency"], dbPath)
+    runTx(["learning:add", "API rate limiting prevents abuse"], dbPath)
+    runTx(["learning:add", "PostgreSQL supports ACID transactions"], dbPath)
   })
 
   afterEach(() => {
@@ -121,27 +121,27 @@ describe("CLI learning:search", () => {
   })
 
   it("searches learnings by query", () => {
-    const result = runTx("learning:search database", dbPath)
+    const result = runTx(["learning:search", "database"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("learning(s) found")
   })
 
   it("respects --limit flag", () => {
-    const result = runTx("learning:search transactions --limit 1 --json", dbPath)
+    const result = runTx(["learning:search", "transactions", "--limit", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBeLessThanOrEqual(1)
   })
 
   it("respects -n short flag for limit", () => {
-    const result = runTx("learning:search transactions -n 1 --json", dbPath)
+    const result = runTx(["learning:search", "transactions", "-n", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBeLessThanOrEqual(1)
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx("learning:search database --json", dbPath)
+    const result = runTx(["learning:search", "database", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(Array.isArray(json)).toBe(true)
@@ -153,19 +153,19 @@ describe("CLI learning:search", () => {
   })
 
   it("returns empty results for non-matching query", () => {
-    const result = runTx("learning:search xyz123nonexistent", dbPath)
+    const result = runTx(["learning:search", "xyz123nonexistent"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("No learnings found")
   })
 
   it("shows error when query is missing", () => {
-    const result = runTx("learning:search", dbPath)
+    const result = runTx(["learning:search"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
 
   it("respects --min-score flag", () => {
-    const result = runTx("learning:search database --min-score 0.9 --json", dbPath)
+    const result = runTx(["learning:search", "database", "--min-score", "0.9", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     // Results should be filtered by min-score
@@ -182,11 +182,11 @@ describe("CLI learning:recent", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "tx-test-"))
     dbPath = join(tmpDir, "test.db")
-    runTx("init", dbPath)
+    runTx(["init"], dbPath)
     // Seed some learnings
-    runTx('learning:add "First learning"', dbPath)
-    runTx('learning:add "Second learning"', dbPath)
-    runTx('learning:add "Third learning"', dbPath)
+    runTx(["learning:add", "First learning"], dbPath)
+    runTx(["learning:add", "Second learning"], dbPath)
+    runTx(["learning:add", "Third learning"], dbPath)
   })
 
   afterEach(() => {
@@ -196,27 +196,27 @@ describe("CLI learning:recent", () => {
   })
 
   it("lists recent learnings", () => {
-    const result = runTx("learning:recent", dbPath)
+    const result = runTx(["learning:recent"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("recent learning(s)")
   })
 
   it("respects --limit flag", () => {
-    const result = runTx("learning:recent --limit 2 --json", dbPath)
+    const result = runTx(["learning:recent", "--limit", "2", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBeLessThanOrEqual(2)
   })
 
   it("respects -n short flag for limit", () => {
-    const result = runTx("learning:recent -n 1 --json", dbPath)
+    const result = runTx(["learning:recent", "-n", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBe(1)
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx("learning:recent --json", dbPath)
+    const result = runTx(["learning:recent", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(Array.isArray(json)).toBe(true)
@@ -230,9 +230,9 @@ describe("CLI learning:recent", () => {
     // Create fresh db with no learnings
     const emptyTmpDir = mkdtempSync(join(tmpdir(), "tx-test-empty-"))
     const emptyDbPath = join(emptyTmpDir, "test.db")
-    runTx("init", emptyDbPath)
+    runTx(["init"], emptyDbPath)
 
-    const result = runTx("learning:recent", emptyDbPath)
+    const result = runTx(["learning:recent"], emptyDbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("No learnings found")
 
@@ -247,9 +247,9 @@ describe("CLI learning:helpful", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "tx-test-"))
     dbPath = join(tmpDir, "test.db")
-    runTx("init", dbPath)
+    runTx(["init"], dbPath)
     // Create a learning to mark as helpful
-    runTx('learning:add "Test learning for helpfulness"', dbPath)
+    runTx(["learning:add", "Test learning for helpfulness"], dbPath)
   })
 
   afterEach(() => {
@@ -259,20 +259,20 @@ describe("CLI learning:helpful", () => {
   })
 
   it("records helpfulness with default score", () => {
-    const result = runTx("learning:helpful 1", dbPath)
+    const result = runTx(["learning:helpful", "1"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Recorded helpfulness for learning #1")
     expect(result.stdout).toContain("Score: 100%")
   })
 
   it("records helpfulness with custom score", () => {
-    const result = runTx("learning:helpful 1 --score 0.8", dbPath)
+    const result = runTx(["learning:helpful", "1", "--score", "0.8"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Score: 80%")
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx("learning:helpful 1 --json", dbPath)
+    const result = runTx(["learning:helpful", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.success).toBe(true)
@@ -281,19 +281,19 @@ describe("CLI learning:helpful", () => {
   })
 
   it("shows error when ID is missing", () => {
-    const result = runTx("learning:helpful", dbPath)
+    const result = runTx(["learning:helpful"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
 
   it("shows error for non-numeric ID", () => {
-    const result = runTx("learning:helpful abc", dbPath)
+    const result = runTx(["learning:helpful", "abc"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Learning ID must be a number")
   })
 
   it("shows error for non-existent learning", () => {
-    const result = runTx("learning:helpful 999", dbPath)
+    const result = runTx(["learning:helpful", "999"], dbPath)
     expect(result.status).toBe(2)
     expect(result.stderr).toContain("Learning not found")
   })
@@ -307,16 +307,16 @@ describe("CLI context", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "tx-test-"))
     dbPath = join(tmpDir, "test.db")
-    runTx("init", dbPath)
+    runTx(["init"], dbPath)
 
     // Create a task
-    const addResult = runTx('add "Implement JWT validation" --json', dbPath)
+    const addResult = runTx(["add", "Implement JWT validation", "--json"], dbPath)
     const taskJson = JSON.parse(addResult.stdout)
     taskId = taskJson.id
 
     // Create learnings related to JWT
-    runTx('learning:add "JWT tokens should be validated on every request"', dbPath)
-    runTx('learning:add "Always check token expiration"', dbPath)
+    runTx(["learning:add", "JWT tokens should be validated on every request"], dbPath)
+    runTx(["learning:add", "Always check token expiration"], dbPath)
   })
 
   afterEach(() => {
@@ -326,14 +326,14 @@ describe("CLI context", () => {
   })
 
   it("gets contextual learnings for a task", () => {
-    const result = runTx(`context ${taskId}`, dbPath)
+    const result = runTx(["context", taskId], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Context for:")
     expect(result.stdout).toContain("relevant learning(s)")
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx(`context ${taskId} --json`, dbPath)
+    const result = runTx(["context", taskId, "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.taskId).toBe(taskId)
@@ -345,7 +345,7 @@ describe("CLI context", () => {
 
   it("writes context file with --inject flag", () => {
     // First create the .tx directory if it doesn't exist
-    const result = runTx(`context ${taskId} --inject`, dbPath)
+    const result = runTx(["context", taskId, "--inject"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Wrote")
     expect(result.stdout).toContain("learning(s) to")
@@ -355,13 +355,13 @@ describe("CLI context", () => {
   })
 
   it("shows error when task-id is missing", () => {
-    const result = runTx("context", dbPath)
+    const result = runTx(["context"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
 
   it("shows error for non-existent task", () => {
-    const result = runTx("context tx-nonexistent", dbPath)
+    const result = runTx(["context", "tx-nonexistent"], dbPath)
     expect(result.status).toBe(2)
     expect(result.stderr).toContain("Task not found")
   })
@@ -374,7 +374,7 @@ describe("CLI learn", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "tx-test-"))
     dbPath = join(tmpDir, "test.db")
-    runTx("init", dbPath)
+    runTx(["init"], dbPath)
   })
 
   afterEach(() => {
@@ -384,31 +384,31 @@ describe("CLI learn", () => {
   })
 
   it("attaches learning to a file path", () => {
-    const result = runTx('learn src/db.ts "Always run migrations in a transaction"', dbPath)
+    const result = runTx(["learn", "src/db.ts", "Always run migrations in a transaction"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Created file learning: #1")
     expect(result.stdout).toContain("Pattern: src/db.ts")
   })
 
   it("attaches learning to a glob pattern", () => {
-    const result = runTx('learn "src/services/*.ts" "Services must use Effect-TS patterns"', dbPath)
+    const result = runTx(["learn", "src/services/*.ts", "Services must use Effect-TS patterns"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Pattern: src/services/*.ts")
   })
 
   it("attaches learning with task association", () => {
     // Create a task first
-    const addResult = runTx('add "Auth system" --json', dbPath)
+    const addResult = runTx(["add", "Auth system", "--json"], dbPath)
     const taskJson = JSON.parse(addResult.stdout)
     const taskId = taskJson.id
 
-    const result = runTx(`learn src/auth.ts "Auth needs session handling" --task ${taskId}`, dbPath)
+    const result = runTx(["learn", "src/auth.ts", "Auth needs session handling", "--task", taskId], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain(`Task: ${taskId}`)
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx('learn src/db.ts "JSON test" --json', dbPath)
+    const result = runTx(["learn", "src/db.ts", "JSON test", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.id).toBe(1)
@@ -417,13 +417,13 @@ describe("CLI learn", () => {
   })
 
   it("shows error when path is missing", () => {
-    const result = runTx("learn", dbPath)
+    const result = runTx(["learn"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
 
   it("shows error when note is missing", () => {
-    const result = runTx("learn src/db.ts", dbPath)
+    const result = runTx(["learn", "src/db.ts"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
@@ -436,11 +436,11 @@ describe("CLI recall", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "tx-test-"))
     dbPath = join(tmpDir, "test.db")
-    runTx("init", dbPath)
+    runTx(["init"], dbPath)
     // Seed file learnings
-    runTx('learn src/db.ts "Database specific note"', dbPath)
-    runTx('learn "src/services/*.ts" "Service patterns"', dbPath)
-    runTx('learn "test/*.ts" "Test conventions"', dbPath)
+    runTx(["learn", "src/db.ts", "Database specific note"], dbPath)
+    runTx(["learn", "src/services/*.ts", "Service patterns"], dbPath)
+    runTx(["learn", "test/*.ts", "Test conventions"], dbPath)
   })
 
   afterEach(() => {
@@ -450,7 +450,7 @@ describe("CLI recall", () => {
   })
 
   it("recalls all file learnings without path", () => {
-    const result = runTx("recall", dbPath)
+    const result = runTx(["recall"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("file learning(s)")
     expect(result.stdout).toContain("src/db.ts")
@@ -458,19 +458,19 @@ describe("CLI recall", () => {
   })
 
   it("recalls learnings matching exact path", () => {
-    const result = runTx("recall src/db.ts", dbPath)
+    const result = runTx(["recall", "src/db.ts"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Database specific note")
   })
 
   it("recalls learnings matching glob pattern", () => {
-    const result = runTx("recall src/services/task-service.ts", dbPath)
+    const result = runTx(["recall", "src/services/task-service.ts"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Service patterns")
   })
 
   it("outputs JSON with --json flag for all learnings", () => {
-    const result = runTx("recall --json", dbPath)
+    const result = runTx(["recall", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(Array.isArray(json)).toBe(true)
@@ -481,7 +481,7 @@ describe("CLI recall", () => {
   })
 
   it("outputs JSON with --json flag for path query", () => {
-    const result = runTx("recall src/db.ts --json", dbPath)
+    const result = runTx(["recall", "src/db.ts", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(Array.isArray(json)).toBe(true)
@@ -490,13 +490,13 @@ describe("CLI recall", () => {
   })
 
   it("shows message when no learnings match path", () => {
-    const result = runTx("recall nonexistent/path.ts", dbPath)
+    const result = runTx(["recall", "nonexistent/path.ts"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("No learnings found for")
   })
 
   it("returns empty array in JSON when no learnings match path", () => {
-    const result = runTx("recall nonexistent/path.ts --json", dbPath)
+    const result = runTx(["recall", "nonexistent/path.ts", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json).toEqual([])
@@ -519,58 +519,58 @@ describe("CLI learning command help", () => {
   })
 
   it("learning:add --help shows help", () => {
-    const result = runTx("learning:add --help", dbPath)
+    const result = runTx(["learning:add", "--help"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx learning:add")
     expect(result.stdout).toContain("Usage:")
   })
 
   it("learning:search --help shows help", () => {
-    const result = runTx("learning:search --help", dbPath)
+    const result = runTx(["learning:search", "--help"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx learning:search")
   })
 
   it("learning:recent --help shows help", () => {
-    const result = runTx("learning:recent --help", dbPath)
+    const result = runTx(["learning:recent", "--help"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx learning:recent")
   })
 
   it("learning:helpful --help shows help", () => {
-    const result = runTx("learning:helpful --help", dbPath)
+    const result = runTx(["learning:helpful", "--help"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx learning:helpful")
   })
 
   it("context --help shows help", () => {
-    const result = runTx("context --help", dbPath)
+    const result = runTx(["context", "--help"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx context")
     expect(result.stdout).toContain("--inject")
   })
 
   it("learn --help shows help", () => {
-    const result = runTx("learn --help", dbPath)
+    const result = runTx(["learn", "--help"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx learn")
     expect(result.stdout).toContain("--task")
   })
 
   it("recall --help shows help", () => {
-    const result = runTx("recall --help", dbPath)
+    const result = runTx(["recall", "--help"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx recall")
   })
 
   it("help learning:add shows help", () => {
-    const result = runTx("help learning:add", dbPath)
+    const result = runTx(["help", "learning:add"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx learning:add")
   })
 
   it("help context shows help", () => {
-    const result = runTx("help context", dbPath)
+    const result = runTx(["help", "context"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("tx context")
   })
