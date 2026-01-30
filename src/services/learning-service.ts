@@ -1,6 +1,7 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import { LearningRepository, type BM25Result } from "../repo/learning-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
+import { EmbeddingService } from "./embedding-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import {
   type Learning,
@@ -12,6 +13,7 @@ import {
 
 /** Default weights for hybrid scoring */
 const DEFAULT_BM25_WEIGHT = 0.4
+const DEFAULT_VECTOR_WEIGHT = 0.3
 const DEFAULT_RECENCY_WEIGHT = 0.2
 const MAX_AGE_DAYS = 30
 
@@ -45,17 +47,68 @@ const OUTCOME_BOOST = 0.1
 const FREQUENCY_BOOST = 0.05
 
 /**
- * Combine BM25 results with recency, outcome, and frequency scoring.
- * Formula: score = bm25_weight * bm25_score + recency_weight * recency_score
+ * Calculate cosine similarity between two vectors.
+ * Returns a value between -1 and 1, where 1 means identical direction.
+ */
+const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
+  if (a.length !== b.length) return 0
+
+  let dotProduct = 0
+  let normA = 0
+  let normB = 0
+
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i]! * b[i]!
+    normA += a[i]! * a[i]!
+    normB += b[i]! * b[i]!
+  }
+
+  const magnitude = Math.sqrt(normA) * Math.sqrt(normB)
+  if (magnitude === 0) return 0
+
+  return dotProduct / magnitude
+}
+
+/**
+ * Calculate vector scores for learnings that have embeddings.
+ * Returns a Map from learning ID to cosine similarity score (0-1 normalized).
+ */
+const calculateVectorScores = (
+  learnings: readonly Learning[],
+  queryEmbedding: Float32Array | null
+): Map<number, number> => {
+  const scores = new Map<number, number>()
+
+  if (!queryEmbedding) {
+    return scores
+  }
+
+  for (const learning of learnings) {
+    if (learning.embedding) {
+      // Cosine similarity is [-1, 1], normalize to [0, 1]
+      const similarity = cosineSimilarity(queryEmbedding, learning.embedding)
+      scores.set(learning.id, (similarity + 1) / 2)
+    }
+  }
+
+  return scores
+}
+
+/**
+ * Combine BM25 results with vector similarity, recency, outcome, and frequency scoring.
+ * Formula: score = bm25_weight * bm25_score + vector_weight * vector_score + recency_weight * recency_score
  *                + outcome_boost * outcome_score + frequency_boost * log(1 + usage_count)
  */
 const applyHybridScoring = (
   bm25Results: readonly BM25Result[],
+  vectorScores: Map<number, number>,
   bm25Weight: number,
+  vectorWeight: number,
   recencyWeight: number
 ): LearningWithScore[] => {
   return bm25Results.map(({ learning, score: bm25Score }) => {
     const recencyScore = calculateRecencyScore(learning.createdAt)
+    const vectorScore = vectorScores.get(learning.id) ?? 0
 
     // Outcome boost: if learning has been marked helpful, boost it
     const outcomeBoost = learning.outcomeScore !== null
@@ -66,6 +119,7 @@ const applyHybridScoring = (
     const frequencyBoost = FREQUENCY_BOOST * Math.log(1 + learning.usageCount)
 
     const relevanceScore = bm25Weight * bm25Score +
+                           vectorWeight * vectorScore +
                            recencyWeight * recencyScore +
                            outcomeBoost +
                            frequencyBoost
@@ -74,7 +128,7 @@ const applyHybridScoring = (
       ...learning,
       relevanceScore,
       bm25Score,
-      vectorScore: 0, // Will be added when vector search is implemented
+      vectorScore,
       recencyScore
     }
   }).sort((a, b) => b.relevanceScore - a.relevanceScore)
@@ -85,11 +139,14 @@ export const LearningServiceLive = Layer.effect(
   Effect.gen(function* () {
     const learningRepo = yield* LearningRepository
     const taskRepo = yield* TaskRepository
+    const embeddingService = yield* EmbeddingService
 
     // Load weights from config (with defaults)
     const bm25WeightStr = yield* learningRepo.getConfig("bm25_weight")
+    const vectorWeightStr = yield* learningRepo.getConfig("vector_weight")
     const recencyWeightStr = yield* learningRepo.getConfig("recency_weight")
     const bm25Weight = bm25WeightStr ? parseFloat(bm25WeightStr) : DEFAULT_BM25_WEIGHT
+    const vectorWeight = vectorWeightStr ? parseFloat(vectorWeightStr) : DEFAULT_VECTOR_WEIGHT
     const recencyWeight = recencyWeightStr ? parseFloat(recencyWeightStr) : DEFAULT_RECENCY_WEIGHT
 
     return {
@@ -129,8 +186,17 @@ export const LearningServiceLive = Layer.effect(
           // BM25 search
           const bm25Results = yield* learningRepo.bm25Search(searchQuery, limit * 3)
 
-          // Apply hybrid scoring (BM25 + recency)
-          const scored = applyHybridScoring(bm25Results, bm25Weight, recencyWeight)
+          // Try to get query embedding for vector search (graceful degradation)
+          const queryEmbedding = yield* Effect.option(embeddingService.embed(searchQuery))
+          const queryEmbeddingValue = Option.getOrNull(queryEmbedding)
+
+          // Calculate vector scores for learnings that have embeddings
+          const learnings = bm25Results.map(r => r.learning)
+          const vectorScores = calculateVectorScores(learnings, queryEmbeddingValue)
+
+          // Apply hybrid scoring (BM25 + vector + recency)
+          // If no embeddings available, vectorWeight contribution is 0
+          const scored = applyHybridScoring(bm25Results, vectorScores, bm25Weight, vectorWeight, recencyWeight)
 
           // Filter by minimum score and limit
           return scored
@@ -176,7 +242,17 @@ export const LearningServiceLive = Layer.effect(
 
           // Search for relevant learnings
           const bm25Results = yield* learningRepo.bm25Search(searchQuery, 30)
-          const scored = applyHybridScoring(bm25Results, bm25Weight, recencyWeight)
+
+          // Try to get query embedding for vector search (graceful degradation)
+          const queryEmbedding = yield* Effect.option(embeddingService.embed(searchQuery))
+          const queryEmbeddingValue = Option.getOrNull(queryEmbedding)
+
+          // Calculate vector scores
+          const resultLearnings = bm25Results.map(r => r.learning)
+          const vectorScores = calculateVectorScores(resultLearnings, queryEmbeddingValue)
+
+          // Apply hybrid scoring
+          const scored = applyHybridScoring(bm25Results, vectorScores, bm25Weight, vectorWeight, recencyWeight)
 
           // Filter and limit
           const learnings = scored

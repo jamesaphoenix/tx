@@ -5,13 +5,14 @@ import { SqliteClient } from "../../src/db.js"
 import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
 import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
 import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
-import { FileLearningRepositoryLive, FileLearningRepository, matchesPattern } from "../../src/repo/file-learning-repo.js"
+import { FileLearningRepositoryLive, matchesPattern } from "../../src/repo/file-learning-repo.js"
 import { TaskServiceLive } from "../../src/services/task-service.js"
 import { DependencyServiceLive } from "../../src/services/dep-service.js"
 import { ReadyServiceLive } from "../../src/services/ready-service.js"
 import { HierarchyServiceLive } from "../../src/services/hierarchy-service.js"
 import { LearningServiceLive } from "../../src/services/learning-service.js"
 import { FileLearningServiceLive, FileLearningService } from "../../src/services/file-learning-service.js"
+import { EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
@@ -32,7 +33,8 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(repos)
+    Layer.provide(repos),
+    Layer.provide(EmbeddingServiceNoop)
   )
   return services
 }

@@ -401,6 +401,25 @@ Examples:
   tx try tx-abc123 "Used Zustand" --succeeded
   tx try tx-abc123 "Direct state prop drilling" --failed --json`,
 
+  attempts: `tx attempts - List attempts for a task
+
+Usage: tx attempts <task-id> [--json]
+
+Lists all attempts recorded for a task, sorted by most recent first.
+Shows the approach tried, outcome (success/failure), reason if any,
+and timestamp.
+
+Arguments:
+  <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json     Output as JSON (full attempt array)
+  --help     Show this help
+
+Examples:
+  tx attempts tx-abc123
+  tx attempts tx-abc123 --json`,
+
   "mcp-server": `tx mcp-server - Start MCP server
 
 Usage: tx mcp-server [options]
@@ -1067,6 +1086,43 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         console.log(`  Outcome: ${outcomeSymbol} ${outcome}`)
         if (attempt.reason) {
           console.log(`  Reason: ${attempt.reason}`)
+        }
+      }
+    }),
+
+  attempts: (pos, flags) =>
+    Effect.gen(function* () {
+      const taskId = pos[0]
+
+      if (!taskId) {
+        console.error("Usage: tx attempts <task-id> [--json]")
+        process.exit(1)
+      }
+
+      const attemptSvc = yield* AttemptService
+      const taskSvc = yield* TaskService
+
+      // Verify task exists (will throw TaskNotFoundError if not)
+      yield* taskSvc.get(taskId as TaskId)
+
+      const attempts = yield* attemptSvc.listForTask(taskId)
+
+      if (flag(flags, "json")) {
+        console.log(toJson(attempts))
+      } else {
+        if (attempts.length === 0) {
+          console.log(`No attempts recorded for ${taskId}`)
+        } else {
+          console.log(`${attempts.length} attempt(s) for ${taskId}:`)
+          for (const a of attempts) {
+            const outcomeSymbol = a.outcome === "succeeded" ? "\u2713" : "\u2717"
+            const timestamp = a.createdAt.toISOString()
+            console.log(`  ${outcomeSymbol} ${a.approach}`)
+            if (a.reason) {
+              console.log(`      Reason: ${a.reason}`)
+            }
+            console.log(`      ${timestamp}`)
+          }
         }
       }
     }),

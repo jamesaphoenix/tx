@@ -23,6 +23,7 @@ import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service
 import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
 import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
 import { FileLearningServiceLive, FileLearningService } from "../../src/services/file-learning-service.js"
+import { EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
 import type { TaskId, TaskWithDeps } from "../../src/schema.js"
 import type { FileLearning } from "../../src/schemas/file-learning.js"
 import type { Learning, LearningWithScore } from "../../src/schemas/learning.js"
