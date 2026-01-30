@@ -244,6 +244,7 @@ const handleLearningHelpful = async (args: { id: number; score?: number }): Prom
  */
 export const registerLearningTools = (server: McpServer): void => {
   // tx_learn - Attach a learning to a file path or glob pattern
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_learn",
     "Attach a learning/note to a file path or glob pattern. Agents can query this when working on files.",
@@ -256,6 +257,7 @@ export const registerLearningTools = (server: McpServer): void => {
   )
 
   // tx_recall - Query file learnings by path
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_recall",
     "Query file-specific learnings. If path is provided, returns learnings matching that path. Otherwise returns all file learnings.",
@@ -266,6 +268,7 @@ export const registerLearningTools = (server: McpServer): void => {
   )
 
   // tx_context - Get contextual learnings for a task
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_context",
     "Get contextual learnings relevant to a task. Searches learnings using the task's title and description, returns scored results with BM25, recency, and relevance scores.",
@@ -277,6 +280,7 @@ export const registerLearningTools = (server: McpServer): void => {
   )
 
   // tx_learning_add - Add a new learning to the knowledge base
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_learning_add",
     "Add a new learning to the contextual learnings knowledge base. Learnings can be retrieved later based on relevance to tasks.",
@@ -291,6 +295,7 @@ export const registerLearningTools = (server: McpServer): void => {
   )
 
   // tx_learning_search - Search learnings with BM25 scoring
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_learning_search",
     "Search learnings using BM25 text search. Returns scored results with relevance, BM25, and recency scores.",
@@ -304,6 +309,7 @@ export const registerLearningTools = (server: McpServer): void => {
   )
 
   // tx_learning_helpful - Record helpfulness score for a learning
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_learning_helpful",
     "Record helpfulness/outcome score for a learning. Use this to provide feedback on whether a learning was useful.",

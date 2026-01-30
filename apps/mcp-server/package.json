@@ -28,6 +28,10 @@
     "./tools/learning": {
       "types": "./dist/tools/learning.d.ts",
       "import": "./dist/tools/learning.js"
+    },
+    "./tools/sync": {
+      "types": "./dist/tools/sync.d.ts",
+      "import": "./dist/tools/sync.js"
     }
   },
   "files": [

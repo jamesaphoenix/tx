@@ -15,6 +15,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { initRuntime, disposeRuntime } from "./runtime.js"
 import { registerTaskTools } from "./tools/task.js"
 import { registerLearningTools } from "./tools/learning.js"
+import { registerSyncTools } from "./tools/sync.js"
 
 // Re-export for library consumers
 export { initRuntime, disposeRuntime, runEffect, getRuntime } from "./runtime.js"
@@ -23,6 +24,7 @@ export { mcpResponse, mcpError } from "./response.js"
 export type { McpContent, McpResponse } from "./response.js"
 export { registerTaskTools, serializeTask } from "./tools/task.js"
 export { registerLearningTools, serializeLearning, serializeLearningWithScore, serializeFileLearning } from "./tools/learning.js"
+export { registerSyncTools, serializeExportResult, serializeImportResult, serializeSyncStatus, serializeCompactResult } from "./tools/sync.js"
 
 // -----------------------------------------------------------------------------
 // Server Creation
@@ -40,6 +42,7 @@ export const createMcpServer = (): McpServer => {
   // Register all tools
   registerTaskTools(server)
   registerLearningTools(server)
+  registerSyncTools(server)
 
   return server
 }
