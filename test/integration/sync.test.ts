@@ -26,6 +26,7 @@ import { DependencyServiceLive } from "../../src/services/dep-service.js"
 import { ReadyServiceLive } from "../../src/services/ready-service.js"
 import { HierarchyServiceLive } from "../../src/services/hierarchy-service.js"
 import { SyncServiceLive, SyncService } from "../../src/services/sync-service.js"
+import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
 
 // -----------------------------------------------------------------------------
 // Test Fixtures
@@ -53,17 +54,18 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   ).pipe(
     Layer.provide(infra)
   )
+  // SyncService only needs repos and infra (no longer depends on TaskService)
+  const syncService = SyncServiceLive.pipe(
+    Layer.provide(Layer.merge(infra, repos))
+  )
+  // Base services need repos and AutoSyncServiceNoop
   const baseServices = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(repos)
-  )
-  // SyncService needs TaskService, all repositories, and SqliteClient
-  const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.merge(infra, Layer.merge(repos, baseServices)))
+    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
   )
   return Layer.mergeAll(baseServices, syncService, repos)
 }

@@ -9,7 +9,8 @@ import type {
   LearningRow
 } from "@tx/types"
 
-// Re-export constants from @tx/types for convenience
+// Re-export types and constants from @tx/types for convenience
+export type { LearningRow } from "@tx/types"
 export { LEARNING_SOURCE_TYPES } from "@tx/types"
 
 /**

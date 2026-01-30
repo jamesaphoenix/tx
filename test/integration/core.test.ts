@@ -9,6 +9,7 @@ import { DependencyServiceLive, DependencyService } from "../../src/services/dep
 import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service.js"
 import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
 import { ScoreServiceLive, ScoreService } from "../../src/services/score-service.js"
+import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
 import type { TaskId } from "../../src/schema.js"
 import type Database from "better-sqlite3"
 
@@ -17,9 +18,9 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
   )
-  // Base services that only depend on repos
+  // Base services that only depend on repos and AutoSyncService
   const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
   )
   // ScoreService depends on HierarchyService, so it needs baseServices
   const scoreService = ScoreServiceLive.pipe(

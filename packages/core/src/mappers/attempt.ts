@@ -10,7 +10,8 @@ import type {
   TaskId
 } from "@tx/types"
 
-// Re-export constants from @tx/types for convenience
+// Re-export types and constants from @tx/types for convenience
+export type { AttemptRow } from "@tx/types"
 export { ATTEMPT_OUTCOMES } from "@tx/types"
 
 /**

@@ -1,5 +1,5 @@
 
 > @tx/types@0.1.0 test
-> echo 'No tests yet'
+> echo 'Types-only package - no tests needed'
 
-No tests yet
+Types-only package - no tests needed

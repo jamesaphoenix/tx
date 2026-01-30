@@ -5,6 +5,7 @@ import { SqliteClient } from "../../src/db.js"
 import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
 import { AttemptRepositoryLive, AttemptRepository } from "../../src/repo/attempt-repo.js"
 import { AttemptServiceLive, AttemptService } from "../../src/services/attempt-service.js"
+import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
 import type { AttemptId } from "../../src/schemas/attempt.js"
 import type Database from "better-sqlite3"
 
@@ -14,7 +15,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
     Layer.provide(infra)
   )
   const services = AttemptServiceLive.pipe(
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
   )
   return Layer.merge(repos, services)
 }

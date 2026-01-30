@@ -1,11 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { FileLearningRepository } from "../repo/file-learning-repo.js"
-import { AutoSyncService } from "./auto-sync-service.js"
 import { FileLearningNotFoundError, ValidationError, DatabaseError } from "../errors.js"
-import {
-  type FileLearning,
-  type CreateFileLearningInput
-} from "../schemas/file-learning.js"
+import type { FileLearning, CreateFileLearningInput } from "@tx/types"
 
 export class FileLearningService extends Context.Tag("FileLearningService")<
   FileLearningService,
@@ -23,7 +19,6 @@ export const FileLearningServiceLive = Layer.effect(
   FileLearningService,
   Effect.gen(function* () {
     const repo = yield* FileLearningRepository
-    const autoSync = yield* AutoSyncService
 
     return {
       create: (input) =>
@@ -34,13 +29,11 @@ export const FileLearningServiceLive = Layer.effect(
           if (!input.note || input.note.trim().length === 0) {
             return yield* Effect.fail(new ValidationError({ reason: "Note is required" }))
           }
-          const fileLearning = yield* repo.insert({
+          return yield* repo.insert({
             ...input,
             filePattern: input.filePattern.trim(),
             note: input.note.trim()
           })
-          yield* autoSync.afterFileLearningMutation()
-          return fileLearning
         }),
 
       get: (id) =>
@@ -59,7 +52,6 @@ export const FileLearningServiceLive = Layer.effect(
             return yield* Effect.fail(new FileLearningNotFoundError({ id }))
           }
           yield* repo.remove(id)
-          yield* autoSync.afterFileLearningMutation()
         }),
 
       getAll: () => repo.findAll(),

@@ -11,7 +11,8 @@ import type {
   DependencyRow
 } from "@tx/types"
 
-// Re-export constants from @tx/types for convenience
+// Re-export types and constants from @tx/types for convenience
+export type { TaskRow, DependencyRow } from "@tx/types"
 export { TASK_STATUSES, VALID_TRANSITIONS } from "@tx/types"
 
 /**

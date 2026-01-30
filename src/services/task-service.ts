@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
+import { AutoSyncService } from "./auto-sync-service.js"
 import { TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import { generateTaskId } from "../id.js"
 import {
@@ -28,6 +29,7 @@ export const TaskServiceLive = Layer.effect(
   Effect.gen(function* () {
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
+    const autoSync = yield* AutoSyncService
 
     const enrichWithDeps = (task: Task): Effect.Effect<TaskWithDeps, DatabaseError> =>
       Effect.gen(function* () {
@@ -162,6 +164,7 @@ export const TaskServiceLive = Layer.effect(
           }
 
           yield* taskRepo.insert(task)
+          yield* autoSync.afterTaskMutation()
           return task
         }),
 
@@ -237,6 +240,7 @@ export const TaskServiceLive = Layer.effect(
             yield* autoCompleteParent(updated.parentId, now)
           }
 
+          yield* autoSync.afterTaskMutation()
           return updated
         }),
 
@@ -247,6 +251,7 @@ export const TaskServiceLive = Layer.effect(
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
           yield* taskRepo.remove(id)
+          yield* autoSync.afterTaskMutation()
         }),
 
       list: (filter) => taskRepo.findAll(filter),

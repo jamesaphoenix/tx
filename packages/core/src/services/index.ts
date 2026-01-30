@@ -1,0 +1,39 @@
+/**
+ * @tx/core/services - Service exports
+ */
+
+export { TaskService, TaskServiceLive } from "./task-service.js"
+export { DependencyService, DependencyServiceLive } from "./dep-service.js"
+export { ReadyService, ReadyServiceLive } from "./ready-service.js"
+export { HierarchyService, HierarchyServiceLive } from "./hierarchy-service.js"
+export { ScoreService, ScoreServiceLive, type ScoreBreakdown } from "./score-service.js"
+export { LearningService, LearningServiceLive } from "./learning-service.js"
+export { FileLearningService, FileLearningServiceLive } from "./file-learning-service.js"
+export { AttemptService, AttemptServiceLive } from "./attempt-service.js"
+export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./embedding-service.js"
+export {
+  SyncService,
+  SyncServiceLive,
+  type ExportResult,
+  type ImportResult,
+  type SyncStatus,
+  type CompactResult,
+  type ExportOptions,
+  type ExportAllResult,
+  type ImportAllResult
+} from "./sync-service.js"
+export {
+  MigrationService,
+  MigrationServiceLive,
+  MIGRATIONS,
+  getLatestVersion,
+  type Migration,
+  type AppliedMigration,
+  type MigrationStatus
+} from "./migration-service.js"
+export {
+  AutoSyncService,
+  AutoSyncServiceLive,
+  AutoSyncServiceNoop,
+  type AutoSyncEntity
+} from "./auto-sync-service.js"

@@ -8,6 +8,9 @@ import type {
   FileLearningRow
 } from "@tx/types"
 
+// Re-export type from @tx/types for convenience
+export type { FileLearningRow } from "@tx/types"
+
 /**
  * Convert a database row to a FileLearning domain object.
  */

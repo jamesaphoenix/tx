@@ -13,12 +13,14 @@ import { LearningServiceLive } from "./services/learning-service.js"
 import { FileLearningServiceLive } from "./services/file-learning-service.js"
 import { AttemptServiceLive } from "./services/attempt-service.js"
 import { SyncService, SyncServiceLive } from "./services/sync-service.js"
+import { AutoSyncServiceLive } from "./services/auto-sync-service.js"
 import { MigrationService, MigrationServiceLive } from "./services/migration-service.js"
 import { EmbeddingServiceNoop } from "./services/embedding-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService }
 export { MigrationService }
+export { AutoSyncService } from "./services/auto-sync-service.js"
 export { LearningService } from "./services/learning-service.js"
 export { FileLearningService } from "./services/file-learning-service.js"
 export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./services/embedding-service.js"
@@ -37,6 +39,17 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(infra)
   )
 
+  // SyncServiceLive only needs repos and infra (no longer depends on TaskService)
+  const syncService = SyncServiceLive.pipe(
+    Layer.provide(Layer.merge(infra, repos))
+  )
+
+  // AutoSyncServiceLive needs SyncService and infra
+  const autoSyncService = AutoSyncServiceLive.pipe(
+    Layer.provide(Layer.merge(infra, syncService))
+  )
+
+  // Services need repos, embedding, and autoSyncService
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -46,12 +59,7 @@ export const makeAppLayer = (dbPath: string) => {
     FileLearningServiceLive,
     AttemptServiceLive
   ).pipe(
-    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
-  )
-
-  // SyncServiceLive needs TaskService (from services), DependencyRepository (from repos), and SqliteClient (from infra)
-  const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.merge(infra, Layer.merge(repos, services)))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, autoSyncService))
   )
 
   // MigrationService only needs SqliteClient

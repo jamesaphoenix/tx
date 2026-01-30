@@ -3,7 +3,6 @@ import { writeFileSync, renameSync, existsSync, mkdirSync, readFileSync, statSyn
 import { dirname, resolve } from "node:path"
 import { DatabaseError, ValidationError } from "../errors.js"
 import { SqliteClient } from "../db.js"
-import { TaskService } from "./task-service.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { LearningRepository } from "../repo/learning-repo.js"
@@ -301,7 +300,6 @@ const attemptToUpsertOp = (attempt: Attempt): AttemptUpsertOp => ({
 export const SyncServiceLive = Layer.effect(
   SyncService,
   Effect.gen(function* () {
-    const taskService = yield* TaskService
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
     const learningRepo = yield* LearningRepository
@@ -336,7 +334,7 @@ export const SyncServiceLive = Layer.effect(
           const filePath = resolve(path ?? DEFAULT_JSONL_PATH)
 
           // Get all tasks and dependencies
-          const tasks = yield* taskService.list()
+          const tasks = yield* taskRepo.findAll()
           const deps = yield* depRepo.getAll()
 
           // Convert to sync operations
@@ -505,7 +503,7 @@ export const SyncServiceLive = Layer.effect(
           const filePath = resolve(DEFAULT_JSONL_PATH)
 
           // Count tasks in database
-          const tasks = yield* taskService.list()
+          const tasks = yield* taskRepo.findAll()
           const dbTaskCount = tasks.length
 
           // Count operations in JSONL file and get file info
@@ -886,7 +884,7 @@ export const SyncServiceLive = Layer.effect(
         Effect.gen(function* () {
           // Export tasks
           const tasksFilePath = resolve(DEFAULT_JSONL_PATH)
-          const tasks = yield* taskService.list()
+          const tasks = yield* taskRepo.findAll()
           const deps = yield* depRepo.getAll()
           const taskOps: SyncOperation[] = tasks.map(taskToUpsertOp)
           const depOps: SyncOperation[] = deps.map(depToAddOp)

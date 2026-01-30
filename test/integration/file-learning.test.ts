@@ -13,6 +13,7 @@ import { HierarchyServiceLive } from "../../src/services/hierarchy-service.js"
 import { LearningServiceLive } from "../../src/services/learning-service.js"
 import { FileLearningServiceLive, FileLearningService } from "../../src/services/file-learning-service.js"
 import { EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
+import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
@@ -33,7 +34,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, AutoSyncServiceNoop))
   )
   return services
 }

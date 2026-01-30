@@ -1,14 +1,9 @@
 import { Context, Effect, Layer } from "effect"
 import { AttemptRepository } from "../repo/attempt-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
-import { AutoSyncService } from "./auto-sync-service.js"
 import { AttemptNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
-import {
-  type Attempt,
-  type AttemptId,
-  type AttemptOutcome,
-  isValidOutcome
-} from "../schemas/attempt.js"
+import { isValidOutcome } from "../mappers/attempt.js"
+import type { Attempt, AttemptId, AttemptOutcome } from "@tx/types"
 
 export class AttemptService extends Context.Tag("AttemptService")<
   AttemptService,
@@ -40,7 +35,6 @@ export const AttemptServiceLive = Layer.effect(
   Effect.gen(function* () {
     const attemptRepo = yield* AttemptRepository
     const taskRepo = yield* TaskRepository
-    const autoSync = yield* AutoSyncService
 
     return {
       create: (taskId, approach, outcome, reason) =>
@@ -61,14 +55,12 @@ export const AttemptServiceLive = Layer.effect(
             return yield* Effect.fail(new ValidationError({ reason: `Invalid outcome: ${outcome}` }))
           }
 
-          const attempt = yield* attemptRepo.insert({
+          return yield* attemptRepo.insert({
             taskId,
             approach: approach.trim(),
             outcome,
             reason: reason ?? null
           })
-          yield* autoSync.afterAttemptMutation()
-          return attempt
         }),
 
       get: (id) =>
@@ -89,7 +81,6 @@ export const AttemptServiceLive = Layer.effect(
             return yield* Effect.fail(new AttemptNotFoundError({ id }))
           }
           yield* attemptRepo.remove(id)
-          yield* autoSync.afterAttemptMutation()
         }),
 
       getFailedCount: (taskId) =>

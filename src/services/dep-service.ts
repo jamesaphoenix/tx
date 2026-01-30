@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
+import { AutoSyncService } from "./auto-sync-service.js"
 import { ValidationError, CircularDependencyError, TaskNotFoundError, DatabaseError } from "../errors.js"
 import type { TaskId } from "../schema.js"
 
@@ -17,6 +18,7 @@ export const DependencyServiceLive = Layer.effect(
   Effect.gen(function* () {
     const depRepo = yield* DependencyRepository
     const taskRepo = yield* TaskRepository
+    const autoSync = yield* AutoSyncService
 
     return {
       addBlocker: (taskId, blockerId) =>
@@ -43,10 +45,14 @@ export const DependencyServiceLive = Layer.effect(
           }
 
           yield* depRepo.insert(blockerId, taskId)
+          yield* autoSync.afterTaskMutation()
         }),
 
       removeBlocker: (taskId, blockerId) =>
-        depRepo.remove(blockerId, taskId)
+        Effect.gen(function* () {
+          yield* depRepo.remove(blockerId, taskId)
+          yield* autoSync.afterTaskMutation()
+        })
     }
   })
 )

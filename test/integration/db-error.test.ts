@@ -9,6 +9,7 @@ import { LearningServiceLive, LearningService } from "../../src/services/learnin
 import { AttemptServiceLive, AttemptService } from "../../src/services/attempt-service.js"
 import { FileLearningServiceLive, FileLearningService } from "../../src/services/file-learning-service.js"
 import { EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
+import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
 import { FIXTURES } from "../fixtures.js"
 import type { AttemptId } from "../../src/schemas/attempt.js"
 import type { FileLearning, FileLearningId } from "../../src/schemas/file-learning.js"
@@ -72,8 +73,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.merge(mockLearningRepo, mockTaskRepo)),
-        Layer.provide(EmbeddingServiceNoop)
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -119,8 +119,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.merge(mockLearningRepo, mockTaskRepo)),
-        Layer.provide(EmbeddingServiceNoop)
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -166,8 +165,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.merge(mockLearningRepo, mockTaskRepo)),
-        Layer.provide(EmbeddingServiceNoop)
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -213,8 +211,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.merge(mockLearningRepo, mockTaskRepo)),
-        Layer.provide(EmbeddingServiceNoop)
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -261,7 +258,7 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const layer = AttemptServiceLive.pipe(
-        Layer.provide(Layer.merge(mockAttemptRepo, mockTaskRepo))
+        Layer.provide(Layer.mergeAll(mockAttemptRepo, mockTaskRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -300,7 +297,7 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const layer = AttemptServiceLive.pipe(
-        Layer.provide(Layer.merge(mockAttemptRepo, mockTaskRepo))
+        Layer.provide(Layer.mergeAll(mockAttemptRepo, mockTaskRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -341,7 +338,7 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const layer = AttemptServiceLive.pipe(
-        Layer.provide(Layer.merge(mockAttemptRepo, mockTaskRepo))
+        Layer.provide(Layer.mergeAll(mockAttemptRepo, mockTaskRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -382,7 +379,7 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const layer = AttemptServiceLive.pipe(
-        Layer.provide(Layer.merge(mockAttemptRepo, mockTaskRepo))
+        Layer.provide(Layer.mergeAll(mockAttemptRepo, mockTaskRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -423,7 +420,7 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const layer = AttemptServiceLive.pipe(
-        Layer.provide(Layer.merge(mockAttemptRepo, mockTaskRepo))
+        Layer.provide(Layer.mergeAll(mockAttemptRepo, mockTaskRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -458,7 +455,7 @@ describe("FileLearningService Database Error Handling", () => {
       })
 
       const layer = FileLearningServiceLive.pipe(
-        Layer.provide(mockFileLearningRepo)
+        Layer.provide(Layer.merge(mockFileLearningRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -487,7 +484,7 @@ describe("FileLearningService Database Error Handling", () => {
       })
 
       const layer = FileLearningServiceLive.pipe(
-        Layer.provide(mockFileLearningRepo)
+        Layer.provide(Layer.merge(mockFileLearningRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -516,7 +513,7 @@ describe("FileLearningService Database Error Handling", () => {
       })
 
       const layer = FileLearningServiceLive.pipe(
-        Layer.provide(mockFileLearningRepo)
+        Layer.provide(Layer.merge(mockFileLearningRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -545,7 +542,7 @@ describe("FileLearningService Database Error Handling", () => {
       })
 
       const layer = FileLearningServiceLive.pipe(
-        Layer.provide(mockFileLearningRepo)
+        Layer.provide(Layer.merge(mockFileLearningRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -574,7 +571,7 @@ describe("FileLearningService Database Error Handling", () => {
       })
 
       const layer = FileLearningServiceLive.pipe(
-        Layer.provide(mockFileLearningRepo)
+        Layer.provide(Layer.merge(mockFileLearningRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -603,7 +600,7 @@ describe("FileLearningService Database Error Handling", () => {
       })
 
       const layer = FileLearningServiceLive.pipe(
-        Layer.provide(mockFileLearningRepo)
+        Layer.provide(Layer.merge(mockFileLearningRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -638,7 +635,7 @@ describe("FileLearningService Database Error Handling", () => {
       })
 
       const layer = FileLearningServiceLive.pipe(
-        Layer.provide(mockFileLearningRepo)
+        Layer.provide(Layer.merge(mockFileLearningRepo, AutoSyncServiceNoop))
       )
 
       const result = await Effect.runPromise(

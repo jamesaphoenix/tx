@@ -4,10 +4,32 @@ import { mkdirSync, existsSync } from "fs"
 import { dirname } from "path"
 import { MIGRATIONS } from "./services/migration-service.js"
 
+/**
+ * Minimal interface for SQL statement objects.
+ * Describes what we need from better-sqlite3's Statement type.
+ */
+export interface SqliteStatement<TResult = unknown> {
+  run(...params: unknown[]): Database.RunResult
+  get(...params: unknown[]): TResult | undefined
+  all(...params: unknown[]): TResult[]
+}
+
+/**
+ * Minimal interface for the SQLite database.
+ * Describes what we need from better-sqlite3's Database type.
+ * This allows declaration generation without exposing private types.
+ */
+export interface SqliteDatabase {
+  prepare<T = unknown>(sql: string): SqliteStatement<T>
+  exec(sql: string): this
+  pragma(pragma: string, options?: { simple?: boolean }): unknown
+  close(): void
+}
+
 /** The SqliteClient service provides a better-sqlite3 Database instance. */
 export class SqliteClient extends Context.Tag("SqliteClient")<
   SqliteClient,
-  ReturnType<typeof Database>
+  SqliteDatabase
 >() {}
 
 /**

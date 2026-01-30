@@ -1,0 +1,145 @@
+/**
+ * @tx/core/layer - Effect layer composition
+ *
+ * This module provides pre-composed layers for common use cases.
+ * See DD-002 for full specification.
+ */
+
+import { Layer } from "effect"
+import { SqliteClientLive } from "./db.js"
+import { TaskRepositoryLive } from "./repo/task-repo.js"
+import { DependencyRepositoryLive } from "./repo/dep-repo.js"
+import { LearningRepositoryLive } from "./repo/learning-repo.js"
+import { FileLearningRepositoryLive } from "./repo/file-learning-repo.js"
+import { AttemptRepositoryLive } from "./repo/attempt-repo.js"
+import { TaskServiceLive } from "./services/task-service.js"
+import { DependencyServiceLive } from "./services/dep-service.js"
+import { ReadyServiceLive } from "./services/ready-service.js"
+import { HierarchyServiceLive } from "./services/hierarchy-service.js"
+import { LearningServiceLive } from "./services/learning-service.js"
+import { FileLearningServiceLive } from "./services/file-learning-service.js"
+import { AttemptServiceLive } from "./services/attempt-service.js"
+import { SyncServiceLive } from "./services/sync-service.js"
+import { AutoSyncServiceLive, AutoSyncServiceNoop } from "./services/auto-sync-service.js"
+import { MigrationServiceLive } from "./services/migration-service.js"
+import { EmbeddingServiceNoop } from "./services/embedding-service.js"
+
+// Re-export services for cleaner imports
+export { SyncService } from "./services/sync-service.js"
+export { MigrationService } from "./services/migration-service.js"
+export { AutoSyncService, AutoSyncServiceNoop, AutoSyncServiceLive } from "./services/auto-sync-service.js"
+export { LearningService } from "./services/learning-service.js"
+export { FileLearningService } from "./services/file-learning-service.js"
+export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./services/embedding-service.js"
+export { AttemptService } from "./services/attempt-service.js"
+export { TaskService } from "./services/task-service.js"
+export { DependencyService } from "./services/dep-service.js"
+export { ReadyService } from "./services/ready-service.js"
+export { HierarchyService } from "./services/hierarchy-service.js"
+export { ScoreService } from "./services/score-service.js"
+
+/**
+ * Create the full application layer with all services.
+ *
+ * This is the standard entry point for CLI, MCP, and SDK consumers.
+ * Provides: TaskService, DependencyService, ReadyService, HierarchyService,
+ * LearningService, FileLearningService, AttemptService, SyncService, MigrationService
+ *
+ * @param dbPath Path to SQLite database file
+ */
+export const makeAppLayer = (dbPath: string) => {
+  const infra = SqliteClientLive(dbPath)
+
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    LearningRepositoryLive,
+    FileLearningRepositoryLive,
+    AttemptRepositoryLive
+  ).pipe(
+    Layer.provide(infra)
+  )
+
+  // SyncServiceLive needs TaskService, repos, and infra
+  const syncServiceWithDeps = SyncServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(
+      infra,
+      repos,
+      TaskServiceLive.pipe(Layer.provide(repos))
+    ))
+  )
+
+  // AutoSyncServiceLive needs SyncService and infra
+  const autoSyncService = AutoSyncServiceLive.pipe(
+    Layer.provide(Layer.merge(infra, syncServiceWithDeps))
+  )
+
+  // Services need repos, embedding, and autoSyncService
+  const services = Layer.mergeAll(
+    TaskServiceLive,
+    DependencyServiceLive,
+    ReadyServiceLive,
+    HierarchyServiceLive,
+    LearningServiceLive,
+    FileLearningServiceLive,
+    AttemptServiceLive
+  ).pipe(
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, autoSyncService))
+  )
+
+  // MigrationService only needs SqliteClient
+  const migrationService = MigrationServiceLive.pipe(
+    Layer.provide(infra)
+  )
+
+  return Layer.mergeAll(services, syncServiceWithDeps, migrationService)
+}
+
+/**
+ * Create a minimal application layer without auto-sync.
+ * Useful for testing and simple CLI operations.
+ *
+ * @param dbPath Path to SQLite database file
+ */
+export const makeMinimalLayer = (dbPath: string) => {
+  const infra = SqliteClientLive(dbPath)
+
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    LearningRepositoryLive,
+    FileLearningRepositoryLive,
+    AttemptRepositoryLive
+  ).pipe(
+    Layer.provide(infra)
+  )
+
+  // Services with Noop embedding and auto-sync
+  const services = Layer.mergeAll(
+    TaskServiceLive,
+    DependencyServiceLive,
+    ReadyServiceLive,
+    HierarchyServiceLive,
+    LearningServiceLive,
+    FileLearningServiceLive,
+    AttemptServiceLive
+  ).pipe(
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, AutoSyncServiceNoop))
+  )
+
+  // MigrationService only needs SqliteClient
+  const migrationService = MigrationServiceLive.pipe(
+    Layer.provide(infra)
+  )
+
+  // SyncService for manual exports
+  const syncService = SyncServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(
+      infra,
+      repos,
+      TaskServiceLive.pipe(Layer.provide(repos))
+    ))
+  )
+
+  return Layer.mergeAll(services, migrationService, syncService)
+}

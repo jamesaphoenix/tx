@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Option } from "effect"
 import { LearningRepository, type BM25Result } from "../repo/learning-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
+import { AutoSyncService } from "./auto-sync-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import {
   type Learning,
@@ -140,6 +141,7 @@ export const LearningServiceLive = Layer.effect(
     const learningRepo = yield* LearningRepository
     const taskRepo = yield* TaskRepository
     const embeddingService = yield* EmbeddingService
+    const autoSync = yield* AutoSyncService
 
     // Load weights from config (with defaults)
     const bm25WeightStr = yield* learningRepo.getConfig("bm25_weight")
@@ -155,10 +157,21 @@ export const LearningServiceLive = Layer.effect(
           if (!input.content || input.content.trim().length === 0) {
             return yield* Effect.fail(new ValidationError({ reason: "Content is required" }))
           }
-          return yield* learningRepo.insert({
+          const learning = yield* learningRepo.insert({
             ...input,
             content: input.content.trim()
           })
+
+          // Try to compute embedding (graceful degradation if model unavailable)
+          const embeddingResult = yield* Effect.either(embeddingService.embed(learning.content))
+          if (embeddingResult._tag === "Right") {
+            yield* learningRepo.updateEmbedding(learning.id, embeddingResult.right)
+          }
+
+          yield* autoSync.afterLearningMutation()
+          return embeddingResult._tag === "Right"
+            ? { ...learning, embedding: embeddingResult.right }
+            : learning
         }),
 
       get: (id) =>
@@ -177,6 +190,7 @@ export const LearningServiceLive = Layer.effect(
             return yield* Effect.fail(new LearningNotFoundError({ id }))
           }
           yield* learningRepo.remove(id)
+          yield* autoSync.afterLearningMutation()
         }),
 
       search: (query) =>

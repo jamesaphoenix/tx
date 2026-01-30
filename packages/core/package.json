@@ -1,7 +1,7 @@
 {
   "name": "@tx/core",
   "version": "0.1.0",
-  "description": "Core business logic for tx",
+  "description": "Core business logic for tx - Effect-TS services and repositories",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,26 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./services": {
+      "types": "./dist/services/index.d.ts",
+      "import": "./dist/services/index.js"
+    },
+    "./repo": {
+      "types": "./dist/repo/index.d.ts",
+      "import": "./dist/repo/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "import": "./dist/schemas/index.js"
+    },
+    "./mappers": {
+      "types": "./dist/mappers/index.d.ts",
+      "import": "./dist/mappers/index.js"
+    },
+    "./layer": {
+      "types": "./dist/layer.d.ts",
+      "import": "./dist/layer.js"
     }
   },
   "files": [
@@ -18,13 +38,22 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "echo 'No tests yet'"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@tx/types": "*",
     "effect": "^3.19.15"
   },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": false
+    }
+  },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

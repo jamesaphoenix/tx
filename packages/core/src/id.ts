@@ -19,3 +19,6 @@ export const deterministicId = (seed: string): string => {
     .substring(0, 8)
   return `tx-${hash}`
 }
+
+/** Alias for deterministicId - generates SHA256-based fixture IDs for tests */
+export const fixtureId = deterministicId
