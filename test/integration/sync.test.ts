@@ -18,6 +18,9 @@ import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import { SqliteClient } from "../../src/db.js"
 import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
 import { DependencyRepositoryLive, DependencyRepository } from "../../src/repo/dep-repo.js"
+import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
+import { FileLearningRepositoryLive } from "../../src/repo/file-learning-repo.js"
+import { AttemptRepositoryLive } from "../../src/repo/attempt-repo.js"
 import { TaskServiceLive, TaskService } from "../../src/services/task-service.js"
 import { DependencyServiceLive } from "../../src/services/dep-service.js"
 import { ReadyServiceLive } from "../../src/services/ready-service.js"
@@ -41,7 +44,13 @@ const SYNC_FIXTURES = {
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
   const infra = Layer.succeed(SqliteClient, db as Database.Database)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    LearningRepositoryLive,
+    FileLearningRepositoryLive,
+    AttemptRepositoryLive
+  ).pipe(
     Layer.provide(infra)
   )
   const baseServices = Layer.mergeAll(
@@ -52,7 +61,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   ).pipe(
     Layer.provide(repos)
   )
-  // SyncService needs TaskService, TaskRepository, DependencyRepository, and SqliteClient
+  // SyncService needs TaskService, all repositories, and SqliteClient
   const syncService = SyncServiceLive.pipe(
     Layer.provide(Layer.merge(infra, Layer.merge(repos, baseServices)))
   )

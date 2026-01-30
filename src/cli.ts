@@ -457,37 +457,47 @@ Examples:
 
   "sync export": `tx sync export - Export tasks to JSONL
 
-Usage: tx sync export [--path <path>] [--json]
+Usage: tx sync export [options]
 
-Exports all tasks and dependencies from the database to a JSONL file.
-The file can be committed to git for sharing tasks across machines.
+Exports tasks and dependencies from the database to JSONL files.
+The files can be committed to git for sharing across machines.
 
 Options:
-  --path <p>  Output file path (default: .tx/tasks.jsonl)
-  --json      Output result as JSON
-  --help      Show this help
+  --path <p>        Output file path for tasks (default: .tx/tasks.jsonl)
+  --all             Export all entities (tasks, learnings, file-learnings, attempts)
+  --learnings       Export learnings to .tx/learnings.jsonl
+  --file-learnings  Export file learnings to .tx/file-learnings.jsonl
+  --attempts        Export attempts to .tx/attempts.jsonl
+  --json            Output result as JSON
+  --help            Show this help
 
 Examples:
-  tx sync export                           # Export to default path
-  tx sync export --path ~/backup.jsonl     # Export to custom path
-  tx sync export --json                    # JSON output for scripting`,
+  tx sync export                    # Export tasks only
+  tx sync export --all              # Export all entities
+  tx sync export --learnings        # Export tasks + learnings
+  tx sync export --all --json       # Export all as JSON`,
 
   "sync import": `tx sync import - Import tasks from JSONL
 
-Usage: tx sync import [--path <path>] [--json]
+Usage: tx sync import [options]
 
-Imports tasks from a JSONL file into the database. Uses timestamp-based
+Imports tasks from JSONL files into the database. Uses timestamp-based
 conflict resolution: newer records win. Safe to run multiple times.
 
 Options:
-  --path <p>  Input file path (default: .tx/tasks.jsonl)
-  --json      Output result as JSON
-  --help      Show this help
+  --path <p>        Input file path for tasks (default: .tx/tasks.jsonl)
+  --all             Import all entities (tasks, learnings, file-learnings, attempts)
+  --learnings       Import learnings from .tx/learnings.jsonl
+  --file-learnings  Import file learnings from .tx/file-learnings.jsonl
+  --attempts        Import attempts from .tx/attempts.jsonl
+  --json            Output result as JSON
+  --help            Show this help
 
 Examples:
-  tx sync import                           # Import from default path
-  tx sync import --path ~/shared.jsonl     # Import from custom path
-  tx sync import --json                    # JSON output for scripting`,
+  tx sync import                    # Import tasks only
+  tx sync import --all              # Import all entities
+  tx sync import --learnings        # Import tasks + learnings
+  tx sync import --all --json       # Import all as JSON`,
 
   "sync status": `tx sync status - Show sync status
 
@@ -1159,21 +1169,83 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
       if (subcommand === "export") {
         const path = opt(flags, "path")
-        const result = yield* syncSvc.export(path)
+        const allFlag = flag(flags, "all")
+        const learningsFlag = flag(flags, "learnings")
+        const fileLearningsFlag = flag(flags, "file-learnings")
+        const attemptsFlag = flag(flags, "attempts")
 
-        if (flag(flags, "json")) {
-          console.log(toJson(result))
+        // If --all or any specific entity flag, use exportAll
+        if (allFlag || learningsFlag || fileLearningsFlag || attemptsFlag) {
+          const options = {
+            learnings: allFlag || learningsFlag,
+            fileLearnings: allFlag || fileLearningsFlag,
+            attempts: allFlag || attemptsFlag
+          }
+          const result = yield* syncSvc.exportAll(options)
+
+          if (flag(flags, "json")) {
+            console.log(toJson(result))
+          } else {
+            console.log(`Exported tasks: ${result.tasks.opCount} operation(s) to ${result.tasks.path}`)
+            if (result.learnings) {
+              console.log(`Exported learnings: ${result.learnings.opCount} operation(s) to ${result.learnings.path}`)
+            }
+            if (result.fileLearnings) {
+              console.log(`Exported file-learnings: ${result.fileLearnings.opCount} operation(s) to ${result.fileLearnings.path}`)
+            }
+            if (result.attempts) {
+              console.log(`Exported attempts: ${result.attempts.opCount} operation(s) to ${result.attempts.path}`)
+            }
+          }
         } else {
-          console.log(`Exported ${result.opCount} operation(s) to ${result.path}`)
+          // Default: export tasks only
+          const result = yield* syncSvc.export(path)
+
+          if (flag(flags, "json")) {
+            console.log(toJson(result))
+          } else {
+            console.log(`Exported ${result.opCount} operation(s) to ${result.path}`)
+          }
         }
       } else if (subcommand === "import") {
         const path = opt(flags, "path")
-        const result = yield* syncSvc.import(path)
+        const allFlag = flag(flags, "all")
+        const learningsFlag = flag(flags, "learnings")
+        const fileLearningsFlag = flag(flags, "file-learnings")
+        const attemptsFlag = flag(flags, "attempts")
 
-        if (flag(flags, "json")) {
-          console.log(toJson(result))
+        // If --all or any specific entity flag, use importAll
+        if (allFlag || learningsFlag || fileLearningsFlag || attemptsFlag) {
+          const options = {
+            learnings: allFlag || learningsFlag,
+            fileLearnings: allFlag || fileLearningsFlag,
+            attempts: allFlag || attemptsFlag
+          }
+          const result = yield* syncSvc.importAll(options)
+
+          if (flag(flags, "json")) {
+            console.log(toJson(result))
+          } else {
+            console.log(`Imported tasks: ${result.tasks.imported}, Skipped: ${result.tasks.skipped}, Conflicts: ${result.tasks.conflicts}`)
+            if (result.learnings) {
+              console.log(`Imported learnings: ${result.learnings.imported}, Skipped: ${result.learnings.skipped}`)
+            }
+            if (result.fileLearnings) {
+              console.log(`Imported file-learnings: ${result.fileLearnings.imported}, Skipped: ${result.fileLearnings.skipped}`)
+            }
+            if (result.attempts) {
+              console.log(`Imported attempts: ${result.attempts.imported}, Skipped: ${result.attempts.skipped}`)
+            }
+          }
         } else {
-          console.log(`Imported: ${result.imported}, Skipped: ${result.skipped}, Conflicts: ${result.conflicts}`)
+          // Default: import tasks only
+          const result = yield* syncSvc.import(path)
+
+          if (flag(flags, "json")) {
+            console.log(toJson(result))
+          } else {
+            console.log(`Imported: ${result.imported}, Skipped: ${result.skipped}, Conflicts: ${result.conflicts}`)
+          }
         }
       } else if (subcommand === "status") {
         const status = yield* syncSvc.status()

@@ -6,14 +6,29 @@ import { SqliteClient } from "../db.js"
 import { TaskService } from "./task-service.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
+import { LearningRepository } from "../repo/learning-repo.js"
+import { FileLearningRepository } from "../repo/file-learning-repo.js"
+import { AttemptRepository } from "../repo/attempt-repo.js"
 import type { Task, TaskDependency, TaskId, TaskStatus } from "../schema.js"
+import type { Learning, LearningSourceType } from "../schemas/learning.js"
+import type { FileLearning } from "../schemas/file-learning.js"
+import type { Attempt, AttemptOutcome, AttemptId } from "../schemas/attempt.js"
 import {
   type TaskUpsertOp,
   type TaskDeleteOp,
   type DepAddOp,
   type DepRemoveOp,
+  type LearningUpsertOp,
+  type FileLearningUpsertOp,
+  type AttemptUpsertOp,
   SyncOperation as SyncOperationSchema,
-  type SyncOperation
+  LearningSyncOperation as LearningSyncOperationSchema,
+  FileLearnningSyncOperation as FileLearnningSyncOperationSchema,
+  AttemptSyncOperation as AttemptSyncOperationSchema,
+  type SyncOperation,
+  type LearningSyncOperation,
+  type FileLearnningSyncOperation,
+  type AttemptSyncOperation
 } from "../schemas/sync.js"
 
 /**
@@ -54,6 +69,35 @@ export interface CompactResult {
 }
 
 /**
+ * Options for export operations.
+ */
+export interface ExportOptions {
+  readonly learnings?: boolean
+  readonly fileLearnings?: boolean
+  readonly attempts?: boolean
+}
+
+/**
+ * Result of an exportAll operation.
+ */
+export interface ExportAllResult {
+  tasks: ExportResult
+  learnings?: ExportResult
+  fileLearnings?: ExportResult
+  attempts?: ExportResult
+}
+
+/**
+ * Result of an importAll operation.
+ */
+export interface ImportAllResult {
+  tasks: ImportResult
+  learnings?: ImportResult
+  fileLearnings?: ImportResult
+  attempts?: ImportResult
+}
+
+/**
  * SyncService provides JSONL-based export/import for git-tracked task syncing.
  * See DD-009 for full specification.
  */
@@ -72,6 +116,52 @@ export class SyncService extends Context.Tag("SyncService")<
      * @param path Optional path (default: .tx/tasks.jsonl)
      */
     readonly import: (path?: string) => Effect.Effect<ImportResult, ValidationError | DatabaseError>
+
+    /**
+     * Export learnings to JSONL file.
+     * @param path Optional path (default: .tx/learnings.jsonl)
+     */
+    readonly exportLearnings: (path?: string) => Effect.Effect<ExportResult, DatabaseError>
+
+    /**
+     * Import learnings from JSONL file.
+     * @param path Optional path (default: .tx/learnings.jsonl)
+     */
+    readonly importLearnings: (path?: string) => Effect.Effect<ImportResult, ValidationError | DatabaseError>
+
+    /**
+     * Export file learnings to JSONL file.
+     * @param path Optional path (default: .tx/file-learnings.jsonl)
+     */
+    readonly exportFileLearnings: (path?: string) => Effect.Effect<ExportResult, DatabaseError>
+
+    /**
+     * Import file learnings from JSONL file.
+     * @param path Optional path (default: .tx/file-learnings.jsonl)
+     */
+    readonly importFileLearnings: (path?: string) => Effect.Effect<ImportResult, ValidationError | DatabaseError>
+
+    /**
+     * Export attempts to JSONL file.
+     * @param path Optional path (default: .tx/attempts.jsonl)
+     */
+    readonly exportAttempts: (path?: string) => Effect.Effect<ExportResult, DatabaseError>
+
+    /**
+     * Import attempts from JSONL file.
+     * @param path Optional path (default: .tx/attempts.jsonl)
+     */
+    readonly importAttempts: (path?: string) => Effect.Effect<ImportResult, ValidationError | DatabaseError>
+
+    /**
+     * Export all entities (tasks + optionally learnings, file-learnings, attempts).
+     */
+    readonly exportAll: (options?: ExportOptions) => Effect.Effect<ExportAllResult, DatabaseError>
+
+    /**
+     * Import all entities (tasks + optionally learnings, file-learnings, attempts).
+     */
+    readonly importAll: (options?: ExportOptions) => Effect.Effect<ImportAllResult, ValidationError | DatabaseError>
 
     /**
      * Get current sync status.
@@ -114,6 +204,9 @@ export class SyncService extends Context.Tag("SyncService")<
 >() {}
 
 const DEFAULT_JSONL_PATH = ".tx/tasks.jsonl"
+const DEFAULT_LEARNINGS_PATH = ".tx/learnings.jsonl"
+const DEFAULT_FILE_LEARNINGS_PATH = ".tx/file-learnings.jsonl"
+const DEFAULT_ATTEMPTS_PATH = ".tx/attempts.jsonl"
 
 /**
  * Convert a Task to a TaskUpsertOp for JSONL export.
@@ -157,12 +250,63 @@ const atomicWrite = (filePath: string, content: string): void => {
   renameSync(tempPath, filePath)
 }
 
+/**
+ * Convert a Learning to a LearningUpsertOp for JSONL export.
+ */
+const learningToUpsertOp = (learning: Learning): LearningUpsertOp => ({
+  v: 1,
+  op: "learning_upsert",
+  ts: learning.createdAt.toISOString(),
+  id: learning.id,
+  data: {
+    content: learning.content,
+    sourceType: learning.sourceType,
+    sourceRef: learning.sourceRef,
+    keywords: learning.keywords,
+    category: learning.category
+  }
+})
+
+/**
+ * Convert a FileLearning to a FileLearningUpsertOp for JSONL export.
+ */
+const fileLearningToUpsertOp = (fl: FileLearning): FileLearningUpsertOp => ({
+  v: 1,
+  op: "file_learning_upsert",
+  ts: fl.createdAt.toISOString(),
+  id: fl.id,
+  data: {
+    filePattern: fl.filePattern,
+    note: fl.note,
+    taskId: fl.taskId
+  }
+})
+
+/**
+ * Convert an Attempt to an AttemptUpsertOp for JSONL export.
+ */
+const attemptToUpsertOp = (attempt: Attempt): AttemptUpsertOp => ({
+  v: 1,
+  op: "attempt_upsert",
+  ts: attempt.createdAt.toISOString(),
+  id: attempt.id,
+  data: {
+    taskId: attempt.taskId,
+    approach: attempt.approach,
+    outcome: attempt.outcome,
+    reason: attempt.reason
+  }
+})
+
 export const SyncServiceLive = Layer.effect(
   SyncService,
   Effect.gen(function* () {
     const taskService = yield* TaskService
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
+    const learningRepo = yield* LearningRepository
+    const fileLearningRepo = yield* FileLearningRepository
+    const attemptRepo = yield* AttemptRepository
     const db = yield* SqliteClient
 
     // Helper: Get config value from sync_config table
@@ -336,7 +480,7 @@ export const SyncServiceLive = Layer.effect(
           }
 
           // Apply dependency operations
-          for (const [_key, { op }] of depStates) {
+          for (const [, { op }] of depStates) {
             if (op.op === "dep_add") {
               // Add dependency, ignore if already exists
               yield* depRepo.insert(op.blockerId, op.blockedId).pipe(
@@ -505,6 +649,560 @@ export const SyncServiceLive = Layer.effect(
           })
 
           return { before, after: compacted.length }
+        }),
+
+      // ----- Learning Sync -----
+
+      exportLearnings: (path?: string) =>
+        Effect.gen(function* () {
+          const filePath = resolve(path ?? DEFAULT_LEARNINGS_PATH)
+          const learnings = yield* learningRepo.findAll()
+
+          const ops: LearningSyncOperation[] = learnings.map(learningToUpsertOp)
+          ops.sort((a, b) => a.ts.localeCompare(b.ts))
+
+          const jsonl = ops.map(op => JSON.stringify(op)).join("\n")
+          yield* Effect.try({
+            try: () => atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : "")),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          return { opCount: ops.length, path: filePath }
+        }),
+
+      importLearnings: (path?: string) =>
+        Effect.gen(function* () {
+          const filePath = resolve(path ?? DEFAULT_LEARNINGS_PATH)
+
+          if (!existsSync(filePath)) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          const content = yield* Effect.try({
+            try: () => readFileSync(filePath, "utf-8"),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          const lines = content.trim().split("\n").filter(Boolean)
+          if (lines.length === 0) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          // Parse and dedupe by ID (latest timestamp wins)
+          const states = new Map<number, { op: LearningSyncOperation; ts: string }>()
+          for (const line of lines) {
+            const parsed = yield* Effect.try({
+              try: () => JSON.parse(line),
+              catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+            })
+            const op = yield* Schema.decodeUnknown(LearningSyncOperationSchema)(parsed).pipe(
+              Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+            )
+            const existing = states.get(op.id)
+            if (!existing || op.ts > existing.ts) {
+              states.set(op.id, { op, ts: op.ts })
+            }
+          }
+
+          let imported = 0
+          let skipped = 0
+
+          for (const [, { op }] of states) {
+            if (op.op === "learning_upsert") {
+              const existing = yield* learningRepo.findById(op.id)
+              if (!existing) {
+                // Insert new learning
+                yield* learningRepo.insert({
+                  content: op.data.content,
+                  sourceType: op.data.sourceType as LearningSourceType,
+                  sourceRef: op.data.sourceRef ?? undefined,
+                  keywords: [...op.data.keywords],
+                  category: op.data.category ?? undefined
+                })
+                imported++
+              } else {
+                // Skip if exists (learnings don't have updatedAt for conflict resolution)
+                skipped++
+              }
+            }
+            // learning_delete ops would decrement imported if we tracked deleted IDs
+          }
+
+          return { imported, skipped, conflicts: 0 }
+        }),
+
+      // ----- File Learning Sync -----
+
+      exportFileLearnings: (path?: string) =>
+        Effect.gen(function* () {
+          const filePath = resolve(path ?? DEFAULT_FILE_LEARNINGS_PATH)
+          const fileLearnings = yield* fileLearningRepo.findAll()
+
+          const ops: FileLearnningSyncOperation[] = fileLearnings.map(fileLearningToUpsertOp)
+          ops.sort((a, b) => a.ts.localeCompare(b.ts))
+
+          const jsonl = ops.map(op => JSON.stringify(op)).join("\n")
+          yield* Effect.try({
+            try: () => atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : "")),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          return { opCount: ops.length, path: filePath }
+        }),
+
+      importFileLearnings: (path?: string) =>
+        Effect.gen(function* () {
+          const filePath = resolve(path ?? DEFAULT_FILE_LEARNINGS_PATH)
+
+          if (!existsSync(filePath)) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          const content = yield* Effect.try({
+            try: () => readFileSync(filePath, "utf-8"),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          const lines = content.trim().split("\n").filter(Boolean)
+          if (lines.length === 0) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          const states = new Map<number, { op: FileLearnningSyncOperation; ts: string }>()
+          for (const line of lines) {
+            const parsed = yield* Effect.try({
+              try: () => JSON.parse(line),
+              catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+            })
+            const op = yield* Schema.decodeUnknown(FileLearnningSyncOperationSchema)(parsed).pipe(
+              Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+            )
+            const existing = states.get(op.id)
+            if (!existing || op.ts > existing.ts) {
+              states.set(op.id, { op, ts: op.ts })
+            }
+          }
+
+          let imported = 0
+          let skipped = 0
+
+          for (const [, { op }] of states) {
+            if (op.op === "file_learning_upsert") {
+              const existing = yield* fileLearningRepo.findById(op.id)
+              if (!existing) {
+                yield* fileLearningRepo.insert({
+                  filePattern: op.data.filePattern,
+                  note: op.data.note,
+                  taskId: op.data.taskId ?? undefined
+                })
+                imported++
+              } else {
+                skipped++
+              }
+            }
+          }
+
+          return { imported, skipped, conflicts: 0 }
+        }),
+
+      // ----- Attempt Sync -----
+
+      exportAttempts: (path?: string) =>
+        Effect.gen(function* () {
+          const filePath = resolve(path ?? DEFAULT_ATTEMPTS_PATH)
+          const attempts = yield* attemptRepo.findAll()
+
+          const ops: AttemptSyncOperation[] = attempts.map(attemptToUpsertOp)
+          ops.sort((a, b) => a.ts.localeCompare(b.ts))
+
+          const jsonl = ops.map(op => JSON.stringify(op)).join("\n")
+          yield* Effect.try({
+            try: () => atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : "")),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          return { opCount: ops.length, path: filePath }
+        }),
+
+      importAttempts: (path?: string) =>
+        Effect.gen(function* () {
+          const filePath = resolve(path ?? DEFAULT_ATTEMPTS_PATH)
+
+          if (!existsSync(filePath)) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          const content = yield* Effect.try({
+            try: () => readFileSync(filePath, "utf-8"),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          const lines = content.trim().split("\n").filter(Boolean)
+          if (lines.length === 0) {
+            return { imported: 0, skipped: 0, conflicts: 0 }
+          }
+
+          const states = new Map<number, { op: AttemptSyncOperation; ts: string }>()
+          for (const line of lines) {
+            const parsed = yield* Effect.try({
+              try: () => JSON.parse(line),
+              catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+            })
+            const op = yield* Schema.decodeUnknown(AttemptSyncOperationSchema)(parsed).pipe(
+              Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+            )
+            const existing = states.get(op.id)
+            if (!existing || op.ts > existing.ts) {
+              states.set(op.id, { op, ts: op.ts })
+            }
+          }
+
+          let imported = 0
+          let skipped = 0
+
+          for (const [, { op }] of states) {
+            if (op.op === "attempt_upsert") {
+              const existing = yield* attemptRepo.findById(op.id as AttemptId)
+              if (!existing) {
+                yield* attemptRepo.insert({
+                  taskId: op.data.taskId,
+                  approach: op.data.approach,
+                  outcome: op.data.outcome as AttemptOutcome,
+                  reason: op.data.reason
+                })
+                imported++
+              } else {
+                skipped++
+              }
+            }
+          }
+
+          return { imported, skipped, conflicts: 0 }
+        }),
+
+      // ----- Export/Import All -----
+
+      exportAll: (options?: ExportOptions) =>
+        Effect.gen(function* () {
+          // Export tasks
+          const tasksFilePath = resolve(DEFAULT_JSONL_PATH)
+          const tasks = yield* taskService.list()
+          const deps = yield* depRepo.getAll()
+          const taskOps: SyncOperation[] = tasks.map(taskToUpsertOp)
+          const depOps: SyncOperation[] = deps.map(depToAddOp)
+          const allTaskOps = [...taskOps, ...depOps].sort((a, b) => a.ts.localeCompare(b.ts))
+          const tasksJsonl = allTaskOps.map(op => JSON.stringify(op)).join("\n")
+          yield* Effect.try({
+            try: () => atomicWrite(tasksFilePath, tasksJsonl + (tasksJsonl.length > 0 ? "\n" : "")),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          yield* setConfig("last_export", new Date().toISOString())
+          const tasksResult: ExportResult = { opCount: allTaskOps.length, path: tasksFilePath }
+
+          const result: ExportAllResult = { tasks: tasksResult }
+
+          if (options?.learnings !== false) {
+            const learningsPath = resolve(DEFAULT_LEARNINGS_PATH)
+            const learnings = yield* learningRepo.findAll()
+            const learningOps: LearningSyncOperation[] = learnings.map(learningToUpsertOp)
+            learningOps.sort((a, b) => a.ts.localeCompare(b.ts))
+            const learningsJsonl = learningOps.map(op => JSON.stringify(op)).join("\n")
+            yield* Effect.try({
+              try: () => atomicWrite(learningsPath, learningsJsonl + (learningsJsonl.length > 0 ? "\n" : "")),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            result.learnings = { opCount: learningOps.length, path: learningsPath }
+          }
+
+          if (options?.fileLearnings !== false) {
+            const flPath = resolve(DEFAULT_FILE_LEARNINGS_PATH)
+            const fileLearnings = yield* fileLearningRepo.findAll()
+            const flOps: FileLearnningSyncOperation[] = fileLearnings.map(fileLearningToUpsertOp)
+            flOps.sort((a, b) => a.ts.localeCompare(b.ts))
+            const flJsonl = flOps.map(op => JSON.stringify(op)).join("\n")
+            yield* Effect.try({
+              try: () => atomicWrite(flPath, flJsonl + (flJsonl.length > 0 ? "\n" : "")),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            result.fileLearnings = { opCount: flOps.length, path: flPath }
+          }
+
+          if (options?.attempts !== false) {
+            const attPath = resolve(DEFAULT_ATTEMPTS_PATH)
+            const attempts = yield* attemptRepo.findAll()
+            const attOps: AttemptSyncOperation[] = attempts.map(attemptToUpsertOp)
+            attOps.sort((a, b) => a.ts.localeCompare(b.ts))
+            const attJsonl = attOps.map(op => JSON.stringify(op)).join("\n")
+            yield* Effect.try({
+              try: () => atomicWrite(attPath, attJsonl + (attJsonl.length > 0 ? "\n" : "")),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            result.attempts = { opCount: attOps.length, path: attPath }
+          }
+
+          return result
+        }),
+
+      importAll: (options?: ExportOptions) =>
+        Effect.gen(function* () {
+          // Import tasks (inline version of import())
+          const tasksFilePath = resolve(DEFAULT_JSONL_PATH)
+          let tasksResult: ImportResult = { imported: 0, skipped: 0, conflicts: 0 }
+
+          if (existsSync(tasksFilePath)) {
+            const content = yield* Effect.try({
+              try: () => readFileSync(tasksFilePath, "utf-8"),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            const lines = content.trim().split("\n").filter(Boolean)
+            if (lines.length > 0) {
+              const ops: SyncOperation[] = []
+              for (const line of lines) {
+                const parsed = yield* Effect.try({
+                  try: () => JSON.parse(line),
+                  catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+                })
+                const op = yield* Schema.decodeUnknown(SyncOperationSchema)(parsed).pipe(
+                  Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+                )
+                ops.push(op)
+              }
+
+              const taskStates = new Map<string, { op: TaskUpsertOp | TaskDeleteOp; ts: string }>()
+              const depStates = new Map<string, { op: DepAddOp | DepRemoveOp; ts: string }>()
+
+              for (const op of ops) {
+                if (op.op === "upsert" || op.op === "delete") {
+                  const existing = taskStates.get(op.id)
+                  if (!existing || op.ts > existing.ts) {
+                    taskStates.set(op.id, { op: op as TaskUpsertOp | TaskDeleteOp, ts: op.ts })
+                  }
+                } else if (op.op === "dep_add" || op.op === "dep_remove") {
+                  const key = `${op.blockerId}:${op.blockedId}`
+                  const existing = depStates.get(key)
+                  if (!existing || op.ts > existing.ts) {
+                    depStates.set(key, { op: op as DepAddOp | DepRemoveOp, ts: op.ts })
+                  }
+                }
+              }
+
+              let imported = 0
+              let skipped = 0
+              let conflicts = 0
+
+              for (const [id, { op }] of taskStates) {
+                if (op.op === "upsert") {
+                  const existing = yield* taskRepo.findById(id)
+                  if (!existing) {
+                    const now = new Date()
+                    const task: Task = {
+                      id: id as TaskId,
+                      title: op.data.title,
+                      description: op.data.description,
+                      status: op.data.status as TaskStatus,
+                      parentId: op.data.parentId as TaskId | null,
+                      score: op.data.score,
+                      createdAt: new Date(op.ts),
+                      updatedAt: new Date(op.ts),
+                      completedAt: op.data.status === "done" ? now : null,
+                      metadata: op.data.metadata as Record<string, unknown>
+                    }
+                    yield* taskRepo.insert(task)
+                    imported++
+                  } else {
+                    const existingTs = existing.updatedAt.toISOString()
+                    if (op.ts > existingTs) {
+                      const updated: Task = {
+                        ...existing,
+                        title: op.data.title,
+                        description: op.data.description,
+                        status: op.data.status as TaskStatus,
+                        parentId: op.data.parentId as TaskId | null,
+                        score: op.data.score,
+                        updatedAt: new Date(op.ts),
+                        completedAt: op.data.status === "done" ? (existing.completedAt ?? new Date()) : null,
+                        metadata: op.data.metadata as Record<string, unknown>
+                      }
+                      yield* taskRepo.update(updated)
+                      imported++
+                    } else if (op.ts === existingTs) {
+                      skipped++
+                    } else {
+                      conflicts++
+                    }
+                  }
+                } else if (op.op === "delete") {
+                  const existing = yield* taskRepo.findById(id)
+                  if (existing) {
+                    yield* taskRepo.remove(id)
+                    imported++
+                  }
+                }
+              }
+
+              for (const [, { op }] of depStates) {
+                if (op.op === "dep_add") {
+                  yield* depRepo.insert(op.blockerId, op.blockedId).pipe(Effect.catchAll(() => Effect.void))
+                } else if (op.op === "dep_remove") {
+                  yield* depRepo.remove(op.blockerId, op.blockedId).pipe(Effect.catchAll(() => Effect.void))
+                }
+              }
+
+              yield* setConfig("last_import", new Date().toISOString())
+              tasksResult = { imported, skipped, conflicts }
+            }
+          }
+
+          const result: ImportAllResult = { tasks: tasksResult }
+
+          // Import learnings
+          if (options?.learnings !== false) {
+            const learningsPath = resolve(DEFAULT_LEARNINGS_PATH)
+            if (existsSync(learningsPath)) {
+              const content = yield* Effect.try({
+                try: () => readFileSync(learningsPath, "utf-8"),
+                catch: (cause) => new DatabaseError({ cause })
+              })
+              const lines = content.trim().split("\n").filter(Boolean)
+              let imported = 0
+              let skipped = 0
+              if (lines.length > 0) {
+                const states = new Map<number, { op: LearningSyncOperation; ts: string }>()
+                for (const line of lines) {
+                  const parsed = yield* Effect.try({
+                    try: () => JSON.parse(line),
+                    catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+                  })
+                  const op = yield* Schema.decodeUnknown(LearningSyncOperationSchema)(parsed).pipe(
+                    Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+                  )
+                  const existing = states.get(op.id)
+                  if (!existing || op.ts > existing.ts) {
+                    states.set(op.id, { op, ts: op.ts })
+                  }
+                }
+                for (const [, { op }] of states) {
+                  if (op.op === "learning_upsert") {
+                    const existing = yield* learningRepo.findById(op.id)
+                    if (!existing) {
+                      yield* learningRepo.insert({
+                        content: op.data.content,
+                        sourceType: op.data.sourceType as LearningSourceType,
+                        sourceRef: op.data.sourceRef ?? undefined,
+                        keywords: [...op.data.keywords],
+                        category: op.data.category ?? undefined
+                      })
+                      imported++
+                    } else {
+                      skipped++
+                    }
+                  }
+                }
+              }
+              result.learnings = { imported, skipped, conflicts: 0 }
+            } else {
+              result.learnings = { imported: 0, skipped: 0, conflicts: 0 }
+            }
+          }
+
+          // Import file learnings
+          if (options?.fileLearnings !== false) {
+            const flPath = resolve(DEFAULT_FILE_LEARNINGS_PATH)
+            if (existsSync(flPath)) {
+              const content = yield* Effect.try({
+                try: () => readFileSync(flPath, "utf-8"),
+                catch: (cause) => new DatabaseError({ cause })
+              })
+              const lines = content.trim().split("\n").filter(Boolean)
+              let imported = 0
+              let skipped = 0
+              if (lines.length > 0) {
+                const states = new Map<number, { op: FileLearnningSyncOperation; ts: string }>()
+                for (const line of lines) {
+                  const parsed = yield* Effect.try({
+                    try: () => JSON.parse(line),
+                    catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+                  })
+                  const op = yield* Schema.decodeUnknown(FileLearnningSyncOperationSchema)(parsed).pipe(
+                    Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+                  )
+                  const existing = states.get(op.id)
+                  if (!existing || op.ts > existing.ts) {
+                    states.set(op.id, { op, ts: op.ts })
+                  }
+                }
+                for (const [, { op }] of states) {
+                  if (op.op === "file_learning_upsert") {
+                    const existing = yield* fileLearningRepo.findById(op.id)
+                    if (!existing) {
+                      yield* fileLearningRepo.insert({
+                        filePattern: op.data.filePattern,
+                        note: op.data.note,
+                        taskId: op.data.taskId ?? undefined
+                      })
+                      imported++
+                    } else {
+                      skipped++
+                    }
+                  }
+                }
+              }
+              result.fileLearnings = { imported, skipped, conflicts: 0 }
+            } else {
+              result.fileLearnings = { imported: 0, skipped: 0, conflicts: 0 }
+            }
+          }
+
+          // Import attempts
+          if (options?.attempts !== false) {
+            const attPath = resolve(DEFAULT_ATTEMPTS_PATH)
+            if (existsSync(attPath)) {
+              const content = yield* Effect.try({
+                try: () => readFileSync(attPath, "utf-8"),
+                catch: (cause) => new DatabaseError({ cause })
+              })
+              const lines = content.trim().split("\n").filter(Boolean)
+              let imported = 0
+              let skipped = 0
+              if (lines.length > 0) {
+                const states = new Map<number, { op: AttemptSyncOperation; ts: string }>()
+                for (const line of lines) {
+                  const parsed = yield* Effect.try({
+                    try: () => JSON.parse(line),
+                    catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
+                  })
+                  const op = yield* Schema.decodeUnknown(AttemptSyncOperationSchema)(parsed).pipe(
+                    Effect.mapError((cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` }))
+                  )
+                  const existing = states.get(op.id)
+                  if (!existing || op.ts > existing.ts) {
+                    states.set(op.id, { op, ts: op.ts })
+                  }
+                }
+                for (const [, { op }] of states) {
+                  if (op.op === "attempt_upsert") {
+                    const existing = yield* attemptRepo.findById(op.id as AttemptId)
+                    if (!existing) {
+                      yield* attemptRepo.insert({
+                        taskId: op.data.taskId,
+                        approach: op.data.approach,
+                        outcome: op.data.outcome as AttemptOutcome,
+                        reason: op.data.reason
+                      })
+                      imported++
+                    } else {
+                      skipped++
+                    }
+                  }
+                }
+              }
+              result.attempts = { imported, skipped, conflicts: 0 }
+            } else {
+              result.attempts = { imported: 0, skipped: 0, conflicts: 0 }
+            }
+          }
+
+          return result
         }),
 
       setLastExport: (timestamp: Date) => setConfig("last_export", timestamp.toISOString()),

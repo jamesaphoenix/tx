@@ -1,14 +1,8 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
-import {
-  type Learning,
-  type LearningRow,
-  type LearningRowWithBM25,
-  type CreateLearningInput,
-  rowToLearning,
-  float32ArrayToBuffer
-} from "../schemas/learning.js"
+import { rowToLearning, float32ArrayToBuffer } from "../mappers/learning.js"
+import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@tx/types"
 
 /** Scored learning result from BM25 search */
 export interface BM25Result {
