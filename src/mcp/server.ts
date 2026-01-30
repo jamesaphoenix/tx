@@ -647,6 +647,45 @@ export const createMcpServer = (): McpServer => {
     }
   )
 
+  // ---------------------------------------------------------------------------
+  // tx_context - Get contextual learnings for a task
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_context",
+    "Get contextual learnings relevant to a task. Searches learnings using the task's title and description, returns scored results with BM25, recency, and relevance scores.",
+    {
+      taskId: z.string().describe("Task ID to get context for"),
+      maxTokens: z.number().int().positive().optional().describe("Maximum tokens for context (reserved for future use)")
+    },
+    async ({ taskId }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const result = await runEffect(
+          Effect.gen(function* () {
+            const learningService = yield* LearningService
+            return yield* learningService.getContextForTask(taskId)
+          })
+        )
+        const serializedLearnings = result.learnings.map(serializeLearningWithScore)
+        return {
+          content: [
+            { type: "text", text: `Found ${result.learnings.length} relevant learning(s) for task "${result.taskTitle}" (search: "${result.searchQuery}", ${result.searchDuration}ms)` },
+            { type: "text", text: JSON.stringify({
+              taskId: result.taskId,
+              taskTitle: result.taskTitle,
+              searchQuery: result.searchQuery,
+              searchDuration: result.searchDuration,
+              learnings: serializedLearnings
+            }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
   return server
 }
 
