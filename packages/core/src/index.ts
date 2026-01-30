@@ -109,7 +109,9 @@ export {
   FileLearningRepository,
   FileLearningRepositoryLive,
   AttemptRepository,
-  AttemptRepositoryLive
+  AttemptRepositoryLive,
+  RunRepository,
+  RunRepositoryLive
 } from "./repo/index.js"
 
 // =============================================================================

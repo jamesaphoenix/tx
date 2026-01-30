@@ -49,7 +49,6 @@ export const registerTaskTools = (server: McpServer): void => {
   // ---------------------------------------------------------------------------
   // tx_ready - List tasks that are ready to work on
   // ---------------------------------------------------------------------------
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_ready",
     "List tasks ready to be worked on (no incomplete blockers)",
@@ -110,7 +109,6 @@ export const registerTaskTools = (server: McpServer): void => {
   // ---------------------------------------------------------------------------
   // tx_list - List tasks with optional filters
   // ---------------------------------------------------------------------------
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_list",
     "List tasks with optional filters for status, parent, and limit",
@@ -220,7 +218,6 @@ export const registerTaskTools = (server: McpServer): void => {
   // ---------------------------------------------------------------------------
   // tx_update - Update an existing task
   // ---------------------------------------------------------------------------
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_update",
     "Update an existing task",

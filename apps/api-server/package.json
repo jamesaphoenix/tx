@@ -1,0 +1,85 @@
+{
+  "name": "@tx/api-server",
+  "version": "0.1.0",
+  "description": "TX REST/HTTP API server - OpenAPI-compliant HTTP interface",
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "bin": {
+    "tx-api": "./dist/server.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    },
+    "./routes/tasks": {
+      "types": "./dist/routes/tasks.d.ts",
+      "import": "./dist/routes/tasks.js"
+    },
+    "./routes/runs": {
+      "types": "./dist/routes/runs.d.ts",
+      "import": "./dist/routes/runs.js"
+    },
+    "./routes/learnings": {
+      "types": "./dist/routes/learnings.d.ts",
+      "import": "./dist/routes/learnings.js"
+    },
+    "./routes/sync": {
+      "types": "./dist/routes/sync.d.ts",
+      "import": "./dist/routes/sync.js"
+    },
+    "./routes/health": {
+      "types": "./dist/routes/health.d.ts",
+      "import": "./dist/routes/health.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsx --watch src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@tx/core": "*",
+    "@tx/types": "*",
+    "hono": "^4.5.0",
+    "@hono/node-server": "^1.12.0",
+    "@hono/zod-openapi": "^0.18.0",
+    "@hono/swagger-ui": "^0.4.0",
+    "effect": "^3.19.15",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "keywords": [
+    "tx",
+    "api",
+    "rest",
+    "http",
+    "openapi",
+    "effect-ts"
+  ]
+}

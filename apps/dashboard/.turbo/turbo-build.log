@@ -10,4 +10,4 @@ computing gzip size...
 dist/index.html                   0.46 kB │ gzip:   0.30 kB
 dist/assets/index-L3jBUI1v.css   24.32 kB │ gzip:   5.23 kB
 dist/assets/index-BLkyL0zT.js   362.61 kB │ gzip: 113.52 kB
-✓ built in 914ms
+✓ built in 851ms

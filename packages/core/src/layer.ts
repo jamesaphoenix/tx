@@ -12,6 +12,7 @@ import { DependencyRepositoryLive } from "./repo/dep-repo.js"
 import { LearningRepositoryLive } from "./repo/learning-repo.js"
 import { FileLearningRepositoryLive } from "./repo/file-learning-repo.js"
 import { AttemptRepositoryLive } from "./repo/attempt-repo.js"
+import { RunRepositoryLive } from "./repo/run-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
@@ -47,6 +48,7 @@ export { DependencyService } from "./services/dep-service.js"
 export { ReadyService } from "./services/ready-service.js"
 export { HierarchyService } from "./services/hierarchy-service.js"
 export { ScoreService } from "./services/score-service.js"
+export { RunRepository } from "./repo/run-repo.js"
 export {
   RerankerService,
   RerankerServiceNoop,
@@ -72,7 +74,8 @@ export const makeAppLayer = (dbPath: string) => {
     DependencyRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
-    AttemptRepositoryLive
+    AttemptRepositoryLive,
+    RunRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -109,7 +112,9 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(infra)
   )
 
-  return Layer.mergeAll(services, syncServiceWithDeps, migrationService)
+  // Also expose RunRepository directly for run tracking
+  // (Note: Consider creating RunService in future refactor)
+  return Layer.mergeAll(services, syncServiceWithDeps, migrationService, repos)
 }
 
 /**
@@ -126,7 +131,8 @@ export const makeMinimalLayer = (dbPath: string) => {
     DependencyRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
-    AttemptRepositoryLive
+    AttemptRepositoryLive,
+    RunRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -158,5 +164,6 @@ export const makeMinimalLayer = (dbPath: string) => {
     ))
   )
 
-  return Layer.mergeAll(services, migrationService, syncService)
+  // Also expose RunRepository directly for run tracking
+  return Layer.mergeAll(services, migrationService, syncService, repos)
 }

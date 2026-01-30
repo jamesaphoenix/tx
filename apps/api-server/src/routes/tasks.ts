@@ -1,0 +1,589 @@
+/**
+ * Task Routes
+ *
+ * Provides REST API endpoints for task CRUD operations with cursor-based pagination.
+ * All responses return TaskWithDeps per doctrine Rule 1.
+ */
+
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
+import { Effect } from "effect"
+import type { TaskId, TaskStatus, TaskWithDeps } from "@tx/types"
+import { TASK_STATUSES } from "@tx/types"
+import { TaskService, ReadyService, DependencyService, HierarchyService } from "@tx/core"
+import { runEffect } from "../runtime.js"
+
+// -----------------------------------------------------------------------------
+// Schemas
+// -----------------------------------------------------------------------------
+
+const TaskIdSchema = z.string().regex(/^tx-[a-z0-9]{6,8}$/).openapi({
+  example: "tx-abc123",
+  description: "Task ID in format tx-[a-z0-9]{6,8}"
+})
+
+const TaskStatusSchema = z.enum(TASK_STATUSES).openapi({
+  example: "active",
+  description: "Task status"
+})
+
+const TaskWithDepsSchema = z.object({
+  id: TaskIdSchema,
+  title: z.string(),
+  description: z.string(),
+  status: TaskStatusSchema,
+  parentId: TaskIdSchema.nullable(),
+  score: z.number().int(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+  metadata: z.record(z.unknown()),
+  blockedBy: z.array(TaskIdSchema),
+  blocks: z.array(TaskIdSchema),
+  children: z.array(TaskIdSchema),
+  isReady: z.boolean()
+}).openapi("TaskWithDeps")
+
+const PaginatedTasksSchema = z.object({
+  tasks: z.array(TaskWithDepsSchema),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+  total: z.number().int()
+}).openapi("PaginatedTasks")
+
+const TaskDetailSchema = z.object({
+  task: TaskWithDepsSchema,
+  blockedByTasks: z.array(TaskWithDepsSchema),
+  blocksTasks: z.array(TaskWithDepsSchema),
+  childTasks: z.array(TaskWithDepsSchema)
+}).openapi("TaskDetail")
+
+const CreateTaskSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  parentId: TaskIdSchema.optional(),
+  score: z.number().int().optional(),
+  metadata: z.record(z.unknown()).optional()
+}).openapi("CreateTask")
+
+const UpdateTaskSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  status: TaskStatusSchema.optional(),
+  parentId: TaskIdSchema.nullable().optional(),
+  score: z.number().int().optional(),
+  metadata: z.record(z.unknown()).optional()
+}).openapi("UpdateTask")
+
+const BlockDependencySchema = z.object({
+  blockerId: TaskIdSchema
+}).openapi("BlockDependency")
+
+// -----------------------------------------------------------------------------
+// Serialization
+// -----------------------------------------------------------------------------
+
+const serializeTask = (task: TaskWithDeps): z.infer<typeof TaskWithDepsSchema> => ({
+  id: task.id,
+  title: task.title,
+  description: task.description,
+  status: task.status,
+  parentId: task.parentId,
+  score: task.score,
+  createdAt: task.createdAt.toISOString(),
+  updatedAt: task.updatedAt.toISOString(),
+  completedAt: task.completedAt?.toISOString() ?? null,
+  metadata: task.metadata,
+  blockedBy: task.blockedBy,
+  blocks: task.blocks,
+  children: task.children,
+  isReady: task.isReady
+})
+
+// -----------------------------------------------------------------------------
+// Cursor Pagination Helpers
+// -----------------------------------------------------------------------------
+
+interface ParsedCursor {
+  score: number
+  id: string
+}
+
+const parseCursor = (cursor: string): ParsedCursor | null => {
+  const colonIndex = cursor.lastIndexOf(":")
+  if (colonIndex === -1) return null
+  const score = parseInt(cursor.slice(0, colonIndex), 10)
+  const id = cursor.slice(colonIndex + 1)
+  if (isNaN(score)) return null
+  return { score, id }
+}
+
+const buildCursor = (task: TaskWithDeps): string => {
+  return `${task.score}:${task.id}`
+}
+
+// -----------------------------------------------------------------------------
+// Route Definitions
+// -----------------------------------------------------------------------------
+
+const listTasksRoute = createRoute({
+  method: "get",
+  path: "/api/tasks",
+  tags: ["Tasks"],
+  summary: "List tasks with cursor-based pagination",
+  description: "Returns paginated tasks with optional filtering by status and search",
+  request: {
+    query: z.object({
+      cursor: z.string().optional().openapi({ description: "Pagination cursor (format: score:id)" }),
+      limit: z.coerce.number().int().min(1).max(100).default(20).openapi({ description: "Items per page" }),
+      status: z.string().optional().openapi({ description: "Comma-separated statuses to filter" }),
+      search: z.string().optional().openapi({ description: "Search in title/description" })
+    })
+  },
+  responses: {
+    200: {
+      description: "Paginated list of tasks",
+      content: { "application/json": { schema: PaginatedTasksSchema } }
+    }
+  }
+})
+
+const readyTasksRoute = createRoute({
+  method: "get",
+  path: "/api/tasks/ready",
+  tags: ["Tasks"],
+  summary: "List ready tasks",
+  description: "Returns tasks that are ready to work on (no incomplete blockers)",
+  request: {
+    query: z.object({
+      limit: z.coerce.number().int().min(1).max(100).default(100).openapi({ description: "Maximum tasks to return" })
+    })
+  },
+  responses: {
+    200: {
+      description: "List of ready tasks",
+      content: { "application/json": { schema: z.object({ tasks: z.array(TaskWithDepsSchema) }) } }
+    }
+  }
+})
+
+const getTaskRoute = createRoute({
+  method: "get",
+  path: "/api/tasks/{id}",
+  tags: ["Tasks"],
+  summary: "Get task details",
+  description: "Returns detailed task information including related tasks",
+  request: {
+    params: z.object({ id: TaskIdSchema })
+  },
+  responses: {
+    200: {
+      description: "Task details with related tasks",
+      content: { "application/json": { schema: TaskDetailSchema } }
+    },
+    404: {
+      description: "Task not found",
+      content: { "application/json": { schema: z.object({ error: z.object({ code: z.string(), message: z.string() }) }) } }
+    }
+  }
+})
+
+const createTaskRoute = createRoute({
+  method: "post",
+  path: "/api/tasks",
+  tags: ["Tasks"],
+  summary: "Create a new task",
+  request: {
+    body: { content: { "application/json": { schema: CreateTaskSchema } } }
+  },
+  responses: {
+    201: {
+      description: "Task created successfully",
+      content: { "application/json": { schema: TaskWithDepsSchema } }
+    }
+  }
+})
+
+const updateTaskRoute = createRoute({
+  method: "patch",
+  path: "/api/tasks/{id}",
+  tags: ["Tasks"],
+  summary: "Update a task",
+  request: {
+    params: z.object({ id: TaskIdSchema }),
+    body: { content: { "application/json": { schema: UpdateTaskSchema } } }
+  },
+  responses: {
+    200: {
+      description: "Task updated successfully",
+      content: { "application/json": { schema: TaskWithDepsSchema } }
+    },
+    404: { description: "Task not found" }
+  }
+})
+
+const completeTaskRoute = createRoute({
+  method: "post",
+  path: "/api/tasks/{id}/done",
+  tags: ["Tasks"],
+  summary: "Mark task as complete",
+  description: "Marks task as done and returns any tasks that became ready",
+  request: {
+    params: z.object({ id: TaskIdSchema })
+  },
+  responses: {
+    200: {
+      description: "Task completed",
+      content: {
+        "application/json": {
+          schema: z.object({
+            task: TaskWithDepsSchema,
+            nowReady: z.array(TaskWithDepsSchema)
+          })
+        }
+      }
+    },
+    404: { description: "Task not found" }
+  }
+})
+
+const deleteTaskRoute = createRoute({
+  method: "delete",
+  path: "/api/tasks/{id}",
+  tags: ["Tasks"],
+  summary: "Delete a task",
+  request: {
+    params: z.object({ id: TaskIdSchema })
+  },
+  responses: {
+    200: {
+      description: "Task deleted",
+      content: { "application/json": { schema: z.object({ success: z.boolean(), id: TaskIdSchema }) } }
+    },
+    404: { description: "Task not found" }
+  }
+})
+
+const blockTaskRoute = createRoute({
+  method: "post",
+  path: "/api/tasks/{id}/block",
+  tags: ["Tasks"],
+  summary: "Add a blocker dependency",
+  description: "Makes blockerId block this task (task cannot start until blocker is done)",
+  request: {
+    params: z.object({ id: TaskIdSchema }),
+    body: { content: { "application/json": { schema: BlockDependencySchema } } }
+  },
+  responses: {
+    200: {
+      description: "Dependency added",
+      content: { "application/json": { schema: TaskWithDepsSchema } }
+    },
+    400: { description: "Invalid dependency (circular or self-blocking)" },
+    404: { description: "Task not found" }
+  }
+})
+
+const unblockTaskRoute = createRoute({
+  method: "delete",
+  path: "/api/tasks/{id}/block/{blockerId}",
+  tags: ["Tasks"],
+  summary: "Remove a blocker dependency",
+  request: {
+    params: z.object({
+      id: TaskIdSchema,
+      blockerId: TaskIdSchema
+    })
+  },
+  responses: {
+    200: {
+      description: "Dependency removed",
+      content: { "application/json": { schema: TaskWithDepsSchema } }
+    },
+    404: { description: "Task or dependency not found" }
+  }
+})
+
+const getTaskTreeRoute = createRoute({
+  method: "get",
+  path: "/api/tasks/{id}/tree",
+  tags: ["Tasks"],
+  summary: "Get task subtree",
+  description: "Returns the task and all descendants in tree structure",
+  request: {
+    params: z.object({ id: TaskIdSchema })
+  },
+  responses: {
+    200: {
+      description: "Task tree",
+      content: { "application/json": { schema: z.object({ tasks: z.array(TaskWithDepsSchema) }) } }
+    },
+    404: { description: "Task not found" }
+  }
+})
+
+// -----------------------------------------------------------------------------
+// Router
+// -----------------------------------------------------------------------------
+
+export const tasksRouter = new OpenAPIHono()
+
+tasksRouter.openapi(listTasksRoute, async (c) => {
+  const { cursor, limit, status, search } = c.req.valid("query")
+
+  const tasks = await runEffect(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+
+      // Get all tasks with optional status filter
+      const statusFilter = status?.split(",").filter(Boolean) as TaskStatus[] | undefined
+      const allTasks = yield* taskService.listWithDeps({
+        status: statusFilter?.length === 1 ? statusFilter[0] : undefined
+      })
+
+      // Apply filters in memory for now (full implementation would use SQL)
+      let filtered: TaskWithDeps[] = [...allTasks]
+
+      // Filter by multiple statuses
+      if (statusFilter && statusFilter.length > 1) {
+        filtered = filtered.filter(t => statusFilter.includes(t.status))
+      }
+
+      // Search filter
+      if (search) {
+        const searchLower = search.toLowerCase()
+        filtered = filtered.filter(t =>
+          t.title.toLowerCase().includes(searchLower) ||
+          t.description.toLowerCase().includes(searchLower)
+        )
+      }
+
+      // Sort by score DESC, id ASC
+      filtered.sort((a: TaskWithDeps, b: TaskWithDeps) => {
+        if (a.score !== b.score) return b.score - a.score
+        return a.id.localeCompare(b.id)
+      })
+
+      // Apply cursor pagination
+      let startIndex = 0
+      if (cursor) {
+        const parsed = parseCursor(cursor)
+        if (parsed) {
+          startIndex = filtered.findIndex(t =>
+            t.score < parsed.score || (t.score === parsed.score && t.id > parsed.id)
+          )
+          if (startIndex === -1) startIndex = filtered.length
+        }
+      }
+
+      const total = filtered.length
+      const paginated = filtered.slice(startIndex, startIndex + limit + 1)
+      const hasMore = paginated.length > limit
+      const resultTasks = hasMore ? paginated.slice(0, limit) : paginated
+
+      return {
+        tasks: resultTasks,
+        hasMore,
+        total,
+        nextCursor: hasMore && resultTasks.length > 0
+          ? buildCursor(resultTasks[resultTasks.length - 1])
+          : null
+      }
+    })
+  )
+
+  return c.json({
+    tasks: tasks.tasks.map(serializeTask),
+    nextCursor: tasks.nextCursor,
+    hasMore: tasks.hasMore,
+    total: tasks.total
+  }, 200)
+})
+
+tasksRouter.openapi(readyTasksRoute, async (c) => {
+  const { limit } = c.req.valid("query")
+
+  const tasks = await runEffect(
+    Effect.gen(function* () {
+      const readyService = yield* ReadyService
+      return yield* readyService.getReady(limit)
+    })
+  )
+
+  return c.json({ tasks: tasks.map(serializeTask) }, 200)
+})
+
+tasksRouter.openapi(getTaskRoute, async (c) => {
+  const { id } = c.req.valid("param")
+
+  const detail = await runEffect(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+
+      const task = yield* taskService.getWithDeps(id as TaskId)
+
+      // Fetch related tasks
+      const blockedByTasks = yield* taskService.getWithDepsBatch(task.blockedBy)
+      const blocksTasks = yield* taskService.getWithDepsBatch(task.blocks)
+      const childTasks = yield* taskService.getWithDepsBatch(task.children)
+
+      return { task, blockedByTasks, blocksTasks, childTasks }
+    })
+  )
+
+  return c.json({
+    task: serializeTask(detail.task),
+    blockedByTasks: detail.blockedByTasks.map(serializeTask),
+    blocksTasks: detail.blocksTasks.map(serializeTask),
+    childTasks: detail.childTasks.map(serializeTask)
+  }, 200)
+})
+
+tasksRouter.openapi(createTaskRoute, async (c) => {
+  const body = c.req.valid("json")
+
+  const task = await runEffect(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      const created = yield* taskService.create({
+        title: body.title,
+        description: body.description,
+        parentId: body.parentId,
+        score: body.score,
+        metadata: body.metadata
+      })
+      return yield* taskService.getWithDeps(created.id)
+    })
+  )
+
+  return c.json(serializeTask(task), 201)
+})
+
+tasksRouter.openapi(updateTaskRoute, async (c) => {
+  const { id } = c.req.valid("param")
+  const body = c.req.valid("json")
+
+  const task = await runEffect(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      yield* taskService.update(id as TaskId, {
+        title: body.title,
+        description: body.description,
+        status: body.status,
+        parentId: body.parentId,
+        score: body.score,
+        metadata: body.metadata
+      })
+      return yield* taskService.getWithDeps(id as TaskId)
+    })
+  )
+
+  return c.json(serializeTask(task), 200)
+})
+
+tasksRouter.openapi(completeTaskRoute, async (c) => {
+  const { id } = c.req.valid("param")
+
+  const result = await runEffect(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      const readyService = yield* ReadyService
+
+      // Get tasks that this task blocks (before completing)
+      const blocking = yield* readyService.getBlocking(id as TaskId)
+
+      // Mark the task as done
+      yield* taskService.update(id as TaskId, { status: "done" })
+
+      // Get the updated task
+      const completedTask = yield* taskService.getWithDeps(id as TaskId)
+
+      // Find newly unblocked tasks
+      const candidateIds = blocking
+        .filter(t => ["backlog", "ready", "planning"].includes(t.status))
+        .map(t => t.id)
+      const candidatesWithDeps = yield* taskService.getWithDepsBatch(candidateIds)
+      const nowReady = candidatesWithDeps.filter(t => t.isReady)
+
+      return { task: completedTask, nowReady }
+    })
+  )
+
+  return c.json({
+    task: serializeTask(result.task),
+    nowReady: result.nowReady.map(serializeTask)
+  }, 200)
+})
+
+tasksRouter.openapi(deleteTaskRoute, async (c) => {
+  const { id } = c.req.valid("param")
+
+  await runEffect(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      yield* taskService.remove(id as TaskId)
+    })
+  )
+
+  return c.json({ success: true, id }, 200)
+})
+
+tasksRouter.openapi(blockTaskRoute, async (c) => {
+  const { id } = c.req.valid("param")
+  const { blockerId } = c.req.valid("json")
+
+  const task = await runEffect(
+    Effect.gen(function* () {
+      const depService = yield* DependencyService
+      const taskService = yield* TaskService
+
+      yield* depService.addBlocker(id as TaskId, blockerId as TaskId)
+      return yield* taskService.getWithDeps(id as TaskId)
+    })
+  )
+
+  return c.json(serializeTask(task), 200)
+})
+
+tasksRouter.openapi(unblockTaskRoute, async (c) => {
+  const { id, blockerId } = c.req.valid("param")
+
+  const task = await runEffect(
+    Effect.gen(function* () {
+      const depService = yield* DependencyService
+      const taskService = yield* TaskService
+
+      yield* depService.removeBlocker(id as TaskId, blockerId as TaskId)
+      return yield* taskService.getWithDeps(id as TaskId)
+    })
+  )
+
+  return c.json(serializeTask(task), 200)
+})
+
+tasksRouter.openapi(getTaskTreeRoute, async (c) => {
+  const { id } = c.req.valid("param")
+
+  const tasks = await runEffect(
+    Effect.gen(function* () {
+      const hierarchyService = yield* HierarchyService
+      const taskService = yield* TaskService
+
+      const tree = yield* hierarchyService.getTree(id as TaskId)
+
+      // Flatten tree and get all task IDs
+      type TreeNode = { task: { id: TaskId }; children: readonly TreeNode[] }
+      const flattenTree = (node: TreeNode): TaskId[] => {
+        const ids: TaskId[] = [node.task.id]
+        for (const child of node.children) {
+          ids.push(...flattenTree(child))
+        }
+        return ids
+      }
+
+      const allIds = flattenTree(tree)
+      return yield* taskService.getWithDepsBatch(allIds)
+    })
+  )
+
+  return c.json({ tasks: tasks.map(serializeTask) }, 200)
+})
