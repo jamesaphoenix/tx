@@ -16,12 +16,15 @@ import { SqliteClient } from "../../src/db.js"
 import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
 import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
 import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
+import { FileLearningRepositoryLive } from "../../src/repo/file-learning-repo.js"
 import { TaskServiceLive, TaskService } from "../../src/services/task-service.js"
 import { DependencyServiceLive, DependencyService } from "../../src/services/dep-service.js"
 import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service.js"
 import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
 import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
+import { FileLearningServiceLive, FileLearningService } from "../../src/services/file-learning-service.js"
 import type { TaskId, TaskWithDeps } from "../../src/schema.js"
+import type { FileLearning } from "../../src/schemas/file-learning.js"
 import type { Learning, LearningWithScore } from "../../src/schemas/learning.js"
 import { LEARNING_SOURCE_TYPES } from "../../src/schemas/learning.js"
 
@@ -30,7 +33,7 @@ import { LEARNING_SOURCE_TYPES } from "../../src/schemas/learning.js"
 // -----------------------------------------------------------------------------
 
 /** Services required by MCP tools */
-export type McpTestServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService
+export type McpTestServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService | FileLearningService
 
 /** MCP tool response format */
 export interface McpToolResponse {
@@ -60,7 +63,12 @@ export interface ParsedMcpResponse<T = unknown> {
 export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
   const infra = Layer.succeed(SqliteClient, db as Database.Database)
 
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, LearningRepositoryLive).pipe(
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    LearningRepositoryLive,
+    FileLearningRepositoryLive
+  ).pipe(
     Layer.provide(infra)
   )
 
@@ -69,7 +77,8 @@ export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRunti
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive,
-    LearningServiceLive
+    LearningServiceLive,
+    FileLearningServiceLive
   ).pipe(
     Layer.provide(repos)
   )
@@ -146,6 +155,15 @@ const toolSchemas = {
   tx_learning_helpful: z.object({
     id: z.number().int(),
     score: z.number().min(0).max(1).optional()
+  }),
+  // File Learning tools
+  tx_learn: z.object({
+    filePattern: z.string(),
+    note: z.string(),
+    taskId: z.string().optional()
+  }),
+  tx_recall: z.object({
+    path: z.string().optional()
   })
 } as const
 
@@ -204,6 +222,18 @@ const serializeLearningWithScore = (learning: LearningWithScore): Record<string,
   bm25Score: learning.bm25Score,
   vectorScore: learning.vectorScore,
   recencyScore: learning.recencyScore
+})
+
+/**
+ * Serialize a FileLearning for JSON output.
+ * Matches the serialization used in the actual MCP server.
+ */
+const serializeFileLearning = (learning: FileLearning): Record<string, unknown> => ({
+  id: learning.id,
+  filePattern: learning.filePattern,
+  note: learning.note,
+  taskId: learning.taskId,
+  createdAt: learning.createdAt.toISOString()
 })
 
 /**
@@ -565,6 +595,59 @@ function createToolEffect(
           content: [
             { type: "text" as const, text: `Updated learning #${id} with helpfulness score: ${effectiveScore}` },
             { type: "text" as const, text: JSON.stringify({ success: true, id, score: effectiveScore }) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
+
+    // ---------------------------------------------------------------------------
+    // File Learning Tools
+    // ---------------------------------------------------------------------------
+
+    case "tx_learn":
+      return Effect.gen(function* () {
+        const { filePattern, note, taskId } = args as z.infer<typeof toolSchemas.tx_learn>
+        const fileLearningService = yield* FileLearningService
+        const learning = yield* fileLearningService.create({
+          filePattern,
+          note,
+          taskId: taskId ?? undefined
+        })
+        const serialized = serializeFileLearning(learning)
+        return {
+          content: [
+            { type: "text" as const, text: `Created file learning: #${learning.id} for pattern "${learning.filePattern}"` },
+            { type: "text" as const, text: JSON.stringify(serialized) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
+
+    case "tx_recall":
+      return Effect.gen(function* () {
+        const { path } = args as z.infer<typeof toolSchemas.tx_recall>
+        const fileLearningService = yield* FileLearningService
+        const learnings = path
+          ? yield* fileLearningService.recall(path)
+          : yield* fileLearningService.getAll()
+        const serialized = learnings.map(serializeFileLearning)
+        const pathInfo = path ? ` for "${path}"` : ""
+        return {
+          content: [
+            { type: "text" as const, text: `Found ${learnings.length} file learning(s)${pathInfo}` },
+            { type: "text" as const, text: JSON.stringify(serialized) }
           ]
         }
       }).pipe(
@@ -2439,5 +2522,466 @@ describe("MCP tx_context Tool", () => {
     expect(response.isError).toBe(false)
     expect(response.data.taskId).toBe(FIXTURES.TASK_LOGIN)
     expect(response.data.taskTitle).toBe("Login page")
+  })
+})
+
+// =============================================================================
+// File Learning Tools (tx_learn, tx_recall) Integration Tests
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// tx_learn Tool Tests
+// -----------------------------------------------------------------------------
+
+describe("MCP tx_learn Tool", () => {
+  let db: InstanceType<typeof Database>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    runtime = makeTestRuntime(db)
+  })
+
+  afterEach(async () => {
+    await runtime.dispose()
+  })
+
+  it("creates file learning with exact path", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "src/db.ts", note: "Always run migrations in a transaction" }
+    )
+
+    expect(response.isError).toBe(false)
+    const learning = response.data
+
+    expect(learning).toHaveProperty("id")
+    expect(learning.id).toBe(1)
+    expect(learning.filePattern).toBe("src/db.ts")
+    expect(learning.note).toBe("Always run migrations in a transaction")
+    expect(learning.taskId).toBeNull()
+    expect(learning).toHaveProperty("createdAt")
+  })
+
+  it("creates file learning with single wildcard (*) pattern", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "src/services/*.ts", note: "Services must use Effect-TS patterns" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.filePattern).toBe("src/services/*.ts")
+    expect(response.data.note).toBe("Services must use Effect-TS patterns")
+  })
+
+  it("creates file learning with double wildcard (**) pattern", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "src/**/*.ts", note: "All TypeScript files should have JSDoc comments" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.filePattern).toBe("src/**/*.ts")
+    expect(response.data.note).toBe("All TypeScript files should have JSDoc comments")
+  })
+
+  it("creates file learning with question mark (?) pattern", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "src/?.ts", note: "Single character files are utilities" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.filePattern).toBe("src/?.ts")
+  })
+
+  it("creates file learning with task association", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      {
+        filePattern: "src/services/task-service.ts",
+        note: "TaskService handles all task CRUD operations",
+        taskId: FIXTURES.TASK_AUTH
+      }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.taskId).toBe(FIXTURES.TASK_AUTH)
+  })
+
+  it("creates multiple file learnings with unique IDs", async () => {
+    const response1 = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "first.ts", note: "First note" }
+    )
+    const response2 = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "second.ts", note: "Second note" }
+    )
+    const response3 = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "third.ts", note: "Third note" }
+    )
+
+    expect(response1.isError).toBe(false)
+    expect(response2.isError).toBe(false)
+    expect(response3.isError).toBe(false)
+
+    expect(response1.data.id).toBe(1)
+    expect(response2.data.id).toBe(2)
+    expect(response3.data.id).toBe(3)
+  })
+
+  it("returns error for empty file pattern", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "", note: "Valid note" }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+    expect(response.message).toContain("File pattern is required")
+  })
+
+  it("returns error for whitespace-only file pattern", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "   ", note: "Valid note" }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+    expect(response.message).toContain("File pattern is required")
+  })
+
+  it("returns error for empty note", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "src/db.ts", note: "" }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+    expect(response.message).toContain("Note is required")
+  })
+
+  it("returns error for whitespace-only note", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "src/db.ts", note: "   " }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+    expect(response.message).toContain("Note is required")
+  })
+
+  it("trims whitespace from filePattern and note", async () => {
+    const response = await callMcpToolParsed<"tx_learn", Record<string, unknown>>(
+      runtime,
+      "tx_learn",
+      { filePattern: "  src/db.ts  ", note: "  Trimmed note  " }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.filePattern).toBe("src/db.ts")
+    expect(response.data.note).toBe("Trimmed note")
+  })
+
+  it("includes correct text content format", async () => {
+    const response = await callMcpTool(runtime, "tx_learn", {
+      filePattern: "src/services/*.ts",
+      note: "Service learning"
+    })
+
+    expect(response.content).toHaveLength(2)
+    expect(response.content[0].type).toBe("text")
+    expect(response.content[0].text).toMatch(/Created file learning: #\d+ for pattern/)
+    expect(response.content[0].text).toContain("src/services/*.ts")
+    expect(response.content[1].type).toBe("text")
+
+    // Verify JSON is valid and has expected structure
+    const json = JSON.parse(response.content[1].text)
+    expect(json).toHaveProperty("id")
+    expect(json).toHaveProperty("filePattern")
+    expect(json).toHaveProperty("note")
+    expect(json).toHaveProperty("taskId")
+    expect(json).toHaveProperty("createdAt")
+  })
+})
+
+// -----------------------------------------------------------------------------
+// tx_recall Tool Tests
+// -----------------------------------------------------------------------------
+
+describe("MCP tx_recall Tool", () => {
+  let db: InstanceType<typeof Database>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    runtime = makeTestRuntime(db)
+  })
+
+  afterEach(async () => {
+    await runtime.dispose()
+  })
+
+  it("returns all file learnings when no path provided", async () => {
+    // Create some file learnings
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/db.ts", note: "DB note" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/index.ts", note: "Index note" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "test/unit/*.ts", note: "Test note" })
+
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      {}
+    )
+
+    expect(response.isError).toBe(false)
+    expect(Array.isArray(response.data)).toBe(true)
+    expect(response.data).toHaveLength(3)
+
+    // Verify each learning has expected fields
+    for (const learning of response.data) {
+      expect(learning).toHaveProperty("id")
+      expect(learning).toHaveProperty("filePattern")
+      expect(learning).toHaveProperty("note")
+      expect(learning).toHaveProperty("taskId")
+      expect(learning).toHaveProperty("createdAt")
+    }
+  })
+
+  it("returns learnings matching exact path", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/db.ts", note: "DB specific" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/index.ts", note: "Index specific" })
+
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/db.ts" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(1)
+    expect(response.data[0].note).toBe("DB specific")
+  })
+
+  it("returns learnings matching single wildcard (*) pattern", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/services/*.ts", note: "Service pattern" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/db.ts", note: "DB specific" })
+
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/services/task-service.ts" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(1)
+    expect(response.data[0].note).toBe("Service pattern")
+  })
+
+  it("returns learnings matching double wildcard (**) pattern", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/**/*.ts", note: "All TS files" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "test/*.ts", note: "Tests only" })
+
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/deep/nested/file.ts" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(1)
+    expect(response.data[0].note).toBe("All TS files")
+  })
+
+  it("returns multiple matching patterns", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/**/*.ts", note: "All TS files" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/services/*.ts", note: "Services only" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "test/*.ts", note: "Tests only" })
+
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/services/task-service.ts" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(2)
+
+    const notes = response.data.map((l: Record<string, unknown>) => l.note)
+    expect(notes).toContain("All TS files")
+    expect(notes).toContain("Services only")
+    expect(notes).not.toContain("Tests only")
+  })
+
+  it("returns empty array for non-matching path", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/*.ts", note: "Source files" })
+
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "test/unit/example.test.ts" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(0)
+  })
+
+  it("returns empty array when no learnings exist", async () => {
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/db.ts" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(0)
+  })
+
+  it("pattern matching: single * does not match path separators", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/*.ts", note: "Single wildcard" })
+
+    // Should NOT match - single * doesn't cross directory boundaries
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/deep/nested.ts" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(0)
+  })
+
+  it("pattern matching: double ** matches across directories", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/**/*.ts", note: "Double wildcard" })
+
+    // Should match - ** crosses directory boundaries
+    const response1 = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/db.ts" }
+    )
+    expect(response1.isError).toBe(false)
+    expect(response1.data).toHaveLength(1)
+
+    const response2 = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/deep/nested.ts" }
+    )
+    expect(response2.isError).toBe(false)
+    expect(response2.data).toHaveLength(1)
+
+    const response3 = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/very/deep/nested/file.ts" }
+    )
+    expect(response3.isError).toBe(false)
+    expect(response3.data).toHaveLength(1)
+  })
+
+  it("includes correct text content format with path parameter", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/db.ts", note: "DB note" })
+
+    const response = await callMcpTool(runtime, "tx_recall", { path: "src/db.ts" })
+
+    expect(response.content).toHaveLength(2)
+    expect(response.content[0].type).toBe("text")
+    expect(response.content[0].text).toMatch(/Found \d+ file learning\(s\) for/)
+    expect(response.content[0].text).toContain("src/db.ts")
+    expect(response.content[1].type).toBe("text")
+
+    // Verify JSON is valid array
+    const json = JSON.parse(response.content[1].text)
+    expect(Array.isArray(json)).toBe(true)
+  })
+
+  it("includes correct text content format without path parameter", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/db.ts", note: "DB note" })
+
+    const response = await callMcpTool(runtime, "tx_recall", {})
+
+    expect(response.content).toHaveLength(2)
+    expect(response.content[0].type).toBe("text")
+    expect(response.content[0].text).toMatch(/Found \d+ file learning\(s\)$/)
+    expect(response.content[0].text).not.toContain("for")
+    expect(response.content[1].type).toBe("text")
+
+    // Verify JSON is valid array
+    const json = JSON.parse(response.content[1].text)
+    expect(Array.isArray(json)).toBe(true)
+  })
+
+  it("recalled learnings include task association when present", async () => {
+    await callMcpTool(runtime, "tx_learn", {
+      filePattern: "src/services/*.ts",
+      note: "Service pattern",
+      taskId: FIXTURES.TASK_JWT
+    })
+    await callMcpTool(runtime, "tx_learn", {
+      filePattern: "src/db.ts",
+      note: "DB note"
+      // No taskId
+    })
+
+    const response = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      {}
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(2)
+
+    const withTask = response.data.find((l: Record<string, unknown>) => l.taskId !== null)
+    const withoutTask = response.data.find((l: Record<string, unknown>) => l.taskId === null)
+
+    expect(withTask).toBeDefined()
+    expect(withTask!.taskId).toBe(FIXTURES.TASK_JWT)
+    expect(withoutTask).toBeDefined()
+    expect(withoutTask!.taskId).toBeNull()
+  })
+
+  it("handles special characters in patterns correctly", async () => {
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/file.test.ts", note: "Test file" })
+    await callMcpTool(runtime, "tx_learn", { filePattern: "src/[special].ts", note: "Special brackets" })
+
+    // Exact match should work
+    const response1 = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/file.test.ts" }
+    )
+    expect(response1.isError).toBe(false)
+    expect(response1.data).toHaveLength(1)
+    expect(response1.data[0].note).toBe("Test file")
+
+    const response2 = await callMcpToolParsed<"tx_recall", Record<string, unknown>[]>(
+      runtime,
+      "tx_recall",
+      { path: "src/[special].ts" }
+    )
+    expect(response2.isError).toBe(false)
+    expect(response2.data).toHaveLength(1)
+    expect(response2.data[0].note).toBe("Special brackets")
   })
 })
