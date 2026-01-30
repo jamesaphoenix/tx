@@ -1,23 +1,69 @@
 # tx
 
-A lean task management system for AI agents and humans, built with Effect-TS.
+**Institutional memory for AI agents.** Not a task manager — a knowledge system.
 
-## Vision
+## Why tx?
 
-**The problem:** AI coding agents lose context across sessions. They repeat mistakes, forget learnings, and can't coordinate on complex multi-step work. Current solutions (markdown plans, git issues, session todos) are designed for humans, not agents.
+Claude Code now has native task tools. Soon it'll have persistent tasks. Why build tx?
 
-**tx's approach:** Give agents a persistent, queryable, dependency-aware system that:
-- **Remembers what worked** — Learnings persist across sessions and surface when relevant
-- **Tracks what failed** — Attempts record approaches tried, preventing repeated failures
-- **Coordinates work** — Dependencies ensure agents never work on blocked tasks
-- **Enables autonomy** — RALPH loop runs agents unattended until tasks complete
+| Native Tasks | tx |
+|--------------|-----|
+| Persistent todos | **Institutional memory** |
+| Task CRUD | Tasks + Learnings + Attempts |
+| Single agent | Multi-agent orchestration |
+| Account-scoped | Git-native (branch-scoped) |
+| Vendor lock-in | Open source, self-hosted |
 
-**Where we're going:**
-- Multi-agent orchestration with specialized agents (planner, implementer, reviewer, tester)
-- Semantic search over learnings using local embeddings (node-llama-cpp)
-- Real-time dashboard for monitoring agent progress
-- TypeScript SDK for building custom agents
-- Git-backed JSONL sync for team collaboration
+**tx isn't competing with task managers. It's building agent infrastructure.**
+
+### What Makes tx Different
+
+**1. Learnings System** — Knowledge that surfaces when relevant
+```bash
+tx learning:add "Use bcrypt for passwords, not SHA256"
+tx context tx-abc123  # Retrieves learnings relevant to THIS task
+```
+
+**2. Attempt Tracking** — Never repeat failed approaches
+```bash
+tx try tx-abc123 "Tried Redis caching" --failed "Race condition on invalidation"
+# Next agent sees what was already tried
+```
+
+**3. Multi-Agent Orchestration** — Specialized agents, shared task graph
+```
+Planner → Implementer → Reviewer → Tester
+   ↓           ↓            ↓          ↓
+   └───────── All share .tx/tasks.db ──┘
+```
+
+**4. Git-Native Collaboration** — Tasks travel with branches
+```bash
+tx sync export
+git checkout -b feature/auth
+# Tasks, learnings, attempts all version-controlled
+```
+
+**5. Dynamic Context Injection** — Learnings auto-surface via Claude Code hooks
+```
+┌─────────────────────────────────────────────────────────┐
+│  User prompt: "Work on tx-abc123"                       │
+│                      ↓                                  │
+│  [Hook] tx context tx-abc123 → relevant learnings       │
+│                      ↓                                  │
+│  Agent sees: task + learnings + failed attempts         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### The Real Value
+
+Tasks are the organizing principle. The value is:
+- **Learnings that compound** — Every session makes future sessions smarter
+- **Failed attempts that persist** — No more "let me try that approach" → "oh, that was tried"
+- **Context retrieval** — BM25 + vector search finds what's relevant
+- **Compaction** — LLM extracts wisdom from completed work
+
+**Memory that outlives conversations.**
 
 ## Quick Start
 

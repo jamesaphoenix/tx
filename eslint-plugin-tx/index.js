@@ -3,6 +3,7 @@
  */
 
 import requireIntegrationTests from './rules/require-integration-tests.js';
+import noInlineSql from './rules/no-inline-sql.js';
 
 const plugin = {
   meta: {
@@ -10,7 +11,8 @@ const plugin = {
     version: '1.0.0'
   },
   rules: {
-    'require-integration-tests': requireIntegrationTests
+    'require-integration-tests': requireIntegrationTests,
+    'no-inline-sql': noInlineSql
   },
   // Flat config recommended configuration
   configs: {
