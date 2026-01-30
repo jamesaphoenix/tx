@@ -24,6 +24,14 @@ export class FileLearningNotFoundError extends Data.TaggedError("FileLearningNot
   }
 }
 
+export class AttemptNotFoundError extends Data.TaggedError("AttemptNotFoundError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `Attempt not found: ${this.id}`
+  }
+}
+
 export class ValidationError extends Data.TaggedError("ValidationError")<{
   readonly reason: string
 }> {
