@@ -65,6 +65,24 @@ Tasks are the organizing principle. The value is:
 
 **Memory that outlives conversations.**
 
+### Why Dynamic Injection, Not Static Context
+
+Many tools dump learnings into CLAUDE.md files. This leads to context bloat.
+
+tx takes a different approach:
+- **CLAUDE.md stays light** — Doctrine rules, quick reference only
+- **Learnings surface at runtime** — Hooks inject relevant context per-task
+- **No accumulated cruft** — Old learnings don't pollute every session
+
+```
+Static approach (bad):
+  CLAUDE.md grows → 50KB → 200KB → context window exhausted
+
+tx approach (good):
+  CLAUDE.md: 5KB (doctrine)
+  Runtime: tx context tx-abc123 → 3 relevant learnings injected
+```
+
 ## Quick Start
 
 ```bash
