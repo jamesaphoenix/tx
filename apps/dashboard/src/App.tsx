@@ -200,10 +200,14 @@ function ChatMessage({ message }: { message: ChatMessage }) {
       <div className="mx-4 my-2 p-2 bg-gray-800/50 rounded text-xs font-mono">
         <span className="text-purple-400">{message.type}:</span>{" "}
         <span className="text-gray-400">{message.tool_name || "unknown"}</span>
-        {message.content && (
+        {message.content != null && (
           <pre className="mt-1 text-gray-500 whitespace-pre-wrap overflow-x-auto max-h-32 overflow-y-auto">
-            {typeof message.content === "string" ? message.content.slice(0, 500) : JSON.stringify(message.content, null, 2).slice(0, 500)}
-            {(typeof message.content === "string" ? message.content.length : JSON.stringify(message.content).length) > 500 && "..."}
+            {typeof message.content === "string"
+              ? message.content.slice(0, 500)
+              : JSON.stringify(message.content, null, 2).slice(0, 500)}
+            {(typeof message.content === "string"
+              ? message.content.length
+              : JSON.stringify(message.content).length) > 500 && "..."}
           </pre>
         )}
       </div>
@@ -363,7 +367,7 @@ type Tab = "tasks" | "runs"
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("runs")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [_selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
