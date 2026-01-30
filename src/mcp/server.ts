@@ -23,6 +23,7 @@ import { makeAppLayer } from "../layer.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "../schema.js"
 import { TASK_STATUSES } from "../schema.js"
 import type { FileLearning } from "../schemas/file-learning.js"
+import type { Learning, LearningWithScore } from "../schemas/learning.js"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -152,6 +153,36 @@ const serializeFileLearning = (learning: FileLearning): Record<string, unknown> 
   note: learning.note,
   taskId: learning.taskId,
   createdAt: learning.createdAt.toISOString()
+})
+
+/**
+ * Serialize a Learning for JSON output.
+ * Converts Date objects to ISO strings and Float32Array to number array.
+ */
+export const serializeLearning = (learning: Learning): Record<string, unknown> => ({
+  id: learning.id,
+  content: learning.content,
+  sourceType: learning.sourceType,
+  sourceRef: learning.sourceRef,
+  createdAt: learning.createdAt.toISOString(),
+  keywords: learning.keywords,
+  category: learning.category,
+  usageCount: learning.usageCount,
+  lastUsedAt: learning.lastUsedAt?.toISOString() ?? null,
+  outcomeScore: learning.outcomeScore,
+  embedding: learning.embedding ? Array.from(learning.embedding) : null
+})
+
+/**
+ * Serialize a LearningWithScore for JSON output.
+ * Extends serializeLearning with score fields.
+ */
+export const serializeLearningWithScore = (learning: LearningWithScore): Record<string, unknown> => ({
+  ...serializeLearning(learning),
+  relevanceScore: learning.relevanceScore,
+  bm25Score: learning.bm25Score,
+  vectorScore: learning.vectorScore,
+  recencyScore: learning.recencyScore
 })
 
 // -----------------------------------------------------------------------------
