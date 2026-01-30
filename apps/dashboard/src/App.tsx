@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type Run, type ChatMessage } from "./api/client"
-import { TaskCard } from "./components/tasks"
+import { TaskList } from "./components/tasks"
 
 // =============================================================================
 // Status Badges
@@ -27,57 +27,6 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`px-2 py-0.5 text-xs rounded-full text-white ${colors[status] ?? "bg-gray-400"}`}>
       {status}
     </span>
-  )
-}
-
-// =============================================================================
-// Task Components
-// =============================================================================
-
-function TaskList({ onSelectTask }: { onSelectTask: (taskId: string) => void }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["tasks"],
-    queryFn: fetchers.tasks,
-  })
-
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="animate-pulse bg-gray-700 h-20 rounded-lg" />
-        ))}
-      </div>
-    )
-  }
-
-  if (error) {
-    return <div className="text-red-400">Error loading tasks: {String(error)}</div>
-  }
-
-  const readyTasks = data?.tasks.filter(t => t.isReady) ?? []
-  const activeTasks = data?.tasks.filter(t => t.status === "active") ?? []
-
-  return (
-    <div className="space-y-4">
-      {activeTasks.length > 0 && (
-        <section>
-          <h3 className="text-sm font-semibold text-yellow-400 mb-2">Active ({activeTasks.length})</h3>
-          <div className="space-y-2">
-            {activeTasks.map(task => (
-              <TaskCard key={task.id} task={task} onClick={() => onSelectTask(task.id)} />
-            ))}
-          </div>
-        </section>
-      )}
-      <section>
-        <h3 className="text-sm font-semibold text-blue-400 mb-2">Ready ({readyTasks.length})</h3>
-        <div className="space-y-2">
-          {readyTasks.slice(0, 15).map(task => (
-            <TaskCard key={task.id} task={task} onClick={() => onSelectTask(task.id)} />
-          ))}
-        </div>
-      </section>
-    </div>
   )
 }
 
