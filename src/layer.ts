@@ -14,7 +14,7 @@ import { FileLearningServiceLive } from "./services/file-learning-service.js"
 import { AttemptServiceLive } from "./services/attempt-service.js"
 import { SyncService, SyncServiceLive } from "./services/sync-service.js"
 import { MigrationService, MigrationServiceLive } from "./services/migration-service.js"
-import { EmbeddingServiceAuto } from "./services/embedding-service.js"
+import { EmbeddingServiceNoop } from "./services/embedding-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService }
@@ -44,10 +44,9 @@ export const makeAppLayer = (dbPath: string) => {
     HierarchyServiceLive,
     LearningServiceLive,
     FileLearningServiceLive,
-    EmbeddingServiceAuto,
     AttemptServiceLive
   ).pipe(
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
   )
 
   // SyncServiceLive needs TaskService (from services), DependencyRepository (from repos), and SqliteClient (from infra)

@@ -29,8 +29,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(repos),
-    Layer.provide(EmbeddingServiceNoop)
+    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
   )
   return services
 }

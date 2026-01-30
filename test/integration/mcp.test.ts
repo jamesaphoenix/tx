@@ -81,7 +81,7 @@ export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRunti
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
   )
 
   return ManagedRuntime.make(services)

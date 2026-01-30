@@ -31,7 +31,7 @@ import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service
 import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
 import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
 import { SyncServiceLive, SyncService } from "../../src/services/sync-service.js"
-import { EmbeddingService } from "../../src/services/embedding-service.js"
+import { EmbeddingService, EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
 import type { TaskId } from "../../src/schema.js"
 
 // Skip unless STRESS=1 environment variable is set
@@ -107,7 +107,7 @@ function makeLearningTestLayer(db: InstanceType<typeof Database>) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
   )
   return services
 }

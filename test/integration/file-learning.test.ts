@@ -33,8 +33,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(repos),
-    Layer.provide(EmbeddingServiceNoop)
+    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
   )
   return services
 }
