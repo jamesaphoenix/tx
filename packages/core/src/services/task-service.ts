@@ -4,7 +4,7 @@ import { DependencyRepository } from "../repo/dep-repo.js"
 import { TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import { generateTaskId } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
-import type { Task, TaskId, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput } from "@tx/types"
+import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput } from "@tx/types"
 
 export class TaskService extends Context.Tag("TaskService")<
   TaskService,
@@ -14,6 +14,7 @@ export class TaskService extends Context.Tag("TaskService")<
     readonly getWithDeps: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly getWithDepsBatch: (ids: readonly TaskId[]) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
     readonly update: (id: TaskId, input: UpdateTaskInput) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError>
+    readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError>
     readonly remove: (id: TaskId) => Effect.Effect<void, TaskNotFoundError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
     readonly listWithDeps: (filter?: TaskFilter) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
@@ -234,6 +235,30 @@ export const TaskServiceLive = Layer.effect(
             yield* autoCompleteParent(updated.parentId, now)
           }
 
+          return updated
+        }),
+
+      forceStatus: (id, status) =>
+        Effect.gen(function* () {
+          const existing = yield* taskRepo.findById(id)
+          if (!existing) {
+            return yield* Effect.fail(new TaskNotFoundError({ id }))
+          }
+
+          if (!isValidStatus(status)) {
+            return yield* Effect.fail(new ValidationError({ reason: `Invalid status: ${status}` }))
+          }
+
+          const now = new Date()
+          const isDone = status === "done" && existing.status !== "done"
+          const updated: Task = {
+            ...existing,
+            status,
+            updatedAt: now,
+            completedAt: isDone ? now : (status !== "done" ? null : existing.completedAt)
+          }
+
+          yield* taskRepo.update(updated)
           return updated
         }),
 

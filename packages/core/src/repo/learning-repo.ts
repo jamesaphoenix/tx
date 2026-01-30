@@ -25,6 +25,7 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
     readonly updateEmbedding: (id: number, embedding: Float32Array) => Effect.Effect<void, DatabaseError>
     readonly remove: (id: number) => Effect.Effect<void, DatabaseError>
     readonly count: () => Effect.Effect<number, DatabaseError>
+    readonly countWithEmbeddings: () => Effect.Effect<number, DatabaseError>
     readonly getConfig: (key: string) => Effect.Effect<string | null, DatabaseError>
   }
 >() {}
@@ -210,6 +211,15 @@ export const LearningRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings").get() as { cnt: number }
+            return result.cnt
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      countWithEmbeddings: () =>
+        Effect.try({
+          try: () => {
+            const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NOT NULL").get() as { cnt: number }
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })

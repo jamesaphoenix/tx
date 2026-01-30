@@ -14,6 +14,7 @@ Commands:
   show <id>               Show task details
   update <id>             Update task
   done <id>               Mark task complete
+  reset <id>              Reset task to ready (recover from stuck)
   delete <id>             Delete task
   block <id> <blocker>    Add blocking dependency
   unblock <id> <blocker>  Remove blocking dependency
@@ -29,6 +30,7 @@ Commands:
   learning:search         Search learnings
   learning:recent         List recent learnings
   learning:helpful        Record learning helpfulness
+  learning:embed          Compute embeddings for learnings
   context                 Get contextual learnings for a task
   learn                   Attach a learning to file/glob pattern
   recall                  Query learnings for a path
@@ -181,6 +183,24 @@ Options:
 Examples:
   tx done tx-a1b2c3d4
   tx done tx-a1b2c3d4 --json`,
+
+  reset: `tx reset - Reset task to ready status
+
+Usage: tx reset <id> [options]
+
+Resets a task back to ready status, regardless of current status.
+Use this to recover from stuck tasks (e.g., worker killed mid-task).
+
+Arguments:
+  <id>    Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx reset tx-a1b2c3d4              # Reset stuck active task
+  tx reset tx-a1b2c3d4 --json`,
 
   delete: `tx delete - Delete a task
 
@@ -544,6 +564,24 @@ Options:
 Examples:
   tx learning:helpful 42
   tx learning:helpful 42 --score 0.8`,
+
+  "learning:embed": `tx learning:embed - Compute embeddings for learnings
+
+Usage: tx learning:embed [options]
+
+Computes vector embeddings for learnings to enable semantic search.
+Requires TX_EMBEDDINGS=1 environment variable to be set.
+
+Options:
+  --all      Re-embed all learnings (default: only those without embeddings)
+  --status   Show embedding coverage status
+  --json     Output as JSON
+  --help     Show this help
+
+Examples:
+  TX_EMBEDDINGS=1 tx learning:embed           # Embed learnings without embeddings
+  TX_EMBEDDINGS=1 tx learning:embed --all     # Re-embed all learnings
+  tx learning:embed --status                   # Show embedding coverage`,
 
   context: `tx context - Get contextual learnings for a task
 

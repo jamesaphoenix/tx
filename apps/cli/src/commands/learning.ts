@@ -233,6 +233,47 @@ export const recall = (pos: string[], flags: Flags) =>
     }
   })
 
+export const learningEmbed = (_pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const svc = yield* LearningService
+
+    // Status check doesn't require embeddings to be enabled
+    if (flag(flags, "status")) {
+      const status = yield* svc.embeddingStatus()
+
+      if (flag(flags, "json")) {
+        console.log(toJson(status))
+      } else {
+        console.log("Embedding Status:")
+        console.log(`  Total learnings: ${status.total}`)
+        console.log(`  With embeddings: ${status.withEmbeddings}`)
+        console.log(`  Without embeddings: ${status.withoutEmbeddings}`)
+        console.log(`  Coverage: ${status.coveragePercent.toFixed(1)}%`)
+      }
+      return
+    }
+
+    // Check if embeddings are enabled
+    if (process.env.TX_EMBEDDINGS !== "1") {
+      console.error("Error: Embeddings not enabled. Set TX_EMBEDDINGS=1 to enable.")
+      console.error("Example: TX_EMBEDDINGS=1 tx learning:embed")
+      process.exit(1)
+    }
+
+    const forceAll = flag(flags, "all")
+    const result = yield* svc.embedAll(forceAll)
+
+    if (flag(flags, "json")) {
+      console.log(toJson(result))
+    } else {
+      console.log("Embedding complete:")
+      console.log(`  Processed: ${result.processed}`)
+      console.log(`  Skipped: ${result.skipped}`)
+      console.log(`  Failed: ${result.failed}`)
+      console.log(`  Total: ${result.total}`)
+    }
+  })
+
 // Help command handler for learning subcommands
 export const learningHelp = (subcommand: string) =>
   Effect.sync(() => {
@@ -245,6 +286,7 @@ export const learningHelp = (subcommand: string) =>
       console.log("  tx learning:search <query>    Search learnings")
       console.log("  tx learning:recent            List recent learnings")
       console.log("  tx learning:helpful <id>      Record helpfulness")
+      console.log("  tx learning:embed             Compute embeddings for learnings")
       console.log("")
       console.log("Run 'tx learning:<command> --help' for command-specific help.")
     }

@@ -12,11 +12,11 @@ import { makeAppLayer } from "@tx/core"
 import { HELP_TEXT, commandHelp } from "./help.js"
 
 // Command imports
-import { add, list, ready, show, update, done, deleteTask } from "./commands/task.js"
+import { add, list, ready, show, update, done, deleteTask, reset } from "./commands/task.js"
 import { block, unblock } from "./commands/dep.js"
 import { children, tree } from "./commands/hierarchy.js"
 import { sync } from "./commands/sync.js"
-import { learningAdd, learningSearch, learningRecent, learningHelpful, context, learn, recall } from "./commands/learning.js"
+import { learningAdd, learningSearch, learningRecent, learningHelpful, learningEmbed, context, learn, recall } from "./commands/learning.js"
 import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
 
@@ -91,6 +91,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   show,
   update,
   done,
+  reset,
   delete: deleteTask,
   block,
   unblock,
@@ -111,6 +112,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "learning:search": learningSearch,
   "learning:recent": learningRecent,
   "learning:helpful": learningHelpful,
+  "learning:embed": learningEmbed,
 
   // Help command
   help: (pos) =>

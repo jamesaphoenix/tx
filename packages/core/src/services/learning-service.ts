@@ -7,6 +7,22 @@ import { RerankerService } from "./reranker-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextResult } from "@tx/types"
 
+/** Result of embedding operation */
+export interface EmbedResult {
+  processed: number
+  skipped: number
+  failed: number
+  total: number
+}
+
+/** Embedding coverage status */
+export interface EmbedStatus {
+  total: number
+  withEmbeddings: number
+  withoutEmbeddings: number
+  coveragePercent: number
+}
+
 /** RRF constant - standard value from the original paper */
 const RRF_K = 60
 
@@ -30,6 +46,8 @@ export class LearningService extends Context.Tag("LearningService")<
     readonly updateOutcome: (id: number, score: number) => Effect.Effect<void, LearningNotFoundError | ValidationError | DatabaseError>
     readonly getContextForTask: (taskId: string) => Effect.Effect<ContextResult, TaskNotFoundError | DatabaseError>
     readonly count: () => Effect.Effect<number, DatabaseError>
+    readonly embedAll: (forceAll?: boolean) => Effect.Effect<EmbedResult, DatabaseError>
+    readonly embeddingStatus: () => Effect.Effect<EmbedStatus, DatabaseError>
   }
 >() {}
 
@@ -495,7 +513,54 @@ export const LearningServiceLive = Layer.effect(
           }
         }),
 
-      count: () => learningRepo.count()
+      count: () => learningRepo.count(),
+
+      embedAll: (forceAll = false) =>
+        Effect.gen(function* () {
+          // Get learnings to embed
+          const allLearnings = yield* learningRepo.findAll()
+          const toEmbed = forceAll
+            ? allLearnings
+            : allLearnings.filter(l => !l.embedding)
+
+          let processed = 0
+          let skipped = 0
+          let failed = 0
+
+          for (const learning of toEmbed) {
+            const result = yield* Effect.either(embeddingService.embed(learning.content))
+            if (result._tag === "Right") {
+              yield* learningRepo.updateEmbedding(learning.id, result.right)
+              processed++
+            } else {
+              failed++
+            }
+          }
+
+          skipped = allLearnings.length - toEmbed.length
+
+          return {
+            processed,
+            skipped,
+            failed,
+            total: allLearnings.length
+          }
+        }),
+
+      embeddingStatus: () =>
+        Effect.gen(function* () {
+          const total = yield* learningRepo.count()
+          const withEmbeddings = yield* learningRepo.countWithEmbeddings()
+          const withoutEmbeddings = total - withEmbeddings
+          const coveragePercent = total > 0 ? (withEmbeddings / total) * 100 : 0
+
+          return {
+            total,
+            withEmbeddings,
+            withoutEmbeddings,
+            coveragePercent
+          }
+        })
     }
   })
 )
