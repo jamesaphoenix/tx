@@ -36,6 +36,17 @@ export interface TasksResponse {
   }
 }
 
+export interface PaginatedTasksResponse {
+  tasks: TaskWithDeps[]
+  nextCursor: string | null
+  hasMore: boolean
+  total: number
+  summary: {
+    total: number
+    byStatus: Record<string, number>
+  }
+}
+
 export interface ReadyResponse {
   tasks: TaskWithDeps[]
 }
@@ -83,6 +94,12 @@ export interface Run {
 
 export interface RunsResponse {
   runs: Run[]
+}
+
+export interface PaginatedRunsResponse {
+  runs: Run[]
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 export interface ChatMessage {
