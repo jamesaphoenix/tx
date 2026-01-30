@@ -115,6 +115,13 @@ export interface RunDetailResponse {
   messages: ChatMessage[]
 }
 
+export interface TaskDetailResponse {
+  task: TaskWithDeps
+  blockedByTasks: TaskWithDeps[]
+  blocksTasks: TaskWithDeps[]
+  childTasks: TaskWithDeps[]
+}
+
 // Effect-based API functions
 const fetchJson = <T>(url: string): Effect.Effect<T, ApiError> =>
   Effect.tryPromise({
@@ -131,6 +138,7 @@ const fetchJson = <T>(url: string): Effect.Effect<T, ApiError> =>
 export const api = {
   getTasks: () => fetchJson<TasksResponse>("/api/tasks"),
   getReady: () => fetchJson<ReadyResponse>("/api/tasks/ready"),
+  getTaskDetail: (id: string) => fetchJson<TaskDetailResponse>(`/api/tasks/${id}`),
   getRalph: () => fetchJson<RalphResponse>("/api/ralph"),
   getStats: () => fetchJson<StatsResponse>("/api/stats"),
   getRuns: () => fetchJson<RunsResponse>("/api/runs"),
@@ -141,6 +149,7 @@ export const api = {
 export const fetchers = {
   tasks: () => Effect.runPromise(api.getTasks()),
   ready: () => Effect.runPromise(api.getReady()),
+  taskDetail: (id: string) => Effect.runPromise(api.getTaskDetail(id)),
   ralph: () => Effect.runPromise(api.getRalph()),
   stats: () => Effect.runPromise(api.getStats()),
   runs: () => Effect.runPromise(api.getRuns()),

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest"
-import { Effect } from "effect"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { Context, Effect, Layer, Ref } from "effect"
 import {
   EmbeddingService,
   EmbeddingServiceNoop,
@@ -7,6 +7,30 @@ import {
   EmbeddingServiceAuto
 } from "../../src/services/embedding-service.js"
 import { EmbeddingUnavailableError } from "../../src/errors.js"
+
+// ============================================================================
+// Mock Factories for node-llama-cpp
+// ============================================================================
+
+/** Creates a successful mock embedding context */
+const createMockContext = (embedFn?: (text: string) => { vector: number[] }) => ({
+  getEmbeddingFor: embedFn ?? ((text: string) => Promise.resolve({ vector: Array(256).fill(0.1) }))
+})
+
+/** Creates a successful mock model */
+const createMockModel = (contextFn?: () => Promise<ReturnType<typeof createMockContext>>) => ({
+  createEmbeddingContext: contextFn ?? (() => Promise.resolve(createMockContext()))
+})
+
+/** Creates a successful mock llama instance */
+const createMockLlama = (modelFn?: (opts: { modelPath: string }) => Promise<ReturnType<typeof createMockModel>>) => ({
+  loadModel: modelFn ?? (() => Promise.resolve(createMockModel()))
+})
+
+/** Creates a successful mock node-llama-cpp module */
+const createMockNodeLlamaCpp = (llamaFn?: () => Promise<ReturnType<typeof createMockLlama>>) => ({
+  getLlama: llamaFn ?? (() => Promise.resolve(createMockLlama()))
+})
 
 describe("EmbeddingServiceNoop", () => {
   it("embed returns EmbeddingUnavailableError", async () => {
