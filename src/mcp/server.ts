@@ -19,18 +19,20 @@ import { HierarchyService } from "../services/hierarchy-service.js"
 import { LearningService } from "../services/learning-service.js"
 import { FileLearningService } from "../services/file-learning-service.js"
 import { SyncService } from "../services/sync-service.js"
+import { AttemptService } from "../services/attempt-service.js"
 import { makeAppLayer } from "../layer.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "../schema.js"
 import { TASK_STATUSES } from "../schema.js"
 import type { FileLearning } from "../schemas/file-learning.js"
 import type { Learning, LearningWithScore } from "../schemas/learning.js"
 import { LEARNING_SOURCE_TYPES } from "../schemas/learning.js"
+import type { Attempt } from "../schemas/attempt.js"
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
-export type McpServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService | FileLearningService | SyncService
+export type McpServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService | FileLearningService | SyncService | AttemptService
 
 export interface McpContent {
   type: "text"
@@ -184,6 +186,19 @@ export const serializeLearningWithScore = (learning: LearningWithScore): Record<
   bm25Score: learning.bm25Score,
   vectorScore: learning.vectorScore,
   recencyScore: learning.recencyScore
+})
+
+/**
+ * Serialize an Attempt for JSON output.
+ * Converts Date objects to ISO strings for proper serialization.
+ */
+const serializeAttempt = (attempt: Attempt): Record<string, unknown> => ({
+  id: attempt.id,
+  taskId: attempt.taskId,
+  approach: attempt.approach,
+  outcome: attempt.outcome,
+  reason: attempt.reason,
+  createdAt: attempt.createdAt.toISOString()
 })
 
 // -----------------------------------------------------------------------------
@@ -792,6 +807,40 @@ export const createMcpServer = (): McpServer => {
           content: [
             { type: "text", text: `Updated learning #${id} with helpfulness score: ${effectiveScore}` },
             { type: "text", text: JSON.stringify({ success: true, id, score: effectiveScore }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_attempts - List attempts for a task
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_attempts",
+    "List all attempts recorded for a task. Shows what approaches have been tried and their outcomes to help agents avoid repeating failed approaches.",
+    {
+      taskId: z.string().describe("Task ID to list attempts for")
+    },
+    async ({ taskId }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const attempts = await runEffect(
+          Effect.gen(function* () {
+            const attemptService = yield* AttemptService
+            return yield* attemptService.listForTask(taskId)
+          })
+        )
+        const serialized = attempts.map(serializeAttempt)
+        const failedCount = attempts.filter(a => a.outcome === "failed").length
+        const succeededCount = attempts.filter(a => a.outcome === "succeeded").length
+        return {
+          content: [
+            { type: "text", text: `Found ${attempts.length} attempt(s) for ${taskId} (${failedCount} failed, ${succeededCount} succeeded)` },
+            { type: "text", text: JSON.stringify(serialized) }
           ]
         }
       } catch (error) {

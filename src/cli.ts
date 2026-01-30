@@ -844,11 +844,26 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   ready: (_pos, flags) =>
     Effect.gen(function* () {
       const svc = yield* ReadyService
+      const attemptSvc = yield* AttemptService
       const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
       const tasks = yield* svc.getReady(limit)
 
+      // Get failed attempt counts for all tasks
+      const failedCounts = new Map<string, number>()
+      for (const t of tasks) {
+        const count = yield* attemptSvc.getFailedCount(t.id)
+        if (count > 0) {
+          failedCounts.set(t.id, count)
+        }
+      }
+
       if (flag(flags, "json")) {
-        console.log(toJson(tasks))
+        // Add failedAttemptCount to each task in JSON output
+        const tasksWithCounts = tasks.map(t => ({
+          ...t,
+          failedAttemptCount: failedCounts.get(t.id) ?? 0
+        }))
+        console.log(toJson(tasksWithCounts))
       } else {
         if (tasks.length === 0) {
           console.log("No ready tasks")
@@ -856,7 +871,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
           console.log(`${tasks.length} ready task(s):`)
           for (const t of tasks) {
             const blocksInfo = t.blocks.length > 0 ? ` (unblocks ${t.blocks.length})` : ""
-            console.log(`  ${t.id} [${t.score}] ${t.title}${blocksInfo}`)
+            const failedCount = failedCounts.get(t.id) ?? 0
+            const failedWarning = failedCount >= 2 ? ` \u26A0 ${failedCount} failed attempts` : ""
+            console.log(`  ${t.id} [${t.score}] ${t.title}${blocksInfo}${failedWarning}`)
           }
         }
       }
@@ -871,12 +888,30 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       }
 
       const svc = yield* TaskService
+      const attemptSvc = yield* AttemptService
       const task = yield* svc.getWithDeps(id as TaskId)
 
+      // Get up to 10 most recent attempts
+      const allAttempts = yield* attemptSvc.listForTask(id)
+      const attempts = allAttempts.slice(0, 10)
+
       if (flag(flags, "json")) {
-        console.log(toJson(task))
+        console.log(toJson({ ...task, attempts }))
       } else {
         console.log(formatTaskWithDeps(task))
+        // Show attempt history if there are any
+        if (attempts.length > 0) {
+          console.log("")
+          console.log("Previous Attempts:")
+          for (const a of attempts) {
+            const outcomeSymbol = a.outcome === "succeeded" ? "\u2713" : "\u2717"
+            console.log(`  ${outcomeSymbol} ${a.approach}`)
+            if (a.reason) {
+              console.log(`      Reason: ${a.reason}`)
+            }
+            console.log(`      ${a.createdAt.toISOString()}`)
+          }
+        }
       }
     }),
 
