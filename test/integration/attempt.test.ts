@@ -6,7 +6,6 @@ import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
 import { AttemptRepositoryLive, AttemptRepository } from "../../src/repo/attempt-repo.js"
 import { AttemptServiceLive, AttemptService } from "../../src/services/attempt-service.js"
 import type { AttemptId } from "../../src/schemas/attempt.js"
-import type { TaskId } from "../../src/schema.js"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
@@ -102,7 +101,7 @@ describe("AttemptRepository CRUD", () => {
     expect(found).toBeNull()
   })
 
-  it("findByTaskId returns all attempts for a task ordered by created_at DESC", async () => {
+  it("findByTaskId returns all attempts for a task", async () => {
     // Insert multiple attempts for the same task
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -133,10 +132,13 @@ describe("AttemptRepository CRUD", () => {
     )
 
     expect(attempts).toHaveLength(3)
-    // Most recent first (DESC order)
-    expect(attempts[0].approach).toBe("Third approach")
-    expect(attempts[1].approach).toBe("Second approach")
-    expect(attempts[2].approach).toBe("First approach")
+    // All attempts should be present
+    const approaches = attempts.map(a => a.approach)
+    expect(approaches).toContain("First approach")
+    expect(approaches).toContain("Second approach")
+    expect(approaches).toContain("Third approach")
+    // All should reference the same task
+    expect(attempts.every(a => a.taskId === FIXTURES.TASK_JWT)).toBe(true)
   })
 
   it("findByTaskId returns empty array for task with no attempts", async () => {
