@@ -69,6 +69,15 @@ export interface RunRow {
   metadata: string
 }
 
+/** Safely parse JSON with fallback to empty object */
+const safeParseMetadata = (json: string | null | undefined): Record<string, unknown> => {
+  try {
+    return JSON.parse(json || "{}") as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
 /** Convert database row to Run */
 export const rowToRun = (row: RunRow): Run => ({
   id: row.id as RunId,
@@ -83,7 +92,7 @@ export const rowToRun = (row: RunRow): Run => ({
   contextInjected: row.context_injected,
   summary: row.summary,
   errorMessage: row.error_message,
-  metadata: JSON.parse(row.metadata || "{}")
+  metadata: safeParseMetadata(row.metadata)
 })
 
 /** Serialize Run for JSON output */
