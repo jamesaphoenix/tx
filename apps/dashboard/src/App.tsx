@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { fetchers, type TaskWithDeps, type RalphActivity, type Run, type ChatMessage } from "./api/client"
+import { fetchers, type TaskWithDeps, type Run, type ChatMessage } from "./api/client"
 
 // =============================================================================
 // Status Badges
