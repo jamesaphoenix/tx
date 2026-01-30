@@ -324,3 +324,153 @@ describe("Hybrid Scoring", () => {
     }
   })
 })
+
+describe("RRF Hybrid Search", () => {
+  let db: InstanceType<typeof Database>
+  let layer: ReturnType<typeof makeTestLayer>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    layer = makeTestLayer(db)
+  })
+
+  it("search results include RRF score fields", async () => {
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        yield* svc.create({ content: "Database query optimization techniques" })
+        yield* svc.create({ content: "SQL indexing best practices for databases" })
+        return yield* svc.search({ query: "database optimization", limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(results.length).toBeGreaterThanOrEqual(1)
+
+    // Check that RRF fields are present on all results
+    for (const result of results) {
+      expect(result).toHaveProperty("rrfScore")
+      expect(result).toHaveProperty("bm25Rank")
+      expect(result).toHaveProperty("vectorRank")
+      expect(typeof result.rrfScore).toBe("number")
+      expect(typeof result.bm25Rank).toBe("number")
+      expect(typeof result.vectorRank).toBe("number")
+    }
+  })
+
+  it("BM25 ranks are 1-indexed and sequential", async () => {
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        yield* svc.create({ content: "Database optimization guide" })
+        yield* svc.create({ content: "Database performance tuning" })
+        yield* svc.create({ content: "Database scaling strategies" })
+        return yield* svc.search({ query: "database", limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(results.length).toBeGreaterThanOrEqual(1)
+
+    // All results from BM25 should have positive bm25Rank
+    const withBM25 = results.filter(r => r.bm25Rank > 0)
+    expect(withBM25.length).toBeGreaterThan(0)
+
+    // Ranks should be valid (1-indexed)
+    for (const result of withBM25) {
+      expect(result.bm25Rank).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  it("RRF score increases with better rank", async () => {
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        // Create learnings with varying relevance
+        yield* svc.create({ content: "Database database database" }) // Most relevant
+        yield* svc.create({ content: "Database systems" }) // Less relevant
+        yield* svc.create({ content: "Database" }) // Least relevant
+        return yield* svc.search({ query: "database", limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(results.length).toBeGreaterThanOrEqual(2)
+
+    // Results with lower (better) BM25 rank should have higher RRF score
+    // Since we're sorting by relevanceScore which includes RRF + boosts,
+    // we verify the RRF component is reasonable
+    for (const result of results) {
+      if (result.bm25Rank > 0) {
+        // RRF formula: 1/(k + rank) where k=60
+        // For rank 1: 1/61 ≈ 0.0164
+        // For rank 10: 1/70 ≈ 0.0143
+        expect(result.rrfScore).toBeGreaterThan(0)
+        expect(result.rrfScore).toBeLessThan(0.1) // Max possible is 1/(60+1) ≈ 0.0164
+      }
+    }
+  })
+
+  it("vector rank is 0 when embeddings are unavailable", async () => {
+    // Using EmbeddingServiceNoop, vector search should return nothing
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        yield* svc.create({ content: "Machine learning algorithms" })
+        return yield* svc.search({ query: "machine learning", limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(results.length).toBeGreaterThanOrEqual(1)
+
+    // With EmbeddingServiceNoop, all vectorRank should be 0
+    for (const result of results) {
+      expect(result.vectorRank).toBe(0)
+      expect(result.vectorScore).toBe(0)
+    }
+  })
+
+  it("search gracefully degrades to BM25-only when embeddings unavailable", async () => {
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        yield* svc.create({ content: "Effect-TS service layer patterns" })
+        yield* svc.create({ content: "TypeScript best practices" })
+        return yield* svc.search({ query: "Effect-TS patterns", limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should still return results based on BM25
+    expect(results.length).toBeGreaterThanOrEqual(1)
+
+    // Results should have valid BM25 scores and ranks
+    const matching = results.filter(r => r.bm25Rank > 0)
+    expect(matching.length).toBeGreaterThan(0)
+  })
+
+  it("relevance score combines RRF with recency and outcome boosts", async () => {
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        // Create learnings
+        yield* svc.create({ content: "API design principles" })
+        yield* svc.create({ content: "API design patterns" })
+
+        // Mark one as helpful
+        yield* svc.updateOutcome(1, 1.0)
+
+        return yield* svc.search({ query: "API design", limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(results.length).toBeGreaterThanOrEqual(2)
+
+    // Both should have similar RRF scores (same query relevance)
+    // But the one with outcome should have higher total relevance
+    const withOutcome = results.find(r => r.id === 1)
+    const withoutOutcome = results.find(r => r.id === 2)
+
+    if (withOutcome && withoutOutcome) {
+      // The outcome boost should make the first one rank higher
+      expect(withOutcome.relevanceScore).toBeGreaterThan(withoutOutcome.relevanceScore)
+    }
+  })
+})

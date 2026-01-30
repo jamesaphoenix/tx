@@ -5,11 +5,16 @@ import { EmbeddingService } from "./embedding-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextResult } from "@tx/types"
 
-/** Default weights for hybrid scoring */
-const DEFAULT_BM25_WEIGHT = 0.4
-const DEFAULT_VECTOR_WEIGHT = 0.3
-const DEFAULT_RECENCY_WEIGHT = 0.2
+/** RRF constant - standard value from the original paper */
+const RRF_K = 60
+
+/** Default weights for recency (used as boost on top of RRF) */
+const DEFAULT_RECENCY_WEIGHT = 0.1
 const MAX_AGE_DAYS = 30
+
+/** Boost weights for outcome and frequency */
+const OUTCOME_BOOST = 0.05
+const FREQUENCY_BOOST = 0.02
 
 export class LearningService extends Context.Tag("LearningService")<
   LearningService,
@@ -36,10 +41,6 @@ const calculateRecencyScore = (createdAt: Date): number => {
   return Math.max(0, 1 - ageDays / MAX_AGE_DAYS)
 }
 
-/** Boost weights for outcome and frequency */
-const OUTCOME_BOOST = 0.1
-const FREQUENCY_BOOST = 0.05
-
 /**
  * Calculate cosine similarity between two vectors.
  * Returns a value between -1 and 1, where 1 means identical direction.
@@ -64,45 +65,141 @@ const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
 }
 
 /**
- * Calculate vector scores for learnings that have embeddings.
- * Returns a Map from learning ID to cosine similarity score (0-1 normalized).
+ * Compute vector similarity scores and return ranked results.
+ * Rank is 1-indexed (1 = best match).
  */
-const calculateVectorScores = (
+const computeVectorRanking = (
   learnings: readonly Learning[],
   queryEmbedding: Float32Array | null
-): Map<number, number> => {
-  const scores = new Map<number, number>()
-
+): { learning: Learning; score: number; rank: number }[] => {
   if (!queryEmbedding) {
-    return scores
+    return []
   }
 
-  for (const learning of learnings) {
-    if (learning.embedding) {
-      // Cosine similarity is [-1, 1], normalize to [0, 1]
-      const similarity = cosineSimilarity(queryEmbedding, learning.embedding)
-      scores.set(learning.id, (similarity + 1) / 2)
-    }
-  }
+  const withScores = learnings
+    .filter(l => l.embedding !== null)
+    .map(learning => {
+      const similarity = cosineSimilarity(queryEmbedding, learning.embedding!)
+      // Normalize cosine similarity from [-1, 1] to [0, 1]
+      const score = (similarity + 1) / 2
+      return { learning, score }
+    })
+    .sort((a, b) => b.score - a.score)
 
-  return scores
+  // Add 1-indexed ranks
+  return withScores.map((item, idx) => ({
+    ...item,
+    rank: idx + 1
+  }))
 }
 
 /**
- * Combine BM25 results with vector similarity, recency, outcome, and frequency scoring.
- * Formula: score = bm25_weight * bm25_score + vector_weight * vector_score + recency_weight * recency_score
- *                + outcome_boost * outcome_score + frequency_boost * log(1 + usage_count)
+ * Reciprocal Rank Fusion (RRF) score calculation.
+ * Formula: RRF(d) = Σ 1/(k + rank_i(d))
+ *
+ * k is a constant (typically 60) that determines how much to weight
+ * items that appear in multiple lists vs items that rank highly in one list.
+ *
+ * @param k - RRF constant (default 60)
+ * @param ranks - Array of ranks (1-indexed, 0 means not present in that list)
  */
-const applyHybridScoring = (
+const rrfScore = (k: number, ...ranks: number[]): number => {
+  return ranks.reduce((sum, rank) => {
+    if (rank === 0) return sum // Not present in this list
+    return sum + 1 / (k + rank)
+  }, 0)
+}
+
+/**
+ * Interface for intermediate RRF computation results.
+ */
+interface RRFCandidate {
+  learning: Learning
+  bm25Score: number
+  bm25Rank: number
+  vectorScore: number
+  vectorRank: number
+  rrfScore: number
+  recencyScore: number
+}
+
+/**
+ * Combine BM25 and vector search results using Reciprocal Rank Fusion (RRF).
+ *
+ * RRF is a robust method for combining ranked lists that:
+ * 1. Does not require score normalization
+ * 2. Works well when combining different retrieval systems
+ * 3. Is robust to outliers and different score distributions
+ *
+ * The final relevance score combines:
+ * - RRF score from BM25 and vector rankings
+ * - Recency boost for newer learnings
+ * - Outcome boost for learnings marked as helpful
+ * - Frequency boost for frequently retrieved learnings
+ */
+const computeRRFScoring = (
   bm25Results: readonly BM25Result[],
-  vectorScores: Map<number, number>,
-  bm25Weight: number,
-  vectorWeight: number,
+  vectorRanking: { learning: Learning; score: number; rank: number }[]
+): RRFCandidate[] => {
+  // Build lookup maps for quick access
+  const bm25Map = new Map<number, { score: number; rank: number }>()
+  bm25Results.forEach((result, idx) => {
+    bm25Map.set(result.learning.id, { score: result.score, rank: idx + 1 })
+  })
+
+  const vectorMap = new Map<number, { score: number; rank: number }>()
+  vectorRanking.forEach(item => {
+    vectorMap.set(item.learning.id, { score: item.score, rank: item.rank })
+  })
+
+  // Collect all unique learnings from both sources
+  const allLearnings = new Map<number, Learning>()
+  for (const result of bm25Results) {
+    allLearnings.set(result.learning.id, result.learning)
+  }
+  for (const item of vectorRanking) {
+    allLearnings.set(item.learning.id, item.learning)
+  }
+
+  // Compute RRF scores for all candidates
+  const candidates: RRFCandidate[] = []
+  for (const [id, learning] of allLearnings) {
+    const bm25Info = bm25Map.get(id)
+    const vectorInfo = vectorMap.get(id)
+
+    const bm25Rank = bm25Info?.rank ?? 0
+    const vectorRank = vectorInfo?.rank ?? 0
+    const bm25Score = bm25Info?.score ?? 0
+    const vectorScore = vectorInfo?.score ?? 0
+    const recencyScore = calculateRecencyScore(learning.createdAt)
+
+    const rrf = rrfScore(RRF_K, bm25Rank, vectorRank)
+
+    candidates.push({
+      learning,
+      bm25Score,
+      bm25Rank,
+      vectorScore,
+      vectorRank,
+      rrfScore: rrf,
+      recencyScore
+    })
+  }
+
+  // Sort by RRF score (descending)
+  return candidates.sort((a, b) => b.rrfScore - a.rrfScore)
+}
+
+/**
+ * Convert RRF candidates to final LearningWithScore results.
+ * Applies additional boosts for recency, outcome, and frequency.
+ */
+const applyFinalScoring = (
+  candidates: RRFCandidate[],
   recencyWeight: number
 ): LearningWithScore[] => {
-  return bm25Results.map(({ learning, score: bm25Score }) => {
-    const recencyScore = calculateRecencyScore(learning.createdAt)
-    const vectorScore = vectorScores.get(learning.id) ?? 0
+  return candidates.map(candidate => {
+    const { learning, bm25Score, bm25Rank, vectorScore, vectorRank, rrfScore: rrf, recencyScore } = candidate
 
     // Outcome boost: if learning has been marked helpful, boost it
     const outcomeBoost = learning.outcomeScore !== null
@@ -112,8 +209,13 @@ const applyHybridScoring = (
     // Frequency boost: learnings that have been retrieved more get a small boost
     const frequencyBoost = FREQUENCY_BOOST * Math.log(1 + learning.usageCount)
 
-    const relevanceScore = bm25Weight * bm25Score +
-                           vectorWeight * vectorScore +
+    // Final relevance score: RRF as base + boosts
+    // RRF score range is [0, 2/k] for two lists, normalize to [0, 1] range
+    // Max possible RRF = 2 * 1/(k+1) ≈ 0.0328 for k=60
+    // Normalize: multiply by (k+1)/2 to get ~[0, 1]
+    const normalizedRRF = rrf * (RRF_K + 1) / 2
+
+    const relevanceScore = normalizedRRF +
                            recencyWeight * recencyScore +
                            outcomeBoost +
                            frequencyBoost
@@ -123,7 +225,10 @@ const applyHybridScoring = (
       relevanceScore,
       bm25Score,
       vectorScore,
-      recencyScore
+      recencyScore,
+      rrfScore: rrf,
+      bm25Rank,
+      vectorRank
     }
   }).sort((a, b) => b.relevanceScore - a.relevanceScore)
 }
@@ -135,12 +240,8 @@ export const LearningServiceLive = Layer.effect(
     const taskRepo = yield* TaskRepository
     const embeddingService = yield* EmbeddingService
 
-    // Load weights from config (with defaults)
-    const bm25WeightStr = yield* learningRepo.getConfig("bm25_weight")
-    const vectorWeightStr = yield* learningRepo.getConfig("vector_weight")
+    // Load recency weight from config (RRF doesn't need BM25/vector weights)
     const recencyWeightStr = yield* learningRepo.getConfig("recency_weight")
-    const bm25Weight = bm25WeightStr ? parseFloat(bm25WeightStr) : DEFAULT_BM25_WEIGHT
-    const vectorWeight = vectorWeightStr ? parseFloat(vectorWeightStr) : DEFAULT_VECTOR_WEIGHT
     const recencyWeight = recencyWeightStr ? parseFloat(recencyWeightStr) : DEFAULT_RECENCY_WEIGHT
 
     return {
@@ -175,22 +276,26 @@ export const LearningServiceLive = Layer.effect(
 
       search: (query) =>
         Effect.gen(function* () {
-          const { query: searchQuery, limit = 10, minScore = 0.3 } = query
+          const { query: searchQuery, limit = 10, minScore = 0.1 } = query
 
-          // BM25 search
+          // Get BM25 search results (ranked list 1)
           const bm25Results = yield* learningRepo.bm25Search(searchQuery, limit * 3)
 
           // Try to get query embedding for vector search (graceful degradation)
           const queryEmbedding = yield* Effect.option(embeddingService.embed(searchQuery))
           const queryEmbeddingValue = Option.getOrNull(queryEmbedding)
 
-          // Calculate vector scores for learnings that have embeddings
-          const learnings = bm25Results.map(r => r.learning)
-          const vectorScores = calculateVectorScores(learnings, queryEmbeddingValue)
+          // Get all learnings that have embeddings for vector ranking
+          const learningsWithEmbeddings = yield* learningRepo.findWithEmbeddings(limit * 3)
 
-          // Apply hybrid scoring (BM25 + vector + recency)
-          // If no embeddings available, vectorWeight contribution is 0
-          const scored = applyHybridScoring(bm25Results, vectorScores, bm25Weight, vectorWeight, recencyWeight)
+          // Compute vector ranking (ranked list 2)
+          const vectorRanking = computeVectorRanking(learningsWithEmbeddings, queryEmbeddingValue)
+
+          // Combine using RRF
+          const candidates = computeRRFScoring(bm25Results, vectorRanking)
+
+          // Apply final scoring with boosts
+          const scored = applyFinalScoring(candidates, recencyWeight)
 
           // Filter by minimum score and limit
           return scored
@@ -234,23 +339,28 @@ export const LearningServiceLive = Layer.effect(
           // Build search query from task content
           const searchQuery = `${task.title} ${task.description}`.trim()
 
-          // Search for relevant learnings
+          // Get BM25 results
           const bm25Results = yield* learningRepo.bm25Search(searchQuery, 30)
 
           // Try to get query embedding for vector search (graceful degradation)
           const queryEmbedding = yield* Effect.option(embeddingService.embed(searchQuery))
           const queryEmbeddingValue = Option.getOrNull(queryEmbedding)
 
-          // Calculate vector scores
-          const resultLearnings = bm25Results.map(r => r.learning)
-          const vectorScores = calculateVectorScores(resultLearnings, queryEmbeddingValue)
+          // Get learnings with embeddings for vector ranking
+          const learningsWithEmbeddings = yield* learningRepo.findWithEmbeddings(30)
 
-          // Apply hybrid scoring
-          const scored = applyHybridScoring(bm25Results, vectorScores, bm25Weight, vectorWeight, recencyWeight)
+          // Compute vector ranking
+          const vectorRanking = computeVectorRanking(learningsWithEmbeddings, queryEmbeddingValue)
+
+          // Combine using RRF
+          const candidates = computeRRFScoring(bm25Results, vectorRanking)
+
+          // Apply final scoring with boosts
+          const scored = applyFinalScoring(candidates, recencyWeight)
 
           // Filter and limit
           const learnings = scored
-            .filter(r => r.relevanceScore >= 0.2)
+            .filter(r => r.relevanceScore >= 0.05)
             .slice(0, 10)
 
           // Record usage for returned learnings

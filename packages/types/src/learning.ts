@@ -51,6 +51,12 @@ export interface LearningWithScore extends Learning {
   readonly bm25Score: number;
   readonly vectorScore: number;
   readonly recencyScore: number;
+  /** RRF (Reciprocal Rank Fusion) score from combining BM25 and vector rankings */
+  readonly rrfScore: number;
+  /** Rank in BM25 results (1-indexed, 0 if not in BM25 results) */
+  readonly bm25Rank: number;
+  /** Rank in vector similarity results (1-indexed, 0 if not in vector results) */
+  readonly vectorRank: number;
 }
 
 /**

@@ -18,6 +18,8 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
     readonly findAll: () => Effect.Effect<readonly Learning[], DatabaseError>
     readonly findRecent: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly bm25Search: (query: string, limit: number) => Effect.Effect<readonly BM25Result[], DatabaseError>
+    /** Find learnings that have embeddings (for vector search) */
+    readonly findWithEmbeddings: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly incrementUsage: (id: number) => Effect.Effect<void, DatabaseError>
     readonly updateOutcomeScore: (id: number, score: number) => Effect.Effect<void, DatabaseError>
     readonly updateEmbedding: (id: number, embedding: Float32Array) => Effect.Effect<void, DatabaseError>
@@ -151,6 +153,17 @@ export const LearningRepositoryLive = Layer.effect(
               learning: rowToLearning(row),
               score: 1.0 / (1 + rank * 0.1)
             }))
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findWithEmbeddings: (limit) =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              `SELECT * FROM learnings WHERE embedding IS NOT NULL ORDER BY created_at DESC LIMIT ?`
+            ).all(limit) as LearningRow[]
+            return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
