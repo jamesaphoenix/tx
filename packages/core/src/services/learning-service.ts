@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Option } from "effect"
 import { LearningRepository, type BM25Result } from "../repo/learning-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
+import { QueryExpansionService } from "./query-expansion-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextResult } from "@tx/types"
 
@@ -239,10 +240,49 @@ export const LearningServiceLive = Layer.effect(
     const learningRepo = yield* LearningRepository
     const taskRepo = yield* TaskRepository
     const embeddingService = yield* EmbeddingService
+    const queryExpansionService = yield* QueryExpansionService
 
     // Load recency weight from config (RRF doesn't need BM25/vector weights)
     const recencyWeightStr = yield* learningRepo.getConfig("recency_weight")
     const recencyWeight = recencyWeightStr ? parseFloat(recencyWeightStr) : DEFAULT_RECENCY_WEIGHT
+
+    /**
+     * Perform BM25 search across multiple queries and merge results.
+     * Uses RRF to combine rankings from each query.
+     */
+    const multiQueryBM25Search = (queries: readonly string[], limit: number) =>
+      Effect.gen(function* () {
+        // Search for each query
+        const allResults: BM25Result[][] = []
+        for (const query of queries) {
+          const results = yield* learningRepo.bm25Search(query, limit)
+          allResults.push([...results])
+        }
+
+        // Merge results using best rank across all queries
+        const learningRanks = new Map<number, { learning: Learning; bestRank: number; bestScore: number }>()
+
+        for (const results of allResults) {
+          results.forEach((result, idx) => {
+            const rank = idx + 1
+            const existing = learningRanks.get(result.learning.id)
+            if (!existing || rank < existing.bestRank) {
+              learningRanks.set(result.learning.id, {
+                learning: result.learning,
+                bestRank: rank,
+                bestScore: result.score
+              })
+            }
+          })
+        }
+
+        // Convert to BM25Result format, sorted by best rank
+        const merged = [...learningRanks.values()]
+          .sort((a, b) => a.bestRank - b.bestRank)
+          .map(item => ({ learning: item.learning, score: item.bestScore }))
+
+        return merged
+      })
 
     return {
       create: (input) =>
@@ -278,10 +318,17 @@ export const LearningServiceLive = Layer.effect(
         Effect.gen(function* () {
           const { query: searchQuery, limit = 10, minScore = 0.1 } = query
 
-          // Get BM25 search results (ranked list 1)
-          const bm25Results = yield* learningRepo.bm25Search(searchQuery, limit * 3)
+          // Expand query using LLM (graceful degradation - returns original if unavailable)
+          const expansionResult = yield* Effect.catchAll(
+            queryExpansionService.expand(searchQuery),
+            () => Effect.succeed({ original: searchQuery, expanded: [searchQuery], wasExpanded: false })
+          )
+
+          // Get BM25 search results across all expanded queries (ranked list 1)
+          const bm25Results = yield* multiQueryBM25Search(expansionResult.expanded, limit * 3)
 
           // Try to get query embedding for vector search (graceful degradation)
+          // Use original query for embedding since expanded queries may be noisier
           const queryEmbedding = yield* Effect.option(embeddingService.embed(searchQuery))
           const queryEmbeddingValue = Option.getOrNull(queryEmbedding)
 
@@ -339,8 +386,14 @@ export const LearningServiceLive = Layer.effect(
           // Build search query from task content
           const searchQuery = `${task.title} ${task.description}`.trim()
 
-          // Get BM25 results
-          const bm25Results = yield* learningRepo.bm25Search(searchQuery, 30)
+          // Expand query using LLM (graceful degradation - returns original if unavailable)
+          const expansionResult = yield* Effect.catchAll(
+            queryExpansionService.expand(searchQuery),
+            () => Effect.succeed({ original: searchQuery, expanded: [searchQuery], wasExpanded: false })
+          )
+
+          // Get BM25 results across all expanded queries
+          const bm25Results = yield* multiQueryBM25Search(expansionResult.expanded, 30)
 
           // Try to get query embedding for vector search (graceful degradation)
           const queryEmbedding = yield* Effect.option(embeddingService.embed(searchQuery))

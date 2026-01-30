@@ -23,6 +23,7 @@ import { SyncServiceLive } from "./services/sync-service.js"
 import { AutoSyncServiceLive, AutoSyncServiceNoop } from "./services/auto-sync-service.js"
 import { MigrationServiceLive } from "./services/migration-service.js"
 import { EmbeddingServiceNoop } from "./services/embedding-service.js"
+import { QueryExpansionServiceNoop } from "./services/query-expansion-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync-service.js"
@@ -31,6 +32,14 @@ export { AutoSyncService, AutoSyncServiceNoop, AutoSyncServiceLive } from "./ser
 export { LearningService } from "./services/learning-service.js"
 export { FileLearningService } from "./services/file-learning-service.js"
 export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./services/embedding-service.js"
+export {
+  QueryExpansionService,
+  QueryExpansionServiceNoop,
+  QueryExpansionServiceLive,
+  QueryExpansionServiceAuto,
+  QueryExpansionUnavailableError,
+  type QueryExpansionResult
+} from "./services/query-expansion-service.js"
 export { AttemptService } from "./services/attempt-service.js"
 export { TaskService } from "./services/task-service.js"
 export { DependencyService } from "./services/dep-service.js"
@@ -74,7 +83,7 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(infra, syncServiceWithDeps))
   )
 
-  // Services need repos, embedding, and autoSyncService
+  // Services need repos, embedding, query expansion, and autoSyncService
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -84,7 +93,7 @@ export const makeAppLayer = (dbPath: string) => {
     FileLearningServiceLive,
     AttemptServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, autoSyncService))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, autoSyncService))
   )
 
   // MigrationService only needs SqliteClient
@@ -114,7 +123,7 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(infra)
   )
 
-  // Services with Noop embedding and auto-sync
+  // Services with Noop embedding, query expansion, and auto-sync
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -124,7 +133,7 @@ export const makeMinimalLayer = (dbPath: string) => {
     FileLearningServiceLive,
     AttemptServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, AutoSyncServiceNoop))
   )
 
   // MigrationService only needs SqliteClient

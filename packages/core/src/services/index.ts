@@ -12,6 +12,14 @@ export { FileLearningService, FileLearningServiceLive } from "./file-learning-se
 export { AttemptService, AttemptServiceLive } from "./attempt-service.js"
 export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./embedding-service.js"
 export {
+  QueryExpansionService,
+  QueryExpansionServiceNoop,
+  QueryExpansionServiceLive,
+  QueryExpansionServiceAuto,
+  QueryExpansionUnavailableError,
+  type QueryExpansionResult
+} from "./query-expansion-service.js"
+export {
   SyncService,
   SyncServiceLive,
   type ExportResult,
