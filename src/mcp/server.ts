@@ -23,7 +23,8 @@ import { makeAppLayer } from "../layer.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "../schema.js"
 import { TASK_STATUSES } from "../schema.js"
 import type { FileLearning } from "../schemas/file-learning.js"
-import type { Learning, LearningWithScore } from "../schemas/learning.js"
+import type { Learning, LearningWithScore, LearningSourceType } from "../schemas/learning.js"
+import { LEARNING_SOURCE_TYPES } from "../schemas/learning.js"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -676,6 +677,48 @@ export const createMcpServer = (): McpServer => {
               searchDuration: result.searchDuration,
               learnings: serializedLearnings
             }) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_learning_add - Add a new learning to the knowledge base
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_learning_add",
+    "Add a new learning to the contextual learnings knowledge base. Learnings can be retrieved later based on relevance to tasks.",
+    {
+      content: z.string().describe("The learning content (required)"),
+      sourceType: z.enum(LEARNING_SOURCE_TYPES).optional().describe(`Source type: ${LEARNING_SOURCE_TYPES.join(", ")}. Defaults to "manual"`),
+      sourceRef: z.string().optional().describe("Optional reference (e.g., task ID, file path, URL)"),
+      category: z.string().optional().describe("Optional category for organizing learnings"),
+      keywords: z.array(z.string()).optional().describe("Optional keywords for improved search")
+    },
+    async ({ content, sourceType, sourceRef, category, keywords }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const learning = await runEffect(
+          Effect.gen(function* () {
+            const learningService = yield* LearningService
+            return yield* learningService.create({
+              content,
+              sourceType: sourceType ?? "manual",
+              sourceRef: sourceRef ?? undefined,
+              category: category ?? undefined,
+              keywords: keywords ?? undefined
+            })
+          })
+        )
+        const serialized = serializeLearning(learning)
+        return {
+          content: [
+            { type: "text", text: `Created learning: #${learning.id}` },
+            { type: "text", text: JSON.stringify(serialized) }
           ]
         }
       } catch (error) {
