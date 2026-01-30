@@ -2,12 +2,13 @@
 import { Effect } from "effect"
 import { resolve } from "path"
 import { existsSync, mkdirSync, writeFileSync } from "fs"
-import { makeAppLayer, SyncService } from "./layer.js"
+import { makeAppLayer, SyncService, LearningService } from "./layer.js"
 import { TaskService } from "./services/task-service.js"
 import { DependencyService } from "./services/dep-service.js"
 import { ReadyService } from "./services/ready-service.js"
 import { startMcpServer } from "./mcp/server.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "./schema.js"
+import type { LearningWithScore } from "./schemas/learning.js"
 
 // --- Help text constant ---
 
@@ -31,6 +32,11 @@ Commands:
   sync export             Export tasks to JSONL file
   sync import             Import tasks from JSONL file
   sync status             Show sync status
+  learning:add            Add a learning
+  learning:search         Search learnings
+  learning:recent         List recent learnings
+  learning:helpful        Record learning helpfulness
+  context                 Get contextual learnings for a task
   mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
@@ -446,6 +452,102 @@ Examples:
   tx sync status
   tx sync status --json`,
 
+  "learning:add": `tx learning:add - Add a learning
+
+Usage: tx learning:add <content> [options]
+
+Creates a new learning entry. Learnings are pieces of knowledge that can
+be retrieved based on task context.
+
+Arguments:
+  <content>  Required. The learning content/insight to store
+
+Options:
+  -c, --category <cat>     Category tag (e.g., database, auth, api)
+  --source-ref <ref>       Reference to source (e.g., task ID, file path)
+  --source-type <type>     Source type: manual, compaction, run, claude_md (default: manual)
+  --json                   Output as JSON
+  --help                   Show this help
+
+Examples:
+  tx learning:add "Always use transactions for multi-step DB operations"
+  tx learning:add "Rate limit is 100 req/min" -c api
+  tx learning:add "Migration requires downtime" --source-ref tx-abc123`,
+
+  "learning:search": `tx learning:search - Search learnings
+
+Usage: tx learning:search <query> [options]
+
+Searches learnings using BM25 full-text search. Returns results ranked by
+relevance (BM25 score) and recency.
+
+Arguments:
+  <query>  Required. Search query (keywords or phrase)
+
+Options:
+  -n, --limit <n>      Maximum results (default: 10)
+  --min-score <n>      Minimum relevance score 0-1 (default: 0.3)
+  --json               Output as JSON
+  --help               Show this help
+
+Examples:
+  tx learning:search "database transactions"
+  tx learning:search "authentication" -n 5 --json`,
+
+  "learning:recent": `tx learning:recent - List recent learnings
+
+Usage: tx learning:recent [options]
+
+Lists the most recently created learnings.
+
+Options:
+  -n, --limit <n>  Maximum results (default: 10)
+  --json           Output as JSON
+  --help           Show this help
+
+Examples:
+  tx learning:recent
+  tx learning:recent -n 5 --json`,
+
+  "learning:helpful": `tx learning:helpful - Record learning helpfulness
+
+Usage: tx learning:helpful <id> [options]
+
+Records whether a learning was helpful (outcome feedback). This improves
+future retrieval by boosting helpful learnings in search results.
+
+Arguments:
+  <id>  Required. Learning ID (number)
+
+Options:
+  --score <n>  Helpfulness score 0-1 (default: 1.0)
+  --json       Output as JSON
+  --help       Show this help
+
+Examples:
+  tx learning:helpful 42
+  tx learning:helpful 42 --score 0.8`,
+
+  context: `tx context - Get contextual learnings for a task
+
+Usage: tx context <task-id> [options]
+
+Retrieves learnings relevant to a specific task based on its title and
+description. Uses hybrid BM25 + recency scoring.
+
+Arguments:
+  <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json     Output as JSON
+  --inject   Write to .tx/context.md for injection
+  --help     Show this help
+
+Examples:
+  tx context tx-a1b2c3d4
+  tx context tx-a1b2c3d4 --json
+  tx context tx-a1b2c3d4 --inject`,
+
   help: `tx help - Show help
 
 Usage: tx help [command]
@@ -829,7 +931,172 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         console.error(`Run 'tx sync --help' for usage information`)
         process.exit(1)
       }
+    }),
+
+  "learning:add": (pos, flags) =>
+    Effect.gen(function* () {
+      const content = pos[0]
+      if (!content) {
+        console.error("Usage: tx learning:add <content> [-c category] [--source-ref ref] [--json]")
+        process.exit(1)
+      }
+
+      const svc = yield* LearningService
+      const learning = yield* svc.create({
+        content,
+        category: opt(flags, "category", "c") ?? undefined,
+        sourceRef: opt(flags, "source-ref") ?? undefined,
+        sourceType: (opt(flags, "source-type") as "manual" | "compaction" | "run" | "claude_md") ?? "manual"
+      })
+
+      if (flag(flags, "json")) {
+        console.log(toJson(learning))
+      } else {
+        console.log(`Created learning: #${learning.id}`)
+        console.log(`  Content: ${learning.content.slice(0, 80)}${learning.content.length > 80 ? "..." : ""}`)
+        if (learning.category) console.log(`  Category: ${learning.category}`)
+        if (learning.sourceRef) console.log(`  Source: ${learning.sourceRef}`)
+      }
+    }),
+
+  "learning:search": (pos, flags) =>
+    Effect.gen(function* () {
+      const query = pos[0]
+      if (!query) {
+        console.error("Usage: tx learning:search <query> [-n limit] [--json]")
+        process.exit(1)
+      }
+
+      const svc = yield* LearningService
+      const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
+      const minScore = opt(flags, "min-score") ? parseFloat(opt(flags, "min-score")!) : 0.3
+
+      const results = yield* svc.search({ query, limit, minScore })
+
+      if (flag(flags, "json")) {
+        console.log(toJson(results))
+      } else {
+        if (results.length === 0) {
+          console.log("No learnings found")
+        } else {
+          console.log(`${results.length} learning(s) found:`)
+          for (const r of results) {
+            const score = (r.relevanceScore * 100).toFixed(0)
+            const category = r.category ? ` [${r.category}]` : ""
+            console.log(`  #${r.id} (${score}%)${category} ${r.content.slice(0, 60)}${r.content.length > 60 ? "..." : ""}`)
+          }
+        }
+      }
+    }),
+
+  "learning:recent": (_pos, flags) =>
+    Effect.gen(function* () {
+      const svc = yield* LearningService
+      const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
+
+      const learnings = yield* svc.getRecent(limit)
+
+      if (flag(flags, "json")) {
+        console.log(toJson(learnings))
+      } else {
+        if (learnings.length === 0) {
+          console.log("No learnings found")
+        } else {
+          console.log(`${learnings.length} recent learning(s):`)
+          for (const l of learnings) {
+            const category = l.category ? ` [${l.category}]` : ""
+            const source = l.sourceType !== "manual" ? ` (${l.sourceType})` : ""
+            console.log(`  #${l.id}${category}${source} ${l.content.slice(0, 60)}${l.content.length > 60 ? "..." : ""}`)
+          }
+        }
+      }
+    }),
+
+  "learning:helpful": (pos, flags) =>
+    Effect.gen(function* () {
+      const idStr = pos[0]
+      if (!idStr) {
+        console.error("Usage: tx learning:helpful <id> [--score 0.8] [--json]")
+        process.exit(1)
+      }
+
+      const id = parseInt(idStr, 10)
+      if (isNaN(id)) {
+        console.error("Error: Learning ID must be a number")
+        process.exit(1)
+      }
+
+      const svc = yield* LearningService
+      const score = opt(flags, "score") ? parseFloat(opt(flags, "score")!) : 1.0
+
+      yield* svc.updateOutcome(id, score)
+      const learning = yield* svc.get(id)
+
+      if (flag(flags, "json")) {
+        console.log(toJson({ success: true, learning }))
+      } else {
+        console.log(`Recorded helpfulness for learning #${id}`)
+        console.log(`  Score: ${(score * 100).toFixed(0)}%`)
+        console.log(`  Content: ${learning.content.slice(0, 60)}${learning.content.length > 60 ? "..." : ""}`)
+      }
+    }),
+
+  context: (pos, flags) =>
+    Effect.gen(function* () {
+      const taskId = pos[0]
+      if (!taskId) {
+        console.error("Usage: tx context <task-id> [--json] [--inject]")
+        process.exit(1)
+      }
+
+      const svc = yield* LearningService
+      const result = yield* svc.getContextForTask(taskId)
+
+      if (flag(flags, "inject")) {
+        // Write to .tx/context.md for injection
+        const contextMd = formatContextMarkdown(result)
+        const contextPath = resolve(process.cwd(), ".tx", "context.md")
+        writeFileSync(contextPath, contextMd)
+        console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath}`)
+      } else if (flag(flags, "json")) {
+        console.log(toJson(result))
+      } else {
+        console.log(`Context for: ${result.taskId} - ${result.taskTitle}`)
+        console.log(`  Search query: ${result.searchQuery.slice(0, 50)}...`)
+        console.log(`  Search duration: ${result.searchDuration}ms`)
+        console.log(`  ${result.learnings.length} relevant learning(s):`)
+        for (const l of result.learnings) {
+          const score = (l.relevanceScore * 100).toFixed(0)
+          console.log(`    #${l.id} (${score}%) ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
+        }
+      }
     })
+}
+
+// --- Context Formatter ---
+
+function formatContextMarkdown(result: { taskId: string; taskTitle: string; learnings: readonly LearningWithScore[] }): string {
+  const lines = [
+    `## Contextual Learnings for ${result.taskId}`,
+    ``,
+    `Task: ${result.taskTitle}`,
+    ``,
+    `### Relevant Learnings`,
+    ``
+  ]
+
+  if (result.learnings.length === 0) {
+    lines.push("_No relevant learnings found._")
+  } else {
+    for (const l of result.learnings) {
+      const score = (l.relevanceScore * 100).toFixed(0)
+      const category = l.category ? ` [${l.category}]` : ""
+      lines.push(`- **${score}%**${category} ${l.content}`)
+    }
+  }
+
+  lines.push("")
+  return lines.join("\n")
 }
 
 // --- Main ---
@@ -927,6 +1194,10 @@ Effect.runPromise(
     const err = error as { _tag?: string; message?: string }
     if (err._tag === "TaskNotFoundError") {
       console.error(err.message ?? `Task not found`)
+      process.exit(2)
+    }
+    if (err._tag === "LearningNotFoundError") {
+      console.error(err.message ?? `Learning not found`)
       process.exit(2)
     }
     if (err._tag === "ValidationError") {

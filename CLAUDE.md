@@ -157,6 +157,13 @@ tx sync export             # Export to JSONL
 tx sync import             # Import from JSONL
 tx sync status             # Show sync state
 
+# Learnings (no API key needed)
+tx learning:add <content>  # Add a learning
+tx learning:search <query> # Search learnings (BM25)
+tx learning:recent         # List recent learnings
+tx learning:helpful <id>   # Record helpfulness
+tx context <task-id>       # Get contextual learnings for task
+
 # LLM features (requires ANTHROPIC_API_KEY)
 tx dedupe                  # Find duplicates
 tx compact                 # Compact old tasks
@@ -174,10 +181,20 @@ tx reprioritize            # LLM rescoring
 
 ## Bootstrapping: tx Builds tx
 
-**Once Phase 1 CLI is stable**, all development on tx MUST use tx itself to manage work.
+**Phase 1 CLI is now stable.** All development on tx MUST use tx itself to manage work.
 
-### Pre-Bootstrap (Phase 1)
-Use Claude Code's built-in `TodoWrite` to track Phase 1 tasks until `tx init`, `tx add`, `tx ready`, and `tx done` are working.
+### IMPORTANT: Use tx, NOT Built-in Task Tools
+
+Claude Code has built-in task tools (TaskCreate, TaskUpdate, TaskList, etc.). **DO NOT USE THESE.**
+
+Instead, use the tx CLI commands:
+- `tx add` instead of TaskCreate
+- `tx ready` instead of TaskList
+- `tx show` instead of TaskGet
+- `tx done` instead of TaskUpdate
+- `tx list` to see all tasks
+
+The tx database is at `.tx/tasks.db`. Tasks persist across sessions and can be synced via git with `tx sync export`.
 
 ### Post-Bootstrap Workflow
 ```bash

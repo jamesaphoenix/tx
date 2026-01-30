@@ -1,0 +1,244 @@
+# PRD-012: Bun Single Binary Distribution
+
+**Status**: Draft
+**Priority**: P2 (Nice to Have)
+**Owner**: TBD
+**Last Updated**: 2025-01-30
+
+---
+
+## Problem Statement
+
+Currently tx requires Node.js and npm/bun installation:
+
+1. **Dependency on runtime** - Users must have Node.js installed
+2. **Installation friction** - `npm install -g` requires npm knowledge
+3. **Version conflicts** - Different Node versions may cause issues
+4. **Large install** - node_modules can be 100MB+
+
+**What we need**: A single portable binary that works anywhere.
+
+---
+
+## Solution Overview
+
+Use **Bun's compile feature** to produce standalone executables:
+
+```bash
+bun build ./src/cli.ts --compile --outfile dist/tx
+```
+
+Result: A single `tx` binary (~50-80MB) that runs without Node.js or Bun installed.
+
+---
+
+## Requirements
+
+### Build Targets
+
+| ID | Requirement | Target |
+|----|-------------|--------|
+| BB-001 | macOS ARM64 (Apple Silicon) | `bun-darwin-arm64` |
+| BB-002 | macOS x64 (Intel) | `bun-darwin-x64` |
+| BB-003 | Linux x64 | `bun-linux-x64` |
+| BB-004 | Linux ARM64 | `bun-linux-arm64` |
+
+### Build Commands
+
+| ID | Requirement |
+|----|-------------|
+| BB-005 | `bun run build` produces native binary |
+| BB-006 | `bun run build:all` produces all platform binaries |
+| BB-007 | Binaries output to `dist/` directory |
+| BB-008 | Binaries named `tx-<platform>-<arch>` |
+
+### Binary Capabilities
+
+| ID | Requirement |
+|----|-------------|
+| BB-009 | All CLI commands work in compiled binary |
+| BB-010 | SQLite (better-sqlite3) bundled and working |
+| BB-011 | MCP server works in compiled binary |
+| BB-012 | node-llama-cpp embeddings work (if installed) |
+
+### Distribution
+
+| ID | Requirement |
+|----|-------------|
+| BB-013 | GitHub Releases include platform binaries |
+| BB-014 | README includes binary installation instructions |
+| BB-015 | Version flag (`--version`) shows correct version |
+
+### Constraints
+
+| ID | Constraint | Rationale |
+|----|------------|-----------|
+| BB-016 | Binary size <100MB | Reasonable download |
+| BB-017 | No runtime dependencies | True standalone |
+| BB-018 | Native modules must work | SQLite, llama.cpp |
+
+---
+
+## Build Configuration
+
+### `package.json`
+
+```json
+{
+  "name": "tx",
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./src/cli.ts --compile --outfile dist/tx --minify",
+    "build:darwin-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-arm64 --target bun-darwin-arm64",
+    "build:darwin-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-x64 --target bun-darwin-x64",
+    "build:linux-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-x64 --target bun-linux-x64",
+    "build:linux-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-arm64 --target bun-linux-arm64",
+    "build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64"
+  }
+}
+```
+
+---
+
+## Migration from Node.js
+
+### Runtime Changes
+
+| Change | Node.js | Bun |
+|--------|---------|-----|
+| Package manager | npm/yarn | bun |
+| Test runner | vitest | bun test (or vitest) |
+| TypeScript | tsc + node | bun (native TS) |
+| Native modules | node-gyp | bun ffi / native |
+
+### Dependencies to Verify
+
+| Dependency | Bun Compatibility |
+|------------|-------------------|
+| better-sqlite3 | Works with bun |
+| effect | Works natively |
+| @anthropic-ai/sdk | Works natively |
+| @modelcontextprotocol/sdk | Works natively |
+| node-llama-cpp | May need testing |
+
+---
+
+## Installation Instructions
+
+### Download Binary
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/user/tx/releases/latest/download/tx-darwin-arm64 -o /usr/local/bin/tx
+chmod +x /usr/local/bin/tx
+
+# macOS (Intel)
+curl -L https://github.com/user/tx/releases/latest/download/tx-darwin-x64 -o /usr/local/bin/tx
+chmod +x /usr/local/bin/tx
+
+# Linux (x64)
+curl -L https://github.com/user/tx/releases/latest/download/tx-linux-x64 -o /usr/local/bin/tx
+chmod +x /usr/local/bin/tx
+```
+
+### Verify Installation
+
+```bash
+tx --version
+# tx v0.2.0
+
+tx init
+# Initialized tx database
+```
+
+---
+
+## CI/CD Pipeline
+
+### GitHub Actions Workflow
+
+```yaml
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            artifact: tx-darwin-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            artifact: tx-darwin-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: tx-linux-x64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+
+      - run: bun install
+      - run: bun build ./src/cli.ts --compile --outfile ${{ matrix.artifact }} --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            tx-darwin-arm64/tx-darwin-arm64
+            tx-darwin-x64/tx-darwin-x64
+            tx-linux-x64/tx-linux-x64
+```
+
+---
+
+## Testing Compiled Binary
+
+```bash
+# Build
+bun run build
+
+# Test basic commands
+./dist/tx --version
+./dist/tx init
+./dist/tx add "Test task"
+./dist/tx list
+./dist/tx ready
+./dist/tx done tx-...
+
+# Test learning commands
+./dist/tx learning:add "Test learning"
+./dist/tx learning:search "test"
+./dist/tx context tx-...
+
+# Test MCP server
+./dist/tx mcp-server &
+# Test with Claude Desktop or claude code
+
+# Verify SQLite works
+ls -la .tx/tasks.db
+```
+
+---
+
+## Related Documents
+
+- [DD-003: CLI Implementation](../design/DD-003-cli-implementation.md) - CLI architecture
+- [PRD-010: Contextual Learnings System](./PRD-010-contextual-learnings-system.md) - Learning commands

@@ -1,0 +1,517 @@
+# DD-011: Claude Code Hooks Implementation
+
+**Status**: Draft
+**Implements**: [PRD-011](../prd/PRD-011-claude-code-hooks.md)
+**Last Updated**: 2025-01-30
+
+---
+
+## Overview
+
+This document describes **how** to implement Claude Code hooks for automatic learning injection and capture.
+
+---
+
+## Hook Scripts
+
+### Directory Structure
+
+```
+.claude/
+├── settings.json           # Hook configuration
+└── hooks/
+    ├── session-start.sh    # SessionStart hook
+    ├── prompt-context.sh   # UserPromptSubmit hook
+    ├── post-bash.sh        # PostToolUse (Bash) hook
+    ├── capture-learning.sh # Stop hook
+    └── pre-compact.sh      # PreCompact hook
+```
+
+---
+
+## Hook 1: SessionStart
+
+**File**: `.claude/hooks/session-start.sh`
+
+**Purpose**: Inject recent learnings when Claude starts a session.
+
+```bash
+#!/bin/bash
+# .claude/hooks/session-start.sh
+# Inject recent learnings at session startup
+
+set -e
+
+# Check if tx is available
+if ! command -v tx &> /dev/null; then
+  exit 0
+fi
+
+# Get recent learnings (last 5)
+LEARNINGS=$(tx learning:recent -n 5 --json 2>/dev/null || echo "[]")
+
+if [ "$LEARNINGS" = "[]" ] || [ -z "$LEARNINGS" ]; then
+  exit 0
+fi
+
+# Format learnings as markdown
+FORMATTED=$(echo "$LEARNINGS" | jq -r '
+  .[] | "- [\(.sourceType // "manual")] \(.content)"
+' | head -10)
+
+if [ -z "$FORMATTED" ]; then
+  exit 0
+fi
+
+# Output JSON with additionalContext
+cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "## Recent Learnings from Past Sessions\n\nThese learnings were captured from previous work:\n\n${FORMATTED//$'\n'/\\n}"
+  }
+}
+EOF
+
+exit 0
+```
+
+---
+
+## Hook 2: UserPromptSubmit
+
+**File**: `.claude/hooks/prompt-context.sh`
+
+**Purpose**: Inject task-relevant learnings based on the user's prompt.
+
+```bash
+#!/bin/bash
+# .claude/hooks/prompt-context.sh
+# Inject task-relevant learnings based on the prompt
+
+set -e
+
+# Check if tx is available
+if ! command -v tx &> /dev/null; then
+  exit 0
+fi
+
+# Read input from stdin
+INPUT=$(cat)
+PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty')
+
+if [ -z "$PROMPT" ]; then
+  exit 0
+fi
+
+# Check if prompt mentions a task ID
+TASK_ID=$(echo "$PROMPT" | grep -oE 'tx-[a-z0-9]{6,8}' | head -1)
+
+if [ -n "$TASK_ID" ]; then
+  # Get contextual learnings for the specific task
+  CONTEXT=$(tx context "$TASK_ID" --json 2>/dev/null || echo "")
+
+  if [ -n "$CONTEXT" ]; then
+    LEARNING_COUNT=$(echo "$CONTEXT" | jq '.learnings | length' 2>/dev/null || echo "0")
+
+    if [ "$LEARNING_COUNT" -gt 0 ]; then
+      FORMATTED=$(echo "$CONTEXT" | jq -r '
+        .learnings[] | "- [\(.sourceType // "manual")] (score: \((.relevanceScore * 100) | floor)%) \(.content)"
+      ')
+
+      cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "## Relevant Learnings for Task $TASK_ID\n\n${FORMATTED//$'\n'/\\n}"
+  }
+}
+EOF
+      exit 0
+    fi
+  fi
+fi
+
+# Fallback: search learnings based on prompt keywords
+# Extract first 100 chars of prompt for search
+SEARCH_QUERY=$(echo "$PROMPT" | head -c 100 | tr -d '"' | tr '\n' ' ')
+SEARCH_RESULTS=$(tx learning:search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
+
+if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
+  FORMATTED=$(echo "$SEARCH_RESULTS" | jq -r '.[] | "- \(.content)"' 2>/dev/null)
+
+  if [ -n "$FORMATTED" ]; then
+    cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "## Potentially Relevant Learnings\n\n${FORMATTED//$'\n'/\\n}"
+  }
+}
+EOF
+  fi
+fi
+
+exit 0
+```
+
+---
+
+## Hook 3: PostToolUse (Bash)
+
+**File**: `.claude/hooks/post-bash.sh`
+
+**Purpose**: Track which task is being worked on.
+
+```bash
+#!/bin/bash
+# .claude/hooks/post-bash.sh
+# Track when working on a task to enable learning capture
+
+set -e
+
+# Read input from stdin
+INPUT=$(cat)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+
+if [ -z "$COMMAND" ]; then
+  exit 0
+fi
+
+# Detect tx show or tx done commands that indicate task context
+if echo "$COMMAND" | grep -qE '^tx (show|done) tx-[a-z0-9]+'; then
+  TASK_ID=$(echo "$COMMAND" | grep -oE 'tx-[a-z0-9]{6,8}')
+  if [ -n "$TASK_ID" ]; then
+    mkdir -p .tx
+    echo "$TASK_ID" > .tx/current-task
+  fi
+fi
+
+exit 0
+```
+
+---
+
+## Hook 4: Stop
+
+**File**: `.claude/hooks/capture-learning.sh`
+
+**Purpose**: Prompt Claude to capture learnings before finishing.
+
+```bash
+#!/bin/bash
+# .claude/hooks/capture-learning.sh
+# Prompt Claude to capture learnings when stopping
+
+set -e
+
+# Read input from stdin
+INPUT=$(cat)
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
+
+# Avoid infinite loop - if we're already in a stop hook, exit
+if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+  exit 0
+fi
+
+# Check if there's a current task context
+if [ -f ".tx/current-task" ]; then
+  TASK_ID=$(cat .tx/current-task)
+
+  if [ -n "$TASK_ID" ]; then
+    # Output JSON to make Claude continue and capture learnings
+    cat << EOF
+{
+  "decision": "block",
+  "reason": "Before finishing, please consider capturing any learnings from this session.\n\nIf you learned something useful that would help with similar tasks in the future, run:\n\n  tx learning:add \"your learning here\" --source-ref $TASK_ID\n\nIf no new learnings to capture, you can proceed to finish."
+}
+EOF
+
+    # Clean up task file after prompting
+    rm -f .tx/current-task
+  fi
+else
+  exit 0
+fi
+```
+
+---
+
+## Hook 5: PreCompact
+
+**File**: `.claude/hooks/pre-compact.sh`
+
+**Purpose**: Archive session learnings before context is compacted.
+
+```bash
+#!/bin/bash
+# .claude/hooks/pre-compact.sh
+# Archive learnings before context is compacted
+
+set -e
+
+# Read input from stdin
+INPUT=$(cat)
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+TRIGGER=$(echo "$INPUT" | jq -r '.trigger // empty')
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+
+# Only archive on auto-compact
+if [ "$TRIGGER" != "auto" ]; then
+  exit 0
+fi
+
+# Check if tx is available
+if ! command -v tx &> /dev/null; then
+  exit 0
+fi
+
+if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+  # Create session archive directory
+  ARCHIVE_DIR=".tx/archive/$SESSION_ID"
+  mkdir -p "$ARCHIVE_DIR"
+
+  # Copy transcript for future analysis
+  cp "$TRANSCRIPT_PATH" "$ARCHIVE_DIR/transcript.jsonl" 2>/dev/null || true
+
+  # Export recent learnings
+  tx learning:recent -n 10 --json > "$ARCHIVE_DIR/recent-learnings.json" 2>/dev/null || true
+
+  # Record archive time
+  echo "{\"archived_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"session_id\": \"$SESSION_ID\"}" > "$ARCHIVE_DIR/metadata.json"
+
+  echo "Archived session to $ARCHIVE_DIR" >&2
+fi
+
+exit 0
+```
+
+---
+
+## Settings Configuration
+
+**File**: `.claude/settings.json`
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prompt-context.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-bash.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/capture-learning.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-compact.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Alternative: Prompt-Based Stop Hook
+
+For more intelligent learning capture using LLM evaluation:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Evaluate if Claude should stop working. Context: $ARGUMENTS\n\nAnalyze the conversation and determine if:\n1. All user-requested tasks are complete\n2. Any new learnings should be captured (insights, gotchas, patterns discovered)\n3. The learning system should be updated with `tx learning:add`\n\nIf learnings should be captured, return:\n{\"ok\": false, \"reason\": \"Please capture any learnings with: tx learning:add 'your learning' --source-ref <task-id>\"}\n\nIf work is complete and no learnings needed, return:\n{\"ok\": true}",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Installation Script
+
+**File**: `scripts/install-hooks.sh`
+
+```bash
+#!/bin/bash
+# Install Claude Code hooks for tx learnings integration
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Create .claude/hooks directory
+mkdir -p "$PROJECT_DIR/.claude/hooks"
+
+# Copy hook scripts
+cp "$SCRIPT_DIR/hooks/session-start.sh" "$PROJECT_DIR/.claude/hooks/"
+cp "$SCRIPT_DIR/hooks/prompt-context.sh" "$PROJECT_DIR/.claude/hooks/"
+cp "$SCRIPT_DIR/hooks/post-bash.sh" "$PROJECT_DIR/.claude/hooks/"
+cp "$SCRIPT_DIR/hooks/capture-learning.sh" "$PROJECT_DIR/.claude/hooks/"
+cp "$SCRIPT_DIR/hooks/pre-compact.sh" "$PROJECT_DIR/.claude/hooks/"
+
+# Make executable
+chmod +x "$PROJECT_DIR/.claude/hooks/"*.sh
+
+# Create settings.json if it doesn't exist
+if [ ! -f "$PROJECT_DIR/.claude/settings.json" ]; then
+  cat > "$PROJECT_DIR/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prompt-context.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-bash.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/capture-learning.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-compact.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+fi
+
+echo "Claude Code hooks installed successfully!"
+echo "Hooks are located in: $PROJECT_DIR/.claude/hooks/"
+echo "Configuration is in: $PROJECT_DIR/.claude/settings.json"
+```
+
+---
+
+## Testing Hooks
+
+### Manual Testing
+
+```bash
+# Test session-start hook
+echo '{"session_id": "test", "source": "startup"}' | .claude/hooks/session-start.sh
+
+# Test prompt-context hook with task ID
+echo '{"prompt": "Working on tx-a1b2c3d4"}' | .claude/hooks/prompt-context.sh
+
+# Test prompt-context hook with keywords
+echo '{"prompt": "Help me with database transactions"}' | .claude/hooks/prompt-context.sh
+
+# Test post-bash hook
+echo '{"tool_input": {"command": "tx show tx-a1b2c3d4"}}' | .claude/hooks/post-bash.sh
+cat .tx/current-task
+
+# Test capture-learning hook (without stop_hook_active)
+echo "$TEST_TASK_ID" > .tx/current-task
+echo '{"stop_hook_active": false}' | .claude/hooks/capture-learning.sh
+
+# Test capture-learning hook (with stop_hook_active - should exit)
+echo '{"stop_hook_active": true}' | .claude/hooks/capture-learning.sh
+```
+
+---
+
+## Related Documents
+
+- [PRD-011: Claude Code Hooks Integration](../prd/PRD-011-claude-code-hooks.md)
+- [PRD-010: Contextual Learnings System](../prd/PRD-010-contextual-learnings-system.md)
+- [DD-010: Learnings Search & Retrieval](./DD-010-learnings-search-retrieval.md)

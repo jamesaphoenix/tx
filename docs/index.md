@@ -15,6 +15,9 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [PRD-007](prd/PRD-007-multi-interface-integration.md) | Multi-Interface Integration   | Phase 2 |
 | [PRD-008](prd/PRD-008-observability-opentelemetry.md) | Observability & OpenTelemetry | Phase 1 |
 | [PRD-009](prd/PRD-009-jsonl-git-sync.md)              | JSONL Git-Backed Sync         | Phase 2 |
+| [PRD-010](prd/PRD-010-contextual-learnings-system.md) | Contextual Learnings System   | Phase 2 |
+| [PRD-011](prd/PRD-011-claude-code-hooks.md)           | Claude Code Hooks Integration | Phase 2 |
+| [PRD-012](prd/PRD-012-bun-single-binary.md)           | Bun Single Binary Distribution| Phase 2 |
 
 ## Design Documents (DDs)
 
@@ -29,6 +32,8 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [DD-007](design/DD-007-testing-strategy.md)          | Testing Strategy            | All              |
 | [DD-008](design/DD-008-opentelemetry-integration.md) | OpenTelemetry Integration   | PRD-008          |
 | [DD-009](design/DD-009-jsonl-git-sync.md)            | JSONL Git Sync              | PRD-009          |
+| [DD-010](design/DD-010-learnings-search-retrieval.md)| Learnings Search & Retrieval| PRD-010          |
+| [DD-011](design/DD-011-claude-code-hooks.md)         | Claude Code Hooks           | PRD-011          |
 
 ## Implementation Phases
 
@@ -45,6 +50,9 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 - JSONL git-backed sync
 - JSON/JSONL export
 - Agent SDK integration
+- **Contextual learnings system** (BM25 + vector search)
+- **Claude Code hooks** for automatic learning injection
+- **Bun single binary** distribution
 
 ### Phase 3 (v0.3.0) - LLM Features
 
@@ -98,4 +106,10 @@ PRD-008 (Observability) ──────────────────�
 PRD-009 (JSONL Sync) ───────────────────────────────────────►  DD-009 (Git Sync)
                                                                     │
                                     DD-007 (Testing) ◄──────────────┘
+
+PRD-010 (Learnings) ───────────────────────────────────────►  DD-010 (Search/Retrieval)
+        │
+PRD-011 (Hooks) ───────────────────────────────────────────►  DD-011 (Claude Code Hooks)
+        │
+PRD-012 (Bun Binary) ──────────────────────────────────────►  DD-003 (CLI)
 ```

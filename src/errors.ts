@@ -8,6 +8,14 @@ export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
   }
 }
 
+export class LearningNotFoundError extends Data.TaggedError("LearningNotFoundError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `Learning not found: ${this.id}`
+  }
+}
+
 export class ValidationError extends Data.TaggedError("ValidationError")<{
   readonly reason: string
 }> {

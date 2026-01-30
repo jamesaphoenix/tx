@@ -16,6 +16,8 @@ import { TaskService } from "../services/task-service.js"
 import { ReadyService } from "../services/ready-service.js"
 import { DependencyService } from "../services/dep-service.js"
 import { HierarchyService } from "../services/hierarchy-service.js"
+import { LearningService } from "../services/learning-service.js"
+import { SyncService } from "../services/sync-service.js"
 import { makeAppLayer } from "../layer.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "../schema.js"
 import { TASK_STATUSES } from "../schema.js"
@@ -24,7 +26,7 @@ import { TASK_STATUSES } from "../schema.js"
 // Types
 // -----------------------------------------------------------------------------
 
-export type McpServices = TaskService | ReadyService | DependencyService | HierarchyService
+export type McpServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService | SyncService
 
 export interface McpContent {
   type: "text"
@@ -40,7 +42,8 @@ export interface McpResponse {
 // Runtime
 // -----------------------------------------------------------------------------
 
-let managedRuntime: ManagedRuntime.ManagedRuntime<McpServices, never> | null = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let managedRuntime: ManagedRuntime.ManagedRuntime<McpServices, any> | null = null
 
 /**
  * Initialize the Effect runtime ONCE at server startup.
@@ -72,7 +75,8 @@ export const runEffect = <A, E>(
  * Get the current runtime for advanced use cases.
  * Returns null if not initialized.
  */
-export const getRuntime = (): ManagedRuntime.ManagedRuntime<McpServices, never> | null => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const getRuntime = (): ManagedRuntime.ManagedRuntime<McpServices, any> | null => {
   return managedRuntime
 }
 
