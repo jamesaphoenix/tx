@@ -34,6 +34,10 @@ const MAX_AGE_DAYS = 30
 const OUTCOME_BOOST = 0.05
 const FREQUENCY_BOOST = 0.02
 
+/** Position-aware bonuses for items ranking highly in any retrieval system */
+const TOP_1_BONUS = 0.05  // Bonus for #1 rank in any system
+const TOP_3_BONUS = 0.02  // Bonus for top 3 in any system
+
 export class LearningService extends Context.Tag("LearningService")<
   LearningService,
   {
@@ -211,8 +215,27 @@ const computeRRFScoring = (
 }
 
 /**
+ * Calculate position-aware bonus based on best rank across retrieval systems.
+ * Items ranking #1 in any system get a larger bonus; top 3 get a smaller one.
+ *
+ * @param ranks - Array of ranks (1-indexed, 0 means not present in that system)
+ * @returns Position bonus to add to the score
+ */
+const calculatePositionBonus = (...ranks: number[]): number => {
+  // Filter out zeros (not present in that ranking)
+  const validRanks = ranks.filter(r => r > 0)
+  if (validRanks.length === 0) return 0
+
+  const bestRank = Math.min(...validRanks)
+
+  if (bestRank === 1) return TOP_1_BONUS     // #1 in any system
+  if (bestRank <= 3) return TOP_3_BONUS      // Top 3 in any system
+  return 0
+}
+
+/**
  * Convert RRF candidates to final LearningWithScore results.
- * Applies additional boosts for recency, outcome, and frequency.
+ * Applies additional boosts for recency, outcome, frequency, and position.
  */
 const applyFinalScoring = (
   candidates: RRFCandidate[],
@@ -229,6 +252,9 @@ const applyFinalScoring = (
     // Frequency boost: learnings that have been retrieved more get a small boost
     const frequencyBoost = FREQUENCY_BOOST * Math.log(1 + learning.usageCount)
 
+    // Position-aware bonus: reward items that rank highly in any retrieval system
+    const positionBonus = calculatePositionBonus(bm25Rank, vectorRank)
+
     // Final relevance score: RRF as base + boosts
     // RRF score range is [0, 2/k] for two lists, normalize to [0, 1] range
     // Max possible RRF = 2 * 1/(k+1) ≈ 0.0328 for k=60
@@ -238,7 +264,8 @@ const applyFinalScoring = (
     const relevanceScore = normalizedRRF +
                            recencyWeight * recencyScore +
                            outcomeBoost +
-                           frequencyBoost
+                           frequencyBoost +
+                           positionBonus
 
     return {
       ...learning,
@@ -267,8 +294,10 @@ export const LearningServiceLive = Layer.effect(
     const recencyWeight = recencyWeightStr ? parseFloat(recencyWeightStr) : DEFAULT_RECENCY_WEIGHT
 
     /**
-     * Apply LLM re-ranking to scored learnings.
+     * Apply LLM re-ranking to scored learnings with position-aware blending.
      * Re-ranking uses a specialized model to improve precision.
+     * Position-aware blending gives bonuses to items that rank highly
+     * across multiple retrieval systems (BM25, vector, AND reranker).
      * Gracefully degrades if reranker is unavailable.
      *
      * @param query The search query
@@ -300,17 +329,31 @@ export const LearningServiceLive = Layer.effect(
           return learnings
         }
 
-        // Create a map of content to reranker score
+        // Create maps of content to reranker score and rank
         const rerankerScores = new Map<string, number>()
-        reranked.forEach(result => {
+        const rerankerRanks = new Map<string, number>()
+        reranked.forEach((result, idx) => {
           rerankerScores.set(result.document, result.score)
+          rerankerRanks.set(result.document, idx + 1) // 1-indexed rank
         })
 
-        // Blend reranker scores with existing relevance scores
-        // Formula: final = (1 - weight) * existing + weight * reranker
+        // Blend reranker scores with existing relevance scores using position-aware bonuses
+        // Formula: final = (1 - weight) * existing + weight * reranker + positionBonus
         return learnings.map(learning => {
           const rerankerScore = rerankerScores.get(learning.content) ?? 0
-          const blendedScore = (1 - rerankerWeight) * learning.relevanceScore + rerankerWeight * rerankerScore
+          const rerankerRank = rerankerRanks.get(learning.content) ?? 0
+
+          // Calculate position bonus across all three systems (BM25, vector, reranker)
+          const positionBonus = calculatePositionBonus(
+            learning.bm25Rank,
+            learning.vectorRank,
+            rerankerRank
+          )
+
+          // Weighted blend plus position-aware bonus
+          const blendedScore = (1 - rerankerWeight) * learning.relevanceScore +
+                               rerankerWeight * rerankerScore +
+                               positionBonus
 
           return {
             ...learning,
