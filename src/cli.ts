@@ -30,6 +30,7 @@ Commands:
   children <id>           List child tasks
   tree <id>               Show task subtree
   try <id> <approach>     Record an attempt on a task
+  attempts <id>           List attempts for a task
   sync export             Export tasks to JSONL file
   sync import             Import tasks from JSONL file
   sync status             Show sync status
