@@ -23,7 +23,7 @@ import { makeAppLayer } from "../layer.js"
 import type { TaskId, TaskStatus, TaskWithDeps } from "../schema.js"
 import { TASK_STATUSES } from "../schema.js"
 import type { FileLearning } from "../schemas/file-learning.js"
-import type { Learning, LearningWithScore, LearningSourceType } from "../schemas/learning.js"
+import type { Learning, LearningWithScore } from "../schemas/learning.js"
 import { LEARNING_SOURCE_TYPES } from "../schemas/learning.js"
 
 // -----------------------------------------------------------------------------
@@ -719,6 +719,79 @@ export const createMcpServer = (): McpServer => {
           content: [
             { type: "text", text: `Created learning: #${learning.id}` },
             { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_learning_search - Search learnings with BM25 scoring
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_learning_search",
+    "Search learnings using BM25 text search. Returns scored results with relevance, BM25, and recency scores.",
+    {
+      query: z.string().describe("Search query text"),
+      limit: z.number().int().positive().optional().describe("Maximum number of results to return (default: 10)"),
+      minScore: z.number().min(0).max(1).optional().describe("Minimum relevance score filter (0-1)"),
+      category: z.string().optional().describe("Filter by category")
+    },
+    async ({ query, limit, minScore, category }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const learnings = await runEffect(
+          Effect.gen(function* () {
+            const learningService = yield* LearningService
+            return yield* learningService.search({
+              query,
+              limit: limit ?? undefined,
+              minScore: minScore ?? undefined,
+              category: category ?? undefined
+            })
+          })
+        )
+        const serialized = learnings.map(serializeLearningWithScore)
+        return {
+          content: [
+            { type: "text", text: `Found ${learnings.length} learning(s) matching "${query}"` },
+            { type: "text", text: JSON.stringify(serialized) }
+          ]
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+        }
+      }
+    }
+  )
+
+  // ---------------------------------------------------------------------------
+  // tx_learning_helpful - Record helpfulness score for a learning
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "tx_learning_helpful",
+    "Record helpfulness/outcome score for a learning. Use this to provide feedback on whether a learning was useful.",
+    {
+      id: z.number().int().describe("Learning ID to update"),
+      score: z.number().min(0).max(1).optional().describe("Helpfulness score between 0 and 1 (default: 1.0)")
+    },
+    async ({ id, score }): Promise<{ content: { type: "text"; text: string }[] }> => {
+      try {
+        const effectiveScore = score ?? 1.0
+        await runEffect(
+          Effect.gen(function* () {
+            const learningService = yield* LearningService
+            yield* learningService.updateOutcome(id, effectiveScore)
+          })
+        )
+        return {
+          content: [
+            { type: "text", text: `Updated learning #${id} with helpfulness score: ${effectiveScore}` },
+            { type: "text", text: JSON.stringify({ success: true, id, score: effectiveScore }) }
           ]
         }
       } catch (error) {
