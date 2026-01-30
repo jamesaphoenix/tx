@@ -20,6 +20,13 @@ export {
   type QueryExpansionResult
 } from "./query-expansion-service.js"
 export {
+  RerankerService,
+  RerankerServiceNoop,
+  RerankerServiceLive,
+  RerankerServiceAuto,
+  type RerankerResult
+} from "./reranker-service.js"
+export {
   SyncService,
   SyncServiceLive,
   type ExportResult,

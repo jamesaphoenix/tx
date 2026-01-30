@@ -65,9 +65,18 @@ export class EmbeddingUnavailableError extends Data.TaggedError("EmbeddingUnavai
   }
 }
 
+export class RerankerUnavailableError extends Data.TaggedError("RerankerUnavailableError")<{
+  readonly reason: string
+}> {
+  get message() {
+    return `Reranker unavailable: ${this.reason}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
   | CircularDependencyError
   | DatabaseError
   | EmbeddingUnavailableError
+  | RerankerUnavailableError

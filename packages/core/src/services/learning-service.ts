@@ -3,6 +3,7 @@ import { LearningRepository, type BM25Result } from "../repo/learning-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
 import { QueryExpansionService } from "./query-expansion-service.js"
+import { RerankerService } from "./reranker-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextResult } from "@tx/types"
 
@@ -241,10 +242,65 @@ export const LearningServiceLive = Layer.effect(
     const taskRepo = yield* TaskRepository
     const embeddingService = yield* EmbeddingService
     const queryExpansionService = yield* QueryExpansionService
+    const rerankerService = yield* RerankerService
 
     // Load recency weight from config (RRF doesn't need BM25/vector weights)
     const recencyWeightStr = yield* learningRepo.getConfig("recency_weight")
     const recencyWeight = recencyWeightStr ? parseFloat(recencyWeightStr) : DEFAULT_RECENCY_WEIGHT
+
+    /**
+     * Apply LLM re-ranking to scored learnings.
+     * Re-ranking uses a specialized model to improve precision.
+     * Gracefully degrades if reranker is unavailable.
+     *
+     * @param query The search query
+     * @param learnings The pre-scored learnings to re-rank
+     * @param rerankerWeight How much to weight the reranker score (0-1)
+     */
+    const applyReranking = (
+      query: string,
+      learnings: LearningWithScore[],
+      rerankerWeight = 0.3
+    ) =>
+      Effect.gen(function* () {
+        // Check if reranker is available
+        const isAvailable = yield* rerankerService.isAvailable()
+        if (!isAvailable || learnings.length === 0) {
+          return learnings
+        }
+
+        // Extract document contents for reranking
+        const documents = learnings.map(l => l.content)
+
+        // Get reranker scores (graceful degradation on error)
+        const reranked = yield* Effect.catchAll(
+          rerankerService.rerank(query, documents),
+          () => Effect.succeed(null)
+        )
+
+        if (!reranked) {
+          return learnings
+        }
+
+        // Create a map of content to reranker score
+        const rerankerScores = new Map<string, number>()
+        reranked.forEach(result => {
+          rerankerScores.set(result.document, result.score)
+        })
+
+        // Blend reranker scores with existing relevance scores
+        // Formula: final = (1 - weight) * existing + weight * reranker
+        return learnings.map(learning => {
+          const rerankerScore = rerankerScores.get(learning.content) ?? 0
+          const blendedScore = (1 - rerankerWeight) * learning.relevanceScore + rerankerWeight * rerankerScore
+
+          return {
+            ...learning,
+            relevanceScore: blendedScore,
+            rerankerScore // Add reranker score to output
+          }
+        }).sort((a, b) => b.relevanceScore - a.relevanceScore)
+      })
 
     /**
      * Perform BM25 search across multiple queries and merge results.
@@ -344,8 +400,13 @@ export const LearningServiceLive = Layer.effect(
           // Apply final scoring with boosts
           const scored = applyFinalScoring(candidates, recencyWeight)
 
+          // Apply LLM re-ranking to top candidates for improved precision
+          // Only re-rank a reasonable number of candidates to balance quality vs latency
+          const topCandidates = scored.slice(0, Math.min(limit * 2, 20))
+          const reranked = yield* applyReranking(searchQuery, topCandidates)
+
           // Filter by minimum score and limit
-          return scored
+          return reranked
             .filter(r => r.relevanceScore >= minScore)
             .slice(0, limit)
         }),
@@ -411,8 +472,12 @@ export const LearningServiceLive = Layer.effect(
           // Apply final scoring with boosts
           const scored = applyFinalScoring(candidates, recencyWeight)
 
+          // Apply LLM re-ranking to top candidates for improved precision
+          const topCandidates = scored.slice(0, 20)
+          const reranked = yield* applyReranking(searchQuery, topCandidates)
+
           // Filter and limit
-          const learnings = scored
+          const learnings = reranked
             .filter(r => r.relevanceScore >= 0.05)
             .slice(0, 10)
 

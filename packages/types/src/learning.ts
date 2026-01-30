@@ -57,6 +57,8 @@ export interface LearningWithScore extends Learning {
   readonly bm25Rank: number;
   /** Rank in vector similarity results (1-indexed, 0 if not in vector results) */
   readonly vectorRank: number;
+  /** LLM reranker score (0-1, optional - only present when reranking is applied) */
+  readonly rerankerScore?: number;
 }
 
 /**
