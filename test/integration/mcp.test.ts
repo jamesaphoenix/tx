@@ -1833,3 +1833,611 @@ describe("MCP tx_unblock Tool", () => {
     expect(json.task).toHaveProperty("blockedBy")
   })
 })
+
+// =============================================================================
+// Learning Tools Integration Tests
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// tx_learning_add Tool Tests
+// -----------------------------------------------------------------------------
+
+describe("MCP tx_learning_add Tool", () => {
+  let db: InstanceType<typeof Database>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    runtime = makeTestRuntime(db)
+  })
+
+  afterEach(async () => {
+    await runtime.dispose()
+  })
+
+  it("creates learning and returns Learning with valid ID", async () => {
+    const response = await callMcpToolParsed<"tx_learning_add", Record<string, unknown>>(
+      runtime,
+      "tx_learning_add",
+      { content: "Always validate user input before processing" }
+    )
+
+    expect(response.isError).toBe(false)
+    const learning = response.data
+
+    expect(learning).toHaveProperty("id")
+    expect(learning.id).toBe(1)
+    expect(learning.content).toBe("Always validate user input before processing")
+    expect(learning.sourceType).toBe("manual")
+    expect(learning.usageCount).toBe(0)
+
+    // Learning fields
+    expect(learning).toHaveProperty("createdAt")
+    expect(learning).toHaveProperty("keywords")
+    expect(learning).toHaveProperty("category")
+    expect(learning).toHaveProperty("outcomeScore")
+    expect(learning).toHaveProperty("embedding")
+  })
+
+  it("creates learning with custom sourceType", async () => {
+    const response = await callMcpToolParsed<"tx_learning_add", Record<string, unknown>>(
+      runtime,
+      "tx_learning_add",
+      { content: "Test learning", sourceType: "compaction" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.sourceType).toBe("compaction")
+  })
+
+  it("creates learning with sourceRef", async () => {
+    const response = await callMcpToolParsed<"tx_learning_add", Record<string, unknown>>(
+      runtime,
+      "tx_learning_add",
+      { content: "Test learning", sourceRef: "task:tx-abc123" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.sourceRef).toBe("task:tx-abc123")
+  })
+
+  it("creates learning with category", async () => {
+    const response = await callMcpToolParsed<"tx_learning_add", Record<string, unknown>>(
+      runtime,
+      "tx_learning_add",
+      { content: "Database tip", category: "database" }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.category).toBe("database")
+  })
+
+  it("creates learning with keywords", async () => {
+    const response = await callMcpToolParsed<"tx_learning_add", Record<string, unknown>>(
+      runtime,
+      "tx_learning_add",
+      { content: "Use indexes", keywords: ["database", "performance", "optimization"] }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.keywords).toEqual(["database", "performance", "optimization"])
+  })
+
+  it("returns error for empty content", async () => {
+    const response = await callMcpToolParsed<"tx_learning_add", Record<string, unknown>>(
+      runtime,
+      "tx_learning_add",
+      { content: "" }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+  })
+
+  it("returns error for whitespace-only content", async () => {
+    const response = await callMcpToolParsed<"tx_learning_add", Record<string, unknown>>(
+      runtime,
+      "tx_learning_add",
+      { content: "   " }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+  })
+
+  it("includes correct text content format", async () => {
+    const response = await callMcpTool(runtime, "tx_learning_add", {
+      content: "Test learning content"
+    })
+
+    expect(response.content).toHaveLength(2)
+    expect(response.content[0].type).toBe("text")
+    expect(response.content[0].text).toMatch(/Created learning: #\d+/)
+    expect(response.content[1].type).toBe("text")
+    const json = JSON.parse(response.content[1].text)
+    expect(json).toHaveProperty("id")
+    expect(json).toHaveProperty("content")
+    expect(json).toHaveProperty("sourceType")
+  })
+})
+
+// -----------------------------------------------------------------------------
+// tx_learning_search Tool Tests
+// -----------------------------------------------------------------------------
+
+describe("MCP tx_learning_search Tool", () => {
+  let db: InstanceType<typeof Database>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    runtime = makeTestRuntime(db)
+  })
+
+  afterEach(async () => {
+    await runtime.dispose()
+  })
+
+  it("returns LearningWithScore[] with relevance scores", async () => {
+    // First create some learnings
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Always use database transactions for data consistency"
+    })
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Rate limiting prevents API abuse"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_search", Record<string, unknown>[]>(
+      runtime,
+      "tx_learning_search",
+      { query: "database transactions", minScore: 0 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(Array.isArray(response.data)).toBe(true)
+    expect(response.data.length).toBeGreaterThanOrEqual(1)
+
+    // Verify LearningWithScore fields
+    for (const learning of response.data) {
+      expect(learning).toHaveProperty("id")
+      expect(learning).toHaveProperty("content")
+      expect(learning).toHaveProperty("sourceType")
+      expect(learning).toHaveProperty("relevanceScore")
+      expect(learning).toHaveProperty("bm25Score")
+      expect(learning).toHaveProperty("vectorScore")
+      expect(learning).toHaveProperty("recencyScore")
+      expect(typeof learning.relevanceScore).toBe("number")
+      expect(typeof learning.bm25Score).toBe("number")
+    }
+  })
+
+  it("returns results sorted by relevance descending", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Database indexing improves query performance"
+    })
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Database transactions ensure ACID compliance"
+    })
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Database backups are essential"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_search", Record<string, unknown>[]>(
+      runtime,
+      "tx_learning_search",
+      { query: "database", limit: 10, minScore: 0 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.length).toBeGreaterThanOrEqual(1)
+
+    // Verify sorted by relevance
+    for (let i = 1; i < response.data.length; i++) {
+      expect((response.data[i - 1] as any).relevanceScore).toBeGreaterThanOrEqual(
+        (response.data[i] as any).relevanceScore
+      )
+    }
+  })
+
+  it("respects limit parameter", async () => {
+    await callMcpTool(runtime, "tx_learning_add", { content: "Database tip 1" })
+    await callMcpTool(runtime, "tx_learning_add", { content: "Database tip 2" })
+    await callMcpTool(runtime, "tx_learning_add", { content: "Database tip 3" })
+    await callMcpTool(runtime, "tx_learning_add", { content: "Database tip 4" })
+
+    const response = await callMcpToolParsed<"tx_learning_search", Record<string, unknown>[]>(
+      runtime,
+      "tx_learning_search",
+      { query: "database", limit: 2, minScore: 0 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.length).toBeLessThanOrEqual(2)
+  })
+
+  it("returns empty array for non-matching query", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Always use database transactions"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_search", Record<string, unknown>[]>(
+      runtime,
+      "tx_learning_search",
+      { query: "xyz123nonexistent", minScore: 0 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data).toHaveLength(0)
+  })
+
+  it("filters by minScore", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Database performance optimization techniques"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_search", Record<string, unknown>[]>(
+      runtime,
+      "tx_learning_search",
+      { query: "database", minScore: 0.5 }
+    )
+
+    expect(response.isError).toBe(false)
+    // All results should have relevanceScore >= 0.5
+    for (const learning of response.data) {
+      expect((learning as any).relevanceScore).toBeGreaterThanOrEqual(0.5)
+    }
+  })
+
+  it("includes correct text content format", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Test database learning"
+    })
+
+    const response = await callMcpTool(runtime, "tx_learning_search", {
+      query: "database",
+      minScore: 0
+    })
+
+    expect(response.content).toHaveLength(2)
+    expect(response.content[0].type).toBe("text")
+    expect(response.content[0].text).toMatch(/Found \d+ learning\(s\) matching/)
+    expect(response.content[1].type).toBe("text")
+    expect(() => JSON.parse(response.content[1].text)).not.toThrow()
+  })
+})
+
+// -----------------------------------------------------------------------------
+// tx_learning_helpful Tool Tests
+// -----------------------------------------------------------------------------
+
+describe("MCP tx_learning_helpful Tool", () => {
+  let db: InstanceType<typeof Database>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    runtime = makeTestRuntime(db)
+  })
+
+  afterEach(async () => {
+    await runtime.dispose()
+  })
+
+  it("updates learning with helpfulness score", async () => {
+    // First create a learning
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Test learning"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_helpful", { success: boolean; id: number; score: number }>(
+      runtime,
+      "tx_learning_helpful",
+      { id: 1, score: 0.85 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.success).toBe(true)
+    expect(response.data.id).toBe(1)
+    expect(response.data.score).toBe(0.85)
+  })
+
+  it("defaults score to 1.0 if not provided", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Test learning"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_helpful", { success: boolean; id: number; score: number }>(
+      runtime,
+      "tx_learning_helpful",
+      { id: 1 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.success).toBe(true)
+    expect(response.data.score).toBe(1.0)
+  })
+
+  it("accepts score of 0", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Test learning"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_helpful", { success: boolean; id: number; score: number }>(
+      runtime,
+      "tx_learning_helpful",
+      { id: 1, score: 0 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.success).toBe(true)
+    expect(response.data.score).toBe(0)
+  })
+
+  it("accepts score of 1", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Test learning"
+    })
+
+    const response = await callMcpToolParsed<"tx_learning_helpful", { success: boolean; id: number; score: number }>(
+      runtime,
+      "tx_learning_helpful",
+      { id: 1, score: 1 }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.success).toBe(true)
+    expect(response.data.score).toBe(1)
+  })
+
+  it("returns error for nonexistent learning", async () => {
+    const response = await callMcpToolParsed<"tx_learning_helpful", { success: boolean; id: number; score: number }>(
+      runtime,
+      "tx_learning_helpful",
+      { id: 999 }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+  })
+
+  it("outcome score persists and is returned in search results", async () => {
+    // Create two learnings with similar content
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Database indexing tip one"
+    })
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Database indexing tip two"
+    })
+
+    // Mark the first one as very helpful
+    await callMcpTool(runtime, "tx_learning_helpful", { id: 1, score: 1.0 })
+
+    // Search should boost the one with outcome score
+    const response = await callMcpToolParsed<"tx_learning_search", Record<string, unknown>[]>(
+      runtime,
+      "tx_learning_search",
+      { query: "database indexing", limit: 10, minScore: 0 }
+    )
+
+    expect(response.isError).toBe(false)
+    // Find the learning with ID 1
+    const withOutcome = response.data.find((l: any) => l.id === 1)
+    expect(withOutcome).toBeDefined()
+    // The outcomeScore should be set
+    expect((withOutcome as any).outcomeScore).toBe(1.0)
+  })
+
+  it("includes correct text content format", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Test learning"
+    })
+
+    const response = await callMcpTool(runtime, "tx_learning_helpful", {
+      id: 1,
+      score: 0.75
+    })
+
+    expect(response.content).toHaveLength(2)
+    expect(response.content[0].type).toBe("text")
+    expect(response.content[0].text).toContain("Updated learning #1")
+    expect(response.content[0].text).toContain("helpfulness score: 0.75")
+    expect(response.content[1].type).toBe("text")
+    const json = JSON.parse(response.content[1].text)
+    expect(json.success).toBe(true)
+    expect(json.id).toBe(1)
+    expect(json.score).toBe(0.75)
+  })
+})
+
+// -----------------------------------------------------------------------------
+// tx_context Tool Tests
+// -----------------------------------------------------------------------------
+
+describe("MCP tx_context Tool", () => {
+  let db: InstanceType<typeof Database>
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    runtime = makeTestRuntime(db)
+  })
+
+  afterEach(async () => {
+    await runtime.dispose()
+  })
+
+  it("returns ContextResult with learnings for valid task", async () => {
+    // Create learnings relevant to JWT validation task
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "JWT tokens should be validated on every request"
+    })
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Always hash passwords with bcrypt"
+    })
+
+    const response = await callMcpToolParsed<"tx_context", {
+      taskId: string
+      taskTitle: string
+      searchQuery: string
+      searchDuration: number
+      learnings: Record<string, unknown>[]
+    }>(
+      runtime,
+      "tx_context",
+      { taskId: FIXTURES.TASK_JWT }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.taskId).toBe(FIXTURES.TASK_JWT)
+    expect(response.data.taskTitle).toBe("JWT validation")
+    expect(typeof response.data.searchQuery).toBe("string")
+    expect(typeof response.data.searchDuration).toBe("number")
+    expect(Array.isArray(response.data.learnings)).toBe(true)
+  })
+
+  it("returns learnings with LearningWithScore fields", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "JWT tokens must be validated before use"
+    })
+
+    const response = await callMcpToolParsed<"tx_context", {
+      taskId: string
+      taskTitle: string
+      searchQuery: string
+      searchDuration: number
+      learnings: Record<string, unknown>[]
+    }>(
+      runtime,
+      "tx_context",
+      { taskId: FIXTURES.TASK_JWT }
+    )
+
+    expect(response.isError).toBe(false)
+
+    // If learnings were returned, verify they have score fields
+    for (const learning of response.data.learnings) {
+      expect(learning).toHaveProperty("id")
+      expect(learning).toHaveProperty("content")
+      expect(learning).toHaveProperty("relevanceScore")
+      expect(learning).toHaveProperty("bm25Score")
+      expect(learning).toHaveProperty("vectorScore")
+      expect(learning).toHaveProperty("recencyScore")
+    }
+  })
+
+  it("returns error for nonexistent task", async () => {
+    const response = await callMcpToolParsed<"tx_context", Record<string, unknown>>(
+      runtime,
+      "tx_context",
+      { taskId: "tx-nonexistent" }
+    )
+
+    expect(response.isError).toBe(true)
+    expect(response.message).toContain("Error")
+  })
+
+  it("constructs searchQuery from task title and description", async () => {
+    const response = await callMcpToolParsed<"tx_context", {
+      taskId: string
+      taskTitle: string
+      searchQuery: string
+      searchDuration: number
+      learnings: Record<string, unknown>[]
+    }>(
+      runtime,
+      "tx_context",
+      { taskId: FIXTURES.TASK_JWT }
+    )
+
+    expect(response.isError).toBe(false)
+    // Search query should contain task title
+    expect(response.data.searchQuery).toContain("JWT validation")
+  })
+
+  it("returns empty learnings array when no relevant learnings exist", async () => {
+    // Don't create any learnings, just get context
+    const response = await callMcpToolParsed<"tx_context", {
+      taskId: string
+      taskTitle: string
+      searchQuery: string
+      searchDuration: number
+      learnings: Record<string, unknown>[]
+    }>(
+      runtime,
+      "tx_context",
+      { taskId: FIXTURES.TASK_JWT }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.learnings).toHaveLength(0)
+  })
+
+  it("includes searchDuration metric", async () => {
+    const response = await callMcpToolParsed<"tx_context", {
+      taskId: string
+      taskTitle: string
+      searchQuery: string
+      searchDuration: number
+      learnings: Record<string, unknown>[]
+    }>(
+      runtime,
+      "tx_context",
+      { taskId: FIXTURES.TASK_JWT }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.searchDuration).toBeGreaterThanOrEqual(0)
+  })
+
+  it("includes correct text content format", async () => {
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "JWT validation tip"
+    })
+
+    const response = await callMcpTool(runtime, "tx_context", {
+      taskId: FIXTURES.TASK_JWT
+    })
+
+    expect(response.content).toHaveLength(2)
+    expect(response.content[0].type).toBe("text")
+    expect(response.content[0].text).toMatch(/Found \d+ relevant learning\(s\)/)
+    expect(response.content[0].text).toContain("JWT validation")
+    expect(response.content[1].type).toBe("text")
+    const json = JSON.parse(response.content[1].text)
+    expect(json).toHaveProperty("taskId")
+    expect(json).toHaveProperty("taskTitle")
+    expect(json).toHaveProperty("searchQuery")
+    expect(json).toHaveProperty("searchDuration")
+    expect(json).toHaveProperty("learnings")
+  })
+
+  it("works with different task types", async () => {
+    // Create learnings relevant to different tasks
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Login forms should validate email format"
+    })
+    await callMcpTool(runtime, "tx_learning_add", {
+      content: "Always use HTTPS for login pages"
+    })
+
+    const response = await callMcpToolParsed<"tx_context", {
+      taskId: string
+      taskTitle: string
+      searchQuery: string
+      searchDuration: number
+      learnings: Record<string, unknown>[]
+    }>(
+      runtime,
+      "tx_context",
+      { taskId: FIXTURES.TASK_LOGIN }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.taskId).toBe(FIXTURES.TASK_LOGIN)
+    expect(response.data.taskTitle).toBe("Login page")
+  })
+})
