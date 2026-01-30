@@ -69,6 +69,26 @@ export default [
       }]
     }
   },
+  // Packages (types, core, etc.)
+  {
+    files: ['packages/**/*.ts'],
+    languageOptions: {
+      parser: tseslintParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module'
+      }
+    },
+    plugins: {
+      '@typescript-eslint': tseslintPlugin
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'off',
+      'no-unused-vars': 'off',
+      'no-undef': 'off'
+    }
+  },
   // Dashboard app files (with separate API test requirements)
   {
     files: ['apps/dashboard/**/*.ts'],

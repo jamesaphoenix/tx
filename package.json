@@ -30,16 +30,20 @@
   "author": "James Phoenix",
   "license": "MIT",
   "scripts": {
-    "build": "turbo build",
+    "build": "turbo build && tsc",
+    "build:packages": "turbo build",
     "build:root": "tsc",
     "dev": "tsx src/cli.ts",
-    "test": "turbo test",
+    "test": "turbo test && vitest --run",
+    "test:packages": "turbo test",
     "test:root": "vitest --run",
     "test:watch": "vitest",
-    "lint": "turbo lint",
+    "lint": "turbo lint && eslint src/",
+    "lint:packages": "turbo lint",
     "lint:root": "eslint src/ apps/",
-    "lint:fix": "eslint src/ apps/ --fix",
-    "typecheck": "turbo typecheck",
+    "lint:fix": "eslint src/ apps/ packages/ --fix",
+    "typecheck": "turbo typecheck && tsc --noEmit",
+    "typecheck:packages": "turbo typecheck",
     "typecheck:root": "tsc --noEmit",
     "check": "./scripts/check.sh --all",
     "check:quick": "./scripts/check.sh --quick",
@@ -69,5 +73,6 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "packageManager": "npm@11.3.0"
 }

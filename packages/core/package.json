@@ -21,7 +21,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
-    "@tx/types": "workspace:*",
+    "@tx/types": "*",
     "effect": "^3.19.15"
   },
   "devDependencies": {
