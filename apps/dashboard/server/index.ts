@@ -270,12 +270,108 @@ app.get("/api/stats", (c) => {
       // Table doesn't exist yet
     }
 
+    // Runs count (if table exists)
+    let runsRunning = 0
+    let runsTotal = 0
+    try {
+      runsRunning = (db.prepare("SELECT COUNT(*) as count FROM runs WHERE status = 'running'").get() as { count: number }).count
+      runsTotal = (db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }).count
+    } catch {
+      // Table doesn't exist yet
+    }
+
     return c.json({
       tasks: taskCount,
       done: doneCount,
       ready: readyCount,
       learnings: learningsCount,
+      runsRunning,
+      runsTotal,
     })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/runs - List recent runs
+app.get("/api/runs", (c) => {
+  try {
+    const db = getDb()
+    const limit = parseInt(c.req.query("limit") ?? "20")
+
+    let runs: Array<{
+      id: string
+      task_id: string | null
+      agent: string
+      started_at: string
+      ended_at: string | null
+      status: string
+      exit_code: number | null
+      transcript_path: string | null
+      summary: string | null
+      error_message: string | null
+    }> = []
+
+    try {
+      runs = db.prepare(`
+        SELECT id, task_id, agent, started_at, ended_at, status, exit_code, transcript_path, summary, error_message
+        FROM runs
+        ORDER BY started_at DESC
+        LIMIT ?
+      `).all(limit) as typeof runs
+    } catch {
+      // Table doesn't exist yet
+    }
+
+    // Enrich with task titles
+    const enriched = runs.map(run => {
+      let taskTitle: string | null = null
+      if (run.task_id) {
+        const task = db.prepare("SELECT title FROM tasks WHERE id = ?").get(run.task_id) as { title: string } | undefined
+        taskTitle = task?.title ?? null
+      }
+      return { ...run, taskTitle }
+    })
+
+    return c.json({ runs: enriched })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/runs/:id - Get run details with transcript
+app.get("/api/runs/:id", (c) => {
+  try {
+    const db = getDb()
+    const id = c.req.param("id")
+
+    const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as {
+      id: string
+      task_id: string | null
+      agent: string
+      started_at: string
+      ended_at: string | null
+      status: string
+      exit_code: number | null
+      pid: number | null
+      transcript_path: string | null
+      context_injected: string | null
+      summary: string | null
+      error_message: string | null
+      metadata: string
+    } | undefined
+
+    if (!run) {
+      return c.json({ error: "Run not found" }, 404)
+    }
+
+    // Try to read transcript if it exists
+    let transcript: string | null = null
+    if (run.transcript_path && existsSync(run.transcript_path)) {
+      transcript = readFileSync(run.transcript_path, "utf-8")
+    }
+
+    return c.json({ run, transcript })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

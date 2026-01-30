@@ -175,6 +175,57 @@ select_agent() {
 }
 
 # ==============================================================================
+# Run Tracking
+# ==============================================================================
+
+# Create a run record and return the run ID
+create_run() {
+  local task_id="$1"
+  local agent="$2"
+  local metadata="$3"
+
+  # Generate run ID
+  local run_id="run-$(date +%s | shasum | head -c 8)"
+  local now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  # Insert into database (if tx supports it, otherwise just track in file)
+  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    sqlite3 "$PROJECT_DIR/.tx/tasks.db" <<EOF
+INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
+VALUES ('$run_id', '$task_id', '$agent', '$now', 'running', $$, '$metadata');
+EOF
+  fi
+
+  # Also write to runs log for dashboard
+  echo "$run_id" > "$PROJECT_DIR/.tx/current-run"
+  echo "{\"id\":\"$run_id\",\"task_id\":\"$task_id\",\"agent\":\"$agent\",\"started_at\":\"$now\",\"status\":\"running\",\"pid\":$$}" >> "$PROJECT_DIR/.tx/runs.jsonl"
+
+  echo "$run_id"
+}
+
+# Update run status
+complete_run() {
+  local run_id="$1"
+  local status="$2"
+  local exit_code="$3"
+  local error_message="${4:-}"
+
+  local now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    if [ -n "$error_message" ]; then
+      sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+        "UPDATE runs SET status='$status', ended_at='$now', exit_code=$exit_code, error_message='$error_message' WHERE id='$run_id';"
+    else
+      sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+        "UPDATE runs SET status='$status', ended_at='$now', exit_code=$exit_code WHERE id='$run_id';"
+    fi
+  fi
+
+  rm -f "$PROJECT_DIR/.tx/current-run"
+}
+
+# ==============================================================================
 # Run Claude Agent
 # ==============================================================================
 
@@ -195,9 +246,18 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
 
   log "Dispatching to Claude..."
 
+  # Create run record
+  local metadata="{\"iteration\":$iteration,\"git_sha\":\"$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\"}"
+  CURRENT_RUN_ID=$(create_run "$task_id" "$agent" "$metadata")
+  log "Run: $CURRENT_RUN_ID"
+
+  local exit_code=0
   if claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE"; then
+    complete_run "$CURRENT_RUN_ID" "completed" 0
     return 0
   else
+    exit_code=$?
+    complete_run "$CURRENT_RUN_ID" "failed" "$exit_code" "Claude exited with code $exit_code"
     return 1
   fi
 }
