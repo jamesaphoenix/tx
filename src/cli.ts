@@ -2,7 +2,7 @@
 import { Effect } from "effect"
 import { resolve } from "path"
 import { existsSync, mkdirSync, writeFileSync } from "fs"
-import { makeAppLayer, SyncService, LearningService, FileLearningService } from "./layer.js"
+import { makeAppLayer, SyncService, LearningService, FileLearningService, MigrationService } from "./layer.js"
 import { TaskService } from "./services/task-service.js"
 import { DependencyService } from "./services/dep-service.js"
 import { ReadyService } from "./services/ready-service.js"
@@ -32,6 +32,7 @@ Commands:
   sync export             Export tasks to JSONL file
   sync import             Import tasks from JSONL file
   sync status             Show sync status
+  migrate status          Show database migration status
   learning:add            Add a learning
   learning:search         Search learnings
   learning:recent         List recent learnings
@@ -453,6 +454,34 @@ Options:
 Examples:
   tx sync status
   tx sync status --json`,
+
+  migrate: `tx migrate - Manage database schema migrations
+
+Usage: tx migrate <subcommand> [options]
+
+Subcommands:
+  status    Show current schema version and pending migrations
+
+Run 'tx migrate <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx migrate status               # Show migration status`,
+
+  "migrate status": `tx migrate status - Show migration status
+
+Usage: tx migrate status [--json]
+
+Shows the current schema version, latest available version, applied
+migrations, and any pending migrations that will be applied on next
+database open.
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx migrate status
+  tx migrate status --json`,
 
   "learning:add": `tx learning:add - Add a learning
 
@@ -972,6 +1001,56 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       } else {
         console.error(`Unknown sync subcommand: ${subcommand}`)
         console.error(`Run 'tx sync --help' for usage information`)
+        process.exit(1)
+      }
+    }),
+
+  migrate: (pos, flags) =>
+    Effect.gen(function* () {
+      const subcommand = pos[0]
+
+      if (!subcommand || subcommand === "help") {
+        console.log(commandHelp["migrate"])
+        return
+      }
+
+      // Check for --help on subcommand
+      if (flag(flags, "help", "h")) {
+        const helpKey = `migrate ${subcommand}`
+        if (commandHelp[helpKey]) {
+          console.log(commandHelp[helpKey])
+          return
+        }
+      }
+
+      const migrationSvc = yield* MigrationService
+
+      if (subcommand === "status") {
+        const status = yield* migrationSvc.getStatus()
+
+        if (flag(flags, "json")) {
+          console.log(toJson(status))
+        } else {
+          console.log(`Migration Status:`)
+          console.log(`  Current version: ${status.currentVersion}`)
+          console.log(`  Latest version: ${status.latestVersion}`)
+          console.log(`  Pending migrations: ${status.pendingCount}`)
+          if (status.appliedMigrations.length > 0) {
+            console.log(`\nApplied migrations:`)
+            for (const m of status.appliedMigrations) {
+              console.log(`  v${m.version} - applied ${m.appliedAt.toISOString()}`)
+            }
+          }
+          if (status.pendingMigrations.length > 0) {
+            console.log(`\nPending migrations:`)
+            for (const m of status.pendingMigrations) {
+              console.log(`  v${m.version} - ${m.description}`)
+            }
+          }
+        }
+      } else {
+        console.error(`Unknown migrate subcommand: ${subcommand}`)
+        console.error(`Run 'tx migrate --help' for usage information`)
         process.exit(1)
       }
     }),

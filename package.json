@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "A lean task management system for AI agents and humans",
   "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
   "bin": {
     "tx": "./dist/cli.js"
   },

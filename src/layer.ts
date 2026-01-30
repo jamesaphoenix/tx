@@ -11,9 +11,11 @@ import { HierarchyServiceLive } from "./services/hierarchy-service.js"
 import { LearningServiceLive } from "./services/learning-service.js"
 import { FileLearningServiceLive } from "./services/file-learning-service.js"
 import { SyncService, SyncServiceLive } from "./services/sync-service.js"
+import { MigrationService, MigrationServiceLive } from "./services/migration-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService }
+export { MigrationService }
 export { LearningService } from "./services/learning-service.js"
 export { FileLearningService } from "./services/file-learning-service.js"
 
@@ -45,5 +47,10 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, services))
   )
 
-  return Layer.merge(services, syncService)
+  // MigrationService only needs SqliteClient
+  const migrationService = MigrationServiceLive.pipe(
+    Layer.provide(infra)
+  )
+
+  return Layer.mergeAll(services, syncService, migrationService)
 }
