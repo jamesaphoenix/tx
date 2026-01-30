@@ -62,6 +62,40 @@ export interface StatsResponse {
   done: number
   ready: number
   learnings: number
+  runsRunning?: number
+  runsTotal?: number
+}
+
+// Run types
+export interface Run {
+  id: string
+  task_id: string | null
+  agent: string
+  started_at: string
+  ended_at: string | null
+  status: string
+  exit_code: number | null
+  transcript_path: string | null
+  summary: string | null
+  error_message: string | null
+  taskTitle?: string | null
+}
+
+export interface RunsResponse {
+  runs: Run[]
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system"
+  content: string | unknown
+  type?: "tool_use" | "tool_result" | "text"
+  tool_name?: string
+  timestamp?: string
+}
+
+export interface RunDetailResponse {
+  run: Run
+  messages: ChatMessage[]
 }
 
 // Effect-based API functions
@@ -82,6 +116,8 @@ export const api = {
   getReady: () => fetchJson<ReadyResponse>("/api/tasks/ready"),
   getRalph: () => fetchJson<RalphResponse>("/api/ralph"),
   getStats: () => fetchJson<StatsResponse>("/api/stats"),
+  getRuns: () => fetchJson<RunsResponse>("/api/runs"),
+  getRunDetail: (id: string) => fetchJson<RunDetailResponse>(`/api/runs/${id}`),
 }
 
 // Promise-based wrappers for TanStack Query
@@ -90,4 +126,6 @@ export const fetchers = {
   ready: () => Effect.runPromise(api.getReady()),
   ralph: () => Effect.runPromise(api.getRalph()),
   stats: () => Effect.runPromise(api.getStats()),
+  runs: () => Effect.runPromise(api.getRuns()),
+  runDetail: (id: string) => Effect.runPromise(api.getRunDetail(id)),
 }
