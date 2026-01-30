@@ -18,6 +18,22 @@ const DEFAULT_VECTOR_WEIGHT = 0.3
 const DEFAULT_RECENCY_WEIGHT = 0.2
 const MAX_AGE_DAYS = 30
 
+/** Result of embedding operation */
+export interface EmbedResult {
+  processed: number
+  skipped: number
+  failed: number
+  total: number
+}
+
+/** Embedding coverage status */
+export interface EmbedStatus {
+  total: number
+  withEmbeddings: number
+  withoutEmbeddings: number
+  coveragePercent: number
+}
+
 export class LearningService extends Context.Tag("LearningService")<
   LearningService,
   {
@@ -30,6 +46,8 @@ export class LearningService extends Context.Tag("LearningService")<
     readonly updateOutcome: (id: number, score: number) => Effect.Effect<void, LearningNotFoundError | ValidationError | DatabaseError>
     readonly getContextForTask: (taskId: string) => Effect.Effect<ContextResult, TaskNotFoundError | DatabaseError>
     readonly count: () => Effect.Effect<number, DatabaseError>
+    readonly embedAll: (forceAll?: boolean) => Effect.Effect<EmbedResult, DatabaseError>
+    readonly embeddingStatus: () => Effect.Effect<EmbedStatus, DatabaseError>
   }
 >() {}
 

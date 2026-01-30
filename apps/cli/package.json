@@ -1,0 +1,55 @@
+{
+  "name": "@tx/cli",
+  "version": "0.1.0",
+  "description": "TX command line tool - task management for AI agents and humans",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "bin": {
+    "tx": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tx/core": "*",
+    "@tx/types": "*",
+    "effect": "^3.19.15"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0",
+    "@modelcontextprotocol/sdk": "^1.25.3"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": false
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "keywords": [
+    "tx",
+    "cli",
+    "task-management",
+    "effect-ts"
+  ]
+}

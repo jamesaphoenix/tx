@@ -15,7 +15,7 @@ import { AttemptServiceLive } from "./services/attempt-service.js"
 import { SyncService, SyncServiceLive } from "./services/sync-service.js"
 import { AutoSyncServiceLive } from "./services/auto-sync-service.js"
 import { MigrationService, MigrationServiceLive } from "./services/migration-service.js"
-import { EmbeddingServiceNoop } from "./services/embedding-service.js"
+import { EmbeddingServiceAuto } from "./services/embedding-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService }
@@ -59,7 +59,7 @@ export const makeAppLayer = (dbPath: string) => {
     FileLearningServiceLive,
     AttemptServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, autoSyncService))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceAuto, autoSyncService))
   )
 
   // MigrationService only needs SqliteClient

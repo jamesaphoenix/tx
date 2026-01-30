@@ -16,6 +16,35 @@ export interface BM25Result {
   score: number
 }
 
+/** Scored learning result from vector search */
+export interface VectorResult {
+  learning: Learning
+  score: number  // cosine similarity normalized to [0, 1]
+}
+
+/**
+ * Calculate cosine similarity between two vectors.
+ * Returns a value between -1 and 1, where 1 means identical direction.
+ */
+const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
+  if (a.length !== b.length) return 0
+
+  let dotProduct = 0
+  let normA = 0
+  let normB = 0
+
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i]! * b[i]!
+    normA += a[i]! * a[i]!
+    normB += b[i]! * b[i]!
+  }
+
+  const magnitude = Math.sqrt(normA) * Math.sqrt(normB)
+  if (magnitude === 0) return 0
+
+  return dotProduct / magnitude
+}
+
 export class LearningRepository extends Context.Tag("LearningRepository")<
   LearningRepository,
   {
@@ -23,12 +52,15 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
     readonly findById: (id: number) => Effect.Effect<Learning | null, DatabaseError>
     readonly findAll: () => Effect.Effect<readonly Learning[], DatabaseError>
     readonly findRecent: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
+    readonly findWithEmbeddings: () => Effect.Effect<readonly Learning[], DatabaseError>
     readonly bm25Search: (query: string, limit: number) => Effect.Effect<readonly BM25Result[], DatabaseError>
+    readonly vectorSearch: (queryEmbedding: Float32Array, limit: number) => Effect.Effect<readonly VectorResult[], DatabaseError>
     readonly incrementUsage: (id: number) => Effect.Effect<void, DatabaseError>
     readonly updateOutcomeScore: (id: number, score: number) => Effect.Effect<void, DatabaseError>
     readonly updateEmbedding: (id: number, embedding: Float32Array) => Effect.Effect<void, DatabaseError>
     readonly remove: (id: number) => Effect.Effect<void, DatabaseError>
     readonly count: () => Effect.Effect<number, DatabaseError>
+    readonly countWithEmbeddings: () => Effect.Effect<number, DatabaseError>
     readonly getConfig: (key: string) => Effect.Effect<string | null, DatabaseError>
   }
 >() {}
@@ -132,6 +164,17 @@ export const LearningRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause })
         }),
 
+      findWithEmbeddings: () =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              `SELECT * FROM learnings WHERE embedding IS NOT NULL`
+            ).all() as LearningRow[]
+            return rows.map(rowToLearning)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
       bm25Search: (query, limit) =>
         Effect.try({
           try: () => {
@@ -157,6 +200,35 @@ export const LearningRepositoryLive = Layer.effect(
               learning: rowToLearning(row),
               score: 1.0 / (1 + rank * 0.1)
             }))
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      vectorSearch: (queryEmbedding, limit) =>
+        Effect.try({
+          try: () => {
+            // Get all learnings with embeddings
+            const rows = db.prepare(
+              `SELECT * FROM learnings WHERE embedding IS NOT NULL`
+            ).all() as LearningRow[]
+
+            if (rows.length === 0) return []
+
+            // Compute cosine similarity for each and sort
+            const results = rows
+              .map(row => {
+                const learning = rowToLearning(row)
+                const similarity = learning.embedding
+                  ? cosineSimilarity(queryEmbedding, learning.embedding)
+                  : 0
+                // Normalize from [-1, 1] to [0, 1]
+                const score = (similarity + 1) / 2
+                return { learning, score }
+              })
+              .sort((a, b) => b.score - a.score)
+              .slice(0, limit)
+
+            return results
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -203,6 +275,15 @@ export const LearningRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings").get() as { cnt: number }
+            return result.cnt
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      countWithEmbeddings: () =>
+        Effect.try({
+          try: () => {
+            const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NOT NULL").get() as { cnt: number }
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
