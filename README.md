@@ -2,122 +2,251 @@
 
 A lean task management system for AI agents and humans, built with Effect-TS.
 
-## Why
+## Vision
 
-AI coding agents lose context across sessions. Markdown plans go stale, git issue trackers are designed for humans, and session-scoped todo lists vanish when the conversation ends.
+**The problem:** AI coding agents lose context across sessions. They repeat mistakes, forget learnings, and can't coordinate on complex multi-step work. Current solutions (markdown plans, git issues, session todos) are designed for humans, not agents.
 
-**tx** gives agents a persistent, queryable, dependency-aware task store that works across sessions and can be programmatically manipulated through CLI, MCP, or TypeScript API.
+**tx's approach:** Give agents a persistent, queryable, dependency-aware system that:
+- **Remembers what worked** — Learnings persist across sessions and surface when relevant
+- **Tracks what failed** — Attempts record approaches tried, preventing repeated failures
+- **Coordinates work** — Dependencies ensure agents never work on blocked tasks
+- **Enables autonomy** — RALPH loop runs agents unattended until tasks complete
 
-## Core Ideas
+**Where we're going:**
+- Multi-agent orchestration with specialized agents (planner, implementer, reviewer, tester)
+- Semantic search over learnings using local embeddings (node-llama-cpp)
+- Real-time dashboard for monitoring agent progress
+- TypeScript SDK for building custom agents
+- Git-backed JSONL sync for team collaboration
 
-- **Persistent** -- Tasks survive across agent sessions and machine restarts via SQLite
-- **Fast** -- Sub-100ms queries for common operations (list, ready, get)
-- **Dependency-aware** -- Explicit blocking relationships so agents never work on blocked tasks
-- **Ready detection** -- `tx ready` returns the highest-priority unblocked tasks, sorted by score
-- **Hierarchical** -- Flexible N-level nesting (epics, milestones, tasks, subtasks)
-- **Multi-interface** -- CLI for humans, MCP server for Claude Code, TypeScript API for custom agents
-- **Minimal** -- Single dependency (SQLite), no external services required for core features
-- **LLM-optional** -- Core commands work without an API key; LLM features (dedupe, compact, reprioritize) use Claude when available
+## Quick Start
 
-## How It Works
+```bash
+npm install -g @jamesaphoenix/tx
 
-```
-tx add "Implement authentication" --score 800
+# Initialize
+tx init
+
+# Create tasks
+tx add "Implement user authentication" --score 800
 tx add "Design auth schema" --parent tx-a1b2c3
-tx block tx-d4e5f6 tx-a1b2c3
-tx ready                          # returns highest-priority unblocked tasks
-tx done tx-a1b2c3                 # completes task, unblocks dependents
+
+# Work on tasks
+tx ready                    # Get highest-priority unblocked tasks
+tx done tx-a1b2c3           # Complete task, unblocks dependents
+
+# Track learnings
+tx learning:add "Use bcrypt for password hashing, not SHA256"
+tx context tx-d4e5f6        # Get relevant learnings for a task
+
+# Sync for git backup
+tx sync export
+git add .tx/tasks.jsonl && git commit -m "Task updates"
 ```
 
-Agents query `tx ready` to pick up work, create subtasks as they decompose problems, and mark tasks done to unblock the next piece of work. Humans review, reprioritize, and add context.
+## Core Features
+
+### Task Management
+- **Persistent** — SQLite storage survives sessions and restarts
+- **Dependency-aware** — Explicit blocking prevents work on blocked tasks
+- **Hierarchical** — N-level nesting (epics → milestones → tasks → subtasks)
+- **Priority scoring** — `tx ready` returns highest-priority unblocked work
+
+### Learnings System
+- **Capture knowledge** — `tx learning:add` stores insights that persist
+- **Contextual retrieval** — `tx context <task-id>` finds relevant learnings via BM25
+- **File patterns** — `tx learn` attaches learnings to file paths/globs
+- **Outcome tracking** — Mark learnings as helpful to improve future retrieval
+
+### Attempt Tracking
+- **Record approaches** — `tx try <id> "approach" --failed "reason"`
+- **Prevent repetition** — See what was already tried before starting work
+- **Learn from failure** — Failed attempts inform future approaches
+
+### Multi-Interface
+| Interface | Consumer | Protocol |
+|-----------|----------|----------|
+| CLI (`tx`) | Humans, scripts | stdin/stdout |
+| MCP Server | Claude Code | JSON-RPC over stdio |
+| API Server | Web apps, agents | REST/HTTP |
+| Agent SDK | Custom agents | TypeScript |
+| Dashboard | Humans | Web UI |
 
 ## Architecture
 
 ```
-CLI / MCP Server / TypeScript API
-         |
-    Service Layer (Effect-TS)
-    TaskService, ReadyService, ScoreService, HierarchyService
-         |
-    Repository Layer
-    TaskRepository, DependencyRepository
-         |
-    SQLite (better-sqlite3, WAL mode)
+┌─────────────────────────────────────────────────────────────┐
+│                        Interfaces                           │
+├──────────┬──────────┬──────────┬──────────┬────────────────┤
+│   CLI    │   MCP    │   API    │  Agent   │   Dashboard    │
+│          │  Server  │  Server  │   SDK    │                │
+└────┬─────┴────┬─────┴────┬─────┴────┬─────┴───────┬────────┘
+     │          │          │          │             │
+     └──────────┴──────────┴──────────┴─────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │      @tx/core           │
+              │  Effect-TS Services     │
+              │  TaskService            │
+              │  LearningService        │
+              │  ReadyService           │
+              │  SyncService            │
+              └────────────┬────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │    Repository Layer     │
+              │  TaskRepository         │
+              │  LearningRepository     │
+              │  DependencyRepository   │
+              └────────────┬────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │   SQLite + JSONL Sync   │
+              │  .tx/tasks.db (local)   │
+              │  .tx/*.jsonl (git)      │
+              └─────────────────────────┘
 ```
 
-All business logic uses Effect-TS for typed errors, service composition, and layer-based dependency injection. Two layer configurations:
-
-- **AppMinimalLive** -- No LLM, used by CLI core commands, MCP server, Agent SDK
-- **AppLive** -- Includes LLM, used by dedupe/compact/reprioritize
-
-## Status Lifecycle
+### Planned Monorepo Structure
 
 ```
-backlog -> ready -> planning -> active -> blocked -> review -> human_needs_to_review -> done
+tx/
+├── packages/
+│   ├── core/              # Effect-TS services, repos, schemas
+│   └── types/             # Shared TypeScript types (zero deps)
+├── apps/
+│   ├── cli/               # tx command
+│   ├── mcp-server/        # Claude Code integration
+│   ├── api-server/        # REST/HTTP API
+│   ├── dashboard/         # Web monitoring UI
+│   └── agent-sdk/         # TypeScript SDK for custom agents
+├── migrations/            # SQL schema (versioned, immutable)
+└── scripts/               # RALPH loop, CI checks
 ```
-
-A task is **ready** when its status is workable and all blockers have status `done`.
-
-## Interfaces
-
-| Interface | Consumer | Protocol |
-|-----------|----------|----------|
-| CLI (`tx`) | Humans, scripts | stdin/stdout (text or JSON) |
-| MCP Server | Claude Code | JSON-RPC over stdio |
-| TypeScript API | Custom agents | Effect types |
-| Agent SDK | Anthropic SDK | Tool definitions |
-
-## LLM Features (optional)
-
-These commands require `ANTHROPIC_API_KEY`:
-
-- **`tx dedupe`** -- Find and merge semantically duplicate tasks
-- **`tx compact`** -- Summarize completed tasks, extract learnings, export to CLAUDE.md
-- **`tx reprioritize`** -- LLM recalculates scores based on context
 
 ## RALPH Loop — Autonomous Development
 
-tx uses an adapted [RALPH loop](https://ghuntley.com/ralph) for autonomous development. Fresh agent instances are spawned per task — memory persists through files (CLAUDE.md, git, `.tx/tasks.db`), not conversation history.
+tx uses the [RALPH pattern](https://ghuntley.com/ralph) for autonomous development. Fresh agent instances handle single tasks — memory persists through files, not conversation history.
 
 ```bash
 ./scripts/ralph.sh           # Run until all tasks done
 ./scripts/ralph.sh --max 10  # Run at most 10 iterations
 ```
 
-The orchestrator picks the highest-priority task from `tx ready`, dispatches it to a specialized agent, and loops until all work is complete.
-
 ### Specialized Agents
-
-Agents are defined as markdown files in `.claude/agents/`:
 
 | Agent | Role |
 |-------|------|
-| `tx-planner` | Research codebase, create implementation plan, decompose into subtasks |
-| `tx-implementer` | Write Effect-TS code for a single task, following doctrine |
-| `tx-reviewer` | Review code changes against all 7 doctrine rules |
-| `tx-tester` | Write integration tests with SHA256 deterministic fixtures |
-| `tx-decomposer` | Break large tasks into atomic subtasks for single iterations |
+| `tx-planner` | Research codebase, create implementation plan |
+| `tx-implementer` | Write code for a single task |
+| `tx-reviewer` | Review against doctrine rules |
+| `tx-tester` | Write integration tests |
+| `tx-decomposer` | Break large tasks into subtasks |
 
-Agents can also be used programmatically via the [Claude Agent SDK](https://docs.anthropic.com/en/docs/agent-sdk).
+### Claude Code Hooks
 
-## Project Structure
+tx includes hooks for autonomous operation:
+
+- **Stop hook** — Blocks exit until task is marked done + tests pass
+- **PostToolUse hook** — Injects recovery context on test/lint failures
+- **PreToolUse hook** — Blocks dangerous commands (rm -rf, force push)
+- **SessionStart hook** — Loads relevant task context and learnings
+
+### Context-Efficient Output
+
+Based on [HumanLayer's backpressure pattern](https://humanlayer.dev/blog/context-efficient-backpressure):
+
+```bash
+./scripts/check.sh --test
+#  ✓ Tests — 389 passed (5s)     # Success: minimal output
+
+./scripts/check.sh --test
+#  ✗ Tests (5s)                   # Failure: FULL output, ALL errors
+#  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  FAIL src/api.test.ts
+#  ... every error shown ...
+```
+
+## Status Lifecycle
 
 ```
-tx/
-├── CLAUDE.md              # Doctrine, PRDs, design docs
-├── .claude/
-│   └── agents/            # Specialized agent definitions
-│       ├── tx-planner.md
-│       ├── tx-implementer.md
-│       ├── tx-reviewer.md
-│       ├── tx-tester.md
-│       └── tx-decomposer.md
-├── scripts/
-│   └── ralph.sh           # RALPH loop orchestrator
-├── docs/
-│   ├── prd/               # Product Requirements Documents
-│   └── design/            # Design Documents
-└── src/                   # Implementation
+backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+```
+
+A task is **ready** when: status is workable AND all blockers have status `done`.
+
+## Git-Backed Persistence
+
+```
+.tx/
+├── tasks.db           # SQLite (gitignored, local source of truth)
+├── tasks.jsonl        # Git-tracked for backup/sharing
+├── learnings.jsonl    # Git-tracked
+└── runs.jsonl         # Agent run history
+```
+
+```bash
+tx sync export         # Export SQLite → JSONL
+tx sync import         # Import JSONL → SQLite
+tx sync status         # Show sync state
+```
+
+## LLM Features (Optional)
+
+Requires `ANTHROPIC_API_KEY`:
+
+- **`tx dedupe`** — Find and merge duplicate tasks
+- **`tx compact`** — Summarize completed tasks, extract learnings
+- **`tx reprioritize`** — LLM recalculates priority scores
+
+## Current Status
+
+**Done:**
+- Core task management (CRUD, dependencies, hierarchy)
+- Learnings system (add, search, context)
+- Attempt tracking
+- CLI with 20+ commands
+- MCP server with 16 tools
+- JSONL sync for tasks
+- Dashboard (basic)
+- 389 passing tests
+
+**In Progress:**
+- Vector similarity search (embeddings)
+- Monorepo refactoring
+- Extended JSONL sync (learnings, attempts)
+- Dashboard UX improvements
+
+**Planned:**
+- API server (REST/HTTP)
+- Agent SDK
+- Real-time WebSocket updates
+- Multi-agent coordination
+
+## Documentation
+
+- **[CLAUDE.md](CLAUDE.md)** — Doctrine rules, quick reference
+- **[docs/prd/](docs/prd/)** — Product Requirements Documents
+- **[docs/design/](docs/design/)** — Technical Design Documents
+- **[docs/index.md](docs/index.md)** — Full documentation index
+
+## Development
+
+```bash
+# Install
+npm install
+
+# Build
+npm run build
+
+# Test
+npm test
+
+# Context-efficient checks (for agents)
+./scripts/check.sh --all
+
+# Run RALPH loop
+./scripts/ralph.sh
 ```
 
 ## License

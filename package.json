@@ -1,9 +1,11 @@
 {
-  "name": "@jamesaphoenix/tx",
+  "name": "tx-monorepo",
   "version": "0.1.0",
   "description": "A lean task management system for AI agents and humans",
+  "private": true,
   "type": "module",
   "workspaces": [
+    "packages/*",
     "apps/*"
   ],
   "bin": {
@@ -28,13 +30,17 @@
   "author": "James Phoenix",
   "license": "MIT",
   "scripts": {
-    "build": "tsc",
+    "build": "turbo build",
+    "build:root": "tsc",
     "dev": "tsx src/cli.ts",
-    "test": "vitest --run",
+    "test": "turbo test",
+    "test:root": "vitest --run",
     "test:watch": "vitest",
-    "lint": "eslint src/ apps/",
+    "lint": "turbo lint",
+    "lint:root": "eslint src/ apps/",
     "lint:fix": "eslint src/ apps/ --fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "turbo typecheck",
+    "typecheck:root": "tsc --noEmit",
     "check": "./scripts/check.sh --all",
     "check:quick": "./scripts/check.sh --quick",
     "check:ci": "./scripts/check-ci.sh",
@@ -57,6 +63,7 @@
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",
     "tsx": "^4.19.0",
+    "turbo": "^2.3.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
