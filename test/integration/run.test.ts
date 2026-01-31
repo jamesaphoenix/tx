@@ -138,6 +138,29 @@ describe("RunRepository CRUD", () => {
 
       expect(found).toBeNull()
     })
+
+    it("handles invalid JSON in metadata column gracefully", async () => {
+      // Insert a run with invalid JSON metadata via raw SQL
+      const runId = "run-badjson" as RunId
+      const now = new Date().toISOString()
+      db.prepare(`
+        INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
+        VALUES (?, NULL, 'test-agent', ?, 'running', 'not valid json {{{')
+      `).run(runId, now)
+
+      // Retrieve via findById - should not throw
+      const found = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RunRepository
+          return yield* repo.findById(runId)
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Verify metadata defaults to {} instead of throwing
+      expect(found).not.toBeNull()
+      expect(found!.id).toBe(runId)
+      expect(found!.metadata).toEqual({})
+    })
   })
 
   describe("findByTaskId", () => {
