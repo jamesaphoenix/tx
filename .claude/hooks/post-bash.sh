@@ -50,9 +50,32 @@ if [ "$IS_TEST_COMMAND" = true ]; then
     echo "true" > "$PROJECT_DIR/.tx/session-tests-ran"
   else
     echo "false" > "$PROJECT_DIR/.tx/session-tests-ran"
+  fi
+fi
 
-    # Call test failure handler if it exists
-    if [ -x "$HOOKS_DIR/post-test-failure.sh" ]; then
+# ============================================
+# Unified Failure Recovery Handler
+# Handles: test failures, build failures, lint failures
+# Provides actionable context with file:line info
+# ============================================
+
+if [ "$EXIT_CODE" -ne 0 ]; then
+  # Call the unified recovery handler if it exists
+  if [ -x "$HOOKS_DIR/post-bash-recovery.sh" ]; then
+    HANDLER_INPUT=$(cat << EOF
+{"command": $(echo "$COMMAND" | jq -Rs '.'), "exit_code": $EXIT_CODE, "output": $(echo "$TOOL_OUTPUT" | jq -Rs '.')}
+EOF
+)
+    HANDLER_OUTPUT=$(echo "$HANDLER_INPUT" | "$HOOKS_DIR/post-bash-recovery.sh" 2>/dev/null || echo "")
+    if [ -n "$HANDLER_OUTPUT" ]; then
+      echo "$HANDLER_OUTPUT"
+      exit 0
+    fi
+  fi
+
+  # Fallback: Call legacy handlers for RALPH mode task creation
+  if [ "${RALPH_MODE:-}" = "true" ]; then
+    if [ "$IS_TEST_COMMAND" = true ] && [ -x "$HOOKS_DIR/post-test-failure.sh" ]; then
       HANDLER_INPUT=$(cat << EOF
 {"command": $(echo "$COMMAND" | jq -Rs '.'), "exit_code": $EXIT_CODE, "output": $(echo "$TOOL_OUTPUT" | jq -Rs '.')}
 EOF
@@ -63,58 +86,6 @@ EOF
         exit 0
       fi
     fi
-  fi
-fi
-
-# ============================================
-# Build Command Detection
-# ============================================
-
-IS_BUILD_COMMAND=false
-if echo "$COMMAND" | grep -qE '(npm run build|npx tsc|tsc|vite build|rollup|webpack|cargo build|go build)'; then
-  IS_BUILD_COMMAND=true
-fi
-
-if [ "$IS_BUILD_COMMAND" = true ] && [ "$EXIT_CODE" -ne 0 ]; then
-  # Call build failure handler if it exists
-  if [ -x "$HOOKS_DIR/post-build-failure.sh" ]; then
-    HANDLER_INPUT=$(cat << EOF
-{"command": $(echo "$COMMAND" | jq -Rs '.'), "exit_code": $EXIT_CODE, "output": $(echo "$TOOL_OUTPUT" | jq -Rs '.')}
-EOF
-)
-    HANDLER_OUTPUT=$(echo "$HANDLER_INPUT" | "$HOOKS_DIR/post-build-failure.sh" 2>/dev/null || echo "")
-    if [ -n "$HANDLER_OUTPUT" ]; then
-      echo "$HANDLER_OUTPUT"
-      exit 0
-    fi
-  fi
-fi
-
-# ============================================
-# Lint Command Detection (captured in post-lint-check.sh for Write/Edit)
-# For Bash-based lint commands, provide context on failure
-# ============================================
-
-IS_LINT_COMMAND=false
-if echo "$COMMAND" | grep -qE '(eslint|prettier|stylelint|npm run lint|npx eslint)'; then
-  IS_LINT_COMMAND=true
-fi
-
-if [ "$IS_LINT_COMMAND" = true ] && [ "$EXIT_CODE" -ne 0 ]; then
-  # Extract lint errors for context
-  LINT_ERRORS=$(echo "$TOOL_OUTPUT" | grep -E '(error|warning|Error:)' | head -10 || true)
-
-  if [ -n "$LINT_ERRORS" ]; then
-    ESCAPED=$(echo "$LINT_ERRORS" | jq -Rs '.')
-    cat << EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PostToolUse",
-    "additionalContext": "## Lint Errors\n\n\`\`\`\n${ESCAPED:1:-1}\n\`\`\`\n\nFix these before proceeding."
-  }
-}
-EOF
-    exit 0
   fi
 fi
 
