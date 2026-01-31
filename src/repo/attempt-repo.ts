@@ -29,6 +29,9 @@ export class AttemptRepository extends Context.Tag("AttemptRepository")<
 
     /** Remove an attempt by ID */
     readonly remove: (id: AttemptId) => Effect.Effect<void, DatabaseError>
+
+    /** Get failed attempt counts for multiple tasks in a single query */
+    readonly getFailedCountsForTasks: (taskIds: readonly string[]) => Effect.Effect<Map<string, number>, DatabaseError>
   }
 >() {}
 
@@ -109,6 +112,27 @@ export const AttemptRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             db.prepare("DELETE FROM attempts WHERE id = ?").run(id)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getFailedCountsForTasks: (taskIds) =>
+        Effect.try({
+          try: () => {
+            if (taskIds.length === 0) {
+              return new Map<string, number>()
+            }
+            const placeholders = taskIds.map(() => "?").join(", ")
+            const rows = db.prepare(
+              `SELECT task_id, COUNT(*) as cnt FROM attempts
+               WHERE task_id IN (${placeholders}) AND outcome = 'failed'
+               GROUP BY task_id`
+            ).all(...taskIds) as Array<{ task_id: string; cnt: number }>
+            const result = new Map<string, number>()
+            for (const row of rows) {
+              result.set(row.task_id, row.cnt)
+            }
+            return result
           },
           catch: (cause) => new DatabaseError({ cause })
         })

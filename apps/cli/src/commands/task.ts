@@ -80,14 +80,9 @@ export const ready = (_pos: string[], flags: Flags) =>
     const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
     const tasks = yield* svc.getReady(limit)
 
-    // Get failed attempt counts for all tasks
-    const failedCounts = new Map<string, number>()
-    for (const t of tasks) {
-      const count = yield* attemptSvc.getFailedCount(t.id)
-      if (count > 0) {
-        failedCounts.set(t.id, count)
-      }
-    }
+    // Get failed attempt counts for all tasks in a single query
+    const taskIds = tasks.map(t => t.id)
+    const failedCounts = yield* attemptSvc.getFailedCountsForTasks(taskIds)
 
     if (flag(flags, "json")) {
       // Add failedAttemptCount to each task in JSON output

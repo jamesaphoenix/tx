@@ -27,6 +27,9 @@ export class AttemptService extends Context.Tag("AttemptService")<
 
     /** Get count of failed attempts for a task */
     readonly getFailedCount: (taskId: string) => Effect.Effect<number, DatabaseError>
+
+    /** Get failed attempt counts for multiple tasks in a single query */
+    readonly getFailedCountsForTasks: (taskIds: readonly string[]) => Effect.Effect<Map<string, number>, DatabaseError>
   }
 >() {}
 
@@ -87,7 +90,9 @@ export const AttemptServiceLive = Layer.effect(
         Effect.gen(function* () {
           const attempts = yield* attemptRepo.findByTaskId(taskId)
           return attempts.filter(a => a.outcome === "failed").length
-        })
+        }),
+
+      getFailedCountsForTasks: (taskIds) => attemptRepo.getFailedCountsForTasks(taskIds)
     }
   })
 )
