@@ -84,7 +84,7 @@ EOF
 done
 
 # Check for writing to node_modules (usually a mistake)
-if [[ "$RESOLVED_PATH" == *"node_modules"* ]] && [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ]; then
+if [[ "$RESOLVED_PATH" == *"node_modules"* ]] && [[ "$TOOL_NAME" = "Write" || "$TOOL_NAME" = "Edit" ]]; then
   cat << EOF
 {
   "decision": "block",
