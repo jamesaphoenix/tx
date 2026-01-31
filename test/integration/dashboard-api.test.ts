@@ -1139,3 +1139,340 @@ describe("Dashboard API - Fixture ID consistency", () => {
     }
   })
 })
+
+describe("Dashboard API - Paginated Tasks with Filters", () => {
+  let db: InstanceType<typeof Database>
+  let app: Hono
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    app = createTestApp(db, "/tmp/.tx")
+  })
+
+  it("cursor pagination works with status filter", async () => {
+    // Add more ready tasks to test pagination with filter
+    const now = new Date().toISOString()
+    for (let i = 0; i < 5; i++) {
+      db.prepare(
+        `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(fixtureId(`ready-extra-${i}`), `Ready task ${i}`, `Description ${i}`, "ready", null, 400 - i * 10, now, now, "{}")
+    }
+
+    // Get first page of ready tasks with limit 2
+    const res1 = await request(app, "/api/tasks?status=ready&limit=2")
+    const data1 = await res1.json()
+
+    expect(data1.tasks.length).toBe(2)
+    expect(data1.hasMore).toBe(true)
+    expect(data1.nextCursor).not.toBeNull()
+    data1.tasks.forEach((t: TaskRow) => expect(t.status).toBe("ready"))
+
+    // Get second page with cursor
+    const res2 = await request(app, `/api/tasks?status=ready&limit=2&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    expect(data2.tasks.length).toBe(2)
+    data2.tasks.forEach((t: TaskRow) => expect(t.status).toBe("ready"))
+
+    // Ensure no duplicates between pages
+    const firstPageIds = data1.tasks.map((t: TaskRow) => t.id)
+    const secondPageIds = data2.tasks.map((t: TaskRow) => t.id)
+    expect(firstPageIds.some((id: string) => secondPageIds.includes(id))).toBe(false)
+
+    // Second page should have lower scores (DESC order)
+    expect(data1.tasks[data1.tasks.length - 1].score).toBeGreaterThanOrEqual(data2.tasks[0].score)
+  })
+
+  it("cursor pagination works with search filter", async () => {
+    // Add tasks with searchable content
+    const now = new Date().toISOString()
+    for (let i = 0; i < 5; i++) {
+      db.prepare(
+        `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(fixtureId(`search-${i}`), `Searchable task ${i}`, `Has keyword FINDME`, "backlog", null, 300 - i * 10, now, now, "{}")
+    }
+
+    // Get first page with search
+    const res1 = await request(app, "/api/tasks?search=FINDME&limit=2")
+    const data1 = await res1.json()
+
+    expect(data1.tasks.length).toBe(2)
+    expect(data1.hasMore).toBe(true)
+    data1.tasks.forEach((t: TaskRow) => expect(t.description).toContain("FINDME"))
+
+    // Get second page with cursor and same search
+    const res2 = await request(app, `/api/tasks?search=FINDME&limit=2&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    expect(data2.tasks.length).toBe(2)
+    data2.tasks.forEach((t: TaskRow) => expect(t.description).toContain("FINDME"))
+
+    // Ensure no duplicates
+    const allIds = [...data1.tasks.map((t: TaskRow) => t.id), ...data2.tasks.map((t: TaskRow) => t.id)]
+    expect(new Set(allIds).size).toBe(allIds.length)
+  })
+
+  it("cursor pagination with combined status and search filters", async () => {
+    // Add tasks with specific status and searchable content
+    const now = new Date().toISOString()
+    for (let i = 0; i < 4; i++) {
+      db.prepare(
+        `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(fixtureId(`combo-${i}`), `Combo task ${i}`, `Has COMBOKEY`, "planning", null, 200 - i * 10, now, now, "{}")
+    }
+    // Add one with different status (should be excluded)
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(fixtureId("combo-done"), "Done combo", "Has COMBOKEY", "done", null, 250, now, now, "{}")
+
+    // Get first page with combined filters
+    const res1 = await request(app, "/api/tasks?status=planning&search=COMBOKEY&limit=2")
+    const data1 = await res1.json()
+
+    expect(data1.tasks.length).toBe(2)
+    expect(data1.hasMore).toBe(true)
+    data1.tasks.forEach((t: TaskRow) => {
+      expect(t.status).toBe("planning")
+      expect(t.description).toContain("COMBOKEY")
+    })
+
+    // Get second page
+    const res2 = await request(app, `/api/tasks?status=planning&search=COMBOKEY&limit=2&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    expect(data2.tasks.length).toBe(2)
+    expect(data2.hasMore).toBe(false)
+    data2.tasks.forEach((t: TaskRow) => {
+      expect(t.status).toBe("planning")
+      expect(t.description).toContain("COMBOKEY")
+    })
+
+    // Total should only count filtered tasks
+    expect(data1.total).toBe(4)
+  })
+
+  it("hasMore is false when on last page", async () => {
+    // With 6 seeded tasks, limit=4 should give hasMore=true on first page, false on second
+    const res1 = await request(app, "/api/tasks?limit=4")
+    const data1 = await res1.json()
+
+    expect(data1.tasks.length).toBe(4)
+    expect(data1.hasMore).toBe(true)
+
+    // Get second (last) page
+    const res2 = await request(app, `/api/tasks?limit=4&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    expect(data2.tasks.length).toBe(2) // Remaining 2 tasks
+    expect(data2.hasMore).toBe(false)
+    expect(data2.nextCursor).toBeNull()
+  })
+
+  it("hasMore is false when results fit in single page", async () => {
+    const res = await request(app, "/api/tasks?status=done&limit=10")
+    const data = await res.json()
+
+    expect(data.tasks.length).toBe(1) // Only one done task
+    expect(data.hasMore).toBe(false)
+    expect(data.nextCursor).toBeNull()
+  })
+
+  it("total count is accurate with status filter", async () => {
+    const res = await request(app, "/api/tasks?status=ready")
+    const data = await res.json()
+
+    // Should have JWT and LOGIN with status 'ready'
+    expect(data.total).toBe(2)
+    expect(data.summary.total).toBe(2)
+    expect(data.tasks.length).toBe(2)
+  })
+
+  it("total count is accurate with multiple status filters", async () => {
+    const res = await request(app, "/api/tasks?status=ready,done")
+    const data = await res.json()
+
+    // 2 ready + 1 done = 3
+    expect(data.total).toBe(3)
+    expect(data.summary.total).toBe(3)
+  })
+
+  it("total count is accurate with search filter", async () => {
+    const res = await request(app, "/api/tasks?search=JWT")
+    const data = await res.json()
+
+    expect(data.total).toBe(1)
+    expect(data.tasks.length).toBe(1)
+    expect(data.tasks[0].title).toContain("JWT")
+  })
+
+  it("total count remains consistent across paginated requests", async () => {
+    // First page
+    const res1 = await request(app, "/api/tasks?limit=2")
+    const data1 = await res1.json()
+
+    // Second page
+    const res2 = await request(app, `/api/tasks?limit=2&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    // Total should be the same across pages
+    expect(data1.total).toBe(6)
+    expect(data2.total).toBe(6)
+  })
+
+  it("summary byStatus is accurate with filter", async () => {
+    const res = await request(app, "/api/tasks?status=ready,backlog")
+    const data = await res.json()
+
+    // backlog: ROOT, AUTH, BLOCKED = 3
+    // ready: JWT, LOGIN = 2
+    expect(data.summary.byStatus.backlog).toBe(3)
+    expect(data.summary.byStatus.ready).toBe(2)
+    expect(data.summary.byStatus.done).toBeUndefined() // Not in filter
+  })
+})
+
+describe("Dashboard API - Paginated Runs with Filters", () => {
+  let db: InstanceType<typeof Database>
+  let app: Hono
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    app = createTestApp(db, "/tmp/.tx")
+
+    // Seed runs for pagination testing
+    // IDs must start with "run-" for cursor parser to work correctly
+    const baseTime = new Date("2026-01-30T10:00:00.000Z")
+    for (let i = 0; i < 8; i++) {
+      const ts = new Date(baseTime.getTime() - i * 60000).toISOString() // 1 minute apart
+      const status = i % 3 === 0 ? "completed" : i % 3 === 1 ? "running" : "failed"
+      const agent = i % 2 === 0 ? "tx-implementer" : "tx-reviewer"
+      const runId = `run-pagtest${String(i).padStart(4, '0')}`
+      db.prepare(`
+        INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(runId, null, agent, ts, status, "{}")
+    }
+  })
+
+  it("cursor pagination works with agent filter", async () => {
+    // Get first page of tx-implementer runs
+    const res1 = await request(app, "/api/runs?agent=tx-implementer&limit=2")
+    const data1 = await res1.json()
+
+    expect(data1.runs.length).toBe(2)
+    expect(data1.hasMore).toBe(true)
+    data1.runs.forEach((r: { agent: string }) => expect(r.agent).toBe("tx-implementer"))
+
+    // Get second page
+    const res2 = await request(app, `/api/runs?agent=tx-implementer&limit=2&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    expect(data2.runs.length).toBe(2)
+    data2.runs.forEach((r: { agent: string }) => expect(r.agent).toBe("tx-implementer"))
+
+    // Ensure no duplicates
+    const firstPageIds = data1.runs.map((r: { id: string }) => r.id)
+    const secondPageIds = data2.runs.map((r: { id: string }) => r.id)
+    expect(firstPageIds.some((id: string) => secondPageIds.includes(id))).toBe(false)
+  })
+
+  it("cursor pagination works with status filter", async () => {
+    // Get running runs (indices 1, 4, 7 = 3 runs)
+    const res1 = await request(app, "/api/runs?status=running&limit=2")
+    const data1 = await res1.json()
+
+    expect(data1.runs.length).toBe(2)
+    data1.runs.forEach((r: { status: string }) => expect(r.status).toBe("running"))
+
+    // Get second page
+    const res2 = await request(app, `/api/runs?status=running&limit=2&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    // Should have 1 remaining
+    expect(data2.runs.length).toBe(1)
+    expect(data2.hasMore).toBe(false)
+    expect(data2.runs[0].status).toBe("running")
+  })
+
+  it("cursor pagination with combined agent and status filters", async () => {
+    // tx-implementer (indices 0, 2, 4, 6) with completed status (indices 0, 3, 6)
+    // Intersection: 0, 6 = 2 runs
+    const res = await request(app, "/api/runs?agent=tx-implementer&status=completed&limit=10")
+    const data = await res.json()
+
+    expect(data.runs.length).toBe(2)
+    data.runs.forEach((r: { agent: string; status: string }) => {
+      expect(r.agent).toBe("tx-implementer")
+      expect(r.status).toBe("completed")
+    })
+    expect(data.hasMore).toBe(false)
+  })
+
+  it("hasMore is false on last page", async () => {
+    // Get first page
+    const res1 = await request(app, "/api/runs?limit=5")
+    const data1 = await res1.json()
+
+    expect(data1.runs.length).toBe(5)
+    expect(data1.hasMore).toBe(true)
+
+    // Get second (last) page
+    const res2 = await request(app, `/api/runs?limit=5&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    expect(data2.runs.length).toBe(3)
+    expect(data2.hasMore).toBe(false)
+    expect(data2.nextCursor).toBeNull()
+  })
+
+  it("hasMore is false when results fit in single page", async () => {
+    const res = await request(app, "/api/runs?status=completed&limit=10")
+    const data = await res.json()
+
+    // completed: indices 0, 3, 6 = 3 runs
+    expect(data.runs.length).toBe(3)
+    expect(data.hasMore).toBe(false)
+    expect(data.nextCursor).toBeNull()
+  })
+
+  it("runs are sorted by started_at descending", async () => {
+    const res = await request(app, "/api/runs?limit=10")
+    const data = await res.json()
+
+    for (let i = 1; i < data.runs.length; i++) {
+      const prev = new Date(data.runs[i - 1].started_at).getTime()
+      const curr = new Date(data.runs[i].started_at).getTime()
+      expect(prev).toBeGreaterThanOrEqual(curr)
+    }
+  })
+
+  it("pagination maintains sort order across pages", async () => {
+    const res1 = await request(app, "/api/runs?limit=4")
+    const data1 = await res1.json()
+
+    const res2 = await request(app, `/api/runs?limit=4&cursor=${data1.nextCursor}`)
+    const data2 = await res2.json()
+
+    // Last item of first page should have later started_at than first item of second page
+    const lastOfFirst = new Date(data1.runs[data1.runs.length - 1].started_at).getTime()
+    const firstOfSecond = new Date(data2.runs[0].started_at).getTime()
+    expect(lastOfFirst).toBeGreaterThanOrEqual(firstOfSecond)
+  })
+
+  it("filters by multiple statuses", async () => {
+    const res = await request(app, "/api/runs?status=running,completed")
+    const data = await res.json()
+
+    // running: 3, completed: 3 = 6 total
+    expect(data.runs.length).toBe(6)
+    data.runs.forEach((r: { status: string }) => {
+      expect(["running", "completed"]).toContain(r.status)
+    })
+  })
+})
