@@ -28,6 +28,12 @@
  * - Files in src/services/ MUST NOT use raw Promise (use Effect instead)
  * - Async/await only allowed in CLI layer, not service layer
  *
+ * Rule: tx/require-taskwithdeps-return
+ * Enforces CLAUDE.md RULE 1:
+ * - Functions returning task data MUST return TaskWithDeps, not bare Task
+ * - MCP tool handlers MUST include blockedBy, blocks, children, isReady
+ * - API endpoints returning tasks MUST use TaskWithDeps[]
+ *
  * Detection logic for require-integration-tests:
  * - Parses source files for exported functions/classes
  * - Checks for corresponding describe() blocks in test files
@@ -96,6 +102,13 @@ export default [
       // tx plugin rules - no raw Promises in service layer (CLAUDE.md RULE 5)
       'tx/no-raw-promises-in-services': ['error', {
         servicePaths: ['src/services/']
+      }],
+
+      // tx plugin rules - require TaskWithDeps for external APIs (CLAUDE.md RULE 1)
+      'tx/require-taskwithdeps-return': ['warn', {
+        externalPaths: ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
+        internalPaths: ['src/repo/', 'src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
+        checkObjectLiterals: true
       }]
     }
   },

@@ -7,6 +7,7 @@ import noInlineSql from './rules/no-inline-sql.js';
 import requireComponentTests from './rules/require-component-tests.js';
 import requireEffectErrorHandling from './rules/require-effect-error-handling.js';
 import noRawPromisesInServices from './rules/no-raw-promises-in-services.js';
+import requireTaskwithdepsReturn from './rules/require-taskwithdeps-return.js';
 
 const plugin = {
   meta: {
@@ -18,7 +19,8 @@ const plugin = {
     'no-inline-sql': noInlineSql,
     'require-component-tests': requireComponentTests,
     'require-effect-error-handling': requireEffectErrorHandling,
-    'no-raw-promises-in-services': noRawPromisesInServices
+    'no-raw-promises-in-services': noRawPromisesInServices,
+    'require-taskwithdeps-return': requireTaskwithdepsReturn
   },
   // Flat config recommended configuration
   configs: {
@@ -49,6 +51,11 @@ const plugin = {
         }],
         'tx/no-raw-promises-in-services': ['error', {
           servicePaths: ['src/services/']
+        }],
+        'tx/require-taskwithdeps-return': ['error', {
+          externalPaths: ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
+          internalPaths: ['src/repo/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
+          checkObjectLiterals: true
         }]
       }
     }
