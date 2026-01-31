@@ -56,6 +56,7 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
     readonly bm25Search: (query: string, limit: number) => Effect.Effect<readonly BM25Result[], DatabaseError>
     readonly vectorSearch: (queryEmbedding: Float32Array, limit: number) => Effect.Effect<readonly VectorResult[], DatabaseError>
     readonly incrementUsage: (id: number) => Effect.Effect<void, DatabaseError>
+    readonly incrementUsageMany: (ids: readonly number[]) => Effect.Effect<void, DatabaseError>
     readonly updateOutcomeScore: (id: number, score: number) => Effect.Effect<void, DatabaseError>
     readonly updateEmbedding: (id: number, embedding: Float32Array) => Effect.Effect<void, DatabaseError>
     readonly remove: (id: number) => Effect.Effect<void, DatabaseError>
@@ -239,6 +240,19 @@ export const LearningRepositoryLive = Layer.effect(
             db.prepare(
               `UPDATE learnings SET usage_count = usage_count + 1, last_used_at = ? WHERE id = ?`
             ).run(new Date().toISOString(), id)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      incrementUsageMany: (ids) =>
+        Effect.try({
+          try: () => {
+            if (ids.length === 0) return
+            const now = new Date().toISOString()
+            const placeholders = ids.map(() => "?").join(", ")
+            db.prepare(
+              `UPDATE learnings SET usage_count = usage_count + 1, last_used_at = ? WHERE id IN (${placeholders})`
+            ).run(now, ...ids)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

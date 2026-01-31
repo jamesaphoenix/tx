@@ -542,9 +542,9 @@ export const LearningServiceLive = Layer.effect(
             .filter(r => r.relevanceScore >= 0.05)
             .slice(0, 10)
 
-          // Record usage for returned learnings
-          for (const learning of learnings) {
-            yield* learningRepo.incrementUsage(learning.id)
+          // Record usage for returned learnings (batch update to avoid N+1)
+          if (learnings.length > 0) {
+            yield* learningRepo.incrementUsageMany(learnings.map(l => l.id))
           }
 
           return {
