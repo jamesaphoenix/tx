@@ -42,6 +42,7 @@
     "lint:packages": "turbo lint",
     "lint:root": "eslint src/ apps/",
     "lint:fix": "eslint src/ apps/ packages/ --fix",
+    "lint:coverage": "node scripts/lint-coverage.js",
     "typecheck": "turbo typecheck && tsc --noEmit",
     "typecheck:packages": "turbo typecheck",
     "typecheck:root": "tsc --noEmit",

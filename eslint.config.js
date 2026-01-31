@@ -34,6 +34,14 @@
  * - MCP tool handlers MUST include blockedBy, blocks, children, isReady
  * - API endpoints returning tasks MUST use TaskWithDeps[]
  *
+ * Rule: tx/test-coverage-thresholds
+ * Enforces DD-007 coverage targets programmatically:
+ * - Core services (src/services/): 90% line coverage required
+ * - Repositories (src/repo/, src/repositories/): 85% line coverage
+ * - CLI commands (src/cli/): 80% line coverage
+ * - Dashboard components/hooks: 75% line coverage
+ * Run separately: npm run lint:coverage (after npm test -- --coverage)
+ *
  * Detection logic for require-integration-tests:
  * - Parses source files for exported functions/classes
  * - Checks for corresponding describe() blocks in test files
