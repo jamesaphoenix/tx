@@ -1,7 +1,8 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { fetchers, type Run, type ChatMessage } from "./api/client"
+import { fetchers, type ChatMessage } from "./api/client"
 import { TaskList } from "./components/tasks"
+import { RunsList } from "./components/runs"
 
 // =============================================================================
 // Status Badges
@@ -27,81 +28,6 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`px-2 py-0.5 text-xs rounded-full text-white ${colors[status] ?? "bg-gray-400"}`}>
       {status}
     </span>
-  )
-}
-
-// =============================================================================
-// Run Components
-// =============================================================================
-
-function RunCard({ run, isSelected, onClick }: { run: Run; isSelected: boolean; onClick: () => void }) {
-  const duration = run.ended_at
-    ? Math.round((new Date(run.ended_at).getTime() - new Date(run.started_at).getTime()) / 1000)
-    : null
-
-  return (
-    <div
-      className={`p-3 rounded-lg border cursor-pointer transition ${
-        isSelected ? "border-blue-500 bg-blue-500/20" : "border-gray-700 bg-gray-800 hover:bg-gray-700/50"
-      }`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <code className="text-xs text-gray-400">{run.id}</code>
-            <span className="text-xs text-purple-400">{run.agent}</span>
-          </div>
-          {run.taskTitle && (
-            <h3 className="text-sm font-medium text-white truncate">{run.taskTitle}</h3>
-          )}
-          <div className="text-xs text-gray-500 mt-1">
-            {new Date(run.started_at).toLocaleString()}
-            {duration !== null && <span className="ml-2">({duration}s)</span>}
-          </div>
-        </div>
-        <StatusBadge status={run.status} />
-      </div>
-      {run.error_message && (
-        <div className="mt-2 text-xs text-red-400 truncate">{run.error_message}</div>
-      )}
-    </div>
-  )
-}
-
-function RunsList({ selectedRunId, onSelectRun }: { selectedRunId: string | null; onSelectRun: (id: string) => void }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["runs"],
-    queryFn: fetchers.runs,
-  })
-
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="animate-pulse bg-gray-700 h-16 rounded-lg" />
-        ))}
-      </div>
-    )
-  }
-
-  const runs = data?.runs ?? []
-
-  if (runs.length === 0) {
-    return <div className="text-gray-500 text-sm">No runs recorded yet</div>
-  }
-
-  return (
-    <div className="space-y-2">
-      {runs.map(run => (
-        <RunCard
-          key={run.id}
-          run={run}
-          isSelected={run.id === selectedRunId}
-          onClick={() => onSelectRun(run.id)}
-        />
-      ))}
-    </div>
   )
 }
 
@@ -334,8 +260,7 @@ export default function App() {
           <>
             {/* Runs List */}
             <div className="w-96 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
-              <h2 className="text-lg font-semibold text-gray-300 mb-3">Runs</h2>
-              <RunsList selectedRunId={selectedRunId} onSelectRun={setSelectedRunId} />
+              <RunsList onSelectRun={setSelectedRunId} />
             </div>
 
             {/* Chat View */}
