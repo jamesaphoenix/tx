@@ -18,6 +18,16 @@
  * - Every .ts file in src/hooks/ MUST have a corresponding .test.ts in __tests__/
  * - Every file in src/services/ MUST have integration test coverage
  *
+ * Rule: tx/require-effect-error-handling
+ * Enforces Effect-TS error handling patterns:
+ * - Effect.runPromise calls MUST be wrapped in try/catch or use Effect.either
+ * - Services returning Effect<T, E> MUST have E properly typed (no unknown)
+ *
+ * Rule: tx/no-raw-promises-in-services
+ * Prevents raw Promise usage in service layer:
+ * - Files in src/services/ MUST NOT use raw Promise (use Effect instead)
+ * - Async/await only allowed in CLI layer, not service layer
+ *
  * Detection logic for require-integration-tests:
  * - Parses source files for exported functions/classes
  * - Checks for corresponding describe() blocks in test files
@@ -29,6 +39,7 @@
  * - Error message: 'SQL schema definitions must be in migrations/*.sql files'
  *
  * Reference: Agent swarm audit findings - services 93-98% covered, CLI 71% covered, dashboard API 0% covered
+ * Reference: DD-002 Effect-TS patterns, CLAUDE.md RULE 5
  */
 
 import eslint from '@eslint/js';
@@ -74,6 +85,17 @@ export default [
       'tx/no-inline-sql': ['error', {
         allowedPaths: ['migrations/', 'test/fixtures/'],
         ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
+      }],
+
+      // tx plugin rules - enforce Effect-TS error handling patterns (CLAUDE.md RULE 5)
+      'tx/require-effect-error-handling': ['warn', {
+        allowedPaths: ['test/', 'tests/', '__tests__/', '.test.', '.spec.'],
+        checkTypeAnnotations: true
+      }],
+
+      // tx plugin rules - no raw Promises in service layer (CLAUDE.md RULE 5)
+      'tx/no-raw-promises-in-services': ['error', {
+        servicePaths: ['src/services/']
       }]
     }
   },

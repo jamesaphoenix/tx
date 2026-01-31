@@ -1,10 +1,12 @@
 /**
- * @fileoverview ESLint plugin for tx project - enforces testing best practices
+ * @fileoverview ESLint plugin for tx project - enforces testing and Effect-TS best practices
  */
 
 import requireIntegrationTests from './rules/require-integration-tests.js';
 import noInlineSql from './rules/no-inline-sql.js';
 import requireComponentTests from './rules/require-component-tests.js';
+import requireEffectErrorHandling from './rules/require-effect-error-handling.js';
+import noRawPromisesInServices from './rules/no-raw-promises-in-services.js';
 
 const plugin = {
   meta: {
@@ -14,7 +16,9 @@ const plugin = {
   rules: {
     'require-integration-tests': requireIntegrationTests,
     'no-inline-sql': noInlineSql,
-    'require-component-tests': requireComponentTests
+    'require-component-tests': requireComponentTests,
+    'require-effect-error-handling': requireEffectErrorHandling,
+    'no-raw-promises-in-services': noRawPromisesInServices
   },
   // Flat config recommended configuration
   configs: {
@@ -38,6 +42,13 @@ const plugin = {
           components: { pattern: 'src/components/**/*.tsx', testDir: '__tests__', testSuffix: '.test.tsx' },
           hooks: { pattern: 'src/hooks/**/*.ts', testDir: '__tests__', testSuffix: '.test.ts' },
           services: { pattern: 'src/services/**/*.ts', testDir: 'test/integration', testSuffix: '.test.ts' }
+        }],
+        'tx/require-effect-error-handling': ['error', {
+          allowedPaths: ['test/', 'tests/', '__tests__/', '.test.', '.spec.'],
+          checkTypeAnnotations: true
+        }],
+        'tx/no-raw-promises-in-services': ['error', {
+          servicePaths: ['src/services/']
         }]
       }
     }
