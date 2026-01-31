@@ -1,200 +1,257 @@
 # tx
 
-**Institutional memory for AI agents.** Not a task manager — a knowledge system.
+**AI agent infrastructure.** Memory + Tasks + Workers.
+
+Three integrated systems, one database, git-native.
+
+| System | What it does |
+|--------|--------------|
+| **Knowledge** | Graph RAG, learnings, contextual retrieval, code anchoring |
+| **Tasks** | Dependencies, hierarchy, ready detection, multi-agent orchestration |
+| **Workers** | Background daemon, auto-extraction, invalidation, agent swarms |
+
+## The Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   CAPTURE           CONNECT            COORDINATE         SURFACE          │
+│                                                                             │
+│   Claude Code   →   Knowledge      →   Task Graph    →   Runtime           │
+│   transcripts       Graph               + Workers        Injection          │
+│                                                                             │
+│   - JSONL watch     - File anchors      - Dependencies   - Claude hooks    │
+│   - LLM extract     - Symbol links      - Ready detect   - BM25 + vector   │
+│   - Auto-promote    - Co-change edges   - Agent swarm    - Graph expand    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Memory that compounds. Tasks that coordinate. Workers that automate.**
 
 ## Why tx?
 
-Claude Code has native persistent tasks. Why build tx?
-
-| Native Tasks | tx |
-|--------------|-----|
-| Persistent todos | **Institutional memory** |
-| Task CRUD | Tasks + Learnings + Attempts |
-| Single agent | Multi-agent orchestration |
-| Account-scoped | Git-native (branch-scoped) |
-| Vendor lock-in | Open source, self-hosted |
-
-**tx isn't competing with task managers. It's building agent infrastructure.**
-
-### What Makes tx Different
-
-**1. Learnings System** — Knowledge that surfaces when relevant
-```bash
-tx learning:add "Use bcrypt for passwords, not SHA256"
-tx context tx-abc123  # Retrieves learnings relevant to THIS task
-```
-
-**2. Attempt Tracking** — Never repeat failed approaches
-```bash
-tx try tx-abc123 "Tried Redis caching" --failed "Race condition on invalidation"
-# Next agent sees what was already tried
-```
-
-**3. Multi-Agent Orchestration** — Specialized agents, shared task graph
-```
-Planner → Implementer → Reviewer → Tester
-   ↓           ↓            ↓          ↓
-   └───────── All share .tx/tasks.db ──┘
-```
-
-**4. Git-Native Collaboration** — Tasks travel with branches
-```bash
-tx sync export
-git checkout -b feature/auth
-# Tasks, learnings, attempts all version-controlled
-```
-
-**5. Dynamic Context Injection** — Learnings auto-surface via Claude Code hooks
-```
-┌─────────────────────────────────────────────────────────┐
-│  User prompt: "Work on tx-abc123"                       │
-│                      ↓                                  │
-│  [Hook] tx context tx-abc123 → relevant learnings       │
-│                      ↓                                  │
-│  Agent sees: task + learnings + failed attempts         │
-└─────────────────────────────────────────────────────────┘
-```
-
-### The Real Value
-
-Tasks are the organizing principle. The value is:
-- **Learnings that compound** — Every session makes future sessions smarter
-- **Failed attempts that persist** — No more "let me try that approach" → "oh, that was tried"
-- **Context retrieval** — BM25 + vector search finds what's relevant
-- **Compaction** — LLM extracts wisdom from completed work
-
-**Memory that outlives conversations.**
-
-### Why Dynamic Injection, Not Static Context
-
-Many tools dump learnings into CLAUDE.md files. This leads to context bloat.
-
-tx takes a different approach:
-- **CLAUDE.md stays light** — Doctrine rules, quick reference only
-- **Learnings surface at runtime** — Hooks inject relevant context per-task
-- **No accumulated cruft** — Old learnings don't pollute every session
-
-```
-Static approach (bad):
-  CLAUDE.md grows → 50KB → 200KB → context window exhausted
-
-tx approach (good):
-  CLAUDE.md: 5KB (doctrine)
-  Runtime: tx context tx-abc123 → 3 relevant learnings injected
-```
+| | Native Tasks | Manual CLAUDE.md | tx |
+|---|--------------|------------------|-----|
+| **Persistence** | Account-scoped | File grows forever | Git-native, branch-scoped |
+| **Knowledge** | None | Static dump | Graph RAG, contextual retrieval |
+| **Automation** | None | None | Background daemon, auto-extraction |
+| **Multi-agent** | Single conversation | Manual handoff | Shared task graph, RALPH loop |
+| **Code awareness** | None | None | Symbol anchoring, co-change analysis |
 
 ## Quick Start
 
 ```bash
 npm install -g @jamesaphoenix/tx
 
-# Initialize
 tx init
-
-# Create tasks
-tx add "Implement user authentication" --score 800
-tx add "Design auth schema" --parent tx-a1b2c3
-
-# Work on tasks
-tx ready                    # Get highest-priority unblocked tasks
-tx done tx-a1b2c3           # Complete task, unblocks dependents
-
-# Track learnings
-tx learning:add "Use bcrypt for password hashing, not SHA256"
-tx context tx-d4e5f6        # Get relevant learnings for a task
-
-# Sync for git backup
-tx sync export
-git add .tx/tasks.jsonl && git commit -m "Task updates"
 ```
 
-## Core Features
+### Use Case: I want persistent memory
 
-### Task Management
-- **Persistent** — SQLite storage survives sessions and restarts
-- **Dependency-aware** — Explicit blocking prevents work on blocked tasks
-- **Hierarchical** — N-level nesting (epics → milestones → tasks → subtasks)
-- **Priority scoring** — `tx ready` returns highest-priority unblocked work
+```bash
+# Add learnings manually
+tx learning:add "Use bcrypt for passwords, not SHA256"
+tx learning:add "Redis caching has race conditions on invalidation"
 
-### Learnings System
-- **Capture knowledge** — `tx learning:add` stores insights that persist
-- **Contextual retrieval** — `tx context <task-id>` finds relevant learnings via BM25
-- **File patterns** — `tx learn` attaches learnings to file paths/globs
-- **Outcome tracking** — Mark learnings as helpful to improve future retrieval
+# Search learnings
+tx learning:search "authentication"
 
-### Attempt Tracking
-- **Record approaches** — `tx try <id> "approach" --failed "reason"`
-- **Prevent repetition** — See what was already tried before starting work
-- **Learn from failure** — Failed attempts inform future approaches
+# Get contextual learnings for a task
+tx context tx-abc123
+```
 
-### Multi-Interface
-| Interface | Consumer | Protocol |
-|-----------|----------|----------|
-| CLI (`tx`) | Humans, scripts | stdin/stdout |
-| MCP Server | Claude Code | JSON-RPC over stdio |
-| API Server | Web apps, agents | REST/HTTP |
-| Agent SDK | Custom agents | TypeScript |
-| Dashboard | Humans | Web UI |
+### Use Case: I want task management
+
+```bash
+# Create tasks with dependencies
+tx add "Implement user authentication" --score 800
+tx add "Design auth schema" --parent tx-a1b2c3
+tx block tx-impl tx-schema  # impl blocked by schema
+
+# Work on what's ready
+tx ready                    # Highest-priority unblocked tasks
+tx done tx-schema           # Complete → unblocks dependents
+```
+
+### Use Case: I want automation
+
+```bash
+# Start the background daemon (watches Claude Code transcripts)
+tx daemon start
+
+# Daemon automatically:
+# - Extracts learnings from sessions
+# - Scores confidence (high/medium/low)
+# - Auto-promotes high-confidence learnings
+# - Queues others for review
+
+tx daemon review            # Review pending candidates
+tx daemon status            # Check daemon health
+```
+
+### Use Case: I want it all working together
+
+```bash
+# Sync everything to git
+tx sync export
+git add .tx/*.jsonl && git commit -m "Knowledge checkpoint"
+
+# On another machine or branch
+git pull
+tx sync import              # Restore full state
+```
+
+## Three Systems
+
+### 1. Knowledge System
+
+Learnings connected to code via a knowledge graph.
+
+```
+Learning: "Always validate JWT expiry before processing"
+    │
+    ├── ANCHORED_TO → src/auth/jwt-service.ts (symbol: validateToken)
+    ├── DERIVED_FROM → Run tx-run-abc123 (provenance)
+    └── SIMILAR_TO → Learning #42 (semantic cluster)
+```
+
+**Features:**
+- **Hybrid search** — BM25 + vector similarity + graph expansion
+- **Code anchoring** — Link learnings to files, symbols, line ranges
+- **Graph traversal** — Working on `auth.ts` surfaces learnings from related `jwt.ts`
+- **Invalidation** — Auto-detect when anchored code changes
+
+```bash
+tx learning:add "Use constant-time comparison for signatures"
+tx graph:link 42 src/crypto.ts --anchor-type symbol
+tx graph:neighbors 42 --depth 2
+```
+
+### 2. Task System
+
+Dependency-aware task management for multi-agent workflows.
+
+```
+Epic: "User Authentication"
+├── Task: "Design schema" (done)
+├── Task: "Implement service" (ready - unblocked)
+│   ├── blocked-by: "Design schema" ✓
+│   └── blocks: "Write tests", "Add API endpoints"
+└── Task: "Write tests" (blocked)
+```
+
+**Features:**
+- **N-level hierarchy** — Epics → Milestones → Tasks → Subtasks
+- **Explicit dependencies** — `tx block` / `tx unblock`
+- **Ready detection** — Only surface unblocked work
+- **Priority scoring** — Configurable, LLM-assisted reprioritization
+
+```bash
+tx add "Implement auth" --score 800
+tx block tx-impl tx-schema
+tx ready --json              # Returns only unblocked tasks
+tx tree tx-epic              # Show full hierarchy
+```
+
+### 3. Worker System
+
+Background automation that keeps knowledge current.
+
+```
+~/.claude/projects/**/*.jsonl
+         ↓
+   [Daemon watches]
+         ↓
+   Parse → Extract → Score → Promote
+         ↓
+   Learning with provenance edges
+```
+
+**Features:**
+- **JSONL daemon** — Watches Claude Code transcripts
+- **LLM extraction** — Identifies learnings from sessions
+- **Confidence scoring** — High confidence auto-promotes
+- **Agent swarms** — Parallel verification after refactors
+- **Self-healing** — Updates anchors when code drifts
+
+```bash
+tx daemon start              # Start background watcher
+tx daemon process            # One-shot processing
+tx graph:verify              # Verify all anchors
+tx graph:verify --swarm      # Parallel verification
+```
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Interfaces                           │
-├──────────┬──────────┬──────────┬──────────┬────────────────┤
-│   CLI    │   MCP    │   API    │  Agent   │   Dashboard    │
-│          │  Server  │  Server  │   SDK    │                │
-└────┬─────┴────┬─────┴────┬─────┴────┬─────┴───────┬────────┘
-     │          │          │          │             │
-     └──────────┴──────────┴──────────┴─────────────┘
-                           │
-              ┌────────────┴────────────┐
-              │      @tx/core           │
-              │  Effect-TS Services     │
-              │  TaskService            │
-              │  LearningService        │
-              │  ReadyService           │
-              │  SyncService            │
-              └────────────┬────────────┘
-                           │
-              ┌────────────┴────────────┐
-              │    Repository Layer     │
-              │  TaskRepository         │
-              │  LearningRepository     │
-              │  DependencyRepository   │
-              └────────────┬────────────┘
-                           │
-              ┌────────────┴────────────┐
-              │   SQLite + JSONL Sync   │
-              │  .tx/tasks.db (local)   │
-              │  .tx/*.jsonl (git)      │
-              └─────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Interfaces                                      │
+├──────────┬──────────┬──────────┬──────────┬──────────────┬─────────────────┤
+│   CLI    │   MCP    │   API    │  Agent   │  Dashboard   │     Daemon      │
+│          │  Server  │  Server  │   SDK    │              │                 │
+└────┬─────┴────┬─────┴────┬─────┴────┬─────┴──────┬───────┴────────┬────────┘
+     │          │          │          │            │                │
+     └──────────┴──────────┴──────────┴────────────┴────────────────┘
+                                      │
+                    ┌─────────────────┴─────────────────┐
+                    │           @tx/core                │
+                    │        Effect-TS Services         │
+                    ├───────────────────────────────────┤
+                    │  TaskService    LearningService   │
+                    │  GraphService   DaemonService     │
+                    │  ReadyService   SyncService       │
+                    └─────────────────┬─────────────────┘
+                                      │
+                    ┌─────────────────┴─────────────────┐
+                    │         Repository Layer          │
+                    ├───────────────────────────────────┤
+                    │  TaskRepo       LearningRepo      │
+                    │  GraphRepo      CandidateRepo     │
+                    │  DependencyRepo AnchorRepo        │
+                    └─────────────────┬─────────────────┘
+                                      │
+                    ┌─────────────────┴─────────────────┐
+                    │       SQLite + JSONL Sync         │
+                    │   .tx/tasks.db (local truth)      │
+                    │   .tx/*.jsonl (git-tracked)       │
+                    └───────────────────────────────────┘
 ```
 
-### Planned Monorepo Structure
+### Monorepo Structure
 
 ```
 tx/
 ├── packages/
 │   ├── core/              # Effect-TS services, repos, schemas
-│   └── types/             # Shared TypeScript types (zero deps)
+│   └── types/             # Shared TypeScript types
 ├── apps/
 │   ├── cli/               # tx command
 │   ├── mcp-server/        # Claude Code integration
 │   ├── api-server/        # REST/HTTP API
 │   ├── dashboard/         # Web monitoring UI
-│   └── agent-sdk/         # TypeScript SDK for custom agents
-├── migrations/            # SQL schema (versioned, immutable)
+│   └── agent-sdk/         # TypeScript SDK
+├── migrations/            # SQL schema (versioned)
 └── scripts/               # RALPH loop, CI checks
 ```
 
-## RALPH Loop — Autonomous Development
+## Multi-Agent Orchestration
 
-tx uses the [RALPH pattern](https://ghuntley.com/ralph) for autonomous development. Fresh agent instances handle single tasks — memory persists through files, not conversation history.
+### RALPH Loop
+
+Fresh agent instances handle single tasks. Memory persists through files, not conversation history.
 
 ```bash
 ./scripts/ralph.sh           # Run until all tasks done
 ./scripts/ralph.sh --max 10  # Run at most 10 iterations
+```
+
+```
+while tasks remain:
+    task = tx ready --limit 1
+    spawn claude --task $task
+    # Agent reads learnings, does work, marks done
+    # New learnings captured for next agent
 ```
 
 ### Specialized Agents
@@ -207,144 +264,132 @@ tx uses the [RALPH pattern](https://ghuntley.com/ralph) for autonomous developme
 | `tx-tester` | Write integration tests |
 | `tx-decomposer` | Break large tasks into subtasks |
 
-### Claude Code Hooks — Dynamic Context Injection
+### Claude Code Hooks
 
-tx hooks into Claude Code to automatically inject relevant knowledge:
+Dynamic context injection via hooks:
 
 ```
 .claude/settings.json
-├── SessionStart     → Inject recent learnings on session start
-├── UserPromptSubmit → Search learnings based on prompt/task ID
+├── SessionStart     → Inject recent learnings
+├── UserPromptSubmit → Search learnings for task/prompt
 ├── PostToolUse      → Capture learnings from failures
 ├── Stop             → Extract learnings before session ends
 └── PreCompact       → Preserve context before summarization
 ```
 
-**How it works:**
-
-```bash
-# 1. Session starts → recent learnings injected
-[Hook: SessionStart]
-$ tx learning:recent -n 5
-→ "## Recent Learnings from Past Sessions
-   - [manual] Use bcrypt for passwords
-   - [failure] Redis caching has race conditions"
-
-# 2. User mentions task → contextual learnings injected
-[Hook: UserPromptSubmit]
-User: "Work on tx-abc123"
-$ tx context tx-abc123
-→ "## Relevant Learnings for Task tx-abc123
-   - [manual] (score: 85%) Auth tokens expire in 24h
-   - [attempt] (score: 72%) JWT approach failed: no refresh"
-
-# 3. Command fails → learning captured
-[Hook: PostToolUse]
-$ npm test → FAIL
-→ tx learning:add --source failure "Test failed: missing mock for DB"
-
-# 4. Session ends → learnings extracted
-[Hook: Stop]
-→ tx learning:add "Completed auth flow using bcrypt + JWT refresh"
-```
-
-**The result:** Agents start each session with relevant context. Knowledge compounds across sessions. Failures become learnings.
-
-### Context-Efficient Output
-
-Based on [HumanLayer's backpressure pattern](https://humanlayer.dev/blog/context-efficient-backpressure):
-
-```bash
-./scripts/check.sh --test
-#  ✓ Tests — 389 passed (5s)     # Success: minimal output
-
-./scripts/check.sh --test
-#  ✗ Tests (5s)                   # Failure: FULL output, ALL errors
-#  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  FAIL src/api.test.ts
-#  ... every error shown ...
-```
-
-## Status Lifecycle
-
-```
-backlog → ready → planning → active → blocked → review → human_needs_to_review → done
-```
-
-A task is **ready** when: status is workable AND all blockers have status `done`.
+**Result:** Agents start with relevant context. Knowledge compounds. Failures become learnings.
 
 ## Git-Backed Persistence
 
 ```
 .tx/
-├── tasks.db           # SQLite (gitignored, local source of truth)
-├── tasks.jsonl        # Git-tracked for backup/sharing
+├── tasks.db           # SQLite (gitignored, local truth)
+├── tasks.jsonl        # Git-tracked
 ├── learnings.jsonl    # Git-tracked
-└── runs.jsonl         # Agent run history
+├── runs.jsonl         # Git-tracked
+└── daemon.pid         # Daemon process ID
 ```
 
 ```bash
-tx sync export         # Export SQLite → JSONL
-tx sync import         # Import JSONL → SQLite
+tx sync export         # SQLite → JSONL
+tx sync import         # JSONL → SQLite
 tx sync status         # Show sync state
 ```
 
-## LLM Features (Optional)
+## CLI Reference
 
-Requires `ANTHROPIC_API_KEY`:
+### Tasks
+```bash
+tx add <title>              # Create task
+tx list                     # List all tasks
+tx ready                    # List ready (unblocked) tasks
+tx show <id>                # Show task details
+tx done <id>                # Complete task
+tx delete <id>              # Delete task
+tx block <id> <blocker>     # Add dependency
+tx unblock <id> <blocker>   # Remove dependency
+tx tree <id>                # Show subtree
+```
 
-- **`tx dedupe`** — Find and merge duplicate tasks
-- **`tx compact`** — Summarize completed tasks, extract learnings
-- **`tx reprioritize`** — LLM recalculates priority scores
+### Learnings
+```bash
+tx learning:add <content>   # Add a learning
+tx learning:search <query>  # Search (BM25 + vector)
+tx learning:recent          # Recent learnings
+tx context <task-id>        # Contextual learnings for task
+```
+
+### Graph
+```bash
+tx graph:link <id> <file>   # Link learning to file
+tx graph:show <id>          # Show learning's graph
+tx graph:neighbors <id>     # Find connected nodes
+tx graph:verify             # Verify all anchors
+tx graph:analyze-imports    # Build import graph
+```
+
+### Daemon
+```bash
+tx daemon start             # Start background daemon
+tx daemon stop              # Stop daemon
+tx daemon status            # Check daemon health
+tx daemon review            # Review pending candidates
+tx daemon promote <id>      # Manually promote candidate
+```
+
+### Sync
+```bash
+tx sync export              # Export to JSONL
+tx sync import              # Import from JSONL
+tx sync status              # Show sync state
+```
+
+### LLM Features (requires ANTHROPIC_API_KEY)
+```bash
+tx dedupe                   # Find duplicate tasks
+tx compact                  # Summarize completed tasks
+tx reprioritize             # LLM-based rescoring
+```
 
 ## Current Status
 
-**Done:**
+**Stable:**
 - Core task management (CRUD, dependencies, hierarchy)
 - Learnings system (add, search, context)
 - Attempt tracking
-- CLI with 20+ commands
-- MCP server with 16 tools
+- CLI (20+ commands)
+- MCP server (16 tools)
 - JSONL sync for tasks
 - Dashboard (basic)
-- 389 passing tests
+- 389+ passing tests
 
 **In Progress:**
-- Vector similarity search (embeddings)
-- Monorepo refactoring
-- Extended JSONL sync (learnings, attempts)
+- Graph RAG (knowledge graph, anchoring)
+- JSONL daemon (telemetry extraction)
 - Dashboard UX improvements
+- Vector similarity search
 
 **Planned:**
-- API server (REST/HTTP)
-- Agent SDK
+- Agent swarm verification
 - Real-time WebSocket updates
-- Multi-agent coordination
+- Cross-file graph expansion
+- Anchor invalidation system
 
 ## Documentation
 
 - **[CLAUDE.md](CLAUDE.md)** — Doctrine rules, quick reference
-- **[docs/prd/](docs/prd/)** — Product Requirements Documents
-- **[docs/design/](docs/design/)** — Technical Design Documents
 - **[docs/index.md](docs/index.md)** — Full documentation index
+- **[docs/prd/](docs/prd/)** — Product Requirements (17 PRDs)
+- **[docs/design/](docs/design/)** — Technical Design (17 DDs)
 
 ## Development
 
 ```bash
-# Install
-npm install
-
-# Build
-npm run build
-
-# Test
-npm test
-
-# Context-efficient checks (for agents)
-./scripts/check.sh --all
-
-# Run RALPH loop
-./scripts/ralph.sh
+npm install                 # Install dependencies
+npm run build               # Build all packages
+npm test                    # Run tests
+./scripts/check.sh --all    # Context-efficient checks
+./scripts/ralph.sh          # Run RALPH loop
 ```
 
 ## License
