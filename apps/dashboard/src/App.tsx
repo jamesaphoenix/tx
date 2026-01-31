@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type ChatMessage } from "./api/client"
-import { TaskList } from "./components/tasks"
-import { RunsList } from "./components/runs"
+import { TaskList, TaskFilters, useTaskFiltersWithUrl } from "./components/tasks"
+import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
 
 // =============================================================================
 // Status Badges
@@ -215,6 +215,40 @@ export default function App() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [_selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
+  // URL state management for filters
+  const { filters: taskFilters, setFilters: setTaskFilters } = useTaskFiltersWithUrl()
+  const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
+
+  // Fetch stats for task status counts
+  const { data: statsData } = useQuery({
+    queryKey: ["stats"],
+    queryFn: fetchers.stats,
+    staleTime: 5000,
+  })
+
+  // Fetch runs to get available agents and status counts
+  const { data: runsMetadata } = useQuery({
+    queryKey: ["runs", "metadata"],
+    queryFn: fetchers.runs,
+    select: (data) => {
+      const agents = [...new Set(data.runs.map((run) => run.agent))].filter(Boolean).sort()
+      const statusCounts = data.runs.reduce<Record<string, number>>((acc, run) => {
+        acc[run.status] = (acc[run.status] ?? 0) + 1
+        return acc
+      }, {})
+      return { agents, statusCounts }
+    },
+    staleTime: 5000,
+  })
+
+  // Task status counts from stats endpoint
+  const taskStatusCounts = statsData
+    ? {
+        ready: statsData.ready,
+        done: statsData.done,
+      }
+    : {}
+
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
       {/* Header */}
@@ -254,13 +288,36 @@ export default function App() {
       <main className="flex-1 flex overflow-hidden">
         {activeTab === "tasks" ? (
           <div className="flex-1 p-4 overflow-y-auto">
-            <TaskList onSelectTask={setSelectedTaskId} />
+            {/* Task Filters - synced with URL */}
+            <div className="mb-4">
+              <TaskFilters
+                value={taskFilters}
+                onChange={setTaskFilters}
+                statusCounts={taskStatusCounts}
+              />
+            </div>
+            <TaskList
+              filters={taskFilters}
+              onSelectTask={setSelectedTaskId}
+            />
           </div>
         ) : (
           <>
             {/* Runs List */}
             <div className="w-96 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
-              <RunsList onSelectRun={setSelectedRunId} />
+              {/* Run Filters - synced with URL */}
+              <div className="mb-4">
+                <RunFilters
+                  value={runFilters}
+                  onChange={setRunFilters}
+                  statusCounts={runsMetadata?.statusCounts}
+                  availableAgents={runsMetadata?.agents}
+                />
+              </div>
+              <RunsList
+                filters={runFilters}
+                onSelectRun={setSelectedRunId}
+              />
             </div>
 
             {/* Chat View */}
