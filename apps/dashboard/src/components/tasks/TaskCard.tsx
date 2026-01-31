@@ -66,12 +66,12 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           </div>
           <StatusBadge status={task.status} />
         </div>
-        {task.blockedBy.length > 0 && (
+        {task.blockedBy?.length > 0 && (
           <div className="mt-2 text-xs text-gray-500">
             Blocked by: {task.blockedBy.join(", ")}
           </div>
         )}
-        {task.blocks.length > 0 && (
+        {task.blocks?.length > 0 && (
           <div className="mt-1 text-xs text-green-600">
             Unblocks {task.blocks.length} task(s)
           </div>
