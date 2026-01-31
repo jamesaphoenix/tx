@@ -6,6 +6,7 @@ import { QueryExpansionService } from "./query-expansion-service.js"
 import { RerankerService } from "./reranker-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextResult } from "@tx/types"
+import { cosineSimilarity } from "../utils/math.js"
 
 /** Result of embedding operation */
 export interface EmbedResult {
@@ -63,29 +64,6 @@ const calculateRecencyScore = (createdAt: Date): number => {
   const ageMs = Date.now() - createdAt.getTime()
   const ageDays = ageMs / (1000 * 60 * 60 * 24)
   return Math.max(0, 1 - ageDays / MAX_AGE_DAYS)
-}
-
-/**
- * Calculate cosine similarity between two vectors.
- * Returns a value between -1 and 1, where 1 means identical direction.
- */
-const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
-  if (a.length !== b.length) return 0
-
-  let dotProduct = 0
-  let normA = 0
-  let normB = 0
-
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i]! * b[i]!
-    normA += a[i]! * a[i]!
-    normB += b[i]! * b[i]!
-  }
-
-  const magnitude = Math.sqrt(normA) * Math.sqrt(normB)
-  if (magnitude === 0) return 0
-
-  return dotProduct / magnitude
 }
 
 /**

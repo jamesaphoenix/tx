@@ -26,6 +26,7 @@ import { LearningServiceLive, LearningService } from "../../src/services/learnin
 import { EmbeddingService, EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
 import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
 import { QueryExpansionServiceNoop } from "../../src/services/query-expansion-service.js"
+import { cosineSimilarity } from "../../src/utils/math.js"
 import type Database from "better-sqlite3"
 import type { LearningWithScore } from "../../src/schemas/learning.js"
 
@@ -249,28 +250,6 @@ const precisionAtK = (
   }
 
   return relevant / topK.length
-}
-
-/**
- * Calculate cosine similarity between two vectors.
- */
-const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
-  if (a.length !== b.length) return 0
-
-  let dotProduct = 0
-  let normA = 0
-  let normB = 0
-
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i]! * b[i]!
-    normA += a[i]! * a[i]!
-    normB += b[i]! * b[i]!
-  }
-
-  const magnitude = Math.sqrt(normA) * Math.sqrt(normB)
-  if (magnitude === 0) return 0
-
-  return dotProduct / magnitude
 }
 
 // ============================================================================
