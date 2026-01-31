@@ -207,13 +207,13 @@ app.get("/api/tasks", (c) => {
   }
 })
 
-// GET /api/tasks/ready
+// GET /api/tasks/ready - Returns ALL ready tasks (not paginated)
 app.get("/api/tasks/ready", (c) => {
   try {
     const db = getDb()
 
-    // Get all tasks and deps to compute ready
-    const tasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
+    // Get all tasks to compute ready status and children
+    const allTasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
     const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
 
     const blockedByMap = new Map<string, string[]>()
@@ -222,16 +222,20 @@ app.get("/api/tasks/ready", (c) => {
       blockedByMap.set(dep.blocked_id, [...existing, dep.blocker_id])
     }
 
-    const statusMap = new Map(tasks.map(t => [t.id, t.status]))
+    const statusMap = new Map(allTasks.map(t => [t.id, t.status]))
     const workableStatuses = ["backlog", "ready", "planning"]
 
-    const ready = tasks.filter(task => {
+    // Filter to ready tasks
+    const readyTasks = allTasks.filter(task => {
       const blockedBy = blockedByMap.get(task.id) ?? []
       const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
       return workableStatuses.includes(task.status) && allBlockersDone
     })
 
-    return c.json({ tasks: ready })
+    // Enrich with full dependency info (Rule 1: every API response MUST include TaskWithDeps)
+    const enriched = enrichTasksWithDeps(db, readyTasks, allTasks)
+
+    return c.json({ tasks: enriched })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

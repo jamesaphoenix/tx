@@ -1,5 +1,6 @@
-import { useCallback, useRef } from "react"
+import { useCallback, useRef, useMemo } from "react"
 import { useInfiniteTasks, type TaskFilters } from "../../hooks/useInfiniteTasks"
+import { useReadyTasks } from "../../hooks/useReadyTasks"
 import { useIntersectionObserver } from "../../hooks/useIntersectionObserver"
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation"
 import { LoadingSkeleton } from "../ui/LoadingSkeleton"
@@ -12,17 +13,57 @@ export interface TaskListProps {
   onEscape?: () => void
 }
 
+/**
+ * Check if the filter is requesting ready tasks only.
+ * When filtering for ready tasks, we fetch ALL of them at once
+ * instead of using pagination, since ready tasks should be
+ * immediately visible without scrolling.
+ */
+function isReadyOnlyFilter(filters: TaskFilters): boolean {
+  // Only use ready endpoint if filtering exclusively by "ready" status
+  // and no search query is active (search requires the paginated endpoint)
+  return (
+    filters.status?.length === 1 &&
+    filters.status[0] === "ready" &&
+    !filters.search
+  )
+}
+
 export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps) {
+  // Determine which data source to use
+  const useReadyEndpoint = useMemo(() => isReadyOnlyFilter(filters), [filters])
+
+  // Ready tasks (non-paginated, all at once)
+  const readyResult = useReadyTasks()
+
+  // Paginated tasks (infinite scroll)
+  const infiniteResult = useInfiniteTasks(filters)
+
+  // Select the appropriate result based on filter
   const {
     tasks,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
     isLoading,
     isError,
     error,
     total,
-  } = useInfiniteTasks(filters)
+  } = useReadyEndpoint
+    ? {
+        tasks: readyResult.tasks,
+        isLoading: readyResult.isLoading,
+        isError: readyResult.isError,
+        error: readyResult.error,
+        total: readyResult.total,
+      }
+    : {
+        tasks: infiniteResult.tasks,
+        isLoading: infiniteResult.isLoading,
+        isError: infiniteResult.isError,
+        error: infiniteResult.error,
+        total: infiniteResult.total,
+      }
+
+  // Pagination controls (only used for infinite scroll mode)
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = infiniteResult
 
   // Refs for card elements for scrollIntoView
   const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -45,16 +86,16 @@ export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps
     enabled: tasks.length > 0,
   })
 
-  // Infinite scroll via intersection observer
+  // Infinite scroll via intersection observer (only for paginated mode)
   const handleLoadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
+    if (!useReadyEndpoint && hasNextPage && !isFetchingNextPage) {
       fetchNextPage()
     }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+  }, [useReadyEndpoint, hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const sentinelRef = useIntersectionObserver({
     onIntersect: handleLoadMore,
-    enabled: hasNextPage && !isFetchingNextPage,
+    enabled: !useReadyEndpoint && hasNextPage && !isFetchingNextPage,
   })
 
   // Initial loading state
@@ -100,10 +141,12 @@ export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps
     <div className="space-y-2">
       {/* Header with total count */}
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-300">Tasks</h2>
+        <h2 className="text-lg font-semibold text-gray-300">
+          {useReadyEndpoint ? "Ready Tasks" : "Tasks"}
+        </h2>
         <span className="text-sm text-gray-500">
           {total} task{total !== 1 ? "s" : ""}
-          {hasNextPage && " (scroll for more)"}
+          {!useReadyEndpoint && hasNextPage && " (scroll for more)"}
         </span>
       </div>
 
@@ -126,16 +169,16 @@ export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps
         ))}
       </div>
 
-      {/* Sentinel element for infinite scroll */}
-      <div ref={sentinelRef} className="h-4" />
+      {/* Sentinel element for infinite scroll (only in paginated mode) */}
+      {!useReadyEndpoint && <div ref={sentinelRef} className="h-4" />}
 
-      {/* Loading more indicator */}
-      {isFetchingNextPage && <LoadingSkeleton count={3} />}
+      {/* Loading more indicator (only in paginated mode) */}
+      {!useReadyEndpoint && isFetchingNextPage && <LoadingSkeleton count={3} />}
 
       {/* End of list indicator */}
-      {!hasNextPage && tasks.length > 0 && (
+      {(useReadyEndpoint || !hasNextPage) && tasks.length > 0 && (
         <div className="text-center text-sm text-gray-500 py-4">
-          End of tasks
+          {useReadyEndpoint ? "All ready tasks shown" : "End of tasks"}
         </div>
       )}
     </div>
