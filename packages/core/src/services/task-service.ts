@@ -18,6 +18,7 @@ export class TaskService extends Context.Tag("TaskService")<
     readonly remove: (id: TaskId) => Effect.Effect<void, TaskNotFoundError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
     readonly listWithDeps: (filter?: TaskFilter) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
+    readonly count: (filter?: TaskFilter) => Effect.Effect<number, DatabaseError>
   }
 >() {}
 
@@ -277,7 +278,9 @@ export const TaskServiceLive = Layer.effect(
         Effect.gen(function* () {
           const tasks = yield* taskRepo.findAll(filter)
           return yield* enrichWithDepsBatch(tasks)
-        })
+        }),
+
+      count: (filter) => taskRepo.count(filter)
     }
   })
 )

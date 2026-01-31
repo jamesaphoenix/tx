@@ -105,12 +105,24 @@ export interface UpdateTaskInput {
 }
 
 /**
+ * Cursor for pagination (score + id based).
+ */
+export interface TaskCursor {
+  readonly score: number;
+  readonly id: string;
+}
+
+/**
  * Filter options for task queries.
  */
 export interface TaskFilter {
   readonly status?: TaskStatus | TaskStatus[];
   readonly parentId?: string | null;
   readonly limit?: number;
+  /** Search in title and description (case-insensitive) */
+  readonly search?: string;
+  /** Cursor for keyset pagination (returns tasks after this cursor) */
+  readonly cursor?: TaskCursor;
 }
 
 /**

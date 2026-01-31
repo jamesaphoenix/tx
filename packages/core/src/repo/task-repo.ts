@@ -72,9 +72,24 @@ export const TaskRepositoryLive = Layer.effect(
               }
             }
 
+            // Search filter: case-insensitive search in title and description
+            if (filter?.search) {
+              const searchPattern = `%${filter.search}%`
+              conditions.push("(title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)")
+              params.push(searchPattern, searchPattern)
+            }
+
+            // Cursor-based pagination: fetch tasks after the cursor position
+            // Order is score DESC, id ASC, so "after cursor" means:
+            // (score < cursor.score) OR (score = cursor.score AND id > cursor.id)
+            if (filter?.cursor) {
+              conditions.push("(score < ? OR (score = ? AND id > ?))")
+              params.push(filter.cursor.score, filter.cursor.score, filter.cursor.id)
+            }
+
             const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
             const limit = filter?.limit ? `LIMIT ${filter.limit}` : ""
-            const sql = `SELECT * FROM tasks ${where} ORDER BY score DESC, created_at ASC ${limit}`
+            const sql = `SELECT * FROM tasks ${where} ORDER BY score DESC, id ASC ${limit}`
             const rows = db.prepare(sql).all(...params) as TaskRow[]
             return rows.map(rowToTask)
           },
@@ -197,6 +212,24 @@ export const TaskRepositoryLive = Layer.effect(
                 params.push(filter.status)
               }
             }
+
+            if (filter?.parentId !== undefined) {
+              if (filter.parentId === null) {
+                conditions.push("parent_id IS NULL")
+              } else {
+                conditions.push("parent_id = ?")
+                params.push(filter.parentId)
+              }
+            }
+
+            // Search filter for count (same as findAll)
+            if (filter?.search) {
+              const searchPattern = `%${filter.search}%`
+              conditions.push("(title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)")
+              params.push(searchPattern, searchPattern)
+            }
+
+            // Note: cursor is intentionally not included in count - we want total matching records
 
             const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
             const result = db.prepare(`SELECT COUNT(*) as cnt FROM tasks ${where}`).get(...params) as { cnt: number }

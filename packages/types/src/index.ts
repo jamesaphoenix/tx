@@ -29,6 +29,7 @@ export {
   type CreateTaskInput,
   type UpdateTaskInput,
   type TaskFilter,
+  type TaskCursor,
   type TaskRow,
   type DependencyRow,
 } from "./task.js";

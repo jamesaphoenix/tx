@@ -7,7 +7,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
-import type { TaskId, TaskStatus, TaskWithDeps } from "@tx/types"
+import type { TaskId, TaskStatus, TaskWithDeps, TaskCursor } from "@tx/types"
 import { TASK_STATUSES } from "@tx/types"
 import { TaskService, ReadyService, DependencyService, HierarchyService } from "@tx/core"
 import { runEffect } from "../runtime.js"
@@ -330,72 +330,58 @@ export const tasksRouter = new OpenAPIHono()
 tasksRouter.openapi(listTasksRoute, async (c) => {
   const { cursor, limit, status, search } = c.req.valid("query")
 
-  const tasks = await runEffect(
+  const result = await runEffect(
     Effect.gen(function* () {
       const taskService = yield* TaskService
 
-      // Get all tasks with optional status filter
+      // Parse status filter (comma-separated)
       const statusFilter = status?.split(",").filter(Boolean) as TaskStatus[] | undefined
-      const allTasks = yield* taskService.listWithDeps({
-        status: statusFilter?.length === 1 ? statusFilter[0] : undefined
-      })
 
-      // Apply filters in memory for now (full implementation would use SQL)
-      let filtered: TaskWithDeps[] = [...allTasks]
-
-      // Filter by multiple statuses
-      if (statusFilter && statusFilter.length > 1) {
-        filtered = filtered.filter(t => statusFilter.includes(t.status))
-      }
-
-      // Search filter
-      if (search) {
-        const searchLower = search.toLowerCase()
-        filtered = filtered.filter(t =>
-          t.title.toLowerCase().includes(searchLower) ||
-          t.description.toLowerCase().includes(searchLower)
-        )
-      }
-
-      // Sort by score DESC, id ASC
-      filtered.sort((a: TaskWithDeps, b: TaskWithDeps) => {
-        if (a.score !== b.score) return b.score - a.score
-        return a.id.localeCompare(b.id)
-      })
-
-      // Apply cursor pagination
-      let startIndex = 0
+      // Parse cursor for keyset pagination
+      let cursorObj: TaskCursor | undefined
       if (cursor) {
         const parsed = parseCursor(cursor)
         if (parsed) {
-          startIndex = filtered.findIndex(t =>
-            t.score < parsed.score || (t.score === parsed.score && t.id > parsed.id)
-          )
-          if (startIndex === -1) startIndex = filtered.length
+          cursorObj = { score: parsed.score, id: parsed.id }
         }
       }
 
-      const total = filtered.length
-      const paginated = filtered.slice(startIndex, startIndex + limit + 1)
-      const hasMore = paginated.length > limit
-      const resultTasks = hasMore ? paginated.slice(0, limit) : paginated
+      // Build filter with all SQL-supported parameters
+      const filter = {
+        status: statusFilter,
+        search: search,
+        cursor: cursorObj,
+        limit: limit + 1 // Fetch one extra to detect hasMore
+      }
+
+      // Get total count (without cursor, to get full count of matching records)
+      const total = yield* taskService.count({
+        status: statusFilter,
+        search: search
+      })
+
+      // Fetch tasks with SQL filtering, search, and cursor pagination
+      const tasks = yield* taskService.listWithDeps(filter)
+
+      const hasMore = tasks.length > limit
+      const resultTasks = hasMore ? tasks.slice(0, limit) : tasks
 
       return {
         tasks: resultTasks,
         hasMore,
         total,
         nextCursor: hasMore && resultTasks.length > 0
-          ? buildCursor(resultTasks[resultTasks.length - 1])
+          ? buildCursor(resultTasks[resultTasks.length - 1] as TaskWithDeps)
           : null
       }
     })
   )
 
   return c.json({
-    tasks: tasks.tasks.map(serializeTask),
-    nextCursor: tasks.nextCursor,
-    hasMore: tasks.hasMore,
-    total: tasks.total
+    tasks: result.tasks.map(serializeTask),
+    nextCursor: result.nextCursor,
+    hasMore: result.hasMore,
+    total: result.total
   }, 200)
 })
 
