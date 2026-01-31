@@ -4,6 +4,7 @@
 
 import requireIntegrationTests from './rules/require-integration-tests.js';
 import noInlineSql from './rules/no-inline-sql.js';
+import requireComponentTests from './rules/require-component-tests.js';
 
 const plugin = {
   meta: {
@@ -12,7 +13,8 @@ const plugin = {
   },
   rules: {
     'require-integration-tests': requireIntegrationTests,
-    'no-inline-sql': noInlineSql
+    'no-inline-sql': noInlineSql,
+    'require-component-tests': requireComponentTests
   },
   // Flat config recommended configuration
   configs: {
@@ -31,6 +33,11 @@ const plugin = {
         'tx/no-inline-sql': ['error', {
           allowedPaths: ['migrations/', 'test/fixtures/'],
           ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
+        }],
+        'tx/require-component-tests': ['error', {
+          components: { pattern: 'src/components/**/*.tsx', testDir: '__tests__', testSuffix: '.test.tsx' },
+          hooks: { pattern: 'src/hooks/**/*.ts', testDir: '__tests__', testSuffix: '.test.ts' },
+          services: { pattern: 'src/services/**/*.ts', testDir: 'test/integration', testSuffix: '.test.ts' }
         }]
       }
     }

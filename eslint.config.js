@@ -12,6 +12,12 @@
  * Prevents SQL DDL statements (CREATE TABLE, etc.) from being defined inline in TypeScript code.
  * SQL schema definitions should be in migrations/*.sql files.
  *
+ * Rule: tx/require-component-tests
+ * Enforces that components, hooks, and services have corresponding test files.
+ * - Every .tsx file in src/components/ MUST have a corresponding .test.tsx in __tests__/
+ * - Every .ts file in src/hooks/ MUST have a corresponding .test.ts in __tests__/
+ * - Every file in src/services/ MUST have integration test coverage
+ *
  * Detection logic for require-integration-tests:
  * - Parses source files for exported functions/classes
  * - Checks for corresponding describe() blocks in test files
@@ -128,6 +134,37 @@ export default [
       'tx/no-inline-sql': ['error', {
         allowedPaths: ['migrations/', 'test/fixtures/'],
         ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
+      }]
+    }
+  },
+  // Dashboard React components and hooks (require component tests)
+  {
+    files: ['apps/dashboard/**/*.tsx', 'apps/dashboard/src/hooks/**/*.ts'],
+    languageOptions: {
+      parser: tseslintParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        ecmaFeatures: {
+          jsx: true
+        }
+      }
+    },
+    plugins: {
+      '@typescript-eslint': tseslintPlugin,
+      tx: txPlugin
+    },
+    rules: {
+      // TypeScript rules
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'off',
+      'no-unused-vars': 'off',
+      'no-undef': 'off',
+
+      // Enforce component and hook tests - principal engineer principle: if it's not tested, it doesn't exist
+      'tx/require-component-tests': ['error', {
+        components: { pattern: 'apps/dashboard/src/components/**/*.tsx', testDir: '__tests__', testSuffix: '.test.tsx' },
+        hooks: { pattern: 'apps/dashboard/src/hooks/**/*.ts', testDir: '__tests__', testSuffix: '.test.ts' }
       }]
     }
   }
