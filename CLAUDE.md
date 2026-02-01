@@ -88,6 +88,82 @@ LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Cor
 
 ---
 
+## Philosophy: Primitives, Not Frameworks
+
+**Headless agent infrastructure.** You bring the orchestration, we bring the primitives.
+
+Like TanStack gives you headless UI primitives, tx gives you headless agent primitives:
+
+- **No opinions on orchestration** — Serial, parallel, swarm, human-in-loop. Your call.
+- **Powerful defaults** — `tx ready` just works. So does dependency resolution.
+- **Escape hatches everywhere** — Raw SQL access, JSONL export, custom scoring.
+- **Framework agnostic** — CLI, MCP, REST API, TypeScript SDK. Use what fits.
+
+### The Primitive Stack
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Your Orchestration (your code, your rules)             │
+├─────────────────────────────────────────────────────────┤
+│  tx primitives                                          │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐  │
+│  │ tx ready│ │ tx claim│ │ tx done │ │ tx context    │  │
+│  └─────────┘ └─────────┘ └─────────┘ └───────────────┘  │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐  │
+│  │ tx block│ │ tx learn│ │ tx sync │ │ tx handoff    │  │
+│  └─────────┘ └─────────┘ └─────────┘ └───────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Core Primitives
+
+| Primitive | Purpose |
+|-----------|---------|
+| `tx ready` | Get next workable task (unblocked, highest priority) |
+| `tx claim <id>` | Mark task as being worked by an agent (prevents collision) |
+| `tx done <id>` | Complete task, potentially unblocking others |
+| `tx block <id> <blocker>` | Declare dependencies |
+| `tx handoff <id> --to <agent>` | Transfer task with context |
+| `tx checkpoint <id> --note "..."` | Save progress without completing |
+| `tx context <id>` | Get relevant learnings + history for prompt injection |
+| `tx learning:add` | Record knowledge for future agents |
+| `tx sync export` | Persist to git-friendly JSONL |
+
+### Example Loops (not THE loop)
+
+We ship example orchestration patterns, not a required workflow:
+
+```bash
+examples/loops/
+├── simple-serial.sh       # One agent, one task at a time
+├── parallel-workers.sh    # N agents pulling from ready queue
+├── coordinator.sh         # One agent delegates to others
+├── specialist-routing.sh  # Route tasks to agents by type
+└── human-in-loop.sh       # Agent proposes, human approves
+```
+
+**You own your orchestration. tx owns the primitives.**
+
+Frameworks lock you in. Libraries let you compose.
+
+### Three-Layer Architecture
+
+```
+┌─────────────────────────────────────────┐
+│  Agent Orchestration                    │  ← Your code (examples provided)
+├─────────────────────────────────────────┤
+│  Task Management                        │  ← tx core (ready, block, done)
+├─────────────────────────────────────────┤
+│  Memory / Knowledge Graph               │  ← tx learnings + context
+├─────────────────────────────────────────┤
+│  Storage (Git + SQLite)                 │  ← Persistence layer
+└─────────────────────────────────────────┘
+```
+
+The moat isn't task management—anyone can build that. The moat is the **knowledge layer**: learnings that surface automatically, code relationships that inform task planning, and context that transfers across projects and sessions.
+
+---
+
 ## Quick Reference
 
 ### Status Lifecycle

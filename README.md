@@ -39,6 +39,44 @@ Three integrated systems, one database, git-native.
 | **Multi-agent** | Single conversation | Manual handoff | Shared task graph, RALPH loop |
 | **Code awareness** | None | None | Symbol anchoring, co-change analysis |
 
+## Primitives, Not Frameworks
+
+**Headless agent infrastructure.** You bring the orchestration, we bring the primitives.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Your Orchestration (your code, your rules)             │
+├─────────────────────────────────────────────────────────┤
+│  tx primitives                                          │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐  │
+│  │ tx ready│ │ tx claim│ │ tx done │ │ tx context    │  │
+│  └─────────┘ └─────────┘ └─────────┘ └───────────────┘  │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐  │
+│  │ tx block│ │ tx learn│ │ tx sync │ │ tx handoff    │  │
+│  └─────────┘ └─────────┘ └─────────┘ └───────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+Like TanStack gives you headless UI primitives, tx gives you headless agent primitives:
+
+- **No opinions on orchestration** — Serial, parallel, swarm, human-in-loop. Your call.
+- **Powerful defaults** — `tx ready` just works. So does dependency resolution.
+- **Escape hatches everywhere** — Raw SQL access, JSONL export, custom scoring.
+- **Framework agnostic** — CLI, MCP, REST API, TypeScript SDK. Use what fits.
+
+We ship **example loops**, not **the loop**:
+
+```bash
+examples/loops/
+├── simple-serial.sh       # One agent, one task at a time
+├── parallel-workers.sh    # N agents pulling from ready queue
+├── coordinator.sh         # One agent delegates to others
+├── specialist-routing.sh  # Route tasks by type
+└── human-in-loop.sh       # Agent proposes, human approves
+```
+
+**Frameworks lock you in. Libraries let you compose.**
+
 ## Quick Start
 
 ```bash
