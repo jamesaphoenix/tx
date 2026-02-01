@@ -1,8 +1,124 @@
 # tx
 
-A lean task management system for AI agents and humans, built with Effect-TS.
+**TanStack for AI agents.** Primitives, not frameworks.
+
+Headless infrastructure for memory, tasks, and orchestration.
 
 **Full documentation**: [docs/index.md](docs/index.md)
+
+---
+
+## Philosophy: Primitives, Not Frameworks
+
+**This is the core design principle. Everything else flows from it.**
+
+### Why Primitives?
+
+The orchestration flow is where developers create value. It encodes their domain knowledge:
+- How their codebase works
+- What their agents are good at
+- Where humans need to intervene
+- How they handle failures
+
+**If you dictate the flow, you're not a tool—you're a competitor.** You're saying "our orchestration is better than yours." But you don't know their domain, their constraints, or whether they need 3 agents or 30.
+
+### The TanStack Model
+
+TanStack won by saying: "Here's headless table logic. Style it yourself."
+
+tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Your Orchestration (your code, your rules)             │
+├─────────────────────────────────────────────────────────┤
+│  tx primitives                                          │
+│                                                         │
+│   tx ready     tx done      tx context    tx learn      │
+│   tx claim     tx block     tx handoff    tx sync       │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Design Principles
+
+- **No opinions on orchestration** — Serial, parallel, swarm, human-in-loop. Your call.
+- **Powerful defaults** — `tx ready` just works. So does dependency resolution.
+- **Escape hatches everywhere** — Raw SQL access, JSONL export, custom scoring.
+- **Framework agnostic** — CLI, MCP, REST API, TypeScript SDK. Use what fits.
+- **Local-first** — SQLite + git. No server required. Works offline.
+
+### Core Primitives
+
+| Primitive | Purpose |
+|-----------|---------|
+| `tx ready` | Get next workable task (unblocked, highest priority) |
+| `tx claim <id>` | Mark task as being worked by an agent (prevents collision) |
+| `tx done <id>` | Complete task, potentially unblocking others |
+| `tx block <id> <blocker>` | Declare dependencies |
+| `tx handoff <id> --to <agent>` | Transfer task with context |
+| `tx checkpoint <id> --note "..."` | Save progress without completing |
+| `tx context <id>` | Get relevant learnings + history for prompt injection |
+| `tx learning:add` | Record knowledge for future agents |
+| `tx sync export` | Persist to git-friendly JSONL |
+
+### Example Loops (not THE loop)
+
+We ship example orchestration patterns, not a required workflow:
+
+```bash
+# Simple: one agent, one task
+while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
+  claude "Work on task $task, then run: tx done $task"
+done
+```
+
+```bash
+# Parallel: N agents pulling from queue
+for i in {1..5}; do
+  (while task=$(tx claim --next); do
+    claude "Complete $task" && tx done $task
+  done) &
+done
+wait
+```
+
+```bash
+# Human-in-loop: agent proposes, human approves
+task=$(tx ready --limit 1)
+claude "Plan implementation for $task" > plan.md
+read -p "Approve? [y/n] " && claude "Execute plan.md"
+tx done $task
+```
+
+**You own your orchestration. tx owns the primitives.**
+
+**Frameworks lock you in. Libraries let you compose.**
+
+### Three-Layer Architecture
+
+```
+┌─────────────────────────────────────────┐
+│  Agent Orchestration                    │  ← Your code (examples provided)
+├─────────────────────────────────────────┤
+│  Task Management                        │  ← tx core (ready, block, done)
+├─────────────────────────────────────────┤
+│  Memory / Knowledge Graph               │  ← tx learnings + context
+├─────────────────────────────────────────┤
+│  Storage (Git + SQLite)                 │  ← Persistence layer
+└─────────────────────────────────────────┘
+```
+
+### The Moat
+
+The moat isn't task management—anyone can build that.
+
+The moat is the **knowledge layer**:
+- Learnings that surface automatically when relevant
+- Code relationships that inform task planning
+- Context that transfers across projects and sessions
+
+This is what compounds. This is what makes agents smarter over time.
 
 ---
 
@@ -88,82 +204,6 @@ LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Cor
 
 ---
 
-## Philosophy: Primitives, Not Frameworks
-
-**Headless agent infrastructure.** You bring the orchestration, we bring the primitives.
-
-Like TanStack gives you headless UI primitives, tx gives you headless agent primitives:
-
-- **No opinions on orchestration** — Serial, parallel, swarm, human-in-loop. Your call.
-- **Powerful defaults** — `tx ready` just works. So does dependency resolution.
-- **Escape hatches everywhere** — Raw SQL access, JSONL export, custom scoring.
-- **Framework agnostic** — CLI, MCP, REST API, TypeScript SDK. Use what fits.
-
-### The Primitive Stack
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Your Orchestration (your code, your rules)             │
-├─────────────────────────────────────────────────────────┤
-│  tx primitives                                          │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐  │
-│  │ tx ready│ │ tx claim│ │ tx done │ │ tx context    │  │
-│  └─────────┘ └─────────┘ └─────────┘ └───────────────┘  │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐  │
-│  │ tx block│ │ tx learn│ │ tx sync │ │ tx handoff    │  │
-│  └─────────┘ └─────────┘ └─────────┘ └───────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Core Primitives
-
-| Primitive | Purpose |
-|-----------|---------|
-| `tx ready` | Get next workable task (unblocked, highest priority) |
-| `tx claim <id>` | Mark task as being worked by an agent (prevents collision) |
-| `tx done <id>` | Complete task, potentially unblocking others |
-| `tx block <id> <blocker>` | Declare dependencies |
-| `tx handoff <id> --to <agent>` | Transfer task with context |
-| `tx checkpoint <id> --note "..."` | Save progress without completing |
-| `tx context <id>` | Get relevant learnings + history for prompt injection |
-| `tx learning:add` | Record knowledge for future agents |
-| `tx sync export` | Persist to git-friendly JSONL |
-
-### Example Loops (not THE loop)
-
-We ship example orchestration patterns, not a required workflow:
-
-```bash
-examples/loops/
-├── simple-serial.sh       # One agent, one task at a time
-├── parallel-workers.sh    # N agents pulling from ready queue
-├── coordinator.sh         # One agent delegates to others
-├── specialist-routing.sh  # Route tasks to agents by type
-└── human-in-loop.sh       # Agent proposes, human approves
-```
-
-**You own your orchestration. tx owns the primitives.**
-
-Frameworks lock you in. Libraries let you compose.
-
-### Three-Layer Architecture
-
-```
-┌─────────────────────────────────────────┐
-│  Agent Orchestration                    │  ← Your code (examples provided)
-├─────────────────────────────────────────┤
-│  Task Management                        │  ← tx core (ready, block, done)
-├─────────────────────────────────────────┤
-│  Memory / Knowledge Graph               │  ← tx learnings + context
-├─────────────────────────────────────────┤
-│  Storage (Git + SQLite)                 │  ← Persistence layer
-└─────────────────────────────────────────┘
-```
-
-The moat isn't task management—anyone can build that. The moat is the **knowledge layer**: learnings that surface automatically, code relationships that inform task planning, and context that transfers across projects and sessions.
-
----
-
 ## Quick Reference
 
 ### Status Lifecycle
@@ -186,78 +226,36 @@ A task is **ready** when: status is workable AND all blockers have status `done`
 | IDs | SHA256-based `tx-[a-z0-9]{6,8}` | [DD-001](docs/design/DD-001-data-model-storage.md) |
 | Testing | Vitest + SHA256 fixtures | [DD-007](docs/design/DD-007-testing-strategy.md) |
 
-### Project Structure
-
-```
-tx/
-├── CLAUDE.md              # This file — doctrine + quick ref
-├── docs/
-│   ├── index.md           # Full documentation index
-│   ├── prd/               # PRD-001 through PRD-009
-│   └── design/            # DD-001 through DD-009
-├── src/
-│   ├── schemas/           # Effect Schema definitions
-│   ├── services/          # Business logic (Effect services)
-│   ├── repositories/      # Data access layer
-│   ├── cli/               # CLI commands
-│   ├── mcp/               # MCP server
-│   └── layers/            # Effect layer composition
-├── test/
-│   ├── fixtures/          # SHA256-based test fixtures
-│   ├── unit/              # Unit tests
-│   └── integration/       # Integration tests
-└── .tx/
-    ├── tasks.db           # SQLite database (gitignored)
-    └── tasks.jsonl        # Git-tracked sync file
-```
-
 ### CLI Commands
 
 ```bash
-# Core (no API key needed)
-tx init                    # Initialize database
-tx add <title>             # Create task
-tx list                    # List tasks
-tx ready                   # List ready tasks
-tx show <id>               # Show task details
-tx update <id>             # Update task
-tx done <id>               # Complete task
-tx delete <id>             # Delete task
-tx block <id> <blocker>    # Add dependency
-tx unblock <id> <blocker>  # Remove dependency
-tx children <id>           # List children
-tx tree <id>               # Show subtree
+# Tasks
+tx add <title>              # Create
+tx ready                    # List unblocked
+tx done <id>                # Complete
+tx block <id> <blocker>     # Add dependency
+tx tree <id>                # Show hierarchy
 
-# Sync (no API key needed)
-tx sync export             # Export to JSONL
-tx sync import             # Import from JSONL
-tx sync status             # Show sync state
+# Memory
+tx learning:add <content>   # Store
+tx learning:search <query>  # Find
+tx context <task-id>        # Contextual retrieval
 
-# Learnings (no API key needed)
-tx learning:add <content>  # Add a learning
-tx learning:search <query> # Search learnings (BM25)
-tx learning:recent         # List recent learnings
-tx learning:helpful <id>   # Record helpfulness
-tx context <task-id>       # Get contextual learnings for task
+# Coordination
+tx claim <id>               # Prevent collisions
+tx handoff <id> --to <agent>
+tx checkpoint <id> --note "..."
 
-# LLM features (requires ANTHROPIC_API_KEY)
-tx dedupe                  # Find duplicates
-tx compact                 # Compact old tasks
-tx reprioritize            # LLM rescoring
+# Sync
+tx sync export              # SQLite → JSONL (git-friendly)
+tx sync import              # JSONL → SQLite
 ```
-
-### Implementation Phases
-
-1. **Phase 1 (v0.1.0)**: Core CRUD + hierarchy + CLI + tests
-2. **Phase 2 (v0.2.0)**: MCP + JSONL sync + Agent SDK
-3. **Phase 3 (v0.3.0)**: LLM features (dedupe, compact, scoring)
-4. **Phase 4 (v1.0.0)**: Polish + performance + full coverage
 
 ---
 
 ## Bootstrapping: tx Builds tx
 
-**Phase 1 CLI is now stable.** All development on tx MUST use tx itself to manage work.
+**All development on tx MUST use tx itself to manage work.**
 
 ### IMPORTANT: Use tx, NOT Built-in Task Tools
 
@@ -268,65 +266,32 @@ Instead, use the tx CLI commands:
 - `tx ready` instead of TaskList
 - `tx show` instead of TaskGet
 - `tx done` instead of TaskUpdate
-- `tx list` to see all tasks
 
 The tx database is at `.tx/tasks.db`. Tasks persist across sessions and can be synced via git with `tx sync export`.
 
-### Post-Bootstrap Workflow
-```bash
-# 1. Pick highest-priority unblocked task
-tx ready --json | head -1
-
-# 2. Read task details
-tx show <id>
-
-# 3. Do the work (implement, test, review)
-
-# 4. Mark complete (may unblock other tasks)
-tx done <id>
-
-# 5. If new work discovered, add subtasks
-tx add "New subtask" --parent <id> --score 700
-
-# 6. Sync for git backup
-tx sync export
-git add .tx/tasks.jsonl && git commit -m "Task updates"
-```
-
 ### Why Bootstrap?
+
 - **Dogfooding** catches bugs before users do
 - **Memory persists** through `.tx/tasks.db` and git-tracked `.tx/tasks.jsonl`
 - **Fresh agent instances** avoid context pollution from failed attempts
 - Tasks survive across sessions; conversation history does not
 
-### RALPH Loop: Autonomous Development
+### RALPH Loop
 
-Run Claude as a subprocess to iterate on tasks automatically:
+One example orchestration pattern (not THE pattern):
 
 ```bash
-# scripts/ralph.sh - orchestrates the loop
 while true; do
-  # Get next task
   TASK=$(tx ready --json --limit 1 | jq -r '.[0].id')
   [ -z "$TASK" ] && break
 
-  # Spawn fresh Claude instance for this task
-  claude --print "$(cat <<EOF
-Read CLAUDE.md for doctrine rules.
-Your task: $TASK
-Run: tx show $TASK
-Implement it, run tests, then: tx done $TASK
-EOF
-)"
+  claude --print "Read CLAUDE.md. Your task: $TASK. Run tx show $TASK, implement it, then tx done $TASK"
 
-  # Checkpoint
   git add -A && git commit -m "Complete $TASK"
 done
 ```
 
-**Key insight**: Each task gets a fresh Claude instance. No accumulated context pollution. Memory lives in files (CLAUDE.md, git, .tx/tasks.db), not conversation history.
-
-See `.claude/agents/` for specialized agent prompts (planner, implementer, reviewer, tester).
+**Key insight**: Each task gets a fresh Claude instance. No accumulated context pollution. Memory lives in files, not conversation history.
 
 ---
 
