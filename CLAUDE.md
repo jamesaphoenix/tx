@@ -20,7 +20,7 @@ The orchestration flow is where developers create value. It encodes their domain
 - Where humans need to intervene
 - How they handle failures
 
-**If you dictate the flow, you're not a tool—you're a competitor.** You're saying "our orchestration is better than yours." But you don't know their domain, their constraints, or whether they need 3 agents or 30.
+**If you dictate the flow, you're not a tool. You're a competitor.** You're saying "our orchestration is better than yours." But you don't know their domain, their constraints, or whether they need 3 agents or 30.
 
 ### The TanStack Model
 
@@ -42,11 +42,11 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 
 ### Design Principles
 
-- **No opinions on orchestration** — Serial, parallel, swarm, human-in-loop. Your call.
-- **Powerful defaults** — `tx ready` just works. So does dependency resolution.
-- **Escape hatches everywhere** — Raw SQL access, JSONL export, custom scoring.
-- **Framework agnostic** — CLI, MCP, REST API, TypeScript SDK. Use what fits.
-- **Local-first** — SQLite + git. No server required. Works offline.
+- **No opinions on orchestration.** Serial, parallel, swarm, human-in-loop. Your call.
+- **Powerful defaults.** `tx ready` just works. So does dependency resolution.
+- **Escape hatches everywhere.** Raw SQL access, JSONL export, custom scoring.
+- **Framework agnostic.** CLI, MCP, REST API, TypeScript SDK. Use what fits.
+- **Local-first.** SQLite + git. No server required. Works offline.
 
 ### Core Primitives
 
@@ -111,18 +111,18 @@ tx done $task
 
 ### The Moat
 
-The moat isn't task management—anyone can build that.
+The moat isn't task management. Anyone can build that.
 
 The moat is the **knowledge layer**:
 - Learnings that surface automatically when relevant
 - Code relationships that inform task planning
 - Context that transfers across projects and sessions
 
-This is what compounds. This is what makes agents smarter over time.
+This compounds. Agents get smarter over time.
 
 ---
 
-## DOCTRINE — INVIOLABLE RULES
+## DOCTRINE: INVIOLABLE RULES
 
 These rules are non-negotiable. Any code that violates them is broken and must be fixed before merge.
 

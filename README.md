@@ -37,7 +37,7 @@ Composable primitives that handle the hard parts. You keep control of the orches
 
 ### Memory
 
-Learnings that persist, surface when relevant, and compound over time.
+Learnings that persist and surface when relevant.
 
 ```bash
 # Store knowledge
@@ -111,7 +111,7 @@ read -p "Approve? [y/n] " && claude "Execute plan.md"
 tx done $task
 ```
 
-**The flow is yours.** Serial, parallel, swarm, human-in-loop—your call.
+**The flow is yours.** Serial, parallel, swarm, human-in-loop. Your call.
 
 ---
 
@@ -128,11 +128,11 @@ tx done $task
 
 ## Design Principles
 
-- **No opinions on orchestration** — Serial, parallel, swarm, human-in-loop. Your call.
-- **Powerful defaults** — `tx ready` just works. So does dependency resolution.
-- **Escape hatches everywhere** — Raw SQL access, JSONL export, custom scoring.
-- **Framework agnostic** — CLI, MCP, REST API, TypeScript SDK. Use what fits.
-- **Local-first** — SQLite + git. No server required. Works offline.
+- **No opinions on orchestration.** Serial, parallel, swarm, human-in-loop. Your call.
+- **Powerful defaults.** `tx ready` just works. So does dependency resolution.
+- **Escape hatches everywhere.** Raw SQL access, JSONL export, custom scoring.
+- **Framework agnostic.** CLI, MCP, REST API, TypeScript SDK. Use what fits.
+- **Local-first.** SQLite + git. No server required. Works offline.
 
 ---
 
@@ -242,8 +242,8 @@ Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code
 
 ## Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** — Doctrine and quick reference
-- **[docs/](docs/)** — Full documentation (17 PRDs, 17 Design Docs)
+- **[CLAUDE.md](CLAUDE.md)**: Doctrine and quick reference
+- **[docs/](docs/)**: Full documentation (17 PRDs, 17 Design Docs)
 
 ---
 
