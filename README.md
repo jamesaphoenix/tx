@@ -128,18 +128,6 @@ tx daemon review            # Review pending candidates
 tx daemon status            # Check daemon health
 ```
 
-### Use Case: I want it all working together
-
-```bash
-# Sync everything to git
-tx sync export
-git add .tx/*.jsonl && git commit -m "Knowledge checkpoint"
-
-# On another machine or branch
-git pull
-tx sync import              # Restore full state
-```
-
 ## Three Systems
 
 ### 1. Knowledge System
