@@ -1,8 +1,8 @@
 # tx
 
-**AI agent infrastructure.** Memory + Tasks + Workers.
+**TanStack for AI agents.** Primitives, not frameworks.
 
-Three integrated systems, one database, git-native.
+Headless infrastructure for memory, tasks, and orchestration.
 
 | System | What it does |
 |--------|--------------|
