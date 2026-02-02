@@ -104,8 +104,17 @@ export {
 // export { createTempDir, writeTestTypeScriptFile, createTestSourceFiles } from './helpers/index.js'
 // export type { TempDir } from './helpers/index.js'
 
-// Mocks (to be implemented)
-// export { createMockAnthropic, createMockAnthropicForExtraction } from './mocks/index.js'
+// Mocks
+export {
+  createMockAnthropic,
+  createMockAnthropicForExtraction,
+  type MockMessage,
+  type MockAnthropicCall,
+  type MockAnthropicResponse,
+  type MockAnthropicConfig,
+  type MockAnthropicResult
+} from "./mocks/index.js"
+// TODO: Implement remaining mocks (tx-b28e5324)
 // export { MockAstGrepService } from './mocks/index.js'
 // export { MockFileSystem } from './mocks/index.js'
 
