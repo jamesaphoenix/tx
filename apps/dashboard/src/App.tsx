@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type ChatMessage } from "./api/client"
-import { TaskList, TaskFilters, useTaskFiltersWithUrl } from "./components/tasks"
+import { TaskList, TaskFilters, TaskDetail, useTaskFiltersWithUrl } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
 
 // =============================================================================
@@ -213,7 +213,7 @@ type Tab = "tasks" | "runs"
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("runs")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-  const [_selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   // URL state management for filters
   const { filters: taskFilters, setFilters: setTaskFilters } = useTaskFiltersWithUrl()
@@ -287,20 +287,45 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
         {activeTab === "tasks" ? (
-          <div className="flex-1 p-4 overflow-y-auto">
-            {/* Task Filters - synced with URL */}
-            <div className="mb-4">
-              <TaskFilters
-                value={taskFilters}
-                onChange={setTaskFilters}
-                statusCounts={taskStatusCounts}
+          <>
+            {/* Tasks List */}
+            <div className="w-96 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
+              {/* Task Filters - synced with URL */}
+              <div className="mb-4">
+                <TaskFilters
+                  value={taskFilters}
+                  onChange={setTaskFilters}
+                  statusCounts={taskStatusCounts}
+                />
+              </div>
+              <TaskList
+                filters={taskFilters}
+                onSelectTask={setSelectedTaskId}
+                onEscape={() => setSelectedTaskId(null)}
               />
             </div>
-            <TaskList
-              filters={taskFilters}
-              onSelectTask={setSelectedTaskId}
-            />
-          </div>
+
+            {/* Task Detail */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {selectedTaskId ? (
+                <div className="flex-1 overflow-y-auto p-4">
+                  <TaskDetail
+                    taskId={selectedTaskId}
+                    onNavigateToTask={setSelectedTaskId}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <div className="text-lg mb-2">Select a task to view details</div>
+                    <div className="text-sm">
+                      Use <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">j</kbd>/<kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">k</kbd> or arrow keys to navigate, <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">Enter</kbd> to select
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         ) : (
           <>
             {/* Runs List */}
@@ -317,6 +342,7 @@ export default function App() {
               <RunsList
                 filters={runFilters}
                 onSelectRun={setSelectedRunId}
+                onEscape={() => setSelectedRunId(null)}
               />
             </div>
 
@@ -326,7 +352,12 @@ export default function App() {
                 <ChatView runId={selectedRunId} />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-gray-500">
-                  Select a run to view conversation
+                  <div className="text-center">
+                    <div className="text-lg mb-2">Select a run to view conversation</div>
+                    <div className="text-sm">
+                      Use <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">j</kbd>/<kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">k</kbd> or arrow keys to navigate, <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">Enter</kbd> to select
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
