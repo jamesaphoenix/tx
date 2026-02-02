@@ -117,9 +117,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Run all checks (continue on failure to report all issues)
-# Build with turbo using --concurrency=1 to ensure strict sequential execution
-# The ^build dependency in turbo.json ensures packages are built in correct order
-run_and_track "Build (packages)" "npx turbo build --concurrency=1"
+# Build packages in explicit dependency order to avoid race conditions
+# Step 1: Build base packages first (@tx/types has no deps)
+# Step 2: Build packages that depend on types (@tx/core)
+# Step 3: Build everything else with turbo
+run_and_track "Build (packages)" "npm -w @tx/types run build && npm -w @tx/core run build && npx turbo build --concurrency=1"
 run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
 run_and_track "ESLint (packages)" "npx turbo lint"
 run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
