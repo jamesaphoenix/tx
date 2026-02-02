@@ -59,3 +59,10 @@ export {
   type BatchVerificationResult,
   type TypedAnchorInput
 } from "./anchor-service.js"
+export {
+  EdgeService,
+  EdgeServiceLive,
+  type NeighborWithDepth,
+  type NeighborWithPath,
+  type FindNeighborsOptions
+} from "./edge-service.js"
