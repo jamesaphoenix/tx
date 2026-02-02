@@ -72,7 +72,11 @@ export const FeedbackTrackerServiceNoop = Layer.succeed(
   FeedbackTrackerService,
   {
     recordUsage: (_runId, _learnings) => Effect.void,
-    getFeedbackScore: (_learningId) => Effect.succeed(0.5)
+    getFeedbackScore: (_learningId) => Effect.succeed(0.5),
+    getFeedbackScores: (learningIds) =>
+      Effect.succeed(
+        new Map(learningIds.map((id) => [id, 0.5])) as ReadonlyMap<number, number>
+      )
   }
 )
 
@@ -138,6 +142,42 @@ export const FeedbackTrackerServiceLive = Layer.effect(
           // = (helpfulCount + 0.5 * 2) / (totalCount + 2)
           // = (helpfulCount + 1) / (totalCount + 2)
           return (helpfulCount + BAYESIAN_PRIOR * BAYESIAN_PRIOR_WEIGHT) / (totalCount + BAYESIAN_PRIOR_WEIGHT)
+        }),
+
+      getFeedbackScores: (learningIds) =>
+        Effect.gen(function* () {
+          // Handle empty input
+          if (learningIds.length === 0) {
+            return new Map() as ReadonlyMap<number, number>
+          }
+
+          // Batch fetch all edges from all learnings
+          const sourceIds = learningIds.map(id => id.toString())
+          const edgesBySource = yield* edgeService.findFromMultipleSources("learning", sourceIds)
+
+          // Compute Bayesian score for each learning
+          const result = new Map<number, number>()
+
+          for (const learningId of learningIds) {
+            const edges = edgesBySource.get(learningId.toString()) ?? []
+            const usedInRunEdges = edges.filter(e => e.edgeType === "USED_IN_RUN")
+
+            // No feedback = neutral score
+            if (usedInRunEdges.length === 0) {
+              result.set(learningId, BAYESIAN_PRIOR)
+              continue
+            }
+
+            // Count helpful (weight > 0) edges
+            const totalCount = usedInRunEdges.length
+            const helpfulCount = usedInRunEdges.filter(e => e.weight > 0).length
+
+            // Bayesian average
+            const score = (helpfulCount + BAYESIAN_PRIOR * BAYESIAN_PRIOR_WEIGHT) / (totalCount + BAYESIAN_PRIOR_WEIGHT)
+            result.set(learningId, score)
+          }
+
+          return result as ReadonlyMap<number, number>
         })
     }
   })
