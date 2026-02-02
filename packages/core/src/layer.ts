@@ -165,7 +165,7 @@ export const makeAppLayer = (dbPath: string) => {
   // EdgeServiceLive needs EdgeRepository from repos
   const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
 
-  // GraphExpansionServiceLive needs EdgeService and LearningRepository
+  // GraphExpansionServiceLive needs EdgeService, LearningRepository, and AnchorRepository
   const graphExpansionService = GraphExpansionServiceLive.pipe(
     Layer.provide(Layer.merge(repos, edgeService))
   )
@@ -244,7 +244,7 @@ export const makeMinimalLayer = (dbPath: string) => {
   // EdgeServiceLive needs EdgeRepository from repos
   const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
 
-  // GraphExpansionServiceLive needs EdgeService and LearningRepository
+  // GraphExpansionServiceLive needs EdgeService, LearningRepository, and AnchorRepository
   const graphExpansionService = GraphExpansionServiceLive.pipe(
     Layer.provide(Layer.merge(repos, edgeService))
   )

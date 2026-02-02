@@ -305,7 +305,7 @@ describe('useTaskFiltersWithUrl', () => {
   })
 
   it('initializes with status from URL params', () => {
-    window.location.search = '?status=ready,active'
+    window.location.search = '?taskStatus=ready,active'
 
     const { result } = renderHook(() => useTaskFiltersWithUrl())
 
@@ -313,7 +313,7 @@ describe('useTaskFiltersWithUrl', () => {
   })
 
   it('initializes with search from URL params', () => {
-    window.location.search = '?search=test%20query'
+    window.location.search = '?taskSearch=test%20query'
 
     const { result } = renderHook(() => useTaskFiltersWithUrl())
 
@@ -330,12 +330,12 @@ describe('useTaskFiltersWithUrl', () => {
     expect(window.history.replaceState).toHaveBeenCalledWith(
       {},
       '',
-      '/tasks?status=ready&search=test'
+      '/tasks?taskStatus=ready&taskSearch=test'
     )
   })
 
   it('clears URL params when filters are empty', () => {
-    window.location.search = '?status=ready&search=test'
+    window.location.search = '?taskStatus=ready&taskSearch=test'
 
     const { result } = renderHook(() => useTaskFiltersWithUrl())
 
@@ -351,7 +351,7 @@ describe('useTaskFiltersWithUrl', () => {
 
     // Simulate browser back navigation
     act(() => {
-      window.location.search = '?status=blocked'
+      window.location.search = '?taskStatus=blocked'
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
 

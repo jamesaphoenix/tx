@@ -172,25 +172,29 @@ export function useRunFiltersWithUrl(): {
   filters: RunFiltersValues
   setFilters: (filters: RunFiltersValues) => void
 } {
-  // Initialize from URL
+  // Initialize from URL - use namespaced params to avoid collision with TaskFilters
   const [filters, setFiltersState] = useState<RunFiltersValues>(() => {
     const searchParams = new URLSearchParams(window.location.search)
     return {
-      status: searchParams.get("status")?.split(",").filter(Boolean) ?? [],
-      agent: searchParams.get("agent") ?? "",
+      status: searchParams.get("runStatus")?.split(",").filter(Boolean) ?? [],
+      agent: searchParams.get("runAgent") ?? "",
     }
   })
 
-  // Update URL when filters change
+  // Update URL when filters change - preserve other params (like taskStatus)
   useEffect(() => {
-    const params = new URLSearchParams()
+    const params = new URLSearchParams(window.location.search)
+
+    // Clear our namespaced params first
+    params.delete("runStatus")
+    params.delete("runAgent")
 
     if (filters.status.length > 0) {
-      params.set("status", filters.status.join(","))
+      params.set("runStatus", filters.status.join(","))
     }
 
     if (filters.agent) {
-      params.set("agent", filters.agent)
+      params.set("runAgent", filters.agent)
     }
 
     const newUrl = params.toString()
@@ -206,8 +210,8 @@ export function useRunFiltersWithUrl(): {
     const handlePopState = () => {
       const searchParams = new URLSearchParams(window.location.search)
       setFiltersState({
-        status: searchParams.get("status")?.split(",").filter(Boolean) ?? [],
-        agent: searchParams.get("agent") ?? "",
+        status: searchParams.get("runStatus")?.split(",").filter(Boolean) ?? [],
+        agent: searchParams.get("runAgent") ?? "",
       })
     }
 

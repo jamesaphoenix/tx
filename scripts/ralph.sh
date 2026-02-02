@@ -55,6 +55,9 @@ START_TIME=$(date +%s)
 cd "$PROJECT_DIR"
 mkdir -p "$PROJECT_DIR/.tx"
 
+# Add local node_modules/.bin to PATH for tx command
+export PATH="$PROJECT_DIR/node_modules/.bin:$PATH"
+
 # ==============================================================================
 # Lock File (Prevent Multiple Instances)
 # ==============================================================================

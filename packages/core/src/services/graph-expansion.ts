@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { EdgeService, type NeighborWithDepth } from "./edge-service.js"
 import { LearningRepository } from "../repo/learning-repo.js"
+import { AnchorRepository } from "../repo/anchor-repo.js"
 import { DatabaseError, ValidationError } from "../errors.js"
 import type { Learning, EdgeType, LearningId } from "@tx/types"
 import { EDGE_TYPES } from "@tx/types"
@@ -342,6 +343,7 @@ export const GraphExpansionServiceLive = Layer.effect(
   Effect.gen(function* () {
     const edgeService = yield* EdgeService
     const learningRepo = yield* LearningRepository
+    const anchorRepo = yield* AnchorRepository
 
     return {
       expand: (seeds, options = {}) =>
@@ -553,23 +555,175 @@ export const GraphExpansionServiceLive = Layer.effect(
             }
           }
 
-          // TODO: Implementation will be added in subsequent task
-          // 1. Find learnings ANCHORED_TO the input files
-          // 2. Expand via IMPORTS edges to find related files
-          // 3. Expand via CO_CHANGES_WITH edges for co-edited files
-          // 4. Find learnings anchored to those expanded files
-          // 5. Apply decay and deduplication
+          // Track visited files and learnings to prevent duplicates
+          const visitedFiles = new Set<string>(files)
+          const visitedLearningIds = new Set<number>()
+
+          // Step 1: Find learnings ANCHORED_TO the input files (hop 0)
+          const anchoredLearnings: FileExpandedLearning[] = []
+
+          for (const filePath of files) {
+            const anchors = yield* anchorRepo.findByFilePath(filePath)
+
+            // Filter to only valid anchors
+            const validAnchors = anchors.filter(a => a.status === "valid")
+
+            for (const anchor of validAnchors) {
+              if (visitedLearningIds.has(anchor.learningId)) continue
+              visitedLearningIds.add(anchor.learningId)
+
+              const learning = yield* learningRepo.findById(anchor.learningId)
+              if (!learning) continue
+
+              anchoredLearnings.push({
+                learning,
+                sourceFile: filePath,
+                hops: 0,
+                decayedScore: 1.0, // Base score for directly anchored learnings
+                sourceEdge: "ANCHORED_TO",
+                edgeWeight: null,
+              })
+            }
+          }
+
+          // If depth is 0, just return anchored learnings
+          if (depth === 0) {
+            const limitedAnchored = anchoredLearnings.slice(0, maxNodes)
+            return {
+              anchored: limitedAnchored,
+              expanded: [],
+              all: limitedAnchored,
+              stats: {
+                inputFileCount: files.length,
+                anchoredCount: limitedAnchored.length,
+                expandedCount: 0,
+                maxDepthReached: 0,
+                filesVisited: files.length,
+              },
+            }
+          }
+
+          // Step 2-5: BFS traverse via IMPORTS and CO_CHANGES_WITH edges
+          type FileFrontierNode = {
+            filePath: string
+            score: number // Score inherited from parent
+          }
+
+          let frontier: FileFrontierNode[] = files.map(f => ({
+            filePath: f,
+            score: 1.0,
+          }))
+
+          const expandedLearnings: FileExpandedLearning[] = []
+          let maxDepthReached = 0
+          const totalLearnings = () => anchoredLearnings.length + expandedLearnings.length
+
+          // BFS traversal through file relationships
+          for (let currentHop = 1; currentHop <= depth; currentHop++) {
+            if (frontier.length === 0) break
+            if (totalLearnings() >= maxNodes) break
+
+            const nextFrontier: FileFrontierNode[] = []
+
+            for (const node of frontier) {
+              if (totalLearnings() >= maxNodes) break
+
+              // Find related files via IMPORTS and CO_CHANGES_WITH edges
+              // Note: For file nodes, nodeType is "file" and nodeId is the file path
+              const neighbors = yield* edgeService.findNeighbors(
+                "file",
+                node.filePath,
+                {
+                  depth: 1,
+                  direction: "both",
+                  edgeTypes: ["IMPORTS", "CO_CHANGES_WITH"],
+                }
+              )
+
+              // Filter to only file neighbors
+              const fileNeighbors = neighbors.filter(
+                (n): n is NeighborWithDepth & { nodeType: "file" } =>
+                  n.nodeType === "file"
+              )
+
+              for (const neighbor of fileNeighbors) {
+                if (totalLearnings() >= maxNodes) break
+
+                const relatedFilePath = neighbor.nodeId
+                if (visitedFiles.has(relatedFilePath)) continue
+                visitedFiles.add(relatedFilePath)
+
+                // Calculate decayed score for this hop
+                const hopScore = node.score * neighbor.weight * decayFactor
+
+                // Find learnings anchored to this related file
+                const anchors = yield* anchorRepo.findByFilePath(relatedFilePath)
+                const validAnchors = anchors.filter(a => a.status === "valid")
+
+                for (const anchor of validAnchors) {
+                  if (totalLearnings() >= maxNodes) break
+                  if (visitedLearningIds.has(anchor.learningId)) continue
+                  visitedLearningIds.add(anchor.learningId)
+
+                  const learning = yield* learningRepo.findById(anchor.learningId)
+                  if (!learning) continue
+
+                  expandedLearnings.push({
+                    learning,
+                    sourceFile: relatedFilePath,
+                    hops: currentHop,
+                    decayedScore: hopScore,
+                    sourceEdge: neighbor.edgeType,
+                    edgeWeight: neighbor.weight,
+                  })
+
+                  maxDepthReached = currentHop
+                }
+
+                // Add to next frontier for further expansion
+                nextFrontier.push({
+                  filePath: relatedFilePath,
+                  score: hopScore,
+                })
+              }
+            }
+
+            frontier = nextFrontier
+          }
+
+          // Sort expanded by decayed score (highest first)
+          expandedLearnings.sort((a, b) => b.decayedScore - a.decayedScore)
+
+          // Enforce maxNodes limit
+          const totalAvailable = anchoredLearnings.length + expandedLearnings.length
+          let limitedAnchored = anchoredLearnings
+          let limitedExpanded = expandedLearnings
+
+          if (totalAvailable > maxNodes) {
+            // Prioritize anchored learnings, then fill with expanded
+            if (anchoredLearnings.length >= maxNodes) {
+              limitedAnchored = anchoredLearnings.slice(0, maxNodes)
+              limitedExpanded = []
+            } else {
+              const remainingSlots = maxNodes - anchoredLearnings.length
+              limitedExpanded = expandedLearnings.slice(0, remainingSlots)
+            }
+          }
+
+          // Combine all and sort by decayedScore
+          const all = [...limitedAnchored, ...limitedExpanded]
+          all.sort((a, b) => b.decayedScore - a.decayedScore)
 
           return {
-            anchored: [],
-            expanded: [],
-            all: [],
+            anchored: limitedAnchored,
+            expanded: limitedExpanded,
+            all,
             stats: {
               inputFileCount: files.length,
-              anchoredCount: 0,
-              expandedCount: 0,
-              maxDepthReached: 0,
-              filesVisited: files.length,
+              anchoredCount: limitedAnchored.length,
+              expandedCount: limitedExpanded.length,
+              maxDepthReached,
+              filesVisited: visitedFiles.size,
             },
           }
         }),

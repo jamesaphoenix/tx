@@ -1812,6 +1812,490 @@ describe("Graph Expansion - Recall Improvement", () => {
 })
 
 // =============================================================================
+// FILE-BASED EXPANSION TESTS (expandFromFiles)
+// =============================================================================
+
+describe("Graph Expansion - File-Based Expansion", () => {
+  it("returns empty result for empty files array", async () => {
+    const { makeAppLayer, GraphExpansionService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const expansionSvc = yield* GraphExpansionService
+        return yield* expansionSvc.expandFromFiles([], { depth: 2 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.anchored).toHaveLength(0)
+    expect(result.expanded).toHaveLength(0)
+    expect(result.all).toHaveLength(0)
+    expect(result.stats.inputFileCount).toBe(0)
+    expect(result.stats.anchoredCount).toBe(0)
+    expect(result.stats.expandedCount).toBe(0)
+  })
+
+  it("finds learnings anchored to input files (hop 0)", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create learnings and anchor them to files
+        const l1 = yield* learningSvc.create({ content: "Auth validation tips", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "JWT best practices", sourceType: "manual" })
+
+        yield* anchorSvc.createAnchor({
+          learningId: l1.id,
+          anchorType: "glob",
+          filePath: "src/auth.ts",
+          value: "src/auth.ts"
+        })
+
+        yield* anchorSvc.createAnchor({
+          learningId: l2.id,
+          anchorType: "glob",
+          filePath: "src/auth.ts",
+          value: "src/auth.ts"
+        })
+
+        return yield* expansionSvc.expandFromFiles(["src/auth.ts"])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.anchored).toHaveLength(2)
+    expect(result.expanded).toHaveLength(0)
+    expect(result.stats.anchoredCount).toBe(2)
+    expect(result.stats.inputFileCount).toBe(1)
+
+    const contents = result.anchored.map(a => a.learning.content)
+    expect(contents).toContain("Auth validation tips")
+    expect(contents).toContain("JWT best practices")
+
+    // All anchored learnings should have hop 0 and ANCHORED_TO edge
+    for (const anchored of result.anchored) {
+      expect(anchored.hops).toBe(0)
+      expect(anchored.sourceEdge).toBe("ANCHORED_TO")
+      expect(anchored.edgeWeight).toBeNull()
+      expect(anchored.decayedScore).toBe(1.0)
+    }
+  })
+
+  it("expands via IMPORTS edges to find related file learnings", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create learnings for different files
+        const authLearning = yield* learningSvc.create({ content: "Auth service tips", sourceType: "manual" })
+        const cryptoLearning = yield* learningSvc.create({ content: "Crypto utils best practices", sourceType: "manual" })
+
+        // Anchor learnings to their respective files
+        yield* anchorSvc.createAnchor({
+          learningId: authLearning.id,
+          anchorType: "glob",
+          filePath: "src/auth.ts",
+          value: "src/auth.ts"
+        })
+
+        yield* anchorSvc.createAnchor({
+          learningId: cryptoLearning.id,
+          anchorType: "glob",
+          filePath: "src/crypto.ts",
+          value: "src/crypto.ts"
+        })
+
+        // Create file->file IMPORTS edge: auth.ts imports crypto.ts
+        yield* edgeSvc.createEdge({
+          edgeType: "IMPORTS",
+          sourceType: "file",
+          sourceId: "src/auth.ts",
+          targetType: "file",
+          targetId: "src/crypto.ts",
+          weight: 0.9
+        })
+
+        return yield* expansionSvc.expandFromFiles(["src/auth.ts"], { depth: 1, decayFactor: 0.7 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should find auth learning as anchored (hop 0)
+    expect(result.anchored).toHaveLength(1)
+    expect(result.anchored[0].learning.content).toBe("Auth service tips")
+
+    // Should find crypto learning as expanded (hop 1 via IMPORTS)
+    expect(result.expanded).toHaveLength(1)
+    expect(result.expanded[0].learning.content).toBe("Crypto utils best practices")
+    expect(result.expanded[0].hops).toBe(1)
+    expect(result.expanded[0].sourceEdge).toBe("IMPORTS")
+    expect(result.expanded[0].edgeWeight).toBe(0.9)
+    expect(result.expanded[0].decayedScore).toBeCloseTo(0.63, 2) // 1.0 * 0.9 * 0.7
+
+    expect(result.stats.filesVisited).toBe(2)
+  })
+
+  it("expands via CO_CHANGES_WITH edges for co-edited files", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create learnings
+        const authLearning = yield* learningSvc.create({ content: "Auth service tips", sourceType: "manual" })
+        const middlewareLearning = yield* learningSvc.create({ content: "JWT middleware patterns", sourceType: "manual" })
+
+        // Anchor to files
+        yield* anchorSvc.createAnchor({
+          learningId: authLearning.id,
+          anchorType: "glob",
+          filePath: "src/auth.ts",
+          value: "src/auth.ts"
+        })
+
+        yield* anchorSvc.createAnchor({
+          learningId: middlewareLearning.id,
+          anchorType: "glob",
+          filePath: "src/jwt-middleware.ts",
+          value: "src/jwt-middleware.ts"
+        })
+
+        // Create file->file CO_CHANGES_WITH edge
+        yield* edgeSvc.createEdge({
+          edgeType: "CO_CHANGES_WITH",
+          sourceType: "file",
+          sourceId: "src/auth.ts",
+          targetType: "file",
+          targetId: "src/jwt-middleware.ts",
+          weight: 0.8
+        })
+
+        return yield* expansionSvc.expandFromFiles(["src/auth.ts"], { depth: 1 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should expand via CO_CHANGES_WITH
+    expect(result.expanded).toHaveLength(1)
+    expect(result.expanded[0].learning.content).toBe("JWT middleware patterns")
+    expect(result.expanded[0].sourceEdge).toBe("CO_CHANGES_WITH")
+  })
+
+  it("applies decay per hop for multi-hop file expansion", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create learnings for a chain of files: auth -> crypto -> hash
+        const authLearning = yield* learningSvc.create({ content: "Auth tips", sourceType: "manual" })
+        const cryptoLearning = yield* learningSvc.create({ content: "Crypto tips", sourceType: "manual" })
+        const hashLearning = yield* learningSvc.create({ content: "Hash tips", sourceType: "manual" })
+
+        // Anchor learnings
+        yield* anchorSvc.createAnchor({
+          learningId: authLearning.id,
+          anchorType: "glob",
+          filePath: "src/auth.ts",
+          value: "src/auth.ts"
+        })
+        yield* anchorSvc.createAnchor({
+          learningId: cryptoLearning.id,
+          anchorType: "glob",
+          filePath: "src/crypto.ts",
+          value: "src/crypto.ts"
+        })
+        yield* anchorSvc.createAnchor({
+          learningId: hashLearning.id,
+          anchorType: "glob",
+          filePath: "src/hash.ts",
+          value: "src/hash.ts"
+        })
+
+        // Create chain: auth -> crypto -> hash
+        yield* edgeSvc.createEdge({
+          edgeType: "IMPORTS",
+          sourceType: "file",
+          sourceId: "src/auth.ts",
+          targetType: "file",
+          targetId: "src/crypto.ts",
+          weight: 1.0
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "IMPORTS",
+          sourceType: "file",
+          sourceId: "src/crypto.ts",
+          targetType: "file",
+          targetId: "src/hash.ts",
+          weight: 1.0
+        })
+
+        return yield* expansionSvc.expandFromFiles(["src/auth.ts"], { depth: 2, decayFactor: 0.7 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.anchored).toHaveLength(1) // auth learning
+    expect(result.expanded).toHaveLength(2) // crypto and hash learnings
+
+    const cryptoExpanded = result.expanded.find(e => e.learning.content === "Crypto tips")
+    const hashExpanded = result.expanded.find(e => e.learning.content === "Hash tips")
+
+    // Crypto at hop 1: 1.0 * 1.0 * 0.7 = 0.7
+    expect(cryptoExpanded!.hops).toBe(1)
+    expect(cryptoExpanded!.decayedScore).toBeCloseTo(0.7, 5)
+
+    // Hash at hop 2: 0.7 * 1.0 * 0.7 = 0.49
+    expect(hashExpanded!.hops).toBe(2)
+    expect(hashExpanded!.decayedScore).toBeCloseTo(0.49, 5)
+  })
+
+  it("deduplicates learnings across multiple input files", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create one learning anchored to multiple files
+        const sharedLearning = yield* learningSvc.create({ content: "Shared pattern", sourceType: "manual" })
+
+        yield* anchorSvc.createAnchor({
+          learningId: sharedLearning.id,
+          anchorType: "glob",
+          filePath: "src/file1.ts",
+          value: "src/file1.ts"
+        })
+        yield* anchorSvc.createAnchor({
+          learningId: sharedLearning.id,
+          anchorType: "glob",
+          filePath: "src/file2.ts",
+          value: "src/file2.ts"
+        })
+
+        return yield* expansionSvc.expandFromFiles(["src/file1.ts", "src/file2.ts"])
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Learning should only appear once despite being anchored to both files
+    expect(result.anchored).toHaveLength(1)
+    expect(result.anchored[0].learning.content).toBe("Shared pattern")
+  })
+
+  it("respects maxNodes limit", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create 5 learnings anchored to the same file
+        for (let i = 1; i <= 5; i++) {
+          const l = yield* learningSvc.create({ content: `Learning ${i}`, sourceType: "manual" })
+          yield* anchorSvc.createAnchor({
+            learningId: l.id,
+            anchorType: "glob",
+            filePath: "src/test.ts",
+            value: "src/test.ts"
+          })
+        }
+
+        return yield* expansionSvc.expandFromFiles(["src/test.ts"], { maxNodes: 3 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.all).toHaveLength(3)
+    expect(result.stats.anchoredCount).toBe(3)
+  })
+
+  it("respects depth 0 (anchored only, no expansion)", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        const l1 = yield* learningSvc.create({ content: "Auth tips", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "Crypto tips", sourceType: "manual" })
+
+        yield* anchorSvc.createAnchor({
+          learningId: l1.id,
+          anchorType: "glob",
+          filePath: "src/auth.ts",
+          value: "src/auth.ts"
+        })
+        yield* anchorSvc.createAnchor({
+          learningId: l2.id,
+          anchorType: "glob",
+          filePath: "src/crypto.ts",
+          value: "src/crypto.ts"
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "IMPORTS",
+          sourceType: "file",
+          sourceId: "src/auth.ts",
+          targetType: "file",
+          targetId: "src/crypto.ts",
+          weight: 0.9
+        })
+
+        return yield* expansionSvc.expandFromFiles(["src/auth.ts"], { depth: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.anchored).toHaveLength(1)
+    expect(result.expanded).toHaveLength(0)
+    expect(result.stats.expandedCount).toBe(0)
+  })
+
+  it("only includes valid anchors (filters out invalid/drifted)", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create learnings and anchors
+        const validLearning = yield* learningSvc.create({ content: "Valid learning", sourceType: "manual" })
+        const invalidLearning = yield* learningSvc.create({ content: "Invalid learning", sourceType: "manual" })
+
+        yield* anchorSvc.createAnchor({
+          learningId: validLearning.id,
+          anchorType: "glob",
+          filePath: "src/test.ts",
+          value: "src/test.ts"
+        })
+
+        const invalidAnchor = yield* anchorSvc.createAnchor({
+          learningId: invalidLearning.id,
+          anchorType: "glob",
+          filePath: "src/test.ts",
+          value: "src/test.ts"
+        })
+
+        // Mark the anchor as invalid
+        yield* anchorSvc.updateAnchorStatus(invalidAnchor.id, "invalid", "Test invalidation")
+
+        return yield* expansionSvc.expandFromFiles(["src/test.ts"])
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should only include the valid learning
+    expect(result.anchored).toHaveLength(1)
+    expect(result.anchored[0].learning.content).toBe("Valid learning")
+  })
+
+  it("validates options (rejects invalid parameters)", async () => {
+    const { makeAppLayer, GraphExpansionService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    // Test negative depth
+    const negativeDepth = await Effect.runPromise(
+      Effect.gen(function* () {
+        const expansionSvc = yield* GraphExpansionService
+        return yield* expansionSvc.expandFromFiles(["src/test.ts"], { depth: -1 })
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+    expect(negativeDepth._tag).toBe("Left")
+
+    // Test invalid decay factor
+    const invalidDecay = await Effect.runPromise(
+      Effect.gen(function* () {
+        const expansionSvc = yield* GraphExpansionService
+        return yield* expansionSvc.expandFromFiles(["src/test.ts"], { decayFactor: 1.5 })
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+    expect(invalidDecay._tag).toBe("Left")
+
+    // Test invalid maxNodes
+    const invalidMaxNodes = await Effect.runPromise(
+      Effect.gen(function* () {
+        const expansionSvc = yield* GraphExpansionService
+        return yield* expansionSvc.expandFromFiles(["src/test.ts"], { maxNodes: 0 })
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+    expect(invalidMaxNodes._tag).toBe("Left")
+  })
+
+  it("sorts all results by decayedScore", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create learnings at different hops with different scores
+        const l1 = yield* learningSvc.create({ content: "Hop 0 learning", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "Hop 1 learning", sourceType: "manual" })
+
+        yield* anchorSvc.createAnchor({
+          learningId: l1.id,
+          anchorType: "glob",
+          filePath: "src/main.ts",
+          value: "src/main.ts"
+        })
+        yield* anchorSvc.createAnchor({
+          learningId: l2.id,
+          anchorType: "glob",
+          filePath: "src/util.ts",
+          value: "src/util.ts"
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "IMPORTS",
+          sourceType: "file",
+          sourceId: "src/main.ts",
+          targetType: "file",
+          targetId: "src/util.ts",
+          weight: 0.5
+        })
+
+        return yield* expansionSvc.expandFromFiles(["src/main.ts"], { depth: 1, decayFactor: 0.7 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Hop 0 learning has score 1.0, hop 1 has score 0.5 * 0.7 = 0.35
+    expect(result.all).toHaveLength(2)
+    expect(result.all[0].decayedScore).toBeGreaterThan(result.all[1].decayedScore)
+  })
+})
+
+// =============================================================================
 // EXPANSION STATISTICS TESTS
 // =============================================================================
 
