@@ -63,9 +63,29 @@ export {
   type CandidateStatus
 } from "./factories/index.js"
 
-// LLM Cache (to be implemented)
-// export { cachedLLMCall, withLLMCache, hashInput, configureLLMCache } from './llm-cache/index.js'
-// export { getCacheStats, clearCache, formatCacheStats } from './llm-cache/index.js'
+// LLM Cache - SHA256-based response caching
+export {
+  // Core functions
+  hashInput,
+  cachedLLMCall,
+  withLLMCache,
+  configureLLMCache,
+  getCacheConfig,
+  resetCacheConfig,
+  // CLI utilities
+  getCacheStats,
+  clearCache,
+  formatCacheStats,
+  getCacheEntry,
+  listCacheEntries
+} from "./llm-cache/index.js"
+export type {
+  CacheEntry,
+  CachedLLMCallOptions,
+  WithLLMCacheOptions,
+  CacheStats,
+  ClearCacheOptions
+} from "./llm-cache/index.js"
 
 // Effect Helpers
 export {
