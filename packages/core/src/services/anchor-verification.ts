@@ -14,7 +14,7 @@
  * @see docs/design/DD-017-invalidation-maintenance.md
  */
 
-import { Context, Effect, Layer } from "effect"
+import { Config, Context, Effect, Layer } from "effect"
 import * as fs from "node:fs/promises"
 import * as crypto from "node:crypto"
 import * as path from "node:path"
@@ -100,6 +100,25 @@ export class AnchorVerificationService extends Context.Tag("AnchorVerificationSe
     ) => Effect.Effect<VerificationSummary, DatabaseError>
   }
 >() {}
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
+/** Default anchor cache TTL in seconds (1 hour) */
+export const DEFAULT_ANCHOR_CACHE_TTL = 3600
+
+/**
+ * Get the anchor cache TTL from TX_ANCHOR_CACHE_TTL env var.
+ * Used by lazy verification to determine staleness.
+ *
+ * @returns Effect yielding TTL in seconds (default: 3600)
+ */
+export const getAnchorTTL = (): Effect.Effect<number, never> =>
+  Config.number("TX_ANCHOR_CACHE_TTL").pipe(
+    Config.withDefault(DEFAULT_ANCHOR_CACHE_TTL),
+    Effect.catchAll(() => Effect.succeed(DEFAULT_ANCHOR_CACHE_TTL))
+  )
 
 // =============================================================================
 // Utility Functions

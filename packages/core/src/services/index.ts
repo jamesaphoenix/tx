@@ -105,6 +105,8 @@ export {
 export {
   AnchorVerificationService,
   AnchorVerificationServiceLive,
+  getAnchorTTL,
+  DEFAULT_ANCHOR_CACHE_TTL,
   type VerificationResult,
   type VerificationSummary,
   type VerifyOptions
