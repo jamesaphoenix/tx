@@ -3,6 +3,7 @@ import { EdgeService, type NeighborWithDepth } from "./edge-service.js"
 import { LearningRepository } from "../repo/learning-repo.js"
 import { DatabaseError, ValidationError } from "../errors.js"
 import type { Learning, EdgeType, LearningId } from "@tx/types"
+import { EDGE_TYPES } from "@tx/types"
 
 /**
  * Seed learning with an initial score for graph expansion.
@@ -31,6 +32,19 @@ export interface ExpandedLearning {
 }
 
 /**
+ * Filter configuration for edge types during graph traversal.
+ * Supports include/exclude lists and per-hop overrides.
+ */
+export interface EdgeTypeFilter {
+  /** Only traverse these edge types (mutually exclusive with exclude for same types) */
+  readonly include?: readonly EdgeType[]
+  /** Traverse all edge types except these (mutually exclusive with include for same types) */
+  readonly exclude?: readonly EdgeType[]
+  /** Depth-specific filter overrides (1-indexed, matching hop number) */
+  readonly perHop?: Readonly<Record<number, EdgeTypeFilter>>
+}
+
+/**
  * Options for graph expansion algorithm.
  */
 export interface GraphExpansionOptions {
@@ -40,8 +54,9 @@ export interface GraphExpansionOptions {
   readonly decayFactor?: number
   /** Maximum nodes to return (default: 100) */
   readonly maxNodes?: number
-  /** Filter by specific edge types (default: all types) */
-  readonly edgeTypes?: readonly EdgeType[]
+  /** Filter by specific edge types (default: all types).
+   * Accepts either a simple array for backwards compatibility or EdgeTypeFilter for advanced filtering. */
+  readonly edgeTypes?: EdgeTypeFilter | readonly EdgeType[]
 }
 
 /**
@@ -128,6 +143,82 @@ const DEFAULT_OPTIONS: Required<Omit<GraphExpansionOptions, "edgeTypes">> = {
 }
 
 /**
+ * Type guard to check if edgeTypes is a simple array (backwards compatibility).
+ */
+const isSimpleEdgeTypeArray = (
+  edgeTypes: EdgeTypeFilter | readonly EdgeType[] | undefined
+): edgeTypes is readonly EdgeType[] | undefined => {
+  if (edgeTypes === undefined) return true
+  return Array.isArray(edgeTypes)
+}
+
+/**
+ * Validate an EdgeTypeFilter for conflicting include/exclude entries.
+ * Returns a ValidationError if the same edge type appears in both include and exclude.
+ */
+const validateEdgeTypeFilter = (
+  filter: EdgeTypeFilter,
+  context: string = "edgeTypes"
+): Effect.Effect<void, ValidationError> =>
+  Effect.gen(function* () {
+    const { include, exclude, perHop } = filter
+
+    // Check for overlapping types in include and exclude
+    if (include && exclude) {
+      const includeSet = new Set(include)
+      const overlap = exclude.filter(t => includeSet.has(t))
+      if (overlap.length > 0) {
+        return yield* Effect.fail(new ValidationError({
+          reason: `${context}: conflicting filters - edge types appear in both include and exclude: ${overlap.join(", ")}`
+        }))
+      }
+    }
+
+    // Recursively validate perHop filters
+    if (perHop) {
+      for (const [hop, hopFilter] of Object.entries(perHop)) {
+        yield* validateEdgeTypeFilter(hopFilter, `${context}.perHop[${hop}]`)
+      }
+    }
+  })
+
+/**
+ * Resolve EdgeTypeFilter to an array of edge types for a specific hop.
+ * Returns undefined if all edge types should be traversed.
+ */
+const resolveEdgeTypesForHop = (
+  filter: EdgeTypeFilter | readonly EdgeType[] | undefined,
+  hop: number
+): readonly EdgeType[] | undefined => {
+  // Simple array or undefined - pass through
+  if (isSimpleEdgeTypeArray(filter)) {
+    return filter
+  }
+
+  // Check for hop-specific override
+  const hopFilter = filter.perHop?.[hop]
+  if (hopFilter) {
+    // Recursively resolve (perHop filters don't have perHop themselves typically)
+    return resolveEdgeTypesForHop(hopFilter, hop)
+  }
+
+  // Apply include/exclude from base filter
+  const { include, exclude } = filter
+
+  if (include && include.length > 0) {
+    return include
+  }
+
+  if (exclude && exclude.length > 0) {
+    // Return all edge types except excluded ones
+    return EDGE_TYPES.filter(t => !exclude.includes(t))
+  }
+
+  // No filtering - return undefined to traverse all
+  return undefined
+}
+
+/**
  * Validate expansion options.
  */
 const validateOptions = (options: GraphExpansionOptions): Effect.Effect<void, ValidationError> =>
@@ -159,6 +250,11 @@ const validateOptions = (options: GraphExpansionOptions): Effect.Effect<void, Va
         reason: `Max nodes must be >= 1, got: ${maxNodes}`
       }))
     }
+
+    // Validate EdgeTypeFilter if provided
+    if (options.edgeTypes && !isSimpleEdgeTypeArray(options.edgeTypes)) {
+      yield* validateEdgeTypeFilter(options.edgeTypes)
+    }
   })
 
 export const GraphExpansionServiceLive = Layer.effect(
@@ -176,7 +272,7 @@ export const GraphExpansionServiceLive = Layer.effect(
           const depth = options.depth ?? DEFAULT_OPTIONS.depth
           const decayFactor = options.decayFactor ?? DEFAULT_OPTIONS.decayFactor
           const maxNodes = options.maxNodes ?? DEFAULT_OPTIONS.maxNodes
-          const edgeTypes = options.edgeTypes
+          const edgeTypeFilter = options.edgeTypes
 
           // Handle empty seeds
           if (seeds.length === 0) {
@@ -251,13 +347,15 @@ export const GraphExpansionServiceLive = Layer.effect(
               if (expanded.length >= maxNodes) break
 
               // Find neighbors bidirectionally (per PRD-016 resolved question #1)
+              // Resolve edge types for this specific hop (supports per-hop overrides)
+              const edgeTypesForHop = resolveEdgeTypesForHop(edgeTypeFilter, currentHop)
               const neighbors = yield* edgeService.findNeighbors(
                 "learning",
                 String(node.learningId),
                 {
                   depth: 1,
                   direction: "both",
-                  edgeTypes,
+                  edgeTypes: edgeTypesForHop,
                 }
               )
 

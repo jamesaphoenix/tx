@@ -99,6 +99,7 @@ export {
   GraphExpansionServiceLive,
   type SeedLearning,
   type ExpandedLearning,
+  type EdgeTypeFilter,
   type GraphExpansionOptions,
   type GraphExpansionResult
 } from "./graph-expansion.js"
