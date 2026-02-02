@@ -117,13 +117,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Run all checks (continue on failure to report all issues)
-# Use turbo for workspace packages, then check root
+# Use turbo for workspace packages, then check root-level test files
 run_and_track "TypeScript (packages)" "npx turbo typecheck"
-run_and_track "TypeScript (root)" "npx tsc --noEmit"
 run_and_track "ESLint (packages)" "npx turbo lint"
-run_and_track "ESLint (root)" "npx eslint src/ --max-warnings 0"
+run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
 run_and_track "Build (packages)" "npx turbo build"
-run_and_track "Build (root)" "npx tsc"
 run_and_track "Tests (packages)" "npx turbo test"
 run_and_track "Tests (root)" "npx vitest --run"
 

@@ -92,17 +92,15 @@ run_tests() {
 
 check_types() {
     run_silent "TypeScript types (packages)" "npx turbo typecheck"
-    run_silent "TypeScript types (root)" "npx tsc --noEmit"
 }
 
 check_lint() {
     run_silent "ESLint (packages)" "npx turbo lint"
-    run_silent "ESLint (root)" "npx eslint src/ --max-warnings 0"
+    run_silent "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
 }
 
 check_build() {
     run_silent "Build (packages)" "npx turbo build"
-    run_silent "Build (root)" "npx tsc"
 }
 
 check_test() {
