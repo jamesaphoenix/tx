@@ -272,7 +272,7 @@ describe("End-to-End Retrieval Pipeline", () => {
     layer = makeTestLayer(db, true)
     learningIds = new Map()
 
-    // Create all 50+ learnings with embeddings
+    // Create all 50+ learnings and generate their embeddings
     await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* LearningService
@@ -285,6 +285,9 @@ describe("End-to-End Retrieval Pipeline", () => {
           })
           learningIds.set(item.content, learning.id)
         }
+
+        // Generate embeddings for all learnings
+        yield* svc.embedAll()
       }).pipe(Effect.provide(layer))
     )
   })
