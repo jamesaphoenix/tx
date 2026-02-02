@@ -150,6 +150,7 @@ export {
 } from "./file-watcher-service.js"
 export {
   PromotionService,
+  PromotionServiceLive,
   type PromotionResult,
   type AutoPromoteResult
 } from "./promotion-service.js"
