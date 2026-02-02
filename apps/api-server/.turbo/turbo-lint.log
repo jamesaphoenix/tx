@@ -1,0 +1,12 @@
+
+> @tx/api-server@0.1.0 lint
+> eslint src/
+
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/api-server/src/runtime.ts
+  41:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  80:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+
+✖ 2 problems (0 errors, 2 warnings)
+  0 errors and 2 warnings potentially fixable with the `--fix` option.
+

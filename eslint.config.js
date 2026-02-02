@@ -147,6 +147,40 @@ export default [
       }]
     }
   },
+  // Apps (api-server, agent-sdk, cli, mcp-server)
+  {
+    files: ['apps/api-server/**/*.ts', 'apps/agent-sdk/**/*.ts', 'apps/cli/**/*.ts', 'apps/mcp-server/**/*.ts'],
+    languageOptions: {
+      parser: tseslintParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module'
+      }
+    },
+    plugins: {
+      '@typescript-eslint': tseslintPlugin,
+      tx: txPlugin
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'off',
+      'no-unused-vars': 'off',
+      'no-undef': 'off',
+
+      // tx plugin rules - enforce SQL schema definitions in migrations/
+      'tx/no-inline-sql': ['error', {
+        allowedPaths: ['migrations/', 'test/fixtures/'],
+        ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
+      }],
+
+      // tx plugin rules - require TaskWithDeps for external APIs (CLAUDE.md RULE 1)
+      'tx/require-taskwithdeps-return': ['warn', {
+        externalPaths: ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
+        internalPaths: ['src/repo/', 'src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
+        checkObjectLiterals: true
+      }]
+    }
+  },
   // Dashboard app files (with separate API test requirements)
   {
     files: ['apps/dashboard/**/*.ts'],

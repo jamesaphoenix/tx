@@ -75,10 +75,9 @@ function flag(flags: Record<string, string | boolean>, ...names: string[]): bool
 
 // --- Commands registry ---
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const commands: Record<string, (positional: string[], flags: Record<string, string | boolean>) => Effect.Effect<void, any, any>> = {
   init: (_pos, _flags) =>
-    Effect.gen(function* () {
+    Effect.sync(() => {
       // Layer construction already creates db + runs migrations
       // Just confirm it exists
       console.log("Initialized tx database")
