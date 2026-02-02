@@ -102,3 +102,11 @@ export {
   CLAIM_STATUSES,
   type ClaimRow
 } from "./claim.js"
+
+// OrchestratorState mappers
+export {
+  rowToOrchestratorState,
+  isValidOrchestratorStatus,
+  ORCHESTRATOR_STATUSES,
+  type OrchestratorStateRow
+} from "./orchestrator-state.js"

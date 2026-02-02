@@ -15,3 +15,4 @@ export { CandidateRepository, CandidateRepositoryLive } from "./candidate-repo.j
 export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./tracked-project-repo.js"
 export { WorkerRepository, WorkerRepositoryLive } from "./worker-repo.js"
 export { ClaimRepository, ClaimRepositoryLive } from "./claim-repo.js"
+export { OrchestratorStateRepository, OrchestratorStateRepositoryLive, type OrchestratorStateUpdate } from "./orchestrator-state-repo.js"
