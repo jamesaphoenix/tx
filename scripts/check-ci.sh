@@ -118,10 +118,9 @@ echo ""
 
 # Run all checks (continue on failure to report all issues)
 # Build packages in explicit dependency order to avoid race conditions
-# Step 1: Build base packages first (@tx/types has no deps)
-# Step 2: Build packages that depend on types (@tx/core)
-# Step 3: Build everything else with turbo
-run_and_track "Build (packages)" "npm -w @tx/types run build && npm -w @tx/core run build && npx turbo build --concurrency=1"
+# The issue is that npm workspaces can have timing issues with TypeScript
+# We build types first, verify its dist exists, then build core
+run_and_track "Build (packages)" "(cd packages/types && npm run build && ls dist/index.d.ts) && (cd packages/core && npm run build) && npx turbo build --concurrency=1"
 run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
 run_and_track "ESLint (packages)" "npx turbo lint"
 run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
