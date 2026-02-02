@@ -301,16 +301,39 @@ export const EmbeddingServiceOpenAI = Layer.effect(
  * Auto-detecting layer that selects the appropriate embedding backend.
  *
  * Priority:
- * 1. OPENAI_API_KEY set → Use OpenAI (text-embedding-3-small)
- * 2. node-llama-cpp available → Use local embeddings
- * 3. Neither available → Use Noop (graceful degradation)
+ * 1. TX_EMBEDDER env var override ("openai", "local", "noop")
+ * 2. OPENAI_API_KEY set → Use OpenAI (text-embedding-3-small)
+ * 3. node-llama-cpp available → Use local embeddings
+ * 4. Neither available → Use Noop (graceful degradation)
  */
 export const EmbeddingServiceAuto = Layer.unwrapEffect(
   Effect.gen(function* () {
-    // Check for OpenAI API key first
+    // Check for TX_EMBEDDER override first
+    const embedderOverride = yield* Config.string("TX_EMBEDDER").pipe(Effect.option)
+
+    if (Option.isSome(embedderOverride)) {
+      const override = embedderOverride.value.toLowerCase().trim()
+      switch (override) {
+        case "openai":
+          yield* Effect.logDebug("EmbeddingService: Using OpenAI (TX_EMBEDDER override)")
+          return EmbeddingServiceOpenAI
+        case "local":
+          yield* Effect.logDebug("EmbeddingService: Using local node-llama-cpp (TX_EMBEDDER override)")
+          return EmbeddingServiceLive
+        case "noop":
+          yield* Effect.logDebug("EmbeddingService: Using noop (TX_EMBEDDER override)")
+          return EmbeddingServiceNoop
+        default:
+          // Invalid override value - continue with auto-detection
+          yield* Effect.logDebug(`EmbeddingService: Invalid TX_EMBEDDER value "${override}", falling back to auto-detection`)
+      }
+    }
+
+    // Check for OpenAI API key
     const openaiKey = yield* Config.string("OPENAI_API_KEY").pipe(Effect.option)
 
     if (Option.isSome(openaiKey) && openaiKey.value.trim().length > 0) {
+      yield* Effect.logDebug("EmbeddingService: Using OpenAI (OPENAI_API_KEY detected)")
       return EmbeddingServiceOpenAI
     }
 
@@ -324,9 +347,11 @@ export const EmbeddingServiceAuto = Layer.unwrapEffect(
     })
 
     if (llamaAvailable) {
+      yield* Effect.logDebug("EmbeddingService: Using local node-llama-cpp (package available)")
       return EmbeddingServiceLive
     }
 
+    yield* Effect.logDebug("EmbeddingService: Using noop (no embedder available)")
     return EmbeddingServiceNoop
   })
 )
