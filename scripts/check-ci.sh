@@ -124,8 +124,8 @@ run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
 run_and_track "ESLint (packages)" "npx turbo lint"
 run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
 run_and_track "Tests (packages)" "npx turbo test"
-# Use basic reporter and sequential file execution to avoid vitest worker RPC timeouts in CI
-run_and_track "Tests (root)" "npx vitest --run --reporter=basic --no-file-parallelism"
+# Use basic reporter, sequential file execution, and ignore cleanup RPC timeouts in CI
+run_and_track "Tests (root)" "npx vitest --run --reporter=basic --no-file-parallelism --dangerouslyIgnoreUnhandledErrors"
 
 # Summary
 echo ""

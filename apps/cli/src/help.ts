@@ -44,6 +44,16 @@ Commands:
   hooks:install           Install post-commit hook for verification
   hooks:uninstall         Remove post-commit hook
   hooks:status            Show git hook status
+  daemon start            Start background daemon
+  daemon stop             Stop background daemon
+  daemon status           Show daemon status
+  daemon track            Track a project for learning extraction
+  daemon untrack          Stop tracking a project
+  daemon list             List tracked projects
+  daemon process          Process learning candidates
+  daemon review           Review a learning candidate
+  daemon promote          Promote a candidate to learning
+  daemon reject           Reject a learning candidate
   mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
@@ -857,5 +867,190 @@ Options:
 
 Examples:
   tx hooks:status
-  tx hooks:status --json`
+  tx hooks:status --json`,
+
+  daemon: `tx daemon - Background daemon for learning extraction
+
+Usage: tx daemon <subcommand> [options]
+
+Subcommands:
+  start       Start the background daemon
+  stop        Stop the background daemon
+  status      Show daemon status
+  track       Track a project for learning extraction
+  untrack     Stop tracking a project
+  list        List tracked projects
+  process     Process learning candidates
+  review      Review a learning candidate
+  promote     Promote a candidate to learning
+  reject      Reject a learning candidate
+
+Run 'tx daemon <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx daemon start               # Start the daemon
+  tx daemon status              # Show daemon status
+  tx daemon track .             # Track current directory
+  tx daemon list                # List tracked projects`,
+
+  "daemon start": `tx daemon start - Start the background daemon
+
+Usage: tx daemon start [options]
+
+Starts the background daemon process that monitors tracked projects
+for file changes and extracts learning candidates.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon start`,
+
+  "daemon stop": `tx daemon stop - Stop the background daemon
+
+Usage: tx daemon stop [options]
+
+Stops the running background daemon process.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon stop`,
+
+  "daemon status": `tx daemon status - Show daemon status
+
+Usage: tx daemon status [options]
+
+Shows the current status of the daemon including:
+- Whether daemon is running
+- PID if running
+- Number of tracked projects
+- Number of pending candidates
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon status
+  tx daemon status --json`,
+
+  "daemon track": `tx daemon track - Track a project for learning extraction
+
+Usage: tx daemon track <project-path> [options]
+
+Adds a project directory to the daemon's watch list. The daemon will
+monitor file changes and extract learning candidates.
+
+Arguments:
+  <project-path>  Required. Path to the project directory
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon track .              # Track current directory
+  tx daemon track ~/projects/my-app`,
+
+  "daemon untrack": `tx daemon untrack - Stop tracking a project
+
+Usage: tx daemon untrack <project-path> [options]
+
+Removes a project from the daemon's watch list.
+
+Arguments:
+  <project-path>  Required. Path to the project directory
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon untrack .
+  tx daemon untrack ~/projects/my-app`,
+
+  "daemon list": `tx daemon list - List tracked projects
+
+Usage: tx daemon list [options]
+
+Lists all projects currently being tracked by the daemon.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon list
+  tx daemon list --json`,
+
+  "daemon process": `tx daemon process - Process learning candidates
+
+Usage: tx daemon process [options]
+
+Processes pending learning candidates, extracting insights from
+recent file changes.
+
+Options:
+  --limit <n>  Maximum candidates to process (default: 10)
+  --json       Output as JSON
+  --help       Show this help
+
+Examples:
+  tx daemon process
+  tx daemon process --limit 5`,
+
+  "daemon review": `tx daemon review - Review a learning candidate
+
+Usage: tx daemon review <candidate-id> [options]
+
+Shows details of a specific learning candidate for review.
+
+Arguments:
+  <candidate-id>  Required. Candidate ID
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon review 42
+  tx daemon review 42 --json`,
+
+  "daemon promote": `tx daemon promote - Promote a candidate to learning
+
+Usage: tx daemon promote <candidate-id> [options]
+
+Promotes a learning candidate to a permanent learning entry.
+
+Arguments:
+  <candidate-id>  Required. Candidate ID
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx daemon promote 42`,
+
+  "daemon reject": `tx daemon reject - Reject a learning candidate
+
+Usage: tx daemon reject <candidate-id> --reason <reason> [options]
+
+Rejects a learning candidate with a reason.
+
+Arguments:
+  <candidate-id>  Required. Candidate ID
+
+Options:
+  --reason <text>  Required. Reason for rejection
+  --json           Output as JSON
+  --help           Show this help
+
+Examples:
+  tx daemon reject 42 --reason "Not relevant"
+  tx daemon reject 42 --reason "Duplicate of existing learning"`
 }

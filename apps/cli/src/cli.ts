@@ -21,6 +21,7 @@ import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
 import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin, graphLink, graphShow, graphNeighbors } from "./commands/graph.js"
 import { hooksInstall, hooksUninstall, hooksStatus } from "./commands/hooks.js"
+import { daemon } from "./commands/daemon.js"
 
 // --- Argv parsing helpers ---
 
@@ -132,6 +133,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "hooks:uninstall": hooksUninstall,
   "hooks:status": hooksStatus,
 
+  // Daemon command (with subcommands)
+  daemon,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -164,9 +168,16 @@ if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
 
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
 if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
-  // Check for subcommand help (e.g., tx sync export --help)
+  // Check for subcommand help (e.g., tx sync export --help, tx daemon start --help)
   if (command === "sync" && positional[0]) {
     const subcommandKey = `sync ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (command === "daemon" && positional[0]) {
+    const subcommandKey = `daemon ${positional[0]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -185,9 +196,16 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
 // Handle 'tx help' and 'tx help <command>'
 if (command === "help") {
   const subcommand = positional[0]
-  // Check for compound command help (e.g., tx help sync export)
+  // Check for compound command help (e.g., tx help sync export, tx help daemon start)
   if (subcommand === "sync" && positional[1]) {
     const subcommandKey = `sync ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "daemon" && positional[1]) {
+    const subcommandKey = `daemon ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
