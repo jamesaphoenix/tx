@@ -685,19 +685,35 @@ export const AnchorServiceLive = Layer.effect(
             return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
           }
 
-          const oldStatus = anchor.status
+          const currentStatus = anchor.status
 
-          // Update status to valid
-          yield* anchorRepo.updateStatus(anchorId, "valid")
+          // Find the most recent invalidation log entry with status change TO 'invalid'
+          const logs = yield* anchorRepo.getInvalidationLogs(anchorId)
+          const invalidationEntry = logs.find(log => log.newStatus === "invalid")
+
+          // Determine restore target status: use oldStatus from log or default to 'valid'
+          const restoreToStatus: AnchorStatus = invalidationEntry?.oldStatus ?? "valid"
+
+          // Update status to the restore target
+          yield* anchorRepo.updateStatus(anchorId, restoreToStatus)
           yield* anchorRepo.updateVerifiedAt(anchorId)
+
+          // Optionally restore old_content_hash if it was stored in the log entry
+          if (invalidationEntry?.oldContentHash) {
+            yield* anchorRepo.update(anchorId, { contentHash: invalidationEntry.oldContentHash })
+          }
 
           // Log the restoration
           yield* anchorRepo.logInvalidation({
             anchorId,
-            oldStatus,
-            newStatus: "valid",
-            reason: "Manual restoration",
-            detectedBy: "manual"
+            oldStatus: currentStatus,
+            newStatus: restoreToStatus,
+            reason: invalidationEntry
+              ? `Restored to ${restoreToStatus} (from invalidation log)`
+              : "Manual restoration",
+            detectedBy: "manual",
+            oldContentHash: anchor.contentHash,
+            newContentHash: invalidationEntry?.oldContentHash ?? null
           })
 
           const updated = yield* anchorRepo.findById(anchorId)

@@ -580,6 +580,154 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
       expect((result.left as any)._tag).toBe("AnchorNotFoundError")
     }
   })
+
+  it("restore uses old_status from invalidation log (drifted -> invalid -> restored to drifted)", async () => {
+    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+
+        const learning = yield* learningSvc.create({
+          content: "Test learning for drifted restore",
+          sourceType: "manual"
+        })
+
+        yield* anchorSvc.createAnchor({
+          learningId: learning.id,
+          anchorType: "glob",
+          filePath: FIXTURES.FILE_DRIFTED,
+          value: "*.ts"
+        })
+
+        // First mark as drifted
+        yield* anchorSvc.updateAnchorStatus(1, "drifted", "Content changed slightly")
+        const drifted = yield* anchorSvc.get(1)
+
+        // Then invalidate (drifted -> invalid)
+        yield* anchorSvc.invalidate(1, "File deleted")
+        const invalidated = yield* anchorSvc.get(1)
+
+        // Restore should go back to drifted (the old_status from invalidation log)
+        const restored = yield* anchorSvc.restore(1)
+
+        return { drifted, invalidated, restored }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.drifted.status).toBe("drifted")
+    expect(result.invalidated.status).toBe("invalid")
+    expect(result.restored.status).toBe("drifted") // Should restore to old_status, not 'valid'
+  })
+
+  it("restore restores old_content_hash from invalidation log", async () => {
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const anchorRepo = yield* AnchorRepository
+
+        const learning = yield* learningSvc.create({
+          content: "Test learning for content hash restore",
+          sourceType: "manual"
+        })
+
+        // Create hash anchor with content hash
+        yield* anchorSvc.createAnchor({
+          learningId: learning.id,
+          anchorType: "hash",
+          filePath: FIXTURES.FILE_EXISTS,
+          value: FIXTURES.HASH_VALID,
+          contentHash: FIXTURES.HASH_VALID
+        })
+
+        const original = yield* anchorSvc.get(1)
+
+        // Simulate invalidation with hash change - use repo directly to set new hash
+        yield* anchorRepo.update(1, { contentHash: FIXTURES.HASH_DRIFTED })
+
+        // Then invalidate - this logs the old_content_hash (which is now HASH_DRIFTED)
+        // We need to manually log with the original hash to simulate the scenario
+        yield* anchorRepo.updateStatus(1, "invalid")
+        yield* anchorRepo.logInvalidation({
+          anchorId: 1,
+          oldStatus: "valid",
+          newStatus: "invalid",
+          reason: "File deleted",
+          detectedBy: "manual",
+          oldContentHash: FIXTURES.HASH_VALID, // Original hash before any changes
+          newContentHash: FIXTURES.HASH_DRIFTED
+        })
+
+        const invalidated = yield* anchorSvc.get(1)
+
+        // Restore should bring back the old content hash
+        const restored = yield* anchorSvc.restore(1)
+
+        return { original, invalidated, restored }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.original.contentHash).toBe(FIXTURES.HASH_VALID)
+    expect(result.invalidated.contentHash).toBe(FIXTURES.HASH_DRIFTED)
+    expect(result.restored.contentHash).toBe(FIXTURES.HASH_VALID) // Should restore to old_content_hash
+    expect(result.restored.status).toBe("valid")
+  })
+
+  it("restore logs the action with detected_by='manual'", async () => {
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const logs = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+        const anchorRepo = yield* AnchorRepository
+
+        const learning = yield* learningSvc.create({
+          content: "Test learning for restore logging",
+          sourceType: "manual"
+        })
+
+        yield* anchorSvc.createAnchor({
+          learningId: learning.id,
+          anchorType: "glob",
+          filePath: FIXTURES.FILE_EXISTS,
+          value: "*.ts"
+        })
+
+        // Invalidate via agent detection
+        yield* anchorSvc.invalidate(1, "File deleted", "agent")
+
+        // Restore
+        yield* anchorSvc.restore(1)
+
+        // Get all invalidation logs
+        return yield* anchorRepo.getInvalidationLogs(1)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should have 2 logs: one for invalidation, one for restore
+    expect(logs).toHaveLength(2)
+
+    // Most recent (first in DESC order) should be the restore log
+    const restoreLog = logs[0]
+    expect(restoreLog.oldStatus).toBe("invalid")
+    expect(restoreLog.newStatus).toBe("valid")
+    expect(restoreLog.detectedBy).toBe("manual")
+    expect(restoreLog.reason).toContain("Restored to valid")
+
+    // Second should be the invalidation log
+    const invalidationLog = logs[1]
+    expect(invalidationLog.oldStatus).toBe("valid")
+    expect(invalidationLog.newStatus).toBe("invalid")
+    expect(invalidationLog.detectedBy).toBe("agent")
+  })
 })
 
 // =============================================================================

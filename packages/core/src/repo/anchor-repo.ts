@@ -297,12 +297,12 @@ export const AnchorRepositoryLive = Layer.effect(
           try: () => {
             if (anchorId !== undefined) {
               const rows = db.prepare(
-                "SELECT * FROM invalidation_log WHERE anchor_id = ? ORDER BY invalidated_at DESC"
+                "SELECT * FROM invalidation_log WHERE anchor_id = ? ORDER BY invalidated_at DESC, id DESC"
               ).all(anchorId) as InvalidationLogRow[]
               return rows.map(rowToInvalidationLog)
             }
             const rows = db.prepare(
-              "SELECT * FROM invalidation_log ORDER BY invalidated_at DESC LIMIT 100"
+              "SELECT * FROM invalidation_log ORDER BY invalidated_at DESC, id DESC LIMIT 100"
             ).all() as InvalidationLogRow[]
             return rows.map(rowToInvalidationLog)
           },
