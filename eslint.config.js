@@ -14,9 +14,9 @@
  *
  * Rule: tx/require-component-tests
  * Enforces that components, hooks, and services have corresponding test files.
- * - Every .tsx file in src/components/ MUST have a corresponding .test.tsx in __tests__/
- * - Every .ts file in src/hooks/ MUST have a corresponding .test.ts in __tests__/
- * - Every file in src/services/ MUST have integration test coverage
+ * - Every .tsx file in components/ MUST have a corresponding .test.tsx in __tests__/
+ * - Every .ts file in hooks/ MUST have a corresponding .test.ts in __tests__/
+ * - Every file in services/ MUST have integration test coverage
  *
  * Rule: tx/require-effect-error-handling
  * Enforces Effect-TS error handling patterns:
@@ -25,7 +25,7 @@
  *
  * Rule: tx/no-raw-promises-in-services
  * Prevents raw Promise usage in service layer:
- * - Files in src/services/ MUST NOT use raw Promise (use Effect instead)
+ * - Files in services/ MUST NOT use raw Promise (use Effect instead)
  * - Async/await only allowed in CLI layer, not service layer
  *
  * Rule: tx/require-taskwithdeps-return
@@ -36,9 +36,9 @@
  *
  * Rule: tx/test-coverage-thresholds
  * Enforces DD-007 coverage targets programmatically:
- * - Core services (src/services/): 90% line coverage required
- * - Repositories (src/repo/, src/repositories/): 85% line coverage
- * - CLI commands (src/cli/): 80% line coverage
+ * - Core services (packages/core/src/services/): 90% line coverage required
+ * - Repositories (packages/core/src/repo/): 85% line coverage
+ * - CLI commands (apps/cli/): 80% line coverage
  * - Dashboard components/hooks: 75% line coverage
  * Run separately: npm run lint:coverage (after npm test -- --coverage)
  *
@@ -66,9 +66,9 @@ export default [
   {
     ignores: ['dist/**', 'node_modules/**', 'eslint-plugin-tx/**']
   },
-  // Main source and test files
+  // Root test files
   {
-    files: ['src/**/*.ts', 'test/**/*.ts'],
+    files: ['test/**/*.ts'],
     languageOptions: {
       parser: tseslintParser,
       parserOptions: {
@@ -87,36 +87,10 @@ export default [
       'no-unused-vars': 'off', // Handled by @typescript-eslint
       'no-undef': 'off', // TypeScript handles this
 
-      // tx plugin rules - enforce integration test coverage
-      'tx/require-integration-tests': ['warn', {
-        services: { src: 'src/services', test: 'test/integration', threshold: 90 },
-        repos: { src: 'src/repo', test: 'test/integration', threshold: 85 },
-        cli: { src: 'src/cli.ts', test: 'test/integration/cli-*.test.ts', threshold: 70 },
-        mcp: { src: 'src/mcp/server.ts', test: 'test/integration/mcp.test.ts', threshold: 80 }
-      }],
-
       // tx plugin rules - enforce SQL schema definitions in migrations/
       'tx/no-inline-sql': ['error', {
         allowedPaths: ['migrations/', 'test/fixtures/'],
         ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
-      }],
-
-      // tx plugin rules - enforce Effect-TS error handling patterns (CLAUDE.md RULE 5)
-      'tx/require-effect-error-handling': ['warn', {
-        allowedPaths: ['test/', 'tests/', '__tests__/', '.test.', '.spec.'],
-        checkTypeAnnotations: true
-      }],
-
-      // tx plugin rules - no raw Promises in service layer (CLAUDE.md RULE 5)
-      'tx/no-raw-promises-in-services': ['error', {
-        servicePaths: ['src/services/']
-      }],
-
-      // tx plugin rules - require TaskWithDeps for external APIs (CLAUDE.md RULE 1)
-      'tx/require-taskwithdeps-return': ['warn', {
-        externalPaths: ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
-        internalPaths: ['src/repo/', 'src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
-        checkObjectLiterals: true
       }]
     }
   },
@@ -175,8 +149,8 @@ export default [
 
       // tx plugin rules - require TaskWithDeps for external APIs (CLAUDE.md RULE 1)
       'tx/require-taskwithdeps-return': ['warn', {
-        externalPaths: ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
-        internalPaths: ['src/repo/', 'src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
+        externalPaths: ['apps/mcp-server/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
+        internalPaths: ['packages/core/src/repo/', 'packages/core/src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
         checkObjectLiterals: true
       }]
     }

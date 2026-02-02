@@ -7,7 +7,7 @@
 
 import Database from "better-sqlite3"
 import { Effect } from "effect"
-import type { TaskId } from "../src/schema.js"
+import type { TaskId } from "@tx/types"
 import type { TestDatabase } from "@tx/test-utils"
 import {
   fixtureId as testUtilsFixtureId,

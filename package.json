@@ -9,11 +9,9 @@
     "apps/*"
   ],
   "bin": {
-    "tx": "./dist/cli.js"
+    "tx": "./apps/cli/dist/cli.js"
   },
-  "main": "./dist/index.js",
   "files": [
-    "dist",
     "migrations"
   ],
   "repository": {
@@ -30,22 +28,19 @@
   "author": "James Phoenix",
   "license": "MIT",
   "scripts": {
-    "build": "turbo build && tsc",
+    "build": "turbo build",
     "build:packages": "turbo build",
-    "build:root": "tsc",
-    "dev": "tsx src/cli.ts",
+    "dev": "tsx apps/cli/src/cli.ts",
     "test": "turbo test && vitest --run",
     "test:packages": "turbo test",
     "test:root": "vitest --run",
     "test:watch": "vitest",
-    "lint": "turbo lint && eslint src/",
+    "lint": "turbo lint",
     "lint:packages": "turbo lint",
-    "lint:root": "eslint src/ apps/",
-    "lint:fix": "eslint src/ apps/ packages/ --fix",
+    "lint:fix": "eslint apps/ packages/ --fix",
     "lint:coverage": "node scripts/lint-coverage.js",
-    "typecheck": "turbo typecheck && tsc --noEmit",
+    "typecheck": "turbo typecheck",
     "typecheck:packages": "turbo typecheck",
-    "typecheck:root": "tsc --noEmit",
     "check": "./scripts/check.sh --all",
     "check:quick": "./scripts/check.sh --quick",
     "check:ci": "./scripts/check-ci.sh",

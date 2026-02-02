@@ -1,13 +1,17 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "declaration": false,
-    "declarationMap": false,
     "composite": false,
     "incremental": false
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test", "packages", "apps"]
+  "references": [
+    { "path": "packages/types" },
+    { "path": "packages/core" },
+    { "path": "packages/test-utils" },
+    { "path": "apps/cli" },
+    { "path": "apps/mcp-server" },
+    { "path": "apps/api-server" },
+    { "path": "apps/agent-sdk" }
+  ],
+  "exclude": ["node_modules", "dist", "**/dist"]
 }
