@@ -216,7 +216,7 @@ const calculatePositionBonus = (...ranks: number[]): number => {
 const applyFinalScoring = (
   candidates: RRFCandidate[],
   recencyWeight: number,
-  feedbackScores?: Map<number, number>
+  feedbackScores?: ReadonlyMap<number, number>
 ): LearningWithScore[] => {
   return candidates.map(candidate => {
     const { learning, bm25Score, bm25Rank, vectorScore, vectorRank, rrfScore: rrf, recencyScore } = candidate
@@ -515,16 +515,14 @@ export const RetrieverServiceLive = Layer.effect(
           // Combine using RRF
           const candidates = computeRRFScoring(bm25Results, vectorRanking)
 
-          // Fetch feedback scores for all candidates (graceful degradation)
-          const feedbackScores = new Map<number, number>()
-          if (feedbackTrackerService) {
-            for (const candidate of candidates) {
-              const score = yield* Effect.catchAll(
-                feedbackTrackerService.getFeedbackScore(candidate.learning.id),
-                () => Effect.succeed(0.5) // Neutral on error
-              )
-              feedbackScores.set(candidate.learning.id, score)
-            }
+          // Fetch feedback scores for all candidates in a single batch (graceful degradation)
+          let feedbackScores: ReadonlyMap<number, number> | undefined
+          if (feedbackTrackerService && candidates.length > 0) {
+            const learningIds = candidates.map(c => c.learning.id)
+            feedbackScores = yield* Effect.catchAll(
+              feedbackTrackerService.getFeedbackScores(learningIds),
+              () => Effect.succeed(new Map(learningIds.map(id => [id, 0.5])) as ReadonlyMap<number, number>)
+            )
           }
 
           // Apply final scoring with boosts (including feedback)
