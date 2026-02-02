@@ -172,3 +172,8 @@ export {
   DiversifierServiceLive,
   DiversifierServiceAuto
 } from "./diversifier-service.js"
+export {
+  FeedbackTrackerService,
+  FeedbackTrackerServiceNoop,
+  type LearningUsageFeedback
+} from "./feedback-tracker.js"
