@@ -44,6 +44,8 @@ Commands:
   hooks:install           Install post-commit hook for verification
   hooks:uninstall         Remove post-commit hook
   hooks:status            Show git hook status
+  test:cache-stats        Show LLM cache statistics
+  test:clear-cache        Clear LLM cache entries
   daemon start            Start background daemon
   daemon stop             Stop background daemon
   daemon status           Show daemon status
@@ -868,6 +870,49 @@ Options:
 Examples:
   tx hooks:status
   tx hooks:status --json`,
+
+  "test:cache-stats": `tx test:cache-stats - Show LLM cache statistics
+
+Usage: tx test:cache-stats [--json]
+
+Shows statistics about the LLM response cache including:
+- Total number of cache entries
+- Total cache size in bytes
+- Date range of cached entries
+- Breakdown by model
+- Breakdown by cache version
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx test:cache-stats                # Show formatted statistics
+  tx test:cache-stats --json         # Output as JSON`,
+
+  "test:clear-cache": `tx test:clear-cache - Clear LLM cache entries
+
+Usage: tx test:clear-cache [options]
+
+Clears LLM cache entries based on specified criteria. At least one
+option must be provided to prevent accidental cache deletion.
+
+Options:
+  --all              Clear all cache entries
+  --older-than <n>d  Clear entries older than N days (e.g., 30d, 7d)
+                     Supports: d (days), h (hours), m (minutes), s (seconds)
+  --model <name>     Clear entries for a specific model
+  --version <n>      Clear entries with a specific cache version
+  --json             Output as JSON
+  --help             Show this help
+
+Examples:
+  tx test:clear-cache --all                  # Clear entire cache
+  tx test:clear-cache --older-than 30d       # Clear entries older than 30 days
+  tx test:clear-cache --older-than 2h        # Clear entries older than 2 hours
+  tx test:clear-cache --model claude-haiku   # Clear claude-haiku entries
+  tx test:clear-cache --version 1            # Clear version 1 entries
+  tx test:clear-cache --model claude-sonnet-4 --older-than 7d`,
 
   daemon: `tx daemon - Background daemon for learning extraction
 

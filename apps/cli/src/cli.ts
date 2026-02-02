@@ -22,6 +22,7 @@ import { migrate } from "./commands/migrate.js"
 import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin, graphLink, graphShow, graphNeighbors } from "./commands/graph.js"
 import { hooksInstall, hooksUninstall, hooksStatus } from "./commands/hooks.js"
 import { daemon } from "./commands/daemon.js"
+import { testCacheStats, testClearCache } from "./commands/test.js"
 
 // --- Argv parsing helpers ---
 
@@ -132,6 +133,10 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "hooks:install": hooksInstall,
   "hooks:uninstall": hooksUninstall,
   "hooks:status": hooksStatus,
+
+  // Test commands (colon-prefixed)
+  "test:cache-stats": testCacheStats,
+  "test:clear-cache": testClearCache,
 
   // Daemon command (with subcommands)
   daemon,
