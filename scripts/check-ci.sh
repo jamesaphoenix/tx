@@ -124,8 +124,8 @@ run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
 run_and_track "ESLint (packages)" "npx turbo lint"
 run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
 run_and_track "Tests (packages)" "npx turbo test"
-# Use vmThreads pool in CI to avoid RPC timeouts (runs in VM context, not separate processes)
-run_and_track "Tests (root)" "npx vitest --run --pool=vmThreads"
+# Increase RPC timeout to 120s to avoid vitest worker timeout in CI
+run_and_track "Tests (root)" "VITEST_WORKER_RPC_TIMEOUT=120000 npx vitest --run"
 
 # Summary
 echo ""
