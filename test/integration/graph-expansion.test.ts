@@ -644,6 +644,322 @@ describe("Graph Expansion - Edge Type Filtering", () => {
     expect(result.expanded[0].learning.content).toBe("L2-similar")
     expect(result.expanded[0].sourceEdge).toBe("SIMILAR_TO")
   })
+
+  it("filters expansion with EdgeTypeFilter include", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "L2-similar", sourceType: "manual" })
+        const l3 = yield* learningSvc.create({ content: "L3-derived", sourceType: "manual" })
+        const l4 = yield* learningSvc.create({ content: "L4-links", sourceType: "manual" })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "LINKS_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l4.id),
+        })
+
+        // Use EdgeTypeFilter with include
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          { depth: 1, edgeTypes: { include: ["SIMILAR_TO", "DERIVED_FROM"] } }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.expanded).toHaveLength(2)
+    const contents = result.expanded.map((e) => e.learning.content)
+    expect(contents).toContain("L2-similar")
+    expect(contents).toContain("L3-derived")
+    expect(contents).not.toContain("L4-links")
+  })
+
+  it("filters expansion with EdgeTypeFilter exclude", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "L2-similar", sourceType: "manual" })
+        const l3 = yield* learningSvc.create({ content: "L3-derived", sourceType: "manual" })
+        const l4 = yield* learningSvc.create({ content: "L4-links", sourceType: "manual" })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "LINKS_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l4.id),
+        })
+
+        // Use EdgeTypeFilter with exclude - exclude LINKS_TO
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          { depth: 1, edgeTypes: { exclude: ["LINKS_TO"] } }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.expanded).toHaveLength(2)
+    const contents = result.expanded.map((e) => e.learning.content)
+    expect(contents).toContain("L2-similar")
+    expect(contents).toContain("L3-derived")
+    expect(contents).not.toContain("L4-links")
+  })
+
+  it("applies perHop filter overrides at specific depths", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create chain: L1 -[SIMILAR_TO]-> L2 -[DERIVED_FROM]-> L3 -[LINKS_TO]-> L4
+        //                 -[DERIVED_FROM]-> L5
+        const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "L2-via-similar", sourceType: "manual" })
+        const l3 = yield* learningSvc.create({ content: "L3-via-derived", sourceType: "manual" })
+        const l4 = yield* learningSvc.create({ content: "L4-via-links", sourceType: "manual" })
+        const l5 = yield* learningSvc.create({ content: "L5-via-derived", sourceType: "manual" })
+
+        // Hop 1: L1 -> L2 (SIMILAR_TO) and L1 -> L5 (DERIVED_FROM)
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l5.id),
+        })
+
+        // Hop 2: L2 -> L3 (DERIVED_FROM)
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l2.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+        })
+
+        // Hop 3: L3 -> L4 (LINKS_TO)
+        yield* edgeSvc.createEdge({
+          edgeType: "LINKS_TO",
+          sourceType: "learning",
+          sourceId: String(l3.id),
+          targetType: "learning",
+          targetId: String(l4.id),
+        })
+
+        // Use perHop overrides:
+        // - Hop 1: only SIMILAR_TO (skip L5)
+        // - Hop 2: only DERIVED_FROM (find L3)
+        // - Hop 3: use default (all types, find L4)
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          {
+            depth: 3,
+            edgeTypes: {
+              perHop: {
+                1: { include: ["SIMILAR_TO"] },
+                2: { include: ["DERIVED_FROM"] }
+                // Hop 3 uses default (all types)
+              }
+            }
+          }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Hop 1: Only L2 (via SIMILAR_TO), L5 excluded because DERIVED_FROM not allowed at hop 1
+    // Hop 2: Only L3 (via DERIVED_FROM from L2)
+    // Hop 3: L4 (via LINKS_TO from L3, using default which allows all)
+    const contents = result.expanded.map((e) => e.learning.content)
+    expect(contents).toContain("L2-via-similar")
+    expect(contents).toContain("L3-via-derived")
+    expect(contents).toContain("L4-via-links")
+    expect(contents).not.toContain("L5-via-derived")
+  })
+
+  it("perHop exclude filter works correctly", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "L2-similar", sourceType: "manual" })
+        const l3 = yield* learningSvc.create({ content: "L3-derived", sourceType: "manual" })
+        const l4 = yield* learningSvc.create({ content: "L4-links", sourceType: "manual" })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "LINKS_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l4.id),
+        })
+
+        // At hop 1, exclude SIMILAR_TO and LINKS_TO (only allow DERIVED_FROM)
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          {
+            depth: 1,
+            edgeTypes: {
+              perHop: {
+                1: { exclude: ["SIMILAR_TO", "LINKS_TO"] }
+              }
+            }
+          }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Only L3 should be found (via DERIVED_FROM)
+    expect(result.expanded).toHaveLength(1)
+    expect(result.expanded[0].learning.content).toBe("L3-derived")
+  })
+
+  it("rejects conflicting include/exclude filters", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const expansionSvc = yield* GraphExpansionService
+
+        const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
+
+        // Conflicting filter: SIMILAR_TO in both include and exclude
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          {
+            depth: 1,
+            edgeTypes: {
+              include: ["SIMILAR_TO", "DERIVED_FROM"],
+              exclude: ["SIMILAR_TO"] // Conflict!
+            }
+          }
+        )
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+      expect((result.left as any).reason).toContain("conflicting filters")
+    }
+  })
+
+  it("backwards compatible with simple EdgeType[] array", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "L2", sourceType: "manual" })
+        const l3 = yield* learningSvc.create({ content: "L3", sourceType: "manual" })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+        })
+
+        // Use simple array (backwards compatible)
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          { depth: 1, edgeTypes: ["SIMILAR_TO"] as const }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.expanded).toHaveLength(1)
+    expect(result.expanded[0].learning.content).toBe("L2")
+  })
 })
 
 // =============================================================================
