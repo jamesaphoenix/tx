@@ -104,6 +104,15 @@ export class EdgeService extends Context.Tag("EdgeService")<
     readonly findFromSource: (sourceType: NodeType, sourceId: string) => Effect.Effect<readonly Edge[], DatabaseError>
 
     /**
+     * Find all edges from multiple source nodes in a single batch query.
+     * Eliminates N+1 queries when fetching edges for multiple nodes.
+     */
+    readonly findFromMultipleSources: (
+      sourceType: NodeType,
+      sourceIds: readonly string[]
+    ) => Effect.Effect<ReadonlyMap<string, readonly Edge[]>, DatabaseError>
+
+    /**
      * Find all edges to a target node.
      */
     readonly findToTarget: (targetType: NodeType, targetId: string) => Effect.Effect<readonly Edge[], DatabaseError>
@@ -272,6 +281,9 @@ export const EdgeServiceLive = Layer.effect(
 
       findFromSource: (sourceType, sourceId) =>
         edgeRepo.findBySource(sourceType, sourceId),
+
+      findFromMultipleSources: (sourceType, sourceIds) =>
+        edgeRepo.findByMultipleSources(sourceType, sourceIds),
 
       findToTarget: (targetType, targetId) =>
         edgeRepo.findByTarget(targetType, targetId),
