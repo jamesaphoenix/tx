@@ -3,15 +3,15 @@
   "version": "0.1.0",
   "description": "TX REST/HTTP API server - OpenAPI-compliant HTTP interface",
   "type": "module",
-  "main": "./dist/server.js",
-  "types": "./dist/server.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "tx-api": "./dist/server.js"
   },
   "exports": {
     ".": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./runtime": {
       "types": "./dist/runtime.d.ts",

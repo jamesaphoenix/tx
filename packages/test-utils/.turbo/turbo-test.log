@@ -5,8 +5,11 @@
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
 
-No test files found, exiting with code 0
+ ✓ test/test-database.test.ts (9 tests) 17ms
+ ✓ src/factories/factories.test.ts (30 tests) 31ms
 
-include: src/**/*.test.ts, test/**/*.test.ts
-exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+ Test Files  2 passed (2)
+      Tests  39 passed (39)
+   Start at  11:39:09
+   Duration  430ms (transform 96ms, setup 0ms, collect 483ms, tests 48ms, environment 0ms, prepare 56ms)
 
