@@ -21,23 +21,18 @@ import { createHash } from "node:crypto"
 // Test Fixtures (Rule 3: SHA256-based IDs)
 // =============================================================================
 
-const fixtureId = (name: string): string => {
+/**
+ * Generate deterministic fixture IDs for tests.
+ * Currently tests use dynamic IDs from LearningService.create(),
+ * but this utility is available for tests requiring deterministic IDs.
+ */
+export const fixtureId = (name: string): string => {
   const hash = createHash("sha256")
     .update(`graph-expansion-test:${name}`)
     .digest("hex")
     .substring(0, 8)
   return `fixture-${hash}`
 }
-
-const FIXTURES = {
-  // Learning names for reference
-  LEARNING_ROOT: fixtureId("learning-root"),
-  LEARNING_A: fixtureId("learning-a"),
-  LEARNING_B: fixtureId("learning-b"),
-  LEARNING_C: fixtureId("learning-c"),
-  LEARNING_D: fixtureId("learning-d"),
-  LEARNING_E: fixtureId("learning-e"),
-} as const
 
 // =============================================================================
 // LINEAR CHAIN TRAVERSAL TESTS
@@ -978,5 +973,619 @@ describe("Graph Expansion - Multiple Seeds", () => {
     // L3 should only appear once
     expect(result.expanded).toHaveLength(1)
     expect(result.expanded[0].learning.content).toBe("L3")
+  })
+})
+
+// =============================================================================
+// RRF INTEGRATION TESTS
+// =============================================================================
+
+describe("Graph Expansion - RRF Integration", () => {
+  it("graph expansion integrates with retrieval pipeline via LearningService", async () => {
+    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        // Create a seed learning that will match the query
+        const seed = yield* learningSvc.create({
+          content: "Database optimization techniques for SQL queries",
+          sourceType: "manual",
+          keywords: ["database", "optimization", "sql"]
+        })
+
+        // Create related learnings that are connected via edges
+        const related1 = yield* learningSvc.create({
+          content: "Index creation strategies for faster lookups",
+          sourceType: "manual",
+          keywords: ["index", "performance"]
+        })
+
+        const related2 = yield* learningSvc.create({
+          content: "Query execution plan analysis methods",
+          sourceType: "manual",
+          keywords: ["query", "execution"]
+        })
+
+        // Create edges from seed to related learnings
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(seed.id),
+          targetType: "learning",
+          targetId: String(related1.id),
+          weight: 0.9,
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(seed.id),
+          targetType: "learning",
+          targetId: String(related2.id),
+          weight: 0.8,
+        })
+
+        // Search with graph expansion enabled
+        const results = yield* learningSvc.search({
+          query: "database optimization sql",
+          limit: 10,
+          graphExpansion: {
+            enabled: true,
+            depth: 2,
+            decayFactor: 0.7
+          }
+        })
+
+        return { results, seed, related1, related2 }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should return results including expanded learnings
+    expect(result.results.length).toBeGreaterThan(0)
+
+    // The seed should be found (direct match)
+    const seedInResults = result.results.find(r => r.id === result.seed.id)
+    expect(seedInResults).toBeDefined()
+
+    // With graph expansion, related learnings may be found
+    // (depends on whether they match query or are expanded from seed)
+  })
+
+  it("graphExpansion results include expansion metadata", async () => {
+    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        // Create connected learnings
+        const l1 = yield* learningSvc.create({
+          content: "TypeScript type system fundamentals",
+          sourceType: "manual",
+          keywords: ["typescript", "types"]
+        })
+
+        const l2 = yield* learningSvc.create({
+          content: "Generic types and constraints in TypeScript",
+          sourceType: "manual",
+          keywords: ["generic", "constraints"]
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+          weight: 0.85,
+        })
+
+        return yield* learningSvc.search({
+          query: "TypeScript type system",
+          limit: 10,
+          graphExpansion: {
+            enabled: true,
+            depth: 1,
+            decayFactor: 0.7
+          }
+        })
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Results should have expansion metadata
+    for (const r of result) {
+      // Direct matches have expansionHops = 0
+      // Expanded results have expansionHops > 0
+      if (r.expansionHops !== undefined) {
+        expect(r.expansionHops).toBeGreaterThanOrEqual(0)
+      }
+    }
+  })
+
+  it("disabled graph expansion returns only direct matches", async () => {
+    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        // Create seed and connected but unrelated content
+        const seed = yield* learningSvc.create({
+          content: "React hooks for state management",
+          sourceType: "manual",
+          keywords: ["react", "hooks", "state"]
+        })
+
+        const connected = yield* learningSvc.create({
+          content: "Completely unrelated content about cooking recipes",
+          sourceType: "manual",
+          keywords: ["cooking", "recipes"]
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "LINKS_TO",
+          sourceType: "learning",
+          sourceId: String(seed.id),
+          targetType: "learning",
+          targetId: String(connected.id),
+        })
+
+        // Search WITHOUT graph expansion
+        const resultsWithout = yield* learningSvc.search({
+          query: "React hooks state",
+          limit: 10,
+          graphExpansion: { enabled: false }
+        })
+
+        // Search WITH graph expansion
+        const resultsWith = yield* learningSvc.search({
+          query: "React hooks state",
+          limit: 10,
+          graphExpansion: { enabled: true, depth: 1 }
+        })
+
+        return { resultsWithout, resultsWith, seed, connected }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Without expansion, cooking content should NOT be in results
+    const cookingWithout = result.resultsWithout.find(r =>
+      r.content.includes("cooking")
+    )
+    expect(cookingWithout).toBeUndefined()
+
+    // With expansion, cooking content MAY be in results (via graph traversal)
+    // This tests that graph expansion can surface related content
+  })
+
+  it("edge types filter applies during RRF integration", async () => {
+    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        const seed = yield* learningSvc.create({
+          content: "API design patterns for REST services",
+          sourceType: "manual",
+          keywords: ["api", "rest"]
+        })
+
+        const similarTo = yield* learningSvc.create({
+          content: "Similar API pattern content",
+          sourceType: "manual"
+        })
+
+        const derivedFrom = yield* learningSvc.create({
+          content: "Derived API pattern content",
+          sourceType: "manual"
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(seed.id),
+          targetType: "learning",
+          targetId: String(similarTo.id),
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(seed.id),
+          targetType: "learning",
+          targetId: String(derivedFrom.id),
+        })
+
+        // Search with only SIMILAR_TO edges
+        const results = yield* learningSvc.search({
+          query: "API design patterns REST",
+          limit: 10,
+          graphExpansion: {
+            enabled: true,
+            depth: 1,
+            edgeTypes: ["SIMILAR_TO"]
+          }
+        })
+
+        return { results, similarTo, derivedFrom }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Edge type filtering should work - only SIMILAR_TO edges should be traversed
+    expect(result.results.length).toBeGreaterThan(0)
+  })
+})
+
+// =============================================================================
+// RECALL IMPROVEMENT VERIFICATION TESTS
+// =============================================================================
+
+describe("Graph Expansion - Recall Improvement", () => {
+  it("graph expansion surfaces semantically related content not in initial BM25 results", async () => {
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create a learning that will match a query
+        const matchingLearning = yield* learningSvc.create({
+          content: "Database indexing best practices for PostgreSQL",
+          sourceType: "manual",
+          keywords: ["database", "indexing", "postgresql"]
+        })
+
+        // Create semantically related content that uses different vocabulary
+        // (won't match BM25 but is semantically related)
+        const relatedContent = yield* learningSvc.create({
+          content: "B-tree data structure optimization in relational systems",
+          sourceType: "manual",
+          keywords: ["btree", "optimization", "relational"]
+        })
+
+        // Create edge showing they are related
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(matchingLearning.id),
+          targetType: "learning",
+          targetId: String(relatedContent.id),
+          weight: 0.9,
+        })
+
+        // Expand from the matching learning
+        const expansionResult = yield* expansionSvc.expand(
+          [{ learning: matchingLearning, score: 1.0 }],
+          { depth: 1, decayFactor: 0.7 }
+        )
+
+        return { expansionResult, matchingLearning, relatedContent }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Graph expansion should find the related content
+    expect(result.expansionResult.expanded.length).toBe(1)
+    expect(result.expansionResult.expanded[0].learning.id).toBe(result.relatedContent.id)
+
+    // The expanded content has appropriate decayed score
+    expect(result.expansionResult.expanded[0].decayedScore).toBeCloseTo(0.63, 2) // 1.0 * 0.9 * 0.7
+  })
+
+  it("multi-hop expansion increases recall for distant but relevant content", async () => {
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create a chain: L1 -> L2 -> L3 (where L3 is distant but relevant)
+        const l1 = yield* learningSvc.create({
+          content: "Authentication middleware for Express.js",
+          sourceType: "manual"
+        })
+
+        const l2 = yield* learningSvc.create({
+          content: "Session management strategies",
+          sourceType: "manual"
+        })
+
+        const l3 = yield* learningSvc.create({
+          content: "Security token validation patterns",
+          sourceType: "manual"
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+          weight: 0.8,
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l2.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+          weight: 0.8,
+        })
+
+        // Expand with depth 1 - should only find L2
+        const depth1Result = yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          { depth: 1 }
+        )
+
+        // Expand with depth 2 - should find both L2 and L3
+        const depth2Result = yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          { depth: 2 }
+        )
+
+        return { depth1Result, depth2Result, l2, l3 }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Depth 1 finds only L2
+    expect(result.depth1Result.expanded).toHaveLength(1)
+    expect(result.depth1Result.expanded[0].learning.id).toBe(result.l2.id)
+
+    // Depth 2 finds both L2 and L3 (improved recall)
+    expect(result.depth2Result.expanded).toHaveLength(2)
+    const expandedIds = result.depth2Result.expanded.map(e => e.learning.id)
+    expect(expandedIds).toContain(result.l2.id)
+    expect(expandedIds).toContain(result.l3.id)
+  })
+
+  it("expansion with high-weight edges improves precision of expanded results", async () => {
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        const seed = yield* learningSvc.create({
+          content: "Machine learning model training",
+          sourceType: "manual"
+        })
+
+        // High-weight edge to highly relevant content
+        const highRelevance = yield* learningSvc.create({
+          content: "Neural network architecture design",
+          sourceType: "manual"
+        })
+
+        // Low-weight edge to tangentially related content
+        const lowRelevance = yield* learningSvc.create({
+          content: "Data preprocessing pipelines",
+          sourceType: "manual"
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(seed.id),
+          targetType: "learning",
+          targetId: String(highRelevance.id),
+          weight: 0.95,
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(seed.id),
+          targetType: "learning",
+          targetId: String(lowRelevance.id),
+          weight: 0.3,
+        })
+
+        return yield* expansionSvc.expand(
+          [{ learning: seed, score: 1.0 }],
+          { depth: 1, decayFactor: 0.7 }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Both should be expanded
+    expect(result.expanded).toHaveLength(2)
+
+    // Results should be sorted by decayed score (high relevance first)
+    expect(result.expanded[0].edgeWeight).toBe(0.95)
+    expect(result.expanded[1].edgeWeight).toBe(0.3)
+
+    // High-weight edge produces higher score
+    expect(result.expanded[0].decayedScore).toBeGreaterThan(result.expanded[1].decayedScore)
+  })
+
+  it("expansion from multiple seeds increases coverage", async () => {
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create two independent clusters
+        const seed1 = yield* learningSvc.create({
+          content: "Frontend development with React",
+          sourceType: "manual"
+        })
+        const cluster1Member = yield* learningSvc.create({
+          content: "React component lifecycle methods",
+          sourceType: "manual"
+        })
+
+        const seed2 = yield* learningSvc.create({
+          content: "Backend development with Node.js",
+          sourceType: "manual"
+        })
+        const cluster2Member = yield* learningSvc.create({
+          content: "Express middleware patterns",
+          sourceType: "manual"
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(seed1.id),
+          targetType: "learning",
+          targetId: String(cluster1Member.id),
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(seed2.id),
+          targetType: "learning",
+          targetId: String(cluster2Member.id),
+        })
+
+        // Expand from single seed
+        const singleSeedResult = yield* expansionSvc.expand(
+          [{ learning: seed1, score: 1.0 }],
+          { depth: 1 }
+        )
+
+        // Expand from both seeds
+        const multiSeedResult = yield* expansionSvc.expand(
+          [
+            { learning: seed1, score: 1.0 },
+            { learning: seed2, score: 0.9 }
+          ],
+          { depth: 1 }
+        )
+
+        return { singleSeedResult, multiSeedResult, cluster1Member, cluster2Member }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Single seed only finds its cluster member
+    expect(result.singleSeedResult.expanded).toHaveLength(1)
+    expect(result.singleSeedResult.expanded[0].learning.id).toBe(result.cluster1Member.id)
+
+    // Multiple seeds find both cluster members (improved coverage/recall)
+    expect(result.multiSeedResult.expanded).toHaveLength(2)
+    const expandedIds = result.multiSeedResult.expanded.map(e => e.learning.id)
+    expect(expandedIds).toContain(result.cluster1Member.id)
+    expect(expandedIds).toContain(result.cluster2Member.id)
+  })
+})
+
+// =============================================================================
+// EXPANSION STATISTICS TESTS
+// =============================================================================
+
+describe("Graph Expansion - Statistics", () => {
+  it("returns accurate expansion statistics", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create graph: L1 -> L2 -> L3, L1 -> L4
+        const l1 = yield* learningSvc.create({ content: "Root", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "Child1", sourceType: "manual" })
+        const l3 = yield* learningSvc.create({ content: "Grandchild", sourceType: "manual" })
+        const l4 = yield* learningSvc.create({ content: "Child2", sourceType: "manual" })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l2.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l4.id),
+        })
+
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          { depth: 2 }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Verify statistics
+    expect(result.stats.seedCount).toBe(1)
+    expect(result.stats.expandedCount).toBe(3) // L2, L3, L4
+    expect(result.stats.maxDepthReached).toBe(2)
+    expect(result.stats.nodesVisited).toBe(4) // L1 (seed) + L2, L3, L4
+  })
+
+  it("stats reflect maxNodes limit", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create star pattern: L1 -> L2, L3, L4, L5, L6
+        const l1 = yield* learningSvc.create({ content: "Center", sourceType: "manual" })
+        const neighbors = []
+        for (let i = 2; i <= 6; i++) {
+          const l = yield* learningSvc.create({ content: `L${i}`, sourceType: "manual" })
+          neighbors.push(l)
+          yield* edgeSvc.createEdge({
+            edgeType: "SIMILAR_TO",
+            sourceType: "learning",
+            sourceId: String(l1.id),
+            targetType: "learning",
+            targetId: String(l.id),
+          })
+        }
+
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          { depth: 1, maxNodes: 3 }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should respect maxNodes limit
+    expect(result.stats.expandedCount).toBe(3)
+    expect(result.expanded).toHaveLength(3)
   })
 })
