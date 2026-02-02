@@ -131,6 +131,21 @@ export interface LearningRow {
 }
 
 /**
+ * Options for retrieval operations.
+ * Used by RetrieverService.search() and custom retrievers.
+ */
+export interface RetrievalOptions {
+  /** Maximum number of results to return (default: 10) */
+  readonly limit?: number;
+  /** Minimum relevance score threshold (default: 0.1) */
+  readonly minScore?: number;
+  /** Optional category filter */
+  readonly category?: string;
+  /** Optional source type filter */
+  readonly sourceType?: LearningSourceType;
+}
+
+/**
  * Learning row with BM25 score from FTS5 query.
  */
 export interface LearningRowWithBM25 extends LearningRow {

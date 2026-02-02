@@ -48,6 +48,7 @@ export {
   type LearningSearchResult,
   type LearningRow,
   type LearningRowWithBM25,
+  type RetrievalOptions,
 } from "./learning.js";
 
 // File learning types

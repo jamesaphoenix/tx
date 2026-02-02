@@ -97,6 +97,14 @@ export class ExtractionUnavailableError extends Data.TaggedError("ExtractionUnav
   }
 }
 
+export class RetrievalError extends Data.TaggedError("RetrievalError")<{
+  readonly reason: string
+}> {
+  get message() {
+    return `Retrieval error: ${this.reason}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
@@ -105,3 +113,4 @@ export type TaskError =
   | EmbeddingUnavailableError
   | RerankerUnavailableError
   | ExtractionUnavailableError
+  | RetrievalError

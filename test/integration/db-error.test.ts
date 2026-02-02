@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import {
   DatabaseError,
+  RetrievalError,
   LearningRepository,
   AttemptRepository,
   FileLearningRepository,
@@ -15,7 +16,9 @@ import {
   EmbeddingServiceNoop,
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
-  RerankerServiceNoop
+  RerankerServiceNoop,
+  RetrieverServiceNoop,
+  RetrieverService
 } from "@tx/core"
 import { FIXTURES } from "../fixtures.js"
 import type { AttemptId, FileLearning, FileLearningId, Task } from "@tx/types"
@@ -54,13 +57,17 @@ describe("LearningService Database Error Handling", () => {
       const mockLearningRepo = Layer.succeed(LearningRepository, {
         insert: () => Effect.fail(testDbError),
         findById: () => Effect.succeed(null),
+        findAll: () => Effect.succeed([]),
         findRecent: () => Effect.succeed([]),
         bm25Search: () => Effect.succeed([]),
+        findWithEmbeddings: () => Effect.succeed([]),
         incrementUsage: () => Effect.void,
+        incrementUsageMany: () => Effect.void,
         updateOutcomeScore: () => Effect.void,
         updateEmbedding: () => Effect.void,
         remove: () => Effect.void,
         count: () => Effect.succeed(0),
+        countWithEmbeddings: () => Effect.succeed(0),
         getConfig: () => Effect.succeed(null)
       })
 
@@ -78,7 +85,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, RetrieverServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -96,17 +103,23 @@ describe("LearningService Database Error Handling", () => {
   })
 
   describe("search", () => {
-    it("propagates DatabaseError from bm25Search", async () => {
+    it("propagates RetrievalError from RetrieverService", async () => {
+      const testRetrievalError = new RetrievalError({ reason: "Simulated retrieval failure" })
+
       const mockLearningRepo = Layer.succeed(LearningRepository, {
         insert: () => Effect.fail(testDbError),
         findById: () => Effect.succeed(null),
+        findAll: () => Effect.succeed([]),
         findRecent: () => Effect.succeed([]),
-        bm25Search: () => Effect.fail(testDbError),
+        bm25Search: () => Effect.succeed([]),
+        findWithEmbeddings: () => Effect.succeed([]),
         incrementUsage: () => Effect.void,
+        incrementUsageMany: () => Effect.void,
         updateOutcomeScore: () => Effect.void,
         updateEmbedding: () => Effect.void,
         remove: () => Effect.void,
         count: () => Effect.succeed(0),
+        countWithEmbeddings: () => Effect.succeed(0),
         getConfig: () => Effect.succeed(null)
       })
 
@@ -123,8 +136,14 @@ describe("LearningService Database Error Handling", () => {
         count: () => Effect.succeed(0)
       })
 
+      // Mock RetrieverService that fails on search
+      const mockRetrieverService = Layer.succeed(RetrieverService, {
+        search: () => Effect.fail(testRetrievalError),
+        isAvailable: () => Effect.succeed(false)
+      })
+
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, mockRetrieverService))
       )
 
       const result = await Effect.runPromise(
@@ -136,7 +155,7 @@ describe("LearningService Database Error Handling", () => {
 
       expect(result._tag).toBe("Left")
       if (result._tag === "Left") {
-        expect((result.left as any)._tag).toBe("DatabaseError")
+        expect((result.left as any)._tag).toBe("RetrievalError")
       }
     })
   })
@@ -146,13 +165,17 @@ describe("LearningService Database Error Handling", () => {
       const mockLearningRepo = Layer.succeed(LearningRepository, {
         insert: () => Effect.fail(testDbError),
         findById: () => Effect.fail(testDbError),
+        findAll: () => Effect.succeed([]),
         findRecent: () => Effect.succeed([]),
         bm25Search: () => Effect.succeed([]),
+        findWithEmbeddings: () => Effect.succeed([]),
         incrementUsage: () => Effect.void,
+        incrementUsageMany: () => Effect.void,
         updateOutcomeScore: () => Effect.void,
         updateEmbedding: () => Effect.void,
         remove: () => Effect.void,
         count: () => Effect.succeed(0),
+        countWithEmbeddings: () => Effect.succeed(0),
         getConfig: () => Effect.succeed(null)
       })
 
@@ -170,7 +193,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, RetrieverServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -192,13 +215,17 @@ describe("LearningService Database Error Handling", () => {
       const mockLearningRepo = Layer.succeed(LearningRepository, {
         insert: () => Effect.fail(testDbError),
         findById: () => Effect.succeed(null),
+        findAll: () => Effect.succeed([]),
         findRecent: () => Effect.succeed([]),
         bm25Search: () => Effect.succeed([]),
+        findWithEmbeddings: () => Effect.succeed([]),
         incrementUsage: () => Effect.void,
+        incrementUsageMany: () => Effect.void,
         updateOutcomeScore: () => Effect.void,
         updateEmbedding: () => Effect.void,
         remove: () => Effect.void,
         count: () => Effect.fail(testDbError),
+        countWithEmbeddings: () => Effect.succeed(0),
         getConfig: () => Effect.succeed(null)
       })
 
@@ -216,7 +243,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, RetrieverServiceNoop))
       )
 
       const result = await Effect.runPromise(

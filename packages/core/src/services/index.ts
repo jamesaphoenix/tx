@@ -79,3 +79,9 @@ export {
   CandidateExtractorServiceOpenAI,
   CandidateExtractorServiceAuto
 } from "./candidate-extractor-service.js"
+export {
+  RetrieverService,
+  RetrieverServiceNoop,
+  RetrieverServiceLive,
+  RetrieverServiceAuto
+} from "./retriever-service.js"

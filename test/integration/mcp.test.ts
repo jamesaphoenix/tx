@@ -33,7 +33,8 @@ import {
   EmbeddingServiceNoop,
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
-  RerankerServiceNoop
+  RerankerServiceNoop,
+  RetrieverServiceLive
 } from "@tx/core"
 import type { TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@tx/types"
 import { LEARNING_SOURCE_TYPES } from "@tx/types"
@@ -82,6 +83,11 @@ export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRunti
     Layer.provide(infra)
   )
 
+  // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
+  const retrieverLayer = RetrieverServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+  )
+
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -90,7 +96,7 @@ export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRunti
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
   )
 
   return ManagedRuntime.make(services)

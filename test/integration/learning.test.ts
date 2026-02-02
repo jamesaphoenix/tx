@@ -15,7 +15,8 @@ import {
   EmbeddingServiceNoop,
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
-  RerankerServiceNoop
+  RerankerServiceNoop,
+  RetrieverServiceLive
 } from "@tx/core"
 import type Database from "better-sqlite3"
 
@@ -28,6 +29,12 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   ).pipe(
     Layer.provide(infra)
   )
+
+  // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
+  const retrieverLayer = RetrieverServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+  )
+
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -35,7 +42,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
   )
   return services
 }

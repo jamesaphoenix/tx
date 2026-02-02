@@ -21,7 +21,8 @@ export {
   EmbeddingUnavailableError,
   EdgeNotFoundError,
   AnchorNotFoundError,
-  ExtractionUnavailableError
+  ExtractionUnavailableError,
+  RetrievalError
 } from "./errors.js"
 
 // =============================================================================
@@ -101,6 +102,10 @@ export {
   RerankerServiceNoop,
   RerankerServiceLive,
   RerankerServiceAuto,
+  RetrieverService,
+  RetrieverServiceNoop,
+  RetrieverServiceLive,
+  RetrieverServiceAuto,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,

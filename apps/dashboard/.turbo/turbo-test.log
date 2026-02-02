@@ -5,15 +5,15 @@
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
 
- ✓ src/components/ui/__tests__/LoadingSkeleton.test.tsx (6 tests) 15ms
+ ✓ src/components/ui/__tests__/LoadingSkeleton.test.tsx (6 tests) 16ms
  ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 14ms
- ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 20ms
- ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 22ms
- ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 41ms
- ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 57ms
- ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 84ms
- ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 117ms
- ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 86ms
+ ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 20ms
+ ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 23ms
+ ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 44ms
+ ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 90ms
+ ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 105ms
+ ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 101ms
+ ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 103ms
 stderr | src/App.test.tsx > App > renders without crashing
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -40,12 +40,12 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/App.test.tsx (1 test) 31ms
- ✓ src/components/tasks/__tests__/TaskDetail.test.tsx (15 tests) 134ms
- ✓ src/components/tasks/__tests__/TaskList.test.tsx (17 tests) 147ms
+ ✓ src/App.test.tsx (1 test) 30ms
+ ✓ src/components/tasks/__tests__/TaskDetail.test.tsx (15 tests) 140ms
+ ✓ src/components/tasks/__tests__/TaskList.test.tsx (17 tests) 154ms
 
  Test Files  12 passed (12)
       Tests  145 passed (145)
-   Start at  14:52:59
-   Duration  1.33s (transform 348ms, setup 1.24s, collect 2.13s, tests 768ms, environment 5.49s, prepare 915ms)
+   Start at  15:09:19
+   Duration  1.21s (transform 325ms, setup 955ms, collect 1.93s, tests 838ms, environment 5.34s, prepare 959ms)
 

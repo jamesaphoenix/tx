@@ -2,11 +2,12 @@
  * Learning commands: learning:add, learning:search, learning:recent, learning:helpful, context, learn, recall
  */
 
-import { Effect } from "effect"
-import { writeFileSync } from "node:fs"
+import { Effect, Layer } from "effect"
+import { writeFileSync, existsSync } from "node:fs"
 import { resolve } from "node:path"
-import { LearningService, FileLearningService } from "@tx/core"
-import type { LearningSourceType } from "@tx/types"
+import { pathToFileURL } from "node:url"
+import { LearningService, FileLearningService, RetrieverService, TaskService, RetrievalError } from "@tx/core"
+import type { LearningSourceType, TaskId } from "@tx/types"
 import { toJson, formatContextMarkdown } from "../output.js"
 import { commandHelp } from "../help.js"
 
@@ -132,14 +133,91 @@ export const learningHelpful = (pos: string[], flags: Flags) =>
     }
   })
 
+/**
+ * Load a custom retriever module from a file path.
+ * The module should export a default Layer that provides RetrieverService.
+ */
+const loadCustomRetriever = (retrieverPath: string) =>
+  Effect.gen(function* () {
+    const absolutePath = resolve(process.cwd(), retrieverPath)
+
+    if (!existsSync(absolutePath)) {
+      console.error(`Error: Retriever module not found: ${absolutePath}`)
+      process.exit(1)
+    }
+
+    // Dynamic import of the custom retriever module
+    const moduleUrl = pathToFileURL(absolutePath).href
+    const retrieverModule = yield* Effect.tryPromise({
+      try: async () => {
+        const mod = await import(moduleUrl)
+        return mod.default as Layer.Layer<RetrieverService>
+      },
+      catch: (e) => new RetrievalError({ reason: `Failed to load retriever module: ${String(e)}` })
+    })
+
+    return retrieverModule
+  })
+
 export const context = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const taskId = pos[0]
     if (!taskId) {
-      console.error("Usage: tx context <task-id> [--json] [--inject]")
+      console.error("Usage: tx context <task-id> [--json] [--inject] [--retriever <path>]")
       process.exit(1)
     }
 
+    const retrieverPath = opt(flags, "retriever")
+
+    // If custom retriever is specified, load it and use it for direct search
+    if (retrieverPath) {
+      const customRetrieverLayer = yield* loadCustomRetriever(retrieverPath)
+      const taskSvc = yield* TaskService
+      const startTime = Date.now()
+
+      // Get task to build search query
+      const task = yield* taskSvc.get(taskId as TaskId)
+
+      // Build search query from task content
+      const searchQuery = `${task.title} ${task.description}`.trim()
+
+      // Use custom retriever for search
+      const searchEffect = Effect.gen(function* () {
+        const retriever = yield* RetrieverService
+        return yield* retriever.search(searchQuery, { limit: 10, minScore: 0.05 })
+      })
+
+      const learnings = yield* Effect.provide(searchEffect, customRetrieverLayer)
+
+      const result = {
+        taskId,
+        taskTitle: task.title,
+        learnings,
+        searchQuery,
+        searchDuration: Date.now() - startTime
+      }
+
+      if (flag(flags, "inject")) {
+        const contextMd = formatContextMarkdown(result)
+        const contextPath = resolve(process.cwd(), ".tx", "context.md")
+        writeFileSync(contextPath, contextMd)
+        console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath} (custom retriever)`)
+      } else if (flag(flags, "json")) {
+        console.log(toJson(result))
+      } else {
+        console.log(`Context for: ${result.taskId} - ${result.taskTitle} (custom retriever)`)
+        console.log(`  Search query: ${result.searchQuery.slice(0, 50)}...`)
+        console.log(`  Search duration: ${result.searchDuration}ms`)
+        console.log(`  ${result.learnings.length} relevant learning(s):`)
+        for (const l of result.learnings) {
+          const score = (l.relevanceScore * 100).toFixed(0)
+          console.log(`    #${l.id} (${score}%) ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
+        }
+      }
+      return
+    }
+
+    // Default path: use LearningService with built-in retriever
     const svc = yield* LearningService
     const result = yield* svc.getContextForTask(taskId)
 
