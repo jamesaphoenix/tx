@@ -202,7 +202,12 @@ export {
   CandidateRepository,
   CandidateRepositoryLive,
   WorkerRepository,
-  WorkerRepositoryLive
+  WorkerRepositoryLive,
+  ClaimRepository,
+  ClaimRepositoryLive,
+  OrchestratorStateRepository,
+  OrchestratorStateRepositoryLive,
+  type OrchestratorStateUpdate
 } from "./repo/index.js"
 
 // =============================================================================
