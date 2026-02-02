@@ -41,6 +41,9 @@ Commands:
   graph:status            Show graph health metrics
   graph:pin               Pin anchor to prevent auto-invalidation
   graph:unpin             Unpin anchor to allow auto-invalidation
+  hooks:install           Install post-commit hook for verification
+  hooks:uninstall         Remove post-commit hook
+  hooks:status            Show git hook status
   mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
@@ -789,5 +792,60 @@ Options:
 
 Examples:
   tx graph:unpin 42
-  tx graph:unpin 42 --json`
+  tx graph:unpin 42 --json`,
+
+  "hooks:install": `tx hooks:install - Install post-commit hook
+
+Usage: tx hooks:install [options]
+
+Installs a git post-commit hook that automatically triggers anchor
+verification when commits meet certain criteria:
+- More than 10 files changed (configurable)
+- High-value configuration files modified
+
+The hook runs verification in the background to avoid blocking commits.
+Configuration is stored in .txrc.json and can be customized.
+
+Options:
+  --force, -f              Overwrite existing hook
+  --threshold, -t <n>      File count threshold (default: 10)
+  --high-value, -h <list>  Comma-separated list of high-value file patterns
+  --help                   Show this help
+
+Examples:
+  tx hooks:install                           # Install with defaults
+  tx hooks:install --threshold 5             # Trigger on 5+ files
+  tx hooks:install --high-value "*.config.ts,schema.prisma"
+  tx hooks:install --force                   # Reinstall hook`,
+
+  "hooks:uninstall": `tx hooks:uninstall - Remove post-commit hook
+
+Usage: tx hooks:uninstall [--help]
+
+Removes the tx post-commit hook. Only removes hooks that were
+installed by tx (identified by marker comment). Updates .txrc.json
+to disable hook settings.
+
+Options:
+  --help   Show this help
+
+Examples:
+  tx hooks:uninstall`,
+
+  "hooks:status": `tx hooks:status - Show git hook status
+
+Usage: tx hooks:status [--json]
+
+Shows the current status of the tx git hook integration including:
+- Whether a hook is installed
+- Whether hooks are enabled in config
+- Current configuration settings
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx hooks:status
+  tx hooks:status --json`
 }

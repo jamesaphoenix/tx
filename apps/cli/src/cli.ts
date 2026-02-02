@@ -20,6 +20,7 @@ import { learningAdd, learningSearch, learningRecent, learningHelpful, learningE
 import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
 import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin } from "./commands/graph.js"
+import { hooksInstall, hooksUninstall, hooksStatus } from "./commands/hooks.js"
 
 // --- Argv parsing helpers ---
 
@@ -122,6 +123,11 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "graph:status": graphStatus,
   "graph:pin": graphPin,
   "graph:unpin": graphUnpin,
+
+  // Hooks commands (colon-prefixed)
+  "hooks:install": hooksInstall,
+  "hooks:uninstall": hooksUninstall,
+  "hooks:status": hooksStatus,
 
   // Help command
   help: (pos) =>
