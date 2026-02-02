@@ -16,6 +16,7 @@ import { RunRepositoryLive } from "./repo/run-repo.js"
 import { AnchorRepositoryLive } from "./repo/anchor-repo.js"
 import { EdgeRepositoryLive } from "./repo/edge-repo.js"
 import { DeduplicationRepositoryLive } from "./repo/deduplication-repo.js"
+import { CandidateRepositoryLive } from "./repo/candidate-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
@@ -36,6 +37,7 @@ import { RetrieverServiceLive } from "./services/retriever-service.js"
 import { GraphExpansionServiceLive } from "./services/graph-expansion.js"
 import { AnchorVerificationServiceLive } from "./services/anchor-verification.js"
 import { SwarmVerificationServiceLive } from "./services/swarm-verification.js"
+import { PromotionServiceLive } from "./services/promotion-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync-service.js"
@@ -100,6 +102,13 @@ export {
   type SwarmVerifyOptions,
   type VoteResult
 } from "./services/swarm-verification.js"
+export {
+  PromotionService,
+  PromotionServiceLive,
+  type PromotionResult,
+  type AutoPromoteResult
+} from "./services/promotion-service.js"
+export { CandidateRepository, CandidateRepositoryLive } from "./repo/candidate-repo.js"
 
 /**
  * Create the full application layer with all services.
@@ -122,7 +131,8 @@ export const makeAppLayer = (dbPath: string) => {
     RunRepositoryLive,
     AnchorRepositoryLive,
     EdgeRepositoryLive,
-    DeduplicationRepositoryLive
+    DeduplicationRepositoryLive,
+    CandidateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -177,8 +187,13 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, anchorVerificationService))
   )
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, and swarmVerificationService
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService)
+  // PromotionServiceLive needs CandidateRepository, LearningService, and EdgeService
+  const promotionService = PromotionServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, services, edgeService))
+  )
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, and promotionService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -208,7 +223,8 @@ export const makeMinimalLayer = (dbPath: string) => {
     RunRepositoryLive,
     AnchorRepositoryLive,
     EdgeRepositoryLive,
-    DeduplicationRepositoryLive
+    DeduplicationRepositoryLive,
+    CandidateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -249,8 +265,13 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, anchorVerificationService))
   )
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, and swarmVerificationService
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService)
+  // PromotionServiceLive needs CandidateRepository, LearningService, and EdgeService
+  const promotionService = PromotionServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, services, edgeService))
+  )
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, and promotionService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
