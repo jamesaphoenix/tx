@@ -5,15 +5,15 @@
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
 
+ ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 14ms
+ ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 18ms
+ ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 18ms
  ✓ src/components/ui/__tests__/LoadingSkeleton.test.tsx (6 tests) 15ms
- ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 16ms
- ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 23ms
- ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 21ms
- ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 40ms
- ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 78ms
- ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 93ms
- ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 73ms
- ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 83ms
+ ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 34ms
+ ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 52ms
+ ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 65ms
+ ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 74ms
+ ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 95ms
 stderr | src/App.test.tsx > App > renders without crashing
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -42,10 +42,10 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 
  ✓ src/App.test.tsx (1 test) 30ms
  ✓ src/components/tasks/__tests__/TaskDetail.test.tsx (15 tests) 129ms
- ✓ src/components/tasks/__tests__/TaskList.test.tsx (17 tests) 134ms
+ ✓ src/components/tasks/__tests__/TaskList.test.tsx (17 tests) 137ms
 
  Test Files  12 passed (12)
       Tests  145 passed (145)
-   Start at  10:50:31
-   Duration  1.11s (transform 313ms, setup 1.27s, collect 1.82s, tests 736ms, environment 4.76s, prepare 546ms)
+   Start at  10:55:30
+   Duration  977ms (transform 303ms, setup 820ms, collect 1.72s, tests 680ms, environment 3.66s, prepare 604ms)
 
