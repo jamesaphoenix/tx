@@ -176,7 +176,11 @@ export {
   type VoteResult,
   PromotionService,
   type PromotionResult,
-  type AutoPromoteResult
+  type AutoPromoteResult,
+  FeedbackTrackerService,
+  FeedbackTrackerServiceNoop,
+  FeedbackTrackerServiceLive,
+  type LearningUsageFeedback
 } from "./services/index.js"
 
 // =============================================================================

@@ -1,0 +1,386 @@
+/**
+ * FeedbackTrackerService Integration Tests
+ *
+ * Tests the FeedbackTrackerService at the service layer with full dependency injection.
+ * Uses real SQLite database (in-memory) and SHA256-based fixture IDs per Rule 3.
+ */
+
+import { describe, it, expect } from "vitest"
+import { Effect } from "effect"
+import { createHash } from "node:crypto"
+
+// =============================================================================
+// Test Fixtures (Rule 3: SHA256-based IDs)
+// =============================================================================
+
+const fixtureId = (name: string): string => {
+  const hash = createHash("sha256")
+    .update(`feedback-tracker-test:${name}`)
+    .digest("hex")
+    .substring(0, 8)
+  return `fixture-${hash}`
+}
+
+const FIXTURES = {
+  RUN_1: fixtureId("run-1"),
+  RUN_2: fixtureId("run-2"),
+  RUN_3: fixtureId("run-3"),
+} as const
+
+// =============================================================================
+// FeedbackTrackerServiceLive Tests
+// =============================================================================
+
+describe("FeedbackTrackerServiceLive Integration", () => {
+  describe("recordUsage", () => {
+    it("creates USED_IN_RUN edges for each learning", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+          const edgeSvc = yield* EdgeService
+
+          // Create learnings
+          const learning1 = yield* learningSvc.create({
+            content: "Learning 1",
+            sourceType: "manual",
+          })
+          const learning2 = yield* learningSvc.create({
+            content: "Learning 2",
+            sourceType: "manual",
+          })
+
+          // Record usage
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [
+            { id: learning1.id, helpful: true },
+            { id: learning2.id, helpful: false },
+          ])
+
+          // Query edges
+          const edges1 = yield* edgeSvc.findFromSource("learning", String(learning1.id))
+          const edges2 = yield* edgeSvc.findFromSource("learning", String(learning2.id))
+
+          return { edges1, edges2 }
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Check edges were created
+      expect(result.edges1).toHaveLength(1)
+      expect(result.edges2).toHaveLength(1)
+
+      // Check edge types
+      expect(result.edges1[0].edgeType).toBe("USED_IN_RUN")
+      expect(result.edges2[0].edgeType).toBe("USED_IN_RUN")
+
+      // Check weights (helpful = 1.0, not helpful = 0.0)
+      expect(result.edges1[0].weight).toBe(1.0)
+      expect(result.edges2[0].weight).toBe(0.0)
+
+      // Check target
+      expect(result.edges1[0].targetType).toBe("run")
+      expect(result.edges1[0].targetId).toBe(FIXTURES.RUN_1)
+    })
+
+    it("stores position in metadata", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+          const edgeSvc = yield* EdgeService
+
+          // Create learnings
+          const learning1 = yield* learningSvc.create({
+            content: "Learning 1",
+            sourceType: "manual",
+          })
+          const learning2 = yield* learningSvc.create({
+            content: "Learning 2",
+            sourceType: "manual",
+          })
+          const learning3 = yield* learningSvc.create({
+            content: "Learning 3",
+            sourceType: "manual",
+          })
+
+          // Record usage
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [
+            { id: learning1.id, helpful: true },
+            { id: learning2.id, helpful: false },
+            { id: learning3.id, helpful: true },
+          ])
+
+          // Query edges
+          const edges1 = yield* edgeSvc.findFromSource("learning", String(learning1.id))
+          const edges2 = yield* edgeSvc.findFromSource("learning", String(learning2.id))
+          const edges3 = yield* edgeSvc.findFromSource("learning", String(learning3.id))
+
+          return { edges1, edges2, edges3 }
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Check positions in metadata
+      expect((result.edges1[0].metadata as any).position).toBe(0)
+      expect((result.edges2[0].metadata as any).position).toBe(1)
+      expect((result.edges3[0].metadata as any).position).toBe(2)
+    })
+
+    it("stores recordedAt in metadata", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+          const edgeSvc = yield* EdgeService
+
+          // Create learning
+          const learning = yield* learningSvc.create({
+            content: "Learning",
+            sourceType: "manual",
+          })
+
+          // Record usage
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [
+            { id: learning.id, helpful: true },
+          ])
+
+          // Query edge
+          const edges = yield* edgeSvc.findFromSource("learning", String(learning.id))
+
+          return edges[0]
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Check recordedAt is ISO string
+      const recordedAt = (result.metadata as any).recordedAt
+      expect(typeof recordedAt).toBe("string")
+      expect(new Date(recordedAt).toISOString()).toBe(recordedAt)
+    })
+
+    it("handles empty learnings array", async () => {
+      const { makeAppLayer, FeedbackTrackerService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      // Should not throw
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [])
+        }).pipe(Effect.provide(layer))
+      )
+    })
+  })
+
+  describe("getFeedbackScore", () => {
+    it("returns 0.5 for learning with no feedback", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+
+          // Create learning with no feedback
+          const learning = yield* learningSvc.create({
+            content: "Learning",
+            sourceType: "manual",
+          })
+
+          return yield* feedbackSvc.getFeedbackScore(learning.id)
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result).toBe(0.5)
+    })
+
+    it("returns higher score for all helpful feedback", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+
+          const learning = yield* learningSvc.create({
+            content: "Learning",
+            sourceType: "manual",
+          })
+
+          // Record 3 helpful usages
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_2, [{ id: learning.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_3, [{ id: learning.id, helpful: true }])
+
+          return yield* feedbackSvc.getFeedbackScore(learning.id)
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Bayesian: (3 + 0.5 * 2) / (3 + 2) = 4 / 5 = 0.8
+      expect(result).toBe(0.8)
+    })
+
+    it("returns lower score for all unhelpful feedback", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+
+          const learning = yield* learningSvc.create({
+            content: "Learning",
+            sourceType: "manual",
+          })
+
+          // Record 3 unhelpful usages
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning.id, helpful: false }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_2, [{ id: learning.id, helpful: false }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_3, [{ id: learning.id, helpful: false }])
+
+          return yield* feedbackSvc.getFeedbackScore(learning.id)
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Bayesian: (0 + 0.5 * 2) / (3 + 2) = 1 / 5 = 0.2
+      expect(result).toBe(0.2)
+    })
+
+    it("returns balanced score for mixed feedback", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+
+          const learning = yield* learningSvc.create({
+            content: "Learning",
+            sourceType: "manual",
+          })
+
+          // Record 2 helpful, 2 unhelpful
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_2, [{ id: learning.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_3, [{ id: learning.id, helpful: false }])
+          yield* feedbackSvc.recordUsage(fixtureId("run-4"), [{ id: learning.id, helpful: false }])
+
+          return yield* feedbackSvc.getFeedbackScore(learning.id)
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Bayesian: (2 + 0.5 * 2) / (4 + 2) = 3 / 6 = 0.5
+      expect(result).toBe(0.5)
+    })
+
+    it("score regresses to prior with less data", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+
+          const learning = yield* learningSvc.create({
+            content: "Learning",
+            sourceType: "manual",
+          })
+
+          // Record 1 helpful usage
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning.id, helpful: true }])
+
+          return yield* feedbackSvc.getFeedbackScore(learning.id)
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Bayesian: (1 + 0.5 * 2) / (1 + 2) = 2 / 3 ≈ 0.667
+      // With only 1 data point, the prior pulls toward 0.5
+      expect(result).toBeCloseTo(0.667, 2)
+    })
+
+    it("scores are independent per learning", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+
+          const learning1 = yield* learningSvc.create({
+            content: "Learning 1",
+            sourceType: "manual",
+          })
+          const learning2 = yield* learningSvc.create({
+            content: "Learning 2",
+            sourceType: "manual",
+          })
+
+          // Learning 1: all helpful
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning1.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_2, [{ id: learning1.id, helpful: true }])
+
+          // Learning 2: all unhelpful
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning2.id, helpful: false }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_2, [{ id: learning2.id, helpful: false }])
+
+          const score1 = yield* feedbackSvc.getFeedbackScore(learning1.id)
+          const score2 = yield* feedbackSvc.getFeedbackScore(learning2.id)
+
+          return { score1, score2 }
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Learning 1: (2 + 1) / (2 + 2) = 0.75
+      expect(result.score1).toBe(0.75)
+      // Learning 2: (0 + 1) / (2 + 2) = 0.25
+      expect(result.score2).toBe(0.25)
+    })
+  })
+})
+
+// =============================================================================
+// FeedbackTrackerServiceNoop Tests
+// =============================================================================
+
+describe("FeedbackTrackerServiceNoop", () => {
+  it("recordUsage does nothing", async () => {
+    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@tx/core")
+    const { Effect } = await import("effect")
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const feedbackSvc = yield* FeedbackTrackerService
+        // Should not throw even with non-existent IDs
+        yield* feedbackSvc.recordUsage("run-1", [
+          { id: 99999, helpful: true },
+        ])
+      }).pipe(Effect.provide(FeedbackTrackerServiceNoop))
+    )
+  })
+
+  it("getFeedbackScore always returns 0.5", async () => {
+    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@tx/core")
+    const { Effect } = await import("effect")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const feedbackSvc = yield* FeedbackTrackerService
+        return yield* feedbackSvc.getFeedbackScore(12345)
+      }).pipe(Effect.provide(FeedbackTrackerServiceNoop))
+    )
+
+    expect(result).toBe(0.5)
+  })
+})

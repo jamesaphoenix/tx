@@ -175,5 +175,6 @@ export {
 export {
   FeedbackTrackerService,
   FeedbackTrackerServiceNoop,
+  FeedbackTrackerServiceLive,
   type LearningUsageFeedback
 } from "./feedback-tracker.js"

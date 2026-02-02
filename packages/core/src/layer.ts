@@ -39,6 +39,7 @@ import { GraphExpansionServiceLive } from "./services/graph-expansion.js"
 import { AnchorVerificationServiceLive } from "./services/anchor-verification.js"
 import { SwarmVerificationServiceLive } from "./services/swarm-verification.js"
 import { PromotionServiceLive } from "./services/promotion-service.js"
+import { FeedbackTrackerServiceLive } from "./services/feedback-tracker.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync-service.js"
@@ -117,6 +118,12 @@ export {
   type PromotionResult,
   type AutoPromoteResult
 } from "./services/promotion-service.js"
+export {
+  FeedbackTrackerService,
+  FeedbackTrackerServiceNoop,
+  FeedbackTrackerServiceLive,
+  type LearningUsageFeedback
+} from "./services/feedback-tracker.js"
 export { CandidateRepository, CandidateRepositoryLive } from "./repo/candidate-repo.js"
 export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./repo/tracked-project-repo.js"
 
@@ -203,8 +210,13 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.mergeAll(repos, services, edgeService))
   )
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, and promotionService
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService)
+  // FeedbackTrackerServiceLive needs EdgeService
+  const feedbackTrackerService = FeedbackTrackerServiceLive.pipe(
+    Layer.provide(edgeService)
+  )
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, and feedbackTrackerService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -282,8 +294,13 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(Layer.mergeAll(repos, services, edgeService))
   )
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, and promotionService
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService)
+  // FeedbackTrackerServiceLive needs EdgeService
+  const feedbackTrackerService = FeedbackTrackerServiceLive.pipe(
+    Layer.provide(edgeService)
+  )
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, and feedbackTrackerService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
