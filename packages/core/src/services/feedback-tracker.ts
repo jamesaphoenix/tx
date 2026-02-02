@@ -42,6 +42,17 @@ export class FeedbackTrackerService extends Context.Tag("FeedbackTrackerService"
     readonly getFeedbackScore: (
       learningId: number
     ) => Effect.Effect<number, DatabaseError>
+
+    /**
+     * Get feedback scores for multiple learnings in a single batch query.
+     * Uses EdgeService.findFromMultipleSources() to avoid N+1 queries.
+     *
+     * @param learningIds - Array of learning IDs to get feedback scores for
+     * @returns Map from learningId to score (0-1, 0.5 is neutral)
+     */
+    readonly getFeedbackScores: (
+      learningIds: readonly number[]
+    ) => Effect.Effect<ReadonlyMap<number, number>, DatabaseError>
   }
 >() {}
 
