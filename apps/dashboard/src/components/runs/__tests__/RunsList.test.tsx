@@ -1,0 +1,714 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
+import { server } from '../../../../test/setup'
+import { RunsList } from '../RunsList'
+import type { PaginatedRunsResponse, Run } from '../../../api/client'
+
+// Helper to create a run fixture
+function createRun(overrides: Partial<Run> = {}): Run {
+  return {
+    id: `run-${Math.random().toString(36).slice(2, 10)}`,
+    task_id: 'tx-abc123',
+    agent: 'tx-tester',
+    started_at: '2026-01-30T12:00:00Z',
+    ended_at: '2026-01-30T12:05:00Z',
+    status: 'completed',
+    exit_code: 0,
+    transcript_path: null,
+    summary: 'Test run summary',
+    error_message: null,
+    taskTitle: 'Test Task',
+    ...overrides,
+  }
+}
+
+// Create a fresh QueryClient for each test
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: 0,
+        refetchInterval: false,
+        refetchOnWindowFocus: false,
+      },
+    },
+  })
+}
+
+// Helper to render with all providers
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = createTestQueryClient()
+  return {
+    ...render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>),
+    queryClient,
+  }
+}
+
+// Default empty response for paginated endpoint
+const emptyPaginatedResponse: PaginatedRunsResponse = {
+  runs: [],
+  nextCursor: null,
+  hasMore: false,
+}
+
+describe('RunsList', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Set up default handler
+    server.use(
+      http.get('/api/runs', () => {
+        return HttpResponse.json(emptyPaginatedResponse)
+      })
+    )
+  })
+
+  afterEach(() => {
+    server.resetHandlers()
+  })
+
+  describe('loading state', () => {
+    it('shows LoadingSkeleton while loading', async () => {
+      // Mock slow response
+      server.use(
+        http.get('/api/runs', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          return HttpResponse.json({
+            runs: [],
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      // Should show loading text
+      expect(screen.getByText('Loading...')).toBeInTheDocument()
+    })
+  })
+
+  describe('empty state', () => {
+    it('shows EmptyState when no runs', async () => {
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs: [],
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('No runs found')).toBeInTheDocument()
+      })
+    })
+
+    it('shows filter hint when filters active and no results', async () => {
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs: [],
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(
+        <RunsList
+          onSelectRun={onSelectRun}
+          filters={{ status: ['failed'], agent: 'tx-tester' }}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('No runs found')).toBeInTheDocument()
+        expect(
+          screen.getByText('Try adjusting your filters')
+        ).toBeInTheDocument()
+      })
+    })
+
+    it('shows default hint when no filters and no runs', async () => {
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs: [],
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} filters={{}} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('No runs found')).toBeInTheDocument()
+        expect(
+          screen.getByText(/Runs will appear here when agents execute tasks/)
+        ).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('rendering runs', () => {
+    it('renders initial runs', async () => {
+      const runs = [
+        createRun({ id: 'run-1', taskTitle: 'First task' }),
+        createRun({ id: 'run-2', taskTitle: 'Second task' }),
+        createRun({ id: 'run-3', taskTitle: 'Third task' }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('First task')).toBeInTheDocument()
+        expect(screen.getByText('Second task')).toBeInTheDocument()
+        expect(screen.getByText('Third task')).toBeInTheDocument()
+      })
+    })
+
+    it('displays run count in header', async () => {
+      const runs = [
+        createRun({ id: 'run-1', taskTitle: 'Task 1' }),
+        createRun({ id: 'run-2', taskTitle: 'Task 2' }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('2 runs')).toBeInTheDocument()
+      })
+    })
+
+    it('uses singular "run" when count is 1', async () => {
+      const runs = [createRun({ id: 'run-1', taskTitle: 'Only run' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('1 run')).toBeInTheDocument()
+      })
+    })
+
+    it('displays run agent name', async () => {
+      const runs = [createRun({ id: 'run-1', agent: 'tx-implementer' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('tx-implementer')).toBeInTheDocument()
+      })
+    })
+
+    it('displays run status badge', async () => {
+      const runs = [createRun({ id: 'run-1', status: 'running' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('running')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('run selection', () => {
+    it('calls onSelectRun when run is clicked', async () => {
+      const runs = [createRun({ id: 'run-clickable', taskTitle: 'Clickable run' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Clickable run')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Clickable run'))
+      expect(onSelectRun).toHaveBeenCalledWith('run-clickable')
+    })
+  })
+
+  describe('keyboard navigation', () => {
+    const dispatchKeyEvent = (key: string) => {
+      const event = new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+      })
+      window.dispatchEvent(event)
+    }
+
+    it('updates focused item on ArrowDown', async () => {
+      const runs = [
+        createRun({ id: 'run-1', taskTitle: 'Run 1' }),
+        createRun({ id: 'run-2', taskTitle: 'Run 2' }),
+        createRun({ id: 'run-3', taskTitle: 'Run 3' }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      const { container } = renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Run 1')).toBeInTheDocument()
+      })
+
+      // First run should be focused by default (tabIndex=0)
+      const cards = container.querySelectorAll('[tabindex]')
+      expect(cards[0]).toHaveAttribute('tabIndex', '0')
+
+      // Press ArrowDown
+      act(() => {
+        dispatchKeyEvent('ArrowDown')
+      })
+
+      // Second run should now be focused
+      await waitFor(() => {
+        const updatedCards = container.querySelectorAll('[tabindex]')
+        expect(updatedCards[1]).toHaveAttribute('tabIndex', '0')
+        expect(updatedCards[0]).toHaveAttribute('tabIndex', '-1')
+      })
+    })
+
+    it('selects focused run on Enter', async () => {
+      const runs = [
+        createRun({ id: 'run-1', taskTitle: 'Run 1' }),
+        createRun({ id: 'run-2', taskTitle: 'Run 2' }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Run 1')).toBeInTheDocument()
+      })
+
+      // Move to second run
+      act(() => {
+        dispatchKeyEvent('ArrowDown')
+      })
+
+      // Press Enter to select
+      act(() => {
+        dispatchKeyEvent('Enter')
+      })
+
+      expect(onSelectRun).toHaveBeenCalledWith('run-2')
+    })
+
+    it('calls onEscape when Escape is pressed', async () => {
+      const runs = [createRun({ id: 'run-1', taskTitle: 'Run 1' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      const onEscape = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} onEscape={onEscape} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Run 1')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyEvent('Escape')
+      })
+
+      expect(onEscape).toHaveBeenCalled()
+    })
+  })
+
+  describe('infinite scroll', () => {
+    it('shows scroll hint when hasMore is true', async () => {
+      const runs = [createRun({ id: 'run-1', taskTitle: 'Run 1' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: 'cursor123',
+            hasMore: true,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText(/scroll for more/)).toBeInTheDocument()
+      })
+    })
+
+    it('shows end of list when no more pages', async () => {
+      const runs = [createRun({ id: 'run-1', taskTitle: 'Run 1' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('End of runs')).toBeInTheDocument()
+      })
+    })
+
+    it('loads more items when cursor is provided', async () => {
+      const page1Runs = [createRun({ id: 'run-1', taskTitle: 'Run 1' })]
+      const page2Runs = [createRun({ id: 'run-2', taskTitle: 'Run 2' })]
+
+      let requestCount = 0
+      server.use(
+        http.get('/api/runs', ({ request }) => {
+          const url = new URL(request.url)
+          const cursor = url.searchParams.get('cursor')
+
+          requestCount++
+
+          if (cursor === 'cursor-page2') {
+            return HttpResponse.json({
+              runs: page2Runs,
+              nextCursor: null,
+              hasMore: false,
+            } satisfies PaginatedRunsResponse)
+          }
+
+          return HttpResponse.json({
+            runs: page1Runs,
+            nextCursor: 'cursor-page2',
+            hasMore: true,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      // First page should load
+      await waitFor(() => {
+        expect(screen.getByText('Run 1')).toBeInTheDocument()
+      })
+
+      // Initial request was made
+      expect(requestCount).toBe(1)
+    })
+  })
+
+  describe('filtering', () => {
+    it('passes agent filter to API', async () => {
+      let receivedAgent: string | null = null
+
+      server.use(
+        http.get('/api/runs', ({ request }) => {
+          const url = new URL(request.url)
+          receivedAgent = url.searchParams.get('agent')
+          return HttpResponse.json({
+            runs: [],
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(
+        <RunsList onSelectRun={onSelectRun} filters={{ agent: 'tx-implementer' }} />
+      )
+
+      await waitFor(() => {
+        expect(receivedAgent).toBe('tx-implementer')
+      })
+    })
+
+    it('passes status filter to API', async () => {
+      let receivedStatus: string | null = null
+
+      server.use(
+        http.get('/api/runs', ({ request }) => {
+          const url = new URL(request.url)
+          receivedStatus = url.searchParams.get('status')
+          return HttpResponse.json({
+            runs: [],
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(
+        <RunsList onSelectRun={onSelectRun} filters={{ status: ['failed', 'running'] }} />
+      )
+
+      await waitFor(() => {
+        expect(receivedStatus).toBe('failed,running')
+      })
+    })
+  })
+
+  describe('error state', () => {
+    it('shows error when API fails', async () => {
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json(
+            { error: 'Internal server error' },
+            { status: 500 }
+          )
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Error loading runs')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('run card content', () => {
+    it('shows error message for failed runs', async () => {
+      const runs = [
+        createRun({
+          id: 'run-failed',
+          status: 'failed',
+          error_message: 'Task execution timed out',
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Task execution timed out')).toBeInTheDocument()
+      })
+    })
+
+    it('shows summary for completed runs', async () => {
+      const runs = [
+        createRun({
+          id: 'run-completed',
+          status: 'completed',
+          summary: 'Implemented the feature successfully',
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Implemented the feature successfully')).toBeInTheDocument()
+      })
+    })
+
+    it('shows exit code for non-zero exits', async () => {
+      const runs = [
+        createRun({
+          id: 'run-failed',
+          status: 'failed',
+          exit_code: 1,
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('exit 1')).toBeInTheDocument()
+      })
+    })
+
+    it('shows task ID when no task title', async () => {
+      const runs = [
+        createRun({
+          id: 'run-1',
+          task_id: 'tx-abc123',
+          taskTitle: null,
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Task: tx-abc123')).toBeInTheDocument()
+      })
+    })
+
+    it('shows "No task" when run has no associated task', async () => {
+      const runs = [
+        createRun({
+          id: 'run-notask',
+          task_id: null,
+          taskTitle: null,
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('No task')).toBeInTheDocument()
+      })
+    })
+  })
+})
