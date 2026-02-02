@@ -79,6 +79,12 @@ describe("Migration system", () => {
 
       // Tables from migration 3
       expect(tableNames).toContain("file_learnings")
+
+      // Tables from migration 8
+      expect(tableNames).toContain("learning_anchors")
+
+      // Tables from migration 9
+      expect(tableNames).toContain("learning_edges")
     })
 
     it("creates all required indexes", () => {
@@ -106,6 +112,17 @@ describe("Migration system", () => {
 
       // Indexes from migration 3
       expect(indexNames).toContain("idx_file_learnings_pattern")
+
+      // Indexes from migration 8 (learning_anchors)
+      expect(indexNames).toContain("idx_learning_anchors_learning_id")
+      expect(indexNames).toContain("idx_learning_anchors_file_path")
+      expect(indexNames).toContain("idx_learning_anchors_status")
+
+      // Indexes from migration 9 (learning_edges)
+      expect(indexNames).toContain("idx_learning_edges_source")
+      expect(indexNames).toContain("idx_learning_edges_target")
+      expect(indexNames).toContain("idx_learning_edges_type")
+      expect(indexNames).toContain("idx_learning_edges_active")
     })
 
     it("is idempotent (running twice is safe)", () => {
@@ -364,6 +381,84 @@ describe("Migration system", () => {
         "SELECT parent_id FROM tasks WHERE id = ?"
       ).get("tx-child1") as { parent_id: string | null }
       expect(child.parent_id).toBeNull()
+    })
+
+    it("enforces learning_edges edge_type CHECK constraint", () => {
+      expect(() => {
+        db.prepare(
+          "INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id) VALUES (?, ?, ?, ?, ?)"
+        ).run("INVALID_TYPE", "learning", "1", "file", "src/foo.ts")
+      }).toThrow()
+    })
+
+    it("enforces learning_edges source_type CHECK constraint", () => {
+      expect(() => {
+        db.prepare(
+          "INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id) VALUES (?, ?, ?, ?, ?)"
+        ).run("ANCHORED_TO", "invalid_source", "1", "file", "src/foo.ts")
+      }).toThrow()
+    })
+
+    it("enforces learning_edges target_type CHECK constraint", () => {
+      expect(() => {
+        db.prepare(
+          "INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id) VALUES (?, ?, ?, ?, ?)"
+        ).run("ANCHORED_TO", "learning", "1", "invalid_target", "src/foo.ts")
+      }).toThrow()
+    })
+
+    it("enforces learning_edges weight range CHECK constraint", () => {
+      expect(() => {
+        db.prepare(
+          "INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id, weight) VALUES (?, ?, ?, ?, ?, ?)"
+        ).run("ANCHORED_TO", "learning", "1", "file", "src/foo.ts", 1.5)
+      }).toThrow()
+
+      expect(() => {
+        db.prepare(
+          "INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id, weight) VALUES (?, ?, ?, ?, ?, ?)"
+        ).run("ANCHORED_TO", "learning", "1", "file", "src/foo.ts", -0.1)
+      }).toThrow()
+    })
+
+    it("allows valid learning_edges insertions", () => {
+      const result = db.prepare(
+        "INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id, weight, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).run("ANCHORED_TO", "learning", "1", "file", "src/foo.ts", 0.8, '{"reason": "test"}')
+
+      expect(result.changes).toBe(1)
+
+      const edge = db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(result.lastInsertRowid) as {
+        edge_type: string
+        source_type: string
+        source_id: string
+        target_type: string
+        target_id: string
+        weight: number
+        metadata: string
+        invalidated_at: string | null
+      }
+      expect(edge.edge_type).toBe("ANCHORED_TO")
+      expect(edge.source_type).toBe("learning")
+      expect(edge.weight).toBe(0.8)
+      expect(edge.invalidated_at).toBeNull()
+    })
+
+    it("supports soft deletion via invalidated_at", () => {
+      const result = db.prepare(
+        "INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id) VALUES (?, ?, ?, ?, ?)"
+      ).run("SIMILAR_TO", "learning", "1", "learning", "2")
+
+      const edgeId = result.lastInsertRowid
+
+      db.prepare(
+        "UPDATE learning_edges SET invalidated_at = datetime('now') WHERE id = ?"
+      ).run(edgeId)
+
+      const edge = db.prepare("SELECT invalidated_at FROM learning_edges WHERE id = ?").get(edgeId) as {
+        invalidated_at: string | null
+      }
+      expect(edge.invalidated_at).not.toBeNull()
     })
   })
 })
