@@ -66,3 +66,15 @@ export {
   rowToFileProgress,
   serializeFileProgress
 } from "./deduplication.js"
+
+// Candidate mappers
+export {
+  rowToCandidate,
+  isValidConfidence,
+  isValidStatus as isValidCandidateStatus,
+  isValidCategory,
+  CANDIDATE_CONFIDENCES,
+  CANDIDATE_CATEGORIES,
+  CANDIDATE_STATUSES,
+  type CandidateRow
+} from "./candidate.js"
