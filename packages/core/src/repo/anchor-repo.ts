@@ -57,8 +57,8 @@ export const AnchorRepositoryLive = Layer.effect(
           try: () => {
             const result = db.prepare(
               `INSERT INTO learning_anchors
-               (learning_id, anchor_type, anchor_value, file_path, symbol_fqname, line_start, line_end, content_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+               (learning_id, anchor_type, anchor_value, file_path, symbol_fqname, line_start, line_end, content_hash, content_preview)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
               input.learningId,
               input.anchorType,
@@ -67,7 +67,8 @@ export const AnchorRepositoryLive = Layer.effect(
               input.symbolFqname ?? null,
               input.lineStart ?? null,
               input.lineEnd ?? null,
-              input.contentHash ?? null
+              input.contentHash ?? null,
+              input.contentPreview ?? null
             )
             const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(result.lastInsertRowid) as AnchorRow
             return rowToAnchor(row)
@@ -135,6 +136,10 @@ export const AnchorRepositoryLive = Layer.effect(
             if (input.contentHash !== undefined) {
               updates.push("content_hash = ?")
               values.push(input.contentHash)
+            }
+            if (input.contentPreview !== undefined) {
+              updates.push("content_preview = ?")
+              values.push(input.contentPreview)
             }
             if (input.status !== undefined) {
               updates.push("status = ?")

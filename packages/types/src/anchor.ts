@@ -43,6 +43,8 @@ export interface Anchor {
   readonly lineStart: number | null;
   readonly lineEnd: number | null;
   readonly contentHash: string | null;
+  /** Original content preview for self-healing Jaccard similarity comparison */
+  readonly contentPreview: string | null;
   readonly status: AnchorStatus;
   readonly pinned: boolean;
   readonly verifiedAt: Date | null;
@@ -61,6 +63,8 @@ export interface CreateAnchorInput {
   readonly lineStart?: number | null;
   readonly lineEnd?: number | null;
   readonly contentHash?: string | null;
+  /** Original content preview for self-healing comparison (max ~500 chars) */
+  readonly contentPreview?: string | null;
 }
 
 /**
@@ -73,6 +77,8 @@ export interface UpdateAnchorInput {
   readonly lineStart?: number | null;
   readonly lineEnd?: number | null;
   readonly contentHash?: string | null;
+  /** Updated content preview for self-healing comparison */
+  readonly contentPreview?: string | null;
   readonly status?: AnchorStatus;
   readonly verifiedAt?: Date | null;
 }
@@ -90,6 +96,7 @@ export interface AnchorRow {
   line_start: number | null;
   line_end: number | null;
   content_hash: string | null;
+  content_preview: string | null;
   status: string;
   pinned: number;
   verified_at: string | null;

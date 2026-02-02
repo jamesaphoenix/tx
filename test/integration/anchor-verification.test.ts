@@ -703,4 +703,242 @@ describe("AnchorVerificationService Integration", () => {
       expect(result[0].detectedBy).toBe("lazy")
     })
   })
+
+  describe("self-healing for drifted anchors", () => {
+    it("self-heals hash anchor when content similarity > 0.8", async () => {
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      // Original content with minor variation to test
+      const originalContent = "export function validateToken(token: string) { return jwt.verify(token) }"
+      const filePath = await createTestFile(tempDir, "self-heal-high.ts", originalContent)
+      const originalHash = computeHash(originalContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for self-healing",
+            sourceType: "manual"
+          })
+
+          // Create hash anchor WITH content preview for self-healing
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: originalHash,
+            contentHash: originalHash,
+            contentPreview: originalContent // Store preview for comparison
+          })
+
+          // Minor modification (add return type annotation) - should be similar
+          const newContent = "export function validateToken(token: string): boolean { return jwt.verify(token) }"
+          yield* Effect.promise(() => fs.writeFile(filePath, newContent, "utf-8"))
+
+          const verifyResult = yield* verificationSvc.verify(1, { baseDir: tempDir })
+
+          // Get logs to check similarity was recorded
+          const logs = yield* anchorRepo.getInvalidationLogs(1)
+
+          return { verifyResult, logs }
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.verifyResult.action).toBe("self_healed")
+      expect(result.verifyResult.newStatus).toBe("valid")
+      expect(result.verifyResult.similarity).toBeGreaterThanOrEqual(0.8)
+      expect(result.logs[0].reason).toBe("self_healed")
+      expect(result.logs[0].similarityScore).toBeGreaterThanOrEqual(0.8)
+    })
+
+    it("does NOT self-heal when content similarity < 0.8", async () => {
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      // Original content
+      const originalContent = "export function validateToken(token: string) { return jwt.verify(token) }"
+      const filePath = await createTestFile(tempDir, "self-heal-low.ts", originalContent)
+      const originalHash = computeHash(originalContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for low similarity",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: originalHash,
+            contentHash: originalHash,
+            contentPreview: originalContent
+          })
+
+          // Major change - completely different content
+          const newContent = "class AuthService { private db: Database; async checkPermissions(userId: string) { return this.db.query(userId) } }"
+          yield* Effect.promise(() => fs.writeFile(filePath, newContent, "utf-8"))
+
+          const verifyResult = yield* verificationSvc.verify(1, { baseDir: tempDir })
+          const logs = yield* anchorRepo.getInvalidationLogs(1)
+
+          return { verifyResult, logs }
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.verifyResult.action).toBe("drifted")
+      expect(result.verifyResult.newStatus).toBe("drifted")
+      expect(result.verifyResult.similarity).toBeLessThan(0.8)
+      expect(result.logs[0].reason).toBe("hash_mismatch")
+    })
+
+    it("does NOT self-heal when no content preview is stored", async () => {
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const originalContent = "export function foo() { return true }"
+      const filePath = await createTestFile(tempDir, "no-preview.ts", originalContent)
+      const originalHash = computeHash(originalContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning without preview",
+            sourceType: "manual"
+          })
+
+          // Create anchor WITHOUT content preview
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: originalHash,
+            contentHash: originalHash
+            // No contentPreview
+          })
+
+          // Minor change
+          const newContent = "export function foo(): boolean { return true }"
+          yield* Effect.promise(() => fs.writeFile(filePath, newContent, "utf-8"))
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Without preview, can't self-heal - should mark as drifted
+      expect(result.action).toBe("drifted")
+      expect(result.newStatus).toBe("drifted")
+    })
+
+    it("updates anchor hash and preview after self-healing", async () => {
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      // Use content where adding type annotation results in >80% similarity
+      const originalContent = "export function loadConfig(path: string) { return JSON.parse(fs.readFileSync(path, 'utf-8')) }"
+      const filePath = await createTestFile(tempDir, "update-hash.ts", originalContent)
+      const originalHash = computeHash(originalContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Config loading function",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: originalHash,
+            contentHash: originalHash,
+            contentPreview: originalContent
+          })
+
+          // Minor change - add return type annotation (high similarity)
+          const newContent = "export function loadConfig(path: string): object { return JSON.parse(fs.readFileSync(path, 'utf-8')) }"
+          yield* Effect.promise(() => fs.writeFile(filePath, newContent, "utf-8"))
+
+          // Verify - should self-heal
+          yield* verificationSvc.verify(1, { baseDir: tempDir })
+
+          // Check that anchor was updated with new hash
+          const updatedAnchor = yield* anchorRepo.findById(1)
+          return { updatedAnchor, newContent }
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Anchor should have new hash after self-healing
+      expect(result.updatedAnchor?.contentHash).toBe(computeHash(result.newContent))
+      expect(result.updatedAnchor?.contentHash).not.toBe(originalHash)
+    })
+
+    it("logs self-healing with similarity score in invalidation log", async () => {
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const originalContent = "function process(data) { return data.map(x => x * 2) }"
+      const filePath = await createTestFile(tempDir, "log-similarity.ts", originalContent)
+      const originalHash = computeHash(originalContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Process function learning",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: originalHash,
+            contentHash: originalHash,
+            contentPreview: originalContent
+          })
+
+          // Minor change
+          const newContent = "function process(data) { return data.map(item => item * 2) }"
+          yield* Effect.promise(() => fs.writeFile(filePath, newContent, "utf-8"))
+
+          yield* verificationSvc.verify(1, { baseDir: tempDir, detectedBy: "periodic" })
+
+          const logs = yield* anchorRepo.getInvalidationLogs(1)
+          return logs
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.length).toBeGreaterThan(0)
+      expect(result[0].reason).toBe("self_healed")
+      expect(result[0].detectedBy).toBe("periodic")
+      expect(result[0].oldContentHash).toBe(originalHash)
+      expect(result[0].newContentHash).not.toBe(originalHash)
+      expect(result[0].similarityScore).toBeGreaterThanOrEqual(0.8)
+    })
+  })
 })

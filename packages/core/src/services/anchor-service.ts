@@ -51,6 +51,8 @@ export interface TypedAnchorInput {
   readonly lineEnd?: number
   /** Content hash for verification */
   readonly contentHash?: string
+  /** Content preview for self-healing comparison (max ~500 chars) */
+  readonly contentPreview?: string
 }
 
 /** Validate anchor types at compile time */
@@ -193,7 +195,8 @@ const validateAnchorInput = (input: TypedAnchorInput): Effect.Effect<CreateAncho
           symbolFqname: null,
           lineStart: null,
           lineEnd: null,
-          contentHash: input.contentHash ?? null
+          contentHash: input.contentHash ?? null,
+          contentPreview: input.contentPreview ?? null
         }
 
       case "hash":
@@ -211,7 +214,8 @@ const validateAnchorInput = (input: TypedAnchorInput): Effect.Effect<CreateAncho
           symbolFqname: null,
           lineStart: input.lineStart ?? null,
           lineEnd: input.lineEnd ?? null,
-          contentHash: input.value
+          contentHash: input.value,
+          contentPreview: input.contentPreview ?? null
         }
 
       case "symbol":
@@ -235,7 +239,8 @@ const validateAnchorInput = (input: TypedAnchorInput): Effect.Effect<CreateAncho
           symbolFqname: input.symbolFqname,
           lineStart: input.lineStart ?? null,
           lineEnd: input.lineEnd ?? null,
-          contentHash: input.contentHash ?? null
+          contentHash: input.contentHash ?? null,
+          contentPreview: input.contentPreview ?? null
         }
 
       case "line_range":
@@ -258,7 +263,8 @@ const validateAnchorInput = (input: TypedAnchorInput): Effect.Effect<CreateAncho
           symbolFqname: null,
           lineStart: input.lineStart,
           lineEnd: input.lineEnd ?? input.lineStart,
-          contentHash: input.contentHash ?? null
+          contentHash: input.contentHash ?? null,
+          contentPreview: input.contentPreview ?? null
         }
 
       default:

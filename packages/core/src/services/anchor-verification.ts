@@ -197,6 +197,112 @@ const symbolExistsInFile = (
   })
 
 // =============================================================================
+// Self-Healing Utilities (PRD-017)
+// =============================================================================
+
+/** Default threshold for self-healing (80% similarity) */
+const SELF_HEAL_THRESHOLD = 0.8
+
+/** Maximum content preview length */
+const MAX_PREVIEW_LENGTH = 500
+
+/**
+ * Tokenize text for Jaccard similarity computation.
+ * Extracts words/identifiers, lowercased, filtering short tokens.
+ */
+const tokenize = (text: string): Set<string> => {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, " ")
+      .split(/\s+/)
+      .filter(t => t.length > 2)
+  )
+}
+
+/**
+ * Compute Jaccard similarity between two sets of tokens.
+ * Returns value between 0 (completely different) and 1 (identical).
+ */
+const jaccardSimilarity = (a: Set<string>, b: Set<string>): number => {
+  if (a.size === 0 && b.size === 0) return 1
+  if (a.size === 0 || b.size === 0) return 0
+
+  const intersection = new Set([...a].filter(x => b.has(x)))
+  const union = new Set([...a, ...b])
+
+  return union.size === 0 ? 0 : intersection.size / union.size
+}
+
+/**
+ * Compute Jaccard similarity between two text strings.
+ */
+const computeSimilarity = (oldContent: string, newContent: string): number => {
+  const oldTokens = tokenize(oldContent)
+  const newTokens = tokenize(newContent)
+  return jaccardSimilarity(oldTokens, newTokens)
+}
+
+/**
+ * Create a content preview (truncated content for storage/comparison).
+ */
+const createContentPreview = (content: string): string => {
+  if (content.length <= MAX_PREVIEW_LENGTH) return content
+  return content.slice(0, MAX_PREVIEW_LENGTH)
+}
+
+/** Self-healing result */
+interface SelfHealResult {
+  readonly healed: boolean
+  readonly similarity: number
+  readonly newHash?: string
+  readonly newPreview?: string
+}
+
+/**
+ * Try to self-heal a drifted anchor by comparing content similarity.
+ * If the new content is similar enough (>= 0.8 Jaccard), update the anchor
+ * with the new hash and preview.
+ */
+const trySelfHeal = (
+  anchor: Anchor,
+  newContent: string,
+  newHash: string,
+  anchorRepo: Context.Tag.Service<typeof AnchorRepository>
+): Effect.Effect<SelfHealResult, DatabaseError> =>
+  Effect.gen(function* () {
+    // If no content preview stored, we can't compare - can't self-heal
+    if (!anchor.contentPreview) {
+      return { healed: false, similarity: 0 }
+    }
+
+    // Compute similarity between old preview and new content
+    const similarity = computeSimilarity(anchor.contentPreview, newContent)
+
+    // If similarity is above threshold, self-heal
+    if (similarity >= SELF_HEAL_THRESHOLD) {
+      const newPreview = createContentPreview(newContent)
+
+      // Update anchor with new hash and preview
+      yield* anchorRepo.update(anchor.id, {
+        contentHash: newHash,
+        contentPreview: newPreview,
+        verifiedAt: new Date()
+      })
+
+      return {
+        healed: true,
+        similarity,
+        newHash,
+        newPreview
+      }
+    }
+
+    // Similarity too low - can't self-heal
+    return { healed: false, similarity }
+  })
+
+// =============================================================================
 // Service Implementation
 // =============================================================================
 
@@ -301,7 +407,35 @@ export const AnchorVerificationServiceLive = Layer.effect(
                 }
               }
 
-              // Hash mismatch - mark as drifted
+              // Hash mismatch - try self-healing if we have content preview
+              const healResult = yield* trySelfHeal(anchor, content, newHash, anchorRepo)
+
+              if (healResult.healed) {
+                // Successfully self-healed
+                yield* anchorRepo.logInvalidation({
+                  anchorId: anchor.id,
+                  oldStatus,
+                  newStatus: "valid",
+                  reason: "self_healed",
+                  detectedBy,
+                  oldContentHash: anchor.contentHash,
+                  newContentHash: newHash,
+                  similarityScore: healResult.similarity
+                })
+
+                return {
+                  anchorId: anchor.id,
+                  previousStatus: oldStatus,
+                  newStatus: "valid" as const,
+                  action: "self_healed" as const,
+                  reason: "content_similar",
+                  similarity: healResult.similarity,
+                  oldContentHash: anchor.contentHash,
+                  newContentHash: newHash
+                }
+              }
+
+              // Could not self-heal - mark as drifted
               yield* anchorRepo.updateStatus(anchor.id, "drifted")
               yield* anchorRepo.logInvalidation({
                 anchorId: anchor.id,
@@ -310,7 +444,8 @@ export const AnchorVerificationServiceLive = Layer.effect(
                 reason: "hash_mismatch",
                 detectedBy,
                 oldContentHash: anchor.contentHash,
-                newContentHash: newHash
+                newContentHash: newHash,
+                similarityScore: healResult.similarity
               })
 
               return {
@@ -319,6 +454,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
                 newStatus: "drifted" as const,
                 action: "drifted" as const,
                 reason: "hash_mismatch",
+                similarity: healResult.similarity,
                 oldContentHash: anchor.contentHash,
                 newContentHash: newHash
               }
@@ -356,9 +492,35 @@ export const AnchorVerificationServiceLive = Layer.effect(
               }
             }
 
-            // Hash mismatch - check if we can self-heal
-            // For self-healing, we'd need the old content stored somewhere
-            // For now, just mark as drifted
+            // Hash mismatch - try self-healing if we have content preview
+            const healResult = yield* trySelfHeal(anchor, content, newHash, anchorRepo)
+
+            if (healResult.healed) {
+              // Successfully self-healed
+              yield* anchorRepo.logInvalidation({
+                anchorId: anchor.id,
+                oldStatus,
+                newStatus: "valid",
+                reason: "self_healed",
+                detectedBy,
+                oldContentHash: anchor.contentHash,
+                newContentHash: newHash,
+                similarityScore: healResult.similarity
+              })
+
+              return {
+                anchorId: anchor.id,
+                previousStatus: oldStatus,
+                newStatus: "valid" as const,
+                action: "self_healed" as const,
+                reason: "content_similar",
+                similarity: healResult.similarity,
+                oldContentHash: anchor.contentHash,
+                newContentHash: newHash
+              }
+            }
+
+            // Could not self-heal - mark as drifted
             yield* anchorRepo.updateStatus(anchor.id, "drifted")
             yield* anchorRepo.logInvalidation({
               anchorId: anchor.id,
@@ -367,7 +529,8 @@ export const AnchorVerificationServiceLive = Layer.effect(
               reason: "hash_mismatch",
               detectedBy,
               oldContentHash: anchor.contentHash,
-              newContentHash: newHash
+              newContentHash: newHash,
+              similarityScore: healResult.similarity
             })
 
             return {
@@ -376,6 +539,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
               newStatus: "drifted" as const,
               action: "drifted" as const,
               reason: "hash_mismatch",
+              similarity: healResult.similarity,
               oldContentHash: anchor.contentHash,
               newContentHash: newHash
             }

@@ -29,6 +29,7 @@ export const rowToAnchor = (row: AnchorRow): Anchor => ({
   lineStart: row.line_start,
   lineEnd: row.line_end,
   contentHash: row.content_hash,
+  contentPreview: row.content_preview,
   status: row.status as AnchorStatus,
   pinned: row.pinned === 1,
   verifiedAt: row.verified_at ? new Date(row.verified_at) : null,
