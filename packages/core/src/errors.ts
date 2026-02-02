@@ -89,6 +89,14 @@ export class AnchorNotFoundError extends Data.TaggedError("AnchorNotFoundError")
   }
 }
 
+export class CandidateNotFoundError extends Data.TaggedError("CandidateNotFoundError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `Candidate not found: ${this.id}`
+  }
+}
+
 export class ExtractionUnavailableError extends Data.TaggedError("ExtractionUnavailableError")<{
   readonly reason: string
 }> {
@@ -159,3 +167,4 @@ export type TaskError =
   | FileWatcherError
   | WatcherAlreadyRunningError
   | WatcherNotRunningError
+  | CandidateNotFoundError

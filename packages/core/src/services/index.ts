@@ -148,3 +148,8 @@ export {
   type FileWatcherConfig,
   type FileWatcherStatus
 } from "./file-watcher-service.js"
+export {
+  PromotionService,
+  type PromotionResult,
+  type AutoPromoteResult
+} from "./promotion-service.js"

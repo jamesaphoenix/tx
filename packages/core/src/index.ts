@@ -21,6 +21,7 @@ export {
   EmbeddingUnavailableError,
   EdgeNotFoundError,
   AnchorNotFoundError,
+  CandidateNotFoundError,
   ExtractionUnavailableError,
   RerankerUnavailableError,
   RetrievalError,
@@ -169,7 +170,10 @@ export {
   type SwarmMetrics,
   type SwarmVerificationResult,
   type SwarmVerifyOptions,
-  type VoteResult
+  type VoteResult,
+  PromotionService,
+  type PromotionResult,
+  type AutoPromoteResult
 } from "./services/index.js"
 
 // =============================================================================
@@ -194,7 +198,9 @@ export {
   EdgeRepository,
   EdgeRepositoryLive,
   DeduplicationRepository,
-  DeduplicationRepositoryLive
+  DeduplicationRepositoryLive,
+  CandidateRepository,
+  CandidateRepositoryLive
 } from "./repo/index.js"
 
 // =============================================================================
