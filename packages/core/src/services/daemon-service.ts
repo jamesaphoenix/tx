@@ -17,6 +17,12 @@ export const PID_FILE_PATH = ".tx/daemon.pid"
 export const LAUNCHD_PLIST_PATH = "~/Library/LaunchAgents/com.tx.daemon.plist"
 
 /**
+ * Default install path for the systemd service file.
+ * Located in the user's systemd user directory for per-user services.
+ */
+export const SYSTEMD_SERVICE_PATH = "~/.config/systemd/user/tx-daemon.service"
+
+/**
  * Options for generating a launchd plist file.
  */
 export interface LaunchdPlistOptions {
@@ -101,6 +107,70 @@ const escapeXml = (str: string): string =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;")
+
+/**
+ * Options for generating a systemd service file.
+ */
+export interface SystemdServiceOptions {
+  /**
+   * The absolute path to the executable to run.
+   */
+  readonly executablePath: string
+  /**
+   * Optional user to run the service as.
+   * If not provided, the service runs as the current user (for user services).
+   */
+  readonly user?: string
+}
+
+/**
+ * Generate a Linux systemd service file content.
+ * Creates a valid systemd unit file for a user service.
+ *
+ * The generated service file configures the daemon to:
+ * - Start after the network is available
+ * - Run as Type=simple (foreground process)
+ * - Restart always on failure with 5 second delay
+ * - Be enabled for multi-user target
+ *
+ * @param options - Configuration options for the service file
+ * @returns The content for the systemd service file
+ *
+ * @example
+ * ```typescript
+ * const service = generateSystemdService({
+ *   executablePath: "/usr/local/bin/tx",
+ *   user: "myuser"
+ * })
+ * ```
+ */
+export const generateSystemdService = (options: SystemdServiceOptions): string => {
+  const { executablePath, user } = options
+
+  // Build the [Service] section lines
+  const serviceLines = [
+    "Type=simple",
+    `ExecStart=${executablePath} daemon run`,
+    "Restart=always",
+    "RestartSec=5"
+  ]
+
+  // Add User= directive only if user is provided
+  if (user) {
+    serviceLines.push(`User=${user}`)
+  }
+
+  return `[Unit]
+Description=tx Daemon - Task and memory management for AI agents
+After=network.target
+
+[Service]
+${serviceLines.join("\n")}
+
+[Install]
+WantedBy=default.target
+`
+}
 
 /**
  * Status information for the daemon process.

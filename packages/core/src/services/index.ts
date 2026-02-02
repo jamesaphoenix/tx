@@ -132,7 +132,10 @@ export {
   isProcessRunning,
   defaultDaemonConfig,
   generateLaunchdPlist,
+  generateSystemdService,
+  SYSTEMD_SERVICE_PATH,
   type DaemonStatus,
   type DaemonConfig,
-  type LaunchdPlistOptions
+  type LaunchdPlistOptions,
+  type SystemdServiceOptions
 } from "./daemon-service.js"
