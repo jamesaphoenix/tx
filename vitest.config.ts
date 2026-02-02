@@ -12,7 +12,9 @@ export default defineConfig({
         singleFork: process.env.CI === "true"
       }
     },
-    // Increase teardown timeout for CI stability
-    teardownTimeout: 10000
+    // Increase timeouts for CI stability
+    teardownTimeout: 10000,
+    // Increase the hook timeout for RPC communication between processes
+    hookTimeout: 60000
   }
 })

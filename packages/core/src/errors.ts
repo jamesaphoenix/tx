@@ -120,6 +120,31 @@ export class DaemonError extends Data.TaggedError("DaemonError")<{
   readonly pid: number | null
 }> {}
 
+export class FileWatcherError extends Data.TaggedError("FileWatcherError")<{
+  readonly reason: string
+  readonly cause?: unknown
+}> {
+  get message() {
+    return `File watcher error: ${this.reason}`
+  }
+}
+
+export class WatcherAlreadyRunningError extends Data.TaggedError("WatcherAlreadyRunningError")<{
+  readonly path: string
+}> {
+  get message() {
+    return `Watcher already running for path: ${this.path}`
+  }
+}
+
+export class WatcherNotRunningError extends Data.TaggedError("WatcherNotRunningError")<{
+  readonly path: string
+}> {
+  get message() {
+    return `Watcher not running for path: ${this.path}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
@@ -131,3 +156,6 @@ export type TaskError =
   | RetrievalError
   | AstGrepError
   | DaemonError
+  | FileWatcherError
+  | WatcherAlreadyRunningError
+  | WatcherNotRunningError
