@@ -148,3 +148,15 @@ export {
   type ExtractionResult,
   type CandidateRow,
 } from "./candidate.js";
+
+// Symbol extraction types (code intelligence)
+export {
+  SYMBOL_KINDS,
+  IMPORT_KINDS,
+  type SymbolKind,
+  type SymbolInfo,
+  type ImportKind,
+  type ImportInfo,
+  type SymbolPattern,
+  type Match,
+} from "./symbol.js";
