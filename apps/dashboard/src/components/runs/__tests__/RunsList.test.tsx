@@ -575,6 +575,252 @@ describe('RunsList', () => {
     })
   })
 
+  describe('RunCard: duration formatting', () => {
+    it('shows "running..." for runs without end time', async () => {
+      const runs = [
+        createRun({
+          id: 'run-running',
+          status: 'running',
+          started_at: '2026-01-30T12:00:00Z',
+          ended_at: null,
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('running...')).toBeInTheDocument()
+      })
+    })
+
+    it('shows duration in seconds for short runs', async () => {
+      const runs = [
+        createRun({
+          id: 'run-short',
+          status: 'completed',
+          started_at: '2026-01-30T12:00:00Z',
+          ended_at: '2026-01-30T12:00:30Z', // 30 seconds
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('30s')).toBeInTheDocument()
+      })
+    })
+
+    it('shows duration in minutes and seconds for longer runs', async () => {
+      const runs = [
+        createRun({
+          id: 'run-longer',
+          status: 'completed',
+          started_at: '2026-01-30T12:00:00Z',
+          ended_at: '2026-01-30T12:05:30Z', // 5 minutes 30 seconds
+        }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('5m 30s')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('RunCard: status colors', () => {
+    it('applies yellow styling for running status', async () => {
+      const runs = [createRun({ id: 'run-running', status: 'running' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        const badge = screen.getByText('running')
+        expect(badge).toHaveClass('bg-yellow-500')
+      })
+    })
+
+    it('applies green styling for completed status', async () => {
+      const runs = [createRun({ id: 'run-completed', status: 'completed' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        const badge = screen.getByText('completed')
+        expect(badge).toHaveClass('bg-green-500')
+      })
+    })
+
+    it('applies red styling for failed status', async () => {
+      const runs = [createRun({ id: 'run-failed', status: 'failed' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        const badge = screen.getByText('failed')
+        expect(badge).toHaveClass('bg-red-500')
+      })
+    })
+
+    it('applies orange styling for timeout status', async () => {
+      const runs = [createRun({ id: 'run-timeout', status: 'timeout' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        const badge = screen.getByText('timeout')
+        expect(badge).toHaveClass('bg-orange-500')
+      })
+    })
+
+    it('applies gray styling for cancelled status', async () => {
+      const runs = [createRun({ id: 'run-cancelled', status: 'cancelled' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        const badge = screen.getByText('cancelled')
+        expect(badge).toHaveClass('bg-gray-500')
+      })
+    })
+
+    it('applies card border styling based on running status', async () => {
+      const runs = [
+        createRun({ id: 'run-running', status: 'running', taskTitle: 'Running task' }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        const card = screen.getByText('Running task').closest('div[class*="border"]')
+        expect(card).toHaveClass('border-yellow-500')
+      })
+    })
+
+    it('applies card border styling based on failed status', async () => {
+      const runs = [
+        createRun({ id: 'run-failed', status: 'failed', taskTitle: 'Failed task' }),
+      ]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        const card = screen.getByText('Failed task').closest('div[class*="border"]')
+        expect(card).toHaveClass('border-red-500/50')
+      })
+    })
+  })
+
   describe('run card content', () => {
     it('shows error message for failed runs', async () => {
       const runs = [
