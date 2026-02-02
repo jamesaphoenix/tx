@@ -1,0 +1,52 @@
+{
+  "name": "@jamesaphoenix/tx",
+  "version": "0.1.0",
+  "description": "TanStack for AI agents - headless primitives for memory, tasks, and orchestration",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@tx/core": "*",
+    "@tx/types": "*"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0",
+    "effect": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": false
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jamesaphoenix/tx.git"
+  },
+  "keywords": [
+    "task-management",
+    "ai-agents",
+    "effect-ts",
+    "mcp",
+    "orchestration"
+  ],
+  "author": "James Phoenix",
+  "license": "MIT"
+}

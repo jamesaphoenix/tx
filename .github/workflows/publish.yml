@@ -5,22 +5,7 @@ on:
     types: [published]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-
   publish:
-    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,7 +21,10 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+      - run: npm test
 
-      - run: npm publish --provenance --access public
+      - name: Publish @jamesaphoenix/tx
+        working-directory: packages/tx
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

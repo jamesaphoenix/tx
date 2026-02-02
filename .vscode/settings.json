@@ -1,0 +1,197 @@
+{
+  // ============================================
+  // TypeScript Configuration
+  // ============================================
+  // Use workspace TypeScript version for consistency
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // Inlay hints for better code readability
+  "typescript.inlayHints.parameterNames.enabled": "all",
+  "typescript.inlayHints.parameterTypes.enabled": true,
+  "typescript.inlayHints.variableTypes.enabled": true,
+  "typescript.inlayHints.functionLikeReturnTypes.enabled": true,
+  "typescript.inlayHints.propertyDeclarationTypes.enabled": true,
+  "typescript.inlayHints.enumMemberValues.enabled": true,
+
+  // Import preferences - prefer non-relative imports for cleaner code
+  "typescript.preferences.importModuleSpecifier": "non-relative",
+  "typescript.preferences.importModuleSpecifierEnding": "minimal",
+
+  // Suggestion settings
+  "typescript.suggest.autoImports": true,
+  "typescript.suggest.completeFunctionCalls": true,
+
+  // ============================================
+  // Search & Explorer Optimization
+  // ============================================
+  // Exclude from search for faster searches
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true,
+    "**/.turbo": true,
+    "**/.tx": true,
+    "**/*.db": true,
+    "**/*.db-wal": true,
+    "**/*.db-shm": true,
+    "**/pnpm-lock.yaml": true,
+    "**/package-lock.json": true
+  },
+
+  // Hide generated/build files in explorer
+  "files.exclude": {
+    "**/.turbo": true,
+    "**/dist/**/*.d.ts.map": true,
+    "**/tsconfig.tsbuildinfo": true
+  },
+
+  // File watcher exclusions for better performance
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.turbo/**": true,
+    "**/coverage/**": true,
+    "**/.tx/**": true,
+    "**/*.db": true,
+    "**/*.db-wal": true,
+    "**/*.db-shm": true
+  },
+
+  // ============================================
+  // Formatting & Editor Settings
+  // ============================================
+  // Default formatter and format on save
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "never"
+  },
+
+  // Language-specific formatter overrides
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[markdown]": {
+    "editor.formatOnSave": false,
+    "editor.wordWrap": "on"
+  },
+
+  // ============================================
+  // Testing UI (Vitest)
+  // ============================================
+  // Auto-open peek view on test failures
+  "testing.automaticallyOpenPeekView": "failureVisible",
+  "testing.automaticallyOpenPeekViewDuringAutoRun": true,
+
+  // Follow running tests in the test explorer
+  "testing.followRunningTest": true,
+
+  // Show test coverage in gutters
+  "testing.showCoverageInExplorer": true,
+
+  // ============================================
+  // ESLint Configuration
+  // ============================================
+  // Enable ESLint validation
+  "eslint.enable": true,
+
+  // Run ESLint on save
+  "eslint.run": "onSave",
+
+  // Use flat config format (eslint.config.js)
+  "eslint.useFlatConfig": true,
+
+  // Working directories for monorepo - ESLint needs to know about each workspace
+  "eslint.workingDirectories": [
+    { "mode": "auto" }
+  ],
+
+  // Validate these file types
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+
+  // ============================================
+  // Debugging Configuration
+  // ============================================
+  // Smart auto-attach for Node.js debugging
+  "debug.javascript.autoAttachFilter": "smart",
+
+  // Include patterns for auto-attach (pnpm, tsx, node, next)
+  "debug.javascript.autoAttachSmartPattern": [
+    "${workspaceFolder}/**",
+    "!**/node_modules/**",
+    "**/$KNOWN_TOOLS$/**"
+  ],
+
+  // Terminal integration for debugging
+  "debug.javascript.terminalOptions": {
+    "skipFiles": [
+      "<node_internals>/**",
+      "**/node_modules/**"
+    ]
+  },
+
+  // ============================================
+  // Terminal & Git
+  // ============================================
+  // Default terminal profile
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.defaultProfile.linux": "bash",
+
+  // Git settings
+  "git.autofetch": true,
+  "git.enableSmartCommit": true,
+  "git.confirmSync": false,
+
+  // ============================================
+  // File Associations
+  // ============================================
+  "files.associations": {
+    "*.jsonl": "json",
+    "turbo.json": "jsonc",
+    "tsconfig*.json": "jsonc"
+  },
+
+  // ============================================
+  // Editor Experience
+  // ============================================
+  // Bracket pair colorization
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active",
+
+  // Sticky scroll for better navigation in large files
+  "editor.stickyScroll.enabled": true,
+
+  // Quick suggestions
+  "editor.quickSuggestions": {
+    "strings": true
+  },
+
+  // Tab settings (align with typical TS projects)
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false
+}

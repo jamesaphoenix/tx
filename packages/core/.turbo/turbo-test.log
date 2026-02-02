@@ -1,5 +1,5 @@
 
-> @jamesaphoenix/tx-core@0.1.0 test
+> @tx/core@0.1.0 test
 > vitest run --passWithNoTests
 
 

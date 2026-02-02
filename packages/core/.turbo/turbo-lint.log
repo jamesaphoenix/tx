@@ -1,4 +1,4 @@
 
-> @jamesaphoenix/tx-core@0.1.0 lint
+> @tx/core@0.1.0 lint
 > eslint src/
 

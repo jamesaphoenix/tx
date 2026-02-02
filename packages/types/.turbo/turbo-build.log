@@ -1,4 +1,4 @@
 
-> @jamesaphoenix/tx-types@0.1.0 build
+> @tx/types@0.1.0 build
 > tsc -b
 

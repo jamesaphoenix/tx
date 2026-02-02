@@ -1,4 +1,4 @@
 
-> @jamesaphoenix/tx-test-utils@0.1.0 lint
+> @tx/test-utils@0.1.0 lint
 > eslint src/
 
