@@ -110,6 +110,9 @@ export {
   GraphExpansionServiceLive,
   AnchorVerificationService,
   AnchorVerificationServiceLive,
+  SwarmVerificationService,
+  SwarmVerificationServiceLive,
+  calculateMajorityVote,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
@@ -140,7 +143,13 @@ export {
   type GraphExpansionResult,
   type VerificationResult,
   type VerificationSummary,
-  type VerifyOptions
+  type VerifyOptions,
+  type VerificationBatch,
+  type BatchResult,
+  type SwarmMetrics,
+  type SwarmVerificationResult,
+  type SwarmVerifyOptions,
+  type VoteResult
 } from "./services/index.js"
 
 // =============================================================================

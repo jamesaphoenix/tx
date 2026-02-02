@@ -35,6 +35,7 @@ import { RerankerServiceNoop } from "./services/reranker-service.js"
 import { RetrieverServiceLive } from "./services/retriever-service.js"
 import { GraphExpansionServiceLive } from "./services/graph-expansion.js"
 import { AnchorVerificationServiceLive } from "./services/anchor-verification.js"
+import { SwarmVerificationServiceLive } from "./services/swarm-verification.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync-service.js"
@@ -88,6 +89,17 @@ export {
   type VerificationSummary,
   type VerifyOptions
 } from "./services/anchor-verification.js"
+export {
+  SwarmVerificationService,
+  SwarmVerificationServiceLive,
+  calculateMajorityVote,
+  type VerificationBatch,
+  type BatchResult,
+  type SwarmMetrics,
+  type SwarmVerificationResult,
+  type SwarmVerifyOptions,
+  type VoteResult
+} from "./services/swarm-verification.js"
 
 /**
  * Create the full application layer with all services.
@@ -160,8 +172,13 @@ export const makeAppLayer = (dbPath: string) => {
   // AnchorVerificationServiceLive needs AnchorRepository from repos
   const anchorVerificationService = AnchorVerificationServiceLive.pipe(Layer.provide(repos))
 
-  // Merge all services including edgeService, graphExpansionService, and anchorVerificationService
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService)
+  // SwarmVerificationServiceLive needs AnchorVerificationService and AnchorRepository
+  const swarmVerificationService = SwarmVerificationServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, anchorVerificationService))
+  )
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, and swarmVerificationService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -227,8 +244,13 @@ export const makeMinimalLayer = (dbPath: string) => {
   // AnchorVerificationServiceLive needs AnchorRepository from repos
   const anchorVerificationService = AnchorVerificationServiceLive.pipe(Layer.provide(repos))
 
-  // Merge all services including edgeService, graphExpansionService, and anchorVerificationService
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService)
+  // SwarmVerificationServiceLive needs AnchorVerificationService and AnchorRepository
+  const swarmVerificationService = SwarmVerificationServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, anchorVerificationService))
+  )
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, and swarmVerificationService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(

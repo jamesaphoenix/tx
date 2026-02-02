@@ -101,3 +101,14 @@ export {
   type VerificationSummary,
   type VerifyOptions
 } from "./anchor-verification.js"
+export {
+  SwarmVerificationService,
+  SwarmVerificationServiceLive,
+  calculateMajorityVote,
+  type VerificationBatch,
+  type BatchResult,
+  type SwarmMetrics,
+  type SwarmVerificationResult,
+  type SwarmVerifyOptions,
+  type VoteResult
+} from "./swarm-verification.js"
