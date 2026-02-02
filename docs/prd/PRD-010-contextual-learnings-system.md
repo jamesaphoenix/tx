@@ -79,6 +79,7 @@ Create → Index (FTS5 + optional vector) → Retrieve → Use → Track Outcome
 | CL-004 | Record outcome feedback | `tx learning:helpful <id> [--score 0.8]` |
 | CL-005 | Import from CLAUDE.md | `tx learning:import [file]` |
 | CL-006 | Generate embeddings | `tx learning:embed` |
+| CL-025 | View single learning by ID | `tx learning:show <id> [--json]` |
 
 ### Task Context Retrieval
 
@@ -204,6 +205,21 @@ $ tx learning:search "database transactions" -n 5
 [65%] [migration] Test rollback paths before deploying
 [52%] [database] Index foreign keys for query performance
 [41%] [api] Wrap batch inserts in transactions
+```
+
+### View Single Learning
+
+When hooks show truncated previews (200 chars), agents can expand specific learnings:
+
+```bash
+$ tx learning:show 42
+Learning #42
+  Content: Always use transactions for multi-step DB operations. This prevents partial updates when errors occur mid-operation. Use BEGIN/COMMIT/ROLLBACK explicitly rather than relying on auto-commit.
+  Category: database
+  Source: manual (tx-a1b2c3d4)
+  Created: 2026-01-15T10:30:00.000Z
+  Usage Count: 12
+  Outcome Score: 90%
 ```
 
 ### Get Task Context

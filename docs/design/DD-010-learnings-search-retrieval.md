@@ -18,7 +18,7 @@ This document describes **how** tx implements the contextual learnings system: h
 ┌─────────────────────────────────────────────────────────────────┐
 │                        LearningService                          │
 ├─────────────────────────────────────────────────────────────────┤
-│  create()  │  search()  │  hybridSearch()  │  getContextForTask()
+│  create()  │  get()  │  search()  │  hybridSearch()  │  getContextForTask()
 ├─────────────────────────────────────────────────────────────────┤
 │                      LearningRepository                          │
 │  ┌───────────────────────────────────────────────────────────┐  │
@@ -34,6 +34,38 @@ This document describes **how** tx implements the contextual learnings system: h
 │  learnings │ learnings_fts (FTS5) │ learnings_vec (optional)    │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Single Learning Retrieval
+
+The `tx learning:show <id>` command provides direct access to a learning's full content.
+
+### Use Case
+
+Claude Code hooks inject learnings truncated to 200 characters to conserve context window. When an agent sees a relevant learning preview, they can expand it:
+
+```bash
+# Hook shows: "#218 (81%) Daemon service file generators (launchd plist, systemd..."
+
+$ tx learning:show 218
+Learning #218
+  Content: Daemon service file generators (launchd plist, systemd unit) follow a consistent pattern in daemon-service.ts: export a PATH constant for install location, define an Options interface with label/executablePath/logPath, and implement a pure generate function returning string XML/INI content. Include XML/special character escaping and expand ~ to homedir() for paths.
+  Category: (none)
+  Source: manual (tx-64c327cb)
+  Created: 2026-02-02T17:39:13.427Z
+  Usage Count: 0
+```
+
+### Implementation
+
+Uses existing `LearningService.get(id)` method:
+
+```typescript
+readonly get: (id: number) => Effect.Effect<Learning, LearningNotFoundError | DatabaseError>
+```
+
+This is a simple lookup by primary key - no search or scoring involved.
 
 ---
 
