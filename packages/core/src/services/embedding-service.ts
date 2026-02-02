@@ -35,6 +35,8 @@ export class EmbeddingService extends Context.Tag("EmbeddingService")<
     readonly embedBatch: (texts: readonly string[]) => Effect.Effect<readonly Float32Array[], EmbeddingUnavailableError>
     /** Check if embedding functionality is available */
     readonly isAvailable: () => Effect.Effect<boolean>
+    /** The dimension of embedding vectors (0 if unavailable) */
+    readonly dimensions: number
   }
 >() {}
 
@@ -47,7 +49,8 @@ export const EmbeddingServiceNoop = Layer.succeed(
   {
     embed: () => Effect.fail(new EmbeddingUnavailableError({ reason: "No embedding model configured" })),
     embedBatch: () => Effect.fail(new EmbeddingUnavailableError({ reason: "No embedding model configured" })),
-    isAvailable: () => Effect.succeed(false)
+    isAvailable: () => Effect.succeed(false),
+    dimensions: 0
   }
 )
 
@@ -148,7 +151,9 @@ export const EmbeddingServiceLive = Layer.scoped(
           return results
         }),
 
-      isAvailable: () => Effect.succeed(true)
+      isAvailable: () => Effect.succeed(true),
+
+      dimensions: 256
     }
   })
 )

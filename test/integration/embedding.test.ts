@@ -55,6 +55,17 @@ describe("EmbeddingServiceNoop", () => {
 
     expect(result).toBe(false)
   })
+
+  it("dimensions returns 0", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* EmbeddingService
+        return svc.dimensions
+      }).pipe(Effect.provide(EmbeddingServiceNoop))
+    )
+
+    expect(result).toBe(0)
+  })
 })
 
 describe("EmbeddingServiceLive", () => {
@@ -72,6 +83,20 @@ describe("EmbeddingServiceLive", () => {
     )
 
     expect(result).toBe(true)
+  })
+
+  it("dimensions returns 256 (embeddinggemma-300M)", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* EmbeddingService
+        return svc.dimensions
+      }).pipe(
+        Effect.provide(EmbeddingServiceLive),
+        Effect.scoped
+      )
+    )
+
+    expect(result).toBe(256)
   })
 
   // Note: We don't test actual embedding generation here since it requires
@@ -233,6 +258,8 @@ describe("EmbeddingService Mock-based Tests", () => {
             }),
 
           isAvailable: () => Effect.succeed(true),
+
+          dimensions: 256,
 
           // Expose internal state for testing
           getLoadCount: () =>
@@ -617,7 +644,8 @@ describe("EmbeddingService Mock-based Tests", () => {
       const NoopLayer = Layer.succeed(EmbeddingService, {
         embed: () => Effect.fail(new EmbeddingUnavailableError({ reason: "No embedding model configured" })),
         embedBatch: () => Effect.fail(new EmbeddingUnavailableError({ reason: "No embedding model configured" })),
-        isAvailable: () => Effect.succeed(false)
+        isAvailable: () => Effect.succeed(false),
+        dimensions: 0
       })
 
       const result = await Effect.runPromise(
@@ -634,7 +662,8 @@ describe("EmbeddingService Mock-based Tests", () => {
       const LiveLayer = Layer.succeed(EmbeddingService, {
         embed: () => Effect.succeed(new Float32Array(256)),
         embedBatch: () => Effect.succeed([new Float32Array(256)]),
-        isAvailable: () => Effect.succeed(true)
+        isAvailable: () => Effect.succeed(true),
+        dimensions: 256
       })
 
       const result = await Effect.runPromise(
@@ -674,7 +703,8 @@ describe("Embedding Output Format", () => {
     const MockLayer = Layer.succeed(EmbeddingService, {
       embed: () => Effect.succeed(new Float32Array(256).fill(0.5)),
       embedBatch: () => Effect.succeed([]),
-      isAvailable: () => Effect.succeed(true)
+      isAvailable: () => Effect.succeed(true),
+      dimensions: 256
     })
 
     const result = await Effect.runPromise(
@@ -695,7 +725,8 @@ describe("Embedding Output Format", () => {
       embedBatch: (texts) => Effect.succeed(
         texts.map(() => new Float32Array(256).fill(0.1))
       ),
-      isAvailable: () => Effect.succeed(true)
+      isAvailable: () => Effect.succeed(true),
+      dimensions: 256
     })
 
     const result = await Effect.runPromise(
