@@ -1,0 +1,73 @@
+{
+  "name": "@tx/test-utils",
+  "version": "0.1.0",
+  "description": "Test utilities, factories, fixtures, and helpers for tx monorepo",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./database": {
+      "types": "./dist/database/index.d.ts",
+      "import": "./dist/database/index.js"
+    },
+    "./factories": {
+      "types": "./dist/factories/index.d.ts",
+      "import": "./dist/factories/index.js"
+    },
+    "./fixtures": {
+      "types": "./dist/fixtures/index.d.ts",
+      "import": "./dist/fixtures/index.js"
+    },
+    "./llm-cache": {
+      "types": "./dist/llm-cache/index.d.ts",
+      "import": "./dist/llm-cache/index.js"
+    },
+    "./mocks": {
+      "types": "./dist/mocks/index.d.ts",
+      "import": "./dist/mocks/index.js"
+    },
+    "./helpers": {
+      "types": "./dist/helpers/index.d.ts",
+      "import": "./dist/helpers/index.js"
+    },
+    "./setup": {
+      "types": "./dist/setup/index.d.ts",
+      "import": "./dist/setup/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tx/core": "*",
+    "@tx/types": "*",
+    "effect": "^3.19.15"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0",
+    "vitest": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": false
+    },
+    "vitest": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
