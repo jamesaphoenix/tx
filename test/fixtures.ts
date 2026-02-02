@@ -1,17 +1,25 @@
-import Database from "better-sqlite3"
-import { createHash } from "crypto"
-import type { TaskId } from "../src/schema.js"
-import { MIGRATIONS } from "../src/services/migration-service.js"
+/**
+ * Test fixtures - migrated to use @tx/test-utils
+ *
+ * This file provides backwards-compatible helpers while migrating
+ * to the centralized @tx/test-utils package.
+ */
 
-// Deterministic SHA256-based IDs for reproducible tests (Rule 3)
+import Database from "better-sqlite3"
+import { Effect } from "effect"
+import type { TaskId } from "../src/schema.js"
+import type { TestDatabase } from "@tx/test-utils"
+import {
+  fixtureId as testUtilsFixtureId,
+  createTestDatabase
+} from "@tx/test-utils"
+
+// Re-export fixtureId from @tx/test-utils
 export const fixtureId = (name: string): TaskId => {
-  const hash = createHash("sha256")
-    .update(`fixture:${name}`)
-    .digest("hex")
-    .substring(0, 8)
-  return `tx-${hash}` as TaskId
+  return testUtilsFixtureId(name) as TaskId
 }
 
+// Pre-computed fixture IDs using the @tx/test-utils fixtureId function
 export const FIXTURES = {
   TASK_AUTH:    fixtureId("auth"),
   TASK_LOGIN:   fixtureId("login"),
@@ -23,28 +31,41 @@ export const FIXTURES = {
 
 /**
  * Create an in-memory test database with all migrations applied.
- * Uses the centralized MIGRATIONS from migration-service.ts to avoid duplication.
+ * Uses @tx/test-utils internally.
+ *
+ * @deprecated Use createTestDatabase from @tx/test-utils directly for new tests
  */
 export function createTestDb(): InstanceType<typeof Database> {
-  const db = new Database(":memory:")
-  db.pragma("foreign_keys = ON")
-
-  // Apply all migrations in order
-  for (const migration of MIGRATIONS) {
-    db.exec(migration.sql)
-  }
-
-  return db
+  // Synchronously create the test database
+  // This is a compatibility shim - new tests should use createTestDatabase()
+  const testDb = Effect.runSync(createTestDatabase())
+  return testDb.db as InstanceType<typeof Database>
 }
 
-export function seedFixtures(db: InstanceType<typeof Database>): void {
+/**
+ * Create an in-memory test database (async version).
+ * Returns the TestDatabase interface from @tx/test-utils.
+ */
+export async function createTestDbAsync(): Promise<TestDatabase> {
+  return Effect.runPromise(createTestDatabase())
+}
+
+/**
+ * Seed the database with fixture tasks.
+ * Works with both raw Database and TestDatabase interfaces.
+ */
+export function seedFixtures(db: InstanceType<typeof Database> | TestDatabase): void {
   const now = new Date().toISOString()
-  const insert = db.prepare(
+
+  // Determine if we have a TestDatabase or raw Database
+  const rawDb = "db" in db ? db.db : db
+
+  const insert = rawDb.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
 
-  const insertDep = db.prepare(
+  const insertDep = rawDb.prepare(
     `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
   )
 
