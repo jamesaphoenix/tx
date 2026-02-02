@@ -77,7 +77,22 @@ export class AnchorService extends Context.Tag("AnchorService")<
     /**
      * Update an anchor's status (valid, drifted, invalid).
      */
-    readonly updateAnchorStatus: (anchorId: number, status: AnchorStatus) => Effect.Effect<Anchor, AnchorNotFoundError | ValidationError | DatabaseError>
+    readonly updateAnchorStatus: (anchorId: number, status: AnchorStatus, reason?: string, detectedBy?: InvalidationSource) => Effect.Effect<Anchor, AnchorNotFoundError | ValidationError | DatabaseError>
+
+    /**
+     * Log a status change for an anchor.
+     * Creates an entry in the invalidation_log table.
+     */
+    readonly logStatusChange: (
+      anchorId: number,
+      oldStatus: AnchorStatus,
+      newStatus: AnchorStatus,
+      reason: string,
+      detectedBy?: InvalidationSource,
+      oldHash?: string | null,
+      newHash?: string | null,
+      similarity?: number | null
+    ) => Effect.Effect<InvalidationLog, AnchorNotFoundError | DatabaseError>
 
     /**
      * Find all anchors for a given file path.
@@ -379,7 +394,7 @@ export const AnchorServiceLive = Layer.effect(
           }
         }),
 
-      updateAnchorStatus: (anchorId, status) =>
+      updateAnchorStatus: (anchorId, status, reason, detectedBy = "manual") =>
         Effect.gen(function* () {
           // Validate status
           yield* validateStatus(status)
@@ -390,8 +405,22 @@ export const AnchorServiceLive = Layer.effect(
             return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
           }
 
+          const oldStatus = anchor.status
+
           // Update the status
           yield* anchorRepo.updateStatus(anchorId, status)
+
+          // Log the status change if status actually changed
+          if (oldStatus !== status) {
+            yield* anchorRepo.logInvalidation({
+              anchorId,
+              oldStatus,
+              newStatus: status,
+              reason: reason ?? `Status changed from ${oldStatus} to ${status}`,
+              detectedBy,
+              oldContentHash: anchor.contentHash
+            })
+          }
 
           // Return updated anchor
           const updated = yield* anchorRepo.findById(anchorId)
@@ -709,6 +738,27 @@ export const AnchorServiceLive = Layer.effect(
             drifted,
             invalid
           }
+        }),
+
+      logStatusChange: (anchorId, oldStatus, newStatus, reason, detectedBy = "manual", oldHash, newHash, similarity) =>
+        Effect.gen(function* () {
+          // Verify anchor exists
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          // Create entry in invalidation_log
+          return yield* anchorRepo.logInvalidation({
+            anchorId,
+            oldStatus,
+            newStatus,
+            reason,
+            detectedBy,
+            oldContentHash: oldHash ?? null,
+            newContentHash: newHash ?? null,
+            similarityScore: similarity ?? null
+          })
         })
     }
   })
