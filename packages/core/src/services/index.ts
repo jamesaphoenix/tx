@@ -120,3 +120,7 @@ export {
   EXT_TO_LANGUAGE,
   DEFAULT_SYMBOL_PATTERNS
 } from "./ast-grep-service.js"
+export {
+  DaemonService,
+  type DaemonStatus
+} from "./daemon-service.js"

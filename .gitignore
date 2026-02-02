@@ -5,3 +5,4 @@ dist/
 *.db-wal
 *.db-shm
 .turbo/
+*.tsbuildinfo
