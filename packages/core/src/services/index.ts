@@ -122,10 +122,14 @@ export {
 } from "./ast-grep-service.js"
 export {
   DaemonService,
+  DaemonServiceLive,
+  DaemonServiceNoop,
   PID_FILE_PATH,
   writePid,
   readPid,
   removePid,
   isProcessRunning,
-  type DaemonStatus
+  defaultDaemonConfig,
+  type DaemonStatus,
+  type DaemonConfig
 } from "./daemon-service.js"

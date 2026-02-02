@@ -24,7 +24,8 @@ export {
   ExtractionUnavailableError,
   RerankerUnavailableError,
   RetrievalError,
-  AstGrepError
+  AstGrepError,
+  DaemonError
 } from "./errors.js"
 
 // =============================================================================
@@ -121,6 +122,17 @@ export {
   AstGrepServiceAuto,
   EXT_TO_LANGUAGE,
   DEFAULT_SYMBOL_PATTERNS,
+  DaemonService,
+  DaemonServiceLive,
+  DaemonServiceNoop,
+  PID_FILE_PATH,
+  writePid,
+  readPid,
+  removePid,
+  isProcessRunning,
+  defaultDaemonConfig,
+  type DaemonStatus,
+  type DaemonConfig,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,

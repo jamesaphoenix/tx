@@ -1,4 +1,5 @@
-import { Context, Effect } from "effect"
+import { Context, Effect, Layer } from "effect"
+import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { DaemonError } from "../errors.js"
@@ -188,3 +189,346 @@ export const removePid = (): Effect.Effect<void, DaemonError> =>
         pid: null
       })
   })
+
+/**
+ * Path to store the daemon start timestamp for uptime calculation.
+ */
+const STARTED_AT_PATH = ".tx/daemon.started"
+
+/**
+ * Write the daemon start timestamp to a file.
+ */
+const writeStartedAt = (date: Date): Effect.Effect<void, DaemonError> =>
+  Effect.try({
+    try: () => {
+      const dir = dirname(STARTED_AT_PATH)
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+      }
+      writeFileSync(STARTED_AT_PATH, date.toISOString(), "utf-8")
+    },
+    catch: (error) =>
+      new DaemonError({
+        code: "STARTED_AT_WRITE_FAILED",
+        message: `Failed to write started_at file: ${error}`,
+        pid: null
+      })
+  })
+
+/**
+ * Read the daemon start timestamp from file.
+ */
+const readStartedAt = (): Effect.Effect<Date | null, DaemonError> =>
+  Effect.try({
+    try: () => {
+      if (!existsSync(STARTED_AT_PATH)) {
+        return null
+      }
+      const content = readFileSync(STARTED_AT_PATH, "utf-8").trim()
+      const date = new Date(content)
+      return isNaN(date.getTime()) ? null : date
+    },
+    catch: (error) =>
+      new DaemonError({
+        code: "STARTED_AT_READ_FAILED",
+        message: `Failed to read started_at file: ${error}`,
+        pid: null
+      })
+  })
+
+/**
+ * Remove the daemon start timestamp file.
+ */
+const removeStartedAt = (): Effect.Effect<void, DaemonError> =>
+  Effect.try({
+    try: () => {
+      if (existsSync(STARTED_AT_PATH)) {
+        unlinkSync(STARTED_AT_PATH)
+      }
+    },
+    catch: (error) =>
+      new DaemonError({
+        code: "STARTED_AT_REMOVE_FAILED",
+        message: `Failed to remove started_at file: ${error}`,
+        pid: null
+      })
+  })
+
+/**
+ * Send a signal to a process by PID.
+ * Returns true if the signal was sent successfully, false if the process doesn't exist.
+ */
+const sendSignal = (pid: number, signal: NodeJS.Signals): Effect.Effect<boolean, DaemonError> =>
+  Effect.try({
+    try: () => {
+      process.kill(pid, signal)
+      return true
+    },
+    catch: (error) => {
+      // ESRCH means no such process - this is expected when process isn't running
+      if (error instanceof Error && "code" in error && error.code === "ESRCH") {
+        return false
+      }
+      // Any other error is unexpected
+      throw error
+    }
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.fail(
+        new DaemonError({
+          code: "SIGNAL_FAILED",
+          message: `Failed to send signal ${signal} to process ${pid}: ${error}`,
+          pid
+        })
+      )
+    ),
+    Effect.flatMap((result) =>
+      typeof result === "boolean" ? Effect.succeed(result) : Effect.succeed(result)
+    )
+  )
+
+/**
+ * Wait for a process to exit with a timeout.
+ * Returns true if the process exited, false if timeout was reached.
+ */
+const waitForExit = (pid: number, timeoutMs: number): Effect.Effect<boolean, DaemonError> =>
+  Effect.gen(function* () {
+    const startTime = Date.now()
+    const pollIntervalMs = 100
+
+    while (Date.now() - startTime < timeoutMs) {
+      const running = yield* isProcessRunning(pid)
+      if (!running) {
+        return true
+      }
+      yield* Effect.sleep(`${pollIntervalMs} millis`)
+    }
+
+    return false
+  })
+
+/**
+ * Configuration for the daemon service.
+ */
+export interface DaemonConfig {
+  /**
+   * The command to run the daemon (e.g., "tx", "node").
+   * Defaults to "tx".
+   */
+  readonly command: string
+  /**
+   * Arguments to pass to the command.
+   * Defaults to ["daemon", "run"].
+   */
+  readonly args: readonly string[]
+  /**
+   * Working directory for the daemon process.
+   * Defaults to current working directory.
+   */
+  readonly cwd?: string
+  /**
+   * Environment variables for the daemon process.
+   * Defaults to current environment.
+   */
+  readonly env?: NodeJS.ProcessEnv
+  /**
+   * Path to redirect stdout (optional).
+   */
+  readonly stdoutPath?: string
+  /**
+   * Path to redirect stderr (optional).
+   */
+  readonly stderrPath?: string
+}
+
+/**
+ * Default daemon configuration.
+ */
+export const defaultDaemonConfig: DaemonConfig = {
+  command: "tx",
+  args: ["daemon", "run"]
+}
+
+/**
+ * Internal start implementation for the daemon.
+ * Extracted to allow reuse in restart without circular dependency.
+ */
+const startDaemonImpl = (config: DaemonConfig): Effect.Effect<void, DaemonError> =>
+  Effect.gen(function* () {
+    // Check if daemon is already running
+    const existingPid = yield* readPid()
+    if (existingPid !== null) {
+      return yield* Effect.fail(
+        new DaemonError({
+          code: "ALREADY_RUNNING",
+          message: `Daemon is already running with PID ${existingPid}`,
+          pid: existingPid
+        })
+      )
+    }
+
+    // Spawn the daemon process
+    const child: ChildProcess = yield* Effect.try({
+      try: () => {
+        const spawnedProcess = spawn(config.command, [...config.args], {
+          detached: true,
+          stdio: "ignore",
+          cwd: config.cwd ?? process.cwd(),
+          env: config.env ?? process.env
+        })
+
+        // Unref to allow parent to exit independently
+        spawnedProcess.unref()
+
+        return spawnedProcess
+      },
+      catch: (error) =>
+        new DaemonError({
+          code: "SPAWN_FAILED",
+          message: `Failed to spawn daemon process: ${error}`,
+          pid: null
+        })
+    })
+
+    // Verify we got a PID
+    if (child.pid === undefined) {
+      return yield* Effect.fail(
+        new DaemonError({
+          code: "NO_PID",
+          message: "Spawned process has no PID",
+          pid: null
+        })
+      )
+    }
+
+    const pid = child.pid
+
+    // Write PID file
+    yield* writePid(pid)
+
+    // Write started timestamp
+    yield* writeStartedAt(new Date())
+
+    // Wait a short time and verify process is still running
+    yield* Effect.sleep("100 millis")
+    const running = yield* isProcessRunning(pid)
+
+    if (!running) {
+      // Process died immediately, clean up
+      yield* removePid()
+      yield* removeStartedAt()
+      return yield* Effect.fail(
+        new DaemonError({
+          code: "PROCESS_DIED",
+          message: "Daemon process exited immediately after starting",
+          pid
+        })
+      )
+    }
+  })
+
+/**
+ * Internal stop implementation for the daemon.
+ * Extracted to allow reuse in restart without circular dependency.
+ */
+const stopDaemonImpl = (): Effect.Effect<void, DaemonError> =>
+  Effect.gen(function* () {
+    // Read PID from file
+    const pid = yield* readPid()
+
+    if (pid === null) {
+      // No daemon running (readPid handles stale cleanup)
+      return
+    }
+
+    // Send SIGTERM
+    const termSent = yield* sendSignal(pid, "SIGTERM")
+
+    if (!termSent) {
+      // Process already gone, clean up files
+      yield* removePid()
+      yield* removeStartedAt()
+      return
+    }
+
+    // Wait for process to exit (timeout 10s)
+    const exited = yield* waitForExit(pid, 10000)
+
+    if (!exited) {
+      // Process didn't exit gracefully, send SIGKILL
+      yield* sendSignal(pid, "SIGKILL")
+
+      // Wait a bit more for SIGKILL to take effect
+      yield* waitForExit(pid, 1000)
+    }
+
+    // Clean up files
+    yield* removePid()
+    yield* removeStartedAt()
+  })
+
+/**
+ * Internal status implementation for the daemon.
+ */
+const statusDaemonImpl = (): Effect.Effect<DaemonStatus, DaemonError> =>
+  Effect.gen(function* () {
+    const pid = yield* readPid()
+
+    if (pid === null) {
+      return {
+        running: false,
+        pid: null,
+        uptime: null,
+        startedAt: null
+      } satisfies DaemonStatus
+    }
+
+    // Process is running (readPid already verified this)
+    const startedAt = yield* readStartedAt()
+    const uptime = startedAt ? Date.now() - startedAt.getTime() : null
+
+    return {
+      running: true,
+      pid,
+      uptime,
+      startedAt
+    } satisfies DaemonStatus
+  })
+
+/**
+ * DaemonServiceLive implementation that manages a real daemon process.
+ * Uses child_process.spawn with detached:true to fork the daemon.
+ */
+export const DaemonServiceLive = Layer.succeed(DaemonService, {
+  start: () => startDaemonImpl(defaultDaemonConfig),
+  stop: () => stopDaemonImpl(),
+  status: () => statusDaemonImpl(),
+  restart: () =>
+    Effect.gen(function* () {
+      // Stop if running
+      yield* stopDaemonImpl()
+
+      // Small delay before starting again
+      yield* Effect.sleep("200 millis")
+
+      // Start fresh
+      yield* startDaemonImpl(defaultDaemonConfig)
+    })
+})
+
+/**
+ * DaemonServiceNoop - no-op implementation for testing.
+ * All operations succeed but don't actually manage a process.
+ */
+export const DaemonServiceNoop = Layer.succeed(DaemonService, {
+  start: () => Effect.void,
+  stop: () => Effect.void,
+  status: () =>
+    Effect.succeed({
+      running: false,
+      pid: null,
+      uptime: null,
+      startedAt: null
+    } satisfies DaemonStatus),
+  restart: () => Effect.void
+})
