@@ -24,9 +24,14 @@ export {
   contentFixtureId
 } from "./fixtures/index.js"
 
-// Database helpers (to be implemented)
-// export { createTestDatabase, TestDatabaseService, TestDatabaseLive } from './database/index.js'
-// export type { TestDatabase } from './database/index.js'
+// Database helpers
+export {
+  createTestDatabase,
+  TestDatabaseService,
+  TestDatabaseLive,
+  createTestDatabaseLayer
+} from "./database/index.js"
+export type { TestDatabase } from "./database/index.js"
 
 // Factories (to be implemented)
 // export { createTestLearning, createTestLearnings, LearningFactory } from './factories/index.js'
