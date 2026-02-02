@@ -3,9 +3,19 @@ import { DocsPage, DocsBody } from 'fumadocs-ui/page';
 import { source } from '@/lib/source';
 import { getMDXComponents } from '@/mdx-components';
 import type { Metadata } from 'next';
+import type { TOCItemType } from 'fumadocs-core/toc';
+import type { FC, ComponentProps } from 'react';
 
 interface PageProps {
   params: Promise<{ slug?: string[] }>;
+}
+
+// Type for MDX page data that includes body and toc
+interface MDXPageData {
+  title: string;
+  description?: string;
+  body: FC<ComponentProps<'div'> & { components?: Record<string, unknown> }>;
+  toc: TOCItemType[];
 }
 
 export default async function Page(props: PageProps) {
@@ -14,14 +24,20 @@ export default async function Page(props: PageProps) {
 
   if (!page) notFound();
 
-  const Mdx = page.data.body;
+  // Type assertion for MDX data
+  const data = page.data as unknown as MDXPageData;
+  const Mdx = data.body;
 
   return (
-    <DocsPage toc={page.data.toc}>
+    <DocsPage
+      toc={data.toc}
+      footer={{ enabled: false }}
+      breadcrumb={{ enabled: false }}
+    >
       <DocsBody>
-        <h1>{page.data.title}</h1>
+        <h1>{data.title}</h1>
         <p className="text-fd-muted-foreground mb-8 text-lg">
-          {page.data.description}
+          {data.description}
         </p>
         <Mdx components={getMDXComponents()} />
       </DocsBody>
