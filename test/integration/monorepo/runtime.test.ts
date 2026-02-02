@@ -27,12 +27,15 @@ const fixtureId = (name: string): TaskId => {
   return `tx-${hash}` as TaskId
 }
 
-// Used for documentation - the pattern matches existing fixtures
-const _FIXTURES = {
+// Fixture IDs for this test file
+const FIXTURES = {
   CLI_TASK: fixtureId("cli-task"),
   MCP_TASK: fixtureId("mcp-task"),
   API_TASK: fixtureId("api-task"),
 } as const
+
+// Export to prevent unused warning (used for consistent test patterns)
+void FIXTURES
 
 // =============================================================================
 // @tx/core Runtime Tests

@@ -30,6 +30,9 @@ const FIXTURES = {
   TASK_2: fixtureId("task-2"),
 } as const
 
+// Suppress unused warning - kept for documentation and future use
+void FIXTURES
+
 // =============================================================================
 // EdgeService CRUD Tests (via @tx/core)
 // =============================================================================

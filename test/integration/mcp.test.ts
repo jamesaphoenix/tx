@@ -70,7 +70,7 @@ export interface ParsedMcpResponse<T = unknown> {
  * @param db - Pre-configured Database instance (from createTestDb)
  * @returns ManagedRuntime ready to execute MCP tool Effects
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
   const infra = Layer.succeed(SqliteClient, db as Database.Database)
 
@@ -694,7 +694,7 @@ function createToolEffect(
  * @param args - Tool arguments (will be validated against schema)
  * @returns Promise<McpToolResponse> - Raw MCP response with content array
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export async function callMcpTool<T extends ToolName>(
   runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>,
   toolName: T,
@@ -716,7 +716,7 @@ export async function callMcpTool<T extends ToolName>(
  * @param args - Tool arguments (will be validated against schema)
  * @returns Promise<ParsedMcpResponse<T>> - Parsed response with typed data
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export async function callMcpToolParsed<T extends ToolName, R = unknown>(
   runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>,
   toolName: T,

@@ -127,12 +127,12 @@ describe("CLI tree command", () => {
       // Children have 2-space indentation
       const childLines = lines.filter(l => l.includes(child1Id) || l.includes(child2Id))
       for (const childLine of childLines) {
-        expect(childLine).toMatch(/^  /)
+        expect(childLine).toMatch(/^ {2}/)
       }
 
       // Grandchild has 4-space indentation
       const grandchildLine = lines.find(l => l.includes(grandchildId))
-      expect(grandchildLine).toMatch(/^    /)
+      expect(grandchildLine).toMatch(/^ {4}/)
     })
 
     it("shows ready indicator (+) for ready tasks", () => {
