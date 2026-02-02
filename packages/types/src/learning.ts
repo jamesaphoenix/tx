@@ -67,6 +67,8 @@ export interface LearningWithScore extends Learning {
   readonly expansionPath?: readonly LearningId[];
   /** Edge type that led to this learning (null for direct matches) */
   readonly sourceEdge?: EdgeType | null;
+  /** Feedback score from historical usage (0-1, 0.5 = neutral, optional) */
+  readonly feedbackScore?: number;
 }
 
 /**

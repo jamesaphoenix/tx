@@ -4,6 +4,7 @@ import { EmbeddingService } from "./embedding-service.js"
 import { QueryExpansionService } from "./query-expansion-service.js"
 import { RerankerService } from "./reranker-service.js"
 import { GraphExpansionService, type SeedLearning } from "./graph-expansion.js"
+import { FeedbackTrackerService } from "./feedback-tracker.js"
 import { RetrievalError, DatabaseError } from "../errors.js"
 import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@tx/types"
 import { cosineSimilarity } from "../utils/math.js"
@@ -22,6 +23,9 @@ const FREQUENCY_BOOST = 0.02
 /** Position-aware bonuses for items ranking highly in any retrieval system */
 const TOP_1_BONUS = 0.05  // Bonus for #1 rank in any system
 const TOP_3_BONUS = 0.02  // Bonus for top 3 in any system
+
+/** Feedback boost weight - scales the 0-1 feedback score */
+const FEEDBACK_BOOST = 0.05
 
 /**
  * RetrieverService provides pluggable retrieval for learnings.
@@ -203,11 +207,16 @@ const calculatePositionBonus = (...ranks: number[]): number => {
 
 /**
  * Convert RRF candidates to final LearningWithScore results.
- * Applies additional boosts for recency, outcome, frequency, and position.
+ * Applies additional boosts for recency, outcome, frequency, position, and feedback.
+ *
+ * @param candidates - RRF-scored candidates
+ * @param recencyWeight - Weight for recency boost
+ * @param feedbackScores - Optional map of learning ID to feedback score (0-1)
  */
 const applyFinalScoring = (
   candidates: RRFCandidate[],
-  recencyWeight: number
+  recencyWeight: number,
+  feedbackScores?: Map<number, number>
 ): LearningWithScore[] => {
   return candidates.map(candidate => {
     const { learning, bm25Score, bm25Rank, vectorScore, vectorRank, rrfScore: rrf, recencyScore } = candidate
@@ -223,6 +232,11 @@ const applyFinalScoring = (
     // Position-aware bonus: reward items that rank highly in any retrieval system
     const positionBonus = calculatePositionBonus(bm25Rank, vectorRank)
 
+    // Feedback boost: learnings that were helpful in past runs get boosted
+    // feedbackScore is 0-1 with 0.5 being neutral (no feedback)
+    const feedbackScore = feedbackScores?.get(learning.id) ?? 0.5
+    const feedbackBoost = FEEDBACK_BOOST * feedbackScore
+
     // Final relevance score: RRF as base + boosts
     // RRF score range is [0, 2/k] for two lists, normalize to [0, 1] range
     // Max possible RRF = 2 * 1/(k+1) ≈ 0.0328 for k=60
@@ -233,7 +247,8 @@ const applyFinalScoring = (
                            recencyWeight * recencyScore +
                            outcomeBoost +
                            frequencyBoost +
-                           positionBonus
+                           positionBonus +
+                           feedbackBoost
 
     return {
       ...learning,
@@ -243,7 +258,8 @@ const applyFinalScoring = (
       recencyScore,
       rrfScore: rrf,
       bm25Rank,
-      vectorRank
+      vectorRank,
+      feedbackScore
     }
   }).sort((a, b) => b.relevanceScore - a.relevanceScore)
 }
@@ -280,6 +296,9 @@ export const RetrieverServiceLive = Layer.effect(
     // GraphExpansionService is optional - graceful degradation when not available
     const graphExpansionServiceOption = yield* Effect.serviceOption(GraphExpansionService)
     const graphExpansionService = Option.getOrNull(graphExpansionServiceOption)
+    // FeedbackTrackerService is optional - graceful degradation when not available
+    const feedbackTrackerServiceOption = yield* Effect.serviceOption(FeedbackTrackerService)
+    const feedbackTrackerService = Option.getOrNull(feedbackTrackerServiceOption)
 
     // Load recency weight from config
     const recencyWeightStr = yield* learningRepo.getConfig("recency_weight")
@@ -496,8 +515,20 @@ export const RetrieverServiceLive = Layer.effect(
           // Combine using RRF
           const candidates = computeRRFScoring(bm25Results, vectorRanking)
 
-          // Apply final scoring with boosts
-          const scored = applyFinalScoring(candidates, recencyWeight)
+          // Fetch feedback scores for all candidates (graceful degradation)
+          const feedbackScores = new Map<number, number>()
+          if (feedbackTrackerService) {
+            for (const candidate of candidates) {
+              const score = yield* Effect.catchAll(
+                feedbackTrackerService.getFeedbackScore(candidate.learning.id),
+                () => Effect.succeed(0.5) // Neutral on error
+              )
+              feedbackScores.set(candidate.learning.id, score)
+            }
+          }
+
+          // Apply final scoring with boosts (including feedback)
+          const scored = applyFinalScoring(candidates, recencyWeight, feedbackScores)
 
           // Apply graph expansion if enabled (after initial RRF scoring)
           const withGraphExpansion = yield* applyGraphExpansion(scored, options ?? {})
