@@ -106,6 +106,8 @@ export {
   RetrieverServiceNoop,
   RetrieverServiceLive,
   RetrieverServiceAuto,
+  GraphExpansionService,
+  GraphExpansionServiceLive,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
@@ -129,7 +131,11 @@ export {
   type NeighborWithPath,
   type FindNeighborsOptions,
   type QueryExpansionResult,
-  type RerankerResult
+  type RerankerResult,
+  type SeedLearning,
+  type ExpandedLearning,
+  type GraphExpansionOptions,
+  type GraphExpansionResult
 } from "./services/index.js"
 
 // =============================================================================

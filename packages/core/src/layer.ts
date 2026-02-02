@@ -33,6 +33,7 @@ import { EmbeddingServiceNoop } from "./services/embedding-service.js"
 import { QueryExpansionServiceNoop } from "./services/query-expansion-service.js"
 import { RerankerServiceNoop } from "./services/reranker-service.js"
 import { RetrieverServiceLive } from "./services/retriever-service.js"
+import { GraphExpansionServiceLive } from "./services/graph-expansion.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync-service.js"
@@ -70,6 +71,14 @@ export {
   RetrieverServiceLive,
   RetrieverServiceAuto
 } from "./services/retriever-service.js"
+export {
+  GraphExpansionService,
+  GraphExpansionServiceLive,
+  type SeedLearning,
+  type ExpandedLearning,
+  type GraphExpansionOptions,
+  type GraphExpansionResult
+} from "./services/graph-expansion.js"
 
 /**
  * Create the full application layer with all services.
@@ -116,6 +125,14 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
   )
 
+  // EdgeServiceLive needs EdgeRepository from repos
+  const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
+
+  // GraphExpansionServiceLive needs EdgeService and LearningRepository
+  const graphExpansionService = GraphExpansionServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, edgeService))
+  )
+
   // Services need repos, embedding, query expansion, reranker, retriever, and autoSyncService
   const services = Layer.mergeAll(
     TaskServiceLive,
@@ -126,11 +143,13 @@ export const makeAppLayer = (dbPath: string) => {
     FileLearningServiceLive,
     AttemptServiceLive,
     AnchorServiceLive,
-    EdgeServiceLive,
     DeduplicationServiceLive
   ).pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverService, autoSyncService))
   )
+
+  // Merge all services including edgeService and graphExpansionService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -139,7 +158,7 @@ export const makeAppLayer = (dbPath: string) => {
 
   // Also expose RunRepository directly for run tracking
   // (Note: Consider creating RunService in future refactor)
-  return Layer.mergeAll(services, syncServiceWithDeps, migrationService, repos)
+  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, repos)
 }
 
 /**
@@ -170,6 +189,14 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
   )
 
+  // EdgeServiceLive needs EdgeRepository from repos
+  const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
+
+  // GraphExpansionServiceLive needs EdgeService and LearningRepository
+  const graphExpansionService = GraphExpansionServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, edgeService))
+  )
+
   // Services with Noop embedding, query expansion, reranker, retriever, and auto-sync
   const services = Layer.mergeAll(
     TaskServiceLive,
@@ -180,11 +207,13 @@ export const makeMinimalLayer = (dbPath: string) => {
     FileLearningServiceLive,
     AttemptServiceLive,
     AnchorServiceLive,
-    EdgeServiceLive,
     DeduplicationServiceLive
   ).pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverService, AutoSyncServiceNoop))
   )
+
+  // Merge all services including edgeService and graphExpansionService
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -201,5 +230,5 @@ export const makeMinimalLayer = (dbPath: string) => {
   )
 
   // Also expose RunRepository directly for run tracking
-  return Layer.mergeAll(services, migrationService, syncService, repos)
+  return Layer.mergeAll(allServices, migrationService, syncService, repos)
 }

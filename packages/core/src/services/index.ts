@@ -85,3 +85,11 @@ export {
   RetrieverServiceLive,
   RetrieverServiceAuto
 } from "./retriever-service.js"
+export {
+  GraphExpansionService,
+  GraphExpansionServiceLive,
+  type SeedLearning,
+  type ExpandedLearning,
+  type GraphExpansionOptions,
+  type GraphExpansionResult
+} from "./graph-expansion.js"
