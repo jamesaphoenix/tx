@@ -1,17 +1,17 @@
 
-> @tx/test-utils@0.1.0 test
+> @jamesaphoenix/tx-test-utils@0.1.0 test
 > vitest run --passWithNoTests
 
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
 
- ✓ src/llm-cache/cache.test.ts (26 tests) 82ms
- ✓ src/helpers/effect.test.ts (28 tests) 74ms
- ✓ test/test-database.test.ts (9 tests) 23ms
- ✓ src/factories/factories.test.ts (30 tests) 52ms
+ ✓ src/llm-cache/cache.test.ts (26 tests) 72ms
+ ✓ src/helpers/effect.test.ts (28 tests) 71ms
+ ✓ test/test-database.test.ts (9 tests) 21ms
+ ✓ src/factories/factories.test.ts (30 tests) 42ms
 
  Test Files  4 passed (4)
       Tests  93 passed (93)
-   Start at  16:46:50
-   Duration  1.27s (transform 489ms, setup 0ms, collect 2.31s, tests 231ms, environment 0ms, prepare 305ms)
+   Start at  16:50:22
+   Duration  913ms (transform 359ms, setup 0ms, collect 1.70s, tests 206ms, environment 0ms, prepare 196ms)
 

@@ -117,9 +117,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Run all checks (continue on failure to report all issues)
-# Build first to ensure declaration files exist for typecheck
-run_and_track "Build (packages)" "npx turbo build"
-run_and_track "TypeScript (packages)" "npx turbo typecheck"
+# Build first with concurrency=1 to ensure proper dependency order
+# This prevents race conditions where dependent packages try to build
+# before their dependencies have generated declaration files
+run_and_track "Build (packages)" "npx turbo build --concurrency=1"
+run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
 run_and_track "ESLint (packages)" "npx turbo lint"
 run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
 run_and_track "Tests (packages)" "npx turbo test"

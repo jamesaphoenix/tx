@@ -1,4 +1,4 @@
 
-> @tx/core@0.1.0 build
+> @jamesaphoenix/tx-core@0.1.0 build
 > tsc -b
 
