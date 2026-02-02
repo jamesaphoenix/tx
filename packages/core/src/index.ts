@@ -22,7 +22,8 @@ export {
   EdgeNotFoundError,
   AnchorNotFoundError,
   ExtractionUnavailableError,
-  RetrievalError
+  RetrievalError,
+  AstGrepError
 } from "./errors.js"
 
 // =============================================================================

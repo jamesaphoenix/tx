@@ -105,6 +105,15 @@ export class RetrievalError extends Data.TaggedError("RetrievalError")<{
   }
 }
 
+export class AstGrepError extends Data.TaggedError("AstGrepError")<{
+  readonly reason: string
+  readonly cause?: unknown
+}> {
+  get message() {
+    return `AST grep error: ${this.reason}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
@@ -114,3 +123,4 @@ export type TaskError =
   | RerankerUnavailableError
   | ExtractionUnavailableError
   | RetrievalError
+  | AstGrepError
