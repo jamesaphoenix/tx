@@ -6,9 +6,39 @@
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "package.json"],
       "outputs": ["dist/**"]
     },
+    "@tx/docs#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "app/**/*.mdx",
+        "content/**/*.mdx",
+        "components/**/*.ts",
+        "components/**/*.tsx",
+        "lib/**/*.ts",
+        "next.config.*",
+        "postcss.config.*",
+        "tailwind.config.*",
+        "tsconfig.json",
+        "package.json"
+      ],
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
     "typecheck": {
       "dependsOn": ["^build"],
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json"],
+      "outputs": []
+    },
+    "@tx/docs#typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "components/**/*.ts",
+        "components/**/*.tsx",
+        "lib/**/*.ts",
+        "tsconfig.json"
+      ],
       "outputs": []
     },
     "lint": {
