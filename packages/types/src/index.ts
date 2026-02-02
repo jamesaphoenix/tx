@@ -78,3 +78,16 @@ export {
   type UpdateRunInput,
   type RunRow,
 } from "./run.js";
+
+// Anchor types
+export {
+  ANCHOR_TYPES,
+  ANCHOR_STATUSES,
+  type AnchorId,
+  type AnchorType,
+  type AnchorStatus,
+  type Anchor,
+  type CreateAnchorInput,
+  type UpdateAnchorInput,
+  type AnchorRow,
+} from "./anchor.js";

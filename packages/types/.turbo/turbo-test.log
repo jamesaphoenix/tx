@@ -1,7 +1,5 @@
 
-
 > @tx/types@0.1.0 test
 > echo 'Types-only package - no tests needed'
 
-[1G[0KTypes-only package - no tests needed
-[1G[0K⠙[1G[0K
+Types-only package - no tests needed
