@@ -158,13 +158,14 @@ const countLines = (filePath: string): Effect.Effect<number, never> =>
 const matchesGlob = (filePath: string, pattern: string): boolean => {
   // Simple glob matching without external dependencies
   // Supports: *, **, ?
-  // Order matters: escape dots BEFORE restoring globstar to avoid escaping the . in .*
+  // Order matters: protect glob patterns, escape dots, then restore patterns
   const regexPattern = pattern
-    .replace(/\*\*/g, "<<<GLOBSTAR>>>")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\?/g, ".")
+    .replace(/\*\*/g, "<<<GLOBSTAR>>>")       // Protect ** (will become .*)
+    .replace(/\?/g, "<<<QUESTION>>>")         // Protect ? (will become .)
+    .replace(/\*/g, "[^/]*")                  // Replace * with segment matcher
     .replace(/\./g, "\\.")                    // Escape literal dots (e.g., .ts → \\.ts)
-    .replace(/<<<GLOBSTAR>>>/g, ".*")         // Restore globstar AFTER escaping dots
+    .replace(/<<<GLOBSTAR>>>/g, ".*")         // Restore ** as .* (matches any path)
+    .replace(/<<<QUESTION>>>/g, ".")          // Restore ? as . (matches single char)
 
   const regex = new RegExp(`^${regexPattern}$`)
   return regex.test(filePath)
