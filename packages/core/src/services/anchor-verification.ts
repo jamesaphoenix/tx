@@ -120,6 +120,28 @@ export const getAnchorTTL = (): Effect.Effect<number, never> =>
     Effect.catchAll(() => Effect.succeed(DEFAULT_ANCHOR_CACHE_TTL))
   )
 
+/**
+ * Check if an anchor is stale based on its verified_at timestamp and TTL.
+ * An anchor is stale if:
+ * - verified_at is null (never verified), or
+ * - verified_at is older than (now - TTL)
+ *
+ * @param anchor - The anchor to check
+ * @param ttlSeconds - TTL in seconds (from getAnchorTTL)
+ * @returns true if anchor is stale and needs verification
+ */
+export const isStale = (anchor: Anchor, ttlSeconds: number): boolean => {
+  if (!anchor.verifiedAt) {
+    return true // Never verified = stale
+  }
+
+  const verifiedAtMs = anchor.verifiedAt.getTime()
+  const ttlMs = ttlSeconds * 1000
+  const cutoffMs = Date.now() - ttlMs
+
+  return verifiedAtMs < cutoffMs
+}
+
 // =============================================================================
 // Utility Functions
 // =============================================================================

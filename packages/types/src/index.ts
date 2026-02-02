@@ -92,6 +92,7 @@ export {
   type AnchorType,
   type AnchorStatus,
   type Anchor,
+  type AnchorWithFreshness,
   type CreateAnchorInput,
   type UpdateAnchorInput,
   type AnchorRow,

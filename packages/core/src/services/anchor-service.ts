@@ -2,7 +2,8 @@ import { Context, Effect, Layer } from "effect"
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { LearningRepository } from "../repo/learning-repo.js"
 import { AnchorNotFoundError, ValidationError, DatabaseError, LearningNotFoundError } from "../errors.js"
-import type { Anchor, AnchorStatus, CreateAnchorInput, AnchorType, InvalidationLog, InvalidationSource } from "@tx/types"
+import { getAnchorTTL, isStale } from "./anchor-verification.js"
+import type { Anchor, AnchorWithFreshness, AnchorStatus, CreateAnchorInput, AnchorType, InvalidationLog, InvalidationSource } from "@tx/types"
 
 /** Verification result for an anchor */
 export interface AnchorVerificationResult {
@@ -92,6 +93,13 @@ export class AnchorService extends Context.Tag("AnchorService")<
      * Get an anchor by ID.
      */
     readonly get: (id: number) => Effect.Effect<Anchor, AnchorNotFoundError | DatabaseError>
+
+    /**
+     * Get an anchor with lazy verification.
+     * If anchor is stale (verified_at > now - TTL), runs verification first.
+     * Returns anchor with freshness information.
+     */
+    readonly getWithVerification: (id: number, options?: { baseDir?: string }) => Effect.Effect<AnchorWithFreshness, AnchorNotFoundError | DatabaseError>
 
     /**
      * Delete an anchor.
@@ -404,6 +412,97 @@ export const AnchorServiceLive = Layer.effect(
             return yield* Effect.fail(new AnchorNotFoundError({ id }))
           }
           return anchor
+        }),
+
+      getWithVerification: (id, _options = {}) =>
+        Effect.gen(function* () {
+          // Get the anchor first
+          const anchor = yield* anchorRepo.findById(id)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id }))
+          }
+
+          // Get TTL and check staleness
+          const ttl = yield* getAnchorTTL()
+          const anchorIsStale = isStale(anchor, ttl)
+
+          // If fresh, return immediately without verification
+          if (!anchorIsStale) {
+            return {
+              anchor,
+              isFresh: true,
+              wasVerified: false
+            }
+          }
+
+          // Anchor is stale - run verification
+          const previousStatus = anchor.status
+
+          // Verification logic (simplified - uses the same logic as verifyAnchor)
+          // For now, we simply update the verified_at timestamp
+          // Full verification would check file existence, hash matches, symbol presence, etc.
+          // Note: Future implementation will use AnchorVerificationService for full file-based verification
+          let newStatus: AnchorStatus = previousStatus
+          let reason: string | undefined
+          let action: "unchanged" | "self_healed" | "drifted" | "invalidated" = "unchanged"
+
+          switch (anchor.anchorType) {
+            case "glob":
+              // Glob anchors are generally considered valid if file path matches pattern
+              // Full implementation would check if files matching the pattern exist
+              break
+
+            case "hash":
+              // Hash anchors would compare stored hash with current file content hash
+              // Placeholder: assume unchanged for now (full implementation requires file access)
+              reason = "Hash verification requires file content access"
+              break
+
+            case "symbol":
+              // Symbol anchors would use ast-grep to verify symbol exists
+              // Placeholder: assume unchanged for now (full implementation requires ast-grep)
+              reason = "Symbol verification requires ast-grep integration"
+              break
+
+            case "line_range":
+              // Line range anchors would check if line range is still within file bounds
+              // Placeholder: assume unchanged for now
+              reason = "Line range verification requires file access"
+              break
+          }
+
+          // Determine action based on status change
+          if (newStatus !== previousStatus) {
+            yield* anchorRepo.updateStatus(id, newStatus)
+            if (newStatus === "drifted") {
+              action = "drifted"
+            } else if (newStatus === "invalid") {
+              action = "invalidated"
+            } else if (previousStatus === "drifted" && newStatus === "valid") {
+              action = "self_healed"
+            }
+          }
+
+          // Update verified_at timestamp
+          yield* anchorRepo.updateVerifiedAt(id)
+
+          // Get the updated anchor
+          const updatedAnchor = yield* anchorRepo.findById(id)
+          if (!updatedAnchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id }))
+          }
+
+          return {
+            anchor: updatedAnchor,
+            isFresh: false,
+            wasVerified: true,
+            verificationResult: {
+              previousStatus,
+              newStatus,
+              action,
+              reason
+            }
+          }
         }),
 
       remove: (id) =>

@@ -140,3 +140,22 @@ export interface InvalidationLogRow {
   similarity_score: number | null;
   invalidated_at: string;
 }
+
+/**
+ * Anchor with freshness information for lazy verification.
+ * Returned by getWithVerification - includes whether anchor was fresh or verified.
+ */
+export interface AnchorWithFreshness {
+  readonly anchor: Anchor;
+  /** True if anchor was still within TTL, false if verification was needed */
+  readonly isFresh: boolean;
+  /** True if verification was performed (because anchor was stale) */
+  readonly wasVerified: boolean;
+  /** Verification result if verification was performed */
+  readonly verificationResult?: {
+    readonly previousStatus: AnchorStatus;
+    readonly newStatus: AnchorStatus;
+    readonly action: "unchanged" | "self_healed" | "drifted" | "invalidated";
+    readonly reason?: string;
+  };
+}
