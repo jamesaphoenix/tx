@@ -139,3 +139,11 @@ export {
   type LaunchdPlistOptions,
   type SystemdServiceOptions
 } from "./daemon-service.js"
+export {
+  FileWatcherService,
+  FileWatcherServiceNoop,
+  type FileEvent,
+  type FileEventType,
+  type FileWatcherConfig,
+  type FileWatcherStatus
+} from "./file-watcher-service.js"
