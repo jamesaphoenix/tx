@@ -64,6 +64,7 @@ export {
   EmbeddingService,
   EmbeddingServiceNoop,
   EmbeddingServiceLive,
+  EmbeddingServiceOpenAI,
   EmbeddingServiceAuto,
   AttemptService,
   TaskService,

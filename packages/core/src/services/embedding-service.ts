@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref } from "effect"
+import { Context, Effect, Layer, Ref, Config, Option } from "effect"
 import { EmbeddingUnavailableError } from "../errors.js"
 
 // Types for node-llama-cpp (imported dynamically)
@@ -18,6 +18,37 @@ interface LlamaModel {
 
 interface Llama {
   loadModel(options: { modelPath: string }): Promise<LlamaModel>
+}
+
+// Types for OpenAI SDK (imported dynamically)
+interface OpenAIEmbeddingResponse {
+  data: Array<{
+    embedding: number[]
+    index: number
+  }>
+  usage?: {
+    prompt_tokens?: number
+    total_tokens?: number
+  }
+}
+
+interface OpenAIClient {
+  embeddings: {
+    create(params: {
+      model: string
+      input: string | string[]
+    }): Promise<OpenAIEmbeddingResponse>
+  }
+}
+
+/**
+ * Model dimensions for OpenAI text-embedding-3 models.
+ * @see https://platform.openai.com/docs/models/embeddings
+ */
+const OPENAI_MODEL_DIMENSIONS: Record<string, number> = {
+  "text-embedding-3-small": 1536,
+  "text-embedding-3-large": 3072,
+  "text-embedding-ada-002": 1536 // Legacy model
 }
 
 /**
@@ -159,13 +190,132 @@ export const EmbeddingServiceLive = Layer.scoped(
 )
 
 /**
- * Auto-detecting layer that uses Live if node-llama-cpp is available, Noop otherwise.
- * This allows graceful degradation when the embedding library is not installed.
+ * OpenAI implementation using text-embedding-3 models.
+ * Uses OPENAI_API_KEY from environment and optional TX_OPENAI_EMBEDDING_MODEL config.
+ *
+ * Supported models:
+ * - text-embedding-3-small (1536 dimensions, default)
+ * - text-embedding-3-large (3072 dimensions)
+ * - text-embedding-ada-002 (1536 dimensions, legacy)
+ */
+export const EmbeddingServiceOpenAI = Layer.effect(
+  EmbeddingService,
+  Effect.gen(function* () {
+    // Read API key from environment
+    const apiKey = yield* Config.string("OPENAI_API_KEY").pipe(
+      Effect.mapError(() => new EmbeddingUnavailableError({
+        reason: "OPENAI_API_KEY environment variable is not set"
+      }))
+    )
+
+    // Read model from environment with default
+    const model = yield* Config.string("TX_OPENAI_EMBEDDING_MODEL").pipe(
+      Config.withDefault("text-embedding-3-small"),
+      Effect.mapError(() => new EmbeddingUnavailableError({
+        reason: "Failed to read TX_OPENAI_EMBEDDING_MODEL config"
+      }))
+    )
+
+    // Determine dimensions based on model
+    const dimensions = OPENAI_MODEL_DIMENSIONS[model] ?? 1536
+
+    // Lazy-load client
+    let client: OpenAIClient | null = null
+
+    const ensureClient = Effect.gen(function* () {
+      if (client) return client
+
+      // Dynamic import of OpenAI SDK (optional peer dependency)
+      const OpenAI = yield* Effect.tryPromise({
+        try: async () => {
+          // @ts-expect-error - openai is an optional peer dependency
+          const mod = await import("openai")
+          return mod.default
+        },
+        catch: () => new EmbeddingUnavailableError({
+          reason: "openai package is not installed"
+        })
+      })
+
+      client = new OpenAI({ apiKey }) as unknown as OpenAIClient
+      return client
+    })
+
+    return {
+      embed: (text) =>
+        Effect.gen(function* () {
+          const openai = yield* ensureClient
+
+          const response = yield* Effect.tryPromise({
+            try: () => openai.embeddings.create({
+              model,
+              input: text
+            }),
+            catch: (e) => new EmbeddingUnavailableError({
+              reason: `OpenAI embedding failed: ${String(e)}`
+            })
+          })
+
+          if (!response.data[0]?.embedding) {
+            return yield* Effect.fail(new EmbeddingUnavailableError({
+              reason: "OpenAI returned empty embedding"
+            }))
+          }
+
+          return new Float32Array(response.data[0].embedding)
+        }),
+
+      embedBatch: (texts) =>
+        Effect.gen(function* () {
+          if (texts.length === 0) {
+            return []
+          }
+
+          const openai = yield* ensureClient
+
+          // OpenAI supports batch embedding via array input
+          const response = yield* Effect.tryPromise({
+            try: () => openai.embeddings.create({
+              model,
+              input: [...texts] // Convert readonly to mutable
+            }),
+            catch: (e) => new EmbeddingUnavailableError({
+              reason: `OpenAI batch embedding failed: ${String(e)}`
+            })
+          })
+
+          // Sort by index to ensure correct order
+          const sorted = [...response.data].sort((a, b) => a.index - b.index)
+
+          return sorted.map(item => new Float32Array(item.embedding))
+        }),
+
+      isAvailable: () => Effect.succeed(true),
+
+      dimensions
+    }
+  })
+)
+
+/**
+ * Auto-detecting layer that selects the appropriate embedding backend.
+ *
+ * Priority:
+ * 1. OPENAI_API_KEY set → Use OpenAI (text-embedding-3-small)
+ * 2. node-llama-cpp available → Use local embeddings
+ * 3. Neither available → Use Noop (graceful degradation)
  */
 export const EmbeddingServiceAuto = Layer.unwrapEffect(
   Effect.gen(function* () {
-    // Try to import node-llama-cpp to check availability
-    const available = yield* Effect.tryPromise({
+    // Check for OpenAI API key first
+    const openaiKey = yield* Config.string("OPENAI_API_KEY").pipe(Effect.option)
+
+    if (Option.isSome(openaiKey) && openaiKey.value.trim().length > 0) {
+      return EmbeddingServiceOpenAI
+    }
+
+    // Fall back to node-llama-cpp if available
+    const llamaAvailable = yield* Effect.tryPromise({
       try: async () => {
         await import("node-llama-cpp")
         return true
@@ -173,9 +323,10 @@ export const EmbeddingServiceAuto = Layer.unwrapEffect(
       catch: () => false
     })
 
-    if (available) {
+    if (llamaAvailable) {
       return EmbeddingServiceLive
     }
+
     return EmbeddingServiceNoop
   })
 )

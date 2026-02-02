@@ -46,7 +46,7 @@ export { MigrationService } from "./services/migration-service.js"
 export { AutoSyncService, AutoSyncServiceNoop, AutoSyncServiceLive } from "./services/auto-sync-service.js"
 export { LearningService } from "./services/learning-service.js"
 export { FileLearningService } from "./services/file-learning-service.js"
-export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceAuto } from "./services/embedding-service.js"
+export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceOpenAI, EmbeddingServiceAuto } from "./services/embedding-service.js"
 export {
   QueryExpansionService,
   QueryExpansionServiceNoop,
