@@ -94,3 +94,11 @@ export {
   WORKER_STATUSES,
   type WorkerRow
 } from "./worker.js"
+
+// Claim mappers
+export {
+  rowToClaim,
+  isValidClaimStatus,
+  CLAIM_STATUSES,
+  type ClaimRow
+} from "./claim.js"

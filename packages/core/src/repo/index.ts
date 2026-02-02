@@ -14,3 +14,4 @@ export { DeduplicationRepository, DeduplicationRepositoryLive } from "./deduplic
 export { CandidateRepository, CandidateRepositoryLive } from "./candidate-repo.js"
 export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./tracked-project-repo.js"
 export { WorkerRepository, WorkerRepositoryLive } from "./worker-repo.js"
+export { ClaimRepository, ClaimRepositoryLive } from "./claim-repo.js"
