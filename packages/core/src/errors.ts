@@ -114,6 +114,12 @@ export class AstGrepError extends Data.TaggedError("AstGrepError")<{
   }
 }
 
+export class DaemonError extends Data.TaggedError("DaemonError")<{
+  readonly code: string
+  readonly message: string
+  readonly pid: number | null
+}> {}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
@@ -124,3 +130,4 @@ export type TaskError =
   | ExtractionUnavailableError
   | RetrievalError
   | AstGrepError
+  | DaemonError
