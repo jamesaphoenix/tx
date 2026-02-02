@@ -19,6 +19,7 @@ export class EdgeRepository extends Context.Tag("EdgeRepository")<
     readonly findById: (id: number) => Effect.Effect<Edge | null, DatabaseError>
     readonly findBySource: (sourceType: NodeType, sourceId: string) => Effect.Effect<readonly Edge[], DatabaseError>
     readonly findByTarget: (targetType: NodeType, targetId: string) => Effect.Effect<readonly Edge[], DatabaseError>
+    readonly findByMultipleSources: (sourceType: NodeType, sourceIds: readonly string[]) => Effect.Effect<ReadonlyMap<string, readonly Edge[]>, DatabaseError>
     readonly findNeighbors: (
       nodeType: NodeType,
       nodeId: string,
@@ -101,6 +102,44 @@ export const EdgeRepositoryLive = Layer.effect(
                ORDER BY created_at ASC`
             ).all(targetType, targetId) as EdgeRow[]
             return rows.map(rowToEdge)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findByMultipleSources: (sourceType, sourceIds) =>
+        Effect.try({
+          try: () => {
+            // Return empty map for empty input
+            if (sourceIds.length === 0) {
+              return new Map<string, readonly Edge[]>()
+            }
+
+            // Build IN clause with placeholders
+            const placeholders = sourceIds.map(() => "?").join(", ")
+            const rows = db.prepare(
+              `SELECT * FROM learning_edges
+               WHERE source_type = ? AND source_id IN (${placeholders}) AND invalidated_at IS NULL
+               ORDER BY weight DESC, created_at ASC`
+            ).all(sourceType, ...sourceIds) as EdgeRow[]
+
+            // Group edges by source_id
+            const result = new Map<string, Edge[]>()
+
+            // Initialize all requested sourceIds with empty arrays
+            for (const sourceId of sourceIds) {
+              result.set(sourceId, [])
+            }
+
+            // Populate with actual edges
+            for (const row of rows) {
+              const edge = rowToEdge(row)
+              const existing = result.get(row.source_id)
+              if (existing) {
+                existing.push(edge)
+              }
+            }
+
+            return result as ReadonlyMap<string, readonly Edge[]>
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

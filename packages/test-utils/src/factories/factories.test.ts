@@ -415,3 +415,152 @@ describe("fixtureId", () => {
     expect(id1).not.toBe(id2)
   })
 })
+
+describe("EdgeRepository.findByMultipleSources", () => {
+  let db: TestDatabase
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+  })
+
+  afterEach(async () => {
+    await Effect.runPromise(db.close())
+  })
+
+  it("should return empty map for empty sourceIds array", async () => {
+    // Import EdgeRepository and create layer
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { Layer } = await import("effect")
+
+    // Create a SqliteClient layer from the test database
+    const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
+    const TestEdgeRepoLayer = Layer.provide(EdgeRepositoryLive, TestSqliteClient)
+
+    const program = Effect.gen(function* () {
+      const edgeRepo = yield* EdgeRepository
+      return yield* edgeRepo.findByMultipleSources("learning", [])
+    })
+
+    const result = await Effect.runPromise(Effect.provide(program, TestEdgeRepoLayer))
+
+    expect(result).toBeInstanceOf(Map)
+    expect(result.size).toBe(0)
+  })
+
+  it("should fetch edges for multiple source IDs in one query", async () => {
+    // Create test edges using a single factory to avoid ID collisions
+    const edgeFactory = new EdgeFactory(db)
+    edgeFactory.create({ sourceType: "learning", sourceId: "1", targetId: "10", weight: 0.9 })
+    edgeFactory.create({ sourceType: "learning", sourceId: "1", targetId: "11", weight: 0.8 })
+    edgeFactory.create({ sourceType: "learning", sourceId: "2", targetId: "20", weight: 0.7 })
+    edgeFactory.create({ sourceType: "learning", sourceId: "3", targetId: "30", weight: 0.6 })
+
+    // Import EdgeRepository and create layer
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { Layer } = await import("effect")
+
+    const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
+    const TestEdgeRepoLayer = Layer.provide(EdgeRepositoryLive, TestSqliteClient)
+
+    const program = Effect.gen(function* () {
+      const edgeRepo = yield* EdgeRepository
+      return yield* edgeRepo.findByMultipleSources("learning", ["1", "2"])
+    })
+
+    const result = await Effect.runPromise(Effect.provide(program, TestEdgeRepoLayer))
+
+    expect(result).toBeInstanceOf(Map)
+    expect(result.size).toBe(2)
+
+    // Check source 1 has 2 edges
+    const source1Edges = result.get("1")
+    expect(source1Edges).toBeDefined()
+    expect(source1Edges).toHaveLength(2)
+    // Edges should be sorted by weight DESC
+    expect(source1Edges![0].weight).toBe(0.9)
+    expect(source1Edges![1].weight).toBe(0.8)
+
+    // Check source 2 has 1 edge
+    const source2Edges = result.get("2")
+    expect(source2Edges).toBeDefined()
+    expect(source2Edges).toHaveLength(1)
+    expect(source2Edges![0].targetId).toBe("20")
+  })
+
+  it("should return empty arrays for sourceIds with no edges", async () => {
+    // Create edge only for source 1
+    createTestEdge(db, { sourceType: "learning", sourceId: "1", targetId: "10" })
+
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { Layer } = await import("effect")
+
+    const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
+    const TestEdgeRepoLayer = Layer.provide(EdgeRepositoryLive, TestSqliteClient)
+
+    const program = Effect.gen(function* () {
+      const edgeRepo = yield* EdgeRepository
+      return yield* edgeRepo.findByMultipleSources("learning", ["1", "2", "3"])
+    })
+
+    const result = await Effect.runPromise(Effect.provide(program, TestEdgeRepoLayer))
+
+    expect(result.size).toBe(3)
+    expect(result.get("1")).toHaveLength(1)
+    expect(result.get("2")).toHaveLength(0)
+    expect(result.get("3")).toHaveLength(0)
+  })
+
+  it("should filter by sourceType", async () => {
+    // Create edges with different source types using a single factory
+    const edgeFactory = new EdgeFactory(db)
+    edgeFactory.create({ sourceType: "learning", sourceId: "1", targetId: "10" })
+    edgeFactory.create({ sourceType: "file", sourceId: "1", targetId: "20" })
+
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { Layer } = await import("effect")
+
+    const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
+    const TestEdgeRepoLayer = Layer.provide(EdgeRepositoryLive, TestSqliteClient)
+
+    const program = Effect.gen(function* () {
+      const edgeRepo = yield* EdgeRepository
+      return yield* edgeRepo.findByMultipleSources("learning", ["1"])
+    })
+
+    const result = await Effect.runPromise(Effect.provide(program, TestEdgeRepoLayer))
+
+    expect(result.size).toBe(1)
+    const edges = result.get("1")
+    expect(edges).toHaveLength(1)
+    expect(edges![0].sourceType).toBe("learning")
+  })
+
+  it("should exclude invalidated edges", async () => {
+    // Create a valid edge
+    createTestEdge(db, { sourceType: "learning", sourceId: "1", targetId: "10" })
+
+    // Create an invalidated edge by inserting directly
+    db.exec(`
+      INSERT INTO learning_edges (edge_type, source_type, source_id, target_type, target_id, weight, metadata, invalidated_at)
+      VALUES ('SIMILAR_TO', 'learning', '1', 'learning', '11', 1.0, '{}', datetime('now'))
+    `)
+
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { Layer } = await import("effect")
+
+    const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
+    const TestEdgeRepoLayer = Layer.provide(EdgeRepositoryLive, TestSqliteClient)
+
+    const program = Effect.gen(function* () {
+      const edgeRepo = yield* EdgeRepository
+      return yield* edgeRepo.findByMultipleSources("learning", ["1"])
+    })
+
+    const result = await Effect.runPromise(Effect.provide(program, TestEdgeRepoLayer))
+
+    expect(result.size).toBe(1)
+    const edges = result.get("1")
+    expect(edges).toHaveLength(1) // Only the valid edge
+    expect(edges![0].targetId).toBe("10")
+  })
+})
