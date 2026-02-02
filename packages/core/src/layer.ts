@@ -17,6 +17,7 @@ import { AnchorRepositoryLive } from "./repo/anchor-repo.js"
 import { EdgeRepositoryLive } from "./repo/edge-repo.js"
 import { DeduplicationRepositoryLive } from "./repo/deduplication-repo.js"
 import { CandidateRepositoryLive } from "./repo/candidate-repo.js"
+import { TrackedProjectRepositoryLive } from "./repo/tracked-project-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
@@ -109,6 +110,7 @@ export {
   type AutoPromoteResult
 } from "./services/promotion-service.js"
 export { CandidateRepository, CandidateRepositoryLive } from "./repo/candidate-repo.js"
+export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./repo/tracked-project-repo.js"
 
 /**
  * Create the full application layer with all services.
@@ -132,7 +134,8 @@ export const makeAppLayer = (dbPath: string) => {
     AnchorRepositoryLive,
     EdgeRepositoryLive,
     DeduplicationRepositoryLive,
-    CandidateRepositoryLive
+    CandidateRepositoryLive,
+    TrackedProjectRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -224,7 +227,8 @@ export const makeMinimalLayer = (dbPath: string) => {
     AnchorRepositoryLive,
     EdgeRepositoryLive,
     DeduplicationRepositoryLive,
-    CandidateRepositoryLive
+    CandidateRepositoryLive,
+    TrackedProjectRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )

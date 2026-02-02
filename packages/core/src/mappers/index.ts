@@ -78,3 +78,11 @@ export {
   CANDIDATE_STATUSES,
   type CandidateRow
 } from "./candidate.js"
+
+// TrackedProject mappers
+export {
+  rowToTrackedProject,
+  isValidTrackedSourceType,
+  SOURCE_TYPES,
+  type TrackedProjectRow
+} from "./tracked-project.js"

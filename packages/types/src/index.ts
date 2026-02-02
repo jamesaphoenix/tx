@@ -159,4 +159,14 @@ export {
   type ImportInfo,
   type SymbolPattern,
   type Match,
-} from "./symbol.js";
+} from "./symbol.js"
+
+// Tracked project types (daemon monitoring)
+export {
+  SOURCE_TYPES,
+  type SourceType,
+  type TrackedProjectId,
+  type TrackedProject,
+  type CreateTrackedProjectInput,
+  type TrackedProjectRow,
+} from "./tracked-project.js";
