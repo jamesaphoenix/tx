@@ -29,6 +29,14 @@ export {
   type MockAstGrepServiceResult
 } from "./ast-grep.mock.js"
 
+// FileSystem mock
+export {
+  MockFileSystem,
+  MockFileSystemServiceTag,
+  MockFileSystemError,
+  type MockFileSystemConfig,
+  type MockFileSystemResult
+} from "./file-system.mock.js"
+
 // TODO: Implement remaining mocks in tx-b28e5324 (PRD-013: Implement mock services)
-// export { MockFileSystem } from './file-system.mock.js'
 // export { MockGit } from './git.mock.js'
