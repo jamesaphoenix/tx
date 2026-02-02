@@ -57,7 +57,9 @@ export {
   AnchorServiceLive,
   type AnchorVerificationResult,
   type BatchVerificationResult,
-  type TypedAnchorInput
+  type TypedAnchorInput,
+  type GraphStatusResult,
+  type PruneResult
 } from "./anchor-service.js"
 export {
   EdgeService,

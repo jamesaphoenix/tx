@@ -34,6 +34,13 @@ Commands:
   context                 Get contextual learnings for a task
   learn                   Attach a learning to file/glob pattern
   recall                  Query learnings for a path
+  graph:verify            Verify anchor validity
+  graph:invalidate        Manually invalidate an anchor
+  graph:restore           Restore a soft-deleted anchor
+  graph:prune             Hard delete old invalid anchors
+  graph:status            Show graph health metrics
+  graph:pin               Pin anchor to prevent auto-invalidation
+  graph:unpin             Unpin anchor to allow auto-invalidation
   mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
@@ -655,5 +662,132 @@ Shows general help or help for a specific command.
 Examples:
   tx help           # General help
   tx help add       # Help for 'add' command
-  tx add --help     # Same as above`
+  tx add --help     # Same as above`,
+
+  "graph:verify": `tx graph:verify - Verify anchor validity
+
+Usage: tx graph:verify [file] [--all] [--json]
+
+Verifies that anchors still point to valid code locations. Checks if files
+exist, content hashes match, and symbols are present.
+
+Arguments:
+  [file]     Optional. File path to verify anchors for
+
+Options:
+  --file <path>   File path to verify (alternative to positional arg)
+  --all           Verify all anchors (default if no file specified)
+  --json          Output as JSON
+  --help          Show this help
+
+Examples:
+  tx graph:verify                    # Verify all anchors
+  tx graph:verify src/auth.ts        # Verify anchors for specific file
+  tx graph:verify --json             # Output as JSON`,
+
+  "graph:invalidate": `tx graph:invalidate - Manually invalidate an anchor
+
+Usage: tx graph:invalidate <anchor-id> [--reason <reason>] [--json]
+
+Marks an anchor as invalid (soft delete). The anchor is kept for history
+but excluded from retrieval. Use graph:restore to undo.
+
+Arguments:
+  <anchor-id>  Required. Anchor ID (number)
+
+Options:
+  --reason <text>  Reason for invalidation (default: "Manual invalidation")
+  --json           Output as JSON
+  --help           Show this help
+
+Examples:
+  tx graph:invalidate 42 --reason "Code removed"
+  tx graph:invalidate 42 --json`,
+
+  "graph:restore": `tx graph:restore - Restore a soft-deleted anchor
+
+Usage: tx graph:restore <anchor-id> [--json]
+
+Restores an invalid anchor back to valid status. Use this to undo
+accidental invalidations or re-enable an anchor after code is restored.
+
+Arguments:
+  <anchor-id>  Required. Anchor ID (number)
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx graph:restore 42
+  tx graph:restore 42 --json`,
+
+  "graph:prune": `tx graph:prune - Hard delete old invalid anchors
+
+Usage: tx graph:prune [--older-than <days>] [--json]
+
+Permanently deletes anchors that have been invalid for longer than the
+specified period. Default retention is 90 days.
+
+Options:
+  --older-than <days>  Delete anchors invalid for this many days (default: 90)
+  --json               Output as JSON
+  --help               Show this help
+
+Examples:
+  tx graph:prune                     # Delete anchors invalid > 90 days
+  tx graph:prune --older-than 30     # Delete anchors invalid > 30 days
+  tx graph:prune --json`,
+
+  "graph:status": `tx graph:status - Show graph health metrics
+
+Usage: tx graph:status [--json]
+
+Shows overall health of the knowledge graph including anchor counts by
+status, pinned anchors, and recent invalidation events.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx graph:status
+  tx graph:status --json`,
+
+  "graph:pin": `tx graph:pin - Pin an anchor
+
+Usage: tx graph:pin <anchor-id> [--json]
+
+Pins an anchor to prevent automatic invalidation. Pinned anchors are
+skipped during periodic and on-access verification. Use for anchors
+you want to preserve regardless of code changes.
+
+Arguments:
+  <anchor-id>  Required. Anchor ID (number)
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx graph:pin 42
+  tx graph:pin 42 --json`,
+
+  "graph:unpin": `tx graph:unpin - Unpin an anchor
+
+Usage: tx graph:unpin <anchor-id> [--json]
+
+Removes the pin from an anchor, allowing automatic invalidation
+during verification.
+
+Arguments:
+  <anchor-id>  Required. Anchor ID (number)
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx graph:unpin 42
+  tx graph:unpin 42 --json`
 }

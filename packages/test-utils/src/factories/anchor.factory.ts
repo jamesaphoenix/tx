@@ -38,6 +38,8 @@ export interface CreateAnchorOptions {
   contentHash?: string | null
   /** Anchor status (valid, drifted, invalid) */
   status?: AnchorStatus
+  /** Whether anchor is pinned (prevents auto-invalidation) */
+  pinned?: boolean
   /** Last verification timestamp */
   verifiedAt?: Date | null
   /** Creation timestamp */
@@ -87,12 +89,13 @@ export class AnchorFactory {
     const lineEnd = options.lineEnd ?? null
     const contentHash = options.contentHash ?? null
     const status = options.status ?? "valid"
+    const pinned = options.pinned ?? false
     const verifiedAt = options.verifiedAt ?? null
     const createdAt = options.createdAt ?? now
 
     this.db.run(
-      `INSERT INTO learning_anchors (id, learning_id, anchor_type, anchor_value, file_path, symbol_fqname, line_start, line_end, content_hash, status, verified_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO learning_anchors (id, learning_id, anchor_type, anchor_value, file_path, symbol_fqname, line_start, line_end, content_hash, status, pinned, verified_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         learningId,
@@ -104,6 +107,7 @@ export class AnchorFactory {
         lineEnd,
         contentHash,
         status,
+        pinned ? 1 : 0,
         verifiedAt ? verifiedAt.toISOString() : null,
         createdAt.toISOString()
       ]
@@ -120,6 +124,7 @@ export class AnchorFactory {
       lineEnd,
       contentHash,
       status,
+      pinned,
       verifiedAt,
       createdAt
     }

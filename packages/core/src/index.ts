@@ -118,6 +118,8 @@ export {
   type AnchorVerificationResult,
   type BatchVerificationResult,
   type TypedAnchorInput,
+  type GraphStatusResult,
+  type PruneResult,
   type NeighborWithDepth,
   type NeighborWithPath,
   type FindNeighborsOptions,
@@ -187,7 +189,9 @@ export {
 
 export {
   rowToAnchor,
-  type AnchorRow
+  rowToInvalidationLog,
+  type AnchorRow,
+  type InvalidationLogRow
 } from "./mappers/anchor.js"
 
 export {

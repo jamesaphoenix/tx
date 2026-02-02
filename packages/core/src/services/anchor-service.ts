@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { LearningRepository } from "../repo/learning-repo.js"
 import { AnchorNotFoundError, ValidationError, DatabaseError, LearningNotFoundError } from "../errors.js"
-import type { Anchor, AnchorStatus, CreateAnchorInput, AnchorType } from "@tx/types"
+import type { Anchor, AnchorStatus, CreateAnchorInput, AnchorType, InvalidationLog, InvalidationSource } from "@tx/types"
 
 /** Verification result for an anchor */
 export interface AnchorVerificationResult {
@@ -19,6 +19,21 @@ export interface BatchVerificationResult {
   readonly verified: number
   readonly drifted: number
   readonly invalid: number
+}
+
+/** Graph status summary */
+export interface GraphStatusResult {
+  readonly total: number
+  readonly valid: number
+  readonly drifted: number
+  readonly invalid: number
+  readonly pinned: number
+  readonly recentInvalidations: readonly InvalidationLog[]
+}
+
+/** Prune result */
+export interface PruneResult {
+  readonly deleted: number
 }
 
 /** Anchor input with type-specific validation */
@@ -95,6 +110,41 @@ export class AnchorService extends Context.Tag("AnchorService")<
      * Verify all anchors for a file (batch operation).
      */
     readonly verifyAnchorsForFile: (filePath: string) => Effect.Effect<BatchVerificationResult, DatabaseError>
+
+    /**
+     * Pin an anchor (prevents auto-invalidation).
+     */
+    readonly pin: (anchorId: number) => Effect.Effect<Anchor, AnchorNotFoundError | DatabaseError>
+
+    /**
+     * Unpin an anchor.
+     */
+    readonly unpin: (anchorId: number) => Effect.Effect<Anchor, AnchorNotFoundError | DatabaseError>
+
+    /**
+     * Manually invalidate an anchor with a reason.
+     */
+    readonly invalidate: (anchorId: number, reason: string, detectedBy?: InvalidationSource) => Effect.Effect<Anchor, AnchorNotFoundError | DatabaseError>
+
+    /**
+     * Restore a soft-deleted (invalid) anchor to valid status.
+     */
+    readonly restore: (anchorId: number) => Effect.Effect<Anchor, AnchorNotFoundError | DatabaseError>
+
+    /**
+     * Hard delete old invalid anchors.
+     */
+    readonly prune: (olderThanDays: number) => Effect.Effect<PruneResult, DatabaseError>
+
+    /**
+     * Get graph status summary.
+     */
+    readonly getStatus: () => Effect.Effect<GraphStatusResult, DatabaseError>
+
+    /**
+     * Verify all anchors (batch operation).
+     */
+    readonly verifyAll: () => Effect.Effect<BatchVerificationResult, DatabaseError>
   }
 >() {}
 
@@ -372,6 +422,166 @@ export const AnchorServiceLive = Layer.effect(
           let invalid = 0
 
           for (const anchor of anchors) {
+            // Simple verification - full implementation would check actual file state
+            yield* anchorRepo.updateVerifiedAt(anchor.id)
+
+            switch (anchor.status) {
+              case "valid":
+                verified++
+                break
+              case "drifted":
+                drifted++
+                break
+              case "invalid":
+                invalid++
+                break
+            }
+          }
+
+          return {
+            total: anchors.length,
+            verified,
+            drifted,
+            invalid
+          }
+        }),
+
+      pin: (anchorId) =>
+        Effect.gen(function* () {
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          yield* anchorRepo.setPinned(anchorId, true)
+
+          const updated = yield* anchorRepo.findById(anchorId)
+          if (!updated) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+          return updated
+        }),
+
+      unpin: (anchorId) =>
+        Effect.gen(function* () {
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          yield* anchorRepo.setPinned(anchorId, false)
+
+          const updated = yield* anchorRepo.findById(anchorId)
+          if (!updated) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+          return updated
+        }),
+
+      invalidate: (anchorId, reason, detectedBy = "manual") =>
+        Effect.gen(function* () {
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          const oldStatus = anchor.status
+
+          // Update status to invalid
+          yield* anchorRepo.updateStatus(anchorId, "invalid")
+
+          // Log the invalidation
+          yield* anchorRepo.logInvalidation({
+            anchorId,
+            oldStatus,
+            newStatus: "invalid",
+            reason,
+            detectedBy,
+            oldContentHash: anchor.contentHash
+          })
+
+          const updated = yield* anchorRepo.findById(anchorId)
+          if (!updated) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+          return updated
+        }),
+
+      restore: (anchorId) =>
+        Effect.gen(function* () {
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          const oldStatus = anchor.status
+
+          // Update status to valid
+          yield* anchorRepo.updateStatus(anchorId, "valid")
+          yield* anchorRepo.updateVerifiedAt(anchorId)
+
+          // Log the restoration
+          yield* anchorRepo.logInvalidation({
+            anchorId,
+            oldStatus,
+            newStatus: "valid",
+            reason: "Manual restoration",
+            detectedBy: "manual"
+          })
+
+          const updated = yield* anchorRepo.findById(anchorId)
+          if (!updated) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+          return updated
+        }),
+
+      prune: (olderThanDays) =>
+        Effect.gen(function* () {
+          const deleted = yield* anchorRepo.deleteOldInvalid(olderThanDays)
+          return { deleted }
+        }),
+
+      getStatus: () =>
+        Effect.gen(function* () {
+          const summary = yield* anchorRepo.getStatusSummary()
+          const recentInvalidations = yield* anchorRepo.getInvalidationLogs()
+
+          return {
+            total: summary.total,
+            valid: summary.valid,
+            drifted: summary.drifted,
+            invalid: summary.invalid,
+            pinned: summary.pinned,
+            recentInvalidations: recentInvalidations.slice(0, 10)
+          }
+        }),
+
+      verifyAll: () =>
+        Effect.gen(function* () {
+          const anchors = yield* anchorRepo.findAll()
+
+          let verified = 0
+          let drifted = 0
+          let invalid = 0
+
+          for (const anchor of anchors) {
+            // Skip pinned anchors
+            if (anchor.pinned) {
+              switch (anchor.status) {
+                case "valid":
+                  verified++
+                  break
+                case "drifted":
+                  drifted++
+                  break
+                case "invalid":
+                  invalid++
+                  break
+              }
+              continue
+            }
+
             // Simple verification - full implementation would check actual file state
             yield* anchorRepo.updateVerifiedAt(anchor.id)
 

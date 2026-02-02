@@ -1,8 +1,20 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
-import { rowToAnchor } from "../mappers/anchor.js"
-import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus } from "@tx/types"
+import { rowToAnchor, rowToInvalidationLog } from "../mappers/anchor.js"
+import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "@tx/types"
+
+/** Input for logging an invalidation event */
+export interface LogInvalidationInput {
+  readonly anchorId: number
+  readonly oldStatus: AnchorStatus
+  readonly newStatus: AnchorStatus
+  readonly reason: string
+  readonly detectedBy: InvalidationSource
+  readonly oldContentHash?: string | null
+  readonly newContentHash?: string | null
+  readonly similarityScore?: number | null
+}
 
 export class AnchorRepository extends Context.Tag("AnchorRepository")<
   AnchorRepository,
@@ -17,6 +29,20 @@ export class AnchorRepository extends Context.Tag("AnchorRepository")<
     readonly findInvalid: () => Effect.Effect<readonly Anchor[], DatabaseError>
     readonly updateStatus: (id: number, status: AnchorStatus) => Effect.Effect<boolean, DatabaseError>
     readonly updateVerifiedAt: (id: number) => Effect.Effect<boolean, DatabaseError>
+    /** Find all anchors */
+    readonly findAll: () => Effect.Effect<readonly Anchor[], DatabaseError>
+    /** Find all valid anchors (for verification) */
+    readonly findAllValid: () => Effect.Effect<readonly Anchor[], DatabaseError>
+    /** Set pinned status */
+    readonly setPinned: (id: number, pinned: boolean) => Effect.Effect<boolean, DatabaseError>
+    /** Delete old invalid anchors */
+    readonly deleteOldInvalid: (olderThanDays: number) => Effect.Effect<number, DatabaseError>
+    /** Log an invalidation event */
+    readonly logInvalidation: (input: LogInvalidationInput) => Effect.Effect<InvalidationLog, DatabaseError>
+    /** Get invalidation logs for an anchor */
+    readonly getInvalidationLogs: (anchorId?: number) => Effect.Effect<readonly InvalidationLog[], DatabaseError>
+    /** Get anchor status summary */
+    readonly getStatusSummary: () => Effect.Effect<{ valid: number; drifted: number; invalid: number; pinned: number; total: number }, DatabaseError>
   }
 >() {}
 
@@ -188,6 +214,115 @@ export const AnchorRepositoryLive = Layer.effect(
               "UPDATE learning_anchors SET verified_at = datetime('now') WHERE id = ?"
             ).run(id)
             return result.changes > 0
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findAll: () =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              "SELECT * FROM learning_anchors ORDER BY created_at DESC"
+            ).all() as AnchorRow[]
+            return rows.map(rowToAnchor)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findAllValid: () =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              "SELECT * FROM learning_anchors WHERE status = 'valid' ORDER BY created_at DESC"
+            ).all() as AnchorRow[]
+            return rows.map(rowToAnchor)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      setPinned: (id, pinned) =>
+        Effect.try({
+          try: () => {
+            const result = db.prepare(
+              "UPDATE learning_anchors SET pinned = ? WHERE id = ?"
+            ).run(pinned ? 1 : 0, id)
+            return result.changes > 0
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      deleteOldInvalid: (olderThanDays) =>
+        Effect.try({
+          try: () => {
+            const result = db.prepare(
+              `DELETE FROM learning_anchors
+               WHERE status = 'invalid'
+               AND created_at < datetime('now', '-' || ? || ' days')`
+            ).run(olderThanDays)
+            return result.changes
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      logInvalidation: (input) =>
+        Effect.try({
+          try: () => {
+            const result = db.prepare(
+              `INSERT INTO invalidation_log
+               (anchor_id, old_status, new_status, reason, detected_by, old_content_hash, new_content_hash, similarity_score)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(
+              input.anchorId,
+              input.oldStatus,
+              input.newStatus,
+              input.reason,
+              input.detectedBy,
+              input.oldContentHash ?? null,
+              input.newContentHash ?? null,
+              input.similarityScore ?? null
+            )
+            const row = db.prepare("SELECT * FROM invalidation_log WHERE id = ?").get(result.lastInsertRowid) as InvalidationLogRow
+            return rowToInvalidationLog(row)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getInvalidationLogs: (anchorId) =>
+        Effect.try({
+          try: () => {
+            if (anchorId !== undefined) {
+              const rows = db.prepare(
+                "SELECT * FROM invalidation_log WHERE anchor_id = ? ORDER BY invalidated_at DESC"
+              ).all(anchorId) as InvalidationLogRow[]
+              return rows.map(rowToInvalidationLog)
+            }
+            const rows = db.prepare(
+              "SELECT * FROM invalidation_log ORDER BY invalidated_at DESC LIMIT 100"
+            ).all() as InvalidationLogRow[]
+            return rows.map(rowToInvalidationLog)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getStatusSummary: () =>
+        Effect.try({
+          try: () => {
+            const result = db.prepare(`
+              SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'valid' THEN 1 ELSE 0 END) as valid,
+                SUM(CASE WHEN status = 'drifted' THEN 1 ELSE 0 END) as drifted,
+                SUM(CASE WHEN status = 'invalid' THEN 1 ELSE 0 END) as invalid,
+                SUM(CASE WHEN pinned = 1 THEN 1 ELSE 0 END) as pinned
+              FROM learning_anchors
+            `).get() as { total: number; valid: number; drifted: number; invalid: number; pinned: number }
+            return {
+              total: result.total ?? 0,
+              valid: result.valid ?? 0,
+              drifted: result.drifted ?? 0,
+              invalid: result.invalid ?? 0,
+              pinned: result.pinned ?? 0
+            }
           },
           catch: (cause) => new DatabaseError({ cause })
         })

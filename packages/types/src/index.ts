@@ -83,6 +83,7 @@ export {
 export {
   ANCHOR_TYPES,
   ANCHOR_STATUSES,
+  INVALIDATION_SOURCES,
   type AnchorId,
   type AnchorType,
   type AnchorStatus,
@@ -90,6 +91,9 @@ export {
   type CreateAnchorInput,
   type UpdateAnchorInput,
   type AnchorRow,
+  type InvalidationSource,
+  type InvalidationLog,
+  type InvalidationLogRow,
 } from "./anchor.js"
 
 // Edge types

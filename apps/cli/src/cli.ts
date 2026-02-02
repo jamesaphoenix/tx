@@ -19,6 +19,7 @@ import { sync } from "./commands/sync.js"
 import { learningAdd, learningSearch, learningRecent, learningHelpful, learningEmbed, context, learn, recall } from "./commands/learning.js"
 import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
+import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin } from "./commands/graph.js"
 
 // --- Argv parsing helpers ---
 
@@ -112,6 +113,15 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "learning:recent": learningRecent,
   "learning:helpful": learningHelpful,
   "learning:embed": learningEmbed,
+
+  // Graph commands (colon-prefixed)
+  "graph:verify": graphVerify,
+  "graph:invalidate": graphInvalidate,
+  "graph:restore": graphRestore,
+  "graph:prune": graphPrune,
+  "graph:status": graphStatus,
+  "graph:pin": graphPin,
+  "graph:unpin": graphUnpin,
 
   // Help command
   help: (pos) =>
@@ -227,6 +237,10 @@ Effect.runPromise(
     }
     if (err._tag === "LearningNotFoundError") {
       console.error(err.message ?? `Learning not found`)
+      process.exit(2)
+    }
+    if (err._tag === "AnchorNotFoundError") {
+      console.error(err.message ?? `Anchor not found`)
       process.exit(2)
     }
     if (err._tag === "ValidationError") {

@@ -44,6 +44,7 @@ export interface Anchor {
   readonly lineEnd: number | null;
   readonly contentHash: string | null;
   readonly status: AnchorStatus;
+  readonly pinned: boolean;
   readonly verifiedAt: Date | null;
   readonly createdAt: Date;
 }
@@ -90,6 +91,45 @@ export interface AnchorRow {
   line_end: number | null;
   content_hash: string | null;
   status: string;
+  pinned: number;
   verified_at: string | null;
   created_at: string;
+}
+
+/**
+ * Detection source for invalidation.
+ */
+export const INVALIDATION_SOURCES = ["periodic", "lazy", "manual", "agent", "git_hook"] as const;
+export type InvalidationSource = (typeof INVALIDATION_SOURCES)[number];
+
+/**
+ * Invalidation log entry - tracks anchor status changes.
+ */
+export interface InvalidationLog {
+  readonly id: number;
+  readonly anchorId: number;
+  readonly oldStatus: AnchorStatus;
+  readonly newStatus: AnchorStatus;
+  readonly reason: string;
+  readonly detectedBy: InvalidationSource;
+  readonly oldContentHash: string | null;
+  readonly newContentHash: string | null;
+  readonly similarityScore: number | null;
+  readonly invalidatedAt: Date;
+}
+
+/**
+ * Database row type for invalidation log (snake_case from SQLite).
+ */
+export interface InvalidationLogRow {
+  id: number;
+  anchor_id: number;
+  old_status: string;
+  new_status: string;
+  reason: string;
+  detected_by: string;
+  old_content_hash: string | null;
+  new_content_hash: string | null;
+  similarity_score: number | null;
+  invalidated_at: string;
 }
