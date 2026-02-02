@@ -203,7 +203,7 @@ describe("AnchorService Integration via @tx/core", () => {
     }
   })
 
-  it("remove deletes an anchor", async () => {
+  it("remove soft deletes an anchor (sets status='invalid')", async () => {
     const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
     const layer = makeAppLayer(":memory:")
 
@@ -224,7 +224,43 @@ describe("AnchorService Integration via @tx/core", () => {
           value: FIXTURES.GLOB_PATTERN,
         })
 
-        yield* anchorSvc.remove(1)
+        // Soft delete returns the updated anchor
+        const removed = yield* anchorSvc.remove(1)
+
+        // Anchor should still exist with status='invalid'
+        const anchor = yield* anchorSvc.get(1)
+
+        return { removed, anchor }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.removed.status).toBe("invalid")
+    expect(result.anchor.status).toBe("invalid")
+    expect(result.anchor.id).toBe(1)
+  })
+
+  it("hardDelete permanently removes an anchor", async () => {
+    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+
+        const learning = yield* learningSvc.create({
+          content: "Test learning",
+          sourceType: "manual",
+        })
+
+        yield* anchorSvc.createAnchor({
+          learningId: learning.id,
+          anchorType: "glob",
+          filePath: FIXTURES.FILE_PATH_1,
+          value: FIXTURES.GLOB_PATTERN,
+        })
+
+        yield* anchorSvc.hardDelete(1)
 
         return yield* anchorSvc.get(1).pipe(Effect.either)
       }).pipe(Effect.provide(layer))
@@ -248,6 +284,57 @@ describe("AnchorService Integration via @tx/core", () => {
     if (result._tag === "Left") {
       expect((result.left as any)._tag).toBe("AnchorNotFoundError")
     }
+  })
+
+  it("hardDelete fails with AnchorNotFoundError for nonexistent ID", async () => {
+    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const anchorSvc = yield* AnchorService
+        return yield* anchorSvc.hardDelete(999)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("AnchorNotFoundError")
+    }
+  })
+
+  it("remove logs status change to invalidation_log", async () => {
+    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const anchorSvc = yield* AnchorService
+
+        const learning = yield* learningSvc.create({
+          content: "Test learning",
+          sourceType: "manual",
+        })
+
+        yield* anchorSvc.createAnchor({
+          learningId: learning.id,
+          anchorType: "glob",
+          filePath: FIXTURES.FILE_PATH_1,
+          value: FIXTURES.GLOB_PATTERN,
+        })
+
+        yield* anchorSvc.remove(1, "Test soft delete reason")
+
+        // Check the status via getStatus which returns recent invalidation logs
+        return yield* anchorSvc.getStatus()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.invalid).toBe(1)
+    expect(result.recentInvalidations.length).toBeGreaterThan(0)
+    expect(result.recentInvalidations[0].newStatus).toBe("invalid")
+    expect(result.recentInvalidations[0].reason).toBe("Test soft delete reason")
   })
 })
 

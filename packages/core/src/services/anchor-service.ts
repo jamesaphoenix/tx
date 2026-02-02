@@ -117,9 +117,16 @@ export class AnchorService extends Context.Tag("AnchorService")<
     readonly getWithVerification: (id: number, options?: { baseDir?: string }) => Effect.Effect<AnchorWithFreshness, AnchorNotFoundError | DatabaseError>
 
     /**
-     * Delete an anchor.
+     * Soft delete an anchor (set status='invalid' and log the change).
+     * Use hardDelete for actual removal.
      */
-    readonly remove: (id: number) => Effect.Effect<void, AnchorNotFoundError | DatabaseError>
+    readonly remove: (id: number, reason?: string) => Effect.Effect<Anchor, AnchorNotFoundError | DatabaseError>
+
+    /**
+     * Hard delete an anchor (actual removal from database).
+     * Used by prune operations. Prefer soft delete via remove().
+     */
+    readonly hardDelete: (id: number) => Effect.Effect<void, AnchorNotFoundError | DatabaseError>
 
     /**
      * Find all drifted anchors.
@@ -534,7 +541,37 @@ export const AnchorServiceLive = Layer.effect(
           }
         }),
 
-      remove: (id) =>
+      remove: (id, reason = "Soft deleted") =>
+        Effect.gen(function* () {
+          const anchor = yield* anchorRepo.findById(id)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id }))
+          }
+
+          const oldStatus = anchor.status
+
+          // Set status to invalid (soft delete)
+          yield* anchorRepo.updateStatus(id, "invalid")
+
+          // Log the status change
+          yield* anchorRepo.logInvalidation({
+            anchorId: id,
+            oldStatus,
+            newStatus: "invalid",
+            reason,
+            detectedBy: "manual",
+            oldContentHash: anchor.contentHash
+          })
+
+          // Return the updated anchor
+          const updated = yield* anchorRepo.findById(id)
+          if (!updated) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id }))
+          }
+          return updated
+        }),
+
+      hardDelete: (id) =>
         Effect.gen(function* () {
           const anchor = yield* anchorRepo.findById(id)
           if (!anchor) {

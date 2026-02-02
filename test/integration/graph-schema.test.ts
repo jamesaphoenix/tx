@@ -186,7 +186,7 @@ describe("Graph Schema - Anchor CRUD", () => {
     expect(result.lineEnd).toBe(75)
   })
 
-  it("removes an anchor successfully", async () => {
+  it("soft deletes an anchor (sets status='invalid')", async () => {
     const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
     const layer = makeAppLayer(":memory:")
 
@@ -207,16 +207,17 @@ describe("Graph Schema - Anchor CRUD", () => {
           value: FIXTURES.GLOB_PATTERN_1,
         })
 
-        yield* anchorSvc.remove(anchor.id)
+        const removed = yield* anchorSvc.remove(anchor.id)
 
-        return yield* anchorSvc.get(anchor.id).pipe(Effect.either)
+        // Anchor still exists but with status='invalid'
+        const retrieved = yield* anchorSvc.get(anchor.id)
+
+        return { removed, retrieved }
       }).pipe(Effect.provide(layer))
     )
 
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect((result.left as any)._tag).toBe("AnchorNotFoundError")
-    }
+    expect(result.removed.status).toBe("invalid")
+    expect(result.retrieved.status).toBe("invalid")
   })
 
   it("finds all anchors for a specific file path", async () => {
