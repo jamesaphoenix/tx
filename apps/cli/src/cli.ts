@@ -19,7 +19,7 @@ import { sync } from "./commands/sync.js"
 import { learningAdd, learningSearch, learningRecent, learningHelpful, learningEmbed, context, learn, recall } from "./commands/learning.js"
 import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
-import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin } from "./commands/graph.js"
+import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin, graphLink, graphShow, graphNeighbors } from "./commands/graph.js"
 import { hooksInstall, hooksUninstall, hooksStatus } from "./commands/hooks.js"
 
 // --- Argv parsing helpers ---
@@ -123,6 +123,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "graph:status": graphStatus,
   "graph:pin": graphPin,
   "graph:unpin": graphUnpin,
+  "graph:link": graphLink,
+  "graph:show": graphShow,
+  "graph:neighbors": graphNeighbors,
 
   // Hooks commands (colon-prefixed)
   "hooks:install": hooksInstall,

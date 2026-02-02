@@ -1,0 +1,12 @@
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+export default defineConfig({
+    plugins: [react()],
+    test: {
+        environment: 'jsdom',
+        include: ['src/**/*.test.{ts,tsx}'],
+        setupFiles: ['./test/setup.ts'],
+        globals: true,
+    },
+});
+//# sourceMappingURL=vitest.config.js.map
