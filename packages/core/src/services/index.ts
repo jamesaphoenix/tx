@@ -112,3 +112,11 @@ export {
   type SwarmVerifyOptions,
   type VoteResult
 } from "./swarm-verification.js"
+export {
+  AstGrepService,
+  AstGrepServiceLive,
+  AstGrepServiceNoop,
+  AstGrepServiceAuto,
+  EXT_TO_LANGUAGE,
+  DEFAULT_SYMBOL_PATTERNS
+} from "./ast-grep-service.js"
