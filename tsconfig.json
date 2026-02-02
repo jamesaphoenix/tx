@@ -7,6 +7,7 @@
   "references": [
     { "path": "packages/types" },
     { "path": "packages/core" },
+    { "path": "packages/tx" },
     { "path": "packages/test-utils" },
     { "path": "apps/cli" },
     { "path": "apps/mcp-server" },
