@@ -66,3 +66,7 @@ export {
   type NeighborWithPath,
   type FindNeighborsOptions
 } from "./edge-service.js"
+export {
+  DeduplicationService,
+  DeduplicationServiceLive
+} from "./deduplication-service.js"

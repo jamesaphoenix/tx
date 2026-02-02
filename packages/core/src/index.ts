@@ -64,7 +64,9 @@ export {
   DependencyService,
   ReadyService,
   HierarchyService,
-  ScoreService
+  ScoreService,
+  DeduplicationService,
+  DeduplicationServiceLive
 } from "./layer.js"
 
 // =============================================================================
@@ -127,7 +129,9 @@ export {
   AnchorRepository,
   AnchorRepositoryLive,
   EdgeRepository,
-  EdgeRepositoryLive
+  EdgeRepositoryLive,
+  DeduplicationRepository,
+  DeduplicationRepositoryLive
 } from "./repo/index.js"
 
 // =============================================================================

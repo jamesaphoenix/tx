@@ -57,3 +57,12 @@ export {
   rowToEdge,
   type EdgeRow
 } from "./edge.js"
+
+// Deduplication mappers
+export {
+  hashContent,
+  rowToProcessedHash,
+  serializeProcessedHash,
+  rowToFileProgress,
+  serializeFileProgress
+} from "./deduplication.js"

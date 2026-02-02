@@ -105,3 +105,19 @@ export {
   type EdgeRow,
   type NeighborNode,
 } from "./edge.js";
+
+// Deduplication types
+export {
+  type ProcessedHashId,
+  type ProcessedHash,
+  type CreateProcessedHashInput,
+  type ProcessedHashRow,
+  type FileProgressId,
+  type FileProgress,
+  type UpsertFileProgressInput,
+  type FileProgressRow,
+  type HashCheckResult,
+  type LineProcessResult,
+  type FileProcessResult,
+  type DeduplicationOptions,
+} from "./deduplication.js";
