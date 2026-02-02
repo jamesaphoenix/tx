@@ -73,6 +73,14 @@ export class RerankerUnavailableError extends Data.TaggedError("RerankerUnavaila
   }
 }
 
+export class EdgeNotFoundError extends Data.TaggedError("EdgeNotFoundError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `Edge not found: ${this.id}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError

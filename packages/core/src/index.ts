@@ -18,7 +18,8 @@ export {
   ValidationError,
   CircularDependencyError,
   DatabaseError,
-  EmbeddingUnavailableError
+  EmbeddingUnavailableError,
+  EdgeNotFoundError
 } from "./errors.js"
 
 // =============================================================================
@@ -111,7 +112,11 @@ export {
   AttemptRepository,
   AttemptRepositoryLive,
   RunRepository,
-  RunRepositoryLive
+  RunRepositoryLive,
+  AnchorRepository,
+  AnchorRepositoryLive,
+  EdgeRepository,
+  EdgeRepositoryLive
 } from "./repo/index.js"
 
 // =============================================================================
@@ -147,3 +152,13 @@ export {
   rowToAttempt,
   type AttemptRow
 } from "./mappers/attempt.js"
+
+export {
+  rowToAnchor,
+  type AnchorRow
+} from "./mappers/anchor.js"
+
+export {
+  rowToEdge,
+  type EdgeRow
+} from "./mappers/edge.js"

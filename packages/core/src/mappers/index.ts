@@ -51,3 +51,9 @@ export {
   rowToAnchor,
   type AnchorRow
 } from "./anchor.js"
+
+// Edge mappers
+export {
+  rowToEdge,
+  type EdgeRow
+} from "./edge.js"

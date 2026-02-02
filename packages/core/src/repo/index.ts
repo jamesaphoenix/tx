@@ -9,3 +9,4 @@ export { FileLearningRepository, FileLearningRepositoryLive } from "./file-learn
 export { AttemptRepository, AttemptRepositoryLive } from "./attempt-repo.js"
 export { RunRepository, RunRepositoryLive } from "./run-repo.js"
 export { AnchorRepository, AnchorRepositoryLive } from "./anchor-repo.js"
+export { EdgeRepository, EdgeRepositoryLive } from "./edge-repo.js"

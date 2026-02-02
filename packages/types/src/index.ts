@@ -90,4 +90,18 @@ export {
   type CreateAnchorInput,
   type UpdateAnchorInput,
   type AnchorRow,
-} from "./anchor.js";
+} from "./anchor.js"
+
+// Edge types
+export {
+  NODE_TYPES,
+  EDGE_TYPES,
+  type EdgeId,
+  type NodeType,
+  type EdgeType,
+  type Edge,
+  type CreateEdgeInput,
+  type UpdateEdgeInput,
+  type EdgeRow,
+  type NeighborNode,
+} from "./edge.js";
