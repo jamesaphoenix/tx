@@ -10,7 +10,15 @@ export { ScoreService, ScoreServiceLive, type ScoreBreakdown } from "./score-ser
 export { LearningService, LearningServiceLive } from "./learning-service.js"
 export { FileLearningService, FileLearningServiceLive } from "./file-learning-service.js"
 export { AttemptService, AttemptServiceLive } from "./attempt-service.js"
-export { EmbeddingService, EmbeddingServiceNoop, EmbeddingServiceLive, EmbeddingServiceOpenAI, EmbeddingServiceAuto } from "./embedding-service.js"
+export {
+  EmbeddingService,
+  EmbeddingServiceNoop,
+  EmbeddingServiceLive,
+  EmbeddingServiceOpenAI,
+  EmbeddingServiceAuto,
+  createEmbedderLayer,
+  type EmbedderConfig
+} from "./embedding-service.js"
 export {
   QueryExpansionService,
   QueryExpansionServiceNoop,

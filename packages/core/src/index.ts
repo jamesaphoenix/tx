@@ -66,6 +66,8 @@ export {
   EmbeddingServiceLive,
   EmbeddingServiceOpenAI,
   EmbeddingServiceAuto,
+  createEmbedderLayer,
+  type EmbedderConfig,
   AttemptService,
   TaskService,
   DependencyService,

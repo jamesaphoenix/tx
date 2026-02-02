@@ -355,3 +355,144 @@ export const EmbeddingServiceAuto = Layer.unwrapEffect(
     return EmbeddingServiceNoop
   })
 )
+
+// =============================================================================
+// SDK Factory for Custom Embedders
+// =============================================================================
+
+/**
+ * Configuration for a custom embedder implementation.
+ *
+ * SDK users can provide their own embedding function to integrate
+ * with any embedding API or model.
+ *
+ * @example
+ * ```typescript
+ * import { createEmbedderLayer } from "@tx/core"
+ *
+ * const myEmbedder = createEmbedderLayer({
+ *   embed: async (text) => {
+ *     const response = await fetch("https://my-embedding-api.com/embed", {
+ *       method: "POST",
+ *       body: JSON.stringify({ text })
+ *     })
+ *     const data = await response.json()
+ *     return new Float32Array(data.embedding)
+ *   },
+ *   dimensions: 768,
+ *   name: "my-custom-embedder"
+ * })
+ * ```
+ */
+export interface EmbedderConfig {
+  /**
+   * Embed a single text string into a vector.
+   * @param text - The text to embed
+   * @returns A Float32Array containing the embedding vector
+   */
+  readonly embed: (text: string) => Promise<Float32Array>
+
+  /**
+   * Embed multiple texts in batch.
+   * Optional - if not provided, defaults to sequential `embed` calls.
+   * @param texts - Array of texts to embed
+   * @returns Array of Float32Array embeddings in the same order as input
+   */
+  readonly embedBatch?: (texts: readonly string[]) => Promise<readonly Float32Array[]>
+
+  /**
+   * The dimension of embedding vectors produced by this embedder.
+   * This must match the actual vector size returned by embed().
+   */
+  readonly dimensions: number
+
+  /**
+   * Human-readable name for logging and debugging.
+   * @default "custom-embedder"
+   */
+  readonly name?: string
+}
+
+/**
+ * Create an EmbeddingService layer from a custom embedder configuration.
+ *
+ * This factory allows SDK users to integrate any embedding provider
+ * (OpenAI, Cohere, local models, etc.) by providing simple async functions.
+ *
+ * @param config - Configuration with embed function and dimensions
+ * @returns An Effect Layer providing EmbeddingService
+ *
+ * @example
+ * ```typescript
+ * import { createEmbedderLayer, makeMinimalLayer } from "@tx/core"
+ * import { Layer, Effect } from "effect"
+ *
+ * // Create custom embedder layer
+ * const myEmbedder = createEmbedderLayer({
+ *   embed: async (text) => callMyEmbeddingAPI(text),
+ *   dimensions: 768,
+ *   name: "my-custom-embedder"
+ * })
+ *
+ * // Use with tx application layer
+ * const appLayer = makeMinimalLayer(":memory:").pipe(
+ *   Layer.provideMerge(myEmbedder)
+ * )
+ *
+ * // Run effects with custom embedder
+ * const program = Effect.gen(function* () {
+ *   const embedding = yield* EmbeddingService
+ *   const vector = yield* embedding.embed("Hello world")
+ *   console.log(`Vector dimensions: ${vector.length}`)
+ * })
+ *
+ * Effect.runPromise(program.pipe(Effect.provide(appLayer)))
+ * ```
+ */
+export const createEmbedderLayer = (config: EmbedderConfig): Layer.Layer<EmbeddingService> => {
+  const embedderName = config.name ?? "custom-embedder"
+
+  return Layer.succeed(EmbeddingService, {
+    embed: (text) =>
+      Effect.tryPromise({
+        try: () => config.embed(text),
+        catch: (error) =>
+          new EmbeddingUnavailableError({
+            reason: `${embedderName} embed failed: ${String(error)}`
+          })
+      }),
+
+    embedBatch: (texts) => {
+      // Use custom batch implementation if provided
+      if (config.embedBatch) {
+        return Effect.tryPromise({
+          try: () => config.embedBatch!(texts),
+          catch: (error) =>
+            new EmbeddingUnavailableError({
+              reason: `${embedderName} embedBatch failed: ${String(error)}`
+            })
+        })
+      }
+
+      // Fall back to sequential embed calls
+      return Effect.gen(function* () {
+        const results: Float32Array[] = []
+        for (const text of texts) {
+          const embedding = yield* Effect.tryPromise({
+            try: () => config.embed(text),
+            catch: (error) =>
+              new EmbeddingUnavailableError({
+                reason: `${embedderName} embed failed: ${String(error)}`
+              })
+          })
+          results.push(embedding)
+        }
+        return results
+      })
+    },
+
+    isAvailable: () => Effect.succeed(true),
+
+    dimensions: config.dimensions
+  })
+}
