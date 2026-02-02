@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createTestDb } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { AnchorRepository, AnchorRepositoryLive } from "../../src/repo/anchor-repo.js"
-import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
+import {
+  SqliteClient,
+  AnchorRepository,
+  AnchorRepositoryLive,
+  LearningRepositoryLive
+} from "@tx/core"
 import type Database from "better-sqlite3"
-import type { Anchor } from "../../src/schemas/anchor.js"
+import type { Anchor } from "@tx/types"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
   const infra = Layer.succeed(SqliteClient, db as any)

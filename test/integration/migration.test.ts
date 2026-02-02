@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import Database from "better-sqlite3"
-import { SqliteClient, getSchemaVersion, applyMigrations } from "../../src/db.js"
 import {
+  SqliteClient,
+  getSchemaVersion,
+  applyMigrations,
   MigrationService,
   MigrationServiceLive,
   MIGRATIONS,
   getLatestVersion
-} from "../../src/services/migration-service.js"
+} from "@tx/core"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
   const infra = Layer.succeed(SqliteClient, db as ReturnType<typeof Database>)

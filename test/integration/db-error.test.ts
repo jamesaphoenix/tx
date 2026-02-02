@@ -1,19 +1,24 @@
 import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
-import { DatabaseError } from "../../src/errors.js"
-import { LearningRepository } from "../../src/repo/learning-repo.js"
-import { AttemptRepository } from "../../src/repo/attempt-repo.js"
-import { FileLearningRepository } from "../../src/repo/file-learning-repo.js"
-import { TaskRepository } from "../../src/repo/task-repo.js"
-import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
-import { AttemptServiceLive, AttemptService } from "../../src/services/attempt-service.js"
-import { FileLearningServiceLive, FileLearningService } from "../../src/services/file-learning-service.js"
-import { EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
-import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
+import {
+  DatabaseError,
+  LearningRepository,
+  AttemptRepository,
+  FileLearningRepository,
+  TaskRepository,
+  LearningServiceLive,
+  LearningService,
+  AttemptServiceLive,
+  AttemptService,
+  FileLearningServiceLive,
+  FileLearningService,
+  EmbeddingServiceNoop,
+  AutoSyncServiceNoop,
+  QueryExpansionServiceNoop,
+  RerankerServiceNoop
+} from "@tx/core"
 import { FIXTURES } from "../fixtures.js"
-import type { AttemptId } from "../../src/schemas/attempt.js"
-import type { FileLearning, FileLearningId } from "../../src/schemas/file-learning.js"
-import type { Task } from "../../src/schema.js"
+import type { AttemptId, FileLearning, FileLearningId, Task } from "@tx/types"
 
 /**
  * Database Error Handling Tests
@@ -73,7 +78,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -119,7 +124,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -165,7 +170,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -211,7 +216,7 @@ describe("LearningService Database Error Handling", () => {
       })
 
       const layer = LearningServiceLive.pipe(
-        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop))
+        Layer.provide(Layer.mergeAll(mockLearningRepo, mockTaskRepo, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
       )
 
       const result = await Effect.runPromise(
@@ -241,7 +246,9 @@ describe("AttemptService Database Error Handling", () => {
         findById: () => Effect.succeed(null),
         findByTaskId: () => Effect.succeed([]),
         count: () => Effect.succeed(0),
-        remove: () => Effect.void
+        remove: () => Effect.void,
+        findAll: () => Effect.succeed([]),
+        getFailedCountsForTasks: () => Effect.succeed(new Map())
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
@@ -280,7 +287,9 @@ describe("AttemptService Database Error Handling", () => {
         findById: () => Effect.succeed(null),
         findByTaskId: () => Effect.succeed([]),
         count: () => Effect.succeed(0),
-        remove: () => Effect.void
+        remove: () => Effect.void,
+        findAll: () => Effect.succeed([]),
+        getFailedCountsForTasks: () => Effect.succeed(new Map())
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
@@ -321,7 +330,9 @@ describe("AttemptService Database Error Handling", () => {
         findById: () => Effect.succeed(null),
         findByTaskId: () => Effect.fail(testDbError),
         count: () => Effect.succeed(0),
-        remove: () => Effect.void
+        remove: () => Effect.void,
+        findAll: () => Effect.succeed([]),
+        getFailedCountsForTasks: () => Effect.succeed(new Map())
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
@@ -362,7 +373,9 @@ describe("AttemptService Database Error Handling", () => {
         findById: () => Effect.fail(testDbError),
         findByTaskId: () => Effect.succeed([]),
         count: () => Effect.succeed(0),
-        remove: () => Effect.void
+        remove: () => Effect.void,
+        findAll: () => Effect.succeed([]),
+        getFailedCountsForTasks: () => Effect.succeed(new Map())
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
@@ -403,7 +416,9 @@ describe("AttemptService Database Error Handling", () => {
         findById: () => Effect.succeed(null),
         findByTaskId: () => Effect.fail(testDbError),
         count: () => Effect.succeed(0),
-        remove: () => Effect.void
+        remove: () => Effect.void,
+        findAll: () => Effect.succeed([]),
+        getFailedCountsForTasks: () => Effect.succeed(new Map())
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {

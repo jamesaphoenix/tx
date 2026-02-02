@@ -5,12 +5,12 @@
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
 
- ✓ src/helpers/effect.test.ts (28 tests) 73ms
+ ✓ src/helpers/effect.test.ts (28 tests) 71ms
  ✓ test/test-database.test.ts (9 tests) 18ms
- ✓ src/factories/factories.test.ts (30 tests) 34ms
+ ✓ src/factories/factories.test.ts (30 tests) 37ms
 
  Test Files  3 passed (3)
       Tests  67 passed (67)
-   Start at  12:33:03
-   Duration  983ms (transform 280ms, setup 0ms, collect 1.60s, tests 125ms, environment 0ms, prepare 168ms)
+   Start at  13:05:25
+   Duration  528ms (transform 147ms, setup 0ms, collect 767ms, tests 127ms, environment 0ms, prepare 87ms)
 

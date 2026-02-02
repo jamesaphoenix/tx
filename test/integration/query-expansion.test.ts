@@ -4,7 +4,7 @@ import {
   QueryExpansionService,
   QueryExpansionServiceNoop,
   QueryExpansionServiceAuto
-} from "../../src/services/query-expansion-service.js"
+} from "@tx/core"
 
 describe("QueryExpansionService", () => {
   describe("QueryExpansionServiceNoop", () => {

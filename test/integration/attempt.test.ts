@@ -1,16 +1,19 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
-import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
-import { AttemptRepositoryLive } from "../../src/repo/attempt-repo.js"
-import { TaskServiceLive } from "../../src/services/task-service.js"
-import { DependencyServiceLive } from "../../src/services/dep-service.js"
-import { ReadyServiceLive } from "../../src/services/ready-service.js"
-import { HierarchyServiceLive } from "../../src/services/hierarchy-service.js"
-import { AttemptServiceLive, AttemptService } from "../../src/services/attempt-service.js"
-import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
+import {
+  SqliteClient,
+  TaskRepositoryLive,
+  DependencyRepositoryLive,
+  AttemptRepositoryLive,
+  TaskServiceLive,
+  DependencyServiceLive,
+  ReadyServiceLive,
+  HierarchyServiceLive,
+  AttemptServiceLive,
+  AttemptService,
+  AutoSyncServiceNoop
+} from "@tx/core"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {

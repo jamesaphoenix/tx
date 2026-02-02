@@ -14,21 +14,26 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "crypto"
 import { createTestDb, seedFixtures } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
-import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
-import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
-import { TaskServiceLive } from "../../src/services/task-service.js"
-import { DependencyServiceLive } from "../../src/services/dep-service.js"
-import { ReadyServiceLive } from "../../src/services/ready-service.js"
-import { HierarchyServiceLive } from "../../src/services/hierarchy-service.js"
-import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
-import { EmbeddingService, EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
-import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
-import { QueryExpansionServiceNoop } from "../../src/services/query-expansion-service.js"
-import { cosineSimilarity } from "../../src/utils/math.js"
+import {
+  SqliteClient,
+  TaskRepositoryLive,
+  DependencyRepositoryLive,
+  LearningRepositoryLive,
+  TaskServiceLive,
+  DependencyServiceLive,
+  ReadyServiceLive,
+  HierarchyServiceLive,
+  LearningServiceLive,
+  LearningService,
+  EmbeddingService,
+  EmbeddingServiceNoop,
+  AutoSyncServiceNoop,
+  QueryExpansionServiceNoop,
+  RerankerServiceNoop,
+  cosineSimilarity
+} from "@tx/core"
 import type Database from "better-sqlite3"
-import type { LearningWithScore } from "../../src/schemas/learning.js"
+import type { LearningWithScore } from "@tx/types"
 
 // ============================================================================
 // Test Data: 50+ learnings across various topics
@@ -215,7 +220,7 @@ function makeTestLayer(db: InstanceType<typeof Database>, useVectorSearch = true
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, embeddingLayer, QueryExpansionServiceNoop, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, embeddingLayer, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop))
   )
 
   return services

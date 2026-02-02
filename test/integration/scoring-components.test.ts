@@ -15,18 +15,22 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createTestDb, seedFixtures } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
-import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
-import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
-import { TaskServiceLive } from "../../src/services/task-service.js"
-import { DependencyServiceLive } from "../../src/services/dep-service.js"
-import { ReadyServiceLive } from "../../src/services/ready-service.js"
-import { HierarchyServiceLive } from "../../src/services/hierarchy-service.js"
-import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
-import { EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
-import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
-import { QueryExpansionServiceNoop } from "../../src/services/query-expansion-service.js"
+import {
+  SqliteClient,
+  TaskRepositoryLive,
+  DependencyRepositoryLive,
+  LearningRepositoryLive,
+  TaskServiceLive,
+  DependencyServiceLive,
+  ReadyServiceLive,
+  HierarchyServiceLive,
+  LearningServiceLive,
+  LearningService,
+  EmbeddingServiceNoop,
+  AutoSyncServiceNoop,
+  QueryExpansionServiceNoop,
+  RerankerServiceNoop
+} from "@tx/core"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
@@ -45,7 +49,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop))
   )
   return services
 }
@@ -601,7 +605,7 @@ describe("Weight Sensitivity", () => {
       HierarchyServiceLive,
       LearningServiceLive
     ).pipe(
-      Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, AutoSyncServiceNoop))
+      Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop))
     )
     return services
   }

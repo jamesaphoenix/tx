@@ -21,18 +21,32 @@ import { join } from "node:path"
 import Database from "better-sqlite3"
 
 import { createTestDb, fixtureId } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { TaskRepository, TaskRepositoryLive } from "../../src/repo/task-repo.js"
-import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
-import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
-import { TaskServiceLive, TaskService } from "../../src/services/task-service.js"
-import { DependencyServiceLive } from "../../src/services/dep-service.js"
-import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service.js"
-import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
-import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
-import { SyncServiceLive, SyncService } from "../../src/services/sync-service.js"
-import { EmbeddingService, EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
-import type { TaskId } from "../../src/schema.js"
+import {
+  SqliteClient,
+  TaskRepository,
+  TaskRepositoryLive,
+  DependencyRepositoryLive,
+  LearningRepositoryLive,
+  FileLearningRepositoryLive,
+  AttemptRepositoryLive,
+  TaskServiceLive,
+  TaskService,
+  DependencyServiceLive,
+  ReadyServiceLive,
+  ReadyService,
+  HierarchyServiceLive,
+  HierarchyService,
+  LearningServiceLive,
+  LearningService,
+  SyncServiceLive,
+  SyncService,
+  EmbeddingService,
+  EmbeddingServiceNoop,
+  AutoSyncServiceNoop,
+  QueryExpansionServiceNoop,
+  RerankerServiceNoop
+} from "@tx/core"
+import type { TaskId } from "@tx/types"
 
 // Skip unless STRESS=1 environment variable is set
 const SKIP_STRESS = !process.env["STRESS"]
@@ -83,7 +97,7 @@ function makeTaskTestLayer(db: InstanceType<typeof Database>) {
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
   )
   return Layer.mergeAll(services, repos)
 }
@@ -107,7 +121,7 @@ function makeLearningTestLayer(db: InstanceType<typeof Database>) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.merge(repos, EmbeddingServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
   )
   return services
 }
@@ -117,7 +131,13 @@ function makeLearningTestLayer(db: InstanceType<typeof Database>) {
  */
 function makeSyncTestLayer(db: InstanceType<typeof Database>) {
   const infra = Layer.succeed(SqliteClient, db as Database.Database)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    LearningRepositoryLive,
+    FileLearningRepositoryLive,
+    AttemptRepositoryLive
+  ).pipe(
     Layer.provide(infra)
   )
   const baseServices = Layer.mergeAll(
@@ -126,10 +146,10 @@ function makeSyncTestLayer(db: InstanceType<typeof Database>) {
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(repos)
+    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
   )
   const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.merge(infra, Layer.merge(repos, baseServices)))
+    Layer.provide(Layer.merge(infra, repos))
   )
   return Layer.mergeAll(baseServices, syncService, repos)
 }

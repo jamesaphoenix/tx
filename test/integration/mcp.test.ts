@@ -12,23 +12,31 @@ import Database from "better-sqlite3"
 import { z } from "zod"
 
 import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
-import { DependencyRepositoryLive } from "../../src/repo/dep-repo.js"
-import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
-import { FileLearningRepositoryLive } from "../../src/repo/file-learning-repo.js"
-import { TaskServiceLive, TaskService } from "../../src/services/task-service.js"
-import { DependencyServiceLive, DependencyService } from "../../src/services/dep-service.js"
-import { ReadyServiceLive, ReadyService } from "../../src/services/ready-service.js"
-import { HierarchyServiceLive, HierarchyService } from "../../src/services/hierarchy-service.js"
-import { LearningServiceLive, LearningService } from "../../src/services/learning-service.js"
-import { FileLearningServiceLive, FileLearningService } from "../../src/services/file-learning-service.js"
-import { EmbeddingServiceNoop } from "../../src/services/embedding-service.js"
-import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
-import type { TaskId, TaskWithDeps } from "../../src/schema.js"
-import type { FileLearning } from "../../src/schemas/file-learning.js"
-import type { Learning, LearningWithScore } from "../../src/schemas/learning.js"
-import { LEARNING_SOURCE_TYPES } from "../../src/schemas/learning.js"
+import {
+  SqliteClient,
+  TaskRepositoryLive,
+  DependencyRepositoryLive,
+  LearningRepositoryLive,
+  FileLearningRepositoryLive,
+  TaskServiceLive,
+  TaskService,
+  DependencyServiceLive,
+  DependencyService,
+  ReadyServiceLive,
+  ReadyService,
+  HierarchyServiceLive,
+  HierarchyService,
+  LearningServiceLive,
+  LearningService,
+  FileLearningServiceLive,
+  FileLearningService,
+  EmbeddingServiceNoop,
+  AutoSyncServiceNoop,
+  QueryExpansionServiceNoop,
+  RerankerServiceNoop
+} from "@tx/core"
+import type { TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@tx/types"
+import { LEARNING_SOURCE_TYPES } from "@tx/types"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -82,7 +90,7 @@ export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRunti
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop))
   )
 
   return ManagedRuntime.make(services)

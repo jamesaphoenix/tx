@@ -15,18 +15,23 @@ import { join } from "node:path"
 import Database from "better-sqlite3"
 
 import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { TaskRepositoryLive } from "../../src/repo/task-repo.js"
-import { DependencyRepositoryLive, DependencyRepository } from "../../src/repo/dep-repo.js"
-import { LearningRepositoryLive } from "../../src/repo/learning-repo.js"
-import { FileLearningRepositoryLive } from "../../src/repo/file-learning-repo.js"
-import { AttemptRepositoryLive } from "../../src/repo/attempt-repo.js"
-import { TaskServiceLive, TaskService } from "../../src/services/task-service.js"
-import { DependencyServiceLive } from "../../src/services/dep-service.js"
-import { ReadyServiceLive } from "../../src/services/ready-service.js"
-import { HierarchyServiceLive } from "../../src/services/hierarchy-service.js"
-import { SyncServiceLive, SyncService } from "../../src/services/sync-service.js"
-import { AutoSyncServiceNoop } from "../../src/services/auto-sync-service.js"
+import {
+  SqliteClient,
+  TaskRepositoryLive,
+  DependencyRepositoryLive,
+  DependencyRepository,
+  LearningRepositoryLive,
+  FileLearningRepositoryLive,
+  AttemptRepositoryLive,
+  TaskServiceLive,
+  TaskService,
+  DependencyServiceLive,
+  ReadyServiceLive,
+  HierarchyServiceLive,
+  SyncServiceLive,
+  SyncService,
+  AutoSyncServiceNoop
+} from "@tx/core"
 
 // -----------------------------------------------------------------------------
 // Test Fixtures
@@ -54,19 +59,20 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   ).pipe(
     Layer.provide(infra)
   )
-  // SyncService only needs repos and infra (no longer depends on TaskService)
-  const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.merge(infra, repos))
-  )
-  // Base services need repos and AutoSyncServiceNoop
+  // Build base services first (SyncServiceLive depends on TaskService)
   const baseServices = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop))
   )
+  // Build SyncService on top of base services
+  const syncService = SyncServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(baseServices, repos, infra))
+  )
+  // Return all services and repos (for DependencyRepository access in tests)
   return Layer.mergeAll(baseServices, syncService, repos)
 }
 

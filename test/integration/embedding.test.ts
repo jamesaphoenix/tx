@@ -4,9 +4,9 @@ import {
   EmbeddingService,
   EmbeddingServiceNoop,
   EmbeddingServiceLive,
-  EmbeddingServiceAuto
-} from "../../src/services/embedding-service.js"
-import { EmbeddingUnavailableError } from "../../src/errors.js"
+  EmbeddingServiceAuto,
+  EmbeddingUnavailableError
+} from "@tx/core"
 
 // ============================================================================
 // Mock Factories for node-llama-cpp

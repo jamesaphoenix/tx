@@ -4,7 +4,7 @@ import {
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
   CandidateExtractorServiceAuto
-} from "../../src/services/candidate-extractor-service.js"
+} from "@tx/core"
 
 describe("CandidateExtractorService", () => {
   describe("CandidateExtractorServiceNoop", () => {

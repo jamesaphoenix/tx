@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
-import { SqliteClient } from "../../src/db.js"
-import { RunRepositoryLive, RunRepository } from "../../src/repo/run-repo.js"
-import type { RunId } from "../../src/schemas/run.js"
+import {
+  SqliteClient,
+  RunRepositoryLive,
+  RunRepository
+} from "@tx/core"
+import type { RunId } from "@tx/types"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {

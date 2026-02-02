@@ -93,6 +93,14 @@ export {
   CandidateExtractorServiceAnthropic,
   CandidateExtractorServiceOpenAI,
   CandidateExtractorServiceAuto,
+  QueryExpansionService,
+  QueryExpansionServiceNoop,
+  QueryExpansionServiceLive,
+  QueryExpansionServiceAuto,
+  RerankerService,
+  RerankerServiceNoop,
+  RerankerServiceLive,
+  RerankerServiceAuto,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
@@ -112,7 +120,9 @@ export {
   type TypedAnchorInput,
   type NeighborWithDepth,
   type NeighborWithPath,
-  type FindNeighborsOptions
+  type FindNeighborsOptions,
+  type QueryExpansionResult,
+  type RerankerResult
 } from "./services/index.js"
 
 // =============================================================================
@@ -166,6 +176,7 @@ export {
 
 export {
   rowToFileLearning,
+  matchesPattern,
   type FileLearningRow
 } from "./mappers/file-learning.js"
 
@@ -183,3 +194,8 @@ export {
   rowToEdge,
   type EdgeRow
 } from "./mappers/edge.js"
+
+// =============================================================================
+// Utils
+// =============================================================================
+export { cosineSimilarity } from "./utils/math.js"

@@ -14,9 +14,9 @@ import { describe, it, expect, beforeAll } from "vitest"
 import { Effect } from "effect"
 import {
   EmbeddingService,
-  EmbeddingServiceLive
-} from "../../src/services/embedding-service.js"
-import { cosineSimilarity } from "../../src/utils/math.js"
+  EmbeddingServiceLive,
+  cosineSimilarity
+} from "@tx/core"
 
 // Skip tests if SKIP_REAL_EMBEDDING_TESTS is set (for CI) or if model loading fails
 const SKIP_REAL_TESTS = process.env.SKIP_REAL_EMBEDDING_TESTS === "1"

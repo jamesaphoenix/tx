@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { z } from "zod"
-import { TASK_STATUSES, type TaskWithDeps, type TaskId } from "../../src/schema.js"
+import { TASK_STATUSES, type TaskWithDeps, type TaskId } from "@tx/types"
 import { fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------
