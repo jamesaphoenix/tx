@@ -4,7 +4,6 @@
     "composite": false,
     "incremental": false
   },
-  "files": [],
   "references": [
     { "path": "packages/types" },
     { "path": "packages/core" },
@@ -14,5 +13,6 @@
     { "path": "apps/mcp-server" },
     { "path": "apps/api-server" },
     { "path": "apps/agent-sdk" }
-  ]
+  ],
+  "exclude": ["node_modules", "dist", "**/dist"]
 }
