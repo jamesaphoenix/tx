@@ -166,3 +166,9 @@ export {
   type PromotionResult,
   type AutoPromoteResult
 } from "./promotion-service.js"
+export {
+  DiversifierService,
+  DiversifierServiceNoop,
+  DiversifierServiceLive,
+  DiversifierServiceAuto
+} from "./diversifier-service.js"
