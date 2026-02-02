@@ -70,3 +70,10 @@ export {
   DeduplicationService,
   DeduplicationServiceLive
 } from "./deduplication-service.js"
+export {
+  CandidateExtractorService,
+  CandidateExtractorServiceNoop,
+  CandidateExtractorServiceAnthropic,
+  CandidateExtractorServiceOpenAI,
+  CandidateExtractorServiceAuto
+} from "./candidate-extractor-service.js"

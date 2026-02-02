@@ -20,7 +20,8 @@ export {
   DatabaseError,
   EmbeddingUnavailableError,
   EdgeNotFoundError,
-  AnchorNotFoundError
+  AnchorNotFoundError,
+  ExtractionUnavailableError
 } from "./errors.js"
 
 // =============================================================================
@@ -87,6 +88,11 @@ export {
   AnchorServiceLive,
   EdgeService,
   EdgeServiceLive,
+  CandidateExtractorService,
+  CandidateExtractorServiceNoop,
+  CandidateExtractorServiceAnthropic,
+  CandidateExtractorServiceOpenAI,
+  CandidateExtractorServiceAuto,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,

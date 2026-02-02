@@ -121,3 +121,22 @@ export {
   type FileProcessResult,
   type DeduplicationOptions,
 } from "./deduplication.js";
+
+// Candidate types (learning extraction from transcripts)
+export {
+  CANDIDATE_CONFIDENCES,
+  CANDIDATE_CATEGORIES,
+  CANDIDATE_STATUSES,
+  type CandidateConfidence,
+  type CandidateCategory,
+  type CandidateStatus,
+  type CandidateId,
+  type TranscriptChunk,
+  type ExtractedCandidate,
+  type LearningCandidate,
+  type CreateCandidateInput,
+  type UpdateCandidateInput,
+  type CandidateFilter,
+  type ExtractionResult,
+  type CandidateRow,
+} from "./candidate.js";

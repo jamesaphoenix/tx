@@ -65,9 +65,18 @@ export class EmbeddingUnavailableError extends Data.TaggedError("EmbeddingUnavai
   }
 }
 
+export class ExtractionUnavailableError extends Data.TaggedError("ExtractionUnavailableError")<{
+  readonly reason: string
+}> {
+  get message() {
+    return `Extraction unavailable: ${this.reason}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
   | CircularDependencyError
   | DatabaseError
   | EmbeddingUnavailableError
+  | ExtractionUnavailableError

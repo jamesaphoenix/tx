@@ -89,6 +89,14 @@ export class AnchorNotFoundError extends Data.TaggedError("AnchorNotFoundError")
   }
 }
 
+export class ExtractionUnavailableError extends Data.TaggedError("ExtractionUnavailableError")<{
+  readonly reason: string
+}> {
+  get message() {
+    return `Extraction unavailable: ${this.reason}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
@@ -96,3 +104,4 @@ export type TaskError =
   | DatabaseError
   | EmbeddingUnavailableError
   | RerankerUnavailableError
+  | ExtractionUnavailableError

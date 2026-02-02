@@ -1,0 +1,288 @@
+import { describe, it, expect } from "vitest"
+import { Effect } from "effect"
+import {
+  CandidateExtractorService,
+  CandidateExtractorServiceNoop,
+  CandidateExtractorServiceAuto
+} from "../../src/services/candidate-extractor-service.js"
+
+describe("CandidateExtractorService", () => {
+  describe("CandidateExtractorServiceNoop", () => {
+    const sampleChunk = {
+      content: "User asked about database optimization. We decided to add indexes.",
+      sourceFile: "~/.claude/projects/test/session.jsonl"
+    }
+
+    it("returns empty candidates array", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.extract(sampleChunk)
+        }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+      )
+
+      expect(result.candidates).toEqual([])
+      expect(result.sourceChunk).toEqual(sampleChunk)
+      expect(result.wasExtracted).toBe(false)
+    })
+
+    it("isAvailable returns false", async () => {
+      const available = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.isAvailable()
+        }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+      )
+
+      expect(available).toBe(false)
+    })
+
+    it("preserves source chunk in result", async () => {
+      const chunkWithMetadata = {
+        content: "Some transcript content here",
+        sourceFile: "~/.claude/projects/myapp/session-123.jsonl",
+        sourceRunId: "run-abc123",
+        sourceTaskId: "tx-def456",
+        byteOffset: 1024,
+        lineRange: { start: 10, end: 50 }
+      }
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.extract(chunkWithMetadata)
+        }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+      )
+
+      expect(result.sourceChunk).toEqual(chunkWithMetadata)
+      expect(result.sourceChunk.sourceRunId).toBe("run-abc123")
+      expect(result.sourceChunk.sourceTaskId).toBe("tx-def456")
+      expect(result.sourceChunk.byteOffset).toBe(1024)
+      expect(result.sourceChunk.lineRange).toEqual({ start: 10, end: 50 })
+    })
+
+    it("handles empty content", async () => {
+      const emptyChunk = {
+        content: "",
+        sourceFile: "~/.claude/projects/test/empty.jsonl"
+      }
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.extract(emptyChunk)
+        }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+      )
+
+      expect(result.candidates).toEqual([])
+      expect(result.wasExtracted).toBe(false)
+    })
+
+    it("handles content with special characters", async () => {
+      const specialChunk = {
+        content: "Fix bug: @#$%^&*() in <tag> with \"quotes\"",
+        sourceFile: "~/.claude/projects/test/special.jsonl"
+      }
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.extract(specialChunk)
+        }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+      )
+
+      expect(result.sourceChunk.content).toBe("Fix bug: @#$%^&*() in <tag> with \"quotes\"")
+      expect(result.wasExtracted).toBe(false)
+    })
+
+    it("handles very large content", async () => {
+      const largeContent = "x".repeat(100000)
+      const largeChunk = {
+        content: largeContent,
+        sourceFile: "~/.claude/projects/test/large.jsonl"
+      }
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.extract(largeChunk)
+        }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+      )
+
+      expect(result.candidates).toEqual([])
+      expect(result.sourceChunk.content.length).toBe(100000)
+    })
+  })
+
+  describe("CandidateExtractorServiceAuto", () => {
+    it("uses Noop when no API keys are set", async () => {
+      // Auto should fall back to Noop when no API keys are configured
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.extract({
+            content: "Test transcript content",
+            sourceFile: "~/.claude/projects/test/auto.jsonl"
+          })
+        }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+      )
+
+      // Without API keys, should behave like Noop
+      expect(result.candidates).toEqual([])
+      expect(result.wasExtracted).toBe(false)
+    })
+
+    it("isAvailable returns false when no API keys set", async () => {
+      const available = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CandidateExtractorService
+          return yield* svc.isAvailable()
+        }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+      )
+
+      expect(available).toBe(false)
+    })
+  })
+})
+
+describe("ExtractionResult interface", () => {
+  it("has correct structure from Noop service", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* svc.extract({
+          content: "Sample transcript",
+          sourceFile: "~/.claude/test.jsonl"
+        })
+      }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+    )
+
+    // Verify all required fields are present
+    expect(result).toHaveProperty("candidates")
+    expect(result).toHaveProperty("sourceChunk")
+    expect(result).toHaveProperty("wasExtracted")
+
+    // Verify types
+    expect(Array.isArray(result.candidates)).toBe(true)
+    expect(typeof result.sourceChunk).toBe("object")
+    expect(typeof result.wasExtracted).toBe("boolean")
+
+    // Source chunk should have required fields
+    expect(result.sourceChunk).toHaveProperty("content")
+    expect(result.sourceChunk).toHaveProperty("sourceFile")
+  })
+
+  it("metadata is optional", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* svc.extract({
+          content: "Sample transcript",
+          sourceFile: "~/.claude/test.jsonl"
+        })
+      }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+    )
+
+    // Noop doesn't include metadata
+    expect(result.metadata).toBeUndefined()
+  })
+})
+
+describe("Candidate extraction graceful degradation", () => {
+  it("extraction results can be used in downstream pipeline", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        const extraction = yield* svc.extract({
+          content: "User discussion about patterns",
+          sourceFile: "~/.claude/session.jsonl"
+        })
+
+        // Verify the result can be used in a promotion pipeline
+        // Even with noop, candidates array exists and can be iterated
+        expect(extraction.candidates).toBeDefined()
+        expect(Array.isArray(extraction.candidates)).toBe(true)
+
+        // Can check wasExtracted to decide promotion logic
+        if (!extraction.wasExtracted) {
+          // Queue for later processing when LLM becomes available
+          return { queued: true, extraction }
+        }
+
+        return { queued: false, extraction }
+      }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+    )
+
+    expect(result.queued).toBe(true)
+    expect(result.extraction.sourceChunk.sourceFile).toBe("~/.claude/session.jsonl")
+  })
+
+  it("handles null/undefined optional fields gracefully", async () => {
+    const minimalChunk = {
+      content: "Minimal content",
+      sourceFile: "~/.claude/minimal.jsonl",
+      sourceRunId: null,
+      sourceTaskId: undefined
+    }
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* svc.extract(minimalChunk)
+      }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+    )
+
+    expect(result.sourceChunk.sourceRunId).toBeNull()
+    expect(result.sourceChunk.sourceTaskId).toBeUndefined()
+  })
+})
+
+describe("Multiple extractions", () => {
+  it("can extract from multiple chunks sequentially", async () => {
+    const chunks = [
+      { content: "Chunk 1", sourceFile: "~/.claude/1.jsonl" },
+      { content: "Chunk 2", sourceFile: "~/.claude/2.jsonl" },
+      { content: "Chunk 3", sourceFile: "~/.claude/3.jsonl" }
+    ]
+
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        const result1 = yield* svc.extract(chunks[0])
+        const result2 = yield* svc.extract(chunks[1])
+        const result3 = yield* svc.extract(chunks[2])
+        return [result1, result2, result3]
+      }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+    )
+
+    expect(results).toHaveLength(3)
+    expect(results[0].sourceChunk.sourceFile).toBe("~/.claude/1.jsonl")
+    expect(results[1].sourceChunk.sourceFile).toBe("~/.claude/2.jsonl")
+    expect(results[2].sourceChunk.sourceFile).toBe("~/.claude/3.jsonl")
+  })
+
+  it("can extract from multiple chunks in parallel", async () => {
+    const chunks = [
+      { content: "Parallel 1", sourceFile: "~/.claude/p1.jsonl" },
+      { content: "Parallel 2", sourceFile: "~/.claude/p2.jsonl" },
+      { content: "Parallel 3", sourceFile: "~/.claude/p3.jsonl" }
+    ]
+
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* Effect.all(
+          chunks.map(chunk => svc.extract(chunk)),
+          { concurrency: "unbounded" }
+        )
+      }).pipe(Effect.provide(CandidateExtractorServiceNoop))
+    )
+
+    expect(results).toHaveLength(3)
+    // All should complete without interference
+    results.forEach((result) => {
+      expect(result.candidates).toEqual([])
+      expect(result.wasExtracted).toBe(false)
+    })
+  })
+})
