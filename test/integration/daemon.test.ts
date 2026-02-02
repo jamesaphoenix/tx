@@ -9,7 +9,7 @@
  * @see DD-007 for testing patterns
  */
 
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -23,8 +23,18 @@ import {
 } from "@tx/test-utils"
 import {
   CandidateExtractorService,
-  CandidateExtractorServiceNoop
+  CandidateExtractorServiceNoop,
+  writePid,
+  readPid,
+  removePid,
+  isProcessRunning
 } from "@tx/core"
+import {
+  generateLaunchdPlist,
+  generateSystemdService,
+  type LaunchdPlistOptions,
+  type SystemdServiceOptions
+} from "@tx/core/services"
 
 // =============================================================================
 // Test Fixtures
@@ -960,5 +970,425 @@ describe("Daemon End-to-End Pipeline", () => {
     })
 
     expect(candidate.status).toBe("pending")
+  })
+})
+
+// =============================================================================
+// Process Management Tests (PID file operations)
+// =============================================================================
+
+describe("Daemon Process Management - writePid", () => {
+  let tempDir: string
+  let originalCwd: string
+
+  beforeEach(() => {
+    // Save original cwd and create temp directory
+    originalCwd = process.cwd()
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tx-daemon-pid-test-"))
+    process.chdir(tempDir)
+  })
+
+  afterEach(() => {
+    // Restore original cwd and cleanup
+    process.chdir(originalCwd)
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  it("creates PID file with correct content", async () => {
+    const testPid = 12345
+
+    await Effect.runPromise(writePid(testPid))
+
+    const pidFile = path.join(tempDir, ".tx", "daemon.pid")
+    expect(fs.existsSync(pidFile)).toBe(true)
+
+    const content = fs.readFileSync(pidFile, "utf-8")
+    expect(content).toBe("12345")
+  })
+
+  it("creates .tx directory if it doesn't exist", async () => {
+    const txDir = path.join(tempDir, ".tx")
+    expect(fs.existsSync(txDir)).toBe(false)
+
+    await Effect.runPromise(writePid(99999))
+
+    expect(fs.existsSync(txDir)).toBe(true)
+  })
+
+  it("overwrites existing PID file", async () => {
+    await Effect.runPromise(writePid(11111))
+    await Effect.runPromise(writePid(22222))
+
+    const pidFile = path.join(tempDir, ".tx", "daemon.pid")
+    const content = fs.readFileSync(pidFile, "utf-8")
+    expect(content).toBe("22222")
+  })
+})
+
+describe("Daemon Process Management - readPid", () => {
+  let tempDir: string
+  let originalCwd: string
+
+  beforeEach(() => {
+    originalCwd = process.cwd()
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tx-daemon-pid-test-"))
+    process.chdir(tempDir)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  it("returns null when PID file doesn't exist", async () => {
+    const result = await Effect.runPromise(readPid())
+    expect(result).toBeNull()
+  })
+
+  it("returns PID when file exists and process is running (current process)", async () => {
+    // Use current process PID - guaranteed to be running
+    const currentPid = process.pid
+    await Effect.runPromise(writePid(currentPid))
+
+    const result = await Effect.runPromise(readPid())
+    expect(result).toBe(currentPid)
+  })
+
+  it("returns null and cleans up stale PID file for non-existent process", async () => {
+    // Use an extremely high PID that likely doesn't exist
+    const stalePid = 999999999
+    const txDir = path.join(tempDir, ".tx")
+    fs.mkdirSync(txDir, { recursive: true })
+    fs.writeFileSync(path.join(txDir, "daemon.pid"), String(stalePid))
+
+    const result = await Effect.runPromise(readPid())
+
+    // Should return null (process doesn't exist)
+    expect(result).toBeNull()
+    // PID file should be cleaned up
+    expect(fs.existsSync(path.join(txDir, "daemon.pid"))).toBe(false)
+  })
+
+  it("returns null and cleans up for invalid PID content", async () => {
+    const txDir = path.join(tempDir, ".tx")
+    fs.mkdirSync(txDir, { recursive: true })
+    fs.writeFileSync(path.join(txDir, "daemon.pid"), "not-a-number")
+
+    const result = await Effect.runPromise(readPid())
+
+    expect(result).toBeNull()
+    expect(fs.existsSync(path.join(txDir, "daemon.pid"))).toBe(false)
+  })
+
+  it("returns null and cleans up for negative PID", async () => {
+    const txDir = path.join(tempDir, ".tx")
+    fs.mkdirSync(txDir, { recursive: true })
+    fs.writeFileSync(path.join(txDir, "daemon.pid"), "-1")
+
+    const result = await Effect.runPromise(readPid())
+
+    expect(result).toBeNull()
+    expect(fs.existsSync(path.join(txDir, "daemon.pid"))).toBe(false)
+  })
+
+  it("returns null and cleans up for zero PID", async () => {
+    const txDir = path.join(tempDir, ".tx")
+    fs.mkdirSync(txDir, { recursive: true })
+    fs.writeFileSync(path.join(txDir, "daemon.pid"), "0")
+
+    const result = await Effect.runPromise(readPid())
+
+    expect(result).toBeNull()
+    expect(fs.existsSync(path.join(txDir, "daemon.pid"))).toBe(false)
+  })
+})
+
+describe("Daemon Process Management - removePid", () => {
+  let tempDir: string
+  let originalCwd: string
+
+  beforeEach(() => {
+    originalCwd = process.cwd()
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tx-daemon-pid-test-"))
+    process.chdir(tempDir)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  it("removes existing PID file", async () => {
+    await Effect.runPromise(writePid(12345))
+    const pidFile = path.join(tempDir, ".tx", "daemon.pid")
+    expect(fs.existsSync(pidFile)).toBe(true)
+
+    await Effect.runPromise(removePid())
+    expect(fs.existsSync(pidFile)).toBe(false)
+  })
+
+  it("succeeds when PID file doesn't exist", async () => {
+    // Should not throw
+    await Effect.runPromise(removePid())
+  })
+})
+
+describe("Daemon Process Management - isProcessRunning", () => {
+  it("returns true for current process", async () => {
+    const result = await Effect.runPromise(isProcessRunning(process.pid))
+    expect(result).toBe(true)
+  })
+
+  it("returns false for non-existent process", async () => {
+    // Use an extremely high PID that likely doesn't exist
+    const result = await Effect.runPromise(isProcessRunning(999999999))
+    expect(result).toBe(false)
+  })
+
+  it("returns true for PID 1 (init process, if accessible)", async () => {
+    // PID 1 is typically the init process, should exist on Unix systems
+    // On macOS/Linux this will return true (process exists) or true (EPERM - no permission but exists)
+    const result = await Effect.runPromise(isProcessRunning(1))
+    expect(result).toBe(true)
+  })
+
+  it("returns false for multiple non-existent PIDs", async () => {
+    const nonExistentPids = [999999991, 999999992, 999999993]
+    const results = await Promise.all(
+      nonExistentPids.map(pid => Effect.runPromise(isProcessRunning(pid)))
+    )
+
+    expect(results).toEqual([false, false, false])
+  })
+})
+
+// =============================================================================
+// Launchd Plist Generation Tests (macOS)
+// =============================================================================
+
+describe("Daemon Launchd Plist Generation", () => {
+  it("generates valid XML plist with required fields", () => {
+    const options: LaunchdPlistOptions = {
+      label: "com.tx.daemon",
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const plist = generateLaunchdPlist(options)
+
+    // Check XML structure
+    expect(plist).toContain('<?xml version="1.0" encoding="UTF-8"?>')
+    expect(plist).toContain('<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"')
+    expect(plist).toContain('<plist version="1.0">')
+
+    // Check required keys
+    expect(plist).toContain("<key>Label</key>")
+    expect(plist).toContain("<string>com.tx.daemon</string>")
+    expect(plist).toContain("<key>ProgramArguments</key>")
+    expect(plist).toContain("<string>/usr/local/bin/tx</string>")
+    expect(plist).toContain("<string>daemon</string>")
+    expect(plist).toContain("<string>run</string>")
+    expect(plist).toContain("<key>RunAtLoad</key>")
+    expect(plist).toContain("<true/>")
+    expect(plist).toContain("<key>KeepAlive</key>")
+  })
+
+  it("includes custom log path when specified", () => {
+    const options: LaunchdPlistOptions = {
+      label: "com.tx.daemon",
+      executablePath: "/usr/local/bin/tx",
+      logPath: "/var/log/tx-daemon.log"
+    }
+
+    const plist = generateLaunchdPlist(options)
+
+    expect(plist).toContain("<key>StandardOutPath</key>")
+    expect(plist).toContain("<string>/var/log/tx-daemon.log</string>")
+    expect(plist).toContain("<key>StandardErrorPath</key>")
+  })
+
+  it("expands ~ in log path to home directory", () => {
+    const options: LaunchdPlistOptions = {
+      label: "com.tx.daemon",
+      executablePath: "/usr/local/bin/tx",
+      logPath: "~/Library/Logs/tx-daemon.log"
+    }
+
+    const plist = generateLaunchdPlist(options)
+    const homeDir = os.homedir()
+
+    // Should expand ~ to actual home directory
+    expect(plist).not.toContain("~/Library/Logs")
+    expect(plist).toContain(`${homeDir}/Library/Logs/tx-daemon.log`)
+  })
+
+  it("uses default log path when not specified", () => {
+    const options: LaunchdPlistOptions = {
+      label: "com.tx.daemon",
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const plist = generateLaunchdPlist(options)
+    const homeDir = os.homedir()
+
+    // Default path: ~/Library/Logs/tx-daemon.log
+    expect(plist).toContain(`${homeDir}/Library/Logs/tx-daemon.log`)
+  })
+
+  it("escapes XML special characters in label", () => {
+    const options: LaunchdPlistOptions = {
+      label: "com.tx.<test>&daemon",
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const plist = generateLaunchdPlist(options)
+
+    // Check that special characters are escaped
+    expect(plist).toContain("&lt;test&gt;&amp;daemon")
+    expect(plist).not.toContain("<test>")
+  })
+
+  it("escapes XML special characters in executable path", () => {
+    const options: LaunchdPlistOptions = {
+      label: "com.tx.daemon",
+      executablePath: "/path/with spaces & special<chars>/tx"
+    }
+
+    const plist = generateLaunchdPlist(options)
+
+    expect(plist).toContain("&amp;")
+    expect(plist).toContain("&lt;chars&gt;")
+  })
+
+  it("generates parseable XML", () => {
+    const options: LaunchdPlistOptions = {
+      label: "com.tx.daemon",
+      executablePath: "/usr/local/bin/tx",
+      logPath: "~/Library/Logs/tx-daemon.log"
+    }
+
+    const plist = generateLaunchdPlist(options)
+
+    // Verify basic XML structure (starts and ends correctly)
+    expect(plist.trim().startsWith("<?xml")).toBe(true)
+    expect(plist.trim().endsWith("</plist>")).toBe(true)
+
+    // Count opening and closing dict tags
+    const dictOpenCount = (plist.match(/<dict>/g) || []).length
+    const dictCloseCount = (plist.match(/<\/dict>/g) || []).length
+    expect(dictOpenCount).toBe(dictCloseCount)
+  })
+})
+
+// =============================================================================
+// Systemd Service Generation Tests (Linux)
+// =============================================================================
+
+describe("Daemon Systemd Service Generation", () => {
+  it("generates valid systemd service file with required sections", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    // Check required sections
+    expect(service).toContain("[Unit]")
+    expect(service).toContain("[Service]")
+    expect(service).toContain("[Install]")
+  })
+
+  it("includes correct Unit section fields", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    expect(service).toContain("Description=tx Daemon - Task and memory management for AI agents")
+    expect(service).toContain("After=network.target")
+  })
+
+  it("includes correct Service section fields", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    expect(service).toContain("Type=simple")
+    expect(service).toContain("ExecStart=/usr/local/bin/tx daemon run")
+    expect(service).toContain("Restart=always")
+    expect(service).toContain("RestartSec=5")
+  })
+
+  it("includes correct Install section fields", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    expect(service).toContain("WantedBy=default.target")
+  })
+
+  it("includes User directive when user is specified", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx",
+      user: "txdaemon"
+    }
+
+    const service = generateSystemdService(options)
+
+    expect(service).toContain("User=txdaemon")
+  })
+
+  it("does not include User directive when user is not specified", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    expect(service).not.toContain("User=")
+  })
+
+  it("handles paths with spaces", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/opt/my app/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    expect(service).toContain("ExecStart=/opt/my app/bin/tx daemon run")
+  })
+
+  it("generates proper line endings", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    // Should have Unix-style line endings
+    expect(service).not.toContain("\r\n")
+
+    // Should end with newline
+    expect(service.endsWith("\n")).toBe(true)
+  })
+
+  it("places sections in correct order", () => {
+    const options: SystemdServiceOptions = {
+      executablePath: "/usr/local/bin/tx"
+    }
+
+    const service = generateSystemdService(options)
+
+    const unitIndex = service.indexOf("[Unit]")
+    const serviceIndex = service.indexOf("[Service]")
+    const installIndex = service.indexOf("[Install]")
+
+    // Verify ordering: Unit < Service < Install
+    expect(unitIndex).toBeLessThan(serviceIndex)
+    expect(serviceIndex).toBeLessThan(installIndex)
   })
 })
