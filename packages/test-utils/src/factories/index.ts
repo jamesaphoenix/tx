@@ -1,12 +1,57 @@
 /**
  * Entity factories for creating test data.
  *
+ * Provides factory classes and convenience functions for creating
+ * test instances of all core tx entities with deterministic fixture IDs.
+ *
  * @module @tx/test-utils/factories
  */
 
-// TODO: Implement in tx-3bca6416 (PRD-013: Implement entity factories)
-// export { createTestLearning, createTestLearnings, LearningFactory } from './learning.factory.js'
-// export { createTestTask, createTestTasks, TaskFactory } from './task.factory.js'
-// export { createTestEdge, createEdgeBetweenLearnings, EdgeFactory } from './edge.factory.js'
-// export { createTestAnchor, AnchorFactory } from './anchor.factory.js'
-// export { createTestCandidate, CandidateFactory } from './candidate.factory.js'
+// Task factory
+export {
+  TaskFactory,
+  createTestTask,
+  createTestTasks,
+  type CreateTaskOptions
+} from "./task.factory.js"
+
+// Learning factory
+export {
+  LearningFactory,
+  createTestLearning,
+  createTestLearnings,
+  type CreateLearningOptions
+} from "./learning.factory.js"
+
+// Edge factory
+export {
+  EdgeFactory,
+  createTestEdge,
+  createEdgeBetweenLearnings,
+  type CreateEdgeOptions
+} from "./edge.factory.js"
+
+// Anchor factory
+export {
+  AnchorFactory,
+  createTestAnchor,
+  type CreateAnchorOptions
+} from "./anchor.factory.js"
+
+// Candidate factory
+export {
+  CandidateFactory,
+  createTestCandidate,
+  type CreateCandidateOptions,
+  type LearningCandidate,
+  type CandidateConfidence,
+  type CandidateStatus
+} from "./candidate.factory.js"
+
+// Re-export fixture ID utilities for convenience
+export {
+  fixtureId,
+  namespacedFixtureId,
+  sequentialFixtureIds,
+  contentFixtureId
+} from "../fixtures/index.js"

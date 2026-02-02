@@ -33,12 +33,35 @@ export {
 } from "./database/index.js"
 export type { TestDatabase } from "./database/index.js"
 
-// Factories (to be implemented)
-// export { createTestLearning, createTestLearnings, LearningFactory } from './factories/index.js'
-// export { createTestTask, createTestTasks, TaskFactory } from './factories/index.js'
-// export { createTestEdge, createEdgeBetweenLearnings, EdgeFactory } from './factories/index.js'
-// export { createTestAnchor, AnchorFactory } from './factories/index.js'
-// export { createTestCandidate, CandidateFactory } from './factories/index.js'
+// Factories
+export {
+  // Task
+  TaskFactory,
+  createTestTask,
+  createTestTasks,
+  type CreateTaskOptions,
+  // Learning
+  LearningFactory,
+  createTestLearning,
+  createTestLearnings,
+  type CreateLearningOptions,
+  // Edge
+  EdgeFactory,
+  createTestEdge,
+  createEdgeBetweenLearnings,
+  type CreateEdgeOptions,
+  // Anchor
+  AnchorFactory,
+  createTestAnchor,
+  type CreateAnchorOptions,
+  // Candidate
+  CandidateFactory,
+  createTestCandidate,
+  type CreateCandidateOptions,
+  type LearningCandidate,
+  type CandidateConfidence,
+  type CandidateStatus
+} from "./factories/index.js"
 
 // LLM Cache (to be implemented)
 // export { cachedLLMCall, withLLMCache, hashInput, configureLLMCache } from './llm-cache/index.js'
