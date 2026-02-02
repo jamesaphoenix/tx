@@ -75,6 +75,9 @@ cleanup() {
   log "RALPH shutdown"
 }
 
+# Track current task for cleanup
+CURRENT_TASK_ID=""
+
 # Cancel current run if RALPH is terminated unexpectedly
 cancel_current_run() {
   if [ -n "${CURRENT_RUN_ID:-}" ]; then
@@ -84,6 +87,11 @@ cancel_current_run() {
   if [ -n "${CLAUDE_PID:-}" ] && kill -0 "$CLAUDE_PID" 2>/dev/null; then
     log "Terminating Claude subprocess (PID $CLAUDE_PID)"
     kill "$CLAUDE_PID" 2>/dev/null || true
+  fi
+  # Reset current task back to ready so it can be picked up again
+  if [ -n "${CURRENT_TASK_ID:-}" ]; then
+    log "Resetting task $CURRENT_TASK_ID to ready"
+    tx reset "$CURRENT_TASK_ID" 2>/dev/null || true
   fi
 }
 
@@ -164,6 +172,28 @@ cancel_orphaned_runs() {
 
   if [ $count -gt 0 ]; then
     log "Cancelled $count orphaned run(s)"
+  fi
+}
+
+# Reset orphaned active tasks from previous sessions
+reset_orphaned_tasks() {
+  local active_tasks
+  active_tasks=$(tx list --status active --json 2>/dev/null | jq -r '.[].id' 2>/dev/null || echo "")
+
+  if [ -z "$active_tasks" ]; then
+    return
+  fi
+
+  local count=0
+  while IFS= read -r task_id; do
+    [ -z "$task_id" ] && continue
+    log "Resetting orphaned active task: $task_id"
+    tx reset "$task_id" 2>/dev/null || true
+    count=$((count + 1))
+  done <<< "$active_tasks"
+
+  if [ $count -gt 0 ]; then
+    log "Reset $count orphaned active task(s)"
   fi
 }
 
@@ -469,6 +499,9 @@ log ""
 # Clean up any orphaned runs from previous crashed sessions
 cancel_orphaned_runs
 
+# Reset any orphaned active tasks from previous sessions
+reset_orphaned_tasks
+
 iteration=$(load_state)
 LAST_REVIEW=0
 
@@ -504,17 +537,75 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     continue
   fi
 
-  # Mark task as active
+  # Mark task as active and track it for signal handling
+  CURRENT_TASK_ID="$TASK_ID"
   tx update "$TASK_ID" --status active 2>/dev/null || true
 
   # Run the agent
+  AGENT_EXIT_CODE=0
   if run_agent "$AGENT" "$TASK_ID" "$TASK_TITLE"; then
-    log "Agent completed successfully"
-    on_success
+    log "Agent process exited successfully"
   else
-    log "Agent failed"
-    record_failure
+    AGENT_EXIT_CODE=$?
+    log "Agent process failed (exit code: $AGENT_EXIT_CODE)"
   fi
+
+  # Verify task actually completed - this is the key reliability check
+  TASK_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
+  log "Task status after agent: $TASK_STATUS"
+
+  if [ "$TASK_STATUS" = "done" ]; then
+    log "✓ Task completed successfully"
+    on_success
+  elif [ "$TASK_STATUS" = "blocked" ]; then
+    log "Task is blocked (likely decomposed into subtasks)"
+    on_success
+  elif [ "$AGENT_EXIT_CODE" -ne 0 ]; then
+    log "✗ Agent failed and task not done - resetting to ready"
+    tx reset "$TASK_ID" 2>/dev/null || true
+    record_failure
+  else
+    # Agent exited 0 but task not done - ask a verification agent to check
+    log "⚠ Agent exited cleanly but task not marked done (status: $TASK_STATUS)"
+    log "Running verification agent..."
+
+    VERIFY_PROMPT="Task $TASK_ID was just worked on but is still status '$TASK_STATUS'.
+
+Run \`tx show $TASK_ID\` to see the task details.
+
+Check if the task is actually complete:
+1. If the work IS done, run \`tx done $TASK_ID\` to mark it complete
+2. If more work is needed, explain what's missing and leave status as-is
+3. If it's blocked on something, run \`tx update $TASK_ID --status blocked\`
+
+Be honest - only mark done if the acceptance criteria are met."
+
+    # Quick verification check (no run tracking for this)
+    if claude --dangerously-skip-permissions --print "$VERIFY_PROMPT" 2>>"$LOG_FILE"; then
+      # Re-check status after verification
+      FINAL_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
+      log "Status after verification: $FINAL_STATUS"
+
+      if [ "$FINAL_STATUS" = "done" ]; then
+        log "✓ Verification agent marked task complete"
+        on_success
+      elif [ "$FINAL_STATUS" = "blocked" ]; then
+        log "Task marked as blocked by verification agent"
+        on_success
+      else
+        log "✗ Task still not done after verification - resetting for retry"
+        tx reset "$TASK_ID" 2>/dev/null || true
+        record_failure
+      fi
+    else
+      log "Verification agent failed - resetting task"
+      tx reset "$TASK_ID" 2>/dev/null || true
+      record_failure
+    fi
+  fi
+
+  # Clear current task tracking
+  CURRENT_TASK_ID=""
 
   # Checkpoint: commit if there are changes
   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
