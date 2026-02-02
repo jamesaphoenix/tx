@@ -4,7 +4,19 @@
  * @module @tx/test-utils/helpers
  */
 
-// TODO: Implement in tx-030847cd (PRD-013: Implement Effect test helpers)
-// export { runEffect, runEffectFail, runEffectEither, expectEffectSuccess, expectEffectFailure } from './effect.js'
+// Effect test helpers
+export {
+  runEffect,
+  runEffectFail,
+  runEffectEither,
+  expectEffectSuccess,
+  expectEffectFailure,
+  mergeLayers,
+  createTestContext,
+  type RunEffectOptions,
+  type EffectResult
+} from "./effect.js"
+
+// TODO: Implement temp file helpers
 // export { createTempDir, writeTestTypeScriptFile, createTestSourceFiles } from './temp-files.js'
 // export type { TempDir } from './temp-files.js'

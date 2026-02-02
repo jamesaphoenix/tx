@@ -67,8 +67,18 @@ export {
 // export { cachedLLMCall, withLLMCache, hashInput, configureLLMCache } from './llm-cache/index.js'
 // export { getCacheStats, clearCache, formatCacheStats } from './llm-cache/index.js'
 
-// Effect Helpers (to be implemented)
-// export { runEffect, runEffectFail, runEffectEither, expectEffectSuccess, expectEffectFailure } from './helpers/index.js'
+// Effect Helpers
+export {
+  runEffect,
+  runEffectFail,
+  runEffectEither,
+  expectEffectSuccess,
+  expectEffectFailure,
+  mergeLayers,
+  createTestContext,
+  type RunEffectOptions,
+  type EffectResult
+} from "./helpers/index.js"
 
 // Temp Files (to be implemented)
 // export { createTempDir, writeTestTypeScriptFile, createTestSourceFiles } from './helpers/index.js'

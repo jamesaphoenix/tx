@@ -2,3 +2,12 @@
 > @tx/test-utils@0.1.0 build
 > tsc -b
 
+src/helpers/effect.test.ts(265,7): error TS2345: Argument of type 'Effect<number, TestError, TestServiceTag>' is not assignable to parameter of type 'Effect<unknown, TestError, never>'.
+  Type 'TestServiceTag' is not assignable to type 'never'.
+npm error Lifecycle script `build` failed with error:
+npm error code 1
+npm error path /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
+npm error workspace @tx/test-utils@0.1.0
+npm error location /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
+npm error command failed
+npm error command sh -c tsc -b
