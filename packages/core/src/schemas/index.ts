@@ -46,3 +46,30 @@ export type {
   SyncOperation as SyncOperationType,
   AnySyncOperation as AnySyncOperationType
 } from "./sync.js"
+
+// Worker orchestration schemas
+export {
+  WorkerStatusSchema,
+  Worker,
+  ClaimStatusSchema,
+  TaskClaim,
+  OrchestratorStatusSchema,
+  OrchestratorState,
+  HeartbeatMetrics,
+  HeartbeatStatusSchema,
+  Heartbeat,
+  ReconciliationResult
+} from "./worker.js"
+
+export type {
+  WorkerStatus,
+  Worker as WorkerType,
+  ClaimStatus,
+  TaskClaim as TaskClaimType,
+  OrchestratorStatus,
+  OrchestratorState as OrchestratorStateType,
+  HeartbeatMetrics as HeartbeatMetricsType,
+  HeartbeatStatus,
+  Heartbeat as HeartbeatType,
+  ReconciliationResult as ReconciliationResultType
+} from "./worker.js"
