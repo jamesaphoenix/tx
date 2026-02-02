@@ -108,6 +108,8 @@ export {
   RetrieverServiceAuto,
   GraphExpansionService,
   GraphExpansionServiceLive,
+  AnchorVerificationService,
+  AnchorVerificationServiceLive,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
@@ -135,7 +137,10 @@ export {
   type SeedLearning,
   type ExpandedLearning,
   type GraphExpansionOptions,
-  type GraphExpansionResult
+  type GraphExpansionResult,
+  type VerificationResult,
+  type VerificationSummary,
+  type VerifyOptions
 } from "./services/index.js"
 
 // =============================================================================

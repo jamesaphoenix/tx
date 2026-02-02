@@ -94,3 +94,10 @@ export {
   type GraphExpansionOptions,
   type GraphExpansionResult
 } from "./graph-expansion.js"
+export {
+  AnchorVerificationService,
+  AnchorVerificationServiceLive,
+  type VerificationResult,
+  type VerificationSummary,
+  type VerifyOptions
+} from "./anchor-verification.js"
