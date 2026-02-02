@@ -6,3 +6,4 @@ dist/
 *.db-shm
 .turbo/
 *.tsbuildinfo
+.next/
