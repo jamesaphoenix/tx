@@ -31,13 +31,19 @@ export const isValidClaimStatus = (s: string): s is ClaimStatus => {
 
 /**
  * Convert a database row to a TaskClaim domain object.
+ * Throws if status is invalid.
  */
-export const rowToClaim = (row: ClaimRow): TaskClaim => ({
-  id: row.id,
-  taskId: row.task_id,
-  workerId: row.worker_id,
-  claimedAt: new Date(row.claimed_at),
-  leaseExpiresAt: new Date(row.lease_expires_at),
-  renewedCount: row.renewed_count,
-  status: row.status as ClaimStatus
-})
+export const rowToClaim = (row: ClaimRow): TaskClaim => {
+  if (!isValidClaimStatus(row.status)) {
+    throw new Error(`Invalid claim status: ${row.status}`)
+  }
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    workerId: row.worker_id,
+    claimedAt: new Date(row.claimed_at),
+    leaseExpiresAt: new Date(row.lease_expires_at),
+    renewedCount: row.renewed_count,
+    status: row.status
+  }
+}

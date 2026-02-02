@@ -34,15 +34,21 @@ export const isValidOrchestratorStatus = (s: string): s is OrchestratorStatus =>
 
 /**
  * Convert a database row to an OrchestratorState domain object.
+ * Throws if status is invalid.
  */
-export const rowToOrchestratorState = (row: OrchestratorStateRow): OrchestratorState => ({
-  status: row.status as OrchestratorStatus,
-  pid: row.pid,
-  startedAt: row.started_at ? new Date(row.started_at) : null,
-  lastReconcileAt: row.last_reconcile_at ? new Date(row.last_reconcile_at) : null,
-  workerPoolSize: row.worker_pool_size,
-  reconcileIntervalSeconds: row.reconcile_interval_seconds,
-  heartbeatIntervalSeconds: row.heartbeat_interval_seconds,
-  leaseDurationMinutes: row.lease_duration_minutes,
-  metadata: JSON.parse(row.metadata || "{}")
-})
+export const rowToOrchestratorState = (row: OrchestratorStateRow): OrchestratorState => {
+  if (!isValidOrchestratorStatus(row.status)) {
+    throw new Error(`Invalid orchestrator status: ${row.status}`)
+  }
+  return {
+    status: row.status,
+    pid: row.pid,
+    startedAt: row.started_at ? new Date(row.started_at) : null,
+    lastReconcileAt: row.last_reconcile_at ? new Date(row.last_reconcile_at) : null,
+    workerPoolSize: row.worker_pool_size,
+    reconcileIntervalSeconds: row.reconcile_interval_seconds,
+    heartbeatIntervalSeconds: row.heartbeat_interval_seconds,
+    leaseDurationMinutes: row.lease_duration_minutes,
+    metadata: JSON.parse(row.metadata || "{}")
+  }
+}

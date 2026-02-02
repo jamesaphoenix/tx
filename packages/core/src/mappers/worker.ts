@@ -34,16 +34,22 @@ export const isValidWorkerStatus = (s: string): s is WorkerStatus => {
 
 /**
  * Convert a database row to a Worker domain object.
+ * Throws if status is invalid.
  */
-export const rowToWorker = (row: WorkerRow): Worker => ({
-  id: row.id,
-  name: row.name,
-  hostname: row.hostname,
-  pid: row.pid,
-  status: row.status as WorkerStatus,
-  registeredAt: new Date(row.registered_at),
-  lastHeartbeatAt: new Date(row.last_heartbeat_at),
-  currentTaskId: row.current_task_id,
-  capabilities: JSON.parse(row.capabilities || "[]"),
-  metadata: JSON.parse(row.metadata || "{}")
-})
+export const rowToWorker = (row: WorkerRow): Worker => {
+  if (!isValidWorkerStatus(row.status)) {
+    throw new Error(`Invalid worker status: ${row.status}`)
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    hostname: row.hostname,
+    pid: row.pid,
+    status: row.status,
+    registeredAt: new Date(row.registered_at),
+    lastHeartbeatAt: new Date(row.last_heartbeat_at),
+    currentTaskId: row.current_task_id,
+    capabilities: JSON.parse(row.capabilities || "[]"),
+    metadata: JSON.parse(row.metadata || "{}")
+  }
+}
