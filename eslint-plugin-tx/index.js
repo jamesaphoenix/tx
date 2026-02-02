@@ -9,6 +9,8 @@ import requireEffectErrorHandling from './rules/require-effect-error-handling.js
 import noRawPromisesInServices from './rules/no-raw-promises-in-services.js';
 import requireTaskwithdepsReturn from './rules/require-taskwithdeps-return.js';
 import testCoverageThresholds from './rules/test-coverage-thresholds.js';
+import requireFactoryParity from './rules/require-factory-parity.js';
+import requireColocatedTests from './rules/require-colocated-tests.js';
 
 const plugin = {
   meta: {
@@ -22,7 +24,9 @@ const plugin = {
     'require-effect-error-handling': requireEffectErrorHandling,
     'no-raw-promises-in-services': noRawPromisesInServices,
     'require-taskwithdeps-return': requireTaskwithdepsReturn,
-    'test-coverage-thresholds': testCoverageThresholds
+    'test-coverage-thresholds': testCoverageThresholds,
+    'require-factory-parity': requireFactoryParity,
+    'require-colocated-tests': requireColocatedTests
   },
   // Flat config recommended configuration
   configs: {
@@ -58,6 +62,19 @@ const plugin = {
           externalPaths: ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
           internalPaths: ['src/repo/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
           checkObjectLiterals: true
+        }],
+        'tx/require-factory-parity': ['error', {
+          typePaths: ['packages/types/src', 'src/schemas'],
+          factoryPaths: ['test/fixtures.ts', 'packages/test-utils/src', 'packages/test-utils/src/factories'],
+          migrationPaths: ['src/services/migration-service.ts'],
+          ignoredEntities: ['TaskTree', 'TaskCursor', 'TaskFilter', 'ContextResult', 'LearningSearchResult']
+        }],
+        'tx/require-colocated-tests': ['warn', {
+          enforcePaths: ['packages/*/src', 'apps/*/src', 'src/services', 'src/repo'],
+          ignorePaths: ['node_modules', 'dist', 'build', '.turbo', 'test/integration', 'test/e2e'],
+          ignorePatterns: ['index.ts', 'index.js', '*.d.ts', '*.config.*', 'types.ts', 'constants.ts', 'schema.ts'],
+          minLinesForTest: 20,
+          allowTestsDirectory: true
         }]
       }
     }

@@ -1,0 +1,1538 @@
+# DD-015: JSONL Daemon and Promotion Pipeline - Implementation
+
+## Overview
+
+Implementation details for the telemetry daemon that watches Claude Code transcripts and promotes learning candidates to the knowledge layer.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    TelemetryDaemon                          │
+│  start | stop | status | runOnce                           │
+├─────────────────────────────────────────────────────────────┤
+│                    FileWatcherService                       │
+│  watch | onFile | getUnprocessed | markProcessed           │
+├─────────────────────────────────────────────────────────────┤
+│                   TranscriptParser                          │
+│  parse | extractConversation | findRunInfo                 │
+├─────────────────────────────────────────────────────────────┤
+│                  CandidateExtractor                         │
+│  extract | scoreConfidence | deduplicate                   │
+├─────────────────────────────────────────────────────────────┤
+│                    PromotionGate                            │
+│  autoPromote | queue | review | reject                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## TypeScript Types
+
+```typescript
+// src/schemas/telemetry.ts
+
+export interface TelemetryLogEntry {
+  id: number
+  filePath: string
+  fileHash: string
+  fileSize: number
+  processedAt: Date
+  candidateCount: number
+  errorMessage: string | null
+}
+
+export interface LearningCandidate {
+  id: number
+  content: string
+  confidence: 'high' | 'medium' | 'low'
+  category: string | null
+  sourceFile: string
+  sourceRunId: string | null
+  sourceTaskId: string | null
+  extractedAt: Date
+  status: 'pending' | 'promoted' | 'rejected' | 'merged'
+  reviewedAt: Date | null
+  reviewedBy: string | null
+  promotedLearningId: number | null
+  rejectionReason: string | null
+}
+
+export interface ProcessResult {
+  filePath: string
+  fileHash: string
+  candidatesExtracted: number
+  candidatesPromoted: number
+  duration: number
+}
+
+export interface DaemonStatus {
+  running: boolean
+  pid: number | null
+  uptime: number | null
+  filesProcessed: number
+  candidatesExtracted: number
+  candidatesPromoted: number
+  lastProcessedAt: Date | null
+  watchedPaths: string[]
+  queueSize: number
+}
+```
+
+## Service Implementations
+
+### TelemetryDaemon
+
+```typescript
+// src/services/telemetry-daemon.ts
+
+import { Context, Effect, Layer, Queue, Fiber, Schedule } from "effect"
+import * as chokidar from "chokidar"
+import * as os from "os"
+import * as fs from "fs/promises"
+import * as crypto from "crypto"
+
+export class TelemetryDaemon extends Context.Tag("TelemetryDaemon")<
+  TelemetryDaemon,
+  {
+    readonly start: () => Effect.Effect<void, DaemonError>
+    readonly stop: () => Effect.Effect<void, DaemonError>
+    readonly status: () => Effect.Effect<DaemonStatus, DatabaseError>
+    readonly runOnce: () => Effect.Effect<ProcessResult[], DatabaseError>
+  }
+>() {}
+
+const WATCH_PATHS = [`${os.homedir()}/.claude/projects/**/*.jsonl`]
+const PID_FILE = '.tx/daemon.pid'
+const DEBOUNCE_MS = 2000
+
+export const TelemetryDaemonLive = Layer.scoped(
+  TelemetryDaemon,
+  Effect.gen(function* () {
+    const telemetryRepo = yield* TelemetryRepository
+    const candidateExtractor = yield* CandidateExtractor
+    const promotionGate = yield* PromotionGate
+
+    // State
+    let watcherFiber: Fiber.RuntimeFiber<never, never> | null = null
+    let watcher: chokidar.FSWatcher | null = null
+    const startTime = Date.now()
+
+    // Processing queue
+    const processQueue = yield* Queue.unbounded<string>()
+
+    // Hash file content
+    const hashFile = (content: string): string =>
+      crypto.createHash('sha256').update(content).digest('hex')
+
+    // Process a single file
+    const processFile = (filePath: string): Effect.Effect<ProcessResult, ProcessingError> =>
+      Effect.gen(function* () {
+        const startMs = Date.now()
+
+        // Read file
+        const content = yield* Effect.tryPromise({
+          try: () => fs.readFile(filePath, 'utf-8'),
+          catch: (e) => new ProcessingError({ message: `Failed to read ${filePath}`, cause: e })
+        })
+
+        const fileHash = hashFile(content)
+        const fileSize = Buffer.byteLength(content, 'utf-8')
+
+        // Check if already processed
+        const existing = yield* telemetryRepo.findByHash(fileHash)
+        if (existing) {
+          return {
+            filePath,
+            fileHash,
+            candidatesExtracted: 0,
+            candidatesPromoted: 0,
+            duration: Date.now() - startMs
+          }
+        }
+
+        // Parse transcript
+        const transcript = yield* parseTranscript(content)
+
+        // Extract candidates
+        const candidates = yield* candidateExtractor.extract(transcript, filePath)
+
+        // Store candidates
+        for (const candidate of candidates) {
+          yield* candidateRepo.insert(candidate)
+        }
+
+        // Auto-promote high confidence
+        let promoted = 0
+        for (const candidate of candidates.filter(c => c.confidence === 'high')) {
+          const result = yield* promotionGate.autoPromote(candidate)
+          if (result.status === 'promoted') promoted++
+        }
+
+        // Log processing
+        yield* telemetryRepo.insert({
+          filePath,
+          fileHash,
+          fileSize,
+          candidateCount: candidates.length
+        })
+
+        return {
+          filePath,
+          fileHash,
+          candidatesExtracted: candidates.length,
+          candidatesPromoted: promoted,
+          duration: Date.now() - startMs
+        }
+      })
+
+    // Worker fiber that processes the queue
+    const workerFiber = Effect.gen(function* () {
+      while (true) {
+        const filePath = yield* Queue.take(processQueue)
+
+        yield* processFile(filePath).pipe(
+          Effect.tap((result) =>
+            Effect.log(`Processed ${result.filePath}: ${result.candidatesExtracted} candidates, ${result.candidatesPromoted} promoted`)
+          ),
+          Effect.catchAll((error) =>
+            Effect.log(`Error processing ${filePath}: ${error.message}`)
+          )
+        )
+
+        // Small delay between files
+        yield* Effect.sleep("500 millis")
+      }
+    })
+
+    return {
+      start: () =>
+        Effect.gen(function* () {
+          if (watcherFiber) {
+            return yield* Effect.fail(new DaemonError({ message: 'Daemon already running' }))
+          }
+
+          // Write PID file
+          yield* Effect.tryPromise({
+            try: () => fs.writeFile(PID_FILE, String(process.pid)),
+            catch: (e) => new DaemonError({ message: 'Failed to write PID file', cause: e })
+          })
+
+          // Start file watcher
+          watcher = chokidar.watch(WATCH_PATHS, {
+            ignoreInitial: false,
+            persistent: true,
+            awaitWriteFinish: {
+              stabilityThreshold: DEBOUNCE_MS,
+              pollInterval: 100
+            }
+          })
+
+          watcher.on('add', (path) => {
+            Effect.runFork(Queue.offer(processQueue, path))
+          })
+
+          watcher.on('change', (path) => {
+            Effect.runFork(Queue.offer(processQueue, path))
+          })
+
+          // Start worker
+          watcherFiber = yield* Effect.fork(workerFiber)
+
+          yield* Effect.log('Telemetry daemon started')
+        }),
+
+      stop: () =>
+        Effect.gen(function* () {
+          if (watcherFiber) {
+            yield* Fiber.interrupt(watcherFiber)
+            watcherFiber = null
+          }
+
+          if (watcher) {
+            yield* Effect.tryPromise({
+              try: () => watcher!.close(),
+              catch: () => new DaemonError({ message: 'Failed to close watcher' })
+            })
+            watcher = null
+          }
+
+          // Remove PID file
+          yield* Effect.tryPromise({
+            try: () => fs.unlink(PID_FILE),
+            catch: () => new DaemonError({ message: 'Failed to remove PID file' })
+          }).pipe(Effect.ignore)
+
+          yield* Effect.log('Telemetry daemon stopped')
+        }),
+
+      status: () =>
+        Effect.gen(function* () {
+          const stats = yield* telemetryRepo.getStats()
+          const queueSize = yield* Queue.size(processQueue)
+
+          return {
+            running: watcherFiber !== null,
+            pid: process.pid,
+            uptime: watcherFiber ? Date.now() - startTime : null,
+            filesProcessed: stats.filesProcessed,
+            candidatesExtracted: stats.candidatesExtracted,
+            candidatesPromoted: stats.candidatesPromoted,
+            lastProcessedAt: stats.lastProcessedAt,
+            watchedPaths: WATCH_PATHS,
+            queueSize
+          }
+        }),
+
+      runOnce: () =>
+        Effect.gen(function* () {
+          // Get unprocessed files
+          const files = yield* Effect.tryPromise({
+            try: async () => {
+              const glob = await import('glob')
+              return glob.glob(WATCH_PATHS[0])
+            },
+            catch: (e) => new DatabaseError({ cause: e })
+          })
+
+          const results: ProcessResult[] = []
+
+          for (const file of files) {
+            const result = yield* processFile(file).pipe(
+              Effect.catchAll(() => Effect.succeed(null))
+            )
+            if (result) results.push(result)
+          }
+
+          return results
+        })
+    }
+  })
+)
+```
+
+### TranscriptParser
+
+```typescript
+// src/services/transcript-parser.ts
+
+export interface ParsedTranscript {
+  sessionId: string
+  projectPath: string
+  messages: TranscriptMessage[]
+  toolCalls: ToolCall[]
+  runInfo: RunInfo | null
+  taskInfo: TaskInfo | null
+}
+
+interface TranscriptMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp?: string
+}
+
+interface ToolCall {
+  tool: string
+  input: Record<string, unknown>
+  output: string
+  error?: string
+}
+
+interface RunInfo {
+  runId: string
+  startedAt: string
+  endedAt?: string
+  outcome?: string
+}
+
+export const parseTranscript = (content: string): Effect.Effect<ParsedTranscript, ParseError> =>
+  Effect.try({
+    try: () => {
+      const lines = content.trim().split('\n')
+      const messages: TranscriptMessage[] = []
+      const toolCalls: ToolCall[] = []
+      let sessionId = ''
+      let projectPath = ''
+      let runInfo: RunInfo | null = null
+
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line)
+
+          if (entry.type === 'user' || entry.type === 'assistant') {
+            messages.push({
+              role: entry.type,
+              content: entry.content?.text || entry.content || '',
+              timestamp: entry.timestamp
+            })
+          }
+
+          if (entry.type === 'tool_call') {
+            toolCalls.push({
+              tool: entry.tool,
+              input: entry.input,
+              output: entry.output || '',
+              error: entry.error
+            })
+          }
+
+          if (entry.type === 'session_start') {
+            sessionId = entry.sessionId || ''
+            projectPath = entry.projectPath || ''
+          }
+
+          // Look for run metadata
+          if (entry.runId) {
+            runInfo = {
+              runId: entry.runId,
+              startedAt: entry.startedAt || entry.timestamp
+            }
+          }
+        } catch {
+          // Skip malformed lines
+        }
+      }
+
+      return {
+        sessionId,
+        projectPath,
+        messages,
+        toolCalls,
+        runInfo,
+        taskInfo: null
+      }
+    },
+    catch: (e) => new ParseError({ message: 'Failed to parse transcript', cause: e })
+  })
+```
+
+### CandidateExtractor
+
+```typescript
+// src/services/candidate-extractor.ts
+
+import { Context, Effect, Layer } from "effect"
+import Anthropic from "@anthropic-ai/sdk"
+
+// Pluggable extractor interface. Default uses Agent SDK.
+export interface CandidateExtractor {
+  extract(chunk: TranscriptChunk): Effect.Effect<LearningCandidate[], ExtractionError>
+}
+
+export class CandidateExtractorService extends Context.Tag("CandidateExtractorService")<
+  CandidateExtractorService,
+  CandidateExtractor
+>() {}
+
+const EXTRACTION_PROMPT = `Analyze this Claude Code session transcript and extract actionable learnings.
+
+<transcript>
+{transcript}
+</transcript>
+
+Extract learnings that meet these criteria:
+1. **Technical decisions**: Describes a choice and its rationale
+2. **Gotchas/pitfalls**: Something to avoid next time
+3. **Patterns that worked**: Reusable approaches
+4. **Future improvements**: Things to do differently
+
+For each learning, provide:
+- content: The learning text (1-3 sentences, actionable)
+- confidence: "high" (certain, tested), "medium" (likely useful), "low" (speculative)
+- category: One of [architecture, testing, performance, security, debugging, tooling, patterns]
+
+Return JSON array:
+[
+  {
+    "content": "...",
+    "confidence": "high",
+    "category": "patterns"
+  }
+]
+
+Rules:
+- Skip generic advice (things any developer knows)
+- Skip context-specific details that won't generalize
+- Prefer actionable "do X when Y" format
+- Maximum 5 learnings per transcript`
+
+export const CandidateExtractorLive = Layer.effect(
+  CandidateExtractor,
+  Effect.gen(function* () {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    const client = apiKey ? new Anthropic({ apiKey }) : null
+
+    return {
+      extract: (transcript, sourcePath) =>
+        Effect.gen(function* () {
+          if (!client) {
+            // Graceful degradation: no extraction without API key
+            yield* Effect.log('ANTHROPIC_API_KEY not set, skipping extraction')
+            return []
+          }
+
+          // Build transcript summary for LLM
+          const transcriptText = transcript.messages
+            .slice(-50)  // Last 50 messages
+            .map(m => `${m.role}: ${m.content.slice(0, 500)}`)
+            .join('\n\n')
+
+          const prompt = EXTRACTION_PROMPT.replace('{transcript}', transcriptText)
+
+          // Call LLM
+          const response = yield* Effect.tryPromise({
+            try: () => client.messages.create({
+              model: 'claude-3-haiku-20240307',
+              max_tokens: 1024,
+              messages: [{ role: 'user', content: prompt }]
+            }),
+            catch: (e) => new ExtractionError({ message: 'LLM call failed', cause: e })
+          })
+
+          // Parse response
+          const text = response.content[0]?.type === 'text'
+            ? response.content[0].text
+            : ''
+
+          const jsonMatch = text.match(/\[[\s\S]*\]/)
+          if (!jsonMatch) {
+            return []
+          }
+
+          const parsed = JSON.parse(jsonMatch[0]) as Array<{
+            content: string
+            confidence: string
+            category: string
+          }>
+
+          // Convert to candidates
+          return parsed.map(p => ({
+            content: p.content,
+            confidence: p.confidence as 'high' | 'medium' | 'low',
+            category: p.category,
+            sourceFile: sourcePath,
+            sourceRunId: transcript.runInfo?.runId || null,
+            sourceTaskId: transcript.taskInfo?.taskId || null,
+            status: 'pending' as const,
+            extractedAt: new Date(),
+            reviewedAt: null,
+            reviewedBy: null,
+            promotedLearningId: null,
+            rejectionReason: null
+          }))
+        })
+    }
+  })
+)
+
+// Default extractor using Agent SDK (Claude)
+// Requires ANTHROPIC_API_KEY - typically available with Claude Code subscription
+export const AgentSdkExtractorLive = Layer.effect(
+  CandidateExtractorService,
+  Effect.gen(function* () {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    const client = apiKey ? new Anthropic({ apiKey }) : null
+
+    return {
+      extract: (chunk) =>
+        Effect.gen(function* () {
+          if (!client) {
+            yield* Effect.log('ANTHROPIC_API_KEY not set, skipping extraction')
+            return []
+          }
+          // ... extraction logic using Claude
+        })
+    }
+  })
+)
+
+// Noop version for testing or when no LLM available
+export const CandidateExtractorNoop = Layer.succeed(
+  CandidateExtractorService,
+  { extract: () => Effect.succeed([]) }
+)
+
+// OpenAI fallback for users without Anthropic API
+export const OpenAIExtractorLive = Layer.effect(
+  CandidateExtractorService,
+  Effect.gen(function* () {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      return { extract: () => Effect.succeed([]) }
+    }
+    // ... extraction logic using GPT-4
+  })
+)
+
+// User can swap in custom extractor
+// const tx = createTx({ extractor: myCustomExtractor })
+
+/**
+ * LLM Provider Resolution Order:
+ * 1. User-provided custom extractor (highest priority)
+ * 2. ANTHROPIC_API_KEY -> AgentSdkExtractor (Claude)
+ * 3. OPENAI_API_KEY -> OpenAIExtractor (GPT-4)
+ * 4. No API key -> Noop (queue for manual review, no auto-extraction)
+ *
+ * Note: Claude Code subscribers typically have ANTHROPIC_API_KEY available.
+ * The daemon still works without any LLM - it just won't auto-extract candidates.
+ * Users can manually review transcripts and add learnings via `tx learning:add`.
+ */
+export const resolveExtractor = (): Layer.Layer<CandidateExtractorService> => {
+  if (process.env.TX_EXTRACTOR === 'none') return CandidateExtractorNoop
+  if (process.env.ANTHROPIC_API_KEY) return AgentSdkExtractorLive
+  if (process.env.OPENAI_API_KEY) return OpenAIExtractorLive
+  return CandidateExtractorNoop
+}
+```
+
+### PromotionGate
+
+```typescript
+// src/services/promotion-gate.ts
+
+import { Context, Effect, Layer } from "effect"
+
+export class PromotionGate extends Context.Tag("PromotionGate")<
+  PromotionGate,
+  {
+    readonly autoPromote: (candidate: LearningCandidate) =>
+      Effect.Effect<PromotionResult, DatabaseError>
+    readonly manualPromote: (candidateId: number) =>
+      Effect.Effect<PromotionResult, CandidateNotFoundError | DatabaseError>
+    readonly reject: (candidateId: number, reason: string) =>
+      Effect.Effect<void, CandidateNotFoundError | DatabaseError>
+  }
+>() {}
+
+interface PromotionResult {
+  status: 'promoted' | 'merged' | 'skipped'
+  learningId?: number
+  existingId?: number
+  reason?: string
+}
+
+export const PromotionGateLive = Layer.effect(
+  PromotionGate,
+  Effect.gen(function* () {
+    const candidateRepo = yield* CandidateRepository
+    const learningService = yield* LearningService
+    const graphService = yield* GraphService
+
+    const promoteCandidate = (candidate: LearningCandidate, reviewedBy: string) =>
+      Effect.gen(function* () {
+        // Check for duplicates via semantic search
+        const similar = yield* learningService.search({
+          query: candidate.content,
+          limit: 5,
+          minScore: 0.85
+        })
+
+        if (similar.length > 0) {
+          // Merge with existing learning
+          yield* candidateRepo.update(candidate.id, {
+            status: 'merged',
+            promotedLearningId: similar[0].id,
+            reviewedAt: new Date(),
+            reviewedBy
+          })
+
+          return {
+            status: 'merged' as const,
+            existingId: similar[0].id
+          }
+        }
+
+        // Create new learning
+        const learning = yield* learningService.create({
+          content: candidate.content,
+          sourceType: 'run',
+          sourceRef: candidate.sourceRunId,
+          category: candidate.category
+        })
+
+        // Create provenance edge
+        if (candidate.sourceRunId) {
+          yield* graphService.addEdge({
+            edgeType: 'DERIVED_FROM',
+            sourceType: 'learning',
+            sourceId: String(learning.id),
+            targetType: 'run',
+            targetId: candidate.sourceRunId,
+            weight: 1.0
+          })
+        }
+
+        // Update candidate
+        yield* candidateRepo.update(candidate.id, {
+          status: 'promoted',
+          promotedLearningId: learning.id,
+          reviewedAt: new Date(),
+          reviewedBy
+        })
+
+        return {
+          status: 'promoted' as const,
+          learningId: learning.id
+        }
+      })
+
+    return {
+      autoPromote: (candidate) =>
+        Effect.gen(function* () {
+          // Only auto-promote high confidence
+          if (candidate.confidence !== 'high') {
+            return { status: 'skipped' as const, reason: 'not high confidence' }
+          }
+
+          return yield* promoteCandidate(candidate, 'auto')
+        }),
+
+      manualPromote: (candidateId) =>
+        Effect.gen(function* () {
+          const candidate = yield* candidateRepo.findById(candidateId)
+          if (!candidate) {
+            return yield* Effect.fail(new CandidateNotFoundError({ id: candidateId }))
+          }
+
+          return yield* promoteCandidate(candidate, 'manual')
+        }),
+
+      reject: (candidateId, reason) =>
+        Effect.gen(function* () {
+          const candidate = yield* candidateRepo.findById(candidateId)
+          if (!candidate) {
+            return yield* Effect.fail(new CandidateNotFoundError({ id: candidateId }))
+          }
+
+          yield* candidateRepo.update(candidateId, {
+            status: 'rejected',
+            rejectionReason: reason,
+            reviewedAt: new Date(),
+            reviewedBy: 'manual'
+          })
+        })
+    }
+  })
+)
+```
+
+## CLI Commands
+
+```typescript
+// apps/cli/src/commands/daemon.ts
+
+export const daemon = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const subcommand = pos[0]
+
+    if (subcommand === 'start') {
+      const daemon = yield* TelemetryDaemon
+      yield* daemon.start()
+      console.log('Telemetry daemon started')
+    }
+
+    else if (subcommand === 'stop') {
+      const daemon = yield* TelemetryDaemon
+      yield* daemon.stop()
+      console.log('Telemetry daemon stopped')
+    }
+
+    else if (subcommand === 'status') {
+      const daemon = yield* TelemetryDaemon
+      const status = yield* daemon.status()
+
+      if (flag(flags, 'json')) {
+        console.log(JSON.stringify(status, null, 2))
+      } else {
+        console.log(`Daemon Status:`)
+        console.log(`  Running: ${status.running}`)
+        console.log(`  PID: ${status.pid}`)
+        console.log(`  Uptime: ${status.uptime ? Math.round(status.uptime / 1000) + 's' : '-'}`)
+        console.log(`  Files Processed: ${status.filesProcessed}`)
+        console.log(`  Candidates Extracted: ${status.candidatesExtracted}`)
+        console.log(`  Candidates Promoted: ${status.candidatesPromoted}`)
+        console.log(`  Queue Size: ${status.queueSize}`)
+      }
+    }
+
+    else if (subcommand === 'process') {
+      const daemon = yield* TelemetryDaemon
+      const results = yield* daemon.runOnce()
+
+      console.log(`Processed ${results.length} files`)
+      for (const r of results) {
+        console.log(`  ${r.filePath}: ${r.candidatesExtracted} candidates, ${r.candidatesPromoted} promoted`)
+      }
+    }
+
+    else if (subcommand === 'review') {
+      const candidateRepo = yield* CandidateRepository
+      const confidence = opt(flags, 'confidence')?.split(',') || ['medium', 'low']
+
+      const candidates = yield* candidateRepo.findByStatus('pending', confidence)
+
+      console.log(`Pending candidates (${candidates.length}):`)
+      for (const c of candidates) {
+        console.log(`  #${c.id} [${c.confidence}] ${c.content.slice(0, 60)}...`)
+      }
+    }
+
+    else if (subcommand === 'promote') {
+      const id = parseInt(pos[1] || '', 10)
+      if (!id) {
+        console.error('Usage: tx daemon promote <candidate-id>')
+        process.exit(1)
+      }
+
+      const promotionGate = yield* PromotionGate
+      const result = yield* promotionGate.manualPromote(id)
+
+      console.log(`Promoted candidate #${id} → Learning #${result.learningId}`)
+    }
+
+    else if (subcommand === 'reject') {
+      const id = parseInt(pos[1] || '', 10)
+      const reason = opt(flags, 'reason') || 'No reason provided'
+
+      if (!id) {
+        console.error('Usage: tx daemon reject <candidate-id> --reason "..."')
+        process.exit(1)
+      }
+
+      const promotionGate = yield* PromotionGate
+      yield* promotionGate.reject(id, reason)
+
+      console.log(`Rejected candidate #${id}`)
+    }
+  })
+```
+
+## Testing Strategy
+
+### Unit Tests
+
+```typescript
+describe('TranscriptParser', () => {
+  it('should parse JSONL transcript', async () => {
+    const content = `
+{"type":"session_start","sessionId":"abc123","projectPath":"/project"}
+{"type":"user","content":"Fix the bug"}
+{"type":"assistant","content":"I'll analyze the code..."}
+{"type":"tool_call","tool":"Read","input":{"path":"src/foo.ts"},"output":"..."}
+`
+    const result = await runEffect(parseTranscript(content))
+
+    expect(result.sessionId).toBe('abc123')
+    expect(result.messages.length).toBe(2)
+    expect(result.toolCalls.length).toBe(1)
+  })
+})
+
+describe('PromotionGate', () => {
+  it('should auto-promote high confidence candidates', async () => {
+    const candidate = createTestCandidate({ confidence: 'high' })
+    const result = await runEffect(promotionGate.autoPromote(candidate))
+
+    expect(result.status).toBe('promoted')
+    expect(result.learningId).toBeDefined()
+  })
+
+  it('should skip low confidence candidates', async () => {
+    const candidate = createTestCandidate({ confidence: 'low' })
+    const result = await runEffect(promotionGate.autoPromote(candidate))
+
+    expect(result.status).toBe('skipped')
+  })
+})
+```
+
+### Integration Tests
+
+```typescript
+// test/integration/daemon.test.ts
+
+import {
+  createTestDatabase,
+  createTestLearning,
+  createTestCandidate,
+  runEffect,
+  createTempDir,
+  cachedLLMCall,
+  createMockAnthropic,
+  createMockAnthropicForExtraction
+} from '@tx/test-utils'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+
+describe('TelemetryDaemon Integration', () => {
+  let db: TestDatabase
+  let tempDir: TempDir
+
+  beforeEach(async () => {
+    db = await createTestDatabase()
+    tempDir = await createTempDir('tx-daemon-test-')
+  })
+
+  afterEach(async () => {
+    await db.close()
+    await fs.rm(tempDir, { recursive: true })
+  })
+
+  describe('File Processing', () => {
+    it('should process JSONL file and extract candidates', async () => {
+      const transcript = generateTestTranscript({
+        messages: [
+          { role: 'user', content: 'Fix the authentication bug' },
+          { role: 'assistant', content: 'I found that we should always validate JWT expiry before processing. Let me fix that.' },
+          { role: 'user', content: 'Great, that worked!' }
+        ]
+      })
+
+      const filePath = path.join(tempDir, 'session.jsonl')
+      await fs.writeFile(filePath, transcript)
+
+      const results = await runEffect(
+        daemon.processFile(filePath),
+        db
+      )
+
+      expect(results.candidatesExtracted).toBeGreaterThan(0)
+      expect(results.fileHash).toBeDefined()
+    })
+
+    it('should skip already processed files (hash dedup)', async () => {
+      const transcript = generateTestTranscript()
+      const filePath = path.join(tempDir, 'session.jsonl')
+      await fs.writeFile(filePath, transcript)
+
+      // Process first time
+      const result1 = await runEffect(daemon.processFile(filePath), db)
+      expect(result1.candidatesExtracted).toBeGreaterThan(0)
+
+      // Process again - should skip
+      const result2 = await runEffect(daemon.processFile(filePath), db)
+      expect(result2.candidatesExtracted).toBe(0)
+    })
+
+    it('should handle malformed JSONL gracefully', async () => {
+      const malformed = `{"type":"user","content":"Hello"}
+not valid json
+{"type":"assistant","content":"Hi"}`
+
+      const filePath = path.join(tempDir, 'malformed.jsonl')
+      await fs.writeFile(filePath, malformed)
+
+      // Should not throw, should extract what it can
+      const results = await runEffect(daemon.processFile(filePath), db)
+      expect(results.filePath).toBe(filePath)
+    })
+
+    it('should track file position for incremental processing', async () => {
+      const transcript = generateTestTranscript({ messageCount: 100 })
+      const filePath = path.join(tempDir, 'large.jsonl')
+      await fs.writeFile(filePath, transcript)
+
+      // Process first chunk
+      await runEffect(daemon.processFile(filePath), db)
+
+      // Check progress is tracked
+      const progress = await db.query(
+        'SELECT * FROM telemetry_progress WHERE file_path = ?',
+        [filePath]
+      )
+      expect(progress[0].last_byte_offset).toBeGreaterThan(0)
+
+      // Append more content
+      await fs.appendFile(filePath, generateTestTranscript({ messageCount: 50 }))
+
+      // Process again - should only process new content
+      const result = await runEffect(daemon.processFile(filePath), db)
+      expect(result.candidatesExtracted).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  describe('Transcript Parsing', () => {
+    it('should parse session metadata', async () => {
+      const transcript = `{"type":"session_start","sessionId":"abc123","projectPath":"/home/user/project"}
+{"type":"user","content":"Hello"}
+{"type":"assistant","content":"Hi there"}`
+
+      const parsed = await runEffect(parseTranscript(transcript))
+
+      expect(parsed.sessionId).toBe('abc123')
+      expect(parsed.projectPath).toBe('/home/user/project')
+      expect(parsed.messages).toHaveLength(2)
+    })
+
+    it('should extract tool calls', async () => {
+      const transcript = `{"type":"user","content":"Read the file"}
+{"type":"tool_call","tool":"Read","input":{"path":"src/foo.ts"},"output":"function foo() {}"}
+{"type":"assistant","content":"I see the function"}`
+
+      const parsed = await runEffect(parseTranscript(transcript))
+
+      expect(parsed.toolCalls).toHaveLength(1)
+      expect(parsed.toolCalls[0].tool).toBe('Read')
+      expect(parsed.toolCalls[0].input.path).toBe('src/foo.ts')
+    })
+
+    it('should handle large transcripts by chunking', async () => {
+      const lines: string[] = []
+      for (let i = 0; i < 1000; i++) {
+        lines.push(JSON.stringify({
+          type: i % 2 === 0 ? 'user' : 'assistant',
+          content: `Message ${i} with some content that makes it longer`
+        }))
+      }
+
+      const chunks = chunkTranscript(lines)
+
+      // Should create multiple chunks
+      expect(chunks.length).toBeGreaterThan(1)
+
+      // Each chunk should be within limits
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(500)
+        const tokens = estimateTokens(chunk.join('\n'))
+        expect(tokens).toBeLessThanOrEqual(8500) // Some buffer
+      }
+    })
+  })
+
+  describe('Candidate Extraction', () => {
+    it('should extract high-confidence learnings', async () => {
+      const transcript = {
+        messages: [
+          { role: 'user', content: 'The tests are failing' },
+          { role: 'assistant', content: 'I found the issue. We need to always wrap database operations in transactions to ensure atomicity. This prevents partial updates.' },
+          { role: 'user', content: 'That fixed it!' }
+        ],
+        toolCalls: [],
+        sessionId: 'test',
+        projectPath: '/test'
+      }
+
+      const candidates = await runEffect(
+        candidateExtractor.extract(transcript, '/tmp/test.jsonl'),
+        db
+      )
+
+      // Should extract the transaction learning
+      const transactionLearning = candidates.find(c =>
+        c.content.toLowerCase().includes('transaction')
+      )
+      expect(transactionLearning).toBeDefined()
+      expect(transactionLearning?.confidence).toBe('high') // Tested and confirmed
+    })
+
+    it('should assign appropriate confidence levels', async () => {
+      const transcript = {
+        messages: [
+          { role: 'assistant', content: 'I think we might want to consider using Redis for caching, but I am not sure if it will help in this case.' }
+        ],
+        toolCalls: [],
+        sessionId: 'test',
+        projectPath: '/test'
+      }
+
+      const candidates = await runEffect(
+        candidateExtractor.extract(transcript, '/tmp/test.jsonl'),
+        db
+      )
+
+      // Speculative suggestions should be low/medium confidence
+      if (candidates.length > 0) {
+        expect(['low', 'medium']).toContain(candidates[0].confidence)
+      }
+    })
+
+    it('should skip generic advice', async () => {
+      const transcript = {
+        messages: [
+          { role: 'assistant', content: 'You should write tests for your code. Tests are important.' }
+        ],
+        toolCalls: [],
+        sessionId: 'test',
+        projectPath: '/test'
+      }
+
+      const candidates = await runEffect(
+        candidateExtractor.extract(transcript, '/tmp/test.jsonl'),
+        db
+      )
+
+      // Generic advice should not be extracted
+      expect(candidates).toHaveLength(0)
+    })
+
+    it('should gracefully handle missing API key', async () => {
+      const originalKey = process.env.ANTHROPIC_API_KEY
+      delete process.env.ANTHROPIC_API_KEY
+
+      const candidates = await runEffect(
+        candidateExtractor.extract({ messages: [], toolCalls: [], sessionId: '', projectPath: '' }, '/tmp/test.jsonl'),
+        db
+      )
+
+      expect(candidates).toHaveLength(0) // No extraction, but no error
+
+      process.env.ANTHROPIC_API_KEY = originalKey
+    })
+  })
+
+  describe('Promotion Gate', () => {
+    it('should auto-promote high-confidence candidates', async () => {
+      const candidate = await createTestCandidate(db, {
+        content: 'Always validate JWT expiry before processing',
+        confidence: 'high'
+      })
+
+      const result = await runEffect(promotionGate.autoPromote(candidate), db)
+
+      expect(result.status).toBe('promoted')
+      expect(result.learningId).toBeDefined()
+
+      // Verify learning was created
+      const learning = await runEffect(
+        learningService.findById(result.learningId!),
+        db
+      )
+      expect(learning?.content).toContain('JWT')
+    })
+
+    it('should skip low-confidence candidates', async () => {
+      const candidate = await createTestCandidate(db, {
+        content: 'Maybe use Redis',
+        confidence: 'low'
+      })
+
+      const result = await runEffect(promotionGate.autoPromote(candidate), db)
+
+      expect(result.status).toBe('skipped')
+      expect(result.reason).toBe('not high confidence')
+    })
+
+    it('should merge with existing similar learnings', async () => {
+      // Create existing learning
+      const existing = await createTestLearning(db, 'Always validate JWT expiry')
+
+      // Create similar candidate
+      const candidate = await createTestCandidate(db, {
+        content: 'Validate JWT expiry before processing tokens',
+        confidence: 'high'
+      })
+
+      const result = await runEffect(promotionGate.autoPromote(candidate), db)
+
+      expect(result.status).toBe('merged')
+      expect(result.existingId).toBe(existing.id)
+    })
+
+    it('should create provenance edge on promotion', async () => {
+      const candidate = await createTestCandidate(db, {
+        content: 'Use connection pooling for database',
+        confidence: 'high',
+        sourceRunId: 'run-123'
+      })
+
+      const result = await runEffect(promotionGate.autoPromote(candidate), db)
+
+      // Check provenance edge was created
+      const edges = await runEffect(
+        graphService.getEdges(String(result.learningId), 'learning'),
+        db
+      )
+
+      const derivedEdge = edges.find(e =>
+        e.edgeType === 'DERIVED_FROM' && e.targetId === 'run-123'
+      )
+      expect(derivedEdge).toBeDefined()
+    })
+
+    it('should allow manual promotion of any confidence', async () => {
+      const candidate = await createTestCandidate(db, {
+        content: 'Interesting edge case handling',
+        confidence: 'low'
+      })
+
+      const result = await runEffect(
+        promotionGate.manualPromote(candidate.id),
+        db
+      )
+
+      expect(result.status).toBe('promoted')
+    })
+
+    it('should record rejection reason', async () => {
+      const candidate = await createTestCandidate(db, {
+        content: 'Too specific to this project',
+        confidence: 'medium'
+      })
+
+      await runEffect(
+        promotionGate.reject(candidate.id, 'Too project-specific'),
+        db
+      )
+
+      const updated = await runEffect(candidateRepo.findById(candidate.id), db)
+      expect(updated?.status).toBe('rejected')
+      expect(updated?.rejectionReason).toBe('Too project-specific')
+    })
+  })
+
+  describe('Project Tracking', () => {
+    it('should only watch tracked projects', async () => {
+      // Track a project
+      await runEffect(
+        daemon.trackProject('/home/user/my-app', 'claude'),
+        db
+      )
+
+      const tracked = await runEffect(daemon.listTrackedProjects(), db)
+      expect(tracked).toHaveLength(1)
+      expect(tracked[0].projectPath).toBe('/home/user/my-app')
+    })
+
+    it('should support multiple source types', async () => {
+      await runEffect(daemon.trackProject('/home/user/app1', 'claude'), db)
+      await runEffect(daemon.trackProject('/home/user/app2', 'cursor'), db)
+
+      const tracked = await runEffect(daemon.listTrackedProjects(), db)
+
+      expect(tracked.find(t => t.sourceType === 'claude')).toBeDefined()
+      expect(tracked.find(t => t.sourceType === 'cursor')).toBeDefined()
+    })
+
+    it('should untrack projects', async () => {
+      await runEffect(daemon.trackProject('/home/user/temp', 'claude'), db)
+      await runEffect(daemon.untrackProject('/home/user/temp'), db)
+
+      const tracked = await runEffect(daemon.listTrackedProjects(), db)
+      expect(tracked).toHaveLength(0)
+    })
+  })
+
+  describe('Candidate Expiration', () => {
+    it('should expire old pending candidates', async () => {
+      // Create old candidate (31 days ago)
+      const oldDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
+      const candidate = await createTestCandidate(db, {
+        content: 'Old learning',
+        confidence: 'medium',
+        extractedAt: oldDate
+      })
+
+      await runEffect(expireOldCandidates(), db)
+
+      const updated = await runEffect(candidateRepo.findById(candidate.id), db)
+      expect(updated?.status).toBe('rejected')
+      expect(updated?.rejectionReason).toBe('expired')
+    })
+
+    it('should not expire promoted candidates', async () => {
+      const oldDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
+      const candidate = await createTestCandidate(db, {
+        content: 'Promoted learning',
+        confidence: 'high',
+        status: 'promoted',
+        extractedAt: oldDate
+      })
+
+      await runEffect(expireOldCandidates(), db)
+
+      const updated = await runEffect(candidateRepo.findById(candidate.id), db)
+      expect(updated?.status).toBe('promoted') // Unchanged
+    })
+  })
+
+  describe('Daemon Lifecycle', () => {
+    it('should report status correctly', async () => {
+      const status = await runEffect(daemon.status(), db)
+
+      expect(status.running).toBe(false)
+      expect(status.watchedPaths).toBeDefined()
+      expect(status.filesProcessed).toBeGreaterThanOrEqual(0)
+    })
+
+    it('should handle start/stop cycle', async () => {
+      await runEffect(daemon.start(), db)
+
+      let status = await runEffect(daemon.status(), db)
+      expect(status.running).toBe(true)
+      expect(status.pid).toBe(process.pid)
+
+      await runEffect(daemon.stop(), db)
+
+      status = await runEffect(daemon.status(), db)
+      expect(status.running).toBe(false)
+    })
+  })
+})
+
+// Test helpers
+function generateTestTranscript(opts: { messageCount?: number; messages?: any[] } = {}): string {
+  const lines: string[] = [
+    JSON.stringify({ type: 'session_start', sessionId: 'test-session', projectPath: '/test' })
+  ]
+
+  const messages = opts.messages || Array.from({ length: opts.messageCount || 10 }, (_, i) => ({
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    content: `Test message ${i}`
+  }))
+
+  for (const msg of messages) {
+    lines.push(JSON.stringify({ type: msg.role, content: msg.content }))
+  }
+
+  return lines.join('\n')
+}
+```
+
+## File Position Tracking
+
+Track byte offset to avoid re-processing already-seen content:
+
+```sql
+CREATE TABLE telemetry_progress (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'claude',  -- 'claude', 'cursor', 'windsurf', etc.
+  last_line_processed INTEGER DEFAULT 0,
+  last_byte_offset INTEGER DEFAULT 0,
+  file_size INTEGER,
+  last_processed_at TEXT,
+  checksum TEXT,
+  UNIQUE(project_id, file_path)
+);
+```
+
+## Opt-In Project Tracking
+
+Daemon only watches explicitly tracked projects. No default watching of all projects.
+
+```sql
+CREATE TABLE daemon_tracked_projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_path TEXT NOT NULL UNIQUE,
+  project_id TEXT,
+  source_type TEXT DEFAULT 'claude',
+  added_at TEXT DEFAULT (datetime('now')),
+  enabled BOOLEAN DEFAULT 1
+);
+```
+
+CLI:
+```bash
+tx daemon track ~/projects/my-app
+tx daemon track ~/projects/my-app --source cursor
+tx daemon list
+tx daemon untrack ~/projects/my-app
+```
+
+## Large Transcript Handling
+
+Chunk transcripts with limits. Process 400-500 lines at a time (~8K tokens max).
+
+```typescript
+const CHUNK_SIZE = 450  // lines
+const MAX_TOKENS = 8000
+
+// Simple tokenizer heuristic (no tiktoken dependency)
+const estimateTokens = (text: string): number => Math.ceil(text.length / 4)
+
+const chunkTranscript = (lines: string[]): string[][] => {
+  const chunks: string[][] = []
+  let currentChunk: string[] = []
+  let currentTokens = 0
+
+  for (const line of lines) {
+    const lineTokens = estimateTokens(line)
+    if (currentTokens + lineTokens > MAX_TOKENS || currentChunk.length >= CHUNK_SIZE) {
+      if (currentChunk.length > 0) chunks.push(currentChunk)
+      currentChunk = []
+      currentTokens = 0
+    }
+    currentChunk.push(line)
+    currentTokens += lineTokens
+  }
+
+  if (currentChunk.length > 0) chunks.push(currentChunk)
+  return chunks
+}
+```
+
+Tokenizer is pluggable for users who need precision:
+```typescript
+const tx = createTx({ tokenizer: tiktokenTokenizer })
+```
+
+## Candidate Expiration
+
+Candidates expire after 30 days without review:
+
+```typescript
+const expireOldCandidates = () =>
+  Effect.gen(function* () {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const count = yield* candidateRepo.expireOlderThan(cutoff)
+    yield* Effect.log(`Expired ${count} stale candidates`)
+  })
+```
+
+## Performance Considerations
+
+1. **File hashing**: SHA256 is fast enough; no need for faster alternatives
+2. **LLM rate limiting**: Max 30 calls/minute to avoid API limits
+3. **Queue processing**: Sequential to avoid duplicate promotions
+4. **Memory**: Stream large files instead of loading entirely
+5. **Bootstrap cap**: Process last 7 days of files on first daemon start, skip older
+
+## Test Caching for LLM Calls
+
+For tests that use real Agent SDK calls, cache responses by SHA256 of input to avoid recomputing:
+
+```typescript
+// test/fixtures/llm-cache.ts
+
+const LLM_CACHE_DIR = 'test/fixtures/llm-responses'
+
+interface CachedResponse {
+  input: string
+  inputHash: string
+  response: any
+  cachedAt: string
+  model: string
+}
+
+export const cachedLLMCall = async <T>(
+  input: string,
+  model: string,
+  actualCall: () => Promise<T>
+): Promise<T> => {
+  const inputHash = crypto.createHash('sha256').update(input).digest('hex')
+  const cachePath = path.join(LLM_CACHE_DIR, `${inputHash}.json`)
+
+  // Check cache
+  if (await fs.access(cachePath).then(() => true).catch(() => false)) {
+    const cached = JSON.parse(await fs.readFile(cachePath, 'utf-8')) as CachedResponse
+    console.log(`[LLM Cache HIT] ${inputHash.slice(0, 8)}...`)
+    return cached.response as T
+  }
+
+  // Cache miss - make real call
+  console.log(`[LLM Cache MISS] ${inputHash.slice(0, 8)}... calling ${model}`)
+  const response = await actualCall()
+
+  // Store in cache
+  await fs.mkdir(LLM_CACHE_DIR, { recursive: true })
+  await fs.writeFile(cachePath, JSON.stringify({
+    input,
+    inputHash,
+    response,
+    cachedAt: new Date().toISOString(),
+    model
+  }, null, 2))
+
+  return response
+}
+
+// Usage in tests
+describe('CandidateExtractor with real LLM', () => {
+  it('should extract learnings from transcript', async () => {
+    const transcript = generateTestTranscript()
+    const inputHash = hashInput(transcript)
+
+    const candidates = await cachedLLMCall(
+      JSON.stringify(transcript),
+      'claude-sonnet-4',
+      () => extractor.extract(transcript)
+    )
+
+    expect(candidates.length).toBeGreaterThan(0)
+  })
+})
+```
+
+### Cache Management CLI
+
+```bash
+# Clear all LLM test caches
+tx test:clear-cache
+
+# Clear caches older than 30 days
+tx test:clear-cache --older-than "30 days"
+
+# Show cache stats
+tx test:cache-stats
+# Output: 47 cached responses, 12.3 MB, oldest: 2024-01-15
+
+# Run tests without cache (force fresh LLM calls)
+TX_NO_LLM_CACHE=1 pnpm test
+```
+
+### Implementation
+
+```typescript
+// apps/cli/src/commands/test.ts
+
+export const testClearCache = (flags: Flags) =>
+  Effect.gen(function* () {
+    const cacheDir = 'test/fixtures/llm-responses'
+    const olderThan = opt(flags, 'older-than')
+
+    if (olderThan) {
+      const cutoff = parseRelativeDate(olderThan)
+      const files = await fs.readdir(cacheDir)
+      let deleted = 0
+
+      for (const file of files) {
+        const filePath = path.join(cacheDir, file)
+        const stat = await fs.stat(filePath)
+        if (stat.mtime < cutoff) {
+          await fs.unlink(filePath)
+          deleted++
+        }
+      }
+
+      console.log(`Deleted ${deleted} cache entries older than ${olderThan}`)
+    } else {
+      await fs.rm(cacheDir, { recursive: true, force: true })
+      console.log('Cleared all LLM test caches')
+    }
+  })
+
+export const testCacheStats = () =>
+  Effect.gen(function* () {
+    const cacheDir = 'test/fixtures/llm-responses'
+    const files = await fs.readdir(cacheDir).catch(() => [])
+
+    let totalSize = 0
+    let oldest: Date | null = null
+
+    for (const file of files) {
+      const stat = await fs.stat(path.join(cacheDir, file))
+      totalSize += stat.size
+      if (!oldest || stat.mtime < oldest) oldest = stat.mtime
+    }
+
+    console.log(`${files.length} cached responses`)
+    console.log(`${(totalSize / 1024 / 1024).toFixed(1)} MB total`)
+    if (oldest) console.log(`Oldest: ${oldest.toISOString().split('T')[0]}`)
+  })
+```
+
+### Gitignore Pattern
+
+```gitignore
+# LLM test caches (regenerated on demand)
+test/fixtures/llm-responses/
+```
+
+**Note**: These caches are gitignored. Each developer's cache is local. CI regenerates fresh on each run (or uses a shared cache bucket).
+
+## References
+
+- PRD-015: JSONL Daemon and Promotion Pipeline
+- DD-013: Test Utilities Package
+- DD-014: Graph Schema (for provenance edges)
+- [chokidar API](https://github.com/paulmillr/chokidar)
+- [Effect Queue](https://effect.website/docs/concurrency/queue)

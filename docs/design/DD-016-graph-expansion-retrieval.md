@@ -1,0 +1,1152 @@
+# DD-016: Graph-Expanded Retrieval - Implementation
+
+## Overview
+
+How to integrate graph expansion into the existing `LearningService.search()` pipeline, including BFS traversal, score merging, diversification, and feedback tracking.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    LearningService                          │
+│  search(query, opts) → hybridSearch → graphExpand →        │
+│  dedupeAndDiversify → results                              │
+├─────────────────────────────────────────────────────────────┤
+│                    GraphExpander                            │
+│  expand | getNeighbors | computeDecay                      │
+├─────────────────────────────────────────────────────────────┤
+│                    Diversifier                              │
+│  mmrDiversify | categoryDiversify                          │
+├─────────────────────────────────────────────────────────────┤
+│                    FeedbackTracker                          │
+│  recordUsage | getFeedbackScore                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Modified Search Pipeline
+
+```typescript
+// src/services/learning-service.ts
+
+search: (query) =>
+  Effect.gen(function* () {
+    const {
+      query: searchQuery,
+      limit = 10,
+      minScore = 0.1,
+      graphExpansion,
+      contextFiles
+    } = query
+
+    // =========================================
+    // Phase 1: RRF Hybrid Search (existing)
+    // =========================================
+    const { expanded: expandedQueries } = yield* queryExpansionService.expand(searchQuery)
+    const bm25Results = yield* multiQueryBM25Search(expandedQueries, limit * 3)
+
+    const queryEmbedding = yield* Effect.option(embeddingService.embed(searchQuery))
+    const vectorRanking = Option.isSome(queryEmbedding)
+      ? computeVectorRanking(learningsWithEmbeddings, queryEmbedding.value)
+      : new Map()
+
+    const rrfSeeds = computeRRFScoring(bm25Results, vectorRanking)
+
+    // =========================================
+    // Phase 2: Graph Expansion (new)
+    // =========================================
+    let candidates = rrfSeeds
+
+    if (graphExpansion?.enabled !== false) {
+      const expander = yield* GraphExpander
+
+      const expanded = yield* expander.expand({
+        seeds: rrfSeeds.slice(0, 15),  // Top 15 seeds
+        depth: graphExpansion?.depth ?? 2,
+        edgeTypes: graphExpansion?.edgeTypes,
+        decayFactor: graphExpansion?.decayFactor ?? 0.7,
+        maxNodes: graphExpansion?.maxNodes ?? 100
+      })
+
+      // Merge RRF seeds with expanded results
+      candidates = mergeResults(rrfSeeds, expanded)
+    }
+
+    // =========================================
+    // Phase 2b: Context-aware file expansion
+    // =========================================
+    if (contextFiles?.length) {
+      const fileLearnings = yield* getFileContextLearnings(contextFiles)
+      candidates = mergeWithFileLearnings(candidates, fileLearnings)
+    }
+
+    // =========================================
+    // Phase 3: Apply feedback boosts
+    // =========================================
+    const feedbackTracker = yield* FeedbackTracker
+    for (const candidate of candidates) {
+      candidate.feedbackScore = yield* feedbackTracker.getFeedbackScore(candidate.id)
+      candidate.relevanceScore += FEEDBACK_BOOST * (candidate.feedbackScore ?? 0)
+    }
+
+    // =========================================
+    // Phase 4: Diversify results
+    // =========================================
+    const diversifier = yield* Diversifier
+    const diversified = yield* diversifier.mmrDiversify(candidates, limit * 2, 0.7)
+
+    // =========================================
+    // Phase 5: Final scoring and filtering
+    // =========================================
+    const scored = applyFinalScoring(diversified, recencyWeight)
+
+    return scored
+      .filter(r => r.relevanceScore >= minScore)
+      .slice(0, limit)
+  })
+```
+
+## GraphExpander Service
+
+```typescript
+// src/services/graph-expander.ts
+
+import { Context, Effect, Layer } from "effect"
+
+export interface ExpansionOptions {
+  seeds: LearningWithScore[]
+  depth: number
+  edgeTypes?: EdgeType[]
+  decayFactor: number
+  maxNodes: number
+}
+
+export interface ExpandedNode {
+  learning: Learning
+  score: number
+  hops: number
+  path: number[]  // Learning IDs
+  sourceEdge: EdgeType
+}
+
+export class GraphExpander extends Context.Tag("GraphExpander")<
+  GraphExpander,
+  {
+    readonly expand: (opts: ExpansionOptions) => Effect.Effect<readonly ExpandedNode[], DatabaseError>
+  }
+>() {}
+
+export const GraphExpanderLive = Layer.effect(
+  GraphExpander,
+  Effect.gen(function* () {
+    const edgeRepo = yield* EdgeRepository
+    const learningRepo = yield* LearningRepository
+
+    return {
+      expand: (opts) =>
+        Effect.gen(function* () {
+          const { seeds, depth, edgeTypes, decayFactor, maxNodes } = opts
+
+          const visited = new Set<number>(seeds.map(s => s.id))
+          const results: ExpandedNode[] = []
+
+          // Initialize frontier with seeds
+          let frontier: Array<{
+            learningId: number
+            score: number
+            hops: number
+            path: number[]
+          }> = seeds.map(s => ({
+            learningId: s.id,
+            score: s.relevanceScore,
+            hops: 0,
+            path: [s.id]
+          }))
+
+          for (let hop = 1; hop <= depth; hop++) {
+            if (results.length >= maxNodes) break
+
+            const nextFrontier: typeof frontier = []
+
+            // Batch fetch edges for all frontier nodes
+            const frontierIds = frontier.map(f => String(f.learningId))
+            const allEdges = yield* edgeRepo.findBySourceIds(frontierIds)
+
+            for (const node of frontier) {
+              const edges = allEdges.filter(
+                e => e.sourceId === String(node.learningId) &&
+                     e.targetType === 'learning' &&
+                     !e.invalidatedAt
+              )
+
+              // Filter by edge type if specified
+              const filteredEdges = edgeTypes
+                ? edges.filter(e => edgeTypes.includes(e.edgeType))
+                : edges
+
+              for (const edge of filteredEdges) {
+                const targetId = parseInt(edge.targetId, 10)
+
+                if (visited.has(targetId)) continue
+                if (results.length >= maxNodes) break
+
+                visited.add(targetId)
+
+                const newScore = node.score * edge.weight * decayFactor
+
+                // Skip very low scores
+                if (newScore < 0.01) continue
+
+                const learning = yield* learningRepo.findById(targetId)
+                if (!learning) continue
+
+                const expandedNode: ExpandedNode = {
+                  learning,
+                  score: newScore,
+                  hops: hop,
+                  path: [...node.path, targetId],
+                  sourceEdge: edge.edgeType
+                }
+
+                results.push(expandedNode)
+                nextFrontier.push({
+                  learningId: targetId,
+                  score: newScore,
+                  hops: hop,
+                  path: expandedNode.path
+                })
+              }
+            }
+
+            frontier = nextFrontier
+          }
+
+          // Sort by score descending
+          return results.sort((a, b) => b.score - a.score)
+        })
+    }
+  })
+)
+```
+
+## Result Merging
+
+```typescript
+// src/services/learning-service.ts
+
+const mergeResults = (
+  rrfResults: LearningWithScore[],
+  expandedResults: ExpandedNode[]
+): LearningWithScore[] => {
+  const EXPANSION_BOOST = 0.15  // Boost for graph-connected results
+
+  const merged = new Map<number, LearningWithScore>()
+
+  // RRF results are base
+  for (const r of rrfResults) {
+    merged.set(r.id, { ...r, expansionHops: 0 })
+  }
+
+  // Expanded results add or boost
+  for (const e of expandedResults) {
+    const existing = merged.get(e.learning.id)
+
+    if (existing) {
+      // Boost existing score (found via multiple paths)
+      existing.relevanceScore += e.score * EXPANSION_BOOST
+    } else {
+      // Add new result from expansion
+      merged.set(e.learning.id, {
+        ...e.learning,
+        relevanceScore: e.score,
+        bm25Score: 0,
+        vectorScore: 0,
+        recencyScore: calculateRecencyScore(e.learning.createdAt),
+        rrfScore: 0,
+        bm25Rank: 0,
+        vectorRank: 0,
+        expansionHops: e.hops,
+        expansionPath: e.path,
+        sourceEdge: e.sourceEdge
+      })
+    }
+  }
+
+  return Array.from(merged.values()).sort((a, b) => b.relevanceScore - a.relevanceScore)
+}
+```
+
+## Context-Aware File Expansion
+
+```typescript
+// src/services/learning-service.ts
+
+const getFileContextLearnings = (files: string[]) =>
+  Effect.gen(function* () {
+    const anchorService = yield* AnchorService
+    const graphService = yield* GraphService
+
+    const results: LearningWithScore[] = []
+    const seen = new Set<number>()
+
+    for (const file of files) {
+      // 1. Direct anchors
+      const anchors = yield* anchorService.findForFile(file)
+      for (const anchor of anchors) {
+        if (!seen.has(anchor.learningId)) {
+          seen.add(anchor.learningId)
+          const learning = yield* learningRepo.findById(anchor.learningId)
+          if (learning) {
+            results.push({
+              ...learning,
+              relevanceScore: FILE_ANCHOR_BOOST,
+              expansionHops: 0,
+              sourceEdge: 'ANCHORED_TO'
+            })
+          }
+        }
+      }
+
+      // 2. Import expansion
+      const imports = yield* fileImportRepo.findImports(file)
+      for (const imp of imports) {
+        const impAnchors = yield* anchorService.findForFile(imp.targetFile)
+        for (const anchor of impAnchors) {
+          if (!seen.has(anchor.learningId)) {
+            seen.add(anchor.learningId)
+            const learning = yield* learningRepo.findById(anchor.learningId)
+            if (learning) {
+              results.push({
+                ...learning,
+                relevanceScore: FILE_IMPORT_BOOST,
+                expansionHops: 1,
+                sourceEdge: 'IMPORTS'
+              })
+            }
+          }
+        }
+      }
+
+      // 3. Co-change expansion
+      const cochanges = yield* fileCochangeRepo.findCoChanges(file, 0.5)  // min 0.5 correlation
+      for (const cc of cochanges) {
+        const ccAnchors = yield* anchorService.findForFile(cc.fileB)
+        for (const anchor of ccAnchors) {
+          if (!seen.has(anchor.learningId)) {
+            seen.add(anchor.learningId)
+            const learning = yield* learningRepo.findById(anchor.learningId)
+            if (learning) {
+              results.push({
+                ...learning,
+                relevanceScore: FILE_COCHANGE_BOOST * cc.correlationScore,
+                expansionHops: 1,
+                sourceEdge: 'CO_CHANGES_WITH'
+              })
+            }
+          }
+        }
+      }
+    }
+
+    return results
+  })
+
+const FILE_ANCHOR_BOOST = 0.8
+const FILE_IMPORT_BOOST = 0.5
+const FILE_COCHANGE_BOOST = 0.4
+```
+
+## Diversifier Service
+
+```typescript
+// src/services/diversifier.ts
+
+import { Context, Effect, Layer } from "effect"
+
+export class Diversifier extends Context.Tag("Diversifier")<
+  Diversifier,
+  {
+    readonly mmrDiversify: (
+      candidates: LearningWithScore[],
+      limit: number,
+      lambda?: number
+    ) => Effect.Effect<LearningWithScore[], never>
+  }
+>() {}
+
+export const DiversifierLive = Layer.effect(
+  Diversifier,
+  Effect.gen(function* () {
+    return {
+      mmrDiversify: (candidates, limit, lambda = 0.7) =>
+        Effect.sync(() => {
+          if (candidates.length <= limit) return candidates
+
+          const selected: LearningWithScore[] = []
+          const remaining = [...candidates]
+
+          while (selected.length < limit && remaining.length > 0) {
+            let bestScore = -Infinity
+            let bestIdx = 0
+
+            for (let i = 0; i < remaining.length; i++) {
+              const candidate = remaining[i]
+              const relevance = candidate.relevanceScore
+
+              // Max similarity to already selected items
+              const maxSim = selected.length === 0
+                ? 0
+                : Math.max(...selected.map(s => {
+                    if (!s.embedding || !candidate.embedding) return 0
+                    return cosineSimilarity(s.embedding, candidate.embedding)
+                  }))
+
+              // MMR score: balance relevance vs diversity
+              const mmrScore = lambda * relevance - (1 - lambda) * maxSim
+
+              if (mmrScore > bestScore) {
+                bestScore = mmrScore
+                bestIdx = i
+              }
+            }
+
+            selected.push(remaining[bestIdx])
+            remaining.splice(bestIdx, 1)
+          }
+
+          return selected
+        })
+    }
+  })
+)
+
+// Import from shared utils
+import { cosineSimilarity } from '../utils/math.js'
+
+// Implementation in packages/core/src/utils/math.ts:
+// export const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
+//   if (a.length !== b.length) return 0
+//   let dotProduct = 0, normA = 0, normB = 0
+//   for (let i = 0; i < a.length; i++) {
+//     dotProduct += a[i]! * b[i]!
+//     normA += a[i]! * a[i]!
+//     normB += b[i]! * b[i]!
+//   }
+//   const magnitude = Math.sqrt(normA) * Math.sqrt(normB)
+//   return magnitude === 0 ? 0 : dotProduct / magnitude
+// }
+```
+
+## FeedbackTracker Service
+
+```typescript
+// src/services/feedback-tracker.ts
+
+import { Context, Effect, Layer } from "effect"
+
+export class FeedbackTracker extends Context.Tag("FeedbackTracker")<
+  FeedbackTracker,
+  {
+    readonly recordUsage: (
+      runId: string,
+      learnings: Array<{ id: number; helpful: boolean }>
+    ) => Effect.Effect<void, DatabaseError>
+    readonly getFeedbackScore: (learningId: number) => Effect.Effect<number, DatabaseError>
+  }
+>() {}
+
+export const FeedbackTrackerLive = Layer.effect(
+  FeedbackTracker,
+  Effect.gen(function* () {
+    const graphService = yield* GraphService
+
+    return {
+      recordUsage: (runId, learnings) =>
+        Effect.gen(function* () {
+          for (let i = 0; i < learnings.length; i++) {
+            const { id, helpful } = learnings[i]
+
+            yield* graphService.addEdge({
+              edgeType: 'USED_IN_RUN',
+              sourceType: 'learning',
+              sourceId: String(id),
+              targetType: 'run',
+              targetId: runId,
+              weight: helpful ? 1.0 : 0.0,
+              metadata: {
+                position: i,
+                helpful,
+                recordedAt: new Date().toISOString()
+              }
+            })
+          }
+        }),
+
+      getFeedbackScore: (learningId) =>
+        Effect.gen(function* () {
+          const edges = yield* graphService.getEdges(
+            String(learningId),
+            'learning'
+          )
+
+          const usedEdges = edges.filter(e => e.edgeType === 'USED_IN_RUN')
+
+          if (usedEdges.length === 0) return 0.5  // Neutral prior
+
+          const helpfulCount = usedEdges.filter(e => e.metadata?.helpful === true).length
+          const totalCount = usedEdges.length
+
+          // Bayesian average with prior
+          const prior = 0.5
+          const priorWeight = 2
+          return (helpfulCount + prior * priorWeight) / (totalCount + priorWeight)
+        })
+    }
+  })
+)
+```
+
+## CLI Integration
+
+```typescript
+// apps/cli/src/commands/learning.ts
+
+// In the search handler
+if (flag(flags, 'expand')) {
+  opts.graphExpansion = {
+    enabled: true,
+    depth: parseInt(opt(flags, 'depth') || '2', 10),
+    decayFactor: parseFloat(opt(flags, 'decay') || '0.7'),
+    maxNodes: parseInt(opt(flags, 'max-nodes') || '100', 10)
+  }
+}
+
+if (opt(flags, 'files')) {
+  opts.contextFiles = opt(flags, 'files')!.split(',')
+}
+
+// Show expansion info in output
+if (flag(flags, 'verbose')) {
+  for (const learning of results) {
+    console.log(`#${learning.id} [score: ${learning.relevanceScore.toFixed(3)}]`)
+    console.log(`  ${learning.content.slice(0, 80)}...`)
+    if (learning.expansionHops !== undefined && learning.expansionHops > 0) {
+      console.log(`  (via ${learning.sourceEdge}, ${learning.expansionHops} hops)`)
+    }
+  }
+}
+```
+
+## Performance Optimizations
+
+### Batch Edge Fetching
+
+```typescript
+// Instead of N queries for N seeds, fetch all edges in one query
+const findBySourceIds = (sourceIds: string[]) =>
+  Effect.try({
+    try: () => {
+      const placeholders = sourceIds.map(() => '?').join(',')
+      return sql.db.prepare(`
+        SELECT * FROM learning_edges
+        WHERE source_id IN (${placeholders})
+          AND invalidated_at IS NULL
+        ORDER BY weight DESC
+      `).all(...sourceIds)
+    },
+    catch: (cause) => new DatabaseError({ cause })
+  })
+```
+
+### Early Termination
+
+```typescript
+// Stop expansion when score drops too low
+if (newScore < 0.01) continue
+
+// Stop when we have enough results
+if (results.length >= maxNodes) break
+```
+
+### Caching
+
+```typescript
+// Cache frequently accessed learnings
+const learningCache = new Map<number, Learning>()
+
+const getCachedLearning = (id: number) =>
+  Effect.gen(function* () {
+    if (learningCache.has(id)) {
+      return learningCache.get(id)!
+    }
+    const learning = yield* learningRepo.findById(id)
+    if (learning) {
+      learningCache.set(id, learning)
+    }
+    return learning
+  })
+```
+
+## Testing Strategy
+
+### Unit Tests
+
+```typescript
+describe('GraphExpander', () => {
+  it('should expand seeds by 2 hops', async () => {
+    // Setup: A -> B -> C -> D
+    await seedLinearGraph(['A', 'B', 'C', 'D'])
+
+    const results = await runEffect(
+      graphExpander.expand({
+        seeds: [{ id: 'A', relevanceScore: 1.0 }],
+        depth: 2,
+        decayFactor: 0.7,
+        maxNodes: 100
+      })
+    )
+
+    expect(results.map(r => r.learning.id)).toEqual(['B', 'C'])
+    expect(results[0].score).toBeCloseTo(0.7)
+    expect(results[1].score).toBeCloseTo(0.49)
+  })
+
+  it('should respect maxNodes limit', async () => {
+    await seedStarGraph('center', ['n1', 'n2', 'n3', 'n4', 'n5'])
+
+    const results = await runEffect(
+      graphExpander.expand({
+        seeds: [{ id: 'center', relevanceScore: 1.0 }],
+        depth: 1,
+        maxNodes: 3
+      })
+    )
+
+    expect(results.length).toBe(3)
+  })
+})
+
+describe('Diversifier', () => {
+  it('should select diverse results via MMR', async () => {
+    const candidates = [
+      { id: 1, relevanceScore: 1.0, embedding: embed('auth jwt token') },
+      { id: 2, relevanceScore: 0.9, embedding: embed('auth jwt verify') },  // Similar to #1
+      { id: 3, relevanceScore: 0.8, embedding: embed('database transactions') },
+      { id: 4, relevanceScore: 0.7, embedding: embed('auth jwt expiry') },  // Similar to #1
+    ]
+
+    const results = await runEffect(diversifier.mmrDiversify(candidates, 2, 0.7))
+
+    // Should select #1 (highest score) and #3 (most diverse)
+    expect(results.map(r => r.id)).toEqual([1, 3])
+  })
+})
+```
+
+### Integration Tests
+
+```typescript
+// test/integration/graph-expansion.test.ts
+
+import {
+  createTestDatabase,
+  createTestLearning,
+  createEdgeBetweenLearnings,
+  runEffect,
+  fixtureId
+} from '@tx/test-utils'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+
+describe('Graph Expansion Integration', () => {
+  let db: TestDatabase
+
+  beforeEach(async () => {
+    db = await createTestDatabase()
+  })
+
+  afterEach(async () => {
+    await db.close()
+  })
+
+  describe('Search with Expansion', () => {
+    it('should return expanded results in search', async () => {
+      // Create learning A about auth (will match query)
+      const learningA = await createTestLearning(db, 'Use JWT for authentication')
+
+      // Create learning B about tokens, linked to A (won't match query directly)
+      const learningB = await createTestLearning(db, 'Always validate token expiry')
+      await createEdge(db, 'SIMILAR_TO', learningA.id, learningB.id)
+
+      // Search should return both via expansion
+      const results = await runEffect(
+        learningService.search({
+          query: 'authentication',
+          graphExpansion: { enabled: true, depth: 1 }
+        }),
+        db
+      )
+
+      expect(results.map(r => r.id)).toContain(learningA.id)
+      expect(results.map(r => r.id)).toContain(learningB.id)
+      expect(results.find(r => r.id === learningB.id)?.expansionHops).toBe(1)
+    })
+
+    it('should boost results found via multiple paths', async () => {
+      const l1 = await createTestLearning(db, 'Authentication patterns')
+      const l2 = await createTestLearning(db, 'Token validation')
+      const l3 = await createTestLearning(db, 'Security best practices')
+
+      // l3 is connected to both l1 and l2
+      await createEdge(db, 'SIMILAR_TO', l1.id, l3.id)
+      await createEdge(db, 'SIMILAR_TO', l2.id, l3.id)
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'authentication token',
+          graphExpansion: { enabled: true, depth: 1 }
+        }),
+        db
+      )
+
+      // l3 should have boosted score due to multiple paths
+      const l3Result = results.find(r => r.id === l3.id)
+      expect(l3Result).toBeDefined()
+      expect(l3Result!.relevanceScore).toBeGreaterThan(0.3) // Should be boosted
+    })
+
+    it('should respect depth limit', async () => {
+      // Create chain: L1 -> L2 -> L3 -> L4
+      const l1 = await createTestLearning(db, 'Authentication basics')
+      const l2 = await createTestLearning(db, 'JWT handling')
+      const l3 = await createTestLearning(db, 'Token refresh')
+      const l4 = await createTestLearning(db, 'Session management')
+
+      await createEdge(db, 'SIMILAR_TO', l1.id, l2.id)
+      await createEdge(db, 'SIMILAR_TO', l2.id, l3.id)
+      await createEdge(db, 'SIMILAR_TO', l3.id, l4.id)
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'authentication',
+          graphExpansion: { enabled: true, depth: 2 }
+        }),
+        db
+      )
+
+      // Should find L1, L2 (hop 1), L3 (hop 2), but NOT L4 (hop 3)
+      expect(results.map(r => r.id)).toContain(l1.id)
+      expect(results.map(r => r.id)).toContain(l2.id)
+      expect(results.map(r => r.id)).toContain(l3.id)
+      expect(results.map(r => r.id)).not.toContain(l4.id)
+    })
+
+    it('should filter by edge type', async () => {
+      const l1 = await createTestLearning(db, 'Database patterns')
+      const l2 = await createTestLearning(db, 'Similar topic')
+      const l3 = await createTestLearning(db, 'Linked manually')
+
+      await createEdge(db, 'SIMILAR_TO', l1.id, l2.id)
+      await createEdge(db, 'LINKS_TO', l1.id, l3.id)
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'database',
+          graphExpansion: {
+            enabled: true,
+            depth: 1,
+            edgeTypes: ['SIMILAR_TO'] // Only semantic similarity
+          }
+        }),
+        db
+      )
+
+      expect(results.map(r => r.id)).toContain(l2.id)
+      expect(results.map(r => r.id)).not.toContain(l3.id)
+    })
+
+    it('should apply decay factor correctly', async () => {
+      const l1 = await createTestLearning(db, 'Auth root')
+      const l2 = await createTestLearning(db, 'Auth child')
+
+      await createEdge(db, 'SIMILAR_TO', l1.id, l2.id, 1.0)
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'auth',
+          graphExpansion: {
+            enabled: true,
+            depth: 1,
+            decayFactor: 0.5
+          }
+        }),
+        db
+      )
+
+      const l1Result = results.find(r => r.id === l1.id)
+      const l2Result = results.find(r => r.id === l2.id)
+
+      // L2's score should be decayed
+      expect(l2Result!.relevanceScore).toBeLessThan(l1Result!.relevanceScore * 0.6)
+    })
+  })
+
+  describe('Context-Aware File Expansion', () => {
+    it('should include learnings anchored to context files', async () => {
+      const learning = await createTestLearning(db, 'Use transactions in repo')
+
+      // Anchor to specific file
+      await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath: 'src/repo/task-repo.ts',
+          anchorType: 'glob',
+          anchorValue: 'src/repo/task-repo.ts'
+        }),
+        db
+      )
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'something unrelated',
+          contextFiles: ['src/repo/task-repo.ts']
+        }),
+        db
+      )
+
+      // Should include the anchored learning despite unrelated query
+      expect(results.map(r => r.id)).toContain(learning.id)
+    })
+
+    it('should expand via file imports', async () => {
+      const l1 = await createTestLearning(db, 'Crypto best practices')
+
+      // Anchor to crypto utils
+      await runEffect(
+        anchorService.createAnchor({
+          learningId: l1.id,
+          filePath: 'src/utils/crypto.ts',
+          anchorType: 'glob',
+          anchorValue: 'src/utils/crypto.ts'
+        }),
+        db
+      )
+
+      // Create import relationship: auth-service imports crypto
+      await db.query(`
+        INSERT INTO file_imports (source_file, target_file, import_type)
+        VALUES ('src/services/auth-service.ts', 'src/utils/crypto.ts', 'static')
+      `)
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'authentication',
+          contextFiles: ['src/services/auth-service.ts'],
+          graphExpansion: { enabled: true }
+        }),
+        db
+      )
+
+      // Should find crypto learning via import expansion
+      expect(results.map(r => r.id)).toContain(l1.id)
+      expect(results.find(r => r.id === l1.id)?.sourceEdge).toBe('IMPORTS')
+    })
+
+    it('should expand via file co-changes', async () => {
+      const learning = await createTestLearning(db, 'JWT middleware pattern')
+
+      await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath: 'src/middleware/jwt.ts',
+          anchorType: 'glob',
+          anchorValue: 'src/middleware/jwt.ts'
+        }),
+        db
+      )
+
+      // Create co-change relationship
+      await db.query(`
+        INSERT INTO file_cochanges (file_a, file_b, correlation_score, commit_count)
+        VALUES ('src/services/auth-service.ts', 'src/middleware/jwt.ts', 0.85, 15)
+      `)
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'auth',
+          contextFiles: ['src/services/auth-service.ts'],
+          graphExpansion: { enabled: true }
+        }),
+        db
+      )
+
+      // Should find JWT learning via co-change expansion
+      expect(results.map(r => r.id)).toContain(learning.id)
+    })
+
+    it('should support glob patterns for context files', async () => {
+      const l1 = await createTestLearning(db, 'Repo pattern 1')
+      const l2 = await createTestLearning(db, 'Repo pattern 2')
+
+      await runEffect(anchorService.createAnchor({
+        learningId: l1.id,
+        filePath: 'src/repo/task-repo.ts',
+        anchorType: 'glob',
+        anchorValue: 'src/repo/task-repo.ts'
+      }), db)
+
+      await runEffect(anchorService.createAnchor({
+        learningId: l2.id,
+        filePath: 'src/repo/learning-repo.ts',
+        anchorType: 'glob',
+        anchorValue: 'src/repo/learning-repo.ts'
+      }), db)
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'database',
+          contextFiles: ['src/repo/**/*.ts'] // Glob pattern
+        }),
+        db
+      )
+
+      expect(results.map(r => r.id)).toContain(l1.id)
+      expect(results.map(r => r.id)).toContain(l2.id)
+    })
+  })
+
+  describe('Diversification', () => {
+    it('should diversify results via MMR', async () => {
+      // Create similar learnings (same embedding space)
+      const similar1 = await createTestLearning(db, 'JWT token validation')
+      const similar2 = await createTestLearning(db, 'JWT token verification')
+      const similar3 = await createTestLearning(db, 'JWT token checking')
+      const different = await createTestLearning(db, 'Database indexing strategy')
+
+      // Set similar embeddings for JWT learnings
+      await setTestEmbedding(db, similar1.id, [0.9, 0.1, 0.0])
+      await setTestEmbedding(db, similar2.id, [0.85, 0.15, 0.0])
+      await setTestEmbedding(db, similar3.id, [0.88, 0.12, 0.0])
+      await setTestEmbedding(db, different.id, [0.1, 0.1, 0.9])
+
+      const results = await runEffect(
+        learningService.search({
+          query: 'authentication',
+          limit: 3
+        }),
+        db
+      )
+
+      // Should include the different one for diversity, not all 3 similar
+      expect(results.map(r => r.id)).toContain(different.id)
+
+      // Count JWT-related in top 3
+      const jwtCount = results.filter(r =>
+        [similar1.id, similar2.id, similar3.id].includes(r.id)
+      ).length
+
+      expect(jwtCount).toBeLessThanOrEqual(2)
+    })
+
+    it('should balance relevance and diversity with lambda', async () => {
+      const candidates = [
+        { id: 1, relevanceScore: 1.0, embedding: new Float32Array([1, 0, 0]) },
+        { id: 2, relevanceScore: 0.95, embedding: new Float32Array([0.99, 0.01, 0]) }, // Very similar to #1
+        { id: 3, relevanceScore: 0.7, embedding: new Float32Array([0, 1, 0]) }, // Different
+      ]
+
+      // High lambda (0.9) = prefer relevance
+      const highLambda = await runEffect(
+        diversifier.mmrDiversify(candidates as any, 2, 0.9)
+      )
+      expect(highLambda.map(r => r.id)).toEqual([1, 2]) // Top 2 by relevance
+
+      // Low lambda (0.3) = prefer diversity
+      const lowLambda = await runEffect(
+        diversifier.mmrDiversify(candidates as any, 2, 0.3)
+      )
+      expect(lowLambda.map(r => r.id)).toEqual([1, 3]) // #1 + diverse #3
+    })
+  })
+
+  describe('Feedback Tracking', () => {
+    it('should record run usage', async () => {
+      const learning = await createTestLearning(db, 'Helpful learning')
+
+      await runEffect(
+        feedbackTracker.recordUsage('run-123', [
+          { id: learning.id, helpful: true }
+        ]),
+        db
+      )
+
+      // Check edge was created
+      const edges = await runEffect(
+        graphService.getEdges(String(learning.id), 'learning'),
+        db
+      )
+
+      const usedEdge = edges.find(e =>
+        e.edgeType === 'USED_IN_RUN' && e.targetId === 'run-123'
+      )
+      expect(usedEdge).toBeDefined()
+      expect(usedEdge?.weight).toBe(1.0) // Helpful
+      expect(usedEdge?.metadata?.helpful).toBe(true)
+    })
+
+    it('should compute feedback score from history', async () => {
+      const learning = await createTestLearning(db, 'Sometimes helpful')
+
+      // Record mixed feedback
+      await runEffect(feedbackTracker.recordUsage('run-1', [{ id: learning.id, helpful: true }]), db)
+      await runEffect(feedbackTracker.recordUsage('run-2', [{ id: learning.id, helpful: true }]), db)
+      await runEffect(feedbackTracker.recordUsage('run-3', [{ id: learning.id, helpful: false }]), db)
+      await runEffect(feedbackTracker.recordUsage('run-4', [{ id: learning.id, helpful: true }]), db)
+
+      const score = await runEffect(
+        feedbackTracker.getFeedbackScore(learning.id),
+        db
+      )
+
+      // 3/4 helpful, with Bayesian prior
+      // (3 + 0.5*2) / (4 + 2) = 4/6 = 0.667
+      expect(score).toBeCloseTo(0.667, 1)
+    })
+
+    it('should return neutral score for new learnings', async () => {
+      const learning = await createTestLearning(db, 'New learning')
+
+      const score = await runEffect(
+        feedbackTracker.getFeedbackScore(learning.id),
+        db
+      )
+
+      expect(score).toBe(0.5) // Neutral prior
+    })
+
+    it('should boost search results by feedback score', async () => {
+      const newLearning = await createTestLearning(db, 'Auth pattern new')
+      const provenLearning = await createTestLearning(db, 'Auth pattern proven')
+
+      // Proven learning has good feedback
+      for (let i = 0; i < 5; i++) {
+        await runEffect(
+          feedbackTracker.recordUsage(`run-${i}`, [
+            { id: provenLearning.id, helpful: true }
+          ]),
+          db
+        )
+      }
+
+      const results = await runEffect(
+        learningService.search({ query: 'auth pattern' }),
+        db
+      )
+
+      // Proven learning should rank higher
+      const newRank = results.findIndex(r => r.id === newLearning.id)
+      const provenRank = results.findIndex(r => r.id === provenLearning.id)
+
+      expect(provenRank).toBeLessThan(newRank)
+    })
+  })
+
+  describe('Pluggable Retriever', () => {
+    it('should allow custom retriever implementation', async () => {
+      const mockRetriever: Retriever = {
+        search: (query) => Effect.succeed([
+          { id: 999, content: 'Mock result', relevanceScore: 1.0 } as any
+        ])
+      }
+
+      const results = await runEffect(
+        learningService.search({ query: 'test' }),
+        db,
+        { retriever: mockRetriever }
+      )
+
+      expect(results[0].id).toBe(999)
+      expect(results[0].content).toBe('Mock result')
+    })
+  })
+})
+
+// Test helper for setting embeddings
+async function setTestEmbedding(db: TestDatabase, learningId: number, vector: number[]) {
+  const buffer = Buffer.from(new Float32Array(vector).buffer)
+  await db.query(
+    'UPDATE learnings SET embedding = ? WHERE id = ?',
+    [buffer, learningId]
+  )
+}
+```
+
+## Pluggable Retriever Interface
+
+Retrieval should be pluggable. Users have existing vector DBs.
+
+```typescript
+interface Retriever {
+  search(query: string, options?: SearchOptions): Effect.Effect<Learning[], RetrievalError>
+}
+
+// Default: BM25 + vector on SQLite
+export const defaultRetriever = hybridRetriever(sqliteDb)
+
+// User can swap
+const tx = createTx({
+  retriever: myPineconeRetriever
+})
+```
+
+## File Patterns: Glob, Not Regex
+
+Use glob patterns for file matching. More familiar, less error-prone.
+
+```bash
+tx context tx-abc --expand --files "src/auth/**/*.ts"
+tx context tx-abc --expand --files "src/auth.ts,src/jwt.ts"
+```
+
+Use `fast-glob` or `picomatch` under the hood. Regex is overkill for file paths.
+
+## Bidirectional Traversal
+
+Graph expansion traverses both incoming and outgoing edges by default. More useful for discovery.
+
+```typescript
+const expand = (opts: ExpansionOptions) =>
+  Effect.gen(function* () {
+    // ...
+    // Get both outgoing AND incoming edges
+    const outgoing = yield* edgeRepo.findBySource(node.nodeType, node.nodeId)
+    const incoming = yield* edgeRepo.findByTarget(node.nodeType, node.nodeId)
+    const edges = [...outgoing, ...incoming]
+    // ...
+  })
+```
+
+## Cycle Prevention
+
+Standard BFS visited set. Simple and effective.
+
+```typescript
+const visited = new Set<number>(seeds.map(s => s.id))
+// ...
+if (visited.has(targetId)) continue
+visited.add(targetId)
+```
+
+## Feedback Edges: No Expiry
+
+USED_IN_RUN edges are kept forever. If needed later, add weight decay:
+
+```typescript
+// Potential future enhancement (not implemented now - KISS)
+const decayedWeight = edge.weight * Math.pow(0.9, monthsOld)
+```
+
+## References
+
+- PRD-016: Graph-Expanded Retrieval
+- DD-013: Test Utilities Package
+- DD-014: Graph Schema
+- [MMR Paper](https://www.cs.cmu.edu/~jgc/publication/The_Use_MMR_Diversity_Based_LTMIR_1998.pdf)

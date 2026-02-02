@@ -26,17 +26,15 @@ if [ -z "$FORMATTED" ]; then
   exit 0
 fi
 
-# Escape for JSON (newlines, quotes)
-ESCAPED=$(echo "$FORMATTED" | jq -Rs '.')
+# Build JSON output using jq for proper escaping (bash 3.2 compatible)
+HEADER="## Recent Learnings from Past Sessions\n\nThese learnings were captured from previous work:\n\n"
+FULL_CONTENT="${HEADER}${FORMATTED}"
 
-# Output JSON with additionalContext
-cat << EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "## Recent Learnings from Past Sessions\n\nThese learnings were captured from previous work:\n\n${ESCAPED:1:-1}"
+jq -n --arg content "$FULL_CONTENT" '{
+  hookSpecificOutput: {
+    hookEventName: "SessionStart",
+    additionalContext: $content
   }
-}
-EOF
+}'
 
 exit 0

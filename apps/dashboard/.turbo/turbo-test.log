@@ -1,21 +1,75 @@
 
+
 > @tx/dashboard@0.1.0 test
 > vitest --run
 
+[1G[0K[?25l
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90m/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard[39m
 
- RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
+[?2026h
+[1m[33m ❯ [39m[22msrc/App.test.tsx[2m [queued][22m
 
- ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 14ms
- ✓ src/components/ui/__tests__/LoadingSkeleton.test.tsx (6 tests) 15ms
- ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 18ms
- ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 19ms
- ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 35ms
- ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 54ms
- ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 75ms
- ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 92ms
- ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 73ms
-stderr | src/App.test.tsx > App > renders without crashing
-[MSW] Warning: intercepted a request without a matching request handler:
+[2m Test Files [22m[1m[32m0 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m[1m[32m0 passed[39m[22m[90m (0)[39m
+[2m   Start at [22m15:42:20
+[2m   Duration [22m505ms
+[?2026l[?2026h[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K
+[1m[33m ❯ [39m[22msrc/App.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskCard.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskDetail.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskFilters.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskList.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/ui/__tests__/EmptyState.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/ui/__tests__/LoadingSkeleton.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/ui/__tests__/SearchInput.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/ui/__tests__/SidePanel.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/hooks/__tests__/useDebounce.test.ts[2m 0/7[22m
+[1m[33m ❯ [39m[22msrc/hooks/__tests__/useIntersectionObserver.test.ts[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/hooks/__tests__/useKeyboardNavigation.test.ts[2m [queued][22m
+
+[2m Test Files [22m[1m[32m0 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m[1m[32m0 passed[39m[22m[90m (7)[39m
+[2m   Start at [22m15:42:20
+[2m   Duration [22m806ms
+[?2026l[?2026h[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K [32m✓[39m src/hooks/__tests__/useDebounce.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/hooks/__tests__/useIntersectionObserver.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/components/ui/__tests__/LoadingSkeleton.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/hooks/__tests__/useKeyboardNavigation.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/components/tasks/__tests__/TaskCard.test.tsx [2m([22m[2m21 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+
+
+
+[1m[33m ❯ [39m[22msrc/App.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskDetail.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskFilters.test.tsx[2m 0/22[22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskList.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/ui/__tests__/EmptyState.test.tsx[2m 1/8[22m
+[1m[33m ❯ [39m[22msrc/components/ui/__tests__/SearchInput.test.tsx[2m 0/10[22m
+[1m[33m ❯ [39m[22msrc/components/ui/__tests__/SidePanel.test.tsx[2m 0/11[22m
+
+[2m Test Files [22m[1m[32m5 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m[1m[32m62 passed[39m[22m[90m (112)[39m
+[2m   Start at [22m15:42:20
+[2m   Duration [22m908ms
+[?2026l[?2026h[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K [32m✓[39m src/components/ui/__tests__/EmptyState.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 73[2mms[22m[39m
+ [32m✓[39m src/components/ui/__tests__/SearchInput.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 81[2mms[22m[39m
+ [32m✓[39m src/components/ui/__tests__/SidePanel.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[32m 89[2mms[22m[39m
+ [32m✓[39m src/components/tasks/__tests__/TaskFilters.test.tsx [2m([22m[2m22 tests[22m[2m)[22m[32m 100[2mms[22m[39m
+
+
+
+
+
+[1m[33m ❯ [39m[22msrc/App.test.tsx[2m [queued][22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskDetail.test.tsx[2m 0/15[22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskList.test.tsx[2m [queued][22m
+
+[2m Test Files [22m[1m[32m9 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m[1m[32m112 passed[39m[22m[90m (127)[39m
+[2m   Start at [22m15:42:20
+[2m   Duration [22m1.01s
+[?2026l[?2026h[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[90mstderr[2m | src/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mrenders without crashing
+[22m[39m[MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/ralph
 
@@ -40,12 +94,29 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/App.test.tsx (1 test) 29ms
- ✓ src/components/tasks/__tests__/TaskDetail.test.tsx (15 tests) 125ms
- ✓ src/components/tasks/__tests__/TaskList.test.tsx (17 tests) 139ms
 
- Test Files  12 passed (12)
-      Tests  145 passed (145)
-   Start at  00:55:59
-   Duration  929ms (transform 207ms, setup 750ms, collect 1.58s, tests 688ms, environment 3.60s, prepare 507ms)
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskDetail.test.tsx[2m 1/15[22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskList.test.tsx[2m 0/17[22m
 
+[2m Test Files [22m[1m[32m10 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m[1m[32m114 passed[39m[22m[90m (145)[39m
+[2m   Start at [22m15:42:20
+[2m   Duration [22m1.11s
+[?2026l[?2026h[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K [32m✓[39m src/App.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 29[2mms[22m[39m
+
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskDetail.test.tsx[2m 1/15[22m
+[1m[33m ❯ [39m[22msrc/components/tasks/__tests__/TaskList.test.tsx[2m 0/17[22m
+
+[2m Test Files [22m[1m[32m10 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m[1m[32m114 passed[39m[22m[90m (145)[39m
+[2m   Start at [22m15:42:20
+[2m   Duration [22m1.11s
+[?2026l[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K [32m✓[39m src/components/tasks/__tests__/TaskDetail.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[32m 129[2mms[22m[39m
+ [32m✓[39m src/components/tasks/__tests__/TaskList.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[32m 137[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m12 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m [1m[32m145 passed[39m[22m[90m (145)[39m
+[2m   Start at [22m 15:42:20
+[2m   Duration [22m 1.25s[2m (transform 299ms, setup 1.42s, collect 2.17s, tests 764ms, environment 5.20s, prepare 571ms)[22m
+
+[?25h[1G[0K⠙[1G[0K

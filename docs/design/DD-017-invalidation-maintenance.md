@@ -1,0 +1,1734 @@
+# DD-017: Anchor Invalidation and Maintenance - Implementation
+
+## Overview
+
+Implementation details for anchor verification, invalidation detection, self-healing, agent swarm coordination, and maintenance workflows.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   InvalidationService                        │
+│  verify | verifyAll | invalidate | restore | prune          │
+├─────────────────────────────────────────────────────────────┤
+│                  VerificationScheduler                       │
+│  runDaily | runOnAccess | runOnDemand                       │
+├─────────────────────────────────────────────────────────────┤
+│                   SelfHealingService                         │
+│  detectDrift | computeSimilarity | heal | backup            │
+├─────────────────────────────────────────────────────────────┤
+│                   SwarmCoordinator                           │
+│  detectLargeChange | partition | spawnAgents | aggregate    │
+├─────────────────────────────────────────────────────────────┤
+│                   NotificationService                        │
+│  sendDriftAlert | sendSummary                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## TypeScript Types
+
+```typescript
+// src/schemas/invalidation.ts
+
+export type VerificationAction = 'unchanged' | 'self_healed' | 'drifted' | 'invalidated'
+export type DetectedBy = 'periodic' | 'lazy' | 'manual' | 'agent' | 'git_hook'
+
+export interface VerificationResult {
+  anchorId: number
+  oldStatus: AnchorStatus
+  newStatus: AnchorStatus
+  action: VerificationAction
+  reason?: string
+  similarity?: number
+  oldContentHash?: string
+  newContentHash?: string
+}
+
+export interface VerificationSummary {
+  total: number
+  valid: number
+  drifted: number
+  invalid: number
+  selfHealed: number
+  errors: number
+  duration: number
+}
+
+export interface InvalidationLogEntry {
+  id: number
+  anchorId: number
+  oldStatus: AnchorStatus
+  newStatus: AnchorStatus
+  reason: string
+  detectedBy: DetectedBy
+  oldContentHash: string | null
+  newContentHash: string | null
+  similarityScore: number | null
+  invalidatedAt: Date
+}
+
+export interface VerificationCacheEntry {
+  anchorId: number
+  status: AnchorStatus
+  verifiedAt: Date
+  expiresAt: Date
+}
+```
+
+## Service Implementations
+
+### InvalidationService
+
+```typescript
+// src/services/invalidation-service.ts
+
+import { Context, Effect, Layer } from "effect"
+import * as fs from "fs/promises"
+import * as crypto from "crypto"
+
+export class InvalidationService extends Context.Tag("InvalidationService")<
+  InvalidationService,
+  {
+    readonly verify: (anchorId: number) => Effect.Effect<VerificationResult, AnchorNotFoundError | DatabaseError>
+    readonly verifyAll: () => Effect.Effect<VerificationSummary, DatabaseError>
+    readonly verifyFile: (filePath: string) => Effect.Effect<VerificationSummary, DatabaseError>
+    readonly invalidate: (anchorId: number, reason: string) => Effect.Effect<void, AnchorNotFoundError | DatabaseError>
+    readonly restore: (anchorId: number) => Effect.Effect<void, AnchorNotFoundError | DatabaseError>
+    readonly prune: (olderThan: Date) => Effect.Effect<PruneResult, DatabaseError>
+  }
+>() {}
+
+export const InvalidationServiceLive = Layer.effect(
+  InvalidationService,
+  Effect.gen(function* () {
+    const anchorRepo = yield* AnchorRepository
+    const invalidationLogRepo = yield* InvalidationLogRepository
+    const verificationCache = yield* VerificationCacheRepository
+    const selfHealingService = yield* SelfHealingService
+    const astGrep = yield* Effect.serviceOption(AstGrepService)
+    const configRepo = yield* ConfigRepository
+
+    const CACHE_TTL = yield* configRepo.getInt('cache_ttl', 3600)
+    const SELF_HEAL_THRESHOLD = yield* configRepo.getFloat('self_heal_threshold', 0.8)
+
+    const computeContentHash = (content: string): string =>
+      crypto.createHash('sha256').update(content).digest('hex').slice(0, 16)
+
+    const readFileRange = (filePath: string, lineStart?: number, lineEnd?: number) =>
+      Effect.tryPromise({
+        try: async () => {
+          const content = await fs.readFile(filePath, 'utf-8')
+          if (lineStart && lineEnd) {
+            const lines = content.split('\n')
+            return lines.slice(lineStart - 1, lineEnd).join('\n')
+          }
+          return content
+        },
+        catch: () => null
+      })
+
+    const verifyAnchor = (anchor: FileAnchor, detectedBy: DetectedBy): Effect.Effect<VerificationResult, DatabaseError> =>
+      Effect.gen(function* () {
+        const oldStatus = anchor.status
+
+        // Check file exists
+        const fileExists = yield* Effect.tryPromise({
+          try: () => fs.access(anchor.filePath).then(() => true).catch(() => false),
+          catch: () => false
+        })
+
+        if (!fileExists) {
+          yield* anchorRepo.updateStatus(anchor.id, 'invalid')
+          yield* logInvalidation(anchor.id, oldStatus, 'invalid', 'file_deleted', detectedBy)
+
+          return {
+            anchorId: anchor.id,
+            oldStatus,
+            newStatus: 'invalid' as const,
+            action: 'invalidated' as const,
+            reason: 'file_deleted'
+          }
+        }
+
+        // Verify based on anchor type
+        switch (anchor.anchorType) {
+          case 'hash': {
+            if (!anchor.lineStart || !anchor.lineEnd) {
+              return { anchorId: anchor.id, oldStatus, newStatus: oldStatus, action: 'unchanged' as const }
+            }
+
+            const content = yield* readFileRange(anchor.filePath, anchor.lineStart, anchor.lineEnd)
+            if (!content) {
+              yield* anchorRepo.updateStatus(anchor.id, 'invalid')
+              yield* logInvalidation(anchor.id, oldStatus, 'invalid', 'content_read_failed', detectedBy)
+              return { anchorId: anchor.id, oldStatus, newStatus: 'invalid' as const, action: 'invalidated' as const }
+            }
+
+            const newHash = computeContentHash(content)
+
+            if (newHash === anchor.contentHash) {
+              return { anchorId: anchor.id, oldStatus, newStatus: oldStatus, action: 'unchanged' as const }
+            }
+
+            // Try self-healing
+            const healResult = yield* selfHealingService.tryHeal(anchor, content, newHash)
+
+            if (healResult.healed) {
+              yield* logInvalidation(anchor.id, oldStatus, 'valid', 'self_healed', detectedBy, {
+                oldHash: anchor.contentHash,
+                newHash,
+                similarity: healResult.similarity
+              })
+              return {
+                anchorId: anchor.id,
+                oldStatus,
+                newStatus: 'valid' as const,
+                action: 'self_healed' as const,
+                similarity: healResult.similarity,
+                oldContentHash: anchor.contentHash,
+                newContentHash: newHash
+              }
+            }
+
+            // Mark as drifted
+            yield* anchorRepo.updateStatus(anchor.id, 'drifted')
+            yield* logInvalidation(anchor.id, oldStatus, 'drifted', 'hash_mismatch', detectedBy, {
+              oldHash: anchor.contentHash,
+              newHash,
+              similarity: healResult.similarity
+            })
+
+            return {
+              anchorId: anchor.id,
+              oldStatus,
+              newStatus: 'drifted' as const,
+              action: 'drifted' as const,
+              reason: 'hash_mismatch',
+              similarity: healResult.similarity
+            }
+          }
+
+          case 'symbol': {
+            if (astGrep._tag === 'None' || !anchor.symbolFqname) {
+              return { anchorId: anchor.id, oldStatus, newStatus: oldStatus, action: 'unchanged' as const }
+            }
+
+            const symbols = yield* astGrep.value.findSymbols(anchor.filePath)
+            const symbolName = anchor.symbolFqname.split('::').pop()
+            const found = symbols.some(s => s.name === symbolName)
+
+            if (found) {
+              return { anchorId: anchor.id, oldStatus, newStatus: oldStatus, action: 'unchanged' as const }
+            }
+
+            // Symbol not found - check if it moved to another file
+            // (simplified - in production, search nearby files)
+            yield* anchorRepo.updateStatus(anchor.id, 'invalid')
+            yield* logInvalidation(anchor.id, oldStatus, 'invalid', 'symbol_missing', detectedBy)
+
+            return {
+              anchorId: anchor.id,
+              oldStatus,
+              newStatus: 'invalid' as const,
+              action: 'invalidated' as const,
+              reason: 'symbol_missing'
+            }
+          }
+
+          case 'glob': {
+            // Glob anchors: file exists = valid
+            return { anchorId: anchor.id, oldStatus, newStatus: oldStatus, action: 'unchanged' as const }
+          }
+
+          default:
+            return { anchorId: anchor.id, oldStatus, newStatus: oldStatus, action: 'unchanged' as const }
+        }
+      })
+
+    const logInvalidation = (
+      anchorId: number,
+      oldStatus: AnchorStatus,
+      newStatus: AnchorStatus,
+      reason: string,
+      detectedBy: DetectedBy,
+      extra?: { oldHash?: string | null; newHash?: string; similarity?: number }
+    ) =>
+      invalidationLogRepo.insert({
+        anchorId,
+        oldStatus,
+        newStatus,
+        reason,
+        detectedBy,
+        oldContentHash: extra?.oldHash ?? null,
+        newContentHash: extra?.newHash ?? null,
+        similarityScore: extra?.similarity ?? null
+      })
+
+    return {
+      verify: (anchorId) =>
+        Effect.gen(function* () {
+          // Check cache first
+          const cached = yield* verificationCache.get(anchorId)
+          if (cached && cached.expiresAt > new Date()) {
+            const anchor = yield* anchorRepo.findById(anchorId)
+            if (!anchor) return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+            return {
+              anchorId,
+              oldStatus: anchor.status,
+              newStatus: cached.status,
+              action: 'unchanged' as const
+            }
+          }
+
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          const result = yield* verifyAnchor(anchor, 'lazy')
+
+          // Update cache
+          yield* verificationCache.set({
+            anchorId,
+            status: result.newStatus,
+            verifiedAt: new Date(),
+            expiresAt: new Date(Date.now() + CACHE_TTL * 1000)
+          })
+
+          return result
+        }),
+
+      verifyAll: () =>
+        Effect.gen(function* () {
+          const startTime = Date.now()
+          const anchors = yield* anchorRepo.findAll()
+
+          let valid = 0, drifted = 0, invalid = 0, selfHealed = 0, errors = 0
+
+          for (const anchor of anchors) {
+            const result = yield* verifyAnchor(anchor, 'periodic').pipe(
+              Effect.catchAll(() => {
+                errors++
+                return Effect.succeed(null)
+              })
+            )
+
+            if (result) {
+              switch (result.action) {
+                case 'unchanged': valid++; break
+                case 'self_healed': selfHealed++; valid++; break
+                case 'drifted': drifted++; break
+                case 'invalidated': invalid++; break
+              }
+            }
+          }
+
+          return {
+            total: anchors.length,
+            valid,
+            drifted,
+            invalid,
+            selfHealed,
+            errors,
+            duration: Date.now() - startTime
+          }
+        }),
+
+      verifyFile: (filePath) =>
+        Effect.gen(function* () {
+          const startTime = Date.now()
+          const anchors = yield* anchorRepo.findByFilePath(filePath)
+
+          let valid = 0, drifted = 0, invalid = 0, selfHealed = 0, errors = 0
+
+          for (const anchor of anchors) {
+            const result = yield* verifyAnchor(anchor, 'manual').pipe(
+              Effect.catchAll(() => {
+                errors++
+                return Effect.succeed(null)
+              })
+            )
+
+            if (result) {
+              switch (result.action) {
+                case 'unchanged': valid++; break
+                case 'self_healed': selfHealed++; valid++; break
+                case 'drifted': drifted++; break
+                case 'invalidated': invalid++; break
+              }
+            }
+          }
+
+          return {
+            total: anchors.length,
+            valid,
+            drifted,
+            invalid,
+            selfHealed,
+            errors,
+            duration: Date.now() - startTime
+          }
+        }),
+
+      invalidate: (anchorId, reason) =>
+        Effect.gen(function* () {
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          yield* anchorRepo.updateStatus(anchorId, 'invalid')
+          yield* logInvalidation(anchorId, anchor.status, 'invalid', reason, 'manual')
+          yield* verificationCache.delete(anchorId)
+        }),
+
+      restore: (anchorId) =>
+        Effect.gen(function* () {
+          const anchor = yield* anchorRepo.findById(anchorId)
+          if (!anchor) {
+            return yield* Effect.fail(new AnchorNotFoundError({ id: anchorId }))
+          }
+
+          yield* anchorRepo.updateStatus(anchorId, 'valid')
+          yield* logInvalidation(anchorId, anchor.status, 'valid', 'manual_restore', 'manual')
+          yield* verificationCache.delete(anchorId)
+        }),
+
+      prune: (olderThan) =>
+        Effect.gen(function* () {
+          const count = yield* anchorRepo.deleteInvalidOlderThan(olderThan)
+          return { deleted: count }
+        })
+    }
+  })
+)
+```
+
+### SelfHealingService
+
+```typescript
+// src/services/self-healing-service.ts
+
+import { Context, Effect, Layer } from "effect"
+
+export interface HealResult {
+  healed: boolean
+  similarity: number
+  newHash?: string
+}
+
+export class SelfHealingService extends Context.Tag("SelfHealingService")<
+  SelfHealingService,
+  {
+    readonly tryHeal: (
+      anchor: FileAnchor,
+      newContent: string,
+      newHash: string
+    ) => Effect.Effect<HealResult, DatabaseError>
+  }
+>() {}
+
+export const SelfHealingServiceLive = Layer.effect(
+  SelfHealingService,
+  Effect.gen(function* () {
+    const anchorRepo = yield* AnchorRepository
+    const contentBackupRepo = yield* ContentBackupRepository
+    const configRepo = yield* ConfigRepository
+
+    const THRESHOLD = yield* configRepo.getFloat('self_heal_threshold', 0.8)
+
+    // Tokenize for Jaccard similarity
+    const tokenize = (text: string): Set<string> => {
+      return new Set(
+        text
+          .toLowerCase()
+          .replace(/[^\w\s]/g, ' ')
+          .split(/\s+/)
+          .filter(t => t.length > 2)
+      )
+    }
+
+    const jaccardSimilarity = (a: Set<string>, b: Set<string>): number => {
+      const intersection = new Set([...a].filter(x => b.has(x)))
+      const union = new Set([...a, ...b])
+      return union.size === 0 ? 0 : intersection.size / union.size
+    }
+
+    return {
+      tryHeal: (anchor, newContent, newHash) =>
+        Effect.gen(function* () {
+          // Get old content from backup
+          const oldContent = yield* contentBackupRepo.get(anchor.contentHash!)
+
+          if (!oldContent) {
+            // No backup, can't compare
+            return { healed: false, similarity: 0 }
+          }
+
+          // Compute similarity
+          const oldTokens = tokenize(oldContent)
+          const newTokens = tokenize(newContent)
+          const similarity = jaccardSimilarity(oldTokens, newTokens)
+
+          if (similarity >= THRESHOLD) {
+            // Content is similar enough - heal
+            yield* anchorRepo.update(anchor.id, {
+              contentHash: newHash,
+              lastVerifiedAt: new Date()
+            })
+
+            // Backup new content
+            yield* contentBackupRepo.set(newHash, newContent)
+
+            return { healed: true, similarity, newHash }
+          }
+
+          return { healed: false, similarity }
+        })
+    }
+  })
+)
+```
+
+### VerificationScheduler
+
+```typescript
+// src/services/verification-scheduler.ts
+
+import { Context, Effect, Layer, Schedule } from "effect"
+
+export class VerificationScheduler extends Context.Tag("VerificationScheduler")<
+  VerificationScheduler,
+  {
+    readonly start: () => Effect.Effect<void, never>
+    readonly stop: () => Effect.Effect<void, never>
+    readonly runNow: () => Effect.Effect<VerificationSummary, DatabaseError>
+  }
+>() {}
+
+export const VerificationSchedulerLive = Layer.scoped(
+  VerificationScheduler,
+  Effect.gen(function* () {
+    const invalidationService = yield* InvalidationService
+    const configRepo = yield* ConfigRepository
+    const notificationService = yield* NotificationService
+
+    const INTERVAL_HOURS = yield* configRepo.getInt('verification_interval', 24)
+
+    let schedulerFiber: Fiber.RuntimeFiber<never, never> | null = null
+
+    const dailySchedule = Schedule.fixed(`${INTERVAL_HOURS} hours`)
+
+    const runVerification = Effect.gen(function* () {
+      yield* Effect.log('Starting scheduled verification...')
+
+      const summary = yield* invalidationService.verifyAll()
+
+      yield* Effect.log(
+        `Verification complete: ${summary.valid} valid, ${summary.drifted} drifted, ` +
+        `${summary.invalid} invalid, ${summary.selfHealed} self-healed`
+      )
+
+      // Notify if there are issues
+      if (summary.drifted > 0 || summary.invalid > 0) {
+        yield* notificationService.sendVerificationSummary(summary)
+      }
+
+      return summary
+    })
+
+    return {
+      start: () =>
+        Effect.gen(function* () {
+          if (schedulerFiber) return
+
+          schedulerFiber = yield* Effect.fork(
+            runVerification.pipe(
+              Effect.repeat(dailySchedule),
+              Effect.catchAll((e) => Effect.log(`Verification error: ${e}`))
+            )
+          )
+
+          yield* Effect.log(`Verification scheduler started (every ${INTERVAL_HOURS}h)`)
+        }),
+
+      stop: () =>
+        Effect.gen(function* () {
+          if (schedulerFiber) {
+            yield* Fiber.interrupt(schedulerFiber)
+            schedulerFiber = null
+          }
+          yield* Effect.log('Verification scheduler stopped')
+        }),
+
+      runNow: () => runVerification
+    }
+  })
+)
+```
+
+### SwarmCoordinator
+
+```typescript
+// src/services/swarm-coordinator.ts
+
+import { Context, Effect, Layer } from "effect"
+
+export class SwarmCoordinator extends Context.Tag("SwarmCoordinator")<
+  SwarmCoordinator,
+  {
+    readonly verifyWithSwarm: (filePaths: string[]) => Effect.Effect<SwarmResult, DatabaseError>
+  }
+>() {}
+
+interface SwarmResult {
+  total: number
+  verified: number
+  errors: number
+  duration: number
+}
+
+export const SwarmCoordinatorLive = Layer.effect(
+  SwarmCoordinator,
+  Effect.gen(function* () {
+    const anchorRepo = yield* AnchorRepository
+    const invalidationService = yield* InvalidationService
+    const configRepo = yield* ConfigRepository
+
+    const BATCH_SIZE = yield* configRepo.getInt('swarm_batch_size', 10)
+    const MAX_CONCURRENT = yield* configRepo.getInt('swarm_max_concurrent', 4)
+
+    const chunk = <T>(arr: T[], size: number): T[][] => {
+      const chunks: T[][] = []
+      for (let i = 0; i < arr.length; i += size) {
+        chunks.push(arr.slice(i, i + size))
+      }
+      return chunks
+    }
+
+    return {
+      verifyWithSwarm: (filePaths) =>
+        Effect.gen(function* () {
+          const startTime = Date.now()
+
+          // Get all anchors for affected files
+          const anchors: FileAnchor[] = []
+          for (const path of filePaths) {
+            const fileAnchors = yield* anchorRepo.findByFilePath(path)
+            anchors.push(...fileAnchors)
+          }
+
+          if (anchors.length === 0) {
+            return { total: 0, verified: 0, errors: 0, duration: 0 }
+          }
+
+          // Partition into batches
+          const batches = chunk(anchors, BATCH_SIZE)
+
+          yield* Effect.log(`Swarm verification: ${anchors.length} anchors in ${batches.length} batches`)
+
+          // Process batches with concurrency limit
+          let verified = 0
+          let errors = 0
+
+          const processBatch = (batch: FileAnchor[]) =>
+            Effect.gen(function* () {
+              for (const anchor of batch) {
+                const result = yield* invalidationService.verify(anchor.id).pipe(
+                  Effect.catchAll(() => {
+                    errors++
+                    return Effect.succeed(null)
+                  })
+                )
+                if (result) verified++
+              }
+            })
+
+          // Run with concurrency
+          yield* Effect.all(
+            batches.map(processBatch),
+            { concurrency: MAX_CONCURRENT }
+          )
+
+          return {
+            total: anchors.length,
+            verified,
+            errors,
+            duration: Date.now() - startTime
+          }
+        })
+    }
+  })
+)
+```
+
+## CLI Commands
+
+```typescript
+// apps/cli/src/commands/graph.ts
+
+// Add to existing graph command handler
+
+if (subcommand === 'verify') {
+  const invalidationService = yield* InvalidationService
+
+  const filePath = pos[1]
+
+  if (filePath) {
+    // Verify specific file
+    const summary = yield* invalidationService.verifyFile(filePath)
+    console.log(`Verified anchors for ${filePath}:`)
+    console.log(`  Valid: ${summary.valid}`)
+    console.log(`  Drifted: ${summary.drifted}`)
+    console.log(`  Invalid: ${summary.invalid}`)
+    console.log(`  Self-healed: ${summary.selfHealed}`)
+  } else if (flag(flags, 'swarm')) {
+    // Swarm verification
+    const filesChanged = opt(flags, 'files-changed')
+    if (!filesChanged) {
+      console.error('Usage: tx graph:verify --swarm --files-changed <file1,file2,...>')
+      process.exit(1)
+    }
+
+    const swarm = yield* SwarmCoordinator
+    const result = yield* swarm.verifyWithSwarm(filesChanged.split(','))
+
+    console.log(`Swarm verification complete:`)
+    console.log(`  Total: ${result.total}`)
+    console.log(`  Verified: ${result.verified}`)
+    console.log(`  Errors: ${result.errors}`)
+    console.log(`  Duration: ${result.duration}ms`)
+  } else {
+    // Full verification
+    const summary = yield* invalidationService.verifyAll()
+
+    if (flag(flags, 'json')) {
+      console.log(JSON.stringify(summary, null, 2))
+    } else {
+      console.log(`Verification Summary:`)
+      console.log(`  Total anchors: ${summary.total}`)
+      console.log(`  Valid: ${summary.valid}`)
+      console.log(`  Drifted: ${summary.drifted}`)
+      console.log(`  Invalid: ${summary.invalid}`)
+      console.log(`  Self-healed: ${summary.selfHealed}`)
+      console.log(`  Errors: ${summary.errors}`)
+      console.log(`  Duration: ${summary.duration}ms`)
+    }
+  }
+}
+
+else if (subcommand === 'invalidate') {
+  const anchorId = parseInt(pos[1] || '', 10)
+  const reason = opt(flags, 'reason') || 'Manual invalidation'
+
+  if (!anchorId) {
+    console.error('Usage: tx graph:invalidate <anchor-id> [--reason "..."]')
+    process.exit(1)
+  }
+
+  const invalidationService = yield* InvalidationService
+  yield* invalidationService.invalidate(anchorId, reason)
+  console.log(`Invalidated anchor #${anchorId}`)
+}
+
+else if (subcommand === 'restore') {
+  const anchorId = parseInt(pos[1] || '', 10)
+
+  if (!anchorId) {
+    console.error('Usage: tx graph:restore <anchor-id>')
+    process.exit(1)
+  }
+
+  const invalidationService = yield* InvalidationService
+  yield* invalidationService.restore(anchorId)
+  console.log(`Restored anchor #${anchorId}`)
+}
+
+else if (subcommand === 'prune') {
+  const beforeStr = opt(flags, 'before') || '30 days ago'
+  const olderThan = parseRelativeDate(beforeStr)
+
+  const invalidationService = yield* InvalidationService
+  const result = yield* invalidationService.prune(olderThan)
+  console.log(`Pruned ${result.deleted} invalid anchors`)
+}
+
+else if (subcommand === 'status') {
+  const anchorRepo = yield* AnchorRepository
+  const stats = yield* anchorRepo.getStats()
+
+  console.log(`Graph Status:`)
+  console.log(`  Total anchors: ${stats.total}`)
+  console.log(`  Valid: ${stats.valid}`)
+  console.log(`  Drifted: ${stats.drifted}`)
+  console.log(`  Invalid: ${stats.invalid}`)
+  console.log(`  Last verified: ${stats.lastVerifiedAt?.toISOString() || 'never'}`)
+}
+```
+
+## Testing Strategy
+
+### Unit Tests
+
+```typescript
+describe('InvalidationService', () => {
+  it('should mark anchor as invalid when file deleted', async () => {
+    const anchor = await createAnchor({ filePath: '/nonexistent/file.ts' })
+
+    const result = await runEffect(invalidationService.verify(anchor.id))
+
+    expect(result.newStatus).toBe('invalid')
+    expect(result.reason).toBe('file_deleted')
+  })
+
+  it('should self-heal when content similarity > threshold', async () => {
+    const oldContent = 'function validateToken(token: string) { return true }'
+    const newContent = 'function validateToken(token: string): boolean { return true }'
+
+    // Create anchor with hash
+    const anchor = await createHashAnchor(oldContent)
+
+    // Modify file slightly
+    await writeFile(anchor.filePath, newContent)
+
+    const result = await runEffect(invalidationService.verify(anchor.id))
+
+    expect(result.action).toBe('self_healed')
+    expect(result.similarity).toBeGreaterThan(0.8)
+  })
+
+  it('should mark as drifted when content similarity < threshold', async () => {
+    const oldContent = 'function validateToken(token: string) { return true }'
+    const newContent = 'class AuthService { validate() { return false } }'
+
+    const anchor = await createHashAnchor(oldContent)
+    await writeFile(anchor.filePath, newContent)
+
+    const result = await runEffect(invalidationService.verify(anchor.id))
+
+    expect(result.action).toBe('drifted')
+    expect(result.similarity).toBeLessThan(0.8)
+  })
+})
+
+describe('SelfHealingService', () => {
+  it('should compute Jaccard similarity correctly', () => {
+    const a = 'the quick brown fox'
+    const b = 'the quick brown dog'
+
+    const similarity = jaccardSimilarity(tokenize(a), tokenize(b))
+
+    // 3 common (the, quick, brown), 5 total (the, quick, brown, fox, dog)
+    expect(similarity).toBeCloseTo(0.6)
+  })
+})
+
+describe('SwarmCoordinator', () => {
+  it('should process batches in parallel', async () => {
+    // Create 25 anchors across 5 files
+    const anchors = await createManyAnchors(25)
+
+    const result = await runEffect(
+      swarmCoordinator.verifyWithSwarm(anchors.map(a => a.filePath))
+    )
+
+    expect(result.verified).toBe(25)
+    expect(result.errors).toBe(0)
+  })
+})
+```
+
+### Integration Tests
+
+```typescript
+// test/integration/invalidation.test.ts
+
+import {
+  createTestDatabase,
+  createTestLearning,
+  createTestAnchor,
+  runEffect,
+  createTempDir,
+  cachedLLMCall,
+  fixtureId
+} from '@tx/test-utils'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+
+describe('Invalidation Integration', () => {
+  let db: TestDatabase
+  let tempDir: TempDir
+
+  beforeEach(async () => {
+    db = await createTestDatabase()
+    tempDir = await createTempDir('tx-invalidation-test-')
+  })
+
+  afterEach(async () => {
+    await db.close()
+    await fs.rm(tempDir, { recursive: true })
+  })
+
+  describe('Anchor Verification', () => {
+    it('should mark anchor as invalid when file deleted', async () => {
+      const filePath = path.join(tempDir, 'will-delete.ts')
+      await fs.writeFile(filePath, 'export function foo() {}')
+
+      const learning = await createTestLearning(db, 'Foo pattern')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'hash',
+          anchorValue: filePath,
+          lineStart: 1,
+          lineEnd: 1
+        }),
+        db
+      )
+
+      // Delete file
+      await fs.unlink(filePath)
+
+      const result = await runEffect(invalidationService.verify(anchor.id), db)
+
+      expect(result.newStatus).toBe('invalid')
+      expect(result.reason).toBe('file_deleted')
+      expect(result.action).toBe('invalidated')
+    })
+
+    it('should self-heal when content similarity > threshold', async () => {
+      const filePath = path.join(tempDir, 'will-change.ts')
+      const oldContent = 'export function validateToken(token: string) { return true }'
+      await fs.writeFile(filePath, oldContent)
+
+      const learning = await createTestLearning(db, 'Token validation')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'hash',
+          anchorValue: filePath,
+          lineStart: 1,
+          lineEnd: 1
+        }),
+        db
+      )
+
+      // Store backup for self-healing comparison
+      await runEffect(
+        contentBackupRepo.set(anchor.contentHash!, oldContent),
+        db
+      )
+
+      // Minor change (adding type annotation)
+      const newContent = 'export function validateToken(token: string): boolean { return true }'
+      await fs.writeFile(filePath, newContent)
+
+      const result = await runEffect(invalidationService.verify(anchor.id), db)
+
+      expect(result.action).toBe('self_healed')
+      expect(result.similarity).toBeGreaterThan(0.8)
+
+      // Check anchor hash was updated
+      const updated = await runEffect(anchorRepo.findById(anchor.id), db)
+      expect(updated?.contentHash).not.toBe(anchor.contentHash)
+    })
+
+    it('should mark as drifted when content similarity < threshold', async () => {
+      const filePath = path.join(tempDir, 'will-drift.ts')
+      const oldContent = 'export function validateToken(token: string) { return true }'
+      await fs.writeFile(filePath, oldContent)
+
+      const learning = await createTestLearning(db, 'Token validation')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'hash',
+          anchorValue: filePath,
+          lineStart: 1,
+          lineEnd: 1
+        }),
+        db
+      )
+
+      await runEffect(contentBackupRepo.set(anchor.contentHash!, oldContent), db)
+
+      // Major change
+      const newContent = 'class AuthService { validate() { return this.checkPermissions() } }'
+      await fs.writeFile(filePath, newContent)
+
+      const result = await runEffect(invalidationService.verify(anchor.id), db)
+
+      expect(result.action).toBe('drifted')
+      expect(result.newStatus).toBe('drifted')
+      expect(result.similarity).toBeLessThan(0.8)
+    })
+
+    it('should handle symbol anchors correctly', async () => {
+      const filePath = path.join(tempDir, 'symbol-test.ts')
+      await fs.writeFile(filePath, 'export function myFunction() {}')
+
+      const learning = await createTestLearning(db, 'MyFunction usage')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'symbol',
+          anchorValue: 'myFunction'
+        }),
+        db
+      )
+
+      // Symbol still exists
+      let result = await runEffect(invalidationService.verify(anchor.id), db)
+      expect(result.newStatus).toBe('valid')
+
+      // Remove symbol
+      await fs.writeFile(filePath, 'export function differentFunction() {}')
+
+      result = await runEffect(invalidationService.verify(anchor.id), db)
+      expect(result.newStatus).toBe('invalid')
+      expect(result.reason).toBe('symbol_missing')
+    })
+
+    it('should relocate symbol when moved to different file', async () => {
+      const originalFile = path.join(tempDir, 'original.ts')
+      const newFile = path.join(tempDir, 'relocated.ts')
+
+      await fs.writeFile(originalFile, 'export function myHelper() {}')
+
+      const learning = await createTestLearning(db, 'Helper usage')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath: originalFile,
+          anchorType: 'symbol',
+          anchorValue: 'myHelper'
+        }),
+        db
+      )
+
+      // Move symbol to new file
+      await fs.writeFile(originalFile, '// empty')
+      await fs.writeFile(newFile, 'export function myHelper() {}')
+
+      const result = await runEffect(invalidationService.verify(anchor.id), db)
+
+      expect(result.reason).toBe('symbol_relocated')
+      expect(result.newStatus).toBe('valid')
+
+      // Check anchor was updated with new path
+      const updated = await runEffect(anchorRepo.findById(anchor.id), db)
+      expect(updated?.filePath).toBe(newFile)
+    })
+  })
+
+  describe('Bulk Verification', () => {
+    it('should verify all anchors and return summary', async () => {
+      // Create multiple anchors with different states
+      const validFile = path.join(tempDir, 'valid.ts')
+      const deletedFile = path.join(tempDir, 'deleted.ts')
+
+      await fs.writeFile(validFile, 'export const valid = true')
+      await fs.writeFile(deletedFile, 'export const deleted = true')
+
+      const l1 = await createTestLearning(db, 'Learning 1')
+      const l2 = await createTestLearning(db, 'Learning 2')
+
+      await runEffect(anchorService.createAnchor({
+        learningId: l1.id,
+        filePath: validFile,
+        anchorType: 'glob',
+        anchorValue: validFile
+      }), db)
+
+      await runEffect(anchorService.createAnchor({
+        learningId: l2.id,
+        filePath: deletedFile,
+        anchorType: 'glob',
+        anchorValue: deletedFile
+      }), db)
+
+      // Delete one file
+      await fs.unlink(deletedFile)
+
+      const summary = await runEffect(invalidationService.verifyAll(), db)
+
+      expect(summary.total).toBe(2)
+      expect(summary.valid).toBe(1)
+      expect(summary.invalid).toBe(1)
+      expect(summary.duration).toBeGreaterThan(0)
+    })
+
+    it('should verify anchors for specific file', async () => {
+      const targetFile = path.join(tempDir, 'target.ts')
+      const otherFile = path.join(tempDir, 'other.ts')
+
+      await fs.writeFile(targetFile, 'export const target = true')
+      await fs.writeFile(otherFile, 'export const other = true')
+
+      const l1 = await createTestLearning(db, 'Target learning')
+      const l2 = await createTestLearning(db, 'Other learning')
+
+      await runEffect(anchorService.createAnchor({
+        learningId: l1.id,
+        filePath: targetFile,
+        anchorType: 'glob',
+        anchorValue: targetFile
+      }), db)
+
+      await runEffect(anchorService.createAnchor({
+        learningId: l2.id,
+        filePath: otherFile,
+        anchorType: 'glob',
+        anchorValue: otherFile
+      }), db)
+
+      const summary = await runEffect(
+        invalidationService.verifyFile(targetFile),
+        db
+      )
+
+      expect(summary.total).toBe(1) // Only target file's anchors
+      expect(summary.valid).toBe(1)
+    })
+  })
+
+  describe('Audit Logging', () => {
+    it('should log all invalidation actions', async () => {
+      const filePath = path.join(tempDir, 'logged.ts')
+      await fs.writeFile(filePath, 'export const foo = true')
+
+      const learning = await createTestLearning(db, 'Logged learning')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'glob',
+          anchorValue: filePath
+        }),
+        db
+      )
+
+      // Manual invalidation
+      await runEffect(
+        invalidationService.invalidate(anchor.id, 'test reason'),
+        db
+      )
+
+      const logs = await runEffect(
+        invalidationLogRepo.findByAnchor(anchor.id),
+        db
+      )
+
+      expect(logs).toHaveLength(1)
+      expect(logs[0].reason).toBe('test reason')
+      expect(logs[0].detectedBy).toBe('manual')
+      expect(logs[0].oldStatus).toBe('valid')
+      expect(logs[0].newStatus).toBe('invalid')
+    })
+
+    it('should track self-healing in audit log', async () => {
+      const filePath = path.join(tempDir, 'self-heal-log.ts')
+      const oldContent = 'function foo() { return 1 }'
+      await fs.writeFile(filePath, oldContent)
+
+      const learning = await createTestLearning(db, 'Foo')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'hash',
+          anchorValue: filePath,
+          lineStart: 1,
+          lineEnd: 1
+        }),
+        db
+      )
+
+      await runEffect(contentBackupRepo.set(anchor.contentHash!, oldContent), db)
+
+      // Minor change
+      await fs.writeFile(filePath, 'function foo() { return 2 }')
+      await runEffect(invalidationService.verify(anchor.id), db)
+
+      const logs = await runEffect(
+        invalidationLogRepo.findByAnchor(anchor.id),
+        db
+      )
+
+      const healLog = logs.find(l => l.reason === 'self_healed')
+      expect(healLog).toBeDefined()
+      expect(healLog?.similarityScore).toBeGreaterThan(0.8)
+      expect(healLog?.oldContentHash).toBeDefined()
+      expect(healLog?.newContentHash).toBeDefined()
+    })
+  })
+
+  describe('Verification Cache', () => {
+    it('should respect cache TTL', async () => {
+      const filePath = path.join(tempDir, 'cached.ts')
+      await fs.writeFile(filePath, 'export const cached = true')
+
+      const learning = await createTestLearning(db, 'Cached')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'glob',
+          anchorValue: filePath
+        }),
+        db
+      )
+
+      // First verify - should populate cache
+      await runEffect(invalidationService.verify(anchor.id), db)
+
+      // Check cache entry
+      const cached = await runEffect(verificationCache.get(anchor.id), db)
+      expect(cached).toBeDefined()
+      expect(cached?.status).toBe('valid')
+      expect(cached?.expiresAt.getTime()).toBeGreaterThan(Date.now())
+
+      // Second verify - should use cache (no DB query for verification)
+      const result2 = await runEffect(invalidationService.verify(anchor.id), db)
+      expect(result2.action).toBe('unchanged')
+    })
+
+    it('should invalidate cache on manual invalidation', async () => {
+      const filePath = path.join(tempDir, 'cache-invalidate.ts')
+      await fs.writeFile(filePath, 'export const foo = true')
+
+      const learning = await createTestLearning(db, 'Cache test')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'glob',
+          anchorValue: filePath
+        }),
+        db
+      )
+
+      // Populate cache
+      await runEffect(invalidationService.verify(anchor.id), db)
+
+      // Manual invalidation should clear cache
+      await runEffect(invalidationService.invalidate(anchor.id, 'manual'), db)
+
+      const cached = await runEffect(verificationCache.get(anchor.id), db)
+      expect(cached).toBeUndefined()
+    })
+  })
+
+  describe('Pinned Anchors', () => {
+    it('should skip verification for pinned anchors', async () => {
+      const filePath = path.join(tempDir, 'pinned.ts')
+      await fs.writeFile(filePath, 'export const pinned = true')
+
+      const learning = await createTestLearning(db, 'Pinned learning')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'hash',
+          anchorValue: filePath,
+          lineStart: 1,
+          lineEnd: 1
+        }),
+        db
+      )
+
+      // Pin the anchor
+      await runEffect(anchorRepo.update(anchor.id, { pinned: true }), db)
+
+      // Delete the file
+      await fs.unlink(filePath)
+
+      // Verify should still return valid (pinned)
+      const result = await runEffect(invalidationService.verify(anchor.id), db)
+      expect(result.action).toBe('unchanged')
+      expect(result.newStatus).toBe('valid')
+    })
+
+    it('should support pin/unpin via CLI', async () => {
+      const learning = await createTestLearning(db, 'Pin test')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath: 'any.ts',
+          anchorType: 'glob',
+          anchorValue: 'any.ts'
+        }),
+        db
+      )
+
+      // Pin
+      await runEffect(anchorService.pin(anchor.id), db)
+      let updated = await runEffect(anchorRepo.findById(anchor.id), db)
+      expect(updated?.pinned).toBe(true)
+
+      // Unpin
+      await runEffect(anchorService.unpin(anchor.id), db)
+      updated = await runEffect(anchorRepo.findById(anchor.id), db)
+      expect(updated?.pinned).toBe(false)
+    })
+  })
+
+  describe('Pruning', () => {
+    it('should delete old invalid anchors', async () => {
+      const learning = await createTestLearning(db, 'Old learning')
+
+      // Create anchor and mark invalid
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath: 'old.ts',
+          anchorType: 'glob',
+          anchorValue: 'old.ts'
+        }),
+        db
+      )
+
+      await runEffect(anchorRepo.updateStatus(anchor.id, 'invalid'), db)
+
+      // Backdate the invalidation (91 days ago)
+      const oldDate = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000)
+      await db.query(
+        'UPDATE file_anchors SET created_at = ? WHERE id = ?',
+        [oldDate.toISOString(), anchor.id]
+      )
+
+      // Prune
+      const result = await runEffect(
+        invalidationService.prune(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)),
+        db
+      )
+
+      expect(result.deleted).toBe(1)
+
+      // Verify anchor is gone
+      const found = await runEffect(anchorRepo.findById(anchor.id), db)
+      expect(found).toBeUndefined()
+    })
+
+    it('should not delete valid anchors', async () => {
+      const learning = await createTestLearning(db, 'Valid learning')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath: 'valid.ts',
+          anchorType: 'glob',
+          anchorValue: 'valid.ts'
+        }),
+        db
+      )
+
+      // Backdate but keep valid
+      const oldDate = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000)
+      await db.query(
+        'UPDATE file_anchors SET created_at = ? WHERE id = ?',
+        [oldDate.toISOString(), anchor.id]
+      )
+
+      const result = await runEffect(
+        invalidationService.prune(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)),
+        db
+      )
+
+      expect(result.deleted).toBe(0)
+
+      // Verify anchor still exists
+      const found = await runEffect(anchorRepo.findById(anchor.id), db)
+      expect(found).toBeDefined()
+    })
+  })
+
+  describe('Swarm Verification', () => {
+    it('should process batches in parallel', async () => {
+      // Create 25 files with anchors
+      const files: string[] = []
+      for (let i = 0; i < 25; i++) {
+        const filePath = path.join(tempDir, `file-${i}.ts`)
+        await fs.writeFile(filePath, `export const file${i} = true`)
+        files.push(filePath)
+
+        const learning = await createTestLearning(db, `Learning ${i}`)
+        await runEffect(
+          anchorService.createAnchor({
+            learningId: learning.id,
+            filePath,
+            anchorType: 'glob',
+            anchorValue: filePath
+          }),
+          db
+        )
+      }
+
+      const startTime = Date.now()
+      const result = await runEffect(
+        swarmCoordinator.verifyWithSwarm(files),
+        db
+      )
+      const duration = Date.now() - startTime
+
+      expect(result.total).toBe(25)
+      expect(result.verified).toBe(25)
+      expect(result.errors).toBe(0)
+
+      // Should be faster than sequential (parallel batches)
+      // This is a rough check - actual speedup depends on system
+      expect(result.duration).toBeLessThan(duration + 100)
+    })
+
+    it('should handle errors gracefully in swarm', async () => {
+      // Create mix of valid and problematic anchors
+      const validFile = path.join(tempDir, 'swarm-valid.ts')
+      await fs.writeFile(validFile, 'export const valid = true')
+
+      const l1 = await createTestLearning(db, 'Valid swarm')
+      const l2 = await createTestLearning(db, 'Invalid swarm')
+
+      await runEffect(anchorService.createAnchor({
+        learningId: l1.id,
+        filePath: validFile,
+        anchorType: 'glob',
+        anchorValue: validFile
+      }), db)
+
+      // Create anchor to non-existent file
+      await runEffect(anchorService.createAnchor({
+        learningId: l2.id,
+        filePath: '/nonexistent/file.ts',
+        anchorType: 'glob',
+        anchorValue: '/nonexistent/file.ts'
+      }), db)
+
+      const result = await runEffect(
+        swarmCoordinator.verifyWithSwarm([validFile, '/nonexistent/file.ts']),
+        db
+      )
+
+      expect(result.verified).toBe(2) // Both processed
+      expect(result.errors).toBe(0) // Errors handled gracefully
+    })
+  })
+
+  describe('Scheduled Verification', () => {
+    it('should run verification on schedule', async () => {
+      // Configure short interval for testing
+      await runEffect(configRepo.set('verification_interval', '1'), db) // 1 hour
+
+      await runEffect(verificationScheduler.start(), db)
+
+      // Trigger immediate run
+      const summary = await runEffect(verificationScheduler.runNow(), db)
+
+      expect(summary).toBeDefined()
+      expect(summary.total).toBeGreaterThanOrEqual(0)
+
+      await runEffect(verificationScheduler.stop(), db)
+    })
+  })
+
+  describe('Restore', () => {
+    it('should restore invalid anchor to valid', async () => {
+      const filePath = path.join(tempDir, 'restore.ts')
+      await fs.writeFile(filePath, 'export const restore = true')
+
+      const learning = await createTestLearning(db, 'Restore test')
+      const anchor = await runEffect(
+        anchorService.createAnchor({
+          learningId: learning.id,
+          filePath,
+          anchorType: 'glob',
+          anchorValue: filePath
+        }),
+        db
+      )
+
+      // Invalidate
+      await runEffect(invalidationService.invalidate(anchor.id, 'test'), db)
+
+      // Restore
+      await runEffect(invalidationService.restore(anchor.id), db)
+
+      const restored = await runEffect(anchorRepo.findById(anchor.id), db)
+      expect(restored?.status).toBe('valid')
+
+      // Check audit log
+      const logs = await runEffect(
+        invalidationLogRepo.findByAnchor(anchor.id),
+        db
+      )
+      const restoreLog = logs.find(l => l.reason === 'manual_restore')
+      expect(restoreLog).toBeDefined()
+    })
+  })
+})
+```
+
+## Pinned Anchors
+
+Anchors can be pinned to skip auto-invalidation:
+
+```sql
+ALTER TABLE file_anchors ADD COLUMN pinned BOOLEAN DEFAULT 0;
+```
+
+```typescript
+const verifyAnchor = (anchor: FileAnchor, detectedBy: DetectedBy) =>
+  Effect.gen(function* () {
+    // Skip verification for pinned anchors
+    if (anchor.pinned) {
+      return { anchorId: anchor.id, oldStatus: anchor.status, newStatus: anchor.status, action: 'unchanged' as const }
+    }
+    // ... rest of verification logic
+  })
+```
+
+CLI:
+```bash
+tx graph:pin <anchor-id>
+tx graph:unpin <anchor-id>
+```
+
+## Soft Delete Retention
+
+Invalid anchors are retained for 90 days before hard deletion:
+
+```bash
+tx graph:prune --before "90 days ago"
+```
+
+## Pluggable Verifier Interface
+
+LLM-assisted verification should be pluggable like extraction:
+
+```typescript
+interface AnchorVerifier {
+  verify(input: VerificationInput): Effect.Effect<VerificationResult, VerificationError>
+}
+
+interface VerificationInput {
+  learning: Learning
+  oldCode: string
+  newCode: string
+}
+
+// Default: Agent SDK (requires ANTHROPIC_API_KEY)
+const defaultVerifier = agentSdkVerifier({
+  model: 'claude-sonnet-4-20250514'
+})
+
+// OpenAI fallback
+const openaiVerifier = openaiVerifier({
+  model: 'gpt-4'
+})
+
+// User can swap
+const tx = createTx({
+  verifier: myCustomVerifier
+})
+```
+
+## LLM Provider Resolution
+
+```typescript
+/**
+ * LLM Provider Resolution Order:
+ * 1. User-provided custom verifier (highest priority)
+ * 2. ANTHROPIC_API_KEY -> AgentSdkVerifier (Claude)
+ * 3. OPENAI_API_KEY -> OpenAIVerifier (GPT-4)
+ * 4. No API key -> RuleBasedVerifier (no LLM, uses similarity only)
+ *
+ * Note: Claude Code subscribers typically have ANTHROPIC_API_KEY available.
+ * Without LLM, verification falls back to rule-based checks:
+ * - File existence
+ * - Content hash comparison
+ * - Symbol existence (via ast-grep)
+ * - Jaccard similarity for self-healing
+ *
+ * LLM-assisted verification is only needed for complex cases where
+ * rule-based checks are insufficient (e.g., semantic drift detection).
+ */
+export const resolveVerifier = (): Layer.Layer<AnchorVerifier> => {
+  if (process.env.TX_VERIFIER === 'none') return RuleBasedVerifierLive
+  if (process.env.ANTHROPIC_API_KEY) return AgentSdkVerifierLive
+  if (process.env.OPENAI_API_KEY) return OpenAIVerifierLive
+  return RuleBasedVerifierLive
+}
+```
+
+## Rule-Based Verifier (No LLM Fallback)
+
+When no LLM is available, use deterministic checks:
+
+```typescript
+export const RuleBasedVerifierLive = Layer.succeed(
+  AnchorVerifier,
+  {
+    verify: (input) =>
+      Effect.gen(function* () {
+        // 1. Check file existence
+        if (!fileExists(input.newCode)) {
+          return { applies: false, confidence: 1.0, reason: 'file_deleted' }
+        }
+
+        // 2. Check symbol existence (if symbol anchor)
+        if (input.learning.anchor?.anchorType === 'symbol') {
+          const symbols = yield* astGrep.findSymbols(input.filePath)
+          const found = symbols.some(s => s.name === input.symbolName)
+          if (!found) {
+            return { applies: false, confidence: 0.9, reason: 'symbol_missing' }
+          }
+        }
+
+        // 3. Jaccard similarity check
+        const similarity = jaccardSimilarity(
+          tokenize(input.oldCode),
+          tokenize(input.newCode)
+        )
+
+        if (similarity > 0.8) {
+          return { applies: true, confidence: similarity, reason: 'high_similarity' }
+        }
+
+        if (similarity < 0.3) {
+          return { applies: false, confidence: 1 - similarity, reason: 'low_similarity' }
+        }
+
+        // 4. Uncertain - queue for human review
+        return { applies: null, confidence: 0.5, reason: 'needs_review' }
+      })
+  }
+)
+```
+
+## No Built-in Swarm
+
+Swarm orchestration is user code, not a core primitive. Provide example scripts:
+
+```bash
+# examples/swarm/parallel-verify.sh
+files=$(git diff --name-only HEAD~1)
+echo "$files" | xargs -P 4 -I {} tx graph:verify --files "{}"
+```
+
+This is consistent with "primitives, not frameworks" philosophy.
+
+## Swarm Conflict Resolution
+
+When multiple agents verify the same anchor (in user-orchestrated swarms), conflicts are resolved by majority vote:
+
+- 3/4 agents say valid → valid
+- 2/2 tie → mark for human review
+
+```typescript
+const resolveConflict = (votes: VerificationResult[]): AnchorStatus => {
+  const validCount = votes.filter(v => v.newStatus === 'valid').length
+  const invalidCount = votes.filter(v => v.newStatus === 'invalid').length
+
+  if (validCount > invalidCount) return 'valid'
+  if (invalidCount > validCount) return 'invalid'
+  return 'needs_review'  // Tie goes to human
+}
+```
+
+## File Patterns: Glob, Not Regex
+
+```bash
+tx graph:verify --files "src/**/*.ts"
+tx graph:verify --files "src/auth/*.ts,src/jwt/*.ts"
+```
+
+Consistent with PRD-016 and the rest of the CLI.
+
+## Performance Considerations
+
+1. **Batch verification**: Process multiple anchors per DB transaction
+2. **Lazy verification**: Cache results with TTL to avoid repeated checks
+3. **Parallel swarm**: User-orchestrated, not built-in
+4. **Content backup**: Store compressed backups for self-healing
+5. **Rate limiting**: Prevent swarm from overwhelming LLM API
+
+## Test Caching for LLM Verification
+
+For tests that use real LLM verification calls, cache by SHA256 of input:
+
+```typescript
+// test/fixtures/verification-cache.ts
+
+const VERIFICATION_CACHE_DIR = 'test/fixtures/verification-responses'
+
+export const cachedVerification = async (
+  input: VerificationInput,
+  actualCall: () => Promise<VerificationResult>
+): Promise<VerificationResult> => {
+  const inputStr = JSON.stringify({
+    learning: input.learning.content,
+    oldCode: input.oldCode,
+    newCode: input.newCode
+  })
+  const inputHash = crypto.createHash('sha256').update(inputStr).digest('hex')
+  const cachePath = path.join(VERIFICATION_CACHE_DIR, `${inputHash}.json`)
+
+  // Check cache
+  try {
+    const cached = JSON.parse(await fs.readFile(cachePath, 'utf-8'))
+    console.log(`[Verification Cache HIT] ${inputHash.slice(0, 8)}...`)
+    return cached.response
+  } catch {
+    // Cache miss
+  }
+
+  console.log(`[Verification Cache MISS] ${inputHash.slice(0, 8)}...`)
+  const response = await actualCall()
+
+  await fs.mkdir(VERIFICATION_CACHE_DIR, { recursive: true })
+  await fs.writeFile(cachePath, JSON.stringify({
+    input: inputStr,
+    inputHash,
+    response,
+    cachedAt: new Date().toISOString()
+  }, null, 2))
+
+  return response
+}
+
+// Usage in tests
+describe('LLM-assisted verification', () => {
+  it('should detect semantic drift', async () => {
+    const input: VerificationInput = {
+      learning: { content: 'Always validate JWT expiry' },
+      oldCode: 'function validateToken(t) { return jwt.verify(t) }',
+      newCode: 'function validateToken(t) { return true }' // Removed actual validation
+    }
+
+    const result = await cachedVerification(input, () =>
+      agentSdkVerifier.verify(input)
+    )
+
+    expect(result.applies).toBe(false) // Learning no longer applies
+    expect(result.reason).toContain('validation removed')
+  })
+})
+```
+
+### Clear verification caches
+
+```bash
+# Clear all verification test caches
+tx test:clear-cache --type verification
+
+# Or clear all LLM caches (extraction + verification)
+tx test:clear-cache --all
+```
+
+## References
+
+- PRD-017: Invalidation and Maintenance
+- DD-013: Test Utilities Package
+- DD-014: Graph Schema
+- [Jaccard Similarity](https://en.wikipedia.org/wiki/Jaccard_index)
