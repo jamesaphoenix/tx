@@ -141,6 +141,7 @@ export {
 } from "./daemon-service.js"
 export {
   FileWatcherService,
+  FileWatcherServiceLive,
   FileWatcherServiceNoop,
   type FileEvent,
   type FileEventType,

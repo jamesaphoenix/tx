@@ -164,3 +164,311 @@ export const FileWatcherServiceNoop = Layer.scoped(
     }
   })
 )
+
+/**
+ * Internal state for the FileWatcherServiceLive implementation.
+ */
+interface FileWatcherState {
+  /** Whether the watcher is running */
+  running: boolean
+  /** Chokidar watcher instance */
+  watcher: import("chokidar").FSWatcher | null
+  /** Currently watched paths/patterns */
+  watchedPaths: readonly string[]
+  /** Timestamp when the watcher started */
+  startedAt: Date | null
+  /** Number of events processed */
+  eventsProcessed: number
+}
+
+/**
+ * Expand tilde (~) to the user's home directory.
+ */
+const expandTilde = (path: string): string => {
+  const { homedir } = require("node:os") as typeof import("node:os")
+  return path.startsWith("~") ? path.replace(/^~/, homedir()) : path
+}
+
+/**
+ * Extract the base directory from a glob pattern.
+ * For "~/.claude/projects/** /*.jsonl", returns the expanded "~/.claude/projects".
+ * For paths without globs, returns the path as-is.
+ */
+const extractBaseDir = (pattern: string): string => {
+  const expanded = expandTilde(pattern)
+  const firstGlobIndex = expanded.search(/[*?[\]{}]/)
+  if (firstGlobIndex === -1) {
+    return expanded
+  }
+  // Find the last path separator before the first glob character
+  const beforeGlob = expanded.slice(0, firstGlobIndex)
+  const lastSep = Math.max(beforeGlob.lastIndexOf("/"), beforeGlob.lastIndexOf("\\"))
+  return lastSep > 0 ? expanded.slice(0, lastSep) : expanded
+}
+
+/**
+ * Check if a file path matches a glob-like pattern.
+ * Simple implementation supporting:
+ * - ** for any directory depth
+ * - * for any characters in a filename
+ */
+const matchesPattern = (filePath: string, pattern: string): boolean => {
+  const expanded = expandTilde(pattern)
+
+  // If no glob characters, just check if the path starts with the pattern
+  if (!/[*?[\]{}]/.test(expanded)) {
+    return filePath.startsWith(expanded)
+  }
+
+  // Convert glob pattern to regex
+  // Escape special regex chars except * and ?
+  let regexStr = expanded
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*/g, "<<<GLOBSTAR>>>")
+    .replace(/\*/g, "[^/\\\\]*")
+    .replace(/<<<GLOBSTAR>>>/g, ".*")
+    .replace(/\?/g, ".")
+
+  const regex = new RegExp(`^${regexStr}$`)
+  return regex.test(filePath)
+}
+
+/**
+ * Live implementation of FileWatcherService using chokidar.
+ *
+ * Features:
+ * - Uses chokidar for cross-platform file watching
+ * - awaitWriteFinish with 2000ms debounce for chunked writes
+ * - persistent mode to keep process running
+ * - ignoreInitial: false to emit events for existing files
+ * - Effect Queue for backpressure-aware event buffering
+ * - Supports glob patterns (expands ~ and extracts base directories)
+ */
+export const FileWatcherServiceLive = Layer.scoped(
+  FileWatcherService,
+  Effect.gen(function* () {
+    const chokidar = yield* Effect.tryPromise({
+      try: () => import("chokidar"),
+      catch: (error) =>
+        new FileWatcherError({
+          reason: "Failed to import chokidar",
+          cause: error
+        })
+    })
+
+    // Create the event queue for delivering file events
+    const eventQueue = yield* Queue.unbounded<FileEvent>()
+
+    // Mutable state using Effect Ref
+    const stateRef = yield* Effect.sync(() => ({
+      current: {
+        running: false,
+        watcher: null,
+        watchedPaths: [],
+        startedAt: null,
+        eventsProcessed: 0
+      } as FileWatcherState
+    }))
+
+    const getState = () => stateRef.current
+    const setState = (updater: (s: FileWatcherState) => FileWatcherState) => {
+      stateRef.current = updater(stateRef.current)
+    }
+
+    // Cleanup on scope finalization
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        const state = getState()
+        if (state.watcher) {
+          yield* Effect.tryPromise({
+            try: () => state.watcher!.close(),
+            catch: () => new Error("cleanup") // Error will be ignored
+          }).pipe(Effect.ignore)
+        }
+      })
+    )
+
+    const start = (
+      config: FileWatcherConfig
+    ): Effect.Effect<void, WatcherAlreadyRunningError | FileWatcherError> =>
+      Effect.gen(function* () {
+        const state = getState()
+
+        if (state.running) {
+          return yield* Effect.fail(
+            new WatcherAlreadyRunningError({
+              path: state.watchedPaths.join(", ")
+            })
+          )
+        }
+
+        // Extract base directories from glob patterns
+        const expandedPaths = config.patterns.map((p) => expandTilde(p))
+        const baseDirs = [...new Set(config.patterns.map(extractBaseDir))]
+
+        // Store original patterns for filtering
+        const originalPatterns = config.patterns
+
+        // Configure chokidar options
+        const debounceMs = config.debounceMs ?? 2000
+        const watcherOptions: import("chokidar").ChokidarOptions = {
+          persistent: true,
+          ignoreInitial: config.ignoreInitial ?? false,
+          awaitWriteFinish: {
+            stabilityThreshold: debounceMs,
+            pollInterval: Math.min(100, debounceMs / 10)
+          },
+          // Use polling interval if specified
+          ...(config.pollInterval && {
+            usePolling: true,
+            interval: config.pollInterval
+          })
+        }
+
+        // Create the watcher
+        const watcher = yield* Effect.try({
+          try: () => chokidar.watch(baseDirs, watcherOptions),
+          catch: (error) =>
+            new FileWatcherError({
+              reason: "Failed to create chokidar watcher",
+              cause: error
+            })
+        })
+
+        // Set up event handlers
+        const handleEvent = (type: FileEventType, path: string) => {
+          // Check if the path matches any of our patterns
+          const matches = originalPatterns.some((pattern) => matchesPattern(path, pattern))
+          if (!matches) return
+
+          const event: FileEvent = {
+            type,
+            path,
+            timestamp: new Date()
+          }
+
+          // Offer event to queue (non-blocking)
+          Effect.runFork(
+            Queue.offer(eventQueue, event).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  setState((s) => ({ ...s, eventsProcessed: s.eventsProcessed + 1 }))
+                })
+              )
+            )
+          )
+        }
+
+        watcher.on("add", (path) => handleEvent("add", path))
+        watcher.on("change", (path) => handleEvent("change", path))
+        watcher.on("unlink", (path) => handleEvent("delete", path))
+
+        watcher.on("error", (error) => {
+          // Log errors but don't crash - fire and forget error reporting
+          Effect.runFork(
+            Effect.logWarning(`File watcher error: ${error}`)
+          )
+        })
+
+        // Wait for the ready event
+        yield* Effect.async<void, FileWatcherError>((resume) => {
+          const timeout = setTimeout(() => {
+            resume(
+              Effect.fail(
+                new FileWatcherError({
+                  reason: "Watcher did not become ready within timeout"
+                })
+              )
+            )
+          }, 30000) // 30 second timeout
+
+          watcher.once("ready", () => {
+            clearTimeout(timeout)
+            resume(Effect.void)
+          })
+
+          watcher.once("error", (error) => {
+            clearTimeout(timeout)
+            resume(
+              Effect.fail(
+                new FileWatcherError({
+                  reason: "Watcher failed during initialization",
+                  cause: error
+                })
+              )
+            )
+          })
+        })
+
+        // Update state
+        setState(() => ({
+          running: true,
+          watcher,
+          watchedPaths: expandedPaths,
+          startedAt: new Date(),
+          eventsProcessed: 0
+        }))
+      })
+
+    const stop = (): Effect.Effect<void, WatcherNotRunningError | FileWatcherError> =>
+      Effect.gen(function* () {
+        const state = getState()
+
+        if (!state.running || !state.watcher) {
+          return yield* Effect.fail(
+            new WatcherNotRunningError({
+              path: "no active watcher"
+            })
+          )
+        }
+
+        // Close the watcher
+        yield* Effect.tryPromise({
+          try: () => state.watcher!.close(),
+          catch: (error) =>
+            new FileWatcherError({
+              reason: "Failed to close chokidar watcher",
+              cause: error
+            })
+        })
+
+        // Update state
+        setState(() => ({
+          running: false,
+          watcher: null,
+          watchedPaths: [],
+          startedAt: null,
+          eventsProcessed: 0
+        }))
+      })
+
+    const isRunning = (): Effect.Effect<boolean> =>
+      Effect.sync(() => getState().running)
+
+    const getWatchedPaths = (): Effect.Effect<readonly string[]> =>
+      Effect.sync(() => getState().watchedPaths)
+
+    const getEventQueue = (): Effect.Effect<Queue.Queue<FileEvent>> =>
+      Effect.succeed(eventQueue)
+
+    const status = (): Effect.Effect<FileWatcherStatus> =>
+      Effect.sync(() => {
+        const state = getState()
+        return {
+          running: state.running,
+          watchedPaths: state.watchedPaths,
+          startedAt: state.startedAt,
+          eventsProcessed: state.eventsProcessed
+        }
+      })
+
+    return {
+      start,
+      stop,
+      isRunning,
+      getWatchedPaths,
+      getEventQueue,
+      status
+    }
+  })
+)
