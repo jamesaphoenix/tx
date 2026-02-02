@@ -232,35 +232,27 @@ export const isProcessRunning = (pid: number): Effect.Effect<boolean, DaemonErro
       process.kill(pid, 0)
       return true
     },
-    catch: (error) => {
-      // ESRCH means no such process - this is expected when process isn't running
+    catch: (error) => error as NodeJS.ErrnoException
+  }).pipe(
+    Effect.catchAll((error) => {
+      // ESRCH means no such process - return false (not running) as success value
       if (error instanceof Error && "code" in error && error.code === "ESRCH") {
-        return false
+        return Effect.succeed(false)
       }
       // EPERM means process exists but we don't have permission to signal it
-      // The process is still running, just owned by another user
+      // The process is still running, just owned by another user - return true as success value
       if (error instanceof Error && "code" in error && error.code === "EPERM") {
-        return true
+        return Effect.succeed(true)
       }
-      // Any other error is unexpected
-      throw error
-    }
-  }).pipe(
-    Effect.catchAll((error) =>
-      Effect.fail(
+      // Any other error is unexpected - convert to DaemonError
+      return Effect.fail(
         new DaemonError({
           code: "PROCESS_CHECK_FAILED",
           message: `Failed to check if process ${pid} is running: ${error}`,
           pid
         })
       )
-    ),
-    // Flatten the nested Effect<boolean, never> from the catch block
-    Effect.flatMap((result) =>
-      typeof result === "boolean"
-        ? Effect.succeed(result)
-        : Effect.succeed(result)
-    )
+    })
   )
 
 /**
