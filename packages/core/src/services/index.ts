@@ -52,3 +52,10 @@ export {
   AutoSyncServiceNoop,
   type AutoSyncEntity
 } from "./auto-sync-service.js"
+export {
+  AnchorService,
+  AnchorServiceLive,
+  type AnchorVerificationResult,
+  type BatchVerificationResult,
+  type TypedAnchorInput
+} from "./anchor-service.js"

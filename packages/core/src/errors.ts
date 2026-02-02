@@ -81,6 +81,14 @@ export class EdgeNotFoundError extends Data.TaggedError("EdgeNotFoundError")<{
   }
 }
 
+export class AnchorNotFoundError extends Data.TaggedError("AnchorNotFoundError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `Anchor not found: ${this.id}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError

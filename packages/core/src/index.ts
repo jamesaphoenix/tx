@@ -19,7 +19,8 @@ export {
   CircularDependencyError,
   DatabaseError,
   EmbeddingUnavailableError,
-  EdgeNotFoundError
+  EdgeNotFoundError,
+  AnchorNotFoundError
 } from "./errors.js"
 
 // =============================================================================
@@ -80,6 +81,8 @@ export {
   AttemptServiceLive,
   SyncServiceLive,
   MigrationServiceLive,
+  AnchorService,
+  AnchorServiceLive,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
@@ -93,7 +96,10 @@ export {
   type Migration,
   type AppliedMigration,
   type MigrationStatus,
-  type AutoSyncEntity
+  type AutoSyncEntity,
+  type AnchorVerificationResult,
+  type BatchVerificationResult,
+  type TypedAnchorInput
 } from "./services/index.js"
 
 // =============================================================================
