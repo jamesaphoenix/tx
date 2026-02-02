@@ -38,7 +38,6 @@ export type ApiServices =
 // Runtime State
 // -----------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let managedRuntime: ManagedRuntime.ManagedRuntime<ApiServices, any> | null = null
 let currentDbPath: string | null = null
 
@@ -77,7 +76,6 @@ export const runEffect = <A, E>(
  * Get the current runtime for advanced use cases.
  * Returns null if not initialized.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getRuntime = (): ManagedRuntime.ManagedRuntime<ApiServices, any> | null => {
   return managedRuntime
 }
