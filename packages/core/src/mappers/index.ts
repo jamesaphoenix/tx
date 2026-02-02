@@ -86,3 +86,11 @@ export {
   SOURCE_TYPES,
   type TrackedProjectRow
 } from "./tracked-project.js"
+
+// Worker mappers
+export {
+  rowToWorker,
+  isValidWorkerStatus,
+  WORKER_STATUSES,
+  type WorkerRow
+} from "./worker.js"

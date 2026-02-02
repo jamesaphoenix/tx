@@ -200,7 +200,9 @@ export {
   DeduplicationRepository,
   DeduplicationRepositoryLive,
   CandidateRepository,
-  CandidateRepositoryLive
+  CandidateRepositoryLive,
+  WorkerRepository,
+  WorkerRepositoryLive
 } from "./repo/index.js"
 
 // =============================================================================
@@ -249,6 +251,13 @@ export {
   rowToEdge,
   type EdgeRow
 } from "./mappers/edge.js"
+
+export {
+  rowToWorker,
+  isValidWorkerStatus,
+  WORKER_STATUSES,
+  type WorkerRow
+} from "./mappers/worker.js"
 
 // =============================================================================
 // Utils
