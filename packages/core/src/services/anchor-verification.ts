@@ -20,6 +20,7 @@ import * as crypto from "node:crypto"
 import * as path from "node:path"
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { DatabaseError } from "../errors.js"
+import { matchesGlob } from "../utils/glob.js"
 import type { Anchor, AnchorStatus, InvalidationSource } from "@tx/types"
 
 // =============================================================================
@@ -194,23 +195,6 @@ const countLines = (filePath: string): Effect.Effect<number, never> =>
     if (!content) return 0
     return content.split("\n").length
   })
-
-/** Simple glob matching - checks if file path matches pattern */
-const matchesGlob = (filePath: string, pattern: string): boolean => {
-  // Simple glob matching without external dependencies
-  // Supports: *, **, ?
-  // Order matters: protect glob patterns, escape dots, then restore patterns
-  const regexPattern = pattern
-    .replace(/\*\*/g, "<<<GLOBSTAR>>>")       // Protect ** (will become .*)
-    .replace(/\?/g, "<<<QUESTION>>>")         // Protect ? (will become .)
-    .replace(/\*/g, "[^/]*")                  // Replace * with segment matcher
-    .replace(/\./g, "\\.")                    // Escape literal dots (e.g., .ts → \\.ts)
-    .replace(/<<<GLOBSTAR>>>/g, ".*")         // Restore ** as .* (matches any path)
-    .replace(/<<<QUESTION>>>/g, ".")          // Restore ? as . (matches single char)
-
-  const regex = new RegExp(`^${regexPattern}$`)
-  return regex.test(filePath)
-}
 
 /** Check if a symbol exists in file (grep-based) */
 const symbolExistsInFile = (

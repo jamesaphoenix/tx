@@ -271,3 +271,4 @@ export {
 // Utils
 // =============================================================================
 export { cosineSimilarity } from "./utils/math.js"
+export { matchesGlob } from "./utils/glob.js"

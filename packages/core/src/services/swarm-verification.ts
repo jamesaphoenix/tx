@@ -13,6 +13,7 @@ import { Context, Effect, Layer, Queue, Fiber, Ref } from "effect"
 import { AnchorVerificationService, type VerificationResult, type VerifyOptions } from "./anchor-verification.js"
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { DatabaseError } from "../errors.js"
+import { matchesGlob } from "../utils/glob.js"
 import type { AnchorStatus } from "@tx/types"
 
 // =============================================================================
@@ -531,20 +532,6 @@ export const SwarmVerificationServiceLive = Layer.effect(
 
       verifyGlob: (globPattern, options = {}) =>
         Effect.gen(function* () {
-          // Simple glob matching - matches file path against pattern
-          const matchesGlob = (filePath: string, pattern: string): boolean => {
-            // Order matters: escape dots first, then convert glob patterns
-            const regexPattern = pattern
-              .replace(/\./g, "\\.") // Escape dots first
-              .replace(/\*\*/g, "<<<GLOBSTAR>>>")
-              .replace(/\*/g, "[^/]*")
-              .replace(/\?/g, ".")
-              .replace(/<<<GLOBSTAR>>>/g, ".*")
-
-            const regex = new RegExp(`^${regexPattern}$`)
-            return regex.test(filePath)
-          }
-
           const allAnchors = yield* anchorRepo.findAll()
           const matchingIds = allAnchors
             .filter((a) => matchesGlob(a.filePath, globPattern))
