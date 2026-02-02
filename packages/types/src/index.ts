@@ -44,11 +44,14 @@ export {
   type CreateLearningInput,
   type UpdateLearningInput,
   type LearningQuery,
+  type ContextOptions,
   type ContextResult,
+  type GraphExpansionStats,
   type LearningSearchResult,
   type LearningRow,
   type LearningRowWithBM25,
   type RetrievalOptions,
+  type GraphExpansionQueryOptions,
 } from "./learning.js";
 
 // File learning types

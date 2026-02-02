@@ -4,7 +4,7 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
 import { RetrieverService } from "./retriever-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError, RetrievalError } from "../errors.js"
-import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextResult } from "@tx/types"
+import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "@tx/types"
 
 /** Result of embedding operation */
 export interface EmbedResult {
@@ -32,7 +32,7 @@ export class LearningService extends Context.Tag("LearningService")<
     readonly getRecent: (limit?: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly recordUsage: (id: number) => Effect.Effect<void, LearningNotFoundError | DatabaseError>
     readonly updateOutcome: (id: number, score: number) => Effect.Effect<void, LearningNotFoundError | ValidationError | DatabaseError>
-    readonly getContextForTask: (taskId: string) => Effect.Effect<ContextResult, TaskNotFoundError | RetrievalError | DatabaseError>
+    readonly getContextForTask: (taskId: string, options?: ContextOptions) => Effect.Effect<ContextResult, TaskNotFoundError | RetrievalError | DatabaseError>
     readonly count: () => Effect.Effect<number, DatabaseError>
     readonly embedAll: (forceAll?: boolean) => Effect.Effect<EmbedResult, DatabaseError>
     readonly embeddingStatus: () => Effect.Effect<EmbedStatus, DatabaseError>
@@ -111,7 +111,7 @@ export const LearningServiceLive = Layer.effect(
           yield* learningRepo.updateOutcomeScore(id, score)
         }),
 
-      getContextForTask: (taskId) =>
+      getContextForTask: (taskId, options) =>
         Effect.gen(function* () {
           const startTime = Date.now()
 
@@ -124,23 +124,44 @@ export const LearningServiceLive = Layer.effect(
           // Build search query from task content
           const searchQuery = `${task.title} ${task.description}`.trim()
 
-          // Delegate to RetrieverService for the actual search
-          const learnings = yield* retrieverService.search(searchQuery, {
+          // Build retrieval options with optional graph expansion
+          const retrievalOptions = {
             limit: 10,
-            minScore: 0.05
-          })
+            minScore: 0.05,
+            graphExpansion: options?.useGraph
+              ? {
+                  enabled: true,
+                  depth: options.expansionDepth ?? 2, // Default depth=2 per PRD-016
+                  edgeTypes: options.edgeTypes
+                }
+              : undefined
+          }
+
+          // Delegate to RetrieverService for the actual search
+          const learnings = yield* retrieverService.search(searchQuery, retrievalOptions)
 
           // Record usage for returned learnings (batch update to avoid N+1)
           if (learnings.length > 0) {
             yield* learningRepo.incrementUsageMany(learnings.map(l => l.id))
           }
 
+          // Calculate graph expansion stats if enabled
+          const graphExpansion = options?.useGraph
+            ? {
+                enabled: true,
+                seedCount: learnings.filter(l => l.expansionHops === 0 || l.expansionHops === undefined).length,
+                expandedCount: learnings.filter(l => l.expansionHops !== undefined && l.expansionHops > 0).length,
+                maxDepthReached: Math.max(0, ...learnings.map(l => l.expansionHops ?? 0))
+              }
+            : undefined
+
           return {
             taskId,
             taskTitle: task.title,
             learnings,
             searchQuery,
-            searchDuration: Date.now() - startTime
+            searchDuration: Date.now() - startTime,
+            graphExpansion
           }
         }),
 

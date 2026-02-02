@@ -73,6 +73,7 @@ export {
 } from "./services/retriever-service.js"
 export {
   GraphExpansionService,
+  GraphExpansionServiceNoop,
   GraphExpansionServiceLive,
   type SeedLearning,
   type ExpandedLearning,
@@ -120,17 +121,17 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(infra, syncServiceWithDeps))
   )
 
-  // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
-  const retrieverService = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
-  )
-
   // EdgeServiceLive needs EdgeRepository from repos
   const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
 
   // GraphExpansionServiceLive needs EdgeService and LearningRepository
   const graphExpansionService = GraphExpansionServiceLive.pipe(
     Layer.provide(Layer.merge(repos, edgeService))
+  )
+
+  // RetrieverServiceLive needs repos, embedding, query expansion, reranker, and graph expansion
+  const retrieverService = RetrieverServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService))
   )
 
   // Services need repos, embedding, query expansion, reranker, retriever, and autoSyncService
@@ -184,17 +185,17 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(infra)
   )
 
-  // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
-  const retrieverService = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
-  )
-
   // EdgeServiceLive needs EdgeRepository from repos
   const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
 
   // GraphExpansionServiceLive needs EdgeService and LearningRepository
   const graphExpansionService = GraphExpansionServiceLive.pipe(
     Layer.provide(Layer.merge(repos, edgeService))
+  )
+
+  // RetrieverServiceLive needs repos, embedding, query expansion, reranker, and graph expansion
+  const retrieverService = RetrieverServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService))
   )
 
   // Services with Noop embedding, query expansion, reranker, retriever, and auto-sync

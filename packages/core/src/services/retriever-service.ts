@@ -3,8 +3,9 @@ import { LearningRepository, type BM25Result } from "../repo/learning-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
 import { QueryExpansionService } from "./query-expansion-service.js"
 import { RerankerService } from "./reranker-service.js"
+import { GraphExpansionService, type SeedLearning } from "./graph-expansion.js"
 import { RetrievalError, DatabaseError } from "../errors.js"
-import type { Learning, LearningWithScore, RetrievalOptions } from "@tx/types"
+import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@tx/types"
 import { cosineSimilarity } from "../utils/math.js"
 
 /** RRF constant - standard value from the original paper */
@@ -276,6 +277,9 @@ export const RetrieverServiceLive = Layer.effect(
     const embeddingService = yield* EmbeddingService
     const queryExpansionService = yield* QueryExpansionService
     const rerankerService = yield* RerankerService
+    // GraphExpansionService is optional - graceful degradation when not available
+    const graphExpansionServiceOption = yield* Effect.serviceOption(GraphExpansionService)
+    const graphExpansionService = Option.getOrNull(graphExpansionServiceOption)
 
     // Load recency weight from config
     const recencyWeightStr = yield* learningRepo.getConfig("recency_weight")
@@ -385,6 +389,85 @@ export const RetrieverServiceLive = Layer.effect(
         return merged
       })
 
+    /**
+     * Apply graph expansion to seed learnings and merge with existing results.
+     * Gracefully degrades if expansion fails or GraphExpansionService is unavailable.
+     */
+    const applyGraphExpansion = (
+      seeds: LearningWithScore[],
+      options: RetrievalOptions
+    ) =>
+      Effect.gen(function* () {
+        const graphOpts = options.graphExpansion
+        // Skip if not enabled, no seeds, or GraphExpansionService unavailable
+        if (!graphOpts?.enabled || seeds.length === 0 || !graphExpansionService) {
+          return seeds
+        }
+
+        // Convert top-k seeds to SeedLearning format for expansion
+        const seedCount = Math.min(seeds.length, 10) // Default top-k seeds
+        const seedLearnings: SeedLearning[] = seeds.slice(0, seedCount).map(s => ({
+          learning: s,
+          score: s.relevanceScore
+        }))
+
+        // Perform graph expansion (graceful degradation on error)
+        const expansionResult = yield* Effect.catchAll(
+          graphExpansionService.expand(seedLearnings, {
+            depth: graphOpts.depth ?? 2,
+            decayFactor: graphOpts.decayFactor ?? 0.7,
+            maxNodes: graphOpts.maxNodes ?? 100,
+            edgeTypes: graphOpts.edgeTypes
+          }),
+          () => Effect.succeed(null)
+        )
+
+        if (!expansionResult) {
+          // Graph expansion failed, return original seeds with hops=0
+          return seeds.map(s => ({
+            ...s,
+            expansionHops: 0,
+            expansionPath: [s.id],
+            sourceEdge: null
+          }))
+        }
+
+        // Create a set of seed IDs to track which learnings are direct matches
+        const seedIds = new Set(seeds.map(s => s.id))
+
+        // Mark seed learnings with expansion metadata (hops=0)
+        const seedsWithMeta: LearningWithScore[] = seeds.map(s => ({
+          ...s,
+          expansionHops: 0,
+          expansionPath: [s.id],
+          sourceEdge: null
+        }))
+
+        // Convert expanded learnings to LearningWithScore format
+        // Only include learnings that aren't already in the seed set (avoid duplicates)
+        const expandedWithScores: LearningWithScore[] = expansionResult.expanded
+          .filter(e => !seedIds.has(e.learning.id))
+          .map(e => ({
+            ...e.learning,
+            relevanceScore: e.decayedScore,
+            bm25Score: 0,
+            vectorScore: 0,
+            recencyScore: calculateRecencyScore(e.learning.createdAt),
+            rrfScore: 0,
+            bm25Rank: 0,
+            vectorRank: 0,
+            expansionHops: e.hops,
+            expansionPath: e.path as readonly LearningId[],
+            sourceEdge: e.sourceEdge
+          }))
+
+        // Merge seeds and expanded, sort by relevance score
+        const merged = [...seedsWithMeta, ...expandedWithScores]
+          .sort((a, b) => b.relevanceScore - a.relevanceScore)
+
+        return merged
+      })
+
     return {
       search: (query, options) =>
         Effect.gen(function* () {
@@ -416,9 +499,12 @@ export const RetrieverServiceLive = Layer.effect(
           // Apply final scoring with boosts
           const scored = applyFinalScoring(candidates, recencyWeight)
 
+          // Apply graph expansion if enabled (after initial RRF scoring)
+          const withGraphExpansion = yield* applyGraphExpansion(scored, options ?? {})
+
           // Apply LLM re-ranking to top candidates for improved precision
           // Only re-rank a reasonable number of candidates to balance quality vs latency
-          const topCandidates = scored.slice(0, Math.min(limit * 2, 20))
+          const topCandidates = withGraphExpansion.slice(0, Math.min(limit * 2, 20))
           const reranked = yield* applyReranking(query, topCandidates)
 
           // Filter by minimum score and limit

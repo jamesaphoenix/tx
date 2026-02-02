@@ -6,6 +6,8 @@
  * Zero runtime dependencies - pure TypeScript types only.
  */
 
+import type { EdgeType } from "./edge.js"
+
 /**
  * Valid learning source types.
  */
@@ -59,6 +61,12 @@ export interface LearningWithScore extends Learning {
   readonly vectorRank: number;
   /** LLM reranker score (0-1, optional - only present when reranking is applied) */
   readonly rerankerScore?: number;
+  /** Number of hops from seed (0 = direct match from RRF, 1+ = expanded via graph) */
+  readonly expansionHops?: number;
+  /** Path of learning IDs from seed to this learning (only for expanded results) */
+  readonly expansionPath?: readonly LearningId[];
+  /** Edge type that led to this learning (null for direct matches) */
+  readonly sourceEdge?: EdgeType | null;
 }
 
 /**
@@ -83,6 +91,23 @@ export interface UpdateLearningInput {
 }
 
 /**
+ * Options for graph expansion during search.
+ * See PRD-016 for specification.
+ */
+export interface GraphExpansionQueryOptions {
+  /** Enable graph expansion (default: false) */
+  readonly enabled: boolean;
+  /** Maximum traversal depth (default: 2) */
+  readonly depth?: number;
+  /** Score decay factor per hop (default: 0.7) */
+  readonly decayFactor?: number;
+  /** Maximum nodes to return from expansion (default: 100) */
+  readonly maxNodes?: number;
+  /** Filter by specific edge types (default: all types) */
+  readonly edgeTypes?: readonly EdgeType[];
+}
+
+/**
  * Query options for learning searches.
  */
 export interface LearningQuery {
@@ -91,6 +116,30 @@ export interface LearningQuery {
   readonly minScore?: number;
   readonly category?: string;
   readonly sourceType?: LearningSourceType;
+  /** Graph expansion options for traversing related learnings */
+  readonly graphExpansion?: GraphExpansionQueryOptions;
+}
+
+/**
+ * Options for context retrieval.
+ */
+export interface ContextOptions {
+  /** Enable graph expansion (default: false) */
+  readonly useGraph?: boolean;
+  /** Graph expansion depth (default: 2 per PRD-016) */
+  readonly expansionDepth?: number;
+  /** Edge types to include in expansion */
+  readonly edgeTypes?: readonly EdgeType[];
+}
+
+/**
+ * Statistics about graph expansion during context retrieval.
+ */
+export interface GraphExpansionStats {
+  readonly enabled: boolean;
+  readonly seedCount: number;
+  readonly expandedCount: number;
+  readonly maxDepthReached: number;
 }
 
 /**
@@ -102,6 +151,8 @@ export interface ContextResult {
   readonly learnings: readonly LearningWithScore[];
   readonly searchQuery: string;
   readonly searchDuration: number;
+  /** Graph expansion statistics (only present when useGraph=true) */
+  readonly graphExpansion?: GraphExpansionStats;
 }
 
 /**
@@ -143,6 +194,8 @@ export interface RetrievalOptions {
   readonly category?: string;
   /** Optional source type filter */
   readonly sourceType?: LearningSourceType;
+  /** Graph expansion options for traversing related learnings */
+  readonly graphExpansion?: GraphExpansionQueryOptions;
 }
 
 /**

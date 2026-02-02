@@ -7,7 +7,7 @@ import { writeFileSync, existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { LearningService, FileLearningService, RetrieverService, TaskService, RetrievalError } from "@tx/core"
-import type { LearningSourceType, TaskId } from "@tx/types"
+import type { LearningSourceType, TaskId, EdgeType } from "@tx/types"
 import { toJson, formatContextMarkdown } from "../output.js"
 import { commandHelp } from "../help.js"
 
@@ -51,11 +51,19 @@ export const learningAdd = (pos: string[], flags: Flags) =>
     }
   })
 
+/**
+ * Parse edge types from comma-separated string.
+ */
+const parseEdgeTypes = (edgeTypesStr: string | undefined): EdgeType[] | undefined => {
+  if (!edgeTypesStr) return undefined
+  return edgeTypesStr.split(",").map(s => s.trim()).filter(s => s.length > 0) as EdgeType[]
+}
+
 export const learningSearch = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const query = pos[0]
     if (!query) {
-      console.error("Usage: tx learning:search <query> [-n limit] [--json]")
+      console.error("Usage: tx learning:search <query> [-n limit] [--expand] [--depth N] [--edge-types TYPES] [--json]")
       process.exit(1)
     }
 
@@ -63,7 +71,16 @@ export const learningSearch = (pos: string[], flags: Flags) =>
     const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
     const minScore = opt(flags, "min-score") ? parseFloat(opt(flags, "min-score")!) : 0.3
 
-    const results = yield* svc.search({ query, limit, minScore })
+    // Graph expansion options
+    const expand = flag(flags, "expand")
+    const depth = opt(flags, "depth") ? parseInt(opt(flags, "depth")!, 10) : 2
+    const edgeTypes = parseEdgeTypes(opt(flags, "edge-types"))
+
+    const graphExpansion = expand
+      ? { enabled: true, depth, edgeTypes }
+      : undefined
+
+    const results = yield* svc.search({ query, limit, minScore, graphExpansion })
 
     if (flag(flags, "json")) {
       console.log(toJson(results))
@@ -71,11 +88,13 @@ export const learningSearch = (pos: string[], flags: Flags) =>
       if (results.length === 0) {
         console.log("No learnings found")
       } else {
-        console.log(`${results.length} learning(s) found:`)
+        const expandInfo = expand ? " (with graph expansion)" : ""
+        console.log(`${results.length} learning(s) found${expandInfo}:`)
         for (const r of results) {
           const score = (r.relevanceScore * 100).toFixed(0)
           const category = r.category ? ` [${r.category}]` : ""
-          console.log(`  #${r.id} (${score}%)${category} ${r.content.slice(0, 60)}${r.content.length > 60 ? "..." : ""}`)
+          const hops = r.expansionHops !== undefined && r.expansionHops > 0 ? ` [+${r.expansionHops} hops]` : ""
+          console.log(`  #${r.id} (${score}%)${category}${hops} ${r.content.slice(0, 60)}${r.content.length > 60 ? "..." : ""}`)
         }
       }
     }
@@ -163,11 +182,16 @@ export const context = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const taskId = pos[0]
     if (!taskId) {
-      console.error("Usage: tx context <task-id> [--json] [--inject] [--retriever <path>]")
+      console.error("Usage: tx context <task-id> [--json] [--inject] [--expand] [--depth N] [--edge-types TYPES] [--retriever <path>]")
       process.exit(1)
     }
 
     const retrieverPath = opt(flags, "retriever")
+
+    // Graph expansion options
+    const expand = flag(flags, "expand")
+    const depth = opt(flags, "depth") ? parseInt(opt(flags, "depth")!, 10) : 2
+    const edgeTypes = parseEdgeTypes(opt(flags, "edge-types"))
 
     // If custom retriever is specified, load it and use it for direct search
     if (retrieverPath) {
@@ -181,10 +205,19 @@ export const context = (pos: string[], flags: Flags) =>
       // Build search query from task content
       const searchQuery = `${task.title} ${task.description}`.trim()
 
+      // Build retrieval options with optional graph expansion
+      const retrievalOptions = {
+        limit: 10,
+        minScore: 0.05,
+        graphExpansion: expand
+          ? { enabled: true, depth, edgeTypes }
+          : undefined
+      }
+
       // Use custom retriever for search
       const searchEffect = Effect.gen(function* () {
         const retriever = yield* RetrieverService
-        return yield* retriever.search(searchQuery, { limit: 10, minScore: 0.05 })
+        return yield* retriever.search(searchQuery, retrievalOptions)
       })
 
       const learnings = yield* Effect.provide(searchEffect, customRetrieverLayer)
@@ -205,13 +238,15 @@ export const context = (pos: string[], flags: Flags) =>
       } else if (flag(flags, "json")) {
         console.log(toJson(result))
       } else {
-        console.log(`Context for: ${result.taskId} - ${result.taskTitle} (custom retriever)`)
+        const expandInfo = expand ? " (with graph expansion)" : ""
+        console.log(`Context for: ${result.taskId} - ${result.taskTitle} (custom retriever)${expandInfo}`)
         console.log(`  Search query: ${result.searchQuery.slice(0, 50)}...`)
         console.log(`  Search duration: ${result.searchDuration}ms`)
         console.log(`  ${result.learnings.length} relevant learning(s):`)
         for (const l of result.learnings) {
           const score = (l.relevanceScore * 100).toFixed(0)
-          console.log(`    #${l.id} (${score}%) ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
+          const hops = l.expansionHops !== undefined && l.expansionHops > 0 ? ` [+${l.expansionHops} hops]` : ""
+          console.log(`    #${l.id} (${score}%)${hops} ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
         }
       }
       return
@@ -219,24 +254,36 @@ export const context = (pos: string[], flags: Flags) =>
 
     // Default path: use LearningService with built-in retriever
     const svc = yield* LearningService
-    const result = yield* svc.getContextForTask(taskId)
+
+    // Build context options with graph expansion if enabled
+    const contextOptions = expand
+      ? { useGraph: true, expansionDepth: depth, edgeTypes }
+      : undefined
+
+    const result = yield* svc.getContextForTask(taskId, contextOptions)
 
     if (flag(flags, "inject")) {
       // Write to .tx/context.md for injection
       const contextMd = formatContextMarkdown(result)
       const contextPath = resolve(process.cwd(), ".tx", "context.md")
       writeFileSync(contextPath, contextMd)
-      console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath}`)
+      const expandInfo = expand ? " (with graph expansion)" : ""
+      console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath}${expandInfo}`)
     } else if (flag(flags, "json")) {
       console.log(toJson(result))
     } else {
-      console.log(`Context for: ${result.taskId} - ${result.taskTitle}`)
+      const expandInfo = expand ? " (with graph expansion)" : ""
+      console.log(`Context for: ${result.taskId} - ${result.taskTitle}${expandInfo}`)
       console.log(`  Search query: ${result.searchQuery.slice(0, 50)}...`)
       console.log(`  Search duration: ${result.searchDuration}ms`)
+      if (result.graphExpansion) {
+        console.log(`  Graph expansion: ${result.graphExpansion.seedCount} seeds, ${result.graphExpansion.expandedCount} expanded, max depth ${result.graphExpansion.maxDepthReached}`)
+      }
       console.log(`  ${result.learnings.length} relevant learning(s):`)
       for (const l of result.learnings) {
         const score = (l.relevanceScore * 100).toFixed(0)
-        console.log(`    #${l.id} (${score}%) ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
+        const hops = l.expansionHops !== undefined && l.expansionHops > 0 ? ` [+${l.expansionHops} hops]` : ""
+        console.log(`    #${l.id} (${score}%)${hops} ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
       }
     }
   })

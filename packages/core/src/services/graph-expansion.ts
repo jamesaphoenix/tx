@@ -83,6 +83,42 @@ export class GraphExpansionService extends Context.Tag("GraphExpansionService")<
 >() {}
 
 /**
+ * Noop implementation that returns seeds without expansion.
+ * Used when graph expansion is disabled or for testing.
+ */
+export const GraphExpansionServiceNoop = Layer.succeed(
+  GraphExpansionService,
+  {
+    expand: (seeds) =>
+      Effect.succeed({
+        seeds: seeds.map(s => ({
+          learning: s.learning,
+          hops: 0,
+          decayedScore: s.score,
+          path: [s.learning.id],
+          sourceEdge: null,
+          edgeWeight: null
+        })),
+        expanded: [],
+        all: seeds.map(s => ({
+          learning: s.learning,
+          hops: 0,
+          decayedScore: s.score,
+          path: [s.learning.id],
+          sourceEdge: null,
+          edgeWeight: null
+        })),
+        stats: {
+          seedCount: seeds.length,
+          expandedCount: 0,
+          maxDepthReached: 0,
+          nodesVisited: seeds.length
+        }
+      })
+  }
+)
+
+/**
  * Default expansion options.
  */
 const DEFAULT_OPTIONS: Required<Omit<GraphExpansionOptions, "edgeTypes">> = {

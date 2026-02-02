@@ -526,7 +526,8 @@ Examples:
 Usage: tx learning:search <query> [options]
 
 Searches learnings using BM25 full-text search. Returns results ranked by
-relevance (BM25 score) and recency.
+relevance (BM25 score) and recency. Supports graph expansion to discover
+related learnings through the knowledge graph.
 
 Arguments:
   <query>  Required. Search query (keywords or phrase)
@@ -534,12 +535,16 @@ Arguments:
 Options:
   -n, --limit <n>      Maximum results (default: 10)
   --min-score <n>      Minimum relevance score 0-1 (default: 0.3)
+  --expand             Enable graph expansion to find related learnings
+  --depth <n>          Graph expansion depth (default: 2)
+  --edge-types <types> Comma-separated edge types to traverse
   --json               Output as JSON
   --help               Show this help
 
 Examples:
   tx learning:search "database transactions"
-  tx learning:search "authentication" -n 5 --json`,
+  tx learning:search "authentication" -n 5 --json
+  tx learning:search "auth" --expand --depth 3`,
 
   "learning:recent": `tx learning:recent - List recent learnings
 
@@ -598,20 +603,25 @@ Examples:
 Usage: tx context <task-id> [options]
 
 Retrieves learnings relevant to a specific task based on its title and
-description. Uses hybrid BM25 + recency scoring.
+description. Uses hybrid BM25 + recency scoring. Supports graph expansion
+to discover related learnings through the knowledge graph.
 
 Arguments:
   <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
 
 Options:
-  --json     Output as JSON
-  --inject   Write to .tx/context.md for injection
-  --help     Show this help
+  --json               Output as JSON
+  --inject             Write to .tx/context.md for injection
+  --expand             Enable graph expansion to find related learnings
+  --depth <n>          Graph expansion depth (default: 2)
+  --edge-types <types> Comma-separated edge types to traverse
+  --help               Show this help
 
 Examples:
   tx context tx-a1b2c3d4
   tx context tx-a1b2c3d4 --json
-  tx context tx-a1b2c3d4 --inject`,
+  tx context tx-a1b2c3d4 --inject
+  tx context tx-a1b2c3d4 --expand --depth 3`,
 
   learn: `tx learn - Attach a learning to a file path or glob pattern
 

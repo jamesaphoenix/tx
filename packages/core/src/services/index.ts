@@ -87,6 +87,7 @@ export {
 } from "./retriever-service.js"
 export {
   GraphExpansionService,
+  GraphExpansionServiceNoop,
   GraphExpansionServiceLive,
   type SeedLearning,
   type ExpandedLearning,
