@@ -4,7 +4,7 @@ import {
   RerankerService,
   RerankerServiceNoop,
   RerankerServiceAuto
-} from "../../packages/core/src/services/reranker-service.js"
+} from "@tx/core"
 
 describe("RerankerService", () => {
   describe("RerankerServiceNoop", () => {
