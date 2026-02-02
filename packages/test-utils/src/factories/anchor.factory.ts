@@ -90,23 +90,24 @@ export class AnchorFactory {
     const verifiedAt = options.verifiedAt ?? null
     const createdAt = options.createdAt ?? now
 
-    this.db.exec(`
-      INSERT INTO learning_anchors (id, learning_id, anchor_type, anchor_value, file_path, symbol_fqname, line_start, line_end, content_hash, status, verified_at, created_at)
-      VALUES (
-        ${id},
-        ${learningId},
-        '${anchorType}',
-        '${anchorValue.replace(/'/g, "''")}',
-        '${filePath.replace(/'/g, "''")}',
-        ${symbolFqname ? `'${symbolFqname.replace(/'/g, "''")}'` : "NULL"},
-        ${lineStart !== null ? lineStart : "NULL"},
-        ${lineEnd !== null ? lineEnd : "NULL"},
-        ${contentHash ? `'${contentHash}'` : "NULL"},
-        '${status}',
-        ${verifiedAt ? `'${verifiedAt.toISOString()}'` : "NULL"},
-        '${createdAt.toISOString()}'
-      )
-    `)
+    this.db.run(
+      `INSERT INTO learning_anchors (id, learning_id, anchor_type, anchor_value, file_path, symbol_fqname, line_start, line_end, content_hash, status, verified_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        learningId,
+        anchorType,
+        anchorValue,
+        filePath,
+        symbolFqname,
+        lineStart,
+        lineEnd,
+        contentHash,
+        status,
+        verifiedAt ? verifiedAt.toISOString() : null,
+        createdAt.toISOString()
+      ]
+    )
 
     return {
       id: id as AnchorId,

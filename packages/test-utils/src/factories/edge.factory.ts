@@ -88,21 +88,22 @@ export class EdgeFactory {
     const createdAt = options.createdAt ?? now
     const invalidatedAt = options.invalidatedAt ?? null
 
-    this.db.exec(`
-      INSERT INTO learning_edges (id, edge_type, source_type, source_id, target_type, target_id, weight, metadata, created_at, invalidated_at)
-      VALUES (
-        ${id},
-        '${edgeType}',
-        '${sourceType}',
-        '${sourceId}',
-        '${targetType}',
-        '${targetId}',
-        ${weight},
-        '${JSON.stringify(metadata).replace(/'/g, "''")}',
-        '${createdAt.toISOString()}',
-        ${invalidatedAt ? `'${invalidatedAt.toISOString()}'` : "NULL"}
-      )
-    `)
+    this.db.run(
+      `INSERT INTO learning_edges (id, edge_type, source_type, source_id, target_type, target_id, weight, metadata, created_at, invalidated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        edgeType,
+        sourceType,
+        sourceId,
+        targetType,
+        targetId,
+        weight,
+        JSON.stringify(metadata),
+        createdAt.toISOString(),
+        invalidatedAt ? invalidatedAt.toISOString() : null
+      ]
+    )
 
     return {
       id: id as EdgeId,

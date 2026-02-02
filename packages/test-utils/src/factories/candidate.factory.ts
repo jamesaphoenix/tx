@@ -118,24 +118,25 @@ export class CandidateFactory {
     const promotedLearningId = options.promotedLearningId ?? null
     const rejectionReason = options.rejectionReason ?? null
 
-    this.db.exec(`
-      INSERT INTO learning_candidates (id, content, confidence, category, source_file, source_run_id, source_task_id, extracted_at, status, reviewed_at, reviewed_by, promoted_learning_id, rejection_reason)
-      VALUES (
-        ${id},
-        '${content.replace(/'/g, "''")}',
-        '${confidence}',
-        ${category ? `'${category}'` : "NULL"},
-        '${sourceFile.replace(/'/g, "''")}',
-        ${sourceRunId ? `'${sourceRunId}'` : "NULL"},
-        ${sourceTaskId ? `'${sourceTaskId}'` : "NULL"},
-        '${extractedAt.toISOString()}',
-        '${status}',
-        ${reviewedAt ? `'${reviewedAt.toISOString()}'` : "NULL"},
-        ${reviewedBy ? `'${reviewedBy}'` : "NULL"},
-        ${promotedLearningId !== null ? promotedLearningId : "NULL"},
-        ${rejectionReason ? `'${rejectionReason.replace(/'/g, "''")}'` : "NULL"}
-      )
-    `)
+    this.db.run(
+      `INSERT INTO learning_candidates (id, content, confidence, category, source_file, source_run_id, source_task_id, extracted_at, status, reviewed_at, reviewed_by, promoted_learning_id, rejection_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        content,
+        confidence,
+        category,
+        sourceFile,
+        sourceRunId,
+        sourceTaskId,
+        extractedAt.toISOString(),
+        status,
+        reviewedAt ? reviewedAt.toISOString() : null,
+        reviewedBy,
+        promotedLearningId,
+        rejectionReason
+      ]
+    )
 
     return {
       id,

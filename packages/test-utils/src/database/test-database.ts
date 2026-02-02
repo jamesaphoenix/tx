@@ -26,6 +26,8 @@ export interface TestDatabase {
   readonly query: <T = unknown>(sql: string, params?: unknown[]) => T[]
   /** Execute raw SQL (DDL or DML) */
   readonly exec: (sql: string) => void
+  /** Execute a parameterized INSERT/UPDATE/DELETE and return run result */
+  readonly run: (sql: string, params?: unknown[]) => Database.RunResult
   /** Execute a function within a transaction */
   readonly transaction: <T>(fn: () => T) => T
 }
@@ -113,6 +115,10 @@ export const createTestDatabase = (): Effect.Effect<TestDatabase, Error> =>
 
         exec: (sql: string): void => {
           db.exec(sql)
+        },
+
+        run: (sql: string, params: unknown[] = []): Database.RunResult => {
+          return db.prepare(sql).run(...params)
         },
 
         transaction: <T>(fn: () => T): T => {

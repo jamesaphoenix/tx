@@ -85,21 +85,22 @@ export class TaskFactory {
     const createdAt = options.createdAt ?? now
     const completedAt = options.completedAt ?? (status === "done" ? now : null)
 
-    this.db.exec(`
-      INSERT INTO tasks (id, title, description, status, parent_id, score, metadata, created_at, updated_at, completed_at)
-      VALUES (
-        '${id}',
-        '${title.replace(/'/g, "''")}',
-        '${description.replace(/'/g, "''")}',
-        '${status}',
-        ${parentId ? `'${parentId}'` : "NULL"},
-        ${score},
-        '${JSON.stringify(metadata).replace(/'/g, "''")}',
-        '${createdAt.toISOString()}',
-        '${now.toISOString()}',
-        ${completedAt ? `'${completedAt.toISOString()}'` : "NULL"}
-      )
-    `)
+    this.db.run(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, metadata, created_at, updated_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        title,
+        description,
+        status,
+        parentId,
+        score,
+        JSON.stringify(metadata),
+        createdAt.toISOString(),
+        now.toISOString(),
+        completedAt ? completedAt.toISOString() : null
+      ]
+    )
 
     return {
       id: id as TaskId,

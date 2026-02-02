@@ -90,22 +90,23 @@ export class LearningFactory {
       ? Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength)
       : null
 
-    this.db.exec(`
-      INSERT INTO learnings (id, content, source_type, source_ref, keywords, category, usage_count, last_used_at, outcome_score, embedding, created_at)
-      VALUES (
-        ${id},
-        '${content.replace(/'/g, "''")}',
-        '${sourceType}',
-        ${sourceRef ? `'${sourceRef}'` : "NULL"},
-        '${JSON.stringify(keywords)}',
-        ${category ? `'${category}'` : "NULL"},
-        ${usageCount},
-        ${lastUsedAt ? `'${lastUsedAt.toISOString()}'` : "NULL"},
-        ${outcomeScore !== null ? outcomeScore : "NULL"},
-        ${embeddingBuffer ? `X'${embeddingBuffer.toString("hex")}'` : "NULL"},
-        '${createdAt.toISOString()}'
-      )
-    `)
+    this.db.run(
+      `INSERT INTO learnings (id, content, source_type, source_ref, keywords, category, usage_count, last_used_at, outcome_score, embedding, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        content,
+        sourceType,
+        sourceRef,
+        JSON.stringify(keywords),
+        category,
+        usageCount,
+        lastUsedAt ? lastUsedAt.toISOString() : null,
+        outcomeScore,
+        embeddingBuffer,
+        createdAt.toISOString()
+      ]
+    )
 
     return {
       id: id as LearningId,
