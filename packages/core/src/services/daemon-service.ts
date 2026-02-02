@@ -1,13 +1,106 @@
 import { Context, Effect, Layer } from "effect"
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
-import { dirname } from "node:path"
+import { dirname, join } from "node:path"
+import { homedir } from "node:os"
 import { DaemonError } from "../errors.js"
 
 /**
  * Default path for the daemon PID file.
  */
 export const PID_FILE_PATH = ".tx/daemon.pid"
+
+/**
+ * Default install path for the launchd plist file.
+ * Located in the user's LaunchAgents directory for per-user daemons.
+ */
+export const LAUNCHD_PLIST_PATH = "~/Library/LaunchAgents/com.tx.daemon.plist"
+
+/**
+ * Options for generating a launchd plist file.
+ */
+export interface LaunchdPlistOptions {
+  /**
+   * The label for the launchd job (e.g., "com.tx.daemon").
+   * This must be unique among all launchd jobs.
+   */
+  readonly label: string
+  /**
+   * The absolute path to the executable to run.
+   */
+  readonly executablePath: string
+  /**
+   * Optional path for log output (both stdout and stderr).
+   * If not provided, defaults to ~/Library/Logs/tx-daemon.log
+   */
+  readonly logPath?: string
+}
+
+/**
+ * Generate a macOS launchd plist file content.
+ * Creates a valid XML plist that can be used with launchctl to run the daemon.
+ *
+ * The generated plist configures the daemon to:
+ * - Run at load (start when user logs in)
+ * - Keep alive (restart if it crashes)
+ * - Log stdout and stderr to the specified log path
+ *
+ * @param options - Configuration options for the plist
+ * @returns The XML content for the launchd plist file
+ *
+ * @example
+ * ```typescript
+ * const plist = generateLaunchdPlist({
+ *   label: "com.tx.daemon",
+ *   executablePath: "/usr/local/bin/tx",
+ *   logPath: "~/Library/Logs/tx-daemon.log"
+ * })
+ * ```
+ */
+export const generateLaunchdPlist = (options: LaunchdPlistOptions): string => {
+  const { label, executablePath, logPath } = options
+
+  // Expand ~ to home directory for the log path
+  const resolvedLogPath = logPath
+    ? logPath.replace(/^~/, homedir())
+    : join(homedir(), "Library", "Logs", "tx-daemon.log")
+
+  // Generate valid XML plist
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${escapeXml(label)}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${escapeXml(executablePath)}</string>
+        <string>daemon</string>
+        <string>run</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${escapeXml(resolvedLogPath)}</string>
+    <key>StandardErrorPath</key>
+    <string>${escapeXml(resolvedLogPath)}</string>
+</dict>
+</plist>
+`
+}
+
+/**
+ * Escape special characters for XML content.
+ */
+const escapeXml = (str: string): string =>
+  str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
 
 /**
  * Status information for the daemon process.

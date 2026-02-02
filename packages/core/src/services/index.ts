@@ -125,11 +125,14 @@ export {
   DaemonServiceLive,
   DaemonServiceNoop,
   PID_FILE_PATH,
+  LAUNCHD_PLIST_PATH,
   writePid,
   readPid,
   removePid,
   isProcessRunning,
   defaultDaemonConfig,
+  generateLaunchdPlist,
   type DaemonStatus,
-  type DaemonConfig
+  type DaemonConfig,
+  type LaunchdPlistOptions
 } from "./daemon-service.js"
