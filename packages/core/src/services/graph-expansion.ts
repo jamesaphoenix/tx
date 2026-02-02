@@ -78,6 +78,58 @@ export interface GraphExpansionResult {
   }
 }
 
+/**
+ * Options for file-based graph expansion.
+ * Expands from files via IMPORTS and CO_CHANGES_WITH edges to find related learnings.
+ * See PRD-016 for specification.
+ */
+export interface FileExpansionOptions {
+  /** Maximum traversal depth for file relationships (default: 2) */
+  readonly depth?: number
+  /** Score decay factor per hop (default: 0.7) */
+  readonly decayFactor?: number
+  /** Maximum learnings to return (default: 100) */
+  readonly maxNodes?: number
+}
+
+/**
+ * A learning discovered through file-based graph expansion.
+ * Contains metadata about how the learning was found via file relationships.
+ */
+export interface FileExpandedLearning {
+  readonly learning: Learning
+  /** The source file path that led to this learning */
+  readonly sourceFile: string
+  /** Number of hops from the source file (0 = directly anchored to input file) */
+  readonly hops: number
+  /** Score after applying weight decay per hop */
+  readonly decayedScore: number
+  /** Edge type that connected this learning (ANCHORED_TO for direct, IMPORTS or CO_CHANGES_WITH for expanded) */
+  readonly sourceEdge: EdgeType
+  /** Edge weight (null for directly anchored learnings, weight value for IMPORTS/CO_CHANGES_WITH) */
+  readonly edgeWeight: number | null
+}
+
+/**
+ * Result of file-based graph expansion operation.
+ */
+export interface FileExpansionResult {
+  /** Learnings directly anchored to the input files (hop 0) */
+  readonly anchored: readonly FileExpandedLearning[]
+  /** Learnings discovered through file expansion (hops > 0 via IMPORTS/CO_CHANGES_WITH) */
+  readonly expanded: readonly FileExpandedLearning[]
+  /** All learnings (anchored + expanded), sorted by decayedScore */
+  readonly all: readonly FileExpandedLearning[]
+  /** Statistics about the expansion */
+  readonly stats: {
+    readonly inputFileCount: number
+    readonly anchoredCount: number
+    readonly expandedCount: number
+    readonly maxDepthReached: number
+    readonly filesVisited: number
+  }
+}
+
 export class GraphExpansionService extends Context.Tag("GraphExpansionService")<
   GraphExpansionService,
   {
@@ -94,6 +146,20 @@ export class GraphExpansionService extends Context.Tag("GraphExpansionService")<
       seeds: readonly SeedLearning[],
       options?: GraphExpansionOptions
     ) => Effect.Effect<GraphExpansionResult, ValidationError | DatabaseError>
+
+    /**
+     * Expand from file paths to find related learnings.
+     * First finds learnings ANCHORED_TO the input files, then expands via
+     * IMPORTS and CO_CHANGES_WITH edges to find learnings anchored to related files.
+     *
+     * @param files - File paths to expand from (e.g., ["src/auth.ts", "src/jwt.ts"])
+     * @param options - Expansion configuration (depth, decay, limits)
+     * @returns Anchored and expanded learnings with file relationship metadata
+     */
+    readonly expandFromFiles: (
+      files: readonly string[],
+      options?: FileExpansionOptions
+    ) => Effect.Effect<FileExpansionResult, ValidationError | DatabaseError>
   }
 >() {}
 
@@ -128,6 +194,20 @@ export const GraphExpansionServiceNoop = Layer.succeed(
           expandedCount: 0,
           maxDepthReached: 0,
           nodesVisited: seeds.length
+        }
+      }),
+
+    expandFromFiles: (files) =>
+      Effect.succeed({
+        anchored: [],
+        expanded: [],
+        all: [],
+        stats: {
+          inputFileCount: files.length,
+          anchoredCount: 0,
+          expandedCount: 0,
+          maxDepthReached: 0,
+          filesVisited: files.length
         }
       })
   }
@@ -422,6 +502,74 @@ export const GraphExpansionServiceLive = Layer.effect(
               expandedCount: limitedExpanded.length,
               maxDepthReached,
               nodesVisited: visited.size,
+            },
+          }
+        }),
+
+      expandFromFiles: (files, options = {}) =>
+        Effect.gen(function* () {
+          // Validate options
+          const depth = options.depth ?? DEFAULT_OPTIONS.depth
+          const decayFactor = options.decayFactor ?? DEFAULT_OPTIONS.decayFactor
+          const maxNodes = options.maxNodes ?? DEFAULT_OPTIONS.maxNodes
+
+          if (depth < 0) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Expansion depth must be >= 0, got: ${depth}`
+            }))
+          }
+
+          if (depth > 10) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Expansion depth must be <= 10, got: ${depth}`
+            }))
+          }
+
+          if (decayFactor <= 0 || decayFactor > 1) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Decay factor must be in (0, 1], got: ${decayFactor}`
+            }))
+          }
+
+          if (maxNodes < 1) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Max nodes must be >= 1, got: ${maxNodes}`
+            }))
+          }
+
+          // Handle empty files input
+          if (files.length === 0) {
+            return {
+              anchored: [],
+              expanded: [],
+              all: [],
+              stats: {
+                inputFileCount: 0,
+                anchoredCount: 0,
+                expandedCount: 0,
+                maxDepthReached: 0,
+                filesVisited: 0,
+              },
+            }
+          }
+
+          // TODO: Implementation will be added in subsequent task
+          // 1. Find learnings ANCHORED_TO the input files
+          // 2. Expand via IMPORTS edges to find related files
+          // 3. Expand via CO_CHANGES_WITH edges for co-edited files
+          // 4. Find learnings anchored to those expanded files
+          // 5. Apply decay and deduplication
+
+          return {
+            anchored: [],
+            expanded: [],
+            all: [],
+            stats: {
+              inputFileCount: files.length,
+              anchoredCount: 0,
+              expandedCount: 0,
+              maxDepthReached: 0,
+              filesVisited: files.length,
             },
           }
         }),
