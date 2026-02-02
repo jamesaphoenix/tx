@@ -5,14 +5,11 @@ export default defineConfig({
     include: ["test/**/*.test.ts", "eslint-plugin-tx/tests/**/*.test.js"],
     environment: "node",
     testTimeout: 10000,
-    // Use forks pool for better stability in CI environments
+    // Use forks pool with single worker to avoid vitest worker communication timeouts in CI
     pool: "forks",
-    // Reduce parallelism to avoid vitest worker communication timeouts
     poolOptions: {
       forks: {
-        // Limit concurrent forks to reduce resource pressure
-        maxForks: process.env.CI ? 2 : undefined,
-        minForks: 1
+        singleFork: process.env.CI === "true"
       }
     },
     // Increase teardown timeout for CI stability
