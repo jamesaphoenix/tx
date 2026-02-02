@@ -13,6 +13,8 @@ import { LearningRepositoryLive } from "./repo/learning-repo.js"
 import { FileLearningRepositoryLive } from "./repo/file-learning-repo.js"
 import { AttemptRepositoryLive } from "./repo/attempt-repo.js"
 import { RunRepositoryLive } from "./repo/run-repo.js"
+import { AnchorRepositoryLive } from "./repo/anchor-repo.js"
+import { EdgeRepositoryLive } from "./repo/edge-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
@@ -20,6 +22,8 @@ import { HierarchyServiceLive } from "./services/hierarchy-service.js"
 import { LearningServiceLive } from "./services/learning-service.js"
 import { FileLearningServiceLive } from "./services/file-learning-service.js"
 import { AttemptServiceLive } from "./services/attempt-service.js"
+import { AnchorServiceLive } from "./services/anchor-service.js"
+import { EdgeServiceLive } from "./services/edge-service.js"
 import { SyncServiceLive } from "./services/sync-service.js"
 import { AutoSyncServiceLive, AutoSyncServiceNoop } from "./services/auto-sync-service.js"
 import { MigrationServiceLive } from "./services/migration-service.js"
@@ -75,7 +79,9 @@ export const makeAppLayer = (dbPath: string) => {
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     AttemptRepositoryLive,
-    RunRepositoryLive
+    RunRepositoryLive,
+    AnchorRepositoryLive,
+    EdgeRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -102,7 +108,9 @@ export const makeAppLayer = (dbPath: string) => {
     HierarchyServiceLive,
     LearningServiceLive,
     FileLearningServiceLive,
-    AttemptServiceLive
+    AttemptServiceLive,
+    AnchorServiceLive,
+    EdgeServiceLive
   ).pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, autoSyncService))
   )
@@ -132,7 +140,9 @@ export const makeMinimalLayer = (dbPath: string) => {
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     AttemptRepositoryLive,
-    RunRepositoryLive
+    RunRepositoryLive,
+    AnchorRepositoryLive,
+    EdgeRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -145,7 +155,9 @@ export const makeMinimalLayer = (dbPath: string) => {
     HierarchyServiceLive,
     LearningServiceLive,
     FileLearningServiceLive,
-    AttemptServiceLive
+    AttemptServiceLive,
+    AnchorServiceLive,
+    EdgeServiceLive
   ).pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop))
   )

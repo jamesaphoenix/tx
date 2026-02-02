@@ -83,6 +83,8 @@ export {
   MigrationServiceLive,
   AnchorService,
   AnchorServiceLive,
+  EdgeService,
+  EdgeServiceLive,
   MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
@@ -99,7 +101,10 @@ export {
   type AutoSyncEntity,
   type AnchorVerificationResult,
   type BatchVerificationResult,
-  type TypedAnchorInput
+  type TypedAnchorInput,
+  type NeighborWithDepth,
+  type NeighborWithPath,
+  type FindNeighborsOptions
 } from "./services/index.js"
 
 // =============================================================================
