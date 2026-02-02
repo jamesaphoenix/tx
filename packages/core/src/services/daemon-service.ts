@@ -419,27 +419,22 @@ const sendSignal = (pid: number, signal: NodeJS.Signals): Effect.Effect<boolean,
       process.kill(pid, signal)
       return true
     },
-    catch: (error) => {
-      // ESRCH means no such process - this is expected when process isn't running
-      if (error instanceof Error && "code" in error && error.code === "ESRCH") {
-        return false
-      }
-      // Any other error is unexpected
-      throw error
-    }
+    catch: (error) => error as NodeJS.ErrnoException
   }).pipe(
-    Effect.catchAll((error) =>
-      Effect.fail(
+    Effect.catchAll((error) => {
+      // ESRCH means no such process - return false (not running) as success value
+      if (error instanceof Error && "code" in error && error.code === "ESRCH") {
+        return Effect.succeed(false)
+      }
+      // Any other error is unexpected - convert to DaemonError
+      return Effect.fail(
         new DaemonError({
           code: "SIGNAL_FAILED",
           message: `Failed to send signal ${signal} to process ${pid}: ${error}`,
           pid
         })
       )
-    ),
-    Effect.flatMap((result) =>
-      typeof result === "boolean" ? Effect.succeed(result) : Effect.succeed(result)
-    )
+    })
   )
 
 /**

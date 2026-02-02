@@ -124,7 +124,7 @@ run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
 run_and_track "ESLint (packages)" "npx turbo lint"
 run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
 run_and_track "Tests (packages)" "npx turbo test"
-run_and_track "Tests (root)" "npx vitest --run"
+run_and_track "Tests (root)" "npx vitest --run --no-file-parallelism"
 
 # Summary
 echo ""
