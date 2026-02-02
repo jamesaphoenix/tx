@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 
-const TX_BIN = resolve(__dirname, "../../dist/cli.js")
+const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
 const CLI_TIMEOUT = 10000
 
 interface ExecResult {
