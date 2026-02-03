@@ -111,13 +111,14 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
     process.on("SIGTERM", () => handleSignal("SIGTERM"))
     process.on("SIGINT", () => handleSignal("SIGINT"))
 
+    // Completed tasks counter for metrics (shared with heartbeat loop)
+    const tasksCompletedRef = yield* Ref.make(0)
+
     // Heartbeat fiber - runs continuously in background
     const heartbeatFiber = yield* Effect.fork(
-      runHeartbeatLoop(workerId, config.heartbeatIntervalSeconds, shutdownState)
+      runHeartbeatLoop(workerId, config.heartbeatIntervalSeconds, shutdownState, tasksCompletedRef)
     )
 
-    // Completed tasks counter for metrics
-    let tasksCompleted = 0
 
     try {
       // Main work loop
@@ -159,6 +160,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
         const _claim = claimResult.right
         yield* Effect.log(`Worker ${workerId} claimed task ${task.id}`)
 
+        const tasksCompleted = yield* Ref.get(tasksCompletedRef)
         // Update worker status to busy with current task
         yield* workerService.heartbeat({
           workerId,
@@ -197,7 +199,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
           if (result.success) {
             // Mark task as done
             yield* taskService.update(task.id, { status: "done" })
-            tasksCompleted++
+            yield* Ref.update(tasksCompletedRef, (n) => n + 1)
             yield* Effect.log(`Task ${task.id} completed successfully`)
           } else {
             yield* Effect.log(
@@ -243,12 +245,12 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
 const runHeartbeatLoop = (
   workerId: string,
   intervalSeconds: number,
-  shutdownState: Ref.Ref<ShutdownState>
+  shutdownState: Ref.Ref<ShutdownState>,
+  tasksCompletedRef: Ref.Ref<number>
 ) =>
   Effect.gen(function* () {
     const workerService = yield* WorkerService
 
-    let tasksCompleted = 0
 
     while (true) {
       // Check shutdown before heartbeat
@@ -257,6 +259,9 @@ const runHeartbeatLoop = (
 
       // Determine current status based on whether Claude is running
       const status = state.claudeProcess ? "busy" : "idle"
+
+      // Read current completed count from shared ref
+      const tasksCompleted = yield* Ref.get(tasksCompletedRef)
 
       yield* workerService
         .heartbeat({
@@ -288,7 +293,7 @@ const runLeaseRenewalLoop = (
   taskId: string,
   workerId: string,
   intervalSeconds: number,
-  shutdownState: Ref.Ref<ShutdownState>
+  shutdownState: Ref.Ref<ShutdownState>,
 ) =>
   Effect.gen(function* () {
     const claimService = yield* ClaimService
@@ -322,7 +327,7 @@ const runClaude = (
   task: TaskWithDeps,
   workerId: string,
   workingDirectory: string,
-  shutdownState: Ref.Ref<ShutdownState>
+  shutdownState: Ref.Ref<ShutdownState>,
 ): Effect.Effect<ClaudeResult, never> =>
   Effect.async((resume) => {
     const prompt = buildPrompt(agent, task)
