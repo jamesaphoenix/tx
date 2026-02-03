@@ -329,6 +329,52 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
   }) as Effect.Effect<void, DatabaseError, RunRepository>
 
 /**
+ * tx trace stderr <run-id> - Display stderr file content.
+ *
+ * Outputs raw stderr content from the stderr file.
+ * Useful for debugging failed runs.
+ */
+export const traceStderr = (pos: string[], _flags: Flags) =>
+  Effect.gen(function* () {
+    const runId = pos[0]
+    if (!runId) {
+      console.error("Error: run-id is required")
+      console.error("Usage: tx trace stderr <run-id>")
+      process.exit(1)
+    }
+
+    const runRepo = yield* RunRepository
+
+    // Get run details
+    const run = yield* runRepo.findById(runId as RunId)
+    if (!run) {
+      console.error(`Error: Run not found: ${runId}`)
+      process.exit(1)
+    }
+
+    // Check if stderr path exists
+    if (!run.stderrPath) {
+      console.error(`Error: No stderr recorded for run: ${runId}`)
+      process.exit(1)
+    }
+
+    // Resolve stderr path relative to .tx directory
+    const txDir = process.cwd() + "/.tx"
+    const fullPath = run.stderrPath.startsWith("/")
+      ? run.stderrPath
+      : resolve(txDir, run.stderrPath)
+
+    if (!existsSync(fullPath)) {
+      console.error(`Error: Stderr file not found: ${fullPath}`)
+      process.exit(1)
+    }
+
+    // Read and output raw content
+    const content = readFileSync(fullPath, "utf-8")
+    process.stdout.write(content)
+  }) as Effect.Effect<void, DatabaseError, RunRepository>
+
+/**
  * tx trace show <run-id> - Show metrics events for a run.
  */
 export const traceShow = (pos: string[], flags: Flags) =>
@@ -741,6 +787,8 @@ Options:
       yield* traceShow(pos.slice(1), flags)
     } else if (subcommand === "transcript") {
       yield* traceTranscript(pos.slice(1), flags)
+    } else if (subcommand === "stderr") {
+      yield* traceStderr(pos.slice(1), flags)
     } else if (subcommand === "errors") {
       yield* traceErrors(pos.slice(1), flags)
     } else {
