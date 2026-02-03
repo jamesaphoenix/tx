@@ -261,31 +261,32 @@ describe("Package.json Configuration", () => {
 
   it("@tx/core depends on @tx/types", () => {
     const pkg = readPackageJson(PACKAGES.core)
-    expect(pkg.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    // Published packages use semver, workspace packages use "*"
+    expect(pkg.dependencies["@jamesaphoenix/tx-types"]).toMatch(/^(\*|\^[\d.]+)$/)
   })
 
   it("apps depend on @tx/core (except agent-sdk)", () => {
     const cliPkg = readPackageJson(APPS.cli)
-    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
+    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
 
     const mcpPkg = readPackageJson(APPS.mcpServer)
-    expect(mcpPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
+    expect(mcpPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
 
     const apiPkg = readPackageJson(APPS.apiServer)
-    expect(apiPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
+    expect(apiPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
 
     // agent-sdk has @tx/core as optional
     const sdkPkg = readPackageJson(APPS.agentSdk)
-    expect(sdkPkg.optionalDependencies?.["@jamesaphoenix/tx-core"]).toBe("*")
+    expect(sdkPkg.optionalDependencies?.["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
   })
 
-  it("packages use workspace protocol for internal deps", () => {
+  it("packages use workspace protocol or semver for internal deps", () => {
     const corePkg = readPackageJson(PACKAGES.core)
-    expect(corePkg.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(corePkg.dependencies["@jamesaphoenix/tx-types"]).toMatch(/^(\*|\^[\d.]+)$/)
 
     const cliPkg = readPackageJson(APPS.cli)
-    expect(cliPkg.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
-    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
+    expect(cliPkg.dependencies["@jamesaphoenix/tx-types"]).toMatch(/^(\*|\^[\d.]+)$/)
+    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
   })
 
   it("executable packages have bin field", () => {
@@ -343,6 +344,10 @@ describe("TypeScript Configuration", () => {
 })
 
 describe("No Circular Dependencies", () => {
+  // Helper to filter internal tx dependencies (both @tx/* and @jamesaphoenix/tx-*)
+  const filterTxDeps = (deps: Record<string, string>) =>
+    Object.keys(deps).filter((d) => d.startsWith("@tx/") || d.startsWith("@jamesaphoenix/tx-"))
+
   // Check that there are no circular imports by verifying the dependency graph
   it("@tx/types has no dependencies on other @tx/* packages", () => {
     const pkg = JSON.parse(
@@ -355,7 +360,7 @@ describe("No Circular Dependencies", () => {
       ...pkg.peerDependencies,
     }
 
-    const txDeps = Object.keys(allDeps).filter((d) => d.startsWith("@tx/"))
+    const txDeps = filterTxDeps(allDeps)
     expect(txDeps).toHaveLength(0)
   })
 
@@ -370,7 +375,7 @@ describe("No Circular Dependencies", () => {
       ...pkg.peerDependencies,
     }
 
-    const txDeps = Object.keys(allDeps).filter((d) => d.startsWith("@tx/"))
+    const txDeps = filterTxDeps(allDeps)
     expect(txDeps).toEqual(["@jamesaphoenix/tx-types"])
   })
 
@@ -384,11 +389,11 @@ describe("No Circular Dependencies", () => {
         ...pkg.peerDependencies,
       }
 
-      const txDeps = Object.keys(allDeps).filter((d) => d.startsWith("@tx/"))
+      const txDeps = filterTxDeps(allDeps)
 
       // Apps should only depend on packages, not other apps
       for (const dep of txDeps) {
-        expect(dep).toMatch(/^@tx\/(types|core|test-utils)$/)
+        expect(dep).toMatch(/^(@tx\/(types|core|test-utils)|@jamesaphoenix\/tx-(types|core|test-utils))$/)
       }
     }
   })
