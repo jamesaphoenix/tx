@@ -153,6 +153,76 @@ export class WatcherNotRunningError extends Data.TaggedError("WatcherNotRunningE
   }
 }
 
+// Orchestration error types (PRD-018)
+
+export class RegistrationError extends Data.TaggedError("RegistrationError")<{
+  readonly reason: string
+  readonly workerId?: string
+}> {
+  get message() {
+    return this.workerId
+      ? `Worker registration failed for ${this.workerId}: ${this.reason}`
+      : `Worker registration failed: ${this.reason}`
+  }
+}
+
+export class WorkerNotFoundError extends Data.TaggedError("WorkerNotFoundError")<{
+  readonly workerId: string
+}> {
+  get message() {
+    return `Worker not found: ${this.workerId}`
+  }
+}
+
+export class AlreadyClaimedError extends Data.TaggedError("AlreadyClaimedError")<{
+  readonly taskId: string
+  readonly claimedByWorkerId: string
+}> {
+  get message() {
+    return `Task ${this.taskId} is already claimed by worker ${this.claimedByWorkerId}`
+  }
+}
+
+export class ClaimNotFoundError extends Data.TaggedError("ClaimNotFoundError")<{
+  readonly taskId: string
+  readonly workerId?: string
+}> {
+  get message() {
+    return this.workerId
+      ? `No active claim found for task ${this.taskId} by worker ${this.workerId}`
+      : `No active claim found for task ${this.taskId}`
+  }
+}
+
+export class LeaseExpiredError extends Data.TaggedError("LeaseExpiredError")<{
+  readonly taskId: string
+  readonly expiredAt: string
+}> {
+  get message() {
+    return `Lease for task ${this.taskId} expired at ${this.expiredAt}`
+  }
+}
+
+export class MaxRenewalsExceededError extends Data.TaggedError("MaxRenewalsExceededError")<{
+  readonly taskId: string
+  readonly renewalCount: number
+  readonly maxRenewals: number
+}> {
+  get message() {
+    return `Task ${this.taskId} has reached maximum renewals (${this.renewalCount}/${this.maxRenewals})`
+  }
+}
+
+export class OrchestratorError extends Data.TaggedError("OrchestratorError")<{
+  readonly code: string
+  readonly reason: string
+  readonly cause?: unknown
+}> {
+  get message() {
+    return `Orchestrator error [${this.code}]: ${this.reason}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
@@ -168,3 +238,10 @@ export type TaskError =
   | WatcherAlreadyRunningError
   | WatcherNotRunningError
   | CandidateNotFoundError
+  | RegistrationError
+  | WorkerNotFoundError
+  | AlreadyClaimedError
+  | ClaimNotFoundError
+  | LeaseExpiredError
+  | MaxRenewalsExceededError
+  | OrchestratorError

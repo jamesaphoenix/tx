@@ -26,7 +26,15 @@ export {
   RerankerUnavailableError,
   RetrievalError,
   AstGrepError,
-  DaemonError
+  DaemonError,
+  // Orchestration errors (PRD-018)
+  RegistrationError,
+  WorkerNotFoundError,
+  AlreadyClaimedError,
+  ClaimNotFoundError,
+  LeaseExpiredError,
+  MaxRenewalsExceededError,
+  OrchestratorError
 } from "./errors.js"
 
 // =============================================================================
