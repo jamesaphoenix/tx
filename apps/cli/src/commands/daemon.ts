@@ -9,6 +9,7 @@ import { Effect } from "effect"
 import {
   CandidateRepository,
   CandidateExtractorService,
+  DaemonService,
   DeduplicationService,
   PromotionService,
   TrackedProjectRepository,
@@ -30,6 +31,26 @@ function opt(flags: Flags, ...names: string[]): string | undefined {
     if (typeof v === "string") return v
   }
   return undefined
+}
+
+/**
+ * Format uptime in milliseconds to a human-readable string.
+ */
+function formatUptime(ms: number): string {
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days > 0) {
+    return `${days}d ${hours % 24}h ${minutes % 60}m`
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`
+  } else {
+    return `${seconds}s`
+  }
 }
 
 /**
@@ -146,17 +167,103 @@ export const daemon = (pos: string[], flags: Flags) =>
     }
 
     if (subcommand === "start") {
-      // TODO: Implement daemon start (tx-5afa592c)
-      console.error("daemon start: not implemented yet")
-      process.exit(1)
+      const daemonService = yield* DaemonService
+      const result = yield* Effect.either(daemonService.start())
+
+      if (result._tag === "Left") {
+        const error = result.left
+        if (error.code === "ALREADY_RUNNING") {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: "already_running", pid: error.pid }))
+          } else {
+            console.error(`Daemon is already running with PID ${error.pid}`)
+          }
+        } else {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: error.code, message: error.message }))
+          } else {
+            console.error(`Failed to start daemon: ${error.message}`)
+          }
+        }
+        process.exit(1)
+      }
+
+      if (flag(flags, "json")) {
+        console.log(toJson({ started: true }))
+      } else {
+        console.log("Daemon started")
+      }
     } else if (subcommand === "stop") {
-      // TODO: Implement daemon stop (tx-5afa592c)
-      console.error("daemon stop: not implemented yet")
-      process.exit(1)
+      const daemonService = yield* DaemonService
+      const result = yield* Effect.either(daemonService.stop())
+
+      if (result._tag === "Left") {
+        const error = result.left
+        if (flag(flags, "json")) {
+          console.log(toJson({ error: error.code, message: error.message }))
+        } else {
+          console.error(`Failed to stop daemon: ${error.message}`)
+        }
+        process.exit(1)
+      }
+
+      if (flag(flags, "json")) {
+        console.log(toJson({ stopped: true }))
+      } else {
+        console.log("Daemon stopped")
+      }
     } else if (subcommand === "status") {
-      // TODO: Implement daemon status (tx-5afa592c)
-      console.error("daemon status: not implemented yet")
-      process.exit(1)
+      const daemonService = yield* DaemonService
+      const trackedProjectRepo = yield* TrackedProjectRepository
+      const candidateRepo = yield* CandidateRepository
+
+      const statusResult = yield* Effect.either(daemonService.status())
+
+      if (statusResult._tag === "Left") {
+        const error = statusResult.left
+        if (flag(flags, "json")) {
+          console.log(toJson({ error: error.code, message: error.message }))
+        } else {
+          console.error(`Failed to get daemon status: ${error.message}`)
+        }
+        process.exit(1)
+      }
+
+      const status = statusResult.right
+
+      // Get tracked projects count
+      const projects = yield* trackedProjectRepo.findAll()
+      const trackedProjects = projects.length
+      const enabledProjects = projects.filter(p => p.enabled).length
+
+      // Get pending candidates count
+      const pendingCandidates = yield* candidateRepo.findByFilter({ status: "pending" })
+      const pendingCount = pendingCandidates.length
+
+      if (flag(flags, "json")) {
+        console.log(toJson({
+          running: status.running,
+          pid: status.pid,
+          uptime: status.uptime,
+          startedAt: status.startedAt?.toISOString() ?? null,
+          trackedProjects,
+          enabledProjects,
+          pendingCandidates: pendingCount
+        }))
+      } else {
+        if (status.running) {
+          console.log("Daemon: running")
+          console.log(`  PID: ${status.pid}`)
+          if (status.uptime !== null) {
+            const uptimeStr = formatUptime(status.uptime)
+            console.log(`  Uptime: ${uptimeStr}`)
+          }
+        } else {
+          console.log("Daemon: stopped")
+        }
+        console.log(`  Tracked projects: ${enabledProjects}/${trackedProjects}`)
+        console.log(`  Pending candidates: ${pendingCount}`)
+      }
     } else if (subcommand === "process") {
       // Process JSONL files to extract learning candidates
       const candidateRepo = yield* CandidateRepository

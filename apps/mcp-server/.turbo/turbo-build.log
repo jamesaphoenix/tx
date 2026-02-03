@@ -2,3 +2,266 @@
 > @tx/mcp-server@0.1.0 build
 > tsc -b
 
+
+<--- Last few GCs --->
+
+[56405:0x9adc00000]    48927 ms: Scavenge 4064.7 (4112.5) -> 4049.3 (4112.5) MB, pooled: 0 MB, 1.17 / 0.00 ms  (average mu = 0.339, current mu = 0.295) allocation failure; 
+[56405:0x9adc00000]    49466 ms: Mark-Compact (reduce) 4055.9 (4112.7) -> 4041.7 (4081.2) MB, pooled: 0 MB, 29.79 / 0.00 ms  (+ 503.7 ms in 102 steps since start of marking, biggest step 5.2 ms, walltime since start of marking 539 ms) (average mu = 0.316,
+FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory
+----- Native stack trace -----
+
+ 1: 0x1002e43dc node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 2: 0x1004e4c60 v8::internal::V8::FatalProcessOutOfMemory(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 3: 0x100744890 v8::internal::Heap::stack() [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 4: 0x100747c64 v8::internal::Heap::HasLowYoungGenerationAllocationRate() [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 5: 0x100758eb4 v8::internal::Heap::CollectGarbage(v8::internal::AllocationSpace, v8::internal::GarbageCollectionReason, v8::GCCallbackFlags)::$_1::operator()() const [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 6: 0x100758788 void heap::base::Stack::SetMarkerAndCallbackImpl<v8::internal::Heap::CollectGarbage(v8::internal::AllocationSpace, v8::internal::GarbageCollectionReason, v8::GCCallbackFlags)::$_1>(heap::base::Stack*, void*, void const*) [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 7: 0x10110e184 PushAllRegistersAndIterateStack [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 8: 0x100742594 v8::internal::Heap::CollectGarbage(v8::internal::AllocationSpace, v8::internal::GarbageCollectionReason, v8::GCCallbackFlags) [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+ 9: 0x1006ba08c v8::internal::StackGuard::HandleInterrupts(v8::internal::StackGuard::InterruptLevel) [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+10: 0x100ba79dc v8::internal::Runtime_StackGuardWithGap(int, unsigned long*, v8::internal::Isolate*) [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+11: 0x1011fdf74 Builtins_CEntry_Return1_ArgvOnStack_NoBuiltinExit [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+12: 0x130eba718 
+13: 0x130d7de48 
+14: 0x130d7f568 
+15: 0x130f16608 
+16: 0x130da3264 
+17: 0x130ed7d10 
+18: 0x130f0b648 
+19: 0x130d02428 
+20: 0x130d8bcd8 
+21: 0x1307b699c 
+22: 0x130da57b4 
+23: 0x130f28b2c 
+24: 0x130d8bc50 
+25: 0x1307b699c 
+26: 0x130da57b4 
+27: 0x130ebc7b8 
+28: 0x130d024c0 
+29: 0x130d8bcd8 
+30: 0x1307b699c 
+31: 0x130da57b4 
+32: 0x130f28b2c 
+33: 0x130d8bc50 
+34: 0x1307b699c 
+35: 0x130da57b4 
+36: 0x130ebc7b8 
+37: 0x130d024c0 
+38: 0x130d8bcd8 
+39: 0x1307b699c 
+40: 0x130da57b4 
+41: 0x130f28b2c 
+42: 0x130d8bc50 
+43: 0x1307b699c 
+44: 0x130da57b4 
+45: 0x130ebc7b8 
+46: 0x130d024c0 
+47: 0x130d8bcd8 
+48: 0x1307b699c 
+49: 0x130da57b4 
+50: 0x130f28b2c 
+51: 0x130d8bc50 
+52: 0x1307b699c 
+53: 0x130da57b4 
+54: 0x130ebc7b8 
+55: 0x130d024c0 
+56: 0x130d8bcd8 
+57: 0x1307b699c 
+58: 0x130da57b4 
+59: 0x130f28b2c 
+60: 0x130d8bc50 
+61: 0x1307b699c 
+62: 0x130da57b4 
+63: 0x130ebc7b8 
+64: 0x130d024c0 
+65: 0x130d8bcd8 
+66: 0x1307b699c 
+67: 0x130da57b4 
+68: 0x130f28b2c 
+69: 0x130d8bc50 
+70: 0x1307b699c 
+71: 0x130da57b4 
+72: 0x130ebc7b8 
+73: 0x130d024c0 
+74: 0x130d8bcd8 
+75: 0x1307b699c 
+76: 0x130da57b4 
+77: 0x130f28b2c 
+78: 0x130d8bc50 
+79: 0x1307b699c 
+80: 0x130da57b4 
+81: 0x130ebc7b8 
+82: 0x130d024c0 
+83: 0x130d8bcd8 
+84: 0x1307b699c 
+85: 0x130da57b4 
+86: 0x130f28b2c 
+87: 0x130d8bc50 
+88: 0x1307b699c 
+89: 0x130da57b4 
+90: 0x130ebc7b8 
+91: 0x130d024c0 
+92: 0x130d8bcd8 
+93: 0x1307b699c 
+94: 0x130da57b4 
+95: 0x130f28b2c 
+96: 0x130d8bc50 
+97: 0x1307b699c 
+98: 0x130da57b4 
+99: 0x130ebc7b8 
+100: 0x130d024c0 
+101: 0x130d8bcd8 
+102: 0x1307b699c 
+103: 0x130da57b4 
+104: 0x130f28b2c 
+105: 0x130d8bc50 
+106: 0x1307b699c 
+107: 0x130da57b4 
+108: 0x130ebc7b8 
+109: 0x130d024c0 
+110: 0x130d8bcd8 
+111: 0x1307b699c 
+112: 0x130da57b4 
+113: 0x130f28b2c 
+114: 0x130d8bc50 
+115: 0x1307b699c 
+116: 0x130da57b4 
+117: 0x130ebc7b8 
+118: 0x130d024c0 
+119: 0x130d8bcd8 
+120: 0x1307b699c 
+121: 0x130da57b4 
+122: 0x130f28b2c 
+123: 0x130d8bc50 
+124: 0x1307b699c 
+125: 0x130da57b4 
+126: 0x130cae574 
+127: 0x101160bec Builtins_InterpreterEntryTrampoline [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+128: 0x1011616e0 Builtins_InterpreterEnterAtBytecode [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+129: 0x101160bec Builtins_InterpreterEntryTrampoline [/Users/jamesaphoenix/Library/pnpm/nodejs/24.13.0/bin/node]
+130: 0x130e9b05c 
+131: 0x130efba90 
+132: 0x130daf484 
+133: 0x130ad197c 
+134: 0x130aed9d4 
+135: 0x130e57180 
+136: 0x130b98c14 
+137: 0x130dd2614 
+138: 0x13071e61c 
+139: 0x130e98a14 
+140: 0x130ad1874 
+141: 0x130aed9d4 
+142: 0x130e57180 
+143: 0x130b98c14 
+144: 0x1309bb3f4 
+145: 0x130e9c83c 
+146: 0x130efba90 
+147: 0x130ba3bd8 
+148: 0x130ad197c 
+149: 0x130aed9d4 
+150: 0x130e57180 
+151: 0x130b98c14 
+152: 0x130dd2614 
+153: 0x13071e61c 
+154: 0x130e98a14 
+155: 0x130ad1874 
+156: 0x130aed9d4 
+157: 0x130e57180 
+158: 0x130b98c14 
+159: 0x1309bb3f4 
+160: 0x130e9c83c 
+161: 0x130efba90 
+162: 0x130ba3bd8 
+163: 0x130ad197c 
+164: 0x130aed9d4 
+165: 0x130e57180 
+166: 0x130b98c14 
+167: 0x130dd2614 
+168: 0x13071e61c 
+169: 0x130e98a14 
+170: 0x130ad1874 
+171: 0x130aed9d4 
+172: 0x130e57180 
+173: 0x130b98c14 
+174: 0x1309bb3f4 
+175: 0x130e9c83c 
+176: 0x130efba90 
+177: 0x130ba3bd8 
+178: 0x130ad197c 
+179: 0x130aed9d4 
+180: 0x130e57180 
+181: 0x130b98c14 
+182: 0x130dd2614 
+183: 0x13071e61c 
+184: 0x130e98a14 
+185: 0x130ad1874 
+186: 0x130aed9d4 
+187: 0x130e57180 
+188: 0x130b98c14 
+189: 0x1309bb3f4 
+190: 0x130e9c83c 
+191: 0x130efba90 
+192: 0x130ba3bd8 
+193: 0x130ad197c 
+194: 0x130aed9d4 
+195: 0x130e57180 
+196: 0x130b98c14 
+197: 0x130dd2614 
+198: 0x13071e61c 
+199: 0x130e98a14 
+200: 0x130ad1874 
+201: 0x130aed9d4 
+202: 0x130e57180 
+203: 0x130b98c14 
+204: 0x1309bb3f4 
+205: 0x130e9c83c 
+206: 0x130efba90 
+207: 0x130ba3bd8 
+208: 0x130ad197c 
+209: 0x130aed9d4 
+210: 0x130e57180 
+211: 0x130b98c14 
+212: 0x130dd2614 
+213: 0x13071e61c 
+214: 0x130e98a14 
+215: 0x130ad1874 
+216: 0x130aed9d4 
+217: 0x130e57180 
+218: 0x130b98c14 
+219: 0x1309bb3f4 
+220: 0x130e9c83c 
+221: 0x130efba90 
+222: 0x130ba3bd8 
+223: 0x130ad197c 
+224: 0x130aed9d4 
+225: 0x130e57180 
+226: 0x130b98c14 
+227: 0x130dd2614 
+228: 0x13071e61c 
+229: 0x130e98a14 
+230: 0x130ad1874 
+231: 0x130aed9d4 
+232: 0x130e57180 
+233: 0x130b98c14 
+234: 0x1309bb3f4 
+235: 0x130e9c83c 
+236: 0x130efba90 
+237: 0x130ba3bd8 
+238: 0x130ad197c 
+239: 0x130aed9d4 
+240: 0x130e57180 
+241: 0x130b98c14 
+242: 0x130dd2614 
+243: 0x13071e61c 
+244: 0x130e98a14 
+245: 0x130ad1874 
+246: 0x130aed9d4 
+247: 0x130e57180 
+248: 0x130b98c14 
+249: 0x1309bb3f4 
+250: 0x130e9c83c 
+251: 0x130efba90 
+252: 0x130ba3bd8 
+253: 0x130ad197c 
+254: 0x130aed9d4 
+255: 0x130e57180 
