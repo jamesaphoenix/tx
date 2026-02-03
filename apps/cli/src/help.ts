@@ -53,6 +53,10 @@ Commands:
   orchestrator stop       Stop the orchestrator
   orchestrator status     Show orchestrator status
   orchestrator reconcile  Force reconciliation pass
+  worker start            Start a worker process
+  worker stop             Stop a worker process
+  worker status           Show worker status
+  worker list             List all workers
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1197,5 +1201,102 @@ Options:
 
 Examples:
   tx orchestrator reconcile
-  tx orchestrator reconcile --json`
+  tx orchestrator reconcile --json`,
+
+  worker: `tx worker - Worker process management
+
+Usage: tx worker <subcommand> [options]
+
+Manages worker processes for the orchestration system. Workers claim and
+execute tasks, sending heartbeats to the orchestrator.
+
+Subcommands:
+  start       Start a worker process
+  stop        Stop a worker process
+  status      Show worker status
+  list        List all workers
+
+Run 'tx worker <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx worker start                           # Start with defaults
+  tx worker start --name my-worker          # Start with custom name
+  tx worker status                          # Show worker summary
+  tx worker list                            # List all workers`,
+
+  "worker start": `tx worker start - Start a worker process
+
+Usage: tx worker start [options]
+
+Starts a worker process that registers with the orchestrator, claims tasks,
+and executes them using Claude. The worker sends periodic heartbeats and
+handles graceful shutdown on SIGTERM/SIGINT.
+
+Options:
+  --name, -n <name>              Worker name (default: worker-<auto>)
+  --capabilities, -c <list>      Comma-separated capabilities (default: tx-implementer)
+  --heartbeat <seconds>          Heartbeat interval in seconds (default: 30)
+  --json                         Output as JSON
+  --help                         Show this help
+
+Examples:
+  tx worker start                                    # Start with defaults
+  tx worker start --name my-worker                   # Custom name
+  tx worker start -c tx-implementer,tx-tester        # Multiple capabilities
+  tx worker start --heartbeat 15                     # Custom heartbeat interval`,
+
+  "worker stop": `tx worker stop - Stop a worker process
+
+Usage: tx worker stop [options]
+
+Workers are stopped by sending SIGTERM to the worker process. The worker
+will finish its current task (if any) before exiting gracefully.
+
+Options:
+  --graceful, -g  Graceful shutdown (workers already handle this)
+  --json          Output as JSON
+  --help          Show this help
+
+Note: To stop a worker, find its PID with 'tx worker list --json' and
+send SIGTERM:
+
+  kill -SIGTERM <worker-pid>
+
+Examples:
+  tx worker stop                   # Show stop instructions`,
+
+  "worker status": `tx worker status - Show worker status
+
+Usage: tx worker status [worker-id] [options]
+
+Shows the status of workers. If a worker ID is provided, shows detailed
+status for that specific worker. Otherwise, shows a summary of all workers.
+
+Arguments:
+  [worker-id]   Optional. Show detailed status for this worker
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx worker status                        # Summary of all workers
+  tx worker status worker-abc12345        # Detailed status for one worker
+  tx worker status --json                 # Summary as JSON`,
+
+  "worker list": `tx worker list - List all workers
+
+Usage: tx worker list [options]
+
+Lists all registered workers with their current status, name, and active task.
+
+Options:
+  --status, -s <list>   Filter by status (comma-separated: starting,idle,busy,stopping,dead)
+  --json                Output as JSON
+  --help                Show this help
+
+Examples:
+  tx worker list                    # List all workers
+  tx worker list --status idle,busy # Only idle and busy workers
+  tx worker list --json             # Output as JSON for scripting`
 }

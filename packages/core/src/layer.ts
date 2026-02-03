@@ -18,6 +18,9 @@ import { EdgeRepositoryLive } from "./repo/edge-repo.js"
 import { DeduplicationRepositoryLive } from "./repo/deduplication-repo.js"
 import { CandidateRepositoryLive } from "./repo/candidate-repo.js"
 import { TrackedProjectRepositoryLive } from "./repo/tracked-project-repo.js"
+import { WorkerRepositoryLive } from "./repo/worker-repo.js"
+import { ClaimRepositoryLive } from "./repo/claim-repo.js"
+import { OrchestratorStateRepositoryLive } from "./repo/orchestrator-state-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
@@ -40,6 +43,9 @@ import { AnchorVerificationServiceLive } from "./services/anchor-verification.js
 import { SwarmVerificationServiceLive } from "./services/swarm-verification.js"
 import { PromotionServiceLive } from "./services/promotion-service.js"
 import { FeedbackTrackerServiceLive } from "./services/feedback-tracker.js"
+import { WorkerServiceLive } from "./services/worker-service.js"
+import { ClaimServiceLive } from "./services/claim-service.js"
+import { OrchestratorServiceLive } from "./services/orchestrator-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync-service.js"
@@ -150,7 +156,10 @@ export const makeAppLayer = (dbPath: string) => {
     EdgeRepositoryLive,
     DeduplicationRepositoryLive,
     CandidateRepositoryLive,
-    TrackedProjectRepositoryLive
+    TrackedProjectRepositoryLive,
+    WorkerRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -215,8 +224,19 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.mergeAll(repos, services, edgeService))
   )
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, and retrieverService
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService)
+  // WorkerServiceLive needs WorkerRepository and OrchestratorStateRepository (from repos)
+  const workerService = WorkerServiceLive.pipe(Layer.provide(repos))
+
+  // ClaimServiceLive needs ClaimRepository and OrchestratorStateRepository (from repos)
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
+
+  // OrchestratorServiceLive needs WorkerService, ClaimService, TaskService, and OrchestratorStateRepository
+  const orchestratorService = OrchestratorServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, services, workerService, claimService))
+  )
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, and orchestration services
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, workerService, claimService, orchestratorService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
