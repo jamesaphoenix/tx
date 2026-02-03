@@ -204,3 +204,12 @@ export {
   TracingServiceNoop,
   type SpanOptions
 } from "./tracing-service.js"
+export {
+  ClaudeCodeAdapter,
+  GenericJSONLAdapter,
+  getAdapter,
+  registerAdapter,
+  type TranscriptAdapter,
+  type ToolCall,
+  type Message
+} from "./transcript-adapter.js"
