@@ -6,7 +6,7 @@
 
 import { Effect } from "effect"
 import { existsSync, readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 import {
   RunRepository,
   SqliteClient,
@@ -313,7 +313,7 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
     }
 
     // Resolve transcript path relative to .tx directory
-    const txDir = process.cwd() + "/.tx"
+    const txDir = join(process.cwd(), ".tx")
     const fullPath = run.transcriptPath.startsWith("/")
       ? run.transcriptPath
       : resolve(txDir, run.transcriptPath)
@@ -359,7 +359,7 @@ export const traceStderr = (pos: string[], _flags: Flags) =>
     }
 
     // Resolve stderr path relative to .tx directory
-    const txDir = process.cwd() + "/.tx"
+    const txDir = join(process.cwd(), ".tx")
     const fullPath = run.stderrPath.startsWith("/")
       ? run.stderrPath
       : resolve(txDir, run.stderrPath)
@@ -435,7 +435,7 @@ export const traceShow = (pos: string[], flags: Flags) =>
 
       if (showFull && run.transcriptPath) {
         // Get .tx directory (parent of tasks.db)
-        const txDir = process.cwd() + "/.tx"
+        const txDir = join(process.cwd(), ".tx")
         const toolCalls = readTranscriptToolCalls(run.transcriptPath, run.agent, txDir)
         output.toolCalls = toolCalls
       }
@@ -478,7 +478,7 @@ export const traceShow = (pos: string[], flags: Flags) =>
       console.log("─".repeat(75))
 
       // Get tool calls from transcript
-      const txDir = process.cwd() + "/.tx"
+      const txDir = join(process.cwd(), ".tx")
       const toolCalls = readTranscriptToolCalls(run.transcriptPath, run.agent, txDir)
 
       // Build combined timeline
