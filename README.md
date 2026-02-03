@@ -245,6 +245,19 @@ Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code
 - **[CLAUDE.md](CLAUDE.md)**: Doctrine and quick reference
 - **[docs/](docs/)**: Full documentation (17 PRDs, 17 Design Docs)
 
+### Docs Site
+
+Run the documentation site locally:
+
+```bash
+cd apps/docs
+npm run dev    # Development server at http://localhost:3000
+npm run build  # Production build
+npm run start  # Serve production build
+```
+
+The docs site is built with [Fumadocs](https://fumadocs.vercel.app/) and Next.js, featuring full-text search, syntax highlighting, and automatic navigation from the markdown files in `docs/`.
+
 ---
 
 ## License
