@@ -327,6 +327,69 @@ describe("PromotionService.promote", () => {
     expect(derivedEdge!.targetType).toBe("run")
     expect(derivedEdge!.targetId).toBe(FIXTURES.RUN_1)
   })
+
+  it("links promoted learning to source task via DERIVED_FROM edge", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+        const edgeSvc = yield* EdgeService
+
+        const candidate = yield* repo.insert({
+          content: "Learning from a task",
+          confidence: "high",
+          sourceFile: "src/test.ts",
+          sourceTaskId: FIXTURES.TASK_1
+        })
+
+        const promotionResult = yield* svc.promote(candidate.id)
+
+        // Check for DERIVED_FROM edge
+        const edges = yield* edgeSvc.findFromSource("learning", String(promotionResult.learning.id))
+
+        return { promotionResult, edges }
+      }).pipe(Effect.provide(layer))
+    )
+
+    const derivedEdge = result.edges.find(e => e.edgeType === "DERIVED_FROM")
+    expect(derivedEdge).toBeDefined()
+    expect(derivedEdge!.targetType).toBe("task")
+    expect(derivedEdge!.targetId).toBe(FIXTURES.TASK_1)
+  })
+
+  it("does not create edge when candidate has no source run or task", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+        const edgeSvc = yield* EdgeService
+
+        const candidate = yield* repo.insert({
+          content: "Learning with no source",
+          confidence: "high",
+          sourceFile: "src/test.ts"
+          // No sourceRunId or sourceTaskId
+        })
+
+        const promotionResult = yield* svc.promote(candidate.id)
+
+        // Check for edges
+        const edges = yield* edgeSvc.findFromSource("learning", String(promotionResult.learning.id))
+
+        return { promotionResult, edges }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should not have any DERIVED_FROM edges
+    const derivedEdges = result.edges.filter(e => e.edgeType === "DERIVED_FROM")
+    expect(derivedEdges).toHaveLength(0)
+  })
 })
 
 // =============================================================================
@@ -629,6 +692,48 @@ describe("PromotionService.autoPromote", () => {
     )
 
     expect(result.promoted).toBe(0)
+  })
+
+  it("creates DERIVED_FROM edge during auto-promotion", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+        const edgeSvc = yield* EdgeService
+        const learningSvc = yield* LearningService
+
+        yield* repo.insert({
+          content: "Auto-promoted with edge",
+          confidence: "high",
+          sourceFile: "src/test.ts",
+          sourceRunId: FIXTURES.RUN_2
+        })
+
+        const autoResult = yield* svc.autoPromote()
+
+        // Verify the learning was created
+        expect(autoResult.learningIds).toHaveLength(1)
+
+        // Check for DERIVED_FROM edge from the learning
+        const edges = yield* edgeSvc.findFromSource("learning", String(autoResult.learningIds[0]))
+
+        // Verify learning exists and has correct content
+        const learning = yield* learningSvc.get(autoResult.learningIds[0])
+
+        return { autoResult, edges, learning }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.autoResult.promoted).toBe(1)
+    expect(result.learning.content).toBe("Auto-promoted with edge")
+
+    const derivedEdge = result.edges.find(e => e.edgeType === "DERIVED_FROM")
+    expect(derivedEdge).toBeDefined()
+    expect(derivedEdge!.targetType).toBe("run")
+    expect(derivedEdge!.targetId).toBe(FIXTURES.RUN_2)
   })
 })
 
