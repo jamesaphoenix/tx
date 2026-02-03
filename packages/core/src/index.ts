@@ -194,7 +194,12 @@ export {
   FeedbackTrackerService,
   FeedbackTrackerServiceNoop,
   FeedbackTrackerServiceLive,
-  type LearningUsageFeedback
+  type LearningUsageFeedback,
+  WorkerService,
+  WorkerServiceLive,
+  type WorkerRegistration,
+  type WorkerFilter,
+  type FindDeadConfig
 } from "./services/index.js"
 
 // =============================================================================

@@ -178,3 +178,10 @@ export {
   FeedbackTrackerServiceLive,
   type LearningUsageFeedback
 } from "./feedback-tracker.js"
+export {
+  WorkerService,
+  WorkerServiceLive,
+  type WorkerRegistration,
+  type WorkerFilter,
+  type FindDeadConfig
+} from "./worker-service.js"
