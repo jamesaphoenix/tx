@@ -204,7 +204,9 @@ export {
   ClaimServiceLive,
   OrchestratorService,
   OrchestratorServiceLive,
-  type OrchestratorConfig
+  type OrchestratorConfig,
+  runWorkerProcess,
+  type WorkerProcessConfig
 } from "./services/index.js"
 
 // =============================================================================

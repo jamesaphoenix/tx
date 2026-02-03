@@ -194,3 +194,7 @@ export {
   OrchestratorServiceLive,
   type OrchestratorConfig
 } from "./orchestrator-service.js"
+export {
+  runWorkerProcess,
+  type WorkerProcessConfig
+} from "./worker-process.js"
