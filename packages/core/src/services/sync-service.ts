@@ -6,7 +6,7 @@ import { SqliteClient } from "../db.js"
 import { TaskService } from "./task-service.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import type { Task, TaskDependency, TaskId, TaskStatus } from "@tx/types"
+import type { Task, TaskDependency, TaskId, TaskStatus } from "@jamesaphoenix/tx-types"
 import {
   type TaskUpsertOp,
   type TaskDeleteOp,

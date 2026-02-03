@@ -11,10 +11,10 @@ import type {
   InvalidationLog,
   InvalidationLogRow,
   InvalidationSource
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export types from @tx/types for convenience
-export type { AnchorRow, InvalidationLogRow } from "@tx/types"
+export type { AnchorRow, InvalidationLogRow } from "@jamesaphoenix/tx-types"
 
 /**
  * Convert a database row to an Anchor domain object.

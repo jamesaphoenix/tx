@@ -7,9 +7,9 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
-import type { Learning, LearningWithScore, FileLearning, LearningSourceType } from "@tx/types"
-import { LEARNING_SOURCE_TYPES } from "@tx/types"
-import { LearningService, FileLearningService } from "@tx/core"
+import type { Learning, LearningWithScore, FileLearning, LearningSourceType } from "@jamesaphoenix/tx-types"
+import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
 // -----------------------------------------------------------------------------

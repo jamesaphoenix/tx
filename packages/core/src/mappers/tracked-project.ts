@@ -6,11 +6,11 @@ import type {
   TrackedProject,
   TrackedProjectRow,
   SourceType
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export types and constants from @tx/types for convenience
-export type { TrackedProjectRow } from "@tx/types"
-export { SOURCE_TYPES } from "@tx/types"
+export type { TrackedProjectRow } from "@jamesaphoenix/tx-types"
+export { SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 
 /**
  * Check if a string is a valid SourceType for tracked projects.

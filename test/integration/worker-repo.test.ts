@@ -66,7 +66,7 @@ const createWorkerData = (
 
 describe("WorkerRepository.insert", () => {
   it("creates a worker with all fields", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -108,7 +108,7 @@ describe("WorkerRepository.insert", () => {
 
 describe("WorkerRepository.update", () => {
   it("updates worker fields", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -143,7 +143,7 @@ describe("WorkerRepository.update", () => {
 
 describe("WorkerRepository.delete", () => {
   it("removes worker and returns true", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -165,7 +165,7 @@ describe("WorkerRepository.delete", () => {
   })
 
   it("returns false for nonexistent worker", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -187,7 +187,7 @@ describe("WorkerRepository.delete", () => {
 
 describe("WorkerRepository.findById", () => {
   it("returns worker by ID", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -208,7 +208,7 @@ describe("WorkerRepository.findById", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -230,7 +230,7 @@ describe("WorkerRepository.findById", () => {
 
 describe("WorkerRepository.findByStatus", () => {
   it("filters workers by status", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -254,7 +254,7 @@ describe("WorkerRepository.findByStatus", () => {
   })
 
   it("returns empty array when no workers match status", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -277,7 +277,7 @@ describe("WorkerRepository.findByStatus", () => {
 
 describe("WorkerRepository.findByLastHeartbeatBefore", () => {
   it("finds stale workers", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -307,7 +307,7 @@ describe("WorkerRepository.findByLastHeartbeatBefore", () => {
   })
 
   it("returns workers sorted by last heartbeat ASC", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -340,7 +340,7 @@ describe("WorkerRepository.findByLastHeartbeatBefore", () => {
 
 describe("WorkerRepository.countByStatus", () => {
   it("counts workers by status", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -361,7 +361,7 @@ describe("WorkerRepository.countByStatus", () => {
   })
 
   it("returns 0 when no workers match status", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))
@@ -378,7 +378,7 @@ describe("WorkerRepository.countByStatus", () => {
   })
 
   it("returns 0 when no workers exist", async () => {
-    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@tx/core")
+    const { WorkerRepository, WorkerRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
     const infra = SqliteClientLive(":memory:")
     const layer = WorkerRepositoryLive.pipe(Layer.provide(infra))

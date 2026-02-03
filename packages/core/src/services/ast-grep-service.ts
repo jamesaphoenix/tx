@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { spawn } from "child_process"
 import { AstGrepError } from "../errors.js"
-import type { SymbolInfo, ImportInfo, Match, SymbolKind, SymbolPattern } from "@tx/types"
+import type { SymbolInfo, ImportInfo, Match, SymbolKind, SymbolPattern } from "@jamesaphoenix/tx-types"
 
 /**
  * File extension to ast-grep language mapping.

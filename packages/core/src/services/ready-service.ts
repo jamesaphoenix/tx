@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { DatabaseError } from "../errors.js"
-import type { Task, TaskId, TaskWithDeps } from "@tx/types"
+import type { Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
 export class ReadyService extends Context.Tag("ReadyService")<
   ReadyService,

@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { rowToAttempt } from "../mappers/attempt.js"
-import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "@tx/types"
+import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "@jamesaphoenix/tx-types"
 
 export class AttemptRepository extends Context.Tag("AttemptRepository")<
   AttemptRepository,

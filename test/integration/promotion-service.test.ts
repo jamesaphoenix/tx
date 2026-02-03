@@ -39,7 +39,7 @@ void FIXTURES
 
 describe("PromotionService.list", () => {
   it("returns empty array when no candidates exist", async () => {
-    const { makeAppLayer, PromotionService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -53,7 +53,7 @@ describe("PromotionService.list", () => {
   })
 
   it("returns all candidates when no filter is applied", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -81,7 +81,7 @@ describe("PromotionService.list", () => {
   })
 
   it("filters by status", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -113,7 +113,7 @@ describe("PromotionService.list", () => {
   })
 
   it("filters by confidence level", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -146,7 +146,7 @@ describe("PromotionService.list", () => {
   })
 
   it("filters by category", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -176,7 +176,7 @@ describe("PromotionService.list", () => {
   })
 
   it("supports pagination with limit and offset", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -216,7 +216,7 @@ describe("PromotionService.list", () => {
 
 describe("PromotionService.promote", () => {
   it("promotes a candidate to a learning", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -251,7 +251,7 @@ describe("PromotionService.promote", () => {
   })
 
   it("fails with CandidateNotFoundError for nonexistent candidate", async () => {
-    const { makeAppLayer, PromotionService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -268,7 +268,7 @@ describe("PromotionService.promote", () => {
   })
 
   it("sets reviewedAt timestamp on promotion", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const before = new Date()
@@ -297,7 +297,7 @@ describe("PromotionService.promote", () => {
   })
 
   it("links promoted learning to source run via DERIVED_FROM edge", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -329,7 +329,7 @@ describe("PromotionService.promote", () => {
   })
 
   it("links promoted learning to source task via DERIVED_FROM edge", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -361,7 +361,7 @@ describe("PromotionService.promote", () => {
   })
 
   it("does not create edge when candidate has no source run or task", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -398,7 +398,7 @@ describe("PromotionService.promote", () => {
 
 describe("PromotionService.reject", () => {
   it("rejects a candidate with a reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -422,7 +422,7 @@ describe("PromotionService.reject", () => {
   })
 
   it("fails with CandidateNotFoundError for nonexistent candidate", async () => {
-    const { makeAppLayer, PromotionService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -439,7 +439,7 @@ describe("PromotionService.reject", () => {
   })
 
   it("fails with ValidationError for empty rejection reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -464,7 +464,7 @@ describe("PromotionService.reject", () => {
   })
 
   it("fails with ValidationError for whitespace-only rejection reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -489,7 +489,7 @@ describe("PromotionService.reject", () => {
   })
 
   it("trims whitespace from rejection reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -511,7 +511,7 @@ describe("PromotionService.reject", () => {
   })
 
   it("sets reviewedAt timestamp on rejection", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const before = new Date()
@@ -546,7 +546,7 @@ describe("PromotionService.reject", () => {
 
 describe("PromotionService.autoPromote", () => {
   it("promotes high-confidence pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -586,7 +586,7 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("returns zero counts when no high-confidence candidates exist", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -611,7 +611,7 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("skips candidates that are duplicates of existing learnings", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -644,7 +644,7 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("uses 'auto' as reviewer identifier", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -670,7 +670,7 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("does not promote non-pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -695,7 +695,7 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("creates DERIVED_FROM edge during auto-promotion", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -743,7 +743,7 @@ describe("PromotionService.autoPromote", () => {
 
 describe("PromotionService.getPending", () => {
   it("returns only pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -784,7 +784,7 @@ describe("PromotionService.getPending", () => {
   })
 
   it("returns empty array when no pending candidates exist", async () => {
-    const { makeAppLayer, PromotionService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const pending = await Effect.runPromise(
@@ -804,7 +804,7 @@ describe("PromotionService.getPending", () => {
 
 describe("PromotionService candidate lifecycle", () => {
   it("candidate transitions correctly: pending → promoted", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -834,7 +834,7 @@ describe("PromotionService candidate lifecycle", () => {
   })
 
   it("candidate transitions correctly: pending → rejected", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -865,7 +865,7 @@ describe("PromotionService candidate lifecycle", () => {
   })
 
   it("promoted learning inherits candidate category", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

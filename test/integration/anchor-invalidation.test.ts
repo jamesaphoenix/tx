@@ -30,9 +30,9 @@ import {
   AnchorRepository,
   AnchorRepositoryLive,
   LearningRepositoryLive
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 import type Database from "better-sqlite3"
-import type { AnchorStatus } from "@tx/types"
+import type { AnchorStatus } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs for determinism)
@@ -128,7 +128,7 @@ function createTestAnchorDirect(
 
 describe("Anchor Invalidation - Periodic Verification", () => {
   it("verifyAll returns summary of all anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -179,7 +179,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
   })
 
   it("verifyAnchorsForFile verifies only anchors for specified file", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -226,7 +226,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
   })
 
   it("verifyAll skips pinned anchors from verification changes", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -269,7 +269,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
   })
 
   it("getStatus returns graph health summary", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -335,7 +335,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
 
 describe("Anchor Invalidation - On-Access Verification", () => {
   it("verifyAnchor returns verification result for valid anchor", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -366,7 +366,7 @@ describe("Anchor Invalidation - On-Access Verification", () => {
   })
 
   it("verifyAnchor updates verifiedAt timestamp", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -400,7 +400,7 @@ describe("Anchor Invalidation - On-Access Verification", () => {
   })
 
   it("verifyAnchor fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -417,7 +417,7 @@ describe("Anchor Invalidation - On-Access Verification", () => {
   })
 
   it("verifyAnchor handles different anchor types", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const results = await Effect.runPromise(
@@ -489,7 +489,7 @@ describe("Anchor Invalidation - On-Access Verification", () => {
 
 describe("Anchor Invalidation - Soft Delete and Restore", () => {
   it("invalidate marks anchor as invalid with reason", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -517,7 +517,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore returns invalid anchor to valid status", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -548,7 +548,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("invalidate fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -565,7 +565,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -582,7 +582,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore uses old_status from invalidation log (drifted -> invalid -> restored to drifted)", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -623,7 +623,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore restores old_content_hash from invalidation log", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -680,7 +680,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore logs the action with detected_by='manual'", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const logs = await Effect.runPromise(
@@ -813,7 +813,7 @@ describe("Anchor Invalidation - Pruning", () => {
 
 describe("Anchor Invalidation - Pinned Anchors", () => {
   it("pin sets pinned flag to true", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -841,7 +841,7 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
   })
 
   it("unpin sets pinned flag to false", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -870,7 +870,7 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
   })
 
   it("pin fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -887,7 +887,7 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
   })
 
   it("unpin fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -904,7 +904,7 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
   })
 
   it("pinned anchors are tracked in status summary", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1092,7 +1092,7 @@ describe("Anchor Invalidation - Self-Healing", () => {
 
 describe("Anchor Invalidation - Swarm Verification", () => {
   it("verifyAll handles large number of anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1129,7 +1129,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
   })
 
   it("verifyAnchorsForFile handles multiple anchors per file", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
     const targetFile = "src/multi-anchor-file.ts"
 
@@ -1183,7 +1183,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
   })
 
   it("findDrifted returns anchors that need review", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const drifted = await Effect.runPromise(
@@ -1233,7 +1233,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
   })
 
   it("findInvalid returns soft-deleted anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const invalid = await Effect.runPromise(
@@ -1519,7 +1519,7 @@ describe("Anchor Invalidation - Stale Detection Metrics", () => {
 
 describe("Anchor Invalidation via makeAppLayer", () => {
   it("invalidation workflow via makeAppLayer", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

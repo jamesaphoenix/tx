@@ -7,7 +7,7 @@ import type {
   LineProcessResult,
   FileProcessResult,
   DeduplicationOptions
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 /**
  * Default batch size for hash checking operations.

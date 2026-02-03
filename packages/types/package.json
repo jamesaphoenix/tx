@@ -1,6 +1,6 @@
 {
-  "name": "@tx/types",
-  "version": "0.1.0",
+  "name": "@jamesaphoenix/tx-types",
+  "version": "0.4.1",
   "description": "Shared TypeScript types for tx - zero runtime dependencies",
   "type": "module",
   "main": "./dist/index.js",
@@ -48,5 +48,12 @@
     "types",
     "typescript"
   ],
-  "sideEffects": false
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jamesaphoenix/tx.git",
+    "directory": "packages/types"
+  },
+  "author": "James Phoenix",
+  "license": "MIT"
 }

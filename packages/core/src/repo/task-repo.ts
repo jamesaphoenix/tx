@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { rowToTask } from "../mappers/task.js"
-import type { Task, TaskId, TaskFilter, TaskRow } from "@tx/types"
+import type { Task, TaskId, TaskFilter, TaskRow } from "@jamesaphoenix/tx-types"
 
 export class TaskRepository extends Context.Tag("TaskRepository")<
   TaskRepository,

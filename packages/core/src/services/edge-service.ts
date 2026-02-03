@@ -8,7 +8,7 @@ import type {
   CreateEdgeInput,
   UpdateEdgeInput,
   NeighborNode
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 /** Valid edge types - imported at runtime for validation */
 const VALID_EDGE_TYPES: readonly EdgeType[] = [

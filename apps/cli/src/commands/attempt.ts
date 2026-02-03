@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect"
-import { AttemptService, TaskService } from "@tx/core"
-import type { TaskId } from "@tx/types"
+import { AttemptService, TaskService } from "@jamesaphoenix/tx-core"
+import type { TaskId } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
 
 type Flags = Record<string, string | boolean>

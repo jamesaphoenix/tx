@@ -14,7 +14,7 @@ import { AnchorVerificationService, type VerificationResult, type VerifyOptions 
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { DatabaseError } from "../errors.js"
 import { matchesGlob } from "../utils/glob.js"
-import type { AnchorStatus } from "@tx/types"
+import type { AnchorStatus } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
 // Configuration Constants

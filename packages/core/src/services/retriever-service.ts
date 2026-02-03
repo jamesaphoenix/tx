@@ -6,7 +6,7 @@ import { RerankerService } from "./reranker-service.js"
 import { GraphExpansionService, type SeedLearning } from "./graph-expansion.js"
 import { FeedbackTrackerService } from "./feedback-tracker.js"
 import { RetrievalError, DatabaseError } from "../errors.js"
-import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@tx/types"
+import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@jamesaphoenix/tx-types"
 import { cosineSimilarity } from "../utils/math.js"
 
 /** RRF constant - standard value from the original paper */

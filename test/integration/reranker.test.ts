@@ -4,7 +4,7 @@ import {
   RerankerService,
   RerankerServiceNoop,
   RerankerServiceAuto
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 describe("RerankerService", () => {
   describe("RerankerServiceNoop", () => {

@@ -31,7 +31,7 @@ import {
   SyncServiceLive,
   SyncService,
   AutoSyncServiceNoop
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
 // Test Fixtures

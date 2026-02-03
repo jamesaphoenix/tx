@@ -429,7 +429,7 @@ describe("EdgeRepository.findByMultipleSources", () => {
 
   it("should return empty map for empty sourceIds array", async () => {
     // Import EdgeRepository and create layer
-    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@jamesaphoenix/tx-core")
     const { Layer } = await import("effect")
 
     // Create a SqliteClient layer from the test database
@@ -456,7 +456,7 @@ describe("EdgeRepository.findByMultipleSources", () => {
     edgeFactory.create({ sourceType: "learning", sourceId: "3", targetId: "30", weight: 0.6 })
 
     // Import EdgeRepository and create layer
-    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@jamesaphoenix/tx-core")
     const { Layer } = await import("effect")
 
     const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
@@ -491,7 +491,7 @@ describe("EdgeRepository.findByMultipleSources", () => {
     // Create edge only for source 1
     createTestEdge(db, { sourceType: "learning", sourceId: "1", targetId: "10" })
 
-    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@jamesaphoenix/tx-core")
     const { Layer } = await import("effect")
 
     const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
@@ -516,7 +516,7 @@ describe("EdgeRepository.findByMultipleSources", () => {
     edgeFactory.create({ sourceType: "learning", sourceId: "1", targetId: "10" })
     edgeFactory.create({ sourceType: "file", sourceId: "1", targetId: "20" })
 
-    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@jamesaphoenix/tx-core")
     const { Layer } = await import("effect")
 
     const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)
@@ -545,7 +545,7 @@ describe("EdgeRepository.findByMultipleSources", () => {
       VALUES ('SIMILAR_TO', 'learning', '1', 'learning', '11', 1.0, '{}', datetime('now'))
     `)
 
-    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@tx/core")
+    const { EdgeRepository, EdgeRepositoryLive, SqliteClient } = await import("@jamesaphoenix/tx-core")
     const { Layer } = await import("effect")
 
     const TestSqliteClient = Layer.succeed(SqliteClient, db.db as any)

@@ -24,7 +24,7 @@ import {
   configureLLMCache,
   resetCacheConfig,
   type TestDatabase
-} from "@tx/test-utils"
+} from "@jamesaphoenix/tx-test-utils"
 import {
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
@@ -33,7 +33,7 @@ import {
   readPid,
   removePid,
   isProcessRunning
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 import {
   generateLaunchdPlist,
   generateSystemdService,
@@ -145,7 +145,7 @@ describe("Daemon File Watching", () => {
 
 describe("Daemon Hash Deduplication", () => {
   it("computes consistent SHA256 hash for content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -169,7 +169,7 @@ describe("Daemon Hash Deduplication", () => {
   })
 
   it("skips already processed JSONL lines", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -191,7 +191,7 @@ describe("Daemon Hash Deduplication", () => {
   })
 
   it("tracks file processing progress", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -223,7 +223,7 @@ describe("Daemon Hash Deduplication", () => {
   })
 
   it("supports incremental processing from last position", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -258,7 +258,7 @@ describe("Daemon Hash Deduplication", () => {
   })
 
   it("batch checks multiple hashes efficiently", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1232,7 +1232,7 @@ describe("Daemon End-to-End Pipeline", () => {
   })
 
   it("simulates full pipeline: watch -> dedupe -> extract -> promote", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     // 1. Simulate file watching (create a JSONL file)
@@ -1304,7 +1304,7 @@ describe("Daemon End-to-End Pipeline", () => {
   })
 
   it("handles reprocessing after file update", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const sessionFile = path.join(tempDir, "session-update.jsonl")
@@ -1798,7 +1798,7 @@ describe("Daemon Systemd Service Generation", () => {
 
 describe("PromotionService Auto-Promote Integration", () => {
   it("auto-promotes high-confidence candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1839,7 +1839,7 @@ describe("PromotionService Auto-Promote Integration", () => {
   })
 
   it("skips low-confidence candidates during auto-promote", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1887,7 +1887,7 @@ describe("PromotionService Auto-Promote Integration", () => {
   })
 
   it("skips candidates that duplicate existing learnings", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1937,7 +1937,7 @@ describe("PromotionService Auto-Promote Integration", () => {
   })
 
   it("creates DERIVED_FROM edge for promoted candidates with sourceRunId", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1979,7 +1979,7 @@ describe("PromotionService Auto-Promote Integration", () => {
   })
 
   it("creates DERIVED_FROM edge for promoted candidates with sourceTaskId", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2023,7 +2023,7 @@ describe("PromotionService Auto-Promote Integration", () => {
 
 describe("PromotionService Manual Promote/Reject Integration", () => {
   it("manual promote creates learning and updates candidate status", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2059,7 +2059,7 @@ describe("PromotionService Manual Promote/Reject Integration", () => {
   })
 
   it("reject marks candidate as rejected with reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2090,7 +2090,7 @@ describe("PromotionService Manual Promote/Reject Integration", () => {
 
 describe("PromotionService Semantic Deduplication Integration", () => {
   it("marks similar candidates as merged when existing learning found", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2131,7 +2131,7 @@ describe("PromotionService Semantic Deduplication Integration", () => {
   })
 
   it("handles auto-promote with mixed duplicate and unique candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2191,7 +2191,7 @@ describe("PromotionService Semantic Deduplication Integration", () => {
 
 describe("PromotionService Provenance Tracking Integration", () => {
   it("promoted learning content matches candidate content exactly", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const testContent = "Use Effect-TS Data.TaggedError for typed error handling"
@@ -2222,7 +2222,7 @@ describe("PromotionService Provenance Tracking Integration", () => {
   })
 
   it("promoted learning inherits category from candidate", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2250,7 +2250,7 @@ describe("PromotionService Provenance Tracking Integration", () => {
   })
 
   it("promoted learning sets sourceType to run when sourceRunId present", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2279,7 +2279,7 @@ describe("PromotionService Provenance Tracking Integration", () => {
   })
 
   it("edge weight is 1.0 for DERIVED_FROM edges", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2315,7 +2315,7 @@ describe("PromotionService Provenance Tracking Integration", () => {
 
 describe("Review Queue Status Filtering Integration", () => {
   it("filters candidates by pending status", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2355,7 +2355,7 @@ describe("Review Queue Status Filtering Integration", () => {
   })
 
   it("filters candidates by promoted status", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2396,7 +2396,7 @@ describe("Review Queue Status Filtering Integration", () => {
   })
 
   it("filters candidates by rejected status", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2437,7 +2437,7 @@ describe("Review Queue Status Filtering Integration", () => {
   })
 
   it("filters candidates by multiple statuses", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2481,7 +2481,7 @@ describe("Review Queue Status Filtering Integration", () => {
 
 describe("Review Queue Confidence Filtering Integration", () => {
   it("filters candidates by single confidence level", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2529,7 +2529,7 @@ describe("Review Queue Confidence Filtering Integration", () => {
   })
 
   it("filters candidates by multiple confidence levels", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2565,7 +2565,7 @@ describe("Review Queue Confidence Filtering Integration", () => {
   })
 
   it("combines status and confidence filters", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2616,7 +2616,7 @@ describe("Review Queue Confidence Filtering Integration", () => {
 
 describe("Review Queue Manual Promote/Reject Edge Cases", () => {
   it("promote fails for non-existent candidate", async () => {
-    const { makeAppLayer, PromotionService, CandidateNotFoundError } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateNotFoundError } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2635,7 +2635,7 @@ describe("Review Queue Manual Promote/Reject Edge Cases", () => {
   })
 
   it("reject fails for non-existent candidate", async () => {
-    const { makeAppLayer, PromotionService, CandidateNotFoundError } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateNotFoundError } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2654,7 +2654,7 @@ describe("Review Queue Manual Promote/Reject Edge Cases", () => {
   })
 
   it("reject fails with empty reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, ValidationError } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, ValidationError } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2680,7 +2680,7 @@ describe("Review Queue Manual Promote/Reject Edge Cases", () => {
   })
 
   it("reject fails with whitespace-only reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, ValidationError } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository, ValidationError } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2706,7 +2706,7 @@ describe("Review Queue Manual Promote/Reject Edge Cases", () => {
   })
 
   it("promote sets reviewedBy to manual", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2730,7 +2730,7 @@ describe("Review Queue Manual Promote/Reject Edge Cases", () => {
   })
 
   it("reject trims reason whitespace", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2755,7 +2755,7 @@ describe("Review Queue Manual Promote/Reject Edge Cases", () => {
 
 describe("Review Queue Pagination Integration", () => {
   it("limits results using limit parameter", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2781,7 +2781,7 @@ describe("Review Queue Pagination Integration", () => {
   })
 
   it("supports offset for pagination", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2823,7 +2823,7 @@ describe("Review Queue Pagination Integration", () => {
 
 describe("Review Queue Category Filtering Integration", () => {
   it("filters candidates by single category", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2860,7 +2860,7 @@ describe("Review Queue Category Filtering Integration", () => {
   })
 
   it("filters candidates by multiple categories", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2900,7 +2900,7 @@ describe("Review Queue Category Filtering Integration", () => {
 
 describe("Review Queue Source Filtering Integration", () => {
   it("filters candidates by source file", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2934,7 +2934,7 @@ describe("Review Queue Source Filtering Integration", () => {
   })
 
   it("filters candidates by source run ID", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2965,7 +2965,7 @@ describe("Review Queue Source Filtering Integration", () => {
   })
 
   it("filters candidates by source task ID", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -3178,7 +3178,7 @@ describe("Review Queue Expiration/Stale Candidates", () => {
 
 describe("Review Queue getPending Convenience Method", () => {
   it("returns only pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -3222,7 +3222,7 @@ describe("Review Queue getPending Convenience Method", () => {
   })
 
   it("returns empty array when no pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

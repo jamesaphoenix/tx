@@ -45,8 +45,8 @@ import {
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
   RerankerServiceNoop
-} from "@tx/core"
-import type { TaskId } from "@tx/types"
+} from "@jamesaphoenix/tx-core"
+import type { TaskId } from "@jamesaphoenix/tx-types"
 
 // Skip unless STRESS=1 environment variable is set
 const SKIP_STRESS = !process.env["STRESS"]

@@ -6,10 +6,10 @@ import type {
   FileLearning,
   FileLearningId,
   FileLearningRow
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export type from @tx/types for convenience
-export type { FileLearningRow } from "@tx/types"
+export type { FileLearningRow } from "@jamesaphoenix/tx-types"
 
 /**
  * Convert a database row to a FileLearning domain object.

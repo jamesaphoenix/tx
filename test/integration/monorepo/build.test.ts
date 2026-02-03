@@ -132,7 +132,7 @@ describe("Build Outputs: @tx/cli", () => {
 
   it("imports @tx/core in built output", () => {
     const content = readFileSync(resolve(distPath, "cli.js"), "utf-8")
-    expect(content).toContain("@tx/core")
+    expect(content).toContain("@jamesaphoenix/tx-core")
   })
 })
 
@@ -261,31 +261,31 @@ describe("Package.json Configuration", () => {
 
   it("@tx/core depends on @tx/types", () => {
     const pkg = readPackageJson(PACKAGES.core)
-    expect(pkg.dependencies["@tx/types"]).toBe("*")
+    expect(pkg.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
   })
 
   it("apps depend on @tx/core (except agent-sdk)", () => {
     const cliPkg = readPackageJson(APPS.cli)
-    expect(cliPkg.dependencies["@tx/core"]).toBe("*")
+    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
 
     const mcpPkg = readPackageJson(APPS.mcpServer)
-    expect(mcpPkg.dependencies["@tx/core"]).toBe("*")
+    expect(mcpPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
 
     const apiPkg = readPackageJson(APPS.apiServer)
-    expect(apiPkg.dependencies["@tx/core"]).toBe("*")
+    expect(apiPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
 
     // agent-sdk has @tx/core as optional
     const sdkPkg = readPackageJson(APPS.agentSdk)
-    expect(sdkPkg.optionalDependencies?.["@tx/core"]).toBe("*")
+    expect(sdkPkg.optionalDependencies?.["@jamesaphoenix/tx-core"]).toBe("*")
   })
 
   it("packages use workspace protocol for internal deps", () => {
     const corePkg = readPackageJson(PACKAGES.core)
-    expect(corePkg.dependencies["@tx/types"]).toBe("*")
+    expect(corePkg.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
 
     const cliPkg = readPackageJson(APPS.cli)
-    expect(cliPkg.dependencies["@tx/types"]).toBe("*")
-    expect(cliPkg.dependencies["@tx/core"]).toBe("*")
+    expect(cliPkg.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
   })
 
   it("executable packages have bin field", () => {
@@ -371,7 +371,7 @@ describe("No Circular Dependencies", () => {
     }
 
     const txDeps = Object.keys(allDeps).filter((d) => d.startsWith("@tx/"))
-    expect(txDeps).toEqual(["@tx/types"])
+    expect(txDeps).toEqual(["@jamesaphoenix/tx-types"])
   })
 
   it("apps do not depend on each other", () => {

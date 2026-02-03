@@ -37,7 +37,7 @@ const FIXTURES = {
 
 describe("AnchorService Integration via @tx/core", () => {
   it("createAnchor creates a glob anchor with valid input", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -69,7 +69,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("createAnchor creates a hash anchor with valid SHA256", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -100,7 +100,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("createAnchor creates a symbol anchor with FQName", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -128,7 +128,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("createAnchor creates a line_range anchor with line numbers", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -158,7 +158,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("get returns anchor by ID", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -187,7 +187,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("get fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -204,7 +204,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("remove soft deletes an anchor (sets status='invalid')", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -240,7 +240,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("hardDelete permanently removes an anchor", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -270,7 +270,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("remove fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -287,7 +287,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("hardDelete fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -304,7 +304,7 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("remove logs status change to invalidation_log", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -344,7 +344,7 @@ describe("AnchorService Integration via @tx/core", () => {
 
 describe("AnchorService validation", () => {
   it("createAnchor fails with ValidationError for invalid anchor type", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -373,7 +373,7 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for empty file path", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -402,7 +402,7 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for empty value", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -431,7 +431,7 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for invalid hash format", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -460,7 +460,7 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for symbol without FQName", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -489,7 +489,7 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for line_range without lineStart", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -518,7 +518,7 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with LearningNotFoundError for nonexistent learning", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -547,7 +547,7 @@ describe("AnchorService validation", () => {
 
 describe("AnchorService query operations", () => {
   it("findAnchorsForFile returns all anchors for a file path", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -593,7 +593,7 @@ describe("AnchorService query operations", () => {
   })
 
   it("findAnchorsForLearning returns all anchors for a learning", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -644,7 +644,7 @@ describe("AnchorService query operations", () => {
 
 describe("AnchorService status operations", () => {
   it("updateAnchorStatus changes anchor status", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -672,7 +672,7 @@ describe("AnchorService status operations", () => {
   })
 
   it("updateAnchorStatus fails with ValidationError for invalid status", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -703,7 +703,7 @@ describe("AnchorService status operations", () => {
   })
 
   it("updateAnchorStatus fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -720,7 +720,7 @@ describe("AnchorService status operations", () => {
   })
 
   it("findDrifted returns only drifted anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -757,7 +757,7 @@ describe("AnchorService status operations", () => {
   })
 
   it("findInvalid returns only invalid anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -800,7 +800,7 @@ describe("AnchorService status operations", () => {
 
 describe("AnchorService verification operations", () => {
   it("verifyAnchor returns verification result", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -831,7 +831,7 @@ describe("AnchorService verification operations", () => {
   })
 
   it("verifyAnchor fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -848,7 +848,7 @@ describe("AnchorService verification operations", () => {
   })
 
   it("verifyAnchorsForFile returns batch verification result", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -886,7 +886,7 @@ describe("AnchorService verification operations", () => {
   })
 
   it("verifyAnchorsForFile handles mixed statuses", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

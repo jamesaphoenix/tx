@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
-import type { TaskId } from "@tx/types"
+import type { TaskId } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -43,14 +43,14 @@ void FIXTURES
 
 describe("Runtime Integration: @tx/core", () => {
   it("can create layer with in-memory database", async () => {
-    const { makeAppLayer } = await import("@tx/core")
+    const { makeAppLayer } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
     expect(layer).toBeDefined()
   })
 
   it("can run TaskService.create through layer", async () => {
-    const { makeAppLayer, TaskService } = await import("@tx/core")
+    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
 
@@ -71,7 +71,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run TaskService.list through layer", async () => {
-    const { makeAppLayer, TaskService } = await import("@tx/core")
+    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
 
@@ -91,7 +91,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run ReadyService.getReady through layer", async () => {
-    const { makeAppLayer, TaskService, ReadyService } = await import("@tx/core")
+    const { makeAppLayer, TaskService, ReadyService } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
 
@@ -116,7 +116,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run DependencyService.addBlocker through layer", async () => {
-    const { makeAppLayer, TaskService, DependencyService } = await import("@tx/core")
+    const { makeAppLayer, TaskService, DependencyService } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
 
@@ -139,7 +139,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run LearningService.create through layer", async () => {
-    const { makeAppLayer, LearningService } = await import("@tx/core")
+    const { makeAppLayer, LearningService } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
 
@@ -159,7 +159,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run SyncService.export through layer", async () => {
-    const { makeAppLayer, TaskService, SyncService } = await import("@tx/core")
+    const { makeAppLayer, TaskService, SyncService } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
 
@@ -217,7 +217,7 @@ describe("Runtime Integration: @tx/mcp-server", () => {
   })
 
   it("can run effects after initialization", async () => {
-    const { TaskService } = await import("@tx/core")
+    const { TaskService } = await import("@jamesaphoenix/tx-core")
 
     await initRuntime(":memory:")
 
@@ -300,7 +300,7 @@ describe("Runtime Integration: @tx/api-server", () => {
   })
 
   it("can run effects after initialization", async () => {
-    const { TaskService } = await import("@tx/core")
+    const { TaskService } = await import("@jamesaphoenix/tx-core")
 
     await initRuntime(":memory:")
 
@@ -505,7 +505,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
 
 describe("Cross-Package Integration", () => {
   it("@tx/types exports match @tx/agent-sdk exports", async () => {
-    const types = await import("@tx/types")
+    const types = await import("@jamesaphoenix/tx-types")
     const sdk = await import("@tx/agent-sdk")
 
     // Both should have the same task statuses
@@ -516,7 +516,7 @@ describe("Cross-Package Integration", () => {
   })
 
   it("fixture IDs are deterministic across packages", async () => {
-    const { fixtureId: coreFixtureId } = await import("@tx/core")
+    const { fixtureId: coreFixtureId } = await import("@jamesaphoenix/tx-core")
 
     // Our test fixture ID should be consistent with core's fixtureId
     const testId = coreFixtureId("test-id")
@@ -526,7 +526,7 @@ describe("Cross-Package Integration", () => {
   })
 
   it("services work consistently across initialization methods", async () => {
-    const { makeAppLayer, TaskService } = await import("@tx/core")
+    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
 
     // Test 1: Direct layer creation
     const layer1 = makeAppLayer(":memory:")
@@ -579,7 +579,7 @@ describe("Cross-Package Integration", () => {
 
 describe("Error Handling Across Packages", () => {
   it("@tx/core errors are properly typed", async () => {
-    const { makeAppLayer, TaskService } = await import("@tx/core")
+    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
 
     const layer = makeAppLayer(":memory:")
 

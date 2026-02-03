@@ -8,10 +8,10 @@ import type {
   RunId,
   RunStatus,
   RunRow
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export constants from @tx/types for convenience
-export { RUN_STATUSES } from "@tx/types"
+export { RUN_STATUSES } from "@jamesaphoenix/tx-types"
 
 /**
  * Generate a run ID from timestamp + random.

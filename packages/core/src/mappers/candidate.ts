@@ -8,15 +8,15 @@ import type {
   CandidateConfidence,
   CandidateCategory,
   CandidateStatus
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export types and constants from @tx/types for convenience
-export type { CandidateRow } from "@tx/types"
+export type { CandidateRow } from "@jamesaphoenix/tx-types"
 export {
   CANDIDATE_CONFIDENCES,
   CANDIDATE_CATEGORIES,
   CANDIDATE_STATUSES
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 /**
  * Check if a string is a valid CandidateConfidence.

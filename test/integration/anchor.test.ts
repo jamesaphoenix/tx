@@ -6,9 +6,9 @@ import {
   AnchorRepository,
   AnchorRepositoryLive,
   LearningRepositoryLive
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 import type Database from "better-sqlite3"
-import type { Anchor } from "@tx/types"
+import type { Anchor } from "@jamesaphoenix/tx-types"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
   const infra = Layer.succeed(SqliteClient, db as any)

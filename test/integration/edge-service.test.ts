@@ -39,7 +39,7 @@ void FIXTURES
 
 describe("EdgeService Integration via @tx/core", () => {
   it("createEdge creates an edge with valid input", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -77,7 +77,7 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("createEdge uses default weight of 1.0", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -104,7 +104,7 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("get returns edge by ID", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -134,7 +134,7 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("get fails with EdgeNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -151,7 +151,7 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("update changes edge weight", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -181,7 +181,7 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("invalidateEdge soft deletes an edge", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -222,7 +222,7 @@ describe("EdgeService Integration via @tx/core", () => {
 
 describe("EdgeService validation", () => {
   it("createEdge fails with ValidationError for invalid edge type", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -245,7 +245,7 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for invalid source type", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -268,7 +268,7 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for invalid target type", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -291,7 +291,7 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for empty source ID", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -314,7 +314,7 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for weight > 1", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -338,7 +338,7 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for weight < 0", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -368,7 +368,7 @@ describe("EdgeService validation", () => {
 
 describe("EdgeService neighbor operations", () => {
   it("findNeighbors returns outgoing neighbors", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -407,7 +407,7 @@ describe("EdgeService neighbor operations", () => {
   })
 
   it("findNeighbors returns incoming neighbors", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -443,7 +443,7 @@ describe("EdgeService neighbor operations", () => {
   })
 
   it("findNeighbors filters by edge type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -482,7 +482,7 @@ describe("EdgeService neighbor operations", () => {
   })
 
   it("findNeighbors with depth > 1 traverses multiple hops", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -540,7 +540,7 @@ describe("EdgeService neighbor operations", () => {
 
 describe("EdgeService path finding", () => {
   it("findPath returns path between two nodes", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -580,7 +580,7 @@ describe("EdgeService path finding", () => {
   })
 
   it("findPath returns null when no path exists", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -612,7 +612,7 @@ describe("EdgeService path finding", () => {
   })
 
   it("findPath finds multi-hop path", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -669,7 +669,7 @@ describe("EdgeService path finding", () => {
 
 describe("EdgeService query operations", () => {
   it("findByType returns edges of specific type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -706,7 +706,7 @@ describe("EdgeService query operations", () => {
   })
 
   it("findFromSource returns all edges from a source", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -742,7 +742,7 @@ describe("EdgeService query operations", () => {
   })
 
   it("findToTarget returns all edges to a target", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -782,7 +782,7 @@ describe("EdgeService query operations", () => {
   })
 
   it("countByType returns counts for each edge type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -832,7 +832,7 @@ describe("EdgeService query operations", () => {
 
 describe("EdgeService batch operations", () => {
   it("findFromMultipleSources returns edges grouped by source ID", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -918,7 +918,7 @@ describe("EdgeService batch operations", () => {
   })
 
   it("findFromMultipleSources returns empty map for empty input", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -932,7 +932,7 @@ describe("EdgeService batch operations", () => {
   })
 
   it("findFromMultipleSources edges are sorted by weight descending", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -990,7 +990,7 @@ describe("EdgeService batch operations", () => {
   })
 
   it("findFromMultipleSources only returns valid (non-invalidated) edges", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

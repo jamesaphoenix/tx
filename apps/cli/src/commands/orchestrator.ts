@@ -5,7 +5,7 @@
  */
 
 import { Effect } from "effect"
-import { OrchestratorService, type OrchestratorConfig } from "@tx/core"
+import { OrchestratorService, type OrchestratorConfig } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 

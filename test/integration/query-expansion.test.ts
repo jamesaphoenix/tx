@@ -4,7 +4,7 @@ import {
   QueryExpansionService,
   QueryExpansionServiceNoop,
   QueryExpansionServiceAuto
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 describe("QueryExpansionService", () => {
   describe("QueryExpansionServiceNoop", () => {

@@ -34,7 +34,7 @@ const FIXTURES = {
 describe("FeedbackTrackerServiceLive Integration", () => {
   describe("recordUsage", () => {
     it("creates USED_IN_RUN edges for each learning", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -85,7 +85,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("stores position in metadata", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -131,7 +131,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("stores recordedAt in metadata", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -165,7 +165,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("handles empty learnings array", async () => {
-      const { makeAppLayer, FeedbackTrackerService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Should not throw
@@ -180,7 +180,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
 
   describe("getFeedbackScore", () => {
     it("returns 0.5 for learning with no feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -202,7 +202,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns higher score for all helpful feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -229,7 +229,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns lower score for all unhelpful feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -256,7 +256,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns balanced score for mixed feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -284,7 +284,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("score regresses to prior with less data", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -310,7 +310,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("calculates Bayesian average correctly with 3/4 helpful (~0.667)", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -339,7 +339,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("scores are independent per learning", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -380,7 +380,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
 
   describe("getFeedbackScores (batch)", () => {
     it("returns map with all 0.5 for learnings with no feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -413,7 +413,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns correct scores for multiple learnings with mixed feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -462,7 +462,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns empty map for empty input array", async () => {
-      const { makeAppLayer, FeedbackTrackerService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -476,7 +476,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns same scores as single getFeedbackScore calls", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -521,7 +521,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
 
 describe("FeedbackTrackerServiceNoop", () => {
   it("recordUsage does nothing", async () => {
-    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@tx/core")
+    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
     const { Effect } = await import("effect")
 
     await Effect.runPromise(
@@ -536,7 +536,7 @@ describe("FeedbackTrackerServiceNoop", () => {
   })
 
   it("getFeedbackScore always returns 0.5", async () => {
-    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@tx/core")
+    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
     const { Effect } = await import("effect")
 
     const result = await Effect.runPromise(
@@ -550,7 +550,7 @@ describe("FeedbackTrackerServiceNoop", () => {
   })
 
   it("getFeedbackScores returns all 0.5 scores", async () => {
-    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@tx/core")
+    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
     const { Effect } = await import("effect")
 
     const result = await Effect.runPromise(
@@ -574,7 +574,7 @@ describe("FeedbackTrackerServiceNoop", () => {
 
 describe("FeedbackTracker Retriever Integration", () => {
   it("search results include feedbackScore field", async () => {
-    const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -605,7 +605,7 @@ describe("FeedbackTracker Retriever Integration", () => {
   })
 
   it("feedbackScore defaults to 0.5 for learnings with no feedback", async () => {
-    const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -630,7 +630,7 @@ describe("FeedbackTracker Retriever Integration", () => {
   })
 
   it("learnings with good feedback rank higher than new learnings (same BM25 score)", async () => {
-    const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@tx/core")
+    const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

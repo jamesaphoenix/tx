@@ -9,7 +9,7 @@ import {
   MigrationServiceLive,
   MIGRATIONS,
   getLatestVersion
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
   const infra = Layer.succeed(SqliteClient, db as ReturnType<typeof Database>)

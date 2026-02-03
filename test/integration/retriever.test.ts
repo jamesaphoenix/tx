@@ -12,7 +12,7 @@ import {
   RetrieverService,
   RetrieverServiceLive,
   RetrieverServiceNoop
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 import type Database from "better-sqlite3"
 
 /**
@@ -883,7 +883,7 @@ describe("RetrieverService", () => {
 
   describe("Feedback Scoring Integration", () => {
     it("search results include feedbackScore field", async () => {
-      const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -912,7 +912,7 @@ describe("RetrieverService", () => {
     })
 
     it("feedbackScore defaults to 0.5 for learnings with no feedback", async () => {
-      const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+      const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -937,7 +937,7 @@ describe("RetrieverService", () => {
     })
 
     it("feedbackScore reflects recorded usage feedback via batch method", async () => {
-      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@tx/core")
+      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -1009,7 +1009,7 @@ describe("RetrieverService", () => {
     })
 
     it("batch feedback method is used for multiple learnings (single query)", async () => {
-      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@tx/core")
+      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(

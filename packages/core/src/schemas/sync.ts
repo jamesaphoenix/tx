@@ -2,7 +2,7 @@
 // See DD-009 for specification details.
 
 import { Schema } from "effect"
-import { TASK_STATUSES } from "@tx/types"
+import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
 
 // Schema version - v=1 for all sync operations
 export const SyncVersion = Schema.Literal(1)

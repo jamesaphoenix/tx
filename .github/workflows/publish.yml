@@ -24,6 +24,25 @@ jobs:
       # Run package tests only (root tests are slower and tested in CI workflow)
       - run: npm run test:packages
 
+      # Publish in dependency order: types -> core -> test-utils -> tx
+      - name: Publish @jamesaphoenix/tx-types
+        working-directory: packages/types
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @jamesaphoenix/tx-core
+        working-directory: packages/core
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @jamesaphoenix/tx-test-utils
+        working-directory: packages/test-utils
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish @jamesaphoenix/tx
         working-directory: packages/tx
         run: npm publish --provenance --access public

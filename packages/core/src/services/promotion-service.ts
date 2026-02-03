@@ -8,7 +8,7 @@ import type {
   CandidateFilter,
   CandidateId,
   Learning
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 /**
  * Result of promoting a candidate to the learnings table.

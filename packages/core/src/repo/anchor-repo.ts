@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { rowToAnchor, rowToInvalidationLog } from "../mappers/anchor.js"
-import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "@tx/types"
+import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "@jamesaphoenix/tx-types"
 
 /** Input for logging an invalidation event */
 export interface LogInvalidationInput {

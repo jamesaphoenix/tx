@@ -3,7 +3,7 @@ import { AnchorRepository } from "../repo/anchor-repo.js"
 import { LearningRepository } from "../repo/learning-repo.js"
 import { AnchorNotFoundError, ValidationError, DatabaseError, LearningNotFoundError } from "../errors.js"
 import { getAnchorTTL, isStale } from "./anchor-verification.js"
-import type { Anchor, AnchorWithFreshness, AnchorStatus, CreateAnchorInput, AnchorType, InvalidationLog, InvalidationSource } from "@tx/types"
+import type { Anchor, AnchorWithFreshness, AnchorStatus, CreateAnchorInput, AnchorType, InvalidationLog, InvalidationSource } from "@jamesaphoenix/tx-types"
 
 /** Verification result for an anchor */
 export interface AnchorVerificationResult {

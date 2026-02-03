@@ -16,7 +16,7 @@ import { Effect, Layer } from "effect"
 // =============================================================================
 
 async function makeTestLayer() {
-  const { OrchestratorStateRepositoryLive, SqliteClientLive } = await import("@tx/core")
+  const { OrchestratorStateRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
 
   const infra = SqliteClientLive(":memory:")
   const layer = OrchestratorStateRepositoryLive.pipe(Layer.provide(infra))
@@ -29,7 +29,7 @@ async function makeTestLayer() {
 
 describe("OrchestratorStateRepository.get", () => {
   it("returns singleton state", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -52,7 +52,7 @@ describe("OrchestratorStateRepository.get", () => {
   })
 
   it("initializes singleton if needed", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     // First call should initialize
@@ -82,7 +82,7 @@ describe("OrchestratorStateRepository.get", () => {
 
 describe("OrchestratorStateRepository.update", () => {
   it("updates status field", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -97,7 +97,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates pid field", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -112,7 +112,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates startedAt timestamp", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const startedAt = new Date()
@@ -130,7 +130,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates lastReconcileAt timestamp", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const lastReconcileAt = new Date()
@@ -148,7 +148,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates configuration fields (workerPoolSize)", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -163,7 +163,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates reconcileIntervalSeconds", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -178,7 +178,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates heartbeatIntervalSeconds", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -193,7 +193,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates leaseDurationMinutes", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -208,7 +208,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates metadata field", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -223,7 +223,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("updates multiple fields at once", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const now = new Date()
@@ -250,7 +250,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("does nothing when no fields provided", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const { initial, result } = await Effect.runPromise(
@@ -272,7 +272,7 @@ describe("OrchestratorStateRepository.update", () => {
   })
 
   it("can set null values for nullable fields", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -306,7 +306,7 @@ describe("OrchestratorStateRepository.update", () => {
 
 describe("OrchestratorStateRepository singleton pattern", () => {
   it("always returns the same row (id=1)", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     // Multiple get calls should return consistent state
@@ -331,7 +331,7 @@ describe("OrchestratorStateRepository singleton pattern", () => {
   })
 
   it("updates affect subsequent get calls", async () => {
-    const { OrchestratorStateRepository } = await import("@tx/core")
+    const { OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

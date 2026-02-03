@@ -9,7 +9,7 @@ import type {
   FileProgress,
   FileProgressRow,
   UpsertFileProgressInput
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 export class DeduplicationRepository extends Context.Tag("DeduplicationRepository")<
   DeduplicationRepository,

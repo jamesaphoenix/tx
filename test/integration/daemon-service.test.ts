@@ -21,7 +21,7 @@ import {
   DaemonServiceNoop,
   writePid,
   removePid
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // DaemonServiceNoop Tests

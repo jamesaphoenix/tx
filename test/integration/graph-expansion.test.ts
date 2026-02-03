@@ -40,7 +40,7 @@ export const fixtureId = (name: string): string => {
 
 describe("Graph Expansion - Linear Chain", () => {
   it("traverses a linear chain with depth limit", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -99,7 +99,7 @@ describe("Graph Expansion - Linear Chain", () => {
   })
 
   it("respects depth 0 (seeds only)", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -138,7 +138,7 @@ describe("Graph Expansion - Linear Chain", () => {
 
 describe("Graph Expansion - Weight Decay", () => {
   it("applies weight decay per hop (default 0.7)", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -190,7 +190,7 @@ describe("Graph Expansion - Weight Decay", () => {
   })
 
   it("applies edge weight in decay calculation", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -225,7 +225,7 @@ describe("Graph Expansion - Weight Decay", () => {
   })
 
   it("uses custom decay factor", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -265,7 +265,7 @@ describe("Graph Expansion - Weight Decay", () => {
 
 describe("Graph Expansion - Cycle Prevention", () => {
   it("prevents cycles with visited set", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -318,7 +318,7 @@ describe("Graph Expansion - Cycle Prevention", () => {
   })
 
   it("handles bidirectional edges (A <-> B)", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -360,7 +360,7 @@ describe("Graph Expansion - Cycle Prevention", () => {
   })
 
   it("handles diamond pattern (L1 -> L2 -> L4, L1 -> L3 -> L4)", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -430,7 +430,7 @@ describe("Graph Expansion - Cycle Prevention", () => {
 
 describe("Graph Expansion - MaxNodes Limit", () => {
   it("respects maxNodes limit", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -474,7 +474,7 @@ describe("Graph Expansion - MaxNodes Limit", () => {
 
 describe("Graph Expansion - Empty Seeds", () => {
   it("returns empty result for empty seeds", async () => {
-    const { makeAppLayer, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -498,7 +498,7 @@ describe("Graph Expansion - Empty Seeds", () => {
 
 describe("Graph Expansion - Branching Graph", () => {
   it("expands branching graph structure", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -552,7 +552,7 @@ describe("Graph Expansion - Branching Graph", () => {
   })
 
   it("sorts expanded results by decayed score", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -604,7 +604,7 @@ describe("Graph Expansion - Branching Graph", () => {
 
 describe("Graph Expansion - Edge Type Filtering", () => {
   it("filters expansion by edge types", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -646,7 +646,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
   })
 
   it("filters expansion with EdgeTypeFilter include", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -698,7 +698,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
   })
 
   it("filters expansion with EdgeTypeFilter exclude", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -750,7 +750,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
   })
 
   it("applies perHop filter overrides at specific depths", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -832,7 +832,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
   })
 
   it("perHop exclude filter works correctly", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -889,7 +889,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
   })
 
   it("rejects conflicting include/exclude filters", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -921,7 +921,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
   })
 
   it("backwards compatible with simple EdgeType[] array", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -962,7 +962,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
   })
 
   it("perHop with top-level fallback: hop 1 uses top-level, hop 2 uses perHop", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1061,7 +1061,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
 
 describe("Graph Expansion - Bidirectional Traversal", () => {
   it("traverses both incoming and outgoing edges", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1111,7 +1111,7 @@ describe("Graph Expansion - Bidirectional Traversal", () => {
 
 describe("Graph Expansion - Validation", () => {
   it("rejects negative depth", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1135,7 +1135,7 @@ describe("Graph Expansion - Validation", () => {
   })
 
   it("rejects decay factor <= 0", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1156,7 +1156,7 @@ describe("Graph Expansion - Validation", () => {
   })
 
   it("rejects decay factor > 1", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1177,7 +1177,7 @@ describe("Graph Expansion - Validation", () => {
   })
 
   it("rejects maxNodes < 1", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1204,7 +1204,7 @@ describe("Graph Expansion - Validation", () => {
 
 describe("Graph Expansion - Path Tracking", () => {
   it("tracks path from seed to expanded node", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1257,7 +1257,7 @@ describe("Graph Expansion - Path Tracking", () => {
   })
 
   it("seeds have path of just themselves", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1290,7 +1290,7 @@ describe("Graph Expansion - Path Tracking", () => {
 
 describe("Graph Expansion - Multiple Seeds", () => {
   it("expands from multiple seeds", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1339,7 +1339,7 @@ describe("Graph Expansion - Multiple Seeds", () => {
   })
 
   it("does not duplicate when seeds share neighbors", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1391,7 +1391,7 @@ describe("Graph Expansion - Multiple Seeds", () => {
 
 describe("Graph Expansion - RRF Integration", () => {
   it("graph expansion integrates with retrieval pipeline via LearningService", async () => {
-    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1465,7 +1465,7 @@ describe("Graph Expansion - RRF Integration", () => {
   })
 
   it("graphExpansion results include expansion metadata", async () => {
-    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1518,7 +1518,7 @@ describe("Graph Expansion - RRF Integration", () => {
   })
 
   it("disabled graph expansion returns only direct matches", async () => {
-    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1576,7 +1576,7 @@ describe("Graph Expansion - RRF Integration", () => {
   })
 
   it("edge types filter applies during RRF integration", async () => {
-    const { makeAppLayer, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1642,7 +1642,7 @@ describe("Graph Expansion - RRF Integration", () => {
 
 describe("Graph Expansion - Recall Improvement", () => {
   it("graph expansion surfaces semantically related content not in initial BM25 results", async () => {
-    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1695,7 +1695,7 @@ describe("Graph Expansion - Recall Improvement", () => {
   })
 
   it("multi-hop expansion increases recall for distant but relevant content", async () => {
-    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1766,7 +1766,7 @@ describe("Graph Expansion - Recall Improvement", () => {
   })
 
   it("expansion with high-weight edges improves precision of expanded results", async () => {
-    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1829,7 +1829,7 @@ describe("Graph Expansion - Recall Improvement", () => {
   })
 
   it("expansion from multiple seeds increases coverage", async () => {
-    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, LearningService, EdgeService, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1910,7 +1910,7 @@ describe("Graph Expansion - Recall Improvement", () => {
 
 describe("Graph Expansion - File-Based Expansion", () => {
   it("returns empty result for empty files array", async () => {
-    const { makeAppLayer, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1929,7 +1929,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("finds learnings anchored to input files (hop 0)", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1979,7 +1979,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("expands via IMPORTS edges to find related file learnings", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2038,7 +2038,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("expands via CO_CHANGES_WITH edges for co-edited files", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2088,7 +2088,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("applies decay per hop for multi-hop file expansion", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2161,7 +2161,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("deduplicates learnings across multiple input files", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2196,7 +2196,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("respects maxNodes limit", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2225,7 +2225,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("respects depth 0 (anchored only, no expansion)", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2270,7 +2270,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("only includes valid anchors (filters out invalid/drifted)", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2310,7 +2310,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("validates options (rejects invalid parameters)", async () => {
-    const { makeAppLayer, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     // Test negative depth
@@ -2342,7 +2342,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("sorts all results by decayedScore", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2388,7 +2388,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("expands via both IMPORTS and CO_CHANGES_WITH edges combined", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2471,7 +2471,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("returns empty anchored when file has no anchors", async () => {
-    const { makeAppLayer, GraphExpansionService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2492,7 +2492,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("returns only anchored when file has no edges", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2523,7 +2523,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("deduplicates learning reachable via multiple paths, keeping best score", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2591,7 +2591,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
   })
 
   it("deduplicates via multi-hop paths correctly", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, AnchorService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2688,7 +2688,7 @@ describe("Graph Expansion - File-Based Expansion", () => {
 
 describe("Graph Expansion - Statistics", () => {
   it("returns accurate expansion statistics", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -2740,7 +2740,7 @@ describe("Graph Expansion - Statistics", () => {
   })
 
   it("stats reflect maxNodes limit", async () => {
-    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

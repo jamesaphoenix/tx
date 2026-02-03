@@ -19,9 +19,9 @@ import {
   RerankerServiceNoop,
   RetrieverServiceNoop,
   RetrieverService
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 import { FIXTURES } from "../fixtures.js"
-import type { AttemptId, FileLearning, FileLearningId, Task } from "@tx/types"
+import type { AttemptId, FileLearning, FileLearningId, Task } from "@jamesaphoenix/tx-types"
 
 /**
  * Database Error Handling Tests

@@ -45,7 +45,7 @@ const FIXTURES = {
 
 describe("Soft Delete - remove() marks as invalid", () => {
   it("remove() sets anchor status to 'invalid' instead of deleting", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -84,7 +84,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() preserves anchor data after soft delete", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -126,7 +126,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() from valid status changes to invalid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -158,7 +158,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() from drifted status changes to invalid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -194,7 +194,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -217,7 +217,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
 
 describe("Soft Delete - remove() logs to invalidation_log", () => {
   it("remove() creates invalidation_log entry", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -253,7 +253,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
   })
 
   it("remove() logs with detected_by='manual'", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -286,7 +286,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
   })
 
   it("remove() logs preserve old_content_hash when present", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -319,7 +319,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
   })
 
   it("remove() uses default reason when none provided", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -358,7 +358,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
 
 describe("Restore - restore() reverts status", () => {
   it("restore() changes status from invalid to valid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -394,7 +394,7 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() restores to old_status from invalidation log", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -435,7 +435,7 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() updates verifiedAt timestamp", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -469,7 +469,7 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() restores old_content_hash when available", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -525,7 +525,7 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -548,7 +548,7 @@ describe("Restore - restore() reverts status", () => {
 
 describe("Restore - restore() logs action", () => {
   it("restore() creates invalidation_log entry", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const logs = await Effect.runPromise(
@@ -586,7 +586,7 @@ describe("Restore - restore() logs action", () => {
   })
 
   it("restore() logs with detected_by='manual'", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const logs = await Effect.runPromise(
@@ -625,7 +625,7 @@ describe("Restore - restore() logs action", () => {
   })
 
   it("restore() log includes reason mentioning old status", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const logs = await Effect.runPromise(
@@ -664,7 +664,7 @@ describe("Restore - restore() logs action", () => {
 
 describe("Hard Delete - hardDelete() removes record", () => {
   it("hardDelete() permanently removes anchor from database", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -702,7 +702,7 @@ describe("Hard Delete - hardDelete() removes record", () => {
   })
 
   it("hardDelete() differs from remove() - record is gone", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -753,7 +753,7 @@ describe("Hard Delete - hardDelete() removes record", () => {
   })
 
   it("hardDelete() fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -770,7 +770,7 @@ describe("Hard Delete - hardDelete() removes record", () => {
   })
 
   it("hardDelete() works on already-invalidated anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -811,7 +811,7 @@ describe("Hard Delete - hardDelete() removes record", () => {
 
 describe("Restore - anchor never invalidated", () => {
   it("restore() on valid anchor defaults to valid (graceful handling)", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -846,7 +846,7 @@ describe("Restore - anchor never invalidated", () => {
   })
 
   it("restore() on never-invalidated anchor logs with 'Manual restoration' reason", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const logs = await Effect.runPromise(
@@ -882,7 +882,7 @@ describe("Restore - anchor never invalidated", () => {
   })
 
   it("restore() on drifted (never invalidated) anchor restores to valid by default", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -919,7 +919,7 @@ describe("Restore - anchor never invalidated", () => {
   })
 
   it("restore() updates verifiedAt even on never-invalidated anchor", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -958,7 +958,7 @@ describe("Restore - anchor never invalidated", () => {
 
 describe("Integration - Full Lifecycle", () => {
   it("complete lifecycle: create -> remove -> restore -> hardDelete", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1004,7 +1004,7 @@ describe("Integration - Full Lifecycle", () => {
   })
 
   it("multiple soft delete / restore cycles maintain correct logs", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const logs = await Effect.runPromise(

@@ -50,8 +50,8 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "@tx/core": "*",
-    "@tx/types": "*",
+    "@jamesaphoenix/tx-core": "*",
+    "@jamesaphoenix/tx-types": "*",
     "hono": "^4.5.0",
     "@hono/node-server": "^1.12.0",
     "@hono/zod-openapi": "^0.18.0",

@@ -8,7 +8,7 @@ import type {
   ProcessedHashRow,
   FileProgress,
   FileProgressRow
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 /**
  * Compute SHA256 hash of content.

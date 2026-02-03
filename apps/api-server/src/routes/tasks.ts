@@ -7,9 +7,9 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
-import type { TaskId, TaskStatus, TaskWithDeps, TaskCursor } from "@tx/types"
-import { TASK_STATUSES } from "@tx/types"
-import { TaskService, ReadyService, DependencyService, HierarchyService } from "@tx/core"
+import type { TaskId, TaskStatus, TaskWithDeps, TaskCursor } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import { TaskService, ReadyService, DependencyService, HierarchyService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
 // -----------------------------------------------------------------------------

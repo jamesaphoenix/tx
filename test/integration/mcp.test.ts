@@ -35,9 +35,9 @@ import {
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive
-} from "@tx/core"
-import type { TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@tx/types"
-import { LEARNING_SOURCE_TYPES } from "@tx/types"
+} from "@jamesaphoenix/tx-core"
+import type { TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
+import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 
 // -----------------------------------------------------------------------------
 // Types

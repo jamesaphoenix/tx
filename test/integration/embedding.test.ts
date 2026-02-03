@@ -9,7 +9,7 @@ import {
   EmbeddingUnavailableError,
   createEmbedderLayer,
   type EmbedderConfig
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 // ============================================================================
 // Mock Factories for node-llama-cpp

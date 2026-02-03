@@ -9,7 +9,7 @@ import type {
   EdgeId,
   EdgeType,
   NodeType
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 import type { TestDatabase } from "../database/index.js"
 
 /**

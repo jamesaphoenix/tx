@@ -4,7 +4,7 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
 import { RetrieverService } from "./retriever-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError, RetrievalError } from "../errors.js"
-import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "@tx/types"
+import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "@jamesaphoenix/tx-types"
 
 /** Result of embedding operation */
 export interface EmbedResult {

@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import type { LearningWithScore } from "@tx/types"
+import type { LearningWithScore } from "@jamesaphoenix/tx-types"
 import { cosineSimilarity } from "../utils/math.js"
 
 /**

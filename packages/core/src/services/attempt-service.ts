@@ -3,7 +3,7 @@ import { AttemptRepository } from "../repo/attempt-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { AttemptNotFoundError, TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import { isValidOutcome } from "../mappers/attempt.js"
-import type { Attempt, AttemptId, AttemptOutcome } from "@tx/types"
+import type { Attempt, AttemptId, AttemptOutcome } from "@jamesaphoenix/tx-types"
 
 export class AttemptService extends Context.Tag("AttemptService")<
   AttemptService,

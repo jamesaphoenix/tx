@@ -32,9 +32,9 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive,
   cosineSimilarity
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 import type Database from "better-sqlite3"
-import type { LearningWithScore } from "@tx/types"
+import type { LearningWithScore } from "@jamesaphoenix/tx-types"
 
 // ============================================================================
 // Test Data: 50+ learnings across various topics

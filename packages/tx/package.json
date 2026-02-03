@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "TanStack for AI agents - headless primitives for memory, tasks, and orchestration",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,8 +25,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@tx/core": "*",
-    "@tx/types": "*"
+    "@jamesaphoenix/tx-core": "^0.4.1",
+    "@jamesaphoenix/tx-types": "^0.4.1"
   },
   "peerDependencies": {
     "better-sqlite3": "^11.0.0",
@@ -39,7 +39,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jamesaphoenix/tx.git"
+    "url": "https://github.com/jamesaphoenix/tx.git",
+    "directory": "packages/tx"
   },
   "keywords": [
     "task-management",

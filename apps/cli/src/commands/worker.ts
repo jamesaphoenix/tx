@@ -5,7 +5,7 @@
  */
 
 import { Effect } from "effect"
-import { WorkerService, runWorkerProcess, type WorkerProcessConfig, type WorkerType } from "@tx/core"
+import { WorkerService, runWorkerProcess, type WorkerProcessConfig, type WorkerType } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 

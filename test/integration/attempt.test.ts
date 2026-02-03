@@ -13,7 +13,7 @@ import {
   AttemptServiceLive,
   AttemptService,
   AutoSyncServiceNoop
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {

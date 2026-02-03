@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { fixtureId } from "@tx/test-utils"
+import { fixtureId } from "@jamesaphoenix/tx-test-utils"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -57,7 +57,7 @@ const FIXTURES = {
 
 describe("Graph Schema - Anchor CRUD", () => {
   it("creates a glob anchor and retrieves it", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -89,7 +89,7 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("creates a hash anchor with content hash and line range", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -120,7 +120,7 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("creates a symbol anchor with fully qualified name", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -149,7 +149,7 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("creates a line_range anchor with line numbers", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -179,7 +179,7 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("soft deletes an anchor (sets status='invalid')", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -213,7 +213,7 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("finds all anchors for a specific file path", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -261,7 +261,7 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("finds all anchors for a specific learning", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -310,7 +310,7 @@ describe("Graph Schema - Anchor CRUD", () => {
 
 describe("Graph Schema - Edge CRUD", () => {
   it("creates an edge between two learnings", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -345,7 +345,7 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("creates ANCHORED_TO edge from learning to file", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -375,7 +375,7 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("creates DERIVED_FROM edge for provenance tracking", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -406,7 +406,7 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("updates edge weight", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -436,7 +436,7 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("invalidates (soft-deletes) an edge", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -468,7 +468,7 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("validates edge types at creation", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -492,7 +492,7 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("validates weight bounds (0-1)", async () => {
-    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -523,7 +523,7 @@ describe("Graph Schema - Edge CRUD", () => {
 
 describe("Graph Schema - Multi-hop Traversal", () => {
   it("traverses a linear chain with depth limit", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -576,7 +576,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
   })
 
   it("traverses a branching graph structure", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -627,7 +627,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
   })
 
   it("finds path between two nodes", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -669,7 +669,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
   })
 
   it("returns null when no path exists", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -702,7 +702,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
 
 describe("Graph Schema - Edge Type Filtering", () => {
   it("filters neighbors by edge type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -742,7 +742,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
   })
 
   it("filters by multiple edge types", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -792,7 +792,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
   })
 
   it("finds edges by type globally", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -835,7 +835,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
   })
 
   it("counts edges by type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -883,7 +883,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
 
 describe("Graph Schema - Cycle Detection", () => {
   it("handles cycles in traversal without infinite loop", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -934,7 +934,7 @@ describe("Graph Schema - Cycle Detection", () => {
   })
 
   it("handles self-referential cycles in simple two-node case", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -975,7 +975,7 @@ describe("Graph Schema - Cycle Detection", () => {
   })
 
   it("detects diamond pattern in graph", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1039,7 +1039,7 @@ describe("Graph Schema - Cycle Detection", () => {
 
 describe("Graph Schema - Bidirectional Queries", () => {
   it("finds outgoing neighbors only", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1078,7 +1078,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("finds incoming neighbors only", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1117,7 +1117,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("finds both incoming and outgoing neighbors (bidirectional)", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1166,7 +1166,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("queries edges to a specific target", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1205,7 +1205,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("queries edges from a specific source", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1256,7 +1256,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
 
 describe("Graph Schema - Anchor and Edge Integration", () => {
   it("creates anchor and corresponding ANCHORED_TO edge", async () => {
-    const { makeAppLayer, AnchorService, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1299,7 +1299,7 @@ describe("Graph Schema - Anchor and Edge Integration", () => {
   })
 
   it("finds learnings related to a file via both anchors and edges", async () => {
-    const { makeAppLayer, AnchorService, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1352,7 +1352,7 @@ describe("Graph Schema - Anchor and Edge Integration", () => {
 
 describe("Graph Schema - Anchor Status Management", () => {
   it("updates anchor status to drifted", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1382,7 +1382,7 @@ describe("Graph Schema - Anchor Status Management", () => {
   })
 
   it("updates anchor status to invalid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1411,7 +1411,7 @@ describe("Graph Schema - Anchor Status Management", () => {
   })
 
   it("finds only drifted anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1448,7 +1448,7 @@ describe("Graph Schema - Anchor Status Management", () => {
   })
 
   it("finds only invalid anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1487,7 +1487,7 @@ describe("Graph Schema - Anchor Status Management", () => {
 
 describe("Graph Schema - Edge Metadata", () => {
   it("stores and retrieves edge metadata", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -1523,7 +1523,7 @@ describe("Graph Schema - Edge Metadata", () => {
   })
 
   it("updates edge metadata", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

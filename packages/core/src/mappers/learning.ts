@@ -7,11 +7,11 @@ import type {
   LearningId,
   LearningSourceType,
   LearningRow
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export types and constants from @tx/types for convenience
-export type { LearningRow } from "@tx/types"
-export { LEARNING_SOURCE_TYPES } from "@tx/types"
+export type { LearningRow } from "@jamesaphoenix/tx-types"
+export { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 
 /**
  * Check if a string is a valid LearningSourceType.

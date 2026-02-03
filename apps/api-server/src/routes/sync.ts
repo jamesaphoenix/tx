@@ -6,7 +6,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
-import { SyncService } from "@tx/core"
+import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
 // -----------------------------------------------------------------------------

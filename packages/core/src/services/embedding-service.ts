@@ -368,7 +368,7 @@ export const EmbeddingServiceAuto = Layer.unwrapEffect(
  *
  * @example
  * ```typescript
- * import { createEmbedderLayer } from "@tx/core"
+ * import { createEmbedderLayer } from "@jamesaphoenix/tx-core"
  *
  * const myEmbedder = createEmbedderLayer({
  *   embed: async (text) => {
@@ -424,7 +424,7 @@ export interface EmbedderConfig {
  *
  * @example
  * ```typescript
- * import { createEmbedderLayer, makeMinimalLayer } from "@tx/core"
+ * import { createEmbedderLayer, makeMinimalLayer } from "@jamesaphoenix/tx-core"
  * import { Layer, Effect } from "effect"
  *
  * // Create custom embedder layer

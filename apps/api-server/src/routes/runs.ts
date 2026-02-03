@@ -7,9 +7,9 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
-import type { Run, RunId, RunStatus } from "@tx/types"
-import { RUN_STATUSES } from "@tx/types"
-import { RunRepository } from "@tx/core"
+import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
+import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
+import { RunRepository } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
 // -----------------------------------------------------------------------------

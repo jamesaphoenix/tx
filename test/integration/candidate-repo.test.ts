@@ -37,7 +37,7 @@ const FIXTURES = {
 
 describe("CandidateRepository.insert", () => {
   it("creates a candidate with required fields", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -67,7 +67,7 @@ describe("CandidateRepository.insert", () => {
   })
 
   it("creates a candidate with all optional fields", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -95,7 +95,7 @@ describe("CandidateRepository.insert", () => {
   })
 
   it("auto-increments IDs for multiple inserts", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -130,7 +130,7 @@ describe("CandidateRepository.insert", () => {
 
 describe("CandidateRepository.findById", () => {
   it("returns candidate by ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -153,7 +153,7 @@ describe("CandidateRepository.findById", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -173,7 +173,7 @@ describe("CandidateRepository.findById", () => {
 
 describe("CandidateRepository.findByFilter", () => {
   it("returns all candidates when no filter applied", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -204,7 +204,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("returns empty array when no candidates exist", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -218,7 +218,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by single status", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -246,7 +246,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by multiple statuses", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -283,7 +283,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by single confidence level", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -315,7 +315,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by multiple confidence levels", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -349,7 +349,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by single category", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -378,7 +378,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by multiple categories", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -415,7 +415,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by sourceFile", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -442,7 +442,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by sourceRunId", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -471,7 +471,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by sourceTaskId", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -500,7 +500,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("supports pagination with limit", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -523,7 +523,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("supports pagination with limit and offset", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -555,7 +555,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("combines multiple filters", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -593,7 +593,7 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("orders results by extracted_at DESC", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -635,7 +635,7 @@ describe("CandidateRepository.findByFilter", () => {
 
 describe("CandidateRepository.update", () => {
   it("updates status field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -657,7 +657,7 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates reviewedAt field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const reviewedAt = new Date()
@@ -683,7 +683,7 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates reviewedBy field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -705,7 +705,7 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates promotedLearningId field", async () => {
-    const { makeAppLayer, CandidateRepository, LearningService } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -733,7 +733,7 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates rejectionReason field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -759,7 +759,7 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates multiple fields at once", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const reviewedAt = new Date()
@@ -789,7 +789,7 @@ describe("CandidateRepository.update", () => {
   })
 
   it("returns current row when no updates provided", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -812,7 +812,7 @@ describe("CandidateRepository.update", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -828,7 +828,7 @@ describe("CandidateRepository.update", () => {
 
 describe("CandidateRepository.updateStatus", () => {
   it("updates status to promoted", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -850,7 +850,7 @@ describe("CandidateRepository.updateStatus", () => {
   })
 
   it("updates status to rejected", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -872,7 +872,7 @@ describe("CandidateRepository.updateStatus", () => {
   })
 
   it("updates status to merged", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -894,7 +894,7 @@ describe("CandidateRepository.updateStatus", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -908,7 +908,7 @@ describe("CandidateRepository.updateStatus", () => {
   })
 
   it("preserves other fields when updating status", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@tx/core")
+    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

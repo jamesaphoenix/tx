@@ -14,7 +14,7 @@ import { Effect, Queue } from "effect"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
-import { fixtureId } from "@tx/test-utils"
+import { fixtureId } from "@jamesaphoenix/tx-test-utils"
 import {
   FileWatcherService,
   FileWatcherServiceLive,

@@ -4,7 +4,7 @@ import { DependencyRepository } from "../repo/dep-repo.js"
 import { TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import { generateTaskId } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
-import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput } from "@tx/types"
+import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput } from "@jamesaphoenix/tx-types"
 
 export class TaskService extends Context.Tag("TaskService")<
   TaskService,

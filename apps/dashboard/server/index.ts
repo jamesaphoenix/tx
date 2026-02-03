@@ -5,7 +5,7 @@ import Database from "better-sqlite3"
 import { readFileSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
 import { fileURLToPath } from "url"
-import type { TaskRow, DependencyRow } from "@tx/types"
+import type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(__dirname, "../../..")

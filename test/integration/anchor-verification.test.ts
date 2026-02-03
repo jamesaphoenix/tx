@@ -90,7 +90,7 @@ describe("AnchorVerificationService Integration", () => {
 
   describe("verify - single anchor verification", () => {
     it("returns unchanged for valid glob anchor with existing file", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create test file
@@ -125,7 +125,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("marks anchor as invalid when file is deleted", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create test file then delete it
@@ -160,7 +160,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("marks hash anchor as drifted when content changes", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create test file with initial content
@@ -203,7 +203,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("marks symbol anchor as invalid when symbol is removed", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create file without the expected symbol
@@ -242,7 +242,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("returns unchanged for symbol anchor when symbol exists", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create file with the expected symbol
@@ -280,7 +280,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("skips verification for pinned anchors", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create file then delete it - but anchor is pinned so should remain unchanged
@@ -319,7 +319,7 @@ describe("AnchorVerificationService Integration", () => {
 
   describe("verifyAll - batch verification", () => {
     it("processes all anchors and returns summary", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create some valid files
@@ -369,7 +369,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("skips pinned anchors by default", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const validFile = await createTestFile(tempDir, "valid.ts", "export const valid = true")
@@ -414,7 +414,7 @@ describe("AnchorVerificationService Integration", () => {
 
   describe("verifyFile - file-specific verification", () => {
     it("verifies only anchors for the specified file", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const targetFile = await createTestFile(tempDir, "target.ts", "export const target = true")
@@ -464,7 +464,7 @@ describe("AnchorVerificationService Integration", () => {
 
   describe("invalidation logging", () => {
     it("logs invalidation when anchor becomes invalid", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const filePath = path.join(tempDir, "to-delete.ts")
@@ -506,7 +506,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("logs drift when content hash changes", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const initialContent = "export const original = 1"
@@ -558,7 +558,7 @@ describe("AnchorVerificationService Integration", () => {
 
   describe("line_range anchor verification", () => {
     it("returns unchanged when file has enough lines", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create file with 10 lines
@@ -594,7 +594,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("marks as drifted when file has fewer lines than required", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create file with only 3 lines
@@ -633,7 +633,7 @@ describe("AnchorVerificationService Integration", () => {
 
   describe("detection source tracking", () => {
     it("tracks periodic detection source", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const filePath = path.join(tempDir, "nonexistent.ts")
@@ -668,7 +668,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("tracks lazy detection source", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const filePath = path.join(tempDir, "nonexistent.ts")
@@ -706,7 +706,7 @@ describe("AnchorVerificationService Integration", () => {
 
   describe("self-healing for drifted anchors", () => {
     it("self-heals hash anchor when content similarity > 0.8", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Original content with minor variation to test
@@ -757,7 +757,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("does NOT self-heal when content similarity < 0.8", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Original content
@@ -804,7 +804,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("does NOT self-heal when no content preview is stored", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const originalContent = "export function foo() { return true }"
@@ -846,7 +846,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("updates anchor hash and preview after self-healing", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Use content where adding type annotation results in >80% similarity
@@ -894,7 +894,7 @@ describe("AnchorVerificationService Integration", () => {
     })
 
     it("logs self-healing with similarity score in invalidation log", async () => {
-      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, AnchorVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const originalContent = "function process(data) { return data.map(x => x * 2) }"

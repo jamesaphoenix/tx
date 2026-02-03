@@ -8,10 +8,10 @@ import type {
   EdgeType,
   NodeType,
   EdgeRow
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export type from @tx/types for convenience
-export type { EdgeRow } from "@tx/types"
+export type { EdgeRow } from "@jamesaphoenix/tx-types"
 
 /**
  * Convert a database row to an Edge domain object.

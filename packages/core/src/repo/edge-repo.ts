@@ -10,7 +10,7 @@ import type {
   CreateEdgeInput,
   UpdateEdgeInput,
   NeighborNode
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 export class EdgeRepository extends Context.Tag("EdgeRepository")<
   EdgeRepository,

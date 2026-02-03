@@ -21,7 +21,7 @@ import * as path from "node:path"
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { DatabaseError } from "../errors.js"
 import { matchesGlob } from "../utils/glob.js"
-import type { Anchor, AnchorStatus, InvalidationSource } from "@tx/types"
+import type { Anchor, AnchorStatus, InvalidationSource } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
 // Types

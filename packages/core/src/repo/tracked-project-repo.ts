@@ -6,7 +6,7 @@ import type {
   TrackedProject,
   TrackedProjectRow,
   CreateTrackedProjectInput
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 export class TrackedProjectRepository extends Context.Tag("TrackedProjectRepository")<
   TrackedProjectRepository,

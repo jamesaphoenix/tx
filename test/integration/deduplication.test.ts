@@ -26,7 +26,7 @@ const FIXTURES = {
 
 describe("DeduplicationService Integration", () => {
   it("processLine records new hash and returns isNew=true", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -44,7 +44,7 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLine returns isNew=false for duplicate content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -67,7 +67,7 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines handles batch processing efficiently", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const lines = [
@@ -93,7 +93,7 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines skips already processed lines", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -125,7 +125,7 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines respects startLine option for incremental processing", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const lines = [
@@ -147,7 +147,7 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines respects maxLines option", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const lines = [
@@ -174,7 +174,7 @@ describe("DeduplicationService Integration", () => {
 
 describe("DeduplicationService hash checking", () => {
   it("isProcessed returns false for new content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -188,7 +188,7 @@ describe("DeduplicationService hash checking", () => {
   })
 
   it("isProcessed returns true after processing", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -207,7 +207,7 @@ describe("DeduplicationService hash checking", () => {
   })
 
   it("filterProcessed returns set of processed contents", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -234,7 +234,7 @@ describe("DeduplicationService hash checking", () => {
   })
 
   it("computeHash returns consistent SHA256 hash", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -261,7 +261,7 @@ describe("DeduplicationService hash checking", () => {
 
 describe("DeduplicationService file progress", () => {
   it("getProgress returns null for unknown file", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -275,7 +275,7 @@ describe("DeduplicationService file progress", () => {
   })
 
   it("updateProgress creates new progress record", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -300,7 +300,7 @@ describe("DeduplicationService file progress", () => {
   })
 
   it("updateProgress updates existing progress record", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -322,7 +322,7 @@ describe("DeduplicationService file progress", () => {
   })
 
   it("getProgress returns saved progress", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -347,7 +347,7 @@ describe("DeduplicationService file progress", () => {
 
 describe("DeduplicationService reset", () => {
   it("resetFile clears hashes and progress for a file", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -381,7 +381,7 @@ describe("DeduplicationService reset", () => {
   })
 
   it("resetFile only affects specified file", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -414,7 +414,7 @@ describe("DeduplicationService reset", () => {
 
 describe("DeduplicationService statistics", () => {
   it("getStats returns counts", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -438,7 +438,7 @@ describe("DeduplicationService statistics", () => {
   })
 
   it("getStats returns zeros for empty database", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -459,7 +459,7 @@ describe("DeduplicationService statistics", () => {
 
 describe("DeduplicationService edge cases", () => {
   it("handles empty lines array", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -475,7 +475,7 @@ describe("DeduplicationService edge cases", () => {
   })
 
   it("handles empty content string", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -490,7 +490,7 @@ describe("DeduplicationService edge cases", () => {
   })
 
   it("handles very long content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const longContent = "x".repeat(100000)
@@ -507,7 +507,7 @@ describe("DeduplicationService edge cases", () => {
   })
 
   it("handles unicode content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@tx/core")
+    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const unicodeContent = '{"message": "Hello 世界 🌍 مرحبا"}'

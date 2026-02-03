@@ -14,8 +14,8 @@ import {
   PromotionService,
   TrackedProjectRepository,
   matchesGlob
-} from "@tx/core"
-import { CANDIDATE_CONFIDENCES, SOURCE_TYPES, type CandidateConfidence, type SourceType, type TranscriptChunk } from "@tx/types"
+} from "@jamesaphoenix/tx-core"
+import { CANDIDATE_CONFIDENCES, SOURCE_TYPES, type CandidateConfidence, type SourceType, type TranscriptChunk } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 

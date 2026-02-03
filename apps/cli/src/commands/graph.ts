@@ -4,8 +4,8 @@
  */
 
 import { Effect } from "effect"
-import { AnchorService, EdgeService } from "@tx/core"
-import type { AnchorType, EdgeType, NodeType } from "@tx/types"
+import { AnchorService, EdgeService } from "@jamesaphoenix/tx-core"
+import type { AnchorType, EdgeType, NodeType } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
 
 type Flags = Record<string, string | boolean>

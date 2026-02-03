@@ -83,7 +83,7 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("verifyAnchors - batch verification", () => {
     it("uses sequential processing for small batches", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create test files
@@ -126,7 +126,7 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("uses swarm processing when forceSwarm is true", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create test files
@@ -172,7 +172,7 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("handles empty anchor list gracefully", async () => {
-      const { makeAppLayer, SwarmVerificationService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const result = await Effect.runPromise(
@@ -191,7 +191,7 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("verifyAll - verify all valid anchors", () => {
     it("processes all valid anchors using swarm for large batches", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create many test files to trigger swarm
@@ -232,7 +232,7 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("skips pinned anchors when skipPinned is true", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const file1 = await createTestFile(tempDir, FIXTURES.FILE_1, "export const a = 1")
@@ -277,7 +277,7 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("verifyGlob - verify anchors matching glob", () => {
     it("verifies only anchors matching glob pattern", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const tsFile = await createTestFile(tempDir, "code.ts", "export const ts = true")
@@ -322,7 +322,7 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("verifyChangedFiles - verify anchors for specific files", () => {
     it("verifies anchors for changed files only", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       const file1 = await createTestFile(tempDir, FIXTURES.FILE_1, "export const a = 1")
@@ -370,7 +370,7 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("sets detectedBy to git_hook by default", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // File doesn't exist, so it will be marked invalid
@@ -409,7 +409,7 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("swarm metrics tracking", () => {
     it("tracks all metrics correctly", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create some valid files and some that will be invalid
@@ -459,7 +459,7 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("calculateMajorityVote utility", () => {
     it("returns consensus when majority agrees", async () => {
-      const { calculateMajorityVote } = await import("@tx/core")
+      const { calculateMajorityVote } = await import("@jamesaphoenix/tx-core")
 
       const results = [
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "valid" as const, action: "unchanged" as const },
@@ -477,7 +477,7 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("marks as needsReview when there is a tie", async () => {
-      const { calculateMajorityVote } = await import("@tx/core")
+      const { calculateMajorityVote } = await import("@jamesaphoenix/tx-core")
 
       const results = [
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "valid" as const, action: "unchanged" as const },
@@ -492,7 +492,7 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("handles unanimous agreement", async () => {
-      const { calculateMajorityVote } = await import("@tx/core")
+      const { calculateMajorityVote } = await import("@jamesaphoenix/tx-core")
 
       const results = [
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "invalid" as const, action: "invalidated" as const },
@@ -511,7 +511,7 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("concurrent agent processing", () => {
     it("limits concurrent agents to maxConcurrent setting", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@tx/core")
+      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
       const layer = makeAppLayer(":memory:")
 
       // Create many files

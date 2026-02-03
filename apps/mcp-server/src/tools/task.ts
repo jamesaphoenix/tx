@@ -8,9 +8,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { z } from "zod"
-import type { TaskId, TaskStatus, TaskWithDeps } from "@tx/types"
-import { TASK_STATUSES } from "@tx/types"
-import { TaskService, ReadyService, DependencyService } from "@tx/core"
+import type { TaskId, TaskStatus, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import { TaskService, ReadyService, DependencyService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
 // -----------------------------------------------------------------------------

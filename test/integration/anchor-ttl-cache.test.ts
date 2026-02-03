@@ -39,7 +39,7 @@ const FIXTURES = {
 
 describe("Anchor TTL Cache - Never Verified", () => {
   it("anchor with null verified_at triggers verification", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -89,7 +89,7 @@ describe("Anchor TTL Cache - Never Verified", () => {
 
 describe("Anchor TTL Cache - Fresh Anchor", () => {
   it("fresh anchor (just verified) returns cached result without re-verification", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -143,7 +143,7 @@ describe("Anchor TTL Cache - Fresh Anchor", () => {
 
 describe("Anchor TTL Cache - Stale Anchor", () => {
   it("stale anchor (verified_at older than TTL) triggers re-verification", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -202,7 +202,7 @@ describe("Anchor TTL Cache - Stale Anchor", () => {
   })
 
   it("stale anchor returns unchanged action when status doesn't change", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -263,7 +263,7 @@ describe("Anchor TTL Cache - Custom TTL", () => {
     // Set a very short TTL (1 second)
     process.env.TX_ANCHOR_CACHE_TTL = "1"
 
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -304,7 +304,7 @@ describe("Anchor TTL Cache - Custom TTL", () => {
     // Set a very long TTL (1 hour = 3600 seconds)
     process.env.TX_ANCHOR_CACHE_TTL = "3600"
 
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -348,7 +348,7 @@ describe("Anchor TTL Cache - Custom TTL", () => {
 
 describe("Anchor TTL Cache - Edge Cases", () => {
   it("getWithVerification fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
@@ -365,7 +365,7 @@ describe("Anchor TTL Cache - Edge Cases", () => {
   })
 
   it("verified_at exactly at TTL boundary is considered stale", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     // Default TTL is 3600 seconds (1 hour)
@@ -403,7 +403,7 @@ describe("Anchor TTL Cache - Edge Cases", () => {
   })
 
   it("verified_at just before TTL boundary is considered fresh", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     // Default TTL is 3600 seconds (1 hour)
@@ -441,7 +441,7 @@ describe("Anchor TTL Cache - Edge Cases", () => {
   })
 
   it("multiple getWithVerification calls on same anchor within TTL only verify once", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@tx/core")
+    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
     const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(

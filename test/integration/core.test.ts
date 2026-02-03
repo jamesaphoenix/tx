@@ -16,8 +16,8 @@ import {
   ScoreServiceLive,
   ScoreService,
   AutoSyncServiceNoop
-} from "@tx/core"
-import type { TaskId } from "@tx/types"
+} from "@jamesaphoenix/tx-core"
+import type { TaskId } from "@jamesaphoenix/tx-types"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {

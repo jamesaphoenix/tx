@@ -5,8 +5,8 @@ import {
   SqliteClient,
   RunRepositoryLive,
   RunRepository
-} from "@tx/core"
-import type { RunId } from "@tx/types"
+} from "@jamesaphoenix/tx-core"
+import type { RunId } from "@jamesaphoenix/tx-types"
 import type Database from "better-sqlite3"
 
 function makeTestLayer(db: InstanceType<typeof Database>) {

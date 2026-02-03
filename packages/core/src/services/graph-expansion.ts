@@ -3,8 +3,8 @@ import { EdgeService, type NeighborWithDepth } from "./edge-service.js"
 import { LearningRepository } from "../repo/learning-repo.js"
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { DatabaseError, ValidationError } from "../errors.js"
-import type { Learning, EdgeType, LearningId } from "@tx/types"
-import { EDGE_TYPES } from "@tx/types"
+import type { Learning, EdgeType, LearningId } from "@jamesaphoenix/tx-types"
+import { EDGE_TYPES } from "@jamesaphoenix/tx-types"
 
 /**
  * Seed learning with an initial score for graph expansion.

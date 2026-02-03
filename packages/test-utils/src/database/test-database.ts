@@ -9,7 +9,7 @@
 
 import Database from "better-sqlite3"
 import { Context, Effect, Layer } from "effect"
-import { applyMigrations } from "@tx/core"
+import { applyMigrations } from "@jamesaphoenix/tx-core"
 
 /**
  * Interface for test database operations.

@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { rowToRun, generateRunId } from "../mappers/run.js"
-import type { Run, RunId, RunStatus, RunRow, CreateRunInput, UpdateRunInput } from "@tx/types"
+import type { Run, RunId, RunStatus, RunRow, CreateRunInput, UpdateRunInput } from "@jamesaphoenix/tx-types"
 
 export class RunRepository extends Context.Tag("RunRepository")<
   RunRepository,

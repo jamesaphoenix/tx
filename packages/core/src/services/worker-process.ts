@@ -13,7 +13,7 @@ import { WorkerService } from "./worker-service.js"
 import { ClaimService } from "./claim-service.js"
 import { ReadyService } from "./ready-service.js"
 import { TaskService } from "./task-service.js"
-import type { TaskWithDeps } from "@tx/types"
+import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
 
 /**
  * Configuration for the worker process.

@@ -8,7 +8,7 @@ import type {
   Task,
   TaskId,
   TaskStatus
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 import type { TestDatabase } from "../database/index.js"
 import { fixtureId } from "../fixtures/index.js"
 

@@ -24,9 +24,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tx/core": "*",
-    "@tx/test-utils": "*",
-    "@tx/types": "*",
+    "@jamesaphoenix/tx-core": "*",
+    "@jamesaphoenix/tx-test-utils": "*",
+    "@jamesaphoenix/tx-types": "*",
     "effect": "^3.19.15"
   },
   "peerDependencies": {

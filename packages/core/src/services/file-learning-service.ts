@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { FileLearningRepository } from "../repo/file-learning-repo.js"
 import { FileLearningNotFoundError, ValidationError, DatabaseError } from "../errors.js"
-import type { FileLearning, CreateFileLearningInput } from "@tx/types"
+import type { FileLearning, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
 
 export class FileLearningService extends Context.Tag("FileLearningService")<
   FileLearningService,

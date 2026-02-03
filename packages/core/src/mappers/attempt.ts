@@ -8,11 +8,11 @@ import type {
   AttemptOutcome,
   AttemptRow,
   TaskId
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export types and constants from @tx/types for convenience
-export type { AttemptRow } from "@tx/types"
-export { ATTEMPT_OUTCOMES } from "@tx/types"
+export type { AttemptRow } from "@jamesaphoenix/tx-types"
+export { ATTEMPT_OUTCOMES } from "@jamesaphoenix/tx-types"
 
 /**
  * Check if a string is a valid AttemptOutcome.

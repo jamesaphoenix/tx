@@ -16,7 +16,7 @@ import {
   EmbeddingService,
   EmbeddingServiceLive,
   cosineSimilarity
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 // Skip tests if SKIP_REAL_EMBEDDING_TESTS is set (for CI) or if model loading fails
 const SKIP_REAL_TESTS = process.env.SKIP_REAL_EMBEDDING_TESTS === "1"

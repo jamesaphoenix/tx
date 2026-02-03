@@ -5,8 +5,8 @@ import {
   CandidateExtractorServiceNoop,
   CandidateExtractorServiceAuto,
   ExtractionUnavailableError
-} from "@tx/core"
-import type { TranscriptChunk, ExtractedCandidate } from "@tx/types"
+} from "@jamesaphoenix/tx-core"
+import type { TranscriptChunk, ExtractedCandidate } from "@jamesaphoenix/tx-types"
 import {
   createMockAnthropic,
   createMockAnthropicForExtraction,
@@ -15,7 +15,7 @@ import {
   createMockOpenAIForExtractionRaw,
   type MockAnthropicResult,
   type MockOpenAIResult
-} from "@tx/test-utils"
+} from "@jamesaphoenix/tx-test-utils"
 
 describe("CandidateExtractorService", () => {
   describe("CandidateExtractorServiceNoop", () => {

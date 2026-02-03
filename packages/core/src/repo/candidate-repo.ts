@@ -9,7 +9,7 @@ import type {
   UpdateCandidateInput,
   CandidateFilter,
   CandidateStatus
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 export class CandidateRepository extends Context.Tag("CandidateRepository")<
   CandidateRepository,

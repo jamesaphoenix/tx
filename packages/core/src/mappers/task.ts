@@ -9,11 +9,11 @@ import type {
   TaskRow,
   TaskDependency,
   DependencyRow
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export types and constants from @tx/types for convenience
-export type { TaskRow, DependencyRow } from "@tx/types"
-export { TASK_STATUSES, VALID_TRANSITIONS } from "@tx/types"
+export type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
+export { TASK_STATUSES, VALID_TRANSITIONS } from "@jamesaphoenix/tx-types"
 
 /**
  * Convert a database row to a Task domain object.

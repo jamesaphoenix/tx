@@ -6,7 +6,7 @@ import type {
   ExtractionResult,
   CandidateConfidence,
   CandidateCategory
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Types for Anthropic SDK (imported dynamically)
 interface AnthropicMessage {

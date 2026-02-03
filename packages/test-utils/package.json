@@ -1,6 +1,6 @@
 {
-  "name": "@tx/test-utils",
-  "version": "0.1.0",
+  "name": "@jamesaphoenix/tx-test-utils",
+  "version": "0.4.1",
   "description": "Test utilities, factories, fixtures, and helpers for tx monorepo",
   "type": "module",
   "main": "./dist/index.js",
@@ -49,8 +49,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tx/core": "*",
-    "@tx/types": "*",
+    "@jamesaphoenix/tx-core": "*",
+    "@jamesaphoenix/tx-types": "*",
     "effect": "^3.19.15"
   },
   "peerDependencies": {

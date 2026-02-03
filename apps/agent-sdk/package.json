@@ -33,10 +33,10 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tx/types": "*"
+    "@jamesaphoenix/tx-types": "*"
   },
   "optionalDependencies": {
-    "@tx/core": "*",
+    "@jamesaphoenix/tx-core": "*",
     "effect": "^3.19.15"
   },
   "peerDependencies": {
@@ -48,7 +48,7 @@
     }
   },
   "devDependencies": {
-    "@tx/core": "*",
+    "@jamesaphoenix/tx-core": "*",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.10.0",
     "effect": "^3.19.15",

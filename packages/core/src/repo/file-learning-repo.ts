@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { rowToFileLearning, matchesPattern } from "../mappers/file-learning.js"
-import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "@tx/types"
+import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
 
 export class FileLearningRepository extends Context.Tag("FileLearningRepository")<
   FileLearningRepository,
