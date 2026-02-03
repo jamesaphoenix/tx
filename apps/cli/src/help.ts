@@ -49,10 +49,10 @@ Commands:
   daemon start            Start background daemon
   daemon stop             Stop background daemon
   daemon status           Show daemon status
-  orchestrator start      Start the orchestrator
-  orchestrator stop       Stop the orchestrator
-  orchestrator status     Show orchestrator status
-  orchestrator reconcile  Force reconciliation pass
+  coordinator start      Start the coordinator
+  coordinator stop       Stop the coordinator
+  coordinator status     Show coordinator status
+  coordinator reconcile  Force reconciliation pass
   worker start            Start a worker process
   worker stop             Stop a worker process
   worker status           Show worker status
@@ -1143,33 +1143,33 @@ Examples:
   tx daemon reject 42 --reason "Not relevant"
   tx daemon reject 42 --reason "Duplicate of existing learning"`,
 
-  orchestrator: `tx orchestrator - Worker orchestration system
+  coordinator: `tx coordinator - Worker coordination primitives
 
-Usage: tx orchestrator <subcommand> [options]
+Usage: tx coordinator <subcommand> [options]
 
-Manages the worker orchestration system for parallel task processing.
+Manages the worker coordination system for parallel task processing.
 Provides Kubernetes-style worker health tracking, lease-based claims,
 and automatic orphan detection.
 
 Subcommands:
-  start       Start the orchestrator
-  stop        Stop the orchestrator
-  status      Show orchestrator status
+  start       Start the coordinator
+  stop        Stop the coordinator
+  status      Show coordinator status
   reconcile   Force a reconciliation pass
 
-Run 'tx orchestrator <subcommand> --help' for subcommand-specific help.
+Run 'tx coordinator <subcommand> --help' for subcommand-specific help.
 
 Examples:
-  tx orchestrator start               # Start with default settings
-  tx orchestrator start --workers 3   # Start with 3 workers
-  tx orchestrator status              # Show current status
-  tx orchestrator reconcile           # Force orphan detection`,
+  tx coordinator start               # Start with default settings
+  tx coordinator start --workers 3   # Start with 3 workers
+  tx coordinator status              # Show current status
+  tx coordinator reconcile           # Force orphan detection`,
 
-  "orchestrator start": `tx orchestrator start - Start the orchestrator
+  "coordinator start": `tx coordinator start - Start the coordinator
 
-Usage: tx orchestrator start [options]
+Usage: tx coordinator start [options]
 
-Starts the worker orchestration system. The orchestrator manages worker
+Starts the worker coordination system. The coordinator manages worker
 health via heartbeats, handles lease-based task claims, and runs periodic
 reconciliation to detect dead workers and orphaned tasks.
 
@@ -1180,15 +1180,15 @@ Options:
   --help             Show this help
 
 Examples:
-  tx orchestrator start                  # Start with 1 worker
-  tx orchestrator start --workers 3      # Start with 3 workers
-  tx orchestrator start -w 5 --daemon    # 5 workers in background`,
+  tx coordinator start                  # Start with 1 worker
+  tx coordinator start --workers 3      # Start with 3 workers
+  tx coordinator start -w 5 --daemon    # 5 workers in background`,
 
-  "orchestrator stop": `tx orchestrator stop - Stop the orchestrator
+  "coordinator stop": `tx coordinator stop - Stop the coordinator
 
-Usage: tx orchestrator stop [options]
+Usage: tx coordinator stop [options]
 
-Stops the running orchestrator. By default, immediately marks all workers
+Stops the running coordinator. By default, immediately marks all workers
 as dead. With --graceful, signals workers to finish current tasks first.
 
 Options:
@@ -1197,14 +1197,14 @@ Options:
   --help          Show this help
 
 Examples:
-  tx orchestrator stop               # Immediate stop
-  tx orchestrator stop --graceful    # Wait for workers to finish`,
+  tx coordinator stop               # Immediate stop
+  tx coordinator stop --graceful    # Wait for workers to finish`,
 
-  "orchestrator status": `tx orchestrator status - Show orchestrator status
+  "coordinator status": `tx coordinator status - Show coordinator status
 
-Usage: tx orchestrator status [options]
+Usage: tx coordinator status [options]
 
-Shows the current status of the orchestrator including:
+Shows the current status of the coordinator including:
 - Running status (stopped/starting/running/stopping)
 - Process ID if running
 - Worker pool size configuration
@@ -1216,12 +1216,12 @@ Options:
   --help   Show this help
 
 Examples:
-  tx orchestrator status
-  tx orchestrator status --json`,
+  tx coordinator status
+  tx coordinator status --json`,
 
-  "orchestrator reconcile": `tx orchestrator reconcile - Force reconciliation pass
+  "coordinator reconcile": `tx coordinator reconcile - Force reconciliation pass
 
-Usage: tx orchestrator reconcile [options]
+Usage: tx coordinator reconcile [options]
 
 Runs a single reconciliation pass immediately. Reconciliation:
 - Detects dead workers (missed 2+ heartbeats)
@@ -1236,15 +1236,15 @@ Options:
   --help   Show this help
 
 Examples:
-  tx orchestrator reconcile
-  tx orchestrator reconcile --json`,
+  tx coordinator reconcile
+  tx coordinator reconcile --json`,
 
   worker: `tx worker - Worker process management
 
 Usage: tx worker <subcommand> [options]
 
-Manages worker processes for the orchestration system. Workers claim and
-execute tasks, sending heartbeats to the orchestrator.
+Manages worker processes for the coordination system. Workers claim and
+execute tasks, sending heartbeats to the coordinator.
 
 Subcommands:
   start       Start a worker process
@@ -1264,7 +1264,7 @@ Examples:
 
 Usage: tx worker start [options]
 
-Starts a worker process that registers with the orchestrator, claims tasks,
+Starts a worker process that registers with the coordinator, claims tasks,
 and executes them using Claude. The worker sends periodic heartbeats and
 handles graceful shutdown on SIGTERM/SIGINT.
 

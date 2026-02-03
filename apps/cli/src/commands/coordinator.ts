@@ -1,7 +1,9 @@
 /**
- * Orchestrator commands: start, stop, status, reconcile
+ * Coordinator commands: start, stop, status, reconcile
  *
- * CLI commands for managing the worker orchestration system (PRD-018).
+ * CLI commands for managing the worker coordination system (PRD-018).
+ * Named "coordinator" to emphasize tx provides coordination primitives,
+ * not an orchestration framework - you own the orchestration loop.
  */
 
 import { Effect } from "effect"
@@ -23,18 +25,18 @@ function opt(flags: Flags, ...names: string[]): string | undefined {
   return undefined
 }
 
-export const orchestrator = (pos: string[], flags: Flags) =>
+export const coordinator = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const subcommand = pos[0]
 
     if (!subcommand || subcommand === "help") {
-      console.log(commandHelp["orchestrator"])
+      console.log(commandHelp["coordinator"])
       return
     }
 
     // Check for --help on subcommand
     if (flag(flags, "help", "h")) {
-      const helpKey = `orchestrator ${subcommand}`
+      const helpKey = `coordinator ${subcommand}`
       if (commandHelp[helpKey]) {
         console.log(commandHelp[helpKey])
         return
@@ -54,7 +56,7 @@ export const orchestrator = (pos: string[], flags: Flags) =>
         ? { workerPoolSize: workers }
         : {}
 
-      // Start orchestrator
+      // Start coordinator
       yield* svc.start(config)
 
       // Get updated status
@@ -69,7 +71,7 @@ export const orchestrator = (pos: string[], flags: Flags) =>
           daemon: isDaemon
         }))
       } else {
-        console.log("Orchestrator started")
+        console.log("Coordinator started")
         console.log(`  Status: ${state.status}`)
         console.log(`  PID: ${state.pid}`)
         console.log(`  Worker pool size: ${state.workerPoolSize}`)
@@ -91,7 +93,7 @@ export const orchestrator = (pos: string[], flags: Flags) =>
           graceful
         }))
       } else {
-        console.log("Orchestrator stopped")
+        console.log("Coordinator stopped")
         if (graceful) {
           console.log("  Mode: graceful (waited for workers to finish)")
         }
@@ -102,7 +104,7 @@ export const orchestrator = (pos: string[], flags: Flags) =>
       if (flag(flags, "json")) {
         console.log(toJson(state))
       } else {
-        console.log("Orchestrator Status:")
+        console.log("Coordinator Status:")
         console.log(`  Status: ${state.status}`)
         if (state.pid) {
           console.log(`  PID: ${state.pid}`)
@@ -132,8 +134,8 @@ export const orchestrator = (pos: string[], flags: Flags) =>
         console.log(`  Time: ${result.reconcileTime}ms`)
       }
     } else {
-      console.error(`Unknown orchestrator subcommand: ${subcommand}`)
-      console.error(`Run 'tx orchestrator --help' for usage information`)
+      console.error(`Unknown coordinator subcommand: ${subcommand}`)
+      console.error(`Run 'tx coordinator --help' for usage information`)
       process.exit(1)
     }
   })

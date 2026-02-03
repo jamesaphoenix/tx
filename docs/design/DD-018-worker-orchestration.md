@@ -1,4 +1,4 @@
-# DD-018: Worker Orchestration System - Implementation
+# DD-018: Worker Coordination Primitives - Implementation
 
 **Status**: Draft
 **Implements**: [PRD-018](../prd/PRD-018-worker-orchestration.md)
@@ -8,7 +8,9 @@
 
 ## Overview
 
-Implementation details for the k8s-style worker orchestration system. Covers service architecture, database operations, worker protocol, and reconciliation loop.
+Implementation details for the k8s-style worker coordination system. Covers service architecture, database operations, worker protocol, and reconciliation loop.
+
+**Note on naming**: The CLI command is `tx coordinator` (emphasizing primitives over framework). The internal service is `OrchestratorService` (implementation detail). This document shows actual code; CLI examples use `tx coordinator`.
 
 ---
 
@@ -164,7 +166,7 @@ export const WorkerServiceLive = Layer.effect(
     return {
       register: (registration) =>
         Effect.gen(function* () {
-          // Verify orchestrator is running
+          // Verify coordinator is running
           const state = yield* orchestratorRepo.get()
           if (state.status !== 'running') {
             return yield* Effect.fail(new RegistrationError({
@@ -714,7 +716,7 @@ The worker is split into two parts:
 │  runWorker(config, hooks)                                   │
 ├─────────────────────────────────────────────────────────────┤
 │  Worker Loop (tx provides)                                  │
-│  ├── Register with orchestrator                             │
+│  ├── Register with coordinator                             │
 │  ├── Heartbeat loop                                         │
 │  ├── Claim available tasks                                  │
 │  ├── → hooks.selectAgent(task)                              │
@@ -834,7 +836,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
       ...config.hooks
     }
 
-    // Register with orchestrator
+    // Register with coordinator
     const worker = yield* workerService.register({
       name: config.name,
       hostname: os.hostname(),
@@ -1288,7 +1290,7 @@ export const workerCommand = Command.make(
 ```typescript
 describe('WorkerService', () => {
   it('should register worker within pool capacity', async () => {
-    // Setup orchestrator with pool size 2
+    // Setup coordinator with pool size 2
     await runEffect(orchestratorService.start({ workerPoolSize: 2 }), db)
 
     const worker = await runEffect(
@@ -1389,7 +1391,7 @@ describe('OrchestratorService', () => {
 ```typescript
 describe('Worker Orchestration Integration', () => {
   it('should complete full task lifecycle', async () => {
-    // 1. Start orchestrator
+    // 1. Start coordinator
     await runEffect(orchestratorService.start({ workerPoolSize: 1 }), db)
 
     // 2. Create task
@@ -1454,8 +1456,8 @@ describe('Worker Orchestration Integration', () => {
 # ralph.sh remains unchanged
 # New commands available
 
-# Start orchestrator (runs alongside ralph.sh)
-tx orchestrator start --workers 1
+# Start coordinator (runs alongside ralph.sh)
+tx coordinator start --workers 1
 
 # Workers use new claim system
 tx worker start
@@ -1463,9 +1465,9 @@ tx worker start
 
 ### Phase 2: Feature Parity Checklist
 
-| ralph.sh Feature | Orchestrator Equivalent | Status |
+| ralph.sh Feature | Coordinator Equivalent | Status |
 |-----------------|------------------------|--------|
-| Lock file | Singleton orchestrator state | Planned |
+| Lock file | Singleton coordinator state | Planned |
 | Run tracking | Task claims with metadata | Planned |
 | Orphan cleanup | Reconciliation loop | Planned |
 | Circuit breaker | Per-worker failure tracking | Planned |
@@ -1477,7 +1479,7 @@ tx worker start
 ```bash
 # ralph.sh prints deprecation warning
 ./scripts/ralph.sh
-# WARNING: ralph.sh is deprecated. Use 'tx orchestrator start' instead.
+# WARNING: ralph.sh is deprecated. Use 'tx coordinator start' instead.
 
 # Migration command
 tx migrate:from-ralph

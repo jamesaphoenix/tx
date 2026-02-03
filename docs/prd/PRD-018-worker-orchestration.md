@@ -1,4 +1,4 @@
-# PRD-018: Worker Orchestration System
+# PRD-018: Worker Coordination Primitives
 
 **Status**: Draft
 **Priority**: P1 (Should Have)
@@ -29,8 +29,8 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 | User Type | Primary Actions | Frequency |
 |-----------|-----------------|-----------|
 | AI Agents | Register as worker, claim tasks, send heartbeats | Continuous |
-| Human Engineers | Start/stop orchestrator, view worker status, scale pool | Daily |
-| CI/CD Systems | Trigger orchestrator, check health | On events |
+| Human Engineers | Start/stop coordinator, view worker status, scale pool | Daily |
+| CI/CD Systems | Trigger coordinator, check health | On events |
 
 ---
 
@@ -43,9 +43,9 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 5. **Primitives, not frameworks** - composable building blocks
 6. **Headless by design** - developers control what workers do
 
-## Design Philosophy: Headless Orchestration
+## Design Philosophy: Coordination Primitives
 
-**tx provides the orchestration primitives. You decide what workers do.**
+**tx provides coordination primitives. You own the orchestration loop.**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -55,7 +55,7 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 │  - LLM execution (Claude, Codex, local, etc.)              │
 │  - Result handling                                          │
 ├─────────────────────────────────────────────────────────────┤
-│  tx primitives (orchestration mechanics)                    │
+│  tx primitives (coordination mechanics)                     │
 │  - Worker registration & heartbeats                         │
 │  - Lease-based task claims                                  │
 │  - Reconciliation & orphan recovery                         │
@@ -66,7 +66,7 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 ### What tx Controls (Primitives)
 - Worker lifecycle (register, heartbeat, deregister)
 - Task claims with leases (claim, renew, release)
-- Orchestrator state (start, stop, reconcile)
+- Coordinator state (start, stop, reconcile)
 - Health monitoring and recovery
 
 ### What You Control (Your Code)
@@ -82,7 +82,7 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 
 - Cloud deployment (future: remote workers)
 - Auto-scaling based on queue depth (future)
-- Distributed consensus (single orchestrator only)
+- Distributed consensus (single coordinator only)
 - External message queue (SQLite is sufficient)
 
 ---
@@ -103,7 +103,7 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Orchestrator                           │
+│                      Coordinator                            │
 │  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
 │  │ Registration│  │ Health       │  │ Reconciliation    │  │
 │  │ Manager     │  │ Monitor      │  │ Loop              │  │
@@ -135,16 +135,16 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| WO-001 | Workers register with orchestrator on startup | P0 |
+| WO-001 | Workers register with coordinator on startup | P0 |
 | WO-002 | Workers send heartbeats every 30s (configurable) | P0 |
-| WO-003 | Orchestrator marks workers dead after 2 missed heartbeats | P0 |
+| WO-003 | Coordinator marks workers dead after 2 missed heartbeats | P0 |
 | WO-004 | Tasks use lease-based claims (30 min default, renewable) | P0 |
 | WO-005 | Expired leases auto-release tasks back to queue | P0 |
 | WO-006 | Reconciliation loop runs every 60s to detect orphans | P0 |
 | WO-007 | Graceful shutdown: workers finish current task before exit | P0 |
 | WO-008 | Configurable worker pool size (1-N) | P0 |
 | WO-009 | Worker status visible via CLI (`tx worker status`) | P0 |
-| WO-010 | Orchestrator can run as daemon or foreground | P1 |
+| WO-010 | Coordinator can run as daemon or foreground | P1 |
 | WO-011 | Workers can be local processes or remote (future) | P2 |
 | WO-012 | Rate limiting / backpressure based on queue depth | P1 |
 
@@ -153,7 +153,7 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 | ID | Requirement | Target |
 |----|-------------|--------|
 | WO-NFR-001 | Heartbeat latency | <100ms |
-| WO-NFR-002 | Orchestrator memory | <50MB |
+| WO-NFR-002 | Coordinator memory | <50MB |
 | WO-NFR-003 | Worker memory | <100MB + Claude |
 | WO-NFR-004 | Database lock contention | <1% of requests |
 
@@ -161,7 +161,7 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 
 ## Data Model
 
-### Migration: `007_worker_orchestration.sql`
+### Migration: `007_worker_coordination.sql`
 
 ```sql
 -- Worker registration and health tracking
@@ -197,8 +197,8 @@ CREATE INDEX idx_claims_task ON task_claims(task_id);
 CREATE INDEX idx_claims_worker ON task_claims(worker_id);
 CREATE INDEX idx_claims_expiry ON task_claims(lease_expires_at);
 
--- Orchestrator state (singleton pattern)
-CREATE TABLE orchestrator_state (
+-- Coordinator state (singleton pattern)
+CREATE TABLE coordinator_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),  -- Singleton
   status TEXT NOT NULL DEFAULT 'stopped'
     CHECK (status IN ('stopped', 'starting', 'running', 'stopping')),
@@ -213,7 +213,7 @@ CREATE TABLE orchestrator_state (
 );
 
 -- Initialize singleton
-INSERT OR IGNORE INTO orchestrator_state (id) VALUES (1);
+INSERT OR IGNORE INTO coordinator_state (id) VALUES (1);
 ```
 
 ---
@@ -265,10 +265,10 @@ interface TaskClaim {
 ### CLI Commands
 
 ```bash
-# Orchestrator management
-tx orchestrator start [--workers 3] [--daemon]
-tx orchestrator stop [--graceful]
-tx orchestrator status
+# Coordinator management
+tx coordinator start [--workers 3] [--daemon]
+tx coordinator stop [--graceful]
+tx coordinator status
 
 # Worker management
 tx worker start [--name my-worker]
@@ -277,7 +277,7 @@ tx worker status
 tx worker list
 
 # Manual operations
-tx orchestrator reconcile          # Force reconciliation
+tx coordinator reconcile          # Force reconciliation
 tx claim <task-id> [--lease 30m]   # Manual task claim
 tx claim:release <task-id>         # Release claim
 tx claim:renew <task-id>           # Renew lease
@@ -286,10 +286,10 @@ tx claim:renew <task-id>           # Renew lease
 ### Service Interface
 
 ```typescript
-interface OrchestratorService {
-  start: (config: OrchestratorConfig) => Effect<void, OrchestratorError>
-  stop: (graceful: boolean) => Effect<void, OrchestratorError>
-  status: () => Effect<OrchestratorStatus, DatabaseError>
+interface CoordinatorService {
+  start: (config: CoordinatorConfig) => Effect<void, CoordinatorError>
+  stop: (graceful: boolean) => Effect<void, CoordinatorError>
+  status: () => Effect<CoordinatorStatus, DatabaseError>
   reconcile: () => Effect<ReconciliationResult, DatabaseError>
 }
 
@@ -315,7 +315,7 @@ interface ClaimService {
 
 ## Reconciliation Loop
 
-The orchestrator runs a reconciliation loop every `reconcile_interval_seconds`:
+The coordinator runs a reconciliation loop every `reconcile_interval_seconds`:
 
 ```typescript
 const reconcile = () =>
@@ -368,7 +368,7 @@ const reconcile = () =>
 
 ## Graceful Shutdown
 
-### Orchestrator Shutdown
+### Coordinator Shutdown
 
 1. Set status to `stopping`
 2. Stop accepting new worker registrations
@@ -383,7 +383,7 @@ const reconcile = () =>
 2. Stop heartbeating
 3. Finish current task (if any)
 4. Release any held claims
-5. Deregister from orchestrator
+5. Deregister from coordinator
 6. Exit
 
 ---
@@ -391,7 +391,7 @@ const reconcile = () =>
 ## Configuration
 
 ```typescript
-interface OrchestratorConfig {
+interface CoordinatorConfig {
   workerPoolSize: number           // Default: 1
   heartbeatIntervalSeconds: number // Default: 30
   leaseDurationMinutes: number     // Default: 30
@@ -819,12 +819,12 @@ await runWorker({
 ## Migration Path from ralph.sh
 
 ### Phase 1: Parallel Operation
-- New orchestrator runs alongside ralph.sh
+- New coordinator runs alongside ralph.sh
 - Workers use new claim system
 - ralph.sh continues for single-worker mode
 
 ### Phase 2: Feature Parity
-- All ralph.sh features implemented in orchestrator
+- All ralph.sh features implemented in coordinator
 - Review cycles, circuit breaker, agent selection
 
 ### Phase 3: Deprecation
@@ -841,10 +841,10 @@ await runWorker({
    - Threads: Lower overhead, shared memory
    - **Recommendation**: Processes for v1, threads as optimization later
 
-2. **What happens if orchestrator crashes?**
+2. **What happens if coordinator crashes?**
    - Workers continue running with current tasks
    - Heartbeats fail (nowhere to send them)
-   - On orchestrator restart, reconciliation recovers state
+   - On coordinator restart, reconciliation recovers state
    - **Recommendation**: Workers should buffer heartbeats, retry on restart
 
 3. **Should we support remote workers in v1?**
