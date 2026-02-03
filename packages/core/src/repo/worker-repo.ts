@@ -14,6 +14,7 @@ export class WorkerRepository extends Context.Tag("WorkerRepository")<
     readonly findByStatus: (status: WorkerStatus) => Effect.Effect<readonly Worker[], DatabaseError>
     readonly findByLastHeartbeatBefore: (threshold: Date) => Effect.Effect<readonly Worker[], DatabaseError>
     readonly countByStatus: (status: WorkerStatus) => Effect.Effect<number, DatabaseError>
+    readonly findAll: () => Effect.Effect<readonly Worker[], DatabaseError>
   }
 >() {}
 
@@ -118,6 +119,17 @@ export const WorkerRepositoryLive = Layer.effect(
               "SELECT COUNT(*) as cnt FROM workers WHERE status = ?"
             ).get(status) as { cnt: number }
             return result.cnt
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findAll: () =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              "SELECT * FROM workers ORDER BY registered_at DESC"
+            ).all() as WorkerRow[]
+            return rows.map(rowToWorker)
           },
           catch: (cause) => new DatabaseError({ cause })
         })

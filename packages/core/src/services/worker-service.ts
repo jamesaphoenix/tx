@@ -211,52 +211,27 @@ export const WorkerServiceLive = Layer.effect(
 
       list: (filter) =>
         Effect.gen(function* () {
+          // Get all workers in a single query
+          const allWorkers = yield* workerRepo.findAll()
+
           if (!filter) {
-            // Get all workers by querying each status
-            const starting = yield* workerRepo.findByStatus("starting")
-            const idle = yield* workerRepo.findByStatus("idle")
-            const busy = yield* workerRepo.findByStatus("busy")
-            const stopping = yield* workerRepo.findByStatus("stopping")
-            const dead = yield* workerRepo.findByStatus("dead")
-            const all = [...starting, ...idle, ...busy, ...stopping, ...dead]
-
-            return all
+            return allWorkers
           }
 
-          // Filter by status
+          let results = [...allWorkers]
+
+          // Filter by status if specified
           if (filter.status && filter.status.length > 0) {
-            const results: Worker[] = []
-            for (const status of filter.status) {
-              const workers = yield* workerRepo.findByStatus(status)
-              results.push(...workers)
-            }
-
-            // Apply noCurrentTask filter if specified
-            if (filter.noCurrentTask) {
-              return results.filter((w) => w.currentTaskId === null)
-            }
-            return results
+            const statusSet = new Set(filter.status)
+            results = results.filter((w) => statusSet.has(w.status))
           }
 
-          // Only noCurrentTask filter without status
+          // Filter by noCurrentTask if specified
           if (filter.noCurrentTask) {
-            const starting = yield* workerRepo.findByStatus("starting")
-            const idle = yield* workerRepo.findByStatus("idle")
-            const busy = yield* workerRepo.findByStatus("busy")
-            const stopping = yield* workerRepo.findByStatus("stopping")
-            const dead = yield* workerRepo.findByStatus("dead")
-            const all = [...starting, ...idle, ...busy, ...stopping, ...dead]
-
-            return all.filter((w) => w.currentTaskId === null)
+            results = results.filter((w) => w.currentTaskId === null)
           }
 
-          // No filter, return all
-          const starting = yield* workerRepo.findByStatus("starting")
-          const idle = yield* workerRepo.findByStatus("idle")
-          const busy = yield* workerRepo.findByStatus("busy")
-          const stopping = yield* workerRepo.findByStatus("stopping")
-          const dead = yield* workerRepo.findByStatus("dead")
-          return [...starting, ...idle, ...busy, ...stopping, ...dead]
+          return results
         }),
 
       findDead: (config) =>
