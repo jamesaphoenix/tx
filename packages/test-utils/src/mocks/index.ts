@@ -15,6 +15,18 @@ export {
   type MockAnthropicResult
 } from "./anthropic.mock.js"
 
+// OpenAI mock
+export {
+  createMockOpenAI,
+  createMockOpenAIForExtraction,
+  createMockOpenAIForExtractionRaw,
+  type MockOpenAIMessage,
+  type MockOpenAIChatCall,
+  type MockOpenAIChatResponse,
+  type MockOpenAIConfig,
+  type MockOpenAIResult
+} from "./openai.mock.js"
+
 // AstGrep mock
 export {
   MockAstGrepService,

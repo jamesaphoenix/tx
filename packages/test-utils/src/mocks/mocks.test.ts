@@ -16,6 +16,13 @@ import {
   type MockAnthropicResponse
 } from "./anthropic.mock.js"
 import {
+  createMockOpenAI,
+  createMockOpenAIForExtraction,
+  createMockOpenAIForExtractionRaw,
+  type MockOpenAIChatCall,
+  type MockOpenAIChatResponse
+} from "./openai.mock.js"
+import {
   MockAstGrepService,
   MockAstGrepServiceTag,
   MockAstGrepError,
@@ -879,6 +886,329 @@ describe("MockFileSystem", () => {
       const error = await expectEffectFailure<MockFileSystemError>(protectedEffect as any, mock.layer as any)
       expect(error.reason).toBe("Permission denied")
       expect(error.path).toBe("/protected/secret.txt")
+    })
+  })
+})
+
+// =============================================================================
+// createMockOpenAI Tests
+// =============================================================================
+
+describe("createMockOpenAI", () => {
+  describe("call tracking", () => {
+    it("records all calls", async () => {
+      const mock = createMockOpenAI()
+
+      await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 256,
+        messages: [{ role: "user", content: "Hello" }]
+      })
+
+      await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 512,
+        messages: [{ role: "user", content: "World" }]
+      })
+
+      expect(mock.calls).toHaveLength(2)
+      expect(mock.getCallCount()).toBe(2)
+    })
+
+    it("stores call parameters correctly", async () => {
+      const mock = createMockOpenAI()
+
+      await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 256,
+        messages: [
+          { role: "user", content: "First message" },
+          { role: "assistant", content: "Response" },
+          { role: "user", content: "Second message" }
+        ],
+        response_format: { type: "json_object" }
+      })
+
+      expect(mock.calls[0]).toEqual({
+        model: "gpt-4o-mini",
+        max_tokens: 256,
+        messages: [
+          { role: "user", content: "First message" },
+          { role: "assistant", content: "Response" },
+          { role: "user", content: "Second message" }
+        ],
+        response_format: { type: "json_object" }
+      })
+    })
+
+    it("getLastCall returns the most recent call", async () => {
+      const mock = createMockOpenAI()
+
+      await mock.client.chat.completions.create({
+        model: "model-a",
+        messages: [{ role: "user", content: "First" }]
+      })
+
+      await mock.client.chat.completions.create({
+        model: "model-b",
+        messages: [{ role: "user", content: "Second" }]
+      })
+
+      const lastCall = mock.getLastCall()
+      expect(lastCall?.model).toBe("model-b")
+      expect(lastCall?.messages[0].content).toBe("Second")
+    })
+
+    it("getLastCall returns undefined when no calls made", () => {
+      const mock = createMockOpenAI()
+      expect(mock.getLastCall()).toBeUndefined()
+    })
+
+    it("reset clears all tracked calls", async () => {
+      const mock = createMockOpenAI()
+
+      await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "Hello" }]
+      })
+
+      expect(mock.calls).toHaveLength(1)
+      mock.reset()
+      expect(mock.calls).toHaveLength(0)
+      expect(mock.getCallCount()).toBe(0)
+    })
+  })
+
+  describe("response fixtures", () => {
+    it("returns default minimal response when no config", async () => {
+      const mock = createMockOpenAI()
+
+      const response = await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "Hello" }]
+      })
+
+      expect(response.id).toBe("mock-chatcmpl-id")
+      expect(response.object).toBe("chat.completion")
+      expect(response.model).toBe("gpt-4o-mini")
+      expect(response.choices).toHaveLength(1)
+      expect(response.choices[0].message.role).toBe("assistant")
+    })
+
+    it("returns configured defaultResponse", async () => {
+      const customResponse: MockOpenAIChatResponse = {
+        id: "custom-id",
+        object: "chat.completion",
+        created: 1234567890,
+        model: "gpt-4o-mini",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: "Custom response text" },
+          finish_reason: "stop"
+        }],
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
+      }
+
+      const mock = createMockOpenAI({ defaultResponse: customResponse })
+
+      const response = await mock.client.chat.completions.create({
+        model: "any-model",
+        messages: [{ role: "user", content: "Anything" }]
+      })
+
+      expect(response).toEqual(customResponse)
+    })
+
+    it("returns specific response for matching messages", async () => {
+      const specificResponse: MockOpenAIChatResponse = {
+        id: "specific-id",
+        object: "chat.completion",
+        created: 1234567890,
+        model: "gpt-4o-mini",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: "Specific answer" },
+          finish_reason: "stop"
+        }]
+      }
+
+      const messages = [{ role: "user", content: "Specific question" }]
+      const responses = new Map<string, MockOpenAIChatResponse>([
+        [JSON.stringify(messages), specificResponse]
+      ])
+
+      const mock = createMockOpenAI({ responses })
+
+      const response = await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: messages as MockOpenAIChatCall["messages"]
+      })
+
+      expect(response.id).toBe("specific-id")
+      expect(response.choices[0].message.content).toBe("Specific answer")
+    })
+
+    it("falls back to defaultResponse when specific response not found", async () => {
+      const defaultResponse: MockOpenAIChatResponse = {
+        id: "default-id",
+        object: "chat.completion",
+        created: 1234567890,
+        model: "gpt-4o-mini",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: "Default" },
+          finish_reason: "stop"
+        }]
+      }
+
+      const responses = new Map<string, MockOpenAIChatResponse>([
+        [JSON.stringify([{ role: "user", content: "Match" }]), {
+          id: "match-id",
+          object: "chat.completion",
+          created: 1234567890,
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Matched" },
+            finish_reason: "stop"
+          }]
+        }]
+      ])
+
+      const mock = createMockOpenAI({ responses, defaultResponse })
+
+      const response = await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "No match" }]
+      })
+
+      expect(response.id).toBe("default-id")
+    })
+  })
+
+  describe("failure injection", () => {
+    it("throws error when shouldFail is true", async () => {
+      const mock = createMockOpenAI({ shouldFail: true })
+
+      await expect(
+        mock.client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "Hello" }]
+        })
+      ).rejects.toThrow("Mock OpenAI API error")
+    })
+
+    it("throws custom failureMessage", async () => {
+      const mock = createMockOpenAI({
+        shouldFail: true,
+        failureMessage: "Rate limit exceeded"
+      })
+
+      await expect(
+        mock.client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "Hello" }]
+        })
+      ).rejects.toThrow("Rate limit exceeded")
+    })
+
+    it("throws custom failureError", async () => {
+      const customError = new Error("Custom error object")
+      const mock = createMockOpenAI({
+        shouldFail: true,
+        failureError: customError
+      })
+
+      await expect(
+        mock.client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "Hello" }]
+        })
+      ).rejects.toBe(customError)
+    })
+
+    it("failureError takes precedence over failureMessage", async () => {
+      const customError = new Error("Custom error wins")
+      const mock = createMockOpenAI({
+        shouldFail: true,
+        failureMessage: "This should not be used",
+        failureError: customError
+      })
+
+      await expect(
+        mock.client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "Hello" }]
+        })
+      ).rejects.toBe(customError)
+    })
+
+    it("still tracks calls when failing", async () => {
+      const mock = createMockOpenAI({ shouldFail: true })
+
+      try {
+        await mock.client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "Hello" }]
+        })
+      } catch {
+        // Expected
+      }
+
+      expect(mock.calls).toHaveLength(1)
+    })
+  })
+
+  describe("latency simulation", () => {
+    it("delays response by configured latencyMs", async () => {
+      const mock = createMockOpenAI({ latencyMs: 100 })
+
+      const start = Date.now()
+      await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "Hello" }]
+      })
+      const elapsed = Date.now() - start
+
+      expect(elapsed).toBeGreaterThanOrEqual(95) // Allow small timing variance
+    })
+  })
+
+  describe("createMockOpenAIForExtraction", () => {
+    it("returns candidates wrapped in object", async () => {
+      const candidates = [
+        { content: "Always use transactions", confidence: "high", category: "patterns" },
+        { content: "Test database migrations", confidence: "medium", category: "testing" }
+      ]
+
+      const mock = createMockOpenAIForExtraction(candidates)
+
+      const response = await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "Extract learnings" }]
+      })
+
+      expect(response.choices[0].message.content).toBe(JSON.stringify({ candidates }))
+      expect(JSON.parse(response.choices[0].message.content!)).toEqual({ candidates })
+    })
+  })
+
+  describe("createMockOpenAIForExtractionRaw", () => {
+    it("returns candidates as raw JSON array", async () => {
+      const candidates = [
+        { content: "Always use transactions", confidence: "high", category: "patterns" },
+        { content: "Test database migrations", confidence: "medium", category: "testing" }
+      ]
+
+      const mock = createMockOpenAIForExtractionRaw(candidates)
+
+      const response = await mock.client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "Extract learnings" }]
+      })
+
+      expect(response.choices[0].message.content).toBe(JSON.stringify(candidates))
+      expect(JSON.parse(response.choices[0].message.content!)).toEqual(candidates)
     })
   })
 })

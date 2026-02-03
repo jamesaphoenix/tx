@@ -112,7 +112,15 @@ export {
   type MockAnthropicCall,
   type MockAnthropicResponse,
   type MockAnthropicConfig,
-  type MockAnthropicResult
+  type MockAnthropicResult,
+  createMockOpenAI,
+  createMockOpenAIForExtraction,
+  createMockOpenAIForExtractionRaw,
+  type MockOpenAIMessage,
+  type MockOpenAIChatCall,
+  type MockOpenAIChatResponse,
+  type MockOpenAIConfig,
+  type MockOpenAIResult
 } from "./mocks/index.js"
 // TODO: Implement remaining mocks (tx-b28e5324)
 // export { MockAstGrepService } from './mocks/index.js'
