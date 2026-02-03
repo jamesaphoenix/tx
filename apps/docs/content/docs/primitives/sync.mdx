@@ -1,0 +1,263 @@
+---
+title: tx sync
+description: Git-backed JSONL synchronization
+---
+
+## Purpose
+
+`tx sync` manages bidirectional synchronization between the SQLite database and a git-friendly JSONL file. This enables:
+
+- Version control of task history
+- Team collaboration via git
+- Backup and recovery
+- Cross-machine synchronization
+
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `tx sync export` | Export tasks to JSONL file |
+| `tx sync import` | Import tasks from JSONL file |
+| `tx sync status` | Show sync status |
+| `tx sync auto` | Enable/disable automatic sync |
+| `tx sync compact` | Compact JSONL by deduplicating operations |
+
+---
+
+## tx sync export
+
+Export all tasks and dependencies to a JSONL file.
+
+### Usage
+
+```bash
+tx sync export [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--path <path>` | Output path (default: `.tx/tasks.jsonl`) |
+| `--json` | Output as JSON with operation count |
+
+### Examples
+
+```bash
+# Export to default location
+tx sync export
+
+# Export to custom location
+tx sync export --path ./backup/tasks.jsonl
+
+# Get operation count
+tx sync export --json
+```
+
+### Output
+
+```
+Exported 42 operations to .tx/tasks.jsonl
+```
+
+---
+
+## tx sync import
+
+Import tasks from a JSONL file using timestamp-based merge.
+
+### Usage
+
+```bash
+tx sync import [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--path <path>` | Input path (default: `.tx/tasks.jsonl`) |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Import from default location
+tx sync import
+
+# Import from custom location
+tx sync import --path ./backup/tasks.jsonl
+```
+
+### Merge Strategy
+
+Import uses **timestamp-based merge**:
+- Newer operations win over older ones
+- Conflicts are resolved by comparing `updatedAt` timestamps
+- Operations are applied in chronological order
+
+---
+
+## tx sync status
+
+Show sync status and whether the database has unexported changes.
+
+### Usage
+
+```bash
+tx sync status [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+tx sync status
+```
+
+### Output
+
+```
+Sync status:
+  Database tasks: 156
+  JSONL operations: 312
+  Last export: 2025-01-28T10:30:00Z
+  Pending changes: 8
+```
+
+---
+
+## tx sync auto
+
+Enable or disable automatic synchronization on mutations.
+
+### Usage
+
+```bash
+tx sync auto --enable|--disable [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--enable` | Enable auto-sync |
+| `--disable` | Disable auto-sync |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Enable auto-sync
+tx sync auto --enable
+
+# Disable auto-sync
+tx sync auto --disable
+```
+
+When auto-sync is enabled, every task mutation automatically exports to JSONL.
+
+---
+
+## tx sync compact
+
+Compact the JSONL file by deduplicating operations.
+
+### Usage
+
+```bash
+tx sync compact [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+tx sync compact
+```
+
+### Output
+
+```
+Compacted .tx/tasks.jsonl:
+  Before: 1,234 operations (256 KB)
+  After: 892 operations (189 KB)
+  Saved: 27%
+```
+
+---
+
+## JSONL Format
+
+The export format is newline-delimited JSON:
+
+```jsonl
+{"op":"create","id":"tx-abc123","title":"Implement auth","status":"backlog","score":800,"ts":"2025-01-28T10:00:00Z"}
+{"op":"update","id":"tx-abc123","status":"active","ts":"2025-01-28T10:30:00Z"}
+{"op":"block","taskId":"tx-def456","blockerId":"tx-abc123","ts":"2025-01-28T11:00:00Z"}
+{"op":"done","id":"tx-abc123","ts":"2025-01-28T14:00:00Z"}
+```
+
+### Operation Types
+
+| Operation | Description |
+|-----------|-------------|
+| `create` | New task created |
+| `update` | Task fields updated |
+| `delete` | Task deleted |
+| `block` | Dependency added |
+| `unblock` | Dependency removed |
+| `done` | Task completed |
+
+---
+
+## Git Workflow
+
+```bash
+# After completing work
+tx sync export
+git add .tx/tasks.jsonl
+git commit -m "Update tasks"
+git push
+
+# On another machine
+git pull
+tx sync import
+```
+
+### .gitignore Recommendation
+
+```gitignore
+# Track the JSONL, ignore the SQLite database
+.tx/tasks.db
+.tx/tasks.db-wal
+.tx/tasks.db-shm
+!.tx/tasks.jsonl
+```
+
+---
+
+## Team Collaboration
+
+Multiple agents or developers can work on the same task database:
+
+1. **Export before pushing**: `tx sync export && git add .tx/tasks.jsonl`
+2. **Import after pulling**: `git pull && tx sync import`
+3. **Enable auto-sync** for real-time updates: `tx sync auto --enable`
+
+Merge conflicts in the JSONL file can be resolved by keeping both sides (JSONL is append-friendly) and running `tx sync compact` afterward.
+
+## Related Commands
+
+- [`tx ready`](/docs/primitives/ready) - Get tasks after syncing
+- [`tx done`](/docs/primitives/done) - Complete tasks (triggers auto-sync if enabled)

@@ -1,0 +1,118 @@
+---
+title: tx ready
+description: List tasks that are ready to work on
+---
+
+## Purpose
+
+`tx ready` returns tasks that are ready to be worked on. A task is ready when:
+
+1. Its status is workable (`backlog`, `ready`, `planning`, `active`, `blocked`, or `review`)
+2. All tasks blocking it have status `done`
+
+Tasks are sorted by score (highest first), making it easy for agents to pick the highest-priority unblocked task.
+
+## Usage
+
+```bash
+tx ready [options]
+```
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--limit, -n <n>` | Maximum tasks to show (default: 10) |
+| `--json` | Output as JSON for scripting |
+| `--help` | Show help |
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Top 10 ready tasks
+tx ready
+
+# Top 5 ready tasks
+tx ready -n 5
+```
+
+### JSON Output for Scripting
+
+```bash
+# Get ready tasks as JSON
+tx ready --json
+
+# Get the ID of the highest-priority ready task
+tx ready --json --limit 1 | jq -r '.[0].id'
+```
+
+## Output
+
+### Text Output
+
+```
+Ready tasks (sorted by score):
+
+ 1. tx-abc123  [800]  Implement authentication
+ 2. tx-def456  [600]  Add login page
+ 3. tx-ghi789  [500]  Write unit tests
+```
+
+### JSON Output
+
+```json
+[
+  {
+    "id": "tx-abc123",
+    "title": "Implement authentication",
+    "status": "ready",
+    "score": 800,
+    "blockedBy": [],
+    "blocks": ["tx-def456"],
+    "children": [],
+    "isReady": true
+  }
+]
+```
+
+## TaskWithDeps Response
+
+Every response includes full dependency information per [Rule 1](/docs/prd/prd-001-core-task-management):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `blockedBy` | `TaskId[]` | Task IDs that block this task |
+| `blocks` | `TaskId[]` | Task IDs this task blocks |
+| `children` | `TaskId[]` | Direct child task IDs |
+| `isReady` | `boolean` | Whether this task can be worked on |
+
+## Agent Loop Pattern
+
+```bash
+#!/bin/bash
+# Simple agent loop using tx ready
+
+while true; do
+  # Get highest priority ready task
+  TASK=$(tx ready --json --limit 1 | jq -r '.[0].id // empty')
+
+  # Exit if no ready tasks
+  [ -z "$TASK" ] && break
+
+  # Work on the task
+  claude "Your task is $TASK. Run 'tx show $TASK' to see details."
+
+  # Mark complete
+  tx done "$TASK"
+done
+
+echo "All tasks complete!"
+```
+
+## Related Commands
+
+- [`tx done`](/docs/primitives/done) - Mark a task as complete
+- [`tx block`](/docs/primitives/block) - Add dependencies between tasks
+- [`tx context`](/docs/primitives/context) - Get learnings relevant to a task

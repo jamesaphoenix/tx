@@ -1,0 +1,175 @@
+---
+title: tx context
+description: Get contextual learnings for a task
+---
+
+## Purpose
+
+`tx context` retrieves learnings that are relevant to a specific task. It uses the task's title and description to find matching knowledge, making it easy to inject relevant context into agent prompts.
+
+The search uses hybrid BM25 + recency scoring, and optionally supports graph expansion to discover related learnings through the knowledge graph.
+
+## Usage
+
+```bash
+tx context <task-id> [options]
+```
+
+## Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<task-id>` | Yes | Task ID (e.g., `tx-a1b2c3d4`) |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+| `--inject` | Write to `.tx/context.md` for injection |
+| `--expand` | Enable graph expansion to find related learnings |
+| `--depth <n>` | Graph expansion depth (default: 2) |
+| `--edge-types <types>` | Comma-separated edge types to traverse |
+| `--retriever <path>` | Use custom retriever module |
+| `--help` | Show help |
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Get context for a task
+tx context tx-abc123
+```
+
+### Write to File for Injection
+
+```bash
+# Write context to .tx/context.md
+tx context tx-abc123 --inject
+```
+
+### Graph Expansion
+
+```bash
+# Expand through knowledge graph for related learnings
+tx context tx-abc123 --expand --depth 3
+```
+
+### JSON Output
+
+```bash
+# Get context as JSON for programmatic use
+tx context tx-abc123 --json
+```
+
+## Output
+
+### Text Output
+
+```
+Context for task tx-abc123: "Implement authentication"
+
+Relevant learnings:
+  1. [0.92] Always hash passwords with bcrypt, never store plaintext
+     Category: security | Source: tx-def456
+
+  2. [0.85] Use JWT tokens with short expiry (15min) and refresh tokens
+     Category: auth | Source: manual
+
+  3. [0.78] Rate limit login attempts to prevent brute force attacks
+     Category: security | Source: tx-ghi789
+```
+
+### JSON Output
+
+```json
+{
+  "task": {
+    "id": "tx-abc123",
+    "title": "Implement authentication"
+  },
+  "learnings": [
+    {
+      "id": "lr-abc123",
+      "content": "Always hash passwords with bcrypt, never store plaintext",
+      "category": "security",
+      "score": 0.92,
+      "sourceRef": "tx-def456"
+    }
+  ]
+}
+```
+
+## Injection Mode
+
+The `--inject` flag writes learnings to `.tx/context.md`, which can be included in agent prompts:
+
+```bash
+# Generate context file
+tx context tx-abc123 --inject
+
+# Use in agent prompt
+claude "Read .tx/context.md for relevant learnings, then work on task tx-abc123"
+```
+
+The generated file:
+
+```markdown
+# Context for tx-abc123: Implement authentication
+
+## Relevant Learnings
+
+- Always hash passwords with bcrypt, never store plaintext
+- Use JWT tokens with short expiry (15min) and refresh tokens
+- Rate limit login attempts to prevent brute force attacks
+```
+
+## Custom Retriever
+
+You can plug in your own vector database (Pinecone, Weaviate, Chroma, etc.):
+
+```typescript
+// my-retriever.ts
+import { Layer, Effect } from "effect"
+import { RetrieverService } from "@tx/core"
+
+export default Layer.succeed(RetrieverService, {
+  search: (query, options) => Effect.gen(function* () {
+    // Custom Pinecone/Weaviate/Chroma implementation
+    return yield* myVectorSearch(query, options)
+  }),
+  isAvailable: () => Effect.succeed(true)
+})
+```
+
+Then use it:
+
+```bash
+tx context tx-abc123 --retriever ./my-retriever.ts
+```
+
+## Agent Workflow
+
+```bash
+#!/bin/bash
+# Start a task with full context
+
+TASK=$(tx ready --json --limit 1 | jq -r '.[0].id')
+
+# Generate context file
+tx context "$TASK" --inject
+
+# Run agent with context
+claude "
+Read .tx/context.md for relevant learnings.
+Then run 'tx show $TASK' to see the task details.
+Implement the task and mark it done with 'tx done $TASK'.
+"
+```
+
+## Related Commands
+
+- [`tx learning:add`](/docs/primitives/learning) - Add new learnings
+- [`tx learning:search`](/docs/primitives/learning) - Search learnings directly
+- [`tx ready`](/docs/primitives/ready) - Get the next task to work on

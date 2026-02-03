@@ -1,0 +1,130 @@
+---
+title: tx done
+description: Mark a task as complete
+---
+
+## Purpose
+
+`tx done` marks a task as complete by setting its status to `done`. This is the primary way to signal that work on a task is finished.
+
+When a task is completed, any tasks that were waiting on it may become unblocked. The command reports which tasks are newly unblocked.
+
+## Usage
+
+```bash
+tx done <id> [options]
+```
+
+## Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<id>` | Yes | Task ID (e.g., `tx-a1b2c3d4`) |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON (includes task and newly unblocked task IDs) |
+| `--help` | Show help |
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Mark a task as complete
+tx done tx-abc123
+```
+
+### JSON Output
+
+```bash
+# Complete a task and get JSON response
+tx done tx-abc123 --json
+```
+
+## Output
+
+### Text Output
+
+```
+Task tx-abc123 marked as done.
+
+Newly unblocked tasks:
+  tx-def456  Add login page
+  tx-ghi789  Write integration tests
+```
+
+### JSON Output
+
+```json
+{
+  "task": {
+    "id": "tx-abc123",
+    "title": "Implement authentication",
+    "status": "done",
+    "score": 800,
+    "blockedBy": [],
+    "blocks": ["tx-def456", "tx-ghi789"],
+    "children": [],
+    "isReady": false
+  },
+  "unblocked": ["tx-def456", "tx-ghi789"]
+}
+```
+
+## Cascade Unblocking
+
+When you complete a task, tx automatically checks which tasks were waiting on it:
+
+```
+Before tx done tx-auth:
+
+  tx-auth [done]
+      ↓ blocks
+  tx-login [blocked]
+      ↓ blocks
+  tx-dashboard [blocked]
+
+After tx done tx-auth:
+
+  tx-auth [done]
+      ↓ blocks
+  tx-login [ready]     ← Newly unblocked!
+      ↓ blocks
+  tx-dashboard [blocked]  ← Still blocked by tx-login
+```
+
+## Agent Workflow
+
+```bash
+#!/bin/bash
+# Complete a task and immediately start the next one
+
+# Finish current task
+tx done tx-abc123
+
+# Get next ready task
+NEXT=$(tx ready --json --limit 1 | jq -r '.[0].id // empty')
+
+if [ -n "$NEXT" ]; then
+  echo "Next task: $NEXT"
+  tx show "$NEXT"
+fi
+```
+
+## Idempotency
+
+Calling `tx done` on an already-completed task is a no-op. The task remains in `done` status and no error is raised.
+
+```bash
+tx done tx-abc123  # First call: marks as done
+tx done tx-abc123  # Second call: no-op, already done
+```
+
+## Related Commands
+
+- [`tx ready`](/docs/primitives/ready) - List tasks that are ready to work on
+- [`tx block`](/docs/primitives/block) - Add dependencies between tasks
+- [`tx reset`](#) - Reset a task back to ready status

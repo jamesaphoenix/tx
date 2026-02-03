@@ -1,0 +1,90 @@
+---
+title: CLI Primitives
+description: Core CLI commands for task management in tx
+---
+
+## Overview
+
+tx provides a set of CLI primitives for managing tasks, dependencies, learnings, and synchronization. These primitives are the building blocks for any agent orchestration pattern.
+
+## Philosophy
+
+tx is about **primitives, not frameworks**. We don't dictate how you orchestrate your agents. Instead, we provide headless infrastructure that you compose however you need.
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Your Orchestration (your code, your rules)         │
+├─────────────────────────────────────────────────────┤
+│  tx primitives                                      │
+│                                                     │
+│   tx ready     tx done      tx context    tx learn  │
+│   tx claim     tx block     tx handoff    tx sync   │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+## Core Primitives
+
+| Primitive | Purpose | Status |
+|-----------|---------|--------|
+| [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) | Available |
+| [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others | Available |
+| [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | Available |
+| [`tx claim`](/docs/primitives/claim) | Mark task as being worked by an agent | Planned |
+| [`tx handoff`](/docs/primitives/handoff) | Transfer task with context to another agent | Planned |
+| [`tx checkpoint`](/docs/primitives/checkpoint) | Save progress without completing | Planned |
+| [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection | Available |
+| [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge | Available |
+| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL | Available |
+
+## Example Orchestration Patterns
+
+We ship example patterns, not a required workflow:
+
+### Simple: One Agent, One Task
+
+```bash
+while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
+  claude "Work on task $task, then run: tx done $task"
+done
+```
+
+### Parallel: N Agents Pulling from Queue
+
+```bash
+for i in {1..5}; do
+  (while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
+    claude "Complete $task" && tx done $task
+  done) &
+done
+wait
+```
+
+### Human-in-Loop: Agent Proposes, Human Approves
+
+```bash
+task=$(tx ready --limit 1 --json | jq -r '.[0].id')
+claude "Plan implementation for $task" > plan.md
+read -p "Approve? [y/n] " && claude "Execute plan.md"
+tx done $task
+```
+
+## Global Options
+
+All primitives support these global options:
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON for scripting |
+| `--db <path>` | Custom database path (default: `.tx/tasks.db`) |
+| `--help` | Show command help |
+
+## Task Lifecycle
+
+```
+backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+```
+
+A task is **ready** when:
+1. Its status is workable (`backlog`, `ready`, `planning`, `active`, `blocked`, or `review`)
+2. All tasks blocking it have status `done`

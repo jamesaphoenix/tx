@@ -1,0 +1,145 @@
+---
+title: tx block
+description: Add blocking dependencies between tasks
+---
+
+## Purpose
+
+`tx block` creates a dependency between two tasks. The blocked task cannot be ready until the blocker is marked done.
+
+tx enforces two rules to maintain consistency:
+1. **No self-blocking**: A task cannot block itself
+2. **No cycles**: A→B→C→A chains are not allowed
+
+## Usage
+
+```bash
+tx block <task-id> <blocker-id> [options]
+```
+
+## Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<task-id>` | Yes | The task that will be blocked |
+| `<blocker-id>` | Yes | The task that blocks it |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+| `--help` | Show help |
+
+## Examples
+
+### Basic Usage
+
+```bash
+# tx-def456 blocks tx-abc123
+tx block tx-abc123 tx-def456
+```
+
+This means: "tx-abc123 cannot start until tx-def456 is done."
+
+### Multiple Blockers
+
+```bash
+# Add multiple blockers to a single task
+tx block tx-feature tx-design
+tx block tx-feature tx-api
+tx block tx-feature tx-tests
+```
+
+## Output
+
+### Text Output
+
+```
+Dependency added: tx-def456 now blocks tx-abc123
+
+Task tx-abc123:
+  Status: blocked
+  Blocked by: tx-def456
+```
+
+### JSON Output
+
+```json
+{
+  "task": {
+    "id": "tx-abc123",
+    "title": "Implement login page",
+    "status": "blocked",
+    "blockedBy": ["tx-def456"],
+    "blocks": [],
+    "children": [],
+    "isReady": false
+  }
+}
+```
+
+## Cycle Detection
+
+tx uses BFS (Breadth-First Search) to detect cycles at insert time:
+
+```bash
+# This would create a cycle and will be rejected
+tx block tx-a tx-b
+tx block tx-b tx-c
+tx block tx-c tx-a  # Error: Would create cycle A→B→C→A
+```
+
+Error output:
+```
+Error: Cannot add dependency - would create cycle: tx-a → tx-b → tx-c → tx-a
+```
+
+## Removing Dependencies
+
+Use `tx unblock` to remove a dependency:
+
+```bash
+# Remove the blocker
+tx unblock tx-abc123 tx-def456
+```
+
+## Dependency Visualization
+
+Use `tx tree` to visualize task dependencies:
+
+```bash
+tx tree tx-feature
+
+tx-feature (blocked)
+├── tx-design (done) ✓
+├── tx-api (active)
+└── tx-tests (blocked)
+    └── tx-unit (ready)
+```
+
+## Agent Workflow
+
+```bash
+#!/bin/bash
+# Decompose a task into subtasks with dependencies
+
+# Create main task
+MAIN=$(tx add "Build user profile page" --json | jq -r '.id')
+
+# Create subtasks
+API=$(tx add "Create profile API endpoint" --parent "$MAIN" --json | jq -r '.id')
+UI=$(tx add "Build profile UI component" --parent "$MAIN" --json | jq -r '.id')
+TEST=$(tx add "Write integration tests" --parent "$MAIN" --json | jq -r '.id')
+
+# Set dependencies: UI depends on API, tests depend on both
+tx block "$UI" "$API"
+tx block "$TEST" "$API"
+tx block "$TEST" "$UI"
+```
+
+## Related Commands
+
+- [`tx unblock`](#) - Remove a blocking dependency
+- [`tx ready`](/docs/primitives/ready) - List tasks with no blockers
+- [`tx done`](/docs/primitives/done) - Complete a task and unblock dependents

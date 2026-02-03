@@ -1,0 +1,16 @@
+{
+  "title": "CLI Primitives",
+  "pages": [
+    "index",
+    "ready",
+    "done",
+    "block",
+    "context",
+    "learning",
+    "sync",
+    "---Planned---",
+    "claim",
+    "handoff",
+    "checkpoint"
+  ]
+}

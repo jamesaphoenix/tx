@@ -1,0 +1,99 @@
+---
+title: tx handoff
+description: Transfer a task with context to another agent
+---
+
+> **Status**: Planned - This primitive is not yet implemented.
+
+## Purpose
+
+`tx handoff` will transfer a task from one agent to another, preserving context and progress. This enables specialized agents to collaborate on complex tasks.
+
+## Planned Usage
+
+```bash
+tx handoff <id> --to <agent> [options]
+```
+
+## Planned Options
+
+| Option | Description |
+|--------|-------------|
+| `--to <agent>` | Target agent identifier |
+| `--note <text>` | Handoff notes for the receiving agent |
+| `--file <path>` | Attach a file with context |
+| `--json` | Output as JSON |
+
+## Planned Examples
+
+```bash
+# Basic handoff
+tx handoff tx-abc123 --to code-reviewer
+
+# Handoff with notes
+tx handoff tx-abc123 --to qa-agent --note "Ready for testing, focus on edge cases"
+
+# Handoff with context file
+tx handoff tx-abc123 --to security-auditor --file ./threat-model.md
+```
+
+## Use Case: Specialist Agent Pipeline
+
+```
+┌─────────────┐    handoff    ┌─────────────┐    handoff    ┌─────────────┐
+│   Planner   │ ───────────►  │  Implementer │ ───────────►  │   Reviewer  │
+└─────────────┘               └─────────────┘               └─────────────┘
+       │                             │                             │
+       │                             │                             │
+   "Decomposed                  "Code written,                "Approved for
+    into subtasks"               tests passing"                   merge"
+```
+
+```bash
+# Planner creates plan
+tx update tx-abc123 --description "Implementation plan: ..."
+tx handoff tx-abc123 --to implementer --note "Plan approved, ready to build"
+
+# Implementer writes code
+tx handoff tx-abc123 --to reviewer --file ./implementation-notes.md
+
+# Reviewer approves
+tx done tx-abc123
+```
+
+## Planned Behavior
+
+1. **Handoff** transfers the claim to the target agent
+2. **Context** (notes, files) is stored with the task
+3. **History** tracks all handoffs for audit
+4. **Notification** can trigger the receiving agent
+
+## Handoff History
+
+Each task will maintain a handoff log:
+
+```json
+{
+  "id": "tx-abc123",
+  "handoffs": [
+    {
+      "from": "planner",
+      "to": "implementer",
+      "at": "2025-01-28T10:00:00Z",
+      "note": "Plan approved, ready to build"
+    },
+    {
+      "from": "implementer",
+      "to": "reviewer",
+      "at": "2025-01-28T14:00:00Z",
+      "files": ["implementation-notes.md"]
+    }
+  ]
+}
+```
+
+## Related Commands
+
+- [`tx claim`](/docs/primitives/claim) - Claim a task for an agent
+- [`tx checkpoint`](/docs/primitives/checkpoint) - Save progress without handoff
+- [`tx done`](/docs/primitives/done) - Complete the task

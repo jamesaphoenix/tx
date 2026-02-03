@@ -1,0 +1,236 @@
+---
+title: tx learning
+description: Record and search knowledge for future agents
+---
+
+## Purpose
+
+Learnings are pieces of knowledge that persist across sessions and can be retrieved based on context. They're the memory layer that helps agents avoid repeating mistakes and build on past insights.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `tx learning:add` | Add a new learning |
+| `tx learning:search` | Search learnings by query |
+| `tx learning:recent` | List recently added learnings |
+| `tx learning:helpful` | Record whether a learning was helpful |
+| `tx learning:embed` | Compute embeddings for vector search |
+
+---
+
+## tx learning:add
+
+Add a new learning to the knowledge base.
+
+### Usage
+
+```bash
+tx learning:add <content> [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<content>` | Yes | The learning content/insight to store |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-c, --category <cat>` | Category tag (e.g., database, auth, api) |
+| `--source-ref <ref>` | Reference to source (e.g., task ID, file path) |
+| `--source-type <type>` | Source type: `manual`, `compaction`, `run`, `claude_md` (default: manual) |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Basic learning
+tx learning:add "Always use transactions for multi-step DB operations"
+
+# With category
+tx learning:add "Rate limit is 100 req/min" -c api
+
+# With source reference
+tx learning:add "Migration requires downtime" --source-ref tx-abc123
+```
+
+---
+
+## tx learning:search
+
+Search learnings using BM25 full-text search with recency weighting.
+
+### Usage
+
+```bash
+tx learning:search <query> [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<query>` | Yes | Search query (keywords or phrase) |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-n, --limit <n>` | Maximum results (default: 10) |
+| `--min-score <n>` | Minimum relevance score 0-1 (default: 0.3) |
+| `--expand` | Enable graph expansion for related learnings |
+| `--depth <n>` | Graph expansion depth (default: 2) |
+| `--edge-types <types>` | Comma-separated edge types to traverse |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Basic search
+tx learning:search "database transactions"
+
+# Limited results with JSON output
+tx learning:search "authentication" -n 5 --json
+
+# With graph expansion
+tx learning:search "auth" --expand --depth 3
+```
+
+### Output
+
+```
+Search results for "database transactions":
+
+  1. [0.89] Always use transactions for multi-step DB operations
+     Category: database | Source: manual
+
+  2. [0.72] Enable WAL mode for better concurrent read performance
+     Category: database | Source: tx-def456
+
+  3. [0.65] Use connection pooling with max 10 connections
+     Category: database | Source: compaction
+```
+
+---
+
+## tx learning:recent
+
+List recently added learnings.
+
+### Usage
+
+```bash
+tx learning:recent [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-n, --limit <n>` | Maximum results (default: 10) |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Recent learnings
+tx learning:recent
+
+# Last 5 learnings as JSON
+tx learning:recent -n 5 --json
+```
+
+---
+
+## tx learning:helpful
+
+Record whether a learning was helpful for a task. This feedback improves future retrieval.
+
+### Usage
+
+```bash
+tx learning:helpful <learning-id> <task-id> --yes|--no
+```
+
+### Examples
+
+```bash
+# Mark a learning as helpful
+tx learning:helpful lr-abc123 tx-def456 --yes
+
+# Mark a learning as not helpful
+tx learning:helpful lr-abc123 tx-def456 --no
+```
+
+---
+
+## tx learning:embed
+
+Compute embeddings for learnings to enable vector search.
+
+### Usage
+
+```bash
+tx learning:embed [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--all` | Recompute all embeddings |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Compute embeddings for new learnings
+tx learning:embed
+
+# Recompute all embeddings
+tx learning:embed --all
+```
+
+---
+
+## The Knowledge Layer
+
+Learnings form the **knowledge layer** in tx's architecture:
+
+```
+┌─────────────────────────────────────────┐
+│  Agent Orchestration                    │
+├─────────────────────────────────────────┤
+│  Task Management (ready, block, done)   │
+├─────────────────────────────────────────┤
+│  Memory / Knowledge Graph               │  ← Learnings live here
+├─────────────────────────────────────────┤
+│  Storage (Git + SQLite)                 │
+└─────────────────────────────────────────┘
+```
+
+Learnings compound over time. As agents complete tasks and record insights, future agents get smarter.
+
+## Agent Workflow
+
+```bash
+#!/bin/bash
+# Record a learning after completing a task
+
+# Complete the task
+tx done tx-abc123
+
+# Record what was learned
+tx learning:add "React Query handles cache invalidation automatically" \
+  -c frontend \
+  --source-ref tx-abc123
+```
+
+## Related Commands
+
+- [`tx context`](/docs/primitives/context) - Get learnings relevant to a task
+- [`tx learn`](#) - Attach a learning to a file/glob pattern
+- [`tx recall`](#) - Query learnings for a specific path

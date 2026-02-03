@@ -1,0 +1,117 @@
+---
+title: tx checkpoint
+description: Save progress without completing
+---
+
+> **Status**: Planned - This primitive is not yet implemented.
+
+## Purpose
+
+`tx checkpoint` will save progress on a task without marking it complete. This is useful for long-running tasks where you want to persist state in case of interruption.
+
+## Planned Usage
+
+```bash
+tx checkpoint <id> [options]
+```
+
+## Planned Options
+
+| Option | Description |
+|--------|-------------|
+| `--note <text>` | Progress note describing current state |
+| `--file <path>` | Attach a file with checkpoint data |
+| `--json` | Output as JSON |
+
+## Planned Examples
+
+```bash
+# Checkpoint with note
+tx checkpoint tx-abc123 --note "Completed API endpoints, starting frontend"
+
+# Checkpoint with file
+tx checkpoint tx-abc123 --file ./progress.md
+
+# Multiple checkpoints
+tx checkpoint tx-abc123 --note "Step 1: Database schema done"
+tx checkpoint tx-abc123 --note "Step 2: API endpoints done"
+tx checkpoint tx-abc123 --note "Step 3: Frontend components done"
+```
+
+## Use Case: Long-Running Tasks
+
+For tasks that span multiple agent sessions:
+
+```bash
+# Session 1: Start implementation
+tx claim tx-abc123 --agent worker-1
+# ... work on task ...
+tx checkpoint tx-abc123 --note "Completed database layer, 40% done"
+
+# Session 2: Continue from checkpoint
+tx show tx-abc123  # See checkpoints
+# ... continue work ...
+tx checkpoint tx-abc123 --note "Completed API layer, 70% done"
+
+# Session 3: Finish
+tx show tx-abc123  # Review all progress
+# ... finish work ...
+tx done tx-abc123
+```
+
+## Use Case: Crash Recovery
+
+If an agent crashes mid-task:
+
+```bash
+# Before crash
+tx checkpoint tx-abc123 --note "Written files: src/auth.ts, src/login.ts"
+
+# After recovery
+tx show tx-abc123
+# Output shows: "Last checkpoint: Written files: src/auth.ts, src/login.ts"
+# Agent knows where to resume
+```
+
+## Planned Checkpoint Format
+
+```json
+{
+  "id": "tx-abc123",
+  "checkpoints": [
+    {
+      "at": "2025-01-28T10:00:00Z",
+      "agent": "worker-1",
+      "note": "Completed database layer, 40% done"
+    },
+    {
+      "at": "2025-01-28T12:00:00Z",
+      "agent": "worker-1",
+      "note": "Completed API layer, 70% done",
+      "files": ["progress.md"]
+    }
+  ]
+}
+```
+
+## Viewing Checkpoints
+
+```bash
+tx show tx-abc123
+
+Task: tx-abc123
+  Title: Implement authentication
+  Status: active
+  Claimed by: worker-1
+
+  Checkpoints:
+    1. [2025-01-28 10:00] Completed database layer, 40% done
+    2. [2025-01-28 12:00] Completed API layer, 70% done
+```
+
+## Related Commands
+
+- [`tx claim`](/docs/primitives/claim) - Claim task before checkpointing
+- [`tx handoff`](/docs/primitives/handoff) - Transfer task with context
+- [`tx done`](/docs/primitives/done) - Complete the task after all checkpoints
+- [`tx try`](#) - Record an attempt (alternative for tracking approaches tried)

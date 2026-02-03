@@ -1,0 +1,69 @@
+---
+title: tx claim
+description: Mark a task as being worked by an agent
+---
+
+> **Status**: Planned - This primitive is not yet implemented.
+
+## Purpose
+
+`tx claim` will mark a task as being actively worked on by a specific agent. This prevents multiple agents from picking the same task and duplicating work.
+
+## Planned Usage
+
+```bash
+tx claim <id> [options]
+```
+
+## Planned Options
+
+| Option | Description |
+|--------|-------------|
+| `--agent <name>` | Agent identifier claiming the task |
+| `--timeout <seconds>` | Auto-release after timeout (default: 3600) |
+| `--next` | Claim the next ready task automatically |
+| `--json` | Output as JSON |
+
+## Planned Examples
+
+```bash
+# Claim a specific task
+tx claim tx-abc123 --agent worker-1
+
+# Claim the next ready task
+tx claim --next --agent worker-1
+
+# Claim with 30-minute timeout
+tx claim tx-abc123 --agent worker-1 --timeout 1800
+```
+
+## Use Case: Parallel Agent Execution
+
+Without claims, parallel agents might pick the same task:
+
+```bash
+# Problem: Both agents pick the same task
+Agent1: tx ready --limit 1  → tx-abc123
+Agent2: tx ready --limit 1  → tx-abc123  # Same task!
+```
+
+With claims:
+
+```bash
+# Solution: Claims prevent collision
+Agent1: tx claim --next --agent worker-1  → tx-abc123
+Agent2: tx claim --next --agent worker-2  → tx-def456  # Different task
+```
+
+## Planned Behavior
+
+1. **Claiming** sets `claimed_by` and `claimed_at` on the task
+2. **Ready queries** exclude claimed tasks (unless `--include-claimed`)
+3. **Timeouts** auto-release abandoned claims
+4. **Completing** a task automatically releases its claim
+
+## Related Commands
+
+- [`tx ready`](/docs/primitives/ready) - List unclaimed ready tasks
+- [`tx done`](/docs/primitives/done) - Complete and release claim
+- [`tx handoff`](/docs/primitives/handoff) - Transfer claim to another agent
