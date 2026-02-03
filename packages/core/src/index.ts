@@ -305,3 +305,15 @@ export {
 // =============================================================================
 export { cosineSimilarity } from "./utils/math.js"
 export { matchesGlob } from "./utils/glob.js"
+
+// =============================================================================
+// Worker (PRD-018 headless worker system)
+// =============================================================================
+export {
+  type ExecutionResult,
+  type IOCapture,
+  type WorkerContext,
+  type WorkerHooks,
+  type WorkerConfig,
+  runWorker
+} from "./worker/index.js"

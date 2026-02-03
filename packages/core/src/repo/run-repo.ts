@@ -143,6 +143,14 @@ export const RunRepositoryLive = Layer.effect(
               updates.push("transcript_path = ?")
               values.push(input.transcriptPath)
             }
+            if (input.stderrPath !== undefined) {
+              updates.push("stderr_path = ?")
+              values.push(input.stderrPath)
+            }
+            if (input.stdoutPath !== undefined) {
+              updates.push("stdout_path = ?")
+              values.push(input.stdoutPath)
+            }
 
             if (updates.length === 0) return
 
