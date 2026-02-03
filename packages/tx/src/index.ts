@@ -14,10 +14,32 @@
  *   return ready;
  * });
  * ```
+ *
+ * @example Custom Retriever
+ * ```typescript
+ * import { createTx, RetrieverService } from "@jamesaphoenix/tx";
+ * import { Effect, Layer } from "effect";
+ *
+ * // Custom Pinecone retriever
+ * const myRetriever = Layer.succeed(RetrieverService, {
+ *   search: (query, options) => Effect.gen(function* () {
+ *     const results = yield* pineconeQuery(query);
+ *     return results.map(toLearningWithScore);
+ *   }),
+ *   isAvailable: () => Effect.succeed(true)
+ * });
+ *
+ * const tx = createTx({
+ *   retriever: myRetriever  // optional override
+ * });
+ * ```
  */
 
 // Re-export everything from @tx/core
 export * from "@tx/core";
+
+// Export createTx and related types
+export { createTx, type CreateTxOptions, type TxClient } from "./create-tx.js";
 
 // Re-export types (explicit for better tree-shaking)
 export type {
@@ -41,6 +63,7 @@ export type {
   LearningQuery,
   ContextOptions,
   ContextResult,
+  RetrievalOptions,
   // Attempt types
   AttemptOutcome,
   AttemptId,
