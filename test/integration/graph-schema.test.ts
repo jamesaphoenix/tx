@@ -15,27 +15,19 @@
 
 import { describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { createHash } from "node:crypto"
+import { fixtureId } from "@tx/test-utils"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
 // =============================================================================
 
-const fixtureId = (name: string): string => {
-  const hash = createHash("sha256")
-    .update(`graph-schema-test:${name}`)
-    .digest("hex")
-    .substring(0, 8)
-  return `fixture-${hash}`
-}
-
 const FIXTURES = {
   // Learning IDs
-  LEARNING_1: fixtureId("learning-1"),
-  LEARNING_2: fixtureId("learning-2"),
-  LEARNING_3: fixtureId("learning-3"),
-  LEARNING_4: fixtureId("learning-4"),
-  LEARNING_5: fixtureId("learning-5"),
+  LEARNING_1: fixtureId("graph-schema-test:learning-1"),
+  LEARNING_2: fixtureId("graph-schema-test:learning-2"),
+  LEARNING_3: fixtureId("graph-schema-test:learning-3"),
+  LEARNING_4: fixtureId("graph-schema-test:learning-4"),
+  LEARNING_5: fixtureId("graph-schema-test:learning-5"),
   // File paths
   FILE_PATH_1: "src/services/task-service.ts",
   FILE_PATH_2: "src/db.ts",
