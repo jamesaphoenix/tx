@@ -2308,3 +2308,941 @@ describe("PromotionService Provenance Tracking Integration", () => {
     expect(derivedFromEdge!.weight).toBe(1.0)
   })
 })
+
+// =============================================================================
+// Review Queue Service Integration Tests (PRD-015)
+// =============================================================================
+
+describe("Review Queue Status Filtering Integration", () => {
+  it("filters candidates by pending status", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create candidates with different statuses
+        yield* repo.insert({
+          content: "Pending candidate 1",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Pending candidate 2",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        // Create and promote a candidate
+        const toPromote = yield* repo.insert({
+          content: "Will be promoted",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* svc.promote(toPromote.id)
+
+        // Filter by pending only
+        const pending = yield* svc.list({ status: "pending" })
+
+        return { pending }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.pending).toHaveLength(2)
+    expect(result.pending.every(c => c.status === "pending")).toBe(true)
+  })
+
+  it("filters candidates by promoted status", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create and promote candidates
+        const c1 = yield* repo.insert({
+          content: "Promoted candidate 1",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        const c2 = yield* repo.insert({
+          content: "Promoted candidate 2",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_2
+        })
+        yield* repo.insert({
+          content: "Stays pending",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        yield* svc.promote(c1.id)
+        yield* svc.promote(c2.id)
+
+        // Filter by promoted only
+        const promoted = yield* svc.list({ status: "promoted" })
+
+        return { promoted }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.promoted).toHaveLength(2)
+    expect(result.promoted.every(c => c.status === "promoted")).toBe(true)
+    expect(result.promoted.every(c => c.promotedLearningId !== null)).toBe(true)
+  })
+
+  it("filters candidates by rejected status", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create candidates
+        const c1 = yield* repo.insert({
+          content: "Will be rejected 1",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        const c2 = yield* repo.insert({
+          content: "Will be rejected 2",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_2
+        })
+        yield* repo.insert({
+          content: "Stays pending",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        yield* svc.reject(c1.id, "Too vague")
+        yield* svc.reject(c2.id, "Already known")
+
+        // Filter by rejected only
+        const rejected = yield* svc.list({ status: "rejected" })
+
+        return { rejected }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.rejected).toHaveLength(2)
+    expect(result.rejected.every(c => c.status === "rejected")).toBe(true)
+    expect(result.rejected.every(c => c.rejectionReason !== null)).toBe(true)
+  })
+
+  it("filters candidates by multiple statuses", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create candidates with different statuses
+        yield* repo.insert({
+          content: "Pending",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const toPromote = yield* repo.insert({
+          content: "Promoted",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* svc.promote(toPromote.id)
+
+        const toReject = yield* repo.insert({
+          content: "Rejected",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* svc.reject(toReject.id, "Reason")
+
+        // Filter by pending and rejected
+        const pendingOrRejected = yield* svc.list({ status: ["pending", "rejected"] })
+
+        return { pendingOrRejected }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.pendingOrRejected).toHaveLength(2)
+    expect(result.pendingOrRejected.some(c => c.status === "pending")).toBe(true)
+    expect(result.pendingOrRejected.some(c => c.status === "rejected")).toBe(true)
+  })
+})
+
+describe("Review Queue Confidence Filtering Integration", () => {
+  it("filters candidates by single confidence level", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        yield* repo.insert({
+          content: "High 1",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "High 2",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_2
+        })
+        yield* repo.insert({
+          content: "Medium",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Low",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const highOnly = yield* svc.list({ confidence: "high" })
+        const mediumOnly = yield* svc.list({ confidence: "medium" })
+        const lowOnly = yield* svc.list({ confidence: "low" })
+
+        return { highOnly, mediumOnly, lowOnly }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.highOnly).toHaveLength(2)
+    expect(result.highOnly.every(c => c.confidence === "high")).toBe(true)
+
+    expect(result.mediumOnly).toHaveLength(1)
+    expect(result.mediumOnly[0].confidence).toBe("medium")
+
+    expect(result.lowOnly).toHaveLength(1)
+    expect(result.lowOnly[0].confidence).toBe("low")
+  })
+
+  it("filters candidates by multiple confidence levels", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        yield* repo.insert({
+          content: "High",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Medium",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Low",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        // Filter by medium and low (needs review)
+        const needsReview = yield* svc.list({ confidence: ["medium", "low"] })
+
+        return { needsReview }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.needsReview).toHaveLength(2)
+    expect(result.needsReview.every(c => c.confidence !== "high")).toBe(true)
+  })
+
+  it("combines status and confidence filters", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create pending candidates at different confidence levels
+        yield* repo.insert({
+          content: "Pending Medium 1",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Pending Medium 2",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_2
+        })
+        yield* repo.insert({
+          content: "Pending Low",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        // Create a promoted medium candidate
+        const toPromote = yield* repo.insert({
+          content: "Promoted Medium",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* svc.promote(toPromote.id)
+
+        // Filter by pending + medium
+        const pendingMedium = yield* svc.list({
+          status: "pending",
+          confidence: "medium"
+        })
+
+        return { pendingMedium }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.pendingMedium).toHaveLength(2)
+    expect(result.pendingMedium.every(c => c.status === "pending")).toBe(true)
+    expect(result.pendingMedium.every(c => c.confidence === "medium")).toBe(true)
+  })
+})
+
+describe("Review Queue Manual Promote/Reject Edge Cases", () => {
+  it("promote fails for non-existent candidate", async () => {
+    const { makeAppLayer, PromotionService, CandidateNotFoundError } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* PromotionService
+
+        const outcome = yield* Effect.either(svc.promote(99999))
+        return { outcome }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.outcome._tag).toBe("Left")
+    if (result.outcome._tag === "Left") {
+      expect(result.outcome.left).toBeInstanceOf(CandidateNotFoundError)
+    }
+  })
+
+  it("reject fails for non-existent candidate", async () => {
+    const { makeAppLayer, PromotionService, CandidateNotFoundError } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* PromotionService
+
+        const outcome = yield* Effect.either(svc.reject(99999, "Not found"))
+        return { outcome }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.outcome._tag).toBe("Left")
+    if (result.outcome._tag === "Left") {
+      expect(result.outcome.left).toBeInstanceOf(CandidateNotFoundError)
+    }
+  })
+
+  it("reject fails with empty reason", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository, ValidationError } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        const candidate = yield* repo.insert({
+          content: "Test candidate",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const outcome = yield* Effect.either(svc.reject(candidate.id, ""))
+        return { outcome }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.outcome._tag).toBe("Left")
+    if (result.outcome._tag === "Left") {
+      expect(result.outcome.left).toBeInstanceOf(ValidationError)
+    }
+  })
+
+  it("reject fails with whitespace-only reason", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository, ValidationError } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        const candidate = yield* repo.insert({
+          content: "Test candidate",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const outcome = yield* Effect.either(svc.reject(candidate.id, "   "))
+        return { outcome }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.outcome._tag).toBe("Left")
+    if (result.outcome._tag === "Left") {
+      expect(result.outcome.left).toBeInstanceOf(ValidationError)
+    }
+  })
+
+  it("promote sets reviewedBy to manual", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        const candidate = yield* repo.insert({
+          content: "Manual promotion test",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const promotion = yield* svc.promote(candidate.id)
+        return { promotion }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.promotion.candidate.reviewedBy).toBe("manual")
+    expect(result.promotion.candidate.reviewedAt).toBeInstanceOf(Date)
+  })
+
+  it("reject trims reason whitespace", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        const candidate = yield* repo.insert({
+          content: "Trim test",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const rejected = yield* svc.reject(candidate.id, "  Too vague  ")
+        return { rejected }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.rejected.rejectionReason).toBe("Too vague")
+  })
+})
+
+describe("Review Queue Pagination Integration", () => {
+  it("limits results using limit parameter", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create 5 candidates
+        for (let i = 1; i <= 5; i++) {
+          yield* repo.insert({
+            content: `Candidate ${i}`,
+            confidence: "medium",
+            sourceFile: FIXTURES.FILE_SESSION_1
+          })
+        }
+
+        const limited = yield* svc.list({ limit: 3 })
+        return { limited }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.limited).toHaveLength(3)
+  })
+
+  it("supports offset for pagination", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create 5 candidates (most recent first in results due to DESC ordering)
+        for (let i = 1; i <= 5; i++) {
+          yield* repo.insert({
+            content: `Candidate ${i}`,
+            confidence: "medium",
+            sourceFile: FIXTURES.FILE_SESSION_1
+          })
+        }
+
+        const page1 = yield* svc.list({ limit: 2, offset: 0 })
+        const page2 = yield* svc.list({ limit: 2, offset: 2 })
+        const page3 = yield* svc.list({ limit: 2, offset: 4 })
+
+        return { page1, page2, page3 }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.page1).toHaveLength(2)
+    expect(result.page2).toHaveLength(2)
+    expect(result.page3).toHaveLength(1)
+
+    // Verify no overlap
+    const allIds = [
+      ...result.page1.map(c => c.id),
+      ...result.page2.map(c => c.id),
+      ...result.page3.map(c => c.id)
+    ]
+    const uniqueIds = new Set(allIds)
+    expect(uniqueIds.size).toBe(5)
+  })
+})
+
+describe("Review Queue Category Filtering Integration", () => {
+  it("filters candidates by single category", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        yield* repo.insert({
+          content: "Security tip 1",
+          confidence: "high",
+          category: "security",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Security tip 2",
+          confidence: "medium",
+          category: "security",
+          sourceFile: FIXTURES.FILE_SESSION_2
+        })
+        yield* repo.insert({
+          content: "Pattern tip",
+          confidence: "high",
+          category: "patterns",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const securityOnly = yield* svc.list({ category: "security" })
+        return { securityOnly }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.securityOnly).toHaveLength(2)
+    expect(result.securityOnly.every(c => c.category === "security")).toBe(true)
+  })
+
+  it("filters candidates by multiple categories", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        yield* repo.insert({
+          content: "Security",
+          confidence: "high",
+          category: "security",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Testing",
+          confidence: "medium",
+          category: "testing",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Patterns",
+          confidence: "high",
+          category: "patterns",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+
+        const securityOrTesting = yield* svc.list({ category: ["security", "testing"] })
+        return { securityOrTesting }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.securityOrTesting).toHaveLength(2)
+    expect(result.securityOrTesting.some(c => c.category === "security")).toBe(true)
+    expect(result.securityOrTesting.some(c => c.category === "testing")).toBe(true)
+  })
+})
+
+describe("Review Queue Source Filtering Integration", () => {
+  it("filters candidates by source file", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        yield* repo.insert({
+          content: "From session 1",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Also from session 1",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "From session 2",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_2
+        })
+
+        const session1Only = yield* svc.list({ sourceFile: FIXTURES.FILE_SESSION_1 })
+        return { session1Only }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.session1Only).toHaveLength(2)
+    expect(result.session1Only.every(c => c.sourceFile === FIXTURES.FILE_SESSION_1)).toBe(true)
+  })
+
+  it("filters candidates by source run ID", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        yield* repo.insert({
+          content: "From run 1",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1,
+          sourceRunId: FIXTURES.RUN_SESSION_1
+        })
+        yield* repo.insert({
+          content: "From run 2",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_2,
+          sourceRunId: FIXTURES.RUN_SESSION_2
+        })
+
+        const run1Only = yield* svc.list({ sourceRunId: FIXTURES.RUN_SESSION_1 })
+        return { run1Only }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.run1Only).toHaveLength(1)
+    expect(result.run1Only[0].sourceRunId).toBe(FIXTURES.RUN_SESSION_1)
+  })
+
+  it("filters candidates by source task ID", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        yield* repo.insert({
+          content: "From auth task",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1,
+          sourceTaskId: FIXTURES.TASK_AUTH
+        })
+        yield* repo.insert({
+          content: "From login task",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1,
+          sourceTaskId: FIXTURES.TASK_LOGIN
+        })
+
+        const authOnly = yield* svc.list({ sourceTaskId: FIXTURES.TASK_AUTH })
+        return { authOnly }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.authOnly).toHaveLength(1)
+    expect(result.authOnly[0].sourceTaskId).toBe(FIXTURES.TASK_AUTH)
+  })
+})
+
+describe("Review Queue Expiration/Stale Candidates", () => {
+  let testDb: TestDatabase
+  let candidateFactory: CandidateFactory
+
+  beforeEach(async () => {
+    testDb = await Effect.runPromise(createTestDatabase())
+    candidateFactory = new CandidateFactory(testDb)
+  })
+
+  it("identifies old pending candidates by extraction date", () => {
+    // Create candidates with different extraction dates
+    const oldDate = new Date("2025-01-01T00:00:00Z")
+    const recentDate = new Date("2025-01-30T00:00:00Z")
+
+    candidateFactory.pending({
+      content: "Old candidate 1",
+      extractedAt: oldDate
+    })
+    candidateFactory.pending({
+      content: "Old candidate 2",
+      extractedAt: oldDate
+    })
+    candidateFactory.pending({
+      content: "Recent candidate",
+      extractedAt: recentDate
+    })
+
+    // Query for old pending candidates (before a cutoff date)
+    const cutoffDate = new Date("2025-01-15T00:00:00Z")
+    const oldPending = testDb.query<{ id: number; content: string }>(
+      `SELECT id, content FROM learning_candidates
+       WHERE status = 'pending' AND extracted_at < ?
+       ORDER BY extracted_at ASC`,
+      [cutoffDate.toISOString()]
+    )
+
+    expect(oldPending).toHaveLength(2)
+    expect(oldPending.every(c => c.content.startsWith("Old"))).toBe(true)
+  })
+
+  it("counts stale candidates older than N days", () => {
+    const now = new Date()
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000)
+    const yesterday = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000)
+
+    // Create candidates at different ages
+    candidateFactory.pending({
+      content: "Very old (30+ days)",
+      extractedAt: thirtyDaysAgo
+    })
+    candidateFactory.pending({
+      content: "Old (10 days)",
+      extractedAt: tenDaysAgo
+    })
+    candidateFactory.pending({
+      content: "Recent (yesterday)",
+      extractedAt: yesterday
+    })
+
+    // Count stale (older than 7 days)
+    const staleCount = testDb.query<{ count: number }>(
+      `SELECT COUNT(*) as count FROM learning_candidates
+       WHERE status = 'pending'
+       AND extracted_at < datetime('now', '-7 days')`
+    )[0].count
+
+    expect(staleCount).toBe(2) // 30-day and 10-day old candidates
+  })
+
+  it("can batch reject expired pending candidates", () => {
+    const oldDate = new Date("2025-01-01T00:00:00Z")
+    const recentDate = new Date()
+
+    // Create old and recent candidates
+    candidateFactory.pending({
+      content: "Expired 1",
+      extractedAt: oldDate
+    })
+    candidateFactory.pending({
+      content: "Expired 2",
+      extractedAt: oldDate
+    })
+    candidateFactory.pending({
+      content: "Still valid",
+      extractedAt: recentDate
+    })
+
+    // Batch reject old pending candidates
+    const cutoffDate = new Date("2025-01-15T00:00:00Z")
+    testDb.run(
+      `UPDATE learning_candidates
+       SET status = 'rejected',
+           rejection_reason = 'Expired: not reviewed within retention period',
+           reviewed_at = datetime('now'),
+           reviewed_by = 'system'
+       WHERE status = 'pending' AND extracted_at < ?`,
+      [cutoffDate.toISOString()]
+    )
+
+    // Verify rejection
+    const rejected = testDb.query<{ id: number; rejection_reason: string }>(
+      `SELECT id, rejection_reason FROM learning_candidates WHERE status = 'rejected'`
+    )
+
+    const pending = testDb.query<{ id: number }>(
+      `SELECT id FROM learning_candidates WHERE status = 'pending'`
+    )
+
+    expect(rejected).toHaveLength(2)
+    expect(rejected[0].rejection_reason).toContain("Expired")
+    expect(pending).toHaveLength(1)
+  })
+
+  it("expired candidates have system as reviewer", () => {
+    const oldDate = new Date("2025-01-01T00:00:00Z")
+
+    candidateFactory.pending({
+      content: "Will expire",
+      extractedAt: oldDate
+    })
+
+    // Simulate expiration
+    testDb.run(
+      `UPDATE learning_candidates
+       SET status = 'rejected',
+           rejection_reason = 'Expired',
+           reviewed_at = datetime('now'),
+           reviewed_by = 'system'
+       WHERE status = 'pending'`
+    )
+
+    const expired = testDb.query<{ reviewed_by: string }>(
+      `SELECT reviewed_by FROM learning_candidates WHERE status = 'rejected'`
+    )[0]
+
+    expect(expired.reviewed_by).toBe("system")
+  })
+
+  it("can query candidates pending for more than a threshold", () => {
+    const now = new Date()
+    const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000)
+    const hourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000)
+
+    candidateFactory.pending({
+      content: "Pending for 2 days",
+      extractedAt: twoDaysAgo
+    })
+    candidateFactory.pending({
+      content: "Pending for 1 hour",
+      extractedAt: hourAgo
+    })
+
+    // Query for candidates pending more than 1 day
+    const longPending = testDb.query<{ id: number; content: string }>(
+      `SELECT id, content FROM learning_candidates
+       WHERE status = 'pending'
+       AND extracted_at < datetime('now', '-1 day')`
+    )
+
+    expect(longPending).toHaveLength(1)
+    expect(longPending[0].content).toBe("Pending for 2 days")
+  })
+
+  it("merged candidates preserve link to original learning", () => {
+    const learningFactory = new LearningFactory(testDb)
+    const existingLearning = learningFactory.create({
+      content: "Original learning"
+    })
+
+    const mergedCandidate = candidateFactory.merged(existingLearning.id, {
+      content: "Similar to original"
+    })
+
+    expect(mergedCandidate.status).toBe("merged")
+    expect(mergedCandidate.promotedLearningId).toBe(existingLearning.id)
+    expect(mergedCandidate.reviewedBy).toBe("auto")
+  })
+})
+
+describe("Review Queue getPending Convenience Method", () => {
+  it("returns only pending candidates", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create candidates with different statuses
+        yield* repo.insert({
+          content: "Pending 1",
+          confidence: "medium",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* repo.insert({
+          content: "Pending 2",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_2
+        })
+
+        const toPromote = yield* repo.insert({
+          content: "Will be promoted",
+          confidence: "high",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* svc.promote(toPromote.id)
+
+        const toReject = yield* repo.insert({
+          content: "Will be rejected",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* svc.reject(toReject.id, "Not useful")
+
+        const pending = yield* svc.getPending()
+        return { pending }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.pending).toHaveLength(2)
+    expect(result.pending.every(c => c.status === "pending")).toBe(true)
+  })
+
+  it("returns empty array when no pending candidates", async () => {
+    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* CandidateRepository
+        const svc = yield* PromotionService
+
+        // Create and immediately reject all candidates
+        const c1 = yield* repo.insert({
+          content: "Rejected 1",
+          confidence: "low",
+          sourceFile: FIXTURES.FILE_SESSION_1
+        })
+        yield* svc.reject(c1.id, "Not useful")
+
+        const pending = yield* svc.getPending()
+        return { pending }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.pending).toHaveLength(0)
+  })
+})
