@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@tx/core": "*",
+    "@tx/test-utils": "*",
     "@tx/types": "*",
     "effect": "^3.19.15"
   },
