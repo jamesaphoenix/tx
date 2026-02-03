@@ -213,6 +213,138 @@ describe("Attempt Failed Count", () => {
   })
 })
 
+describe("getFailedCountsForTasks Batch Query", () => {
+  let db: InstanceType<typeof Database>
+  let layer: ReturnType<typeof makeTestLayer>
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+    layer = makeTestLayer(db)
+  })
+
+  it("returns counts for multiple tasks with failed attempts", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* AttemptService
+        // Create failed attempts for JWT task
+        yield* svc.create(FIXTURES.TASK_JWT, "Approach 1", "failed", null)
+        yield* svc.create(FIXTURES.TASK_JWT, "Approach 2", "failed", null)
+        // Create failed attempt for LOGIN task
+        yield* svc.create(FIXTURES.TASK_LOGIN, "Login approach", "failed", "Auth error")
+        // Query both tasks
+        return yield* svc.getFailedCountsForTasks([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.get(FIXTURES.TASK_JWT)).toBe(2)
+    expect(result.get(FIXTURES.TASK_LOGIN)).toBe(1)
+  })
+
+  it("returns empty map for empty task ID array", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* AttemptService
+        return yield* svc.getFailedCountsForTasks([])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.size).toBe(0)
+  })
+
+  it("only counts failed outcomes, not succeeded", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* AttemptService
+        // Mixed outcomes
+        yield* svc.create(FIXTURES.TASK_JWT, "Failed approach", "failed", null)
+        yield* svc.create(FIXTURES.TASK_JWT, "Succeeded approach", "succeeded", null)
+        yield* svc.create(FIXTURES.TASK_JWT, "Another failed", "failed", null)
+        return yield* svc.getFailedCountsForTasks([FIXTURES.TASK_JWT])
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should only count the 2 failed, not the 1 succeeded
+    expect(result.get(FIXTURES.TASK_JWT)).toBe(2)
+  })
+
+  it("returns undefined for tasks with no failed attempts", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* AttemptService
+        // Only successful attempts for JWT
+        yield* svc.create(FIXTURES.TASK_JWT, "Succeeded approach", "succeeded", null)
+        return yield* svc.getFailedCountsForTasks([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+      }).pipe(Effect.provide(layer))
+    )
+
+    // JWT has no failed attempts (only succeeded), LOGIN has no attempts at all
+    expect(result.get(FIXTURES.TASK_JWT)).toBeUndefined()
+    expect(result.get(FIXTURES.TASK_LOGIN)).toBeUndefined()
+    expect(result.size).toBe(0)
+  })
+
+  it("excludes tasks not in the input array", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* AttemptService
+        // Failed attempts for JWT and LOGIN
+        yield* svc.create(FIXTURES.TASK_JWT, "JWT approach", "failed", null)
+        yield* svc.create(FIXTURES.TASK_LOGIN, "Login approach", "failed", null)
+        // Only query JWT, not LOGIN
+        return yield* svc.getFailedCountsForTasks([FIXTURES.TASK_JWT])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.get(FIXTURES.TASK_JWT)).toBe(1)
+    expect(result.get(FIXTURES.TASK_LOGIN)).toBeUndefined()
+    expect(result.size).toBe(1)
+  })
+
+  it("handles single task in array", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* AttemptService
+        yield* svc.create(FIXTURES.TASK_JWT, "Single approach", "failed", null)
+        return yield* svc.getFailedCountsForTasks([FIXTURES.TASK_JWT])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.get(FIXTURES.TASK_JWT)).toBe(1)
+    expect(result.size).toBe(1)
+  })
+
+  it("handles many tasks efficiently in batch", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* AttemptService
+        // Create attempts for multiple tasks
+        yield* svc.create(FIXTURES.TASK_JWT, "JWT fail 1", "failed", null)
+        yield* svc.create(FIXTURES.TASK_JWT, "JWT fail 2", "failed", null)
+        yield* svc.create(FIXTURES.TASK_JWT, "JWT fail 3", "failed", null)
+        yield* svc.create(FIXTURES.TASK_LOGIN, "Login fail", "failed", null)
+        yield* svc.create(FIXTURES.TASK_AUTH, "Auth fail 1", "failed", null)
+        yield* svc.create(FIXTURES.TASK_AUTH, "Auth fail 2", "failed", null)
+        yield* svc.create(FIXTURES.TASK_BLOCKED, "Blocked success", "succeeded", null)
+
+        return yield* svc.getFailedCountsForTasks([
+          FIXTURES.TASK_JWT,
+          FIXTURES.TASK_LOGIN,
+          FIXTURES.TASK_AUTH,
+          FIXTURES.TASK_BLOCKED,
+          FIXTURES.TASK_ROOT // No attempts at all
+        ])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.get(FIXTURES.TASK_JWT)).toBe(3)
+    expect(result.get(FIXTURES.TASK_LOGIN)).toBe(1)
+    expect(result.get(FIXTURES.TASK_AUTH)).toBe(2)
+    expect(result.get(FIXTURES.TASK_BLOCKED)).toBeUndefined() // Only has succeeded
+    expect(result.get(FIXTURES.TASK_ROOT)).toBeUndefined() // No attempts
+  })
+})
+
 describe("Attempt Integration with Tasks", () => {
   let db: InstanceType<typeof Database>
   let layer: ReturnType<typeof makeTestLayer>
