@@ -209,7 +209,11 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
 
           // Release the claim
           yield* claimService.release(task.id, workerId).pipe(
-            Effect.catchAll(() => Effect.void)
+            Effect.catchAll((error) =>
+              Effect.log(
+                `Failed to release claim for task ${task.id}: ${error.message}`
+              )
+            )
           )
         } finally {
           // Stop renewal fiber
@@ -225,12 +229,16 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
 
       // Release any active claims before deregistering
       yield* claimService.releaseByWorker(workerId).pipe(
-        Effect.catchAll(() => Effect.succeed(0))
+        Effect.catchAll((error) =>
+          Effect.log(
+            `Failed to release claims for worker ${workerId}: ${error.message}`
+          ).pipe(Effect.as(0))
+        )
       )
 
       yield* workerService.deregister(workerId).pipe(
-        Effect.catchAll((e) =>
-          Effect.log(`Failed to deregister worker ${workerId}: ${e._tag}`)
+        Effect.catchAll((error) =>
+          Effect.log(`Failed to deregister worker ${workerId}: ${error.message}`)
         )
       )
 
@@ -277,7 +285,7 @@ const runHeartbeatLoop = (
         })
         .pipe(
           Effect.catchAll((error) =>
-            Effect.log(`Heartbeat failed for ${workerId}: ${error._tag}`)
+            Effect.log(`Heartbeat failed for ${workerId}: ${error.message}`)
           )
         )
 
@@ -312,7 +320,7 @@ const runLeaseRenewalLoop = (
           Effect.tap(() => Effect.log(`Renewed lease on task ${taskId}`)),
           Effect.catchAll((error) =>
             Effect.log(
-              `Lease renewal failed for task ${taskId}: ${error._tag}`
+              `Lease renewal failed for task ${taskId}: ${error.message}`
             )
           )
         )
