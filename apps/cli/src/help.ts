@@ -1353,6 +1353,7 @@ Examples:
   tx trace list                    # Recent runs with span counts
   tx trace list --hours 48         # Runs from last 48 hours
   tx trace show run-abc123         # Metrics events for a run
+  tx trace show run-abc123 --full  # Combined events + tool calls timeline
   tx trace transcript run-abc123   # Raw JSONL transcript
   tx trace stderr run-abc123       # Stderr output for debugging
   tx trace errors                  # Recent errors across all runs
@@ -1376,6 +1377,40 @@ Examples:
   tx trace list --hours 48         # Last 48 hours
   tx trace list --limit 10         # Top 10 only
   tx trace list --json             # JSON output for scripting`,
+
+  "trace show": `tx trace show - Show metrics events for a run
+
+Usage: tx trace show <run-id> [options]
+
+Displays operational metrics events (spans, metrics) recorded during a run.
+With --full, also includes tool calls from the transcript file, interleaved
+by timestamp for comprehensive debugging.
+
+Arguments:
+  <run-id>   Required. Run ID (e.g., run-abc12345)
+
+Options:
+  --full     Combine events timeline with transcript tool calls
+  --json     Output as JSON
+  --help     Show this help
+
+Output (default):
+  Shows run metadata (agent, task, status, times) followed by metrics events
+  in chronological order with their duration and status.
+
+Output (--full):
+  Shows a combined timeline that interleaves:
+  - [span] Operational spans with timing data
+  - [metric] Custom metrics
+  - [tool] Tool calls from the transcript (e.g., Bash, Read, Edit)
+
+  This is useful for understanding exactly what the agent was doing at each
+  point in time, correlating service operations with agent tool usage.
+
+Examples:
+  tx trace show run-abc123           # Metrics events only
+  tx trace show run-abc123 --full    # Combined timeline with tool calls
+  tx trace show run-abc123 --json    # JSON output for scripting`,
 
   "trace errors": `tx trace errors - Show recent errors across all runs
 
