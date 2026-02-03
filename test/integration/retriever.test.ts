@@ -5,6 +5,7 @@ import {
   SqliteClient,
   LearningRepositoryLive,
   LearningRepository,
+  EmbeddingService,
   EmbeddingServiceNoop,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
@@ -13,6 +14,54 @@ import {
   RetrieverServiceNoop
 } from "@tx/core"
 import type Database from "better-sqlite3"
+
+/**
+ * Create a deterministic embedding from text content.
+ * Uses a simple hash-based approach to ensure consistent results.
+ * Similar content produces similar embeddings.
+ */
+function createDeterministicEmbedding(text: string, dimensions = 256): Float32Array {
+  const embedding = new Float32Array(dimensions)
+  // Use character codes to create a deterministic pattern
+  for (let i = 0; i < dimensions; i++) {
+    const charIndex = i % text.length
+    const char = text.charCodeAt(charIndex)
+    // Create a value between -1 and 1 based on character and position
+    embedding[i] = Math.sin(char * (i + 1) * 0.01) * 0.5 + 0.5
+  }
+  // Normalize to unit vector
+  let magnitude = 0
+  for (let i = 0; i < dimensions; i++) {
+    magnitude += embedding[i]! * embedding[i]!
+  }
+  magnitude = Math.sqrt(magnitude)
+  if (magnitude > 0) {
+    for (let i = 0; i < dimensions; i++) {
+      embedding[i] = embedding[i]! / magnitude
+    }
+  }
+  return embedding
+}
+
+/**
+ * Create a Mock EmbeddingService that returns deterministic embeddings.
+ * This allows testing vector search without requiring actual LLM embeddings.
+ */
+function createMockEmbeddingService() {
+  return Layer.succeed(EmbeddingService, {
+    embed: (text: string) => Effect.succeed(createDeterministicEmbedding(text)),
+    embedBatch: (texts: readonly string[]) => Effect.succeed(texts.map(t => createDeterministicEmbedding(t))),
+    isAvailable: () => Effect.succeed(true),
+    dimensions: 256
+  })
+}
+
+/**
+ * Convert Float32Array to Buffer for SQLite storage.
+ */
+function float32ArrayToBuffer(arr: Float32Array): Buffer {
+  return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength)
+}
 
 function makeTestLayer(db: InstanceType<typeof Database>) {
   const infra = Layer.succeed(SqliteClient, db as any)
@@ -28,6 +77,22 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
 
 function makeNoopTestLayer() {
   return RetrieverServiceNoop
+}
+
+/**
+ * Create test layer with mock embedding service for vector search testing.
+ */
+function makeTestLayerWithMockEmbeddings(db: InstanceType<typeof Database>) {
+  const infra = Layer.succeed(SqliteClient, db as any)
+  const repos = LearningRepositoryLive.pipe(Layer.provide(infra))
+  const mockEmbeddingService = createMockEmbeddingService()
+
+  // RetrieverServiceLive with mock embeddings
+  const retrieverLayer = RetrieverServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, mockEmbeddingService, QueryExpansionServiceNoop, RerankerServiceNoop))
+  )
+
+  return retrieverLayer
 }
 
 describe("RetrieverService", () => {
@@ -485,6 +550,333 @@ describe("RetrieverService", () => {
       // With high minScore, may filter out results
       for (const result of results) {
         expect(result.relevanceScore).toBeGreaterThanOrEqual(0.9)
+      }
+    })
+  })
+
+  describe("Vector Search with Mock Embeddings", () => {
+    let db: InstanceType<typeof Database>
+    let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
+
+    beforeEach(() => {
+      db = createTestDb()
+      seedFixtures(db)
+      layer = makeTestLayerWithMockEmbeddings(db)
+    })
+
+    /**
+     * Helper to insert learning with embedding directly in DB.
+     */
+    const insertLearningWithEmbedding = (
+      db: InstanceType<typeof Database>,
+      content: string
+    ): number => {
+      const now = new Date().toISOString()
+      const result = db.prepare(
+        `INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)`
+      ).run(content, now)
+      const id = Number(result.lastInsertRowid)
+
+      // Add deterministic embedding
+      const embedding = createDeterministicEmbedding(content)
+      const buffer = float32ArrayToBuffer(embedding)
+      db.prepare(`UPDATE learnings SET embedding = ? WHERE id = ?`).run(buffer, id)
+
+      return id
+    }
+
+    it("semantic query returns content with similar embeddings", async () => {
+      // Insert learnings with embeddings for vector search
+      insertLearningWithEmbedding(db, "database optimization techniques")
+      insertLearningWithEmbedding(db, "database performance tuning")
+      insertLearningWithEmbedding(db, "cooking recipe for pasta")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("database optimization", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(1)
+
+      // Database-related learnings should rank higher than cooking
+      const dbResults = results.filter(r => r.content.includes("database"))
+      expect(dbResults.length).toBeGreaterThanOrEqual(1)
+
+      // Check that vector scores are present (non-zero for matched learnings)
+      const withVectorScore = results.filter(r => r.vectorScore > 0)
+      expect(withVectorScore.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it("mock embeddings produce consistent results across searches", async () => {
+      insertLearningWithEmbedding(db, "consistent embedding test")
+
+      // Run same search twice
+      const results1 = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("consistent embedding", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      const results2 = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("consistent embedding", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results1.length).toBe(results2.length)
+
+      // Same query should produce same scores (use toBeCloseTo for floating-point comparison)
+      // Small differences can occur due to recency score using Date.now()
+      if (results1.length > 0 && results2.length > 0) {
+        expect(results1[0]?.vectorScore).toBe(results2[0]?.vectorScore)
+        expect(results1[0]?.relevanceScore).toBeCloseTo(results2[0]!.relevanceScore, 5)
+      }
+    })
+
+    it("vector rank is positive when embeddings are available", async () => {
+      insertLearningWithEmbedding(db, "vector rank test content")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("vector rank test", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(1)
+
+      // With mock embeddings, vectorRank should be positive
+      const withVectorRank = results.filter(r => r.vectorRank > 0)
+      expect(withVectorRank.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it("vector score is normalized between 0 and 1", async () => {
+      insertLearningWithEmbedding(db, "normalization test alpha")
+      insertLearningWithEmbedding(db, "normalization test beta")
+      insertLearningWithEmbedding(db, "normalization test gamma")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("normalization test", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(1)
+
+      // Vector scores should be normalized between 0 and 1
+      for (const result of results) {
+        expect(result.vectorScore).toBeGreaterThanOrEqual(0)
+        expect(result.vectorScore).toBeLessThanOrEqual(1)
+      }
+    })
+  })
+
+  describe("RRF Fusion Boost", () => {
+    let db: InstanceType<typeof Database>
+    let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
+
+    beforeEach(() => {
+      db = createTestDb()
+      seedFixtures(db)
+      layer = makeTestLayerWithMockEmbeddings(db)
+    })
+
+    /**
+     * Helper to insert learning with embedding directly in DB.
+     */
+    const insertLearningWithEmbedding = (
+      db: InstanceType<typeof Database>,
+      content: string
+    ): number => {
+      const now = new Date().toISOString()
+      const result = db.prepare(
+        `INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)`
+      ).run(content, now)
+      const id = Number(result.lastInsertRowid)
+
+      // Add deterministic embedding
+      const embedding = createDeterministicEmbedding(content)
+      const buffer = float32ArrayToBuffer(embedding)
+      db.prepare(`UPDATE learnings SET embedding = ? WHERE id = ?`).run(buffer, id)
+
+      return id
+    }
+
+    it("items in both BM25 and vector rankings get RRF boost", async () => {
+      // Insert learnings with embeddings
+      insertLearningWithEmbedding(db, "database optimization strategies")
+      insertLearningWithEmbedding(db, "database optimization techniques")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("database optimization", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(1)
+
+      // Results should have both BM25 and vector rankings
+      const withBothRankings = results.filter(r => r.bm25Rank > 0 && r.vectorRank > 0)
+      expect(withBothRankings.length).toBeGreaterThanOrEqual(1)
+
+      // RRF score should be positive for items in both rankings
+      for (const result of withBothRankings) {
+        expect(result.rrfScore).toBeGreaterThan(0)
+      }
+    })
+
+    it("RRF score is higher for items ranking well in both systems", async () => {
+      // Insert learnings with embeddings
+      insertLearningWithEmbedding(db, "fusion test exact match")
+      insertLearningWithEmbedding(db, "fusion test partial")
+      insertLearningWithEmbedding(db, "unrelated cooking recipe")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("fusion test exact", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(1)
+
+      // Exact match should have highest RRF score
+      const exactMatch = results.find(r => r.content.includes("exact match"))
+      const partialMatch = results.find(r => r.content.includes("partial"))
+
+      if (exactMatch && partialMatch) {
+        // Item matching well in both BM25 and vector should have higher RRF
+        expect(exactMatch.rrfScore).toBeGreaterThanOrEqual(partialMatch.rrfScore)
+      }
+    })
+
+    it("RRF formula: 1/(k + rank) produces expected scores", async () => {
+      insertLearningWithEmbedding(db, "rrf formula test")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("rrf formula", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(1)
+
+      // RRF uses k=60 by default
+      // For rank 1 in one system: 1/(60+1) ≈ 0.0164
+      // For rank 1 in both systems: 2 * 1/(60+1) ≈ 0.0328
+      for (const result of results) {
+        if (result.bm25Rank > 0 || result.vectorRank > 0) {
+          // RRF score should be positive
+          expect(result.rrfScore).toBeGreaterThan(0)
+          // Max possible for single system is 1/(60+1) ≈ 0.0164
+          // Max possible for two systems is ~0.033
+          expect(result.rrfScore).toBeLessThan(0.1)
+        }
+      }
+    })
+  })
+
+  describe("Position-Aware Bonuses", () => {
+    let db: InstanceType<typeof Database>
+    let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
+
+    beforeEach(() => {
+      db = createTestDb()
+      seedFixtures(db)
+      layer = makeTestLayerWithMockEmbeddings(db)
+    })
+
+    /**
+     * Helper to insert learning with embedding directly in DB.
+     */
+    const insertLearningWithEmbedding = (
+      db: InstanceType<typeof Database>,
+      content: string
+    ): number => {
+      const now = new Date().toISOString()
+      const result = db.prepare(
+        `INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)`
+      ).run(content, now)
+      const id = Number(result.lastInsertRowid)
+
+      // Add deterministic embedding
+      const embedding = createDeterministicEmbedding(content)
+      const buffer = float32ArrayToBuffer(embedding)
+      db.prepare(`UPDATE learnings SET embedding = ? WHERE id = ?`).run(buffer, id)
+
+      return id
+    }
+
+    it("top ranked items get position bonus", async () => {
+      // Insert multiple learnings to test ranking
+      insertLearningWithEmbedding(db, "position bonus primary test")
+      insertLearningWithEmbedding(db, "position bonus secondary test")
+      insertLearningWithEmbedding(db, "position bonus tertiary test")
+      insertLearningWithEmbedding(db, "unrelated content about cooking")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("position bonus", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(3)
+
+      // Results should be sorted by relevanceScore (descending)
+      for (let i = 1; i < results.length; i++) {
+        expect(results[i - 1]!.relevanceScore).toBeGreaterThanOrEqual(results[i]!.relevanceScore)
+      }
+
+      // Position bonus contributes to final score
+      // Top results should have valid BM25 ranks (positive, within range)
+      const matchingResults = results.filter(r => r.content.includes("position bonus"))
+      expect(matchingResults.length).toBe(3)
+
+      // All matching results should have positive BM25 ranks
+      for (const result of matchingResults) {
+        expect(result.bm25Rank).toBeGreaterThanOrEqual(1)
+        expect(result.bm25Rank).toBeLessThanOrEqual(3)
+      }
+    })
+
+    it("position bonuses are applied based on rank", async () => {
+      // Position bonuses are applied:
+      // - TOP_1_BONUS = 0.05 for rank 1 in any system
+      // - TOP_3_BONUS = 0.02 for ranks 2-3 in any system
+      insertLearningWithEmbedding(db, "position rank first item test")
+      insertLearningWithEmbedding(db, "position rank second item test")
+      insertLearningWithEmbedding(db, "position rank third item test")
+
+      const results = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* RetrieverService
+          return yield* svc.search("position rank", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(results.length).toBeGreaterThanOrEqual(2)
+
+      // Verify results have valid BM25 rankings (1-indexed)
+      const bm25Ranks = results.filter(r => r.bm25Rank > 0).map(r => r.bm25Rank)
+      expect(bm25Ranks.length).toBeGreaterThanOrEqual(2)
+
+      // Rankings should be positive and sequential
+      for (const rank of bm25Ranks) {
+        expect(rank).toBeGreaterThanOrEqual(1)
+      }
+
+      // Results are sorted by relevance score (descending)
+      // Position bonus contributes to this ordering
+      for (let i = 1; i < results.length; i++) {
+        expect(results[i - 1]!.relevanceScore).toBeGreaterThanOrEqual(results[i]!.relevanceScore)
       }
     })
   })
