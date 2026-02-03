@@ -235,6 +235,8 @@ export {
   DeduplicationRepositoryLive,
   CandidateRepository,
   CandidateRepositoryLive,
+  TrackedProjectRepository,
+  TrackedProjectRepositoryLive,
   WorkerRepository,
   WorkerRepositoryLive,
   ClaimRepository,
