@@ -317,3 +317,26 @@ export {
   type WorkerConfig,
   runWorker
 } from "./worker/index.js"
+
+// =============================================================================
+// Transcript Adapters (PRD-019 Execution Tracing)
+// =============================================================================
+export {
+  ClaudeCodeAdapter,
+  GenericJSONLAdapter,
+  getAdapter,
+  registerAdapter,
+  type TranscriptAdapter,
+  type ToolCall,
+  type Message
+} from "./services/transcript-adapter.js"
+
+// =============================================================================
+// Tracing Service (PRD-019 Execution Tracing)
+// =============================================================================
+export {
+  TracingService,
+  TracingServiceLive,
+  TracingServiceNoop,
+  type SpanOptions
+} from "./services/tracing-service.js"

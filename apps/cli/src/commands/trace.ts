@@ -5,8 +5,16 @@
  */
 
 import { Effect } from "effect"
-import { RunRepository, SqliteClient, type DatabaseError } from "@jamesaphoenix/tx-core"
-import type { Run } from "@jamesaphoenix/tx-types"
+import { existsSync, readFileSync } from "node:fs"
+import { resolve } from "node:path"
+import {
+  RunRepository,
+  SqliteClient,
+  type DatabaseError,
+  getAdapter,
+  type ToolCall
+} from "@jamesaphoenix/tx-core"
+import type { Run, RunId } from "@jamesaphoenix/tx-types"
 import { toJson, truncate } from "../output.js"
 import { commandHelp } from "../help.js"
 
@@ -148,6 +156,324 @@ export const traceList = (_pos: string[], flags: Flags) =>
   }) as Effect.Effect<void, DatabaseError, RunRepository | SqliteClient>
 
 /**
+ * Event row from database.
+ */
+interface EventRow {
+  id: number
+  timestamp: string
+  event_type: string
+  run_id: string | null
+  task_id: string | null
+  agent: string | null
+  tool_name: string | null
+  content: string | null
+  metadata: string
+  duration_ms: number | null
+}
+
+/**
+ * Parsed event for display.
+ */
+interface ParsedEvent {
+  timestamp: Date
+  type: "span" | "metric" | "other"
+  name: string
+  durationMs: number | null
+  status: "ok" | "error" | "unknown"
+  error?: string
+  attributes?: Record<string, unknown>
+}
+
+/**
+ * Timeline entry for combined view.
+ */
+interface TimelineEntry {
+  timestamp: Date
+  entryType: "span" | "metric" | "tool"
+  name: string
+  detail?: string
+  durationMs?: number
+  status?: "ok" | "error" | "unknown"
+}
+
+/**
+ * Get events for a run from the database.
+ */
+const getEventsForRun = (
+  db: { prepare: (sql: string) => { all: (...params: unknown[]) => EventRow[] } },
+  runId: string
+): EventRow[] => {
+  return db.prepare(`
+    SELECT id, timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms
+    FROM events
+    WHERE run_id = ?
+    ORDER BY timestamp ASC, id ASC
+  `).all(runId)
+}
+
+/**
+ * Parse an event row into a structured event.
+ */
+const parseEvent = (row: EventRow): ParsedEvent => {
+  let metadata: Record<string, unknown> = {}
+  try {
+    metadata = JSON.parse(row.metadata)
+  } catch {
+    // Ignore parse errors
+  }
+
+  const status = (metadata.status as string) === "ok" ? "ok"
+    : (metadata.status as string) === "error" ? "error"
+    : "unknown"
+
+  return {
+    timestamp: new Date(row.timestamp),
+    type: row.event_type === "span" ? "span"
+      : row.event_type === "metric" ? "metric"
+      : "other",
+    name: row.content ?? row.event_type,
+    durationMs: row.duration_ms,
+    status,
+    error: metadata.error as string | undefined,
+    attributes: metadata.attributes as Record<string, unknown> | undefined
+  }
+}
+
+/**
+ * Format time as HH:MM:SS.
+ */
+const formatTime = (date: Date): string => {
+  return date.toTimeString().slice(0, 8)
+}
+
+/**
+ * Format time as HH:MM:SS.mmm for detailed view.
+ */
+const formatTimeWithMs = (date: Date): string => {
+  const time = date.toTimeString().slice(0, 8)
+  const ms = String(date.getMilliseconds()).padStart(3, "0")
+  return `${time}.${ms}`
+}
+
+/**
+ * Read transcript file and parse tool calls.
+ */
+const readTranscriptToolCalls = (
+  transcriptPath: string,
+  agentType: string,
+  txDir: string
+): ToolCall[] => {
+  // Resolve transcript path relative to .tx directory
+  const fullPath = transcriptPath.startsWith("/")
+    ? transcriptPath
+    : resolve(txDir, transcriptPath)
+
+  if (!existsSync(fullPath)) {
+    return []
+  }
+
+  try {
+    const content = readFileSync(fullPath, "utf-8")
+    const lines = content.split("\n").filter(Boolean)
+    const adapter = getAdapter(agentType)
+    return [...adapter.parseToolCalls(lines)]
+  } catch {
+    return []
+  }
+}
+
+/**
+ * tx trace show <run-id> - Show metrics events for a run.
+ */
+export const traceShow = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const runId = pos[0]
+    if (!runId) {
+      console.error("Error: run-id is required")
+      console.error("Usage: tx trace show <run-id> [--full] [--json]")
+      process.exit(1)
+    }
+
+    const runRepo = yield* RunRepository
+    const db = yield* SqliteClient
+
+    // Get run details
+    const run = yield* runRepo.findById(runId as RunId)
+    if (!run) {
+      console.error(`Error: Run not found: ${runId}`)
+      process.exit(1)
+    }
+
+    // Get events for this run
+    const eventRows = getEventsForRun(db, runId)
+    const events = eventRows.map(parseEvent)
+
+    // Filter to spans and metrics only (for basic view)
+    const metricsEvents = events.filter(e => e.type === "span" || e.type === "metric")
+
+    // Check for --full flag
+    const showFull = flag(flags, "full")
+
+    if (flag(flags, "json")) {
+      // JSON output
+      const output: Record<string, unknown> = {
+        run: {
+          id: run.id,
+          agent: run.agent,
+          taskId: run.taskId,
+          status: run.status,
+          startedAt: run.startedAt.toISOString(),
+          endedAt: run.endedAt?.toISOString() ?? null,
+          transcriptPath: run.transcriptPath,
+          stderrPath: run.stderrPath,
+          stdoutPath: run.stdoutPath,
+          exitCode: run.exitCode,
+          errorMessage: run.errorMessage
+        },
+        events: metricsEvents.map(e => ({
+          timestamp: e.timestamp.toISOString(),
+          type: e.type,
+          name: e.name,
+          durationMs: e.durationMs,
+          status: e.status,
+          error: e.error,
+          attributes: e.attributes
+        }))
+      }
+
+      if (showFull && run.transcriptPath) {
+        // Get .tx directory (parent of tasks.db)
+        const txDir = process.cwd() + "/.tx"
+        const toolCalls = readTranscriptToolCalls(run.transcriptPath, run.agent, txDir)
+        output.toolCalls = toolCalls
+      }
+
+      console.log(toJson(output))
+      return
+    }
+
+    // Human-readable output
+    console.log(`Run: ${run.id}`)
+    console.log(`Agent: ${run.agent}`)
+    console.log(`Task: ${run.taskId ?? "-"}`)
+    console.log(`Status: ${run.status}`)
+    if (run.startedAt) {
+      console.log(`Started: ${run.startedAt.toISOString()}`)
+    }
+    if (run.endedAt) {
+      console.log(`Ended: ${run.endedAt.toISOString()}`)
+    }
+    if (run.exitCode !== null) {
+      console.log(`Exit Code: ${run.exitCode}`)
+    }
+    if (run.errorMessage) {
+      console.log(`Error: ${run.errorMessage}`)
+    }
+    if (run.transcriptPath) {
+      console.log(`Transcript: ${run.transcriptPath}`)
+    }
+    if (run.stderrPath) {
+      console.log(`Stderr: ${run.stderrPath}`)
+    }
+    if (run.stdoutPath) {
+      console.log(`Stdout: ${run.stdoutPath}`)
+    }
+    console.log("")
+
+    if (showFull && run.transcriptPath) {
+      // Combined timeline view
+      console.log("Combined Timeline:")
+      console.log("─".repeat(75))
+
+      // Get tool calls from transcript
+      const txDir = process.cwd() + "/.tx"
+      const toolCalls = readTranscriptToolCalls(run.transcriptPath, run.agent, txDir)
+
+      // Build combined timeline
+      const timeline: TimelineEntry[] = []
+
+      // Add events
+      for (const event of metricsEvents) {
+        timeline.push({
+          timestamp: event.timestamp,
+          entryType: event.type === "metric" ? "metric" : "span",
+          name: event.name,
+          durationMs: event.durationMs ?? undefined,
+          status: event.status
+        })
+      }
+
+      // Add tool calls
+      for (const toolCall of toolCalls) {
+        const inputSummary = toolCall.input.command
+          ?? toolCall.input.file_path
+          ?? toolCall.input.pattern
+          ?? ""
+        timeline.push({
+          timestamp: new Date(toolCall.timestamp),
+          entryType: "tool",
+          name: toolCall.name,
+          detail: typeof inputSummary === "string" ? truncate(inputSummary, 40) : undefined
+        })
+      }
+
+      // Sort by timestamp
+      timeline.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+
+      if (timeline.length === 0) {
+        console.log("  No events or tool calls recorded")
+      } else {
+        for (const entry of timeline) {
+          const time = formatTimeWithMs(entry.timestamp)
+          const typeTag = `[${entry.entryType}]`.padEnd(8)
+
+          if (entry.entryType === "tool") {
+            const detail = entry.detail ? `: ${entry.detail}` : ""
+            console.log(`${time}  ${typeTag}  ${entry.name}${detail}`)
+          } else {
+            const duration = entry.durationMs !== undefined ? `${entry.durationMs}ms` : "-"
+            const status = entry.status ?? "unknown"
+            const line = `${time}  ${typeTag}  ${entry.name.padEnd(30)}  ${duration.padStart(8)}  ${status}`
+            console.log(line)
+
+            // Show error on next line if present
+            const event = metricsEvents.find(
+              e => e.timestamp.getTime() === entry.timestamp.getTime() && e.name === entry.name
+            )
+            if (event?.error) {
+              console.log(`          └─ ${truncate(event.error, 60)}`)
+            }
+          }
+        }
+      }
+    } else {
+      // Basic metrics events view
+      console.log("Metrics Events:")
+      console.log("─".repeat(75))
+
+      if (metricsEvents.length === 0) {
+        console.log("  No events recorded")
+      } else {
+        for (const event of metricsEvents) {
+          const time = formatTime(event.timestamp)
+          const typeTag = `[${event.type}]`
+          const duration = event.durationMs !== null ? `${event.durationMs}ms` : "-"
+          const line = `${time}  ${typeTag}  ${event.name.padEnd(30)}  ${duration.padStart(8)}  ${event.status}`
+          console.log(line)
+
+          // Show error on next line if present
+          if (event.error) {
+            console.log(`          └─ ${truncate(event.error, 60)}`)
+          }
+        }
+      }
+    }
+
+    console.log("")
+    console.log(`${metricsEvents.length} event(s)`)
+  }) as Effect.Effect<void, DatabaseError, RunRepository | SqliteClient>
+
+/**
  * Main trace command dispatcher.
  */
 export const trace = (pos: string[], flags: Flags) =>
@@ -185,6 +511,8 @@ Options:
 
     if (subcommand === "list") {
       yield* traceList(pos.slice(1), flags)
+    } else if (subcommand === "show") {
+      yield* traceShow(pos.slice(1), flags)
     } else {
       console.error(`Unknown trace subcommand: ${subcommand}`)
       console.error(`Run 'tx trace --help' for usage information`)
