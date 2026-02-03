@@ -84,7 +84,11 @@ export {
   HierarchyService,
   ScoreService,
   DeduplicationService,
-  DeduplicationServiceLive
+  DeduplicationServiceLive,
+  DiversifierService,
+  DiversifierServiceNoop,
+  DiversifierServiceLive,
+  DiversifierServiceAuto
 } from "./layer.js"
 
 // =============================================================================
