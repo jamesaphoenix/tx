@@ -119,7 +119,7 @@ echo ""
 # Run all checks (continue on failure to report all issues)
 # Build packages in explicit dependency order
 # Use workspace syntax from root and add debug output
-run_and_track "Build (packages)" "npm run build -w @tx/types && ls -la packages/types/dist/ && npm run build -w @tx/core && npx turbo build --concurrency=1"
+run_and_track "Build (packages)" "npm run build -w @jamesaphoenix/tx-types && ls -la packages/types/dist/ && npm run build -w @jamesaphoenix/tx-core && npx turbo build --concurrency=1"
 run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
 run_and_track "ESLint (packages)" "npx turbo lint"
 run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
