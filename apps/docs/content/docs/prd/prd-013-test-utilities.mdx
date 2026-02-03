@@ -66,9 +66,9 @@ packages/test-utils/
 
 | ID | Requirement | Target |
 |----|-------------|--------|
-| TU-NFR-001 | Test database creation | <50ms |
-| TU-NFR-002 | Fixture ID computation | <1ms |
-| TU-NFR-003 | LLM cache lookup | <5ms |
+| TU-NFR-001 | Test database creation | `<50ms` |
+| TU-NFR-002 | Fixture ID computation | `<1ms` |
+| TU-NFR-003 | LLM cache lookup | `<5ms` |
 | TU-NFR-004 | Zero external dependencies in mocks | 100% |
 
 ### Test Co-location Requirements
@@ -261,7 +261,7 @@ describe('MyFeature', () => {
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Test setup time | <100ms | Benchmark |
+| Test setup time | `<100ms` | Benchmark |
 | LLM cache hit rate | >90% in CI | Monitoring |
 | Code duplication | 0 test helpers in app packages | Lint rule |
 | Coverage of factories | 100% of core entities | Audit |

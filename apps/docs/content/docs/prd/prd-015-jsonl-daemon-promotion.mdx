@@ -58,9 +58,9 @@ Background service that watches Claude Code transcripts (`~/.claude/projects/`),
 
 | ID | Requirement | Target |
 |----|-------------|--------|
-| DP-NFR-001 | Daemon startup time | <2s |
-| DP-NFR-002 | File processing latency | <10s per file |
-| DP-NFR-003 | Memory footprint | <100MB |
+| DP-NFR-001 | Daemon startup time | `<2s` |
+| DP-NFR-002 | File processing latency | `<10s` per file |
+| DP-NFR-003 | Memory footprint | `<100MB` |
 | DP-NFR-004 | Uptime | 99.9% |
 
 ## Data Model
@@ -262,11 +262,11 @@ WantedBy=multi-user.target
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Candidate extraction latency | <10s per file | p95 |
+| Candidate extraction latency | `<10s` per file | p95 |
 | High-confidence accuracy | >90% useful | Manual audit |
 | Duplicate detection rate | 100% | No re-processing |
 | Daemon uptime | 99.9% | Monitoring |
-| Memory usage | <100MB | Prometheus |
+| Memory usage | `<100MB` | Prometheus |
 
 ## Dependencies
 

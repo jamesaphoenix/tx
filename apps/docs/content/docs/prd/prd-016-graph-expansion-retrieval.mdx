@@ -49,9 +49,9 @@ Query → RRF Hybrid Search → Top-K Seeds
 
 | ID | Requirement | Target |
 |----|-------------|--------|
-| GE-NFR-001 | Expansion latency overhead | <50ms for depth=2 |
+| GE-NFR-001 | Expansion latency overhead | `<50ms` for depth=2 |
 | GE-NFR-002 | Graph traversal efficiency | 1000 edges/10ms |
-| GE-NFR-003 | Memory for expansion | <10MB per query |
+| GE-NFR-003 | Memory for expansion | `<10MB` per query |
 
 ## Expansion Algorithm
 
@@ -219,7 +219,7 @@ Where:
 | Metric | Target | Measurement |
 |--------|--------|-------------|
 | Recall improvement | +20% vs pure RRF | A/B test |
-| Expansion latency | <50ms for depth=2 | p95 |
+| Expansion latency | `<50ms` for depth=2 | p95 |
 | Graph traversal | 1000 edges/10ms | Benchmark |
 | Feedback coverage | 100% of runs tracked | Monitoring |
 | Diversification | Max 2 same-category in top 5 | Audit |

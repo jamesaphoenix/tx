@@ -61,7 +61,7 @@ Detect stale anchors (code changed, symbols moved), soft-delete edges, and provi
 | ID | Requirement | Target |
 |----|-------------|--------|
 | IM-NFR-001 | Stale anchor detection rate | >95% within 24h |
-| IM-NFR-002 | False positive rate | <5% |
+| IM-NFR-002 | False positive rate | `<5%` |
 | IM-NFR-003 | Self-healing success rate | >80% for minor edits |
 | IM-NFR-004 | Verification throughput | 10K anchors/min |
 
@@ -204,7 +204,7 @@ interface InvalidationService {
 | Metric | Target | Measurement |
 |--------|--------|-------------|
 | Stale detection rate | >95% within 24h | Audit log analysis |
-| False positive rate | <5% | Manual review sample |
+| False positive rate | `<5%` | Manual review sample |
 | Self-heal success | >80% for minor edits | Audit log analysis |
 | Verification throughput | 10K anchors/min | Benchmark |
 | Swarm efficiency | 4x speedup vs sequential | Benchmark |

@@ -60,10 +60,10 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Orphan detection latency | <60s | Time from worker death to task recovery |
-| Worker registration latency | <100ms | P95 via CLI |
-| Heartbeat overhead | <1% CPU | Per worker |
-| Graceful shutdown time | <30s | All workers stopped cleanly |
+| Orphan detection latency | `<60s` | Time from worker death to task recovery |
+| Worker registration latency | `<100ms` | P95 via CLI |
+| Heartbeat overhead | `<1%` CPU | Per worker |
+| Graceful shutdown time | `<30s` | All workers stopped cleanly |
 | Task throughput | 3x current | With 3 parallel workers |
 
 ---
@@ -121,10 +121,10 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 
 | ID | Requirement | Target |
 |----|-------------|--------|
-| WO-NFR-001 | Heartbeat latency | <100ms |
-| WO-NFR-002 | Orchestrator memory | <50MB |
-| WO-NFR-003 | Worker memory | <100MB + Claude |
-| WO-NFR-004 | Database lock contention | <1% of requests |
+| WO-NFR-001 | Heartbeat latency | `<100ms` |
+| WO-NFR-002 | Orchestrator memory | `<50MB` |
+| WO-NFR-003 | Worker memory | `<100MB` + Claude |
+| WO-NFR-004 | Database lock contention | `<1%` of requests |
 
 ---
 

@@ -5,13 +5,13 @@
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
 
- ✓ src/llm-cache/cache.test.ts (26 tests) 21ms
- ✓ src/helpers/effect.test.ts (28 tests) 69ms
- ✓ test/test-database.test.ts (9 tests) 21ms
- ✓ src/factories/factories.test.ts (35 tests) 58ms
+ ✓ src/llm-cache/cache.test.ts (26 tests) 22ms
+ ✓ src/helpers/effect.test.ts (28 tests) 68ms
+ ✓ test/test-database.test.ts (9 tests) 22ms
+ ✓ src/factories/factories.test.ts (35 tests) 57ms
 
  Test Files  4 passed (4)
       Tests  98 passed (98)
-   Start at  01:31:18
-   Duration  552ms (transform 192ms, setup 0ms, collect 866ms, tests 168ms, environment 0ms, prepare 122ms)
+   Start at  02:23:49
+   Duration  572ms (transform 222ms, setup 0ms, collect 910ms, tests 170ms, environment 0ms, prepare 132ms)
 
