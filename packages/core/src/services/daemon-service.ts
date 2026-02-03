@@ -500,6 +500,53 @@ export const defaultDaemonConfig: DaemonConfig = {
 }
 
 /**
+ * Spawn a daemon process and wait for it to either start successfully or fail.
+ * This properly handles the async ENOENT error that spawn emits.
+ */
+const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess; pid: number }> =>
+  new Promise((resolve, reject) => {
+    const spawnedProcess = spawn(config.command, [...config.args], {
+      detached: true,
+      stdio: "ignore",
+      cwd: config.cwd ?? process.cwd(),
+      env: config.env ?? process.env
+    })
+
+    // Handle spawn errors (like ENOENT when command doesn't exist)
+    spawnedProcess.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        reject(new DaemonError({
+          code: "COMMAND_NOT_FOUND",
+          message: `Command '${config.command}' not found. Make sure it is installed and in PATH.`,
+          pid: null
+        }))
+      } else {
+        reject(new DaemonError({
+          code: "SPAWN_FAILED",
+          message: `Failed to spawn daemon process: ${error.message}`,
+          pid: null
+        }))
+      }
+    })
+
+    // Check if we got a PID (spawn succeeded synchronously)
+    if (spawnedProcess.pid !== undefined) {
+      // Unref to allow parent to exit independently
+      spawnedProcess.unref()
+      resolve({ child: spawnedProcess, pid: spawnedProcess.pid })
+    } else {
+      // Wait a tick for the error event to fire
+      setImmediate(() => {
+        if (spawnedProcess.pid !== undefined) {
+          spawnedProcess.unref()
+          resolve({ child: spawnedProcess, pid: spawnedProcess.pid })
+        }
+        // If still no PID, the error handler will reject
+      })
+    }
+  })
+
+/**
  * Internal start implementation for the daemon.
  * Extracted to allow reuse in restart without circular dependency.
  */
@@ -517,41 +564,20 @@ const startDaemonImpl = (config: DaemonConfig): Effect.Effect<void, DaemonError>
       )
     }
 
-    // Spawn the daemon process
-    const child: ChildProcess = yield* Effect.try({
-      try: () => {
-        const spawnedProcess = spawn(config.command, [...config.args], {
-          detached: true,
-          stdio: "ignore",
-          cwd: config.cwd ?? process.cwd(),
-          env: config.env ?? process.env
-        })
-
-        // Unref to allow parent to exit independently
-        spawnedProcess.unref()
-
-        return spawnedProcess
-      },
-      catch: (error) =>
-        new DaemonError({
+    // Spawn the daemon process with proper error handling
+    const { pid } = yield* Effect.tryPromise({
+      try: () => spawnDaemonProcess(config),
+      catch: (error) => {
+        if (error instanceof DaemonError) {
+          return error
+        }
+        return new DaemonError({
           code: "SPAWN_FAILED",
           message: `Failed to spawn daemon process: ${error}`,
           pid: null
         })
+      }
     })
-
-    // Verify we got a PID
-    if (child.pid === undefined) {
-      return yield* Effect.fail(
-        new DaemonError({
-          code: "NO_PID",
-          message: "Spawned process has no PID",
-          pid: null
-        })
-      )
-    }
-
-    const pid = child.pid
 
     // Write PID file
     yield* writePid(pid)
