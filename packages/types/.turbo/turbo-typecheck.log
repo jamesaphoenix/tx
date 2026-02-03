@@ -1,4 +1,4 @@
 
-> @tx/types@0.1.0 typecheck
+> @jamesaphoenix/tx-types@0.4.2 typecheck
 > tsc --noEmit
 

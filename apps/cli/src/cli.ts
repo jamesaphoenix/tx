@@ -83,7 +83,7 @@ function flag(flags: Record<string, string | boolean>, ...names: string[]): bool
 
 // --- Commands registry ---
 
-const commands: Record<string, (positional: string[], flags: Record<string, string | boolean>) => Effect.Effect<void, any, any>> = {
+const commands: Record<string, (positional: string[], flags: Record<string, string | boolean>) => Effect.Effect<void, unknown, unknown>> = {
   init: (_pos, _flags) =>
     Effect.sync(() => {
       // Layer construction already creates db + runs migrations

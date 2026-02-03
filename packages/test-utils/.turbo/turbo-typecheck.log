@@ -1,4 +1,4 @@
 
-> @tx/test-utils@0.1.0 typecheck
+> @jamesaphoenix/tx-test-utils@0.4.2 typecheck
 > tsc --noEmit
 
