@@ -358,8 +358,29 @@ export const recall = (pos: string[], flags: Flags) =>
     }
   })
 
+const VALID_EMBEDDERS = ["auto", "openai", "local", "noop"] as const
+type EmbedderType = typeof VALID_EMBEDDERS[number]
+
 export const learningEmbed = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
+    // Parse --embedder flag (overrides TX_EMBEDDER env var)
+    const embedderArg = opt(flags, "embedder")
+    let selectedEmbedder: EmbedderType = "auto"
+
+    if (embedderArg) {
+      const normalized = embedderArg.toLowerCase().trim()
+      if (!VALID_EMBEDDERS.includes(normalized as EmbedderType)) {
+        console.error(`Error: Invalid --embedder value "${embedderArg}"`)
+        console.error(`Valid values: ${VALID_EMBEDDERS.join(", ")}`)
+        process.exit(1)
+      }
+      selectedEmbedder = normalized as EmbedderType
+      // Set environment variable for EmbeddingServiceAuto to pick up
+      if (selectedEmbedder !== "auto") {
+        process.env.TX_EMBEDDER = selectedEmbedder
+      }
+    }
+
     const svc = yield* LearningService
 
     // Status check doesn't require embeddings to be enabled
@@ -367,9 +388,10 @@ export const learningEmbed = (_pos: string[], flags: Flags) =>
       const status = yield* svc.embeddingStatus()
 
       if (flag(flags, "json")) {
-        console.log(toJson(status))
+        console.log(toJson({ ...status, embedder: selectedEmbedder }))
       } else {
         console.log("Embedding Status:")
+        console.log(`  Embedder: ${selectedEmbedder}`)
         console.log(`  Total learnings: ${status.total}`)
         console.log(`  With embeddings: ${status.withEmbeddings}`)
         console.log(`  Without embeddings: ${status.withoutEmbeddings}`)
@@ -389,9 +411,10 @@ export const learningEmbed = (_pos: string[], flags: Flags) =>
     const result = yield* svc.embedAll(forceAll)
 
     if (flag(flags, "json")) {
-      console.log(toJson(result))
+      console.log(toJson({ ...result, embedder: selectedEmbedder }))
     } else {
       console.log("Embedding complete:")
+      console.log(`  Embedder: ${selectedEmbedder}`)
       console.log(`  Processed: ${result.processed}`)
       console.log(`  Skipped: ${result.skipped}`)
       console.log(`  Failed: ${result.failed}`)

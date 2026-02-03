@@ -608,15 +608,26 @@ Computes vector embeddings for learnings to enable semantic search.
 Requires TX_EMBEDDINGS=1 environment variable to be set.
 
 Options:
-  --all      Re-embed all learnings (default: only those without embeddings)
-  --status   Show embedding coverage status
-  --json     Output as JSON
-  --help     Show this help
+  --embedder <type>  Select embedder: auto (default), openai, local, noop
+                     Overrides TX_EMBEDDER environment variable
+  --all              Re-embed all learnings (default: only those without embeddings)
+  --status           Show embedding coverage status
+  --json             Output as JSON
+  --help             Show this help
+
+Embedder Types:
+  auto     Auto-detect based on available API keys and packages
+  openai   Use OpenAI text-embedding-3-small (requires OPENAI_API_KEY)
+  local    Use local node-llama-cpp with embeddinggemma-300M
+  noop     Disable embeddings (for testing)
 
 Examples:
-  TX_EMBEDDINGS=1 tx learning:embed           # Embed learnings without embeddings
-  TX_EMBEDDINGS=1 tx learning:embed --all     # Re-embed all learnings
-  tx learning:embed --status                   # Show embedding coverage`,
+  TX_EMBEDDINGS=1 tx learning:embed                    # Embed with auto-detection
+  TX_EMBEDDINGS=1 tx learning:embed --embedder openai  # Force OpenAI embedder
+  TX_EMBEDDINGS=1 tx learning:embed --embedder local   # Force local embedder
+  TX_EMBEDDINGS=1 tx learning:embed --all              # Re-embed all learnings
+  tx learning:embed --status                           # Show embedding coverage
+  tx learning:embed --status --embedder openai         # Show status with embedder info`,
 
   context: `tx context - Get contextual learnings for a task
 
