@@ -1354,7 +1354,9 @@ Examples:
   tx trace list --hours 48         # Runs from last 48 hours
   tx trace show run-abc123         # Metrics events for a run
   tx trace transcript run-abc123   # Raw JSONL transcript
-  tx trace stderr run-abc123       # Stderr output for debugging`,
+  tx trace stderr run-abc123       # Stderr output for debugging
+  tx trace errors                  # Recent errors across all runs
+  tx trace errors --hours 48       # Errors from last 48 hours`,
 
   "trace list": `tx trace list - Show recent runs with event counts
 
@@ -1374,6 +1376,29 @@ Examples:
   tx trace list --hours 48         # Last 48 hours
   tx trace list --limit 10         # Top 10 only
   tx trace list --json             # JSON output for scripting`,
+
+  "trace errors": `tx trace errors - Show recent errors across all runs
+
+Usage: tx trace errors [options]
+
+Aggregates errors from multiple sources:
+- Failed runs (runs with status='failed')
+- Error spans (operations that threw exceptions)
+- Error events (explicit error events)
+
+Useful for quickly identifying patterns in failures across multiple runs.
+
+Options:
+  --hours <n>       Time window in hours (default: 24)
+  --limit, -n <n>   Maximum number of results (default: 20)
+  --json            Output as JSON
+  --help            Show this help
+
+Examples:
+  tx trace errors                  # Recent errors (last 24h)
+  tx trace errors --hours 48       # Last 48 hours
+  tx trace errors --limit 10       # Top 10 only
+  tx trace errors --json           # JSON output for scripting`,
 
   claim: `tx claim - Claim a task for a worker with a lease
 

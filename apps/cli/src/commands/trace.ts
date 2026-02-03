@@ -520,6 +520,186 @@ export const traceShow = (pos: string[], flags: Flags) =>
   }) as Effect.Effect<void, DatabaseError, RunRepository | SqliteClient>
 
 /**
+ * Error entry for display.
+ */
+interface ErrorEntry {
+  timestamp: Date
+  source: "run" | "span" | "event"
+  runId: string | null
+  taskId: string | null
+  agent: string | null
+  name: string
+  error: string
+  durationMs: number | null
+}
+
+/**
+ * Row type for error span query.
+ */
+interface ErrorSpanRow {
+  timestamp: string
+  run_id: string | null
+  task_id: string | null
+  agent: string | null
+  content: string | null
+  metadata: string
+  duration_ms: number | null
+}
+
+/**
+ * Row type for failed run query.
+ */
+interface FailedRunRow {
+  id: string
+  task_id: string | null
+  agent: string
+  ended_at: string | null
+  error_message: string | null
+}
+
+/**
+ * tx trace errors - Show recent errors across all runs.
+ */
+export const traceErrors = (_pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const db = yield* SqliteClient
+
+    // Parse options
+    const limitOpt = opt(flags, "limit", "n")
+    const limit = limitOpt ? parseInt(limitOpt, 10) : 20
+    const hoursOpt = opt(flags, "hours")
+    const hours = hoursOpt ? parseInt(hoursOpt, 10) : 24
+
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+    const errors: ErrorEntry[] = []
+
+    // Query 1: Failed runs
+    const failedRuns = db.prepare(`
+      SELECT id, task_id, agent, ended_at, error_message
+      FROM runs
+      WHERE status = 'failed' AND ended_at >= ?
+      ORDER BY ended_at DESC
+      LIMIT ?
+    `).all(cutoff, limit) as FailedRunRow[]
+
+    for (const run of failedRuns) {
+      errors.push({
+        timestamp: run.ended_at ? new Date(run.ended_at) : new Date(),
+        source: "run",
+        runId: run.id,
+        taskId: run.task_id,
+        agent: run.agent,
+        name: "Run failed",
+        error: run.error_message ?? "Unknown error",
+        durationMs: null
+      })
+    }
+
+    // Query 2: Error spans (spans with status='error' in metadata)
+    const errorSpans = db.prepare(`
+      SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
+      FROM events
+      WHERE event_type = 'span'
+        AND timestamp >= ?
+        AND json_extract(metadata, '$.status') = 'error'
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(cutoff, limit) as ErrorSpanRow[]
+
+    for (const span of errorSpans) {
+      let errorMessage = "Unknown error"
+      try {
+        const metadata = JSON.parse(span.metadata)
+        if (metadata.error) {
+          errorMessage = String(metadata.error)
+        }
+      } catch {
+        // Ignore parse errors
+      }
+
+      errors.push({
+        timestamp: new Date(span.timestamp),
+        source: "span",
+        runId: span.run_id,
+        taskId: span.task_id,
+        agent: span.agent,
+        name: span.content ?? "Unknown span",
+        error: errorMessage,
+        durationMs: span.duration_ms
+      })
+    }
+
+    // Query 3: Error events (event_type='error')
+    const errorEvents = db.prepare(`
+      SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
+      FROM events
+      WHERE event_type = 'error' AND timestamp >= ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(cutoff, limit) as ErrorSpanRow[]
+
+    for (const event of errorEvents) {
+      errors.push({
+        timestamp: new Date(event.timestamp),
+        source: "event",
+        runId: event.run_id,
+        taskId: event.task_id,
+        agent: event.agent,
+        name: "Error event",
+        error: event.content ?? "Unknown error",
+        durationMs: event.duration_ms
+      })
+    }
+
+    // Sort all errors by timestamp descending
+    errors.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+
+    // Limit to requested number
+    const limitedErrors = errors.slice(0, limit)
+
+    if (flag(flags, "json")) {
+      console.log(toJson(limitedErrors.map(e => ({
+        timestamp: e.timestamp.toISOString(),
+        source: e.source,
+        runId: e.runId,
+        taskId: e.taskId,
+        agent: e.agent,
+        name: e.name,
+        error: e.error,
+        durationMs: e.durationMs
+      }))))
+    } else {
+      if (limitedErrors.length === 0) {
+        console.log(`No errors found in the last ${hours} hours`)
+        return
+      }
+
+      console.log(`Recent Errors (last ${hours}h)`)
+      console.log("─".repeat(80))
+
+      for (const err of limitedErrors) {
+        const time = formatTime(err.timestamp)
+        const sourceTag = `[${err.source}]`.padEnd(7)
+        const runInfo = err.runId ? truncate(err.runId, 14) : "-"
+        const agentInfo = err.agent ? truncate(err.agent, 14) : "-"
+
+        console.log(`${time}  ${sourceTag}  ${runInfo.padEnd(14)}  ${agentInfo.padEnd(14)}`)
+        console.log(`          Name: ${err.name}`)
+        console.log(`          Error: ${truncate(err.error, 70)}`)
+        if (err.taskId) {
+          console.log(`          Task: ${err.taskId}`)
+        }
+        if (err.durationMs !== null) {
+          console.log(`          Duration: ${err.durationMs}ms`)
+        }
+        console.log("")
+      }
+
+      console.log(`${limitedErrors.length} error(s)`)
+    }
+  }) as Effect.Effect<void, DatabaseError, SqliteClient>
+
+/**
  * Main trace command dispatcher.
  */
 export const trace = (pos: string[], flags: Flags) =>
@@ -561,6 +741,8 @@ Options:
       yield* traceShow(pos.slice(1), flags)
     } else if (subcommand === "transcript") {
       yield* traceTranscript(pos.slice(1), flags)
+    } else if (subcommand === "errors") {
+      yield* traceErrors(pos.slice(1), flags)
     } else {
       console.error(`Unknown trace subcommand: ${subcommand}`)
       console.error(`Run 'tx trace --help' for usage information`)
