@@ -527,7 +527,7 @@ describe("ClaimService.expire", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    expect(error._tag).toBe("ClaimNotFoundError")
+    expect(error._tag).toBe("ClaimIdNotFoundError")
   })
 })
 

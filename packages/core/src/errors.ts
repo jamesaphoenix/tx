@@ -213,6 +213,14 @@ export class MaxRenewalsExceededError extends Data.TaggedError("MaxRenewalsExcee
   }
 }
 
+export class ClaimIdNotFoundError extends Data.TaggedError("ClaimIdNotFoundError")<{
+  readonly claimId: number
+}> {
+  get message() {
+    return `Claim not found: ${this.claimId}`
+  }
+}
+
 export class OrchestratorError extends Data.TaggedError("OrchestratorError")<{
   readonly code: string
   readonly reason: string
@@ -242,6 +250,7 @@ export type TaskError =
   | WorkerNotFoundError
   | AlreadyClaimedError
   | ClaimNotFoundError
+  | ClaimIdNotFoundError
   | LeaseExpiredError
   | MaxRenewalsExceededError
   | OrchestratorError

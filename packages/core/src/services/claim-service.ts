@@ -11,6 +11,7 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { OrchestratorStateRepository } from "../repo/orchestrator-state-repo.js"
 import {
   AlreadyClaimedError,
+  ClaimIdNotFoundError,
   ClaimNotFoundError,
   DatabaseError,
   LeaseExpiredError,
@@ -67,7 +68,7 @@ export class ClaimService extends Context.Tag("ClaimService")<
      */
     readonly expire: (
       claimId: number
-    ) => Effect.Effect<void, ClaimNotFoundError | DatabaseError>
+    ) => Effect.Effect<void, ClaimIdNotFoundError | DatabaseError>
 
     /**
      * Release all active claims held by a worker.
@@ -217,9 +218,7 @@ export const ClaimServiceLive = Layer.effect(
         Effect.gen(function* () {
           const claim = yield* claimRepo.findById(claimId)
           if (!claim) {
-            return yield* Effect.fail(
-              new ClaimNotFoundError({ taskId: `claim:${claimId}` })
-            )
+            return yield* Effect.fail(new ClaimIdNotFoundError({ claimId }))
           }
 
           yield* claimRepo.update({

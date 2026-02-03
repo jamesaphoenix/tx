@@ -32,6 +32,7 @@ export {
   WorkerNotFoundError,
   AlreadyClaimedError,
   ClaimNotFoundError,
+  ClaimIdNotFoundError,
   LeaseExpiredError,
   MaxRenewalsExceededError,
   OrchestratorError
