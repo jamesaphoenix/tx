@@ -1,0 +1,339 @@
+---
+title: "PRD-011: Claude Code Hooks Integration"
+description: "Automatic context injection and learning capture through Claude Code hooks"
+---
+
+**Status**: Draft
+**Priority**: P1 (Core Feature)
+**Owner**: TBD
+**Last Updated**: 2025-01-30
+
+---
+
+## Problem Statement
+
+The contextual learnings system (PRD-010) provides retrieval and injection capabilities, but agents need **automatic** context injection without manual intervention:
+
+1. **SessionStart**: Load recent learnings when Claude starts
+2. **UserPromptSubmit**: Inject task-relevant learnings based on the prompt
+3. **PostToolUse**: Track which task is being worked on
+4. **Stop**: Prompt for learning capture before finishing
+5. **PreCompact**: Archive learnings before context is lost
+
+Claude Code hooks provide the mechanism for this automation.
+
+---
+
+## Solution Overview
+
+A set of **Claude Code hooks** that:
+
+1. **Automatically inject relevant learnings** at session start and prompt submit
+2. **Track task context** to associate learnings with specific tasks
+3. **Prompt for learning capture** when stopping work
+4. **Archive session state** before context compaction
+
+---
+
+## Hook Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Claude Code Session                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  SessionStart ─────► session-start.sh ─────► Inject Recent Learnings   │
+│        │                                                                │
+│        ▼                                                                │
+│  UserPromptSubmit ──► prompt-context.sh ──► Inject Task Learnings      │
+│        │                    │                                           │
+│        │                    ├─► Search by task ID if mentioned          │
+│        │                    └─► Fallback: keyword search                │
+│        ▼                                                                │
+│  [Agent Works] ─────► PostToolUse ─────► Track current task            │
+│        │                                                                │
+│        ▼                                                                │
+│  PreCompact ────────► pre-compact.sh ───► Archive session learnings    │
+│        │                                                                │
+│        ▼                                                                │
+│  Stop ──────────────► capture-learning.sh ► Prompt learning capture    │
+│                             │                                           │
+│                             └─► "tx learning:add" if insights gained   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Requirements
+
+### Hook Scripts
+
+| ID | Hook | Script | Purpose |
+|----|------|--------|---------|
+| HC-001 | SessionStart | `session-start.sh` | Inject recent learnings |
+| HC-002 | UserPromptSubmit | `prompt-context.sh` | Inject task-relevant learnings |
+| HC-003 | PostToolUse (Bash) | `post-bash.sh` | Track current task context |
+| HC-004 | Stop | `capture-learning.sh` | Prompt for learning capture |
+| HC-005 | PreCompact | `pre-compact.sh` | Archive before context loss |
+
+### Hook Behaviors
+
+| ID | Requirement |
+|----|-------------|
+| HC-006 | SessionStart injects last 5 learnings as `additionalContext` |
+| HC-007 | UserPromptSubmit detects task IDs in prompt (tx-[a-z0-9]+) |
+| HC-008 | UserPromptSubmit calls `tx context <task-id>` if task mentioned |
+| HC-009 | UserPromptSubmit falls back to keyword search if no task ID |
+| HC-010 | PostToolUse tracks task ID to `.tx/current-task` file |
+| HC-011 | Stop blocks if `.tx/current-task` exists, prompts for learning capture |
+| HC-012 | Stop avoids infinite loop via `stop_hook_active` check |
+| HC-013 | PreCompact archives transcript and learnings on auto-compact |
+
+### Configuration
+
+| ID | Requirement |
+|----|-------------|
+| HC-014 | Hooks configured in `.claude/settings.json` |
+| HC-015 | Scripts stored in `.claude/hooks/` directory |
+| HC-016 | Scripts use `$CLAUDE_PROJECT_DIR` for portability |
+| HC-017 | Each hook has appropriate timeout (10-30s) |
+
+### Constraints
+
+| ID | Constraint | Rationale |
+|----|------------|-----------|
+| HC-018 | Hooks must exit 0 on success | Non-zero blocks execution |
+| HC-019 | Hooks must handle missing tx gracefully | May not be installed |
+| HC-020 | Hooks must be fast (<15s typical) | Avoid blocking user |
+| HC-021 | Stop hook must check `stop_hook_active` | Prevent infinite loop |
+
+---
+
+## Hook Configuration
+
+### `.claude/settings.json`
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prompt-context.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/capture-learning.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-bash.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-compact.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Hook Implementations
+
+### Hook 1: SessionStart - Load Recent Learnings
+
+**Purpose**: Inject recent learnings when Claude starts a session.
+
+**Input**: `{ session_id, source, model, ... }`
+
+**Output** (JSON):
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "## Recent Learnings\n\n- Learning 1\n- Learning 2"
+  }
+}
+```
+
+**Script**: `session-start.sh`
+```bash
+#!/bin/bash
+LEARNINGS=$(tx learning:recent -n 5 --json 2>/dev/null)
+if [ -n "$LEARNINGS" ] && [ "$LEARNINGS" != "[]" ]; then
+  # Format as additionalContext JSON
+  echo "{\"hookSpecificOutput\":{...}}"
+fi
+exit 0
+```
+
+### Hook 2: UserPromptSubmit - Contextual Injection
+
+**Purpose**: Inject task-relevant learnings based on the user's prompt.
+
+**Input**: `{ prompt, session_id, ... }`
+
+**Logic**:
+1. Check if prompt contains task ID (tx-[a-z0-9]+)
+2. If yes, call `tx context <task-id> --json`
+3. If no, call `tx learning:search "<prompt keywords>" -n 3 --json`
+4. Return as `additionalContext`
+
+**Output** (JSON):
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "## Relevant Learnings\n\n- Learning 1\n- Learning 2"
+  }
+}
+```
+
+### Hook 3: PostToolUse (Bash) - Track Task Context
+
+**Purpose**: Track which task is being worked on.
+
+**Input**: `{ tool_input: { command }, ... }`
+
+**Logic**:
+1. Check if command is `tx show <task-id>` or `tx done <task-id>`
+2. Extract task ID and write to `.tx/current-task`
+
+**Script**: `post-bash.sh`
+```bash
+#!/bin/bash
+INPUT=$(cat)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+if echo "$COMMAND" | grep -qE '^tx (show|done) (tx-[a-z0-9]+)'; then
+  TASK_ID=$(echo "$COMMAND" | grep -oE 'tx-[a-z0-9]{6,8}')
+  echo "$TASK_ID" > .tx/current-task
+fi
+exit 0
+```
+
+### Hook 4: Stop - Prompt Learning Capture
+
+**Purpose**: Prompt Claude to capture learnings before finishing.
+
+**Input**: `{ stop_hook_active, session_id, ... }`
+
+**Logic**:
+1. Check `stop_hook_active` - if true, exit (avoid infinite loop)
+2. Check if `.tx/current-task` exists
+3. If yes, block stop and prompt for `tx learning:add`
+4. Clean up `.tx/current-task`
+
+**Output** (JSON to block):
+```json
+{
+  "decision": "block",
+  "reason": "Please capture learnings with tx learning:add before finishing."
+}
+```
+
+### Hook 5: PreCompact - Archive Before Context Loss
+
+**Purpose**: Archive session learnings before auto-compact.
+
+**Input**: `{ trigger, session_id, transcript_path, ... }`
+
+**Logic**:
+1. Only act on `trigger: "auto"`
+2. Create archive directory `.tx/archive/<session-id>/`
+3. Copy transcript to archive
+4. Export recent learnings to archive
+
+---
+
+## Directory Structure
+
+```
+.claude/
+├── settings.json           # Hook configuration
+├── settings.local.json     # Local overrides (gitignored)
+└── hooks/
+    ├── session-start.sh    # Load recent learnings
+    ├── prompt-context.sh   # Inject task-relevant learnings
+    ├── capture-learning.sh # Prompt for learning capture on stop
+    ├── post-bash.sh        # Track task context
+    └── pre-compact.sh      # Archive before context loss
+
+.tx/
+├── tasks.db                # Main database
+├── current-task            # Currently active task ID (temp file)
+└── archive/
+    └── <session-id>/
+        ├── transcript.jsonl
+        └── recent-learnings.json
+```
+
+---
+
+## Alternative: Prompt-Based Stop Hook
+
+For more intelligent learning capture, use a prompt-based hook:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Evaluate if Claude should stop. Input: $ARGUMENTS\n\nCheck if:\n1. The task was completed successfully\n2. Any learnings should be captured\n\nIf learnings should be captured, return {\"ok\": false, \"reason\": \"Please capture learnings with tx learning:add\"}\nIf complete, return {\"ok\": true}",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Related Documents
+
+- [PRD-010: Contextual Learnings System](/docs/prd/prd-010-contextual-learnings-system) - Learning storage and retrieval

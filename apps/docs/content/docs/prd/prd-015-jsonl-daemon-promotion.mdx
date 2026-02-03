@@ -1,0 +1,278 @@
+---
+title: "PRD-015: Graph RAG - JSONL Telemetry Daemon and Knowledge Promotion Pipeline"
+description: "Background service for extracting learning candidates from Claude Code transcripts"
+---
+
+## Overview
+
+Background service that watches Claude Code transcripts (`~/.claude/projects/`), extracts learning candidates, and manages promotion to the knowledge layer.
+
+## Problem Statement
+
+- Claude Code sessions generate valuable insights in JSONL transcripts
+- These are lost after session ends
+- No automated extraction of learnings
+- Manual `tx learning:add` is tedious
+- Need pipeline from raw telemetry to curated knowledge
+
+## Solution: Telemetry → Knowledge Pipeline
+
+```
+~/.claude/projects/**/*.jsonl
+         ↓
+   FileWatcher (chokidar)
+         ↓
+   Hash Check (skip processed)
+         ↓
+   Parse JSONL Transcript
+         ↓
+   LLM Candidate Extraction
+         ↓
+   Confidence Scoring (high/medium/low)
+         ↓
+   Promotion Gate
+   ├── High confidence → Auto-promote to learnings
+   └── Medium/Low → Queue for review
+         ↓
+   Create provenance edges (DERIVED_FROM)
+```
+
+## Requirements
+
+### Functional Requirements
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| DP-001 | Watch `~/.claude/projects/` for new/changed JSONL files | P0 |
+| DP-002 | Hash-based deduplication (skip already processed files) | P0 |
+| DP-003 | Extract learning candidates with LLM | P0 |
+| DP-004 | Score confidence: high/medium/low | P0 |
+| DP-005 | Auto-promote high-confidence candidates | P0 |
+| DP-006 | Queue medium/low for human review | P1 |
+| DP-007 | Link promoted learnings to source run/task | P0 |
+| DP-008 | Run as background daemon (launchd/systemd) | P0 |
+| DP-009 | Graceful degradation without LLM (queue only) | P1 |
+| DP-010 | Rate limiting for LLM calls | P1 |
+
+### Non-Functional Requirements
+
+| ID | Requirement | Target |
+|----|-------------|--------|
+| DP-NFR-001 | Daemon startup time | <2s |
+| DP-NFR-002 | File processing latency | <10s per file |
+| DP-NFR-003 | Memory footprint | <100MB |
+| DP-NFR-004 | Uptime | 99.9% |
+
+## Data Model
+
+### Migration: `006_telemetry_daemon.sql`
+
+```sql
+-- Track processed JSONL files
+CREATE TABLE telemetry_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL,
+  file_hash TEXT NOT NULL UNIQUE,
+  file_size INTEGER NOT NULL,
+  processed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  candidate_count INTEGER DEFAULT 0,
+  error_message TEXT
+);
+
+-- Learning candidates awaiting promotion
+CREATE TABLE learning_candidates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content TEXT NOT NULL,
+  confidence TEXT NOT NULL CHECK (confidence IN ('high', 'medium', 'low')),
+  category TEXT,
+  source_file TEXT NOT NULL,
+  source_run_id TEXT,
+  source_task_id TEXT,
+  extracted_at TEXT NOT NULL DEFAULT (datetime('now')),
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'promoted', 'rejected', 'merged')),
+  reviewed_at TEXT,
+  reviewed_by TEXT,
+  promoted_learning_id INTEGER,
+  rejection_reason TEXT,
+  FOREIGN KEY (promoted_learning_id) REFERENCES learnings(id)
+);
+```
+
+## Candidate Extraction
+
+### LLM Prompt
+
+```
+Analyze this Claude Code session transcript and extract actionable learnings.
+
+<transcript>
+{transcript_excerpt}
+</transcript>
+
+Extract learnings that meet these criteria:
+1. **Technical decisions**: Describes a choice and its rationale
+2. **Gotchas/pitfalls**: Something to avoid next time
+3. **Patterns that worked**: Reusable approaches
+4. **Future improvements**: Things to do differently
+
+For each learning, provide:
+- content: The learning text (1-3 sentences, actionable)
+- confidence: "high" (certain, tested), "medium" (likely useful), "low" (speculative)
+- category: One of [architecture, testing, performance, security, debugging, tooling, patterns]
+
+Return JSON array:
+[
+  {
+    "content": "Always wrap database operations in transactions to ensure atomicity",
+    "confidence": "high",
+    "category": "patterns"
+  }
+]
+```
+
+### Confidence Scoring
+
+| Confidence | Criteria | Action |
+|------------|----------|--------|
+| **High** | Tested in session, clear outcome | Auto-promote |
+| **Medium** | Reasonable but unverified | Queue for review |
+| **Low** | Speculative, edge case | Queue with low priority |
+
+## API Surface
+
+### CLI Commands
+
+```bash
+# Start daemon
+tx daemon start
+
+# Stop daemon
+tx daemon stop
+
+# Check daemon status
+tx daemon status
+
+# Process files manually (without daemon)
+tx daemon process [--path ~/.claude/projects/]
+
+# Review pending candidates
+tx daemon review [--confidence medium,low]
+
+# Promote a candidate manually
+tx daemon promote <candidate-id>
+
+# Reject a candidate
+tx daemon reject <candidate-id> --reason "too specific"
+```
+
+### Service Interface
+
+```typescript
+interface TelemetryDaemonService {
+  start: () => Effect<void, DaemonError>
+  stop: () => Effect<void, DaemonError>
+  status: () => Effect<DaemonStatus, DatabaseError>
+  processFile: (path: string) => Effect<ProcessResult, ProcessingError>
+}
+
+interface CandidateService {
+  list: (filter?: CandidateFilter) => Effect<LearningCandidate[], DatabaseError>
+  promote: (id: number) => Effect<Learning, CandidateNotFoundError | DatabaseError>
+  reject: (id: number, reason: string) => Effect<void, CandidateNotFoundError | DatabaseError>
+  autoPromote: () => Effect<PromotionResult, DatabaseError>
+}
+```
+
+## Daemon Architecture
+
+### Process Model
+
+```
+tx daemon start
+    │
+    ├── Write PID to .tx/daemon.pid
+    ├── Initialize file watcher (chokidar)
+    ├── Spawn processing fiber (Effect background)
+    │   └── Watch queue → Process file → Extract → Store
+    └── Health check endpoint (optional)
+```
+
+### Rate Limiting
+
+```typescript
+const rateLimiter = {
+  maxConcurrent: 2,       // Max parallel LLM calls
+  minInterval: 1000,      // 1s between calls
+  maxPerMinute: 30,       // Burst limit
+  backoffFactor: 2        // Exponential backoff on errors
+}
+```
+
+## Graceful Degradation
+
+| Component | Failure | Fallback |
+|-----------|---------|----------|
+| LLM (Anthropic) | API unavailable | Queue file for later, no extraction |
+| ast-grep | Not installed | Skip symbol extraction |
+| File system | Watch fails | Periodic polling (60s) |
+| SQLite | Locked | Retry with exponential backoff |
+
+## System Integration
+
+### launchd (macOS)
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tx.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/tx</string>
+    <string>daemon</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
+```
+
+### systemd (Linux)
+
+```ini
+[Unit]
+Description=tx Telemetry Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tx daemon run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Success Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Candidate extraction latency | <10s per file | p95 |
+| High-confidence accuracy | >90% useful | Manual audit |
+| Duplicate detection rate | 100% | No re-processing |
+| Daemon uptime | 99.9% | Monitoring |
+| Memory usage | <100MB | Prometheus |
+
+## Dependencies
+
+- **Depends on**: PRD-014 (Graph Schema for provenance edges)
+- **Blocks**: PRD-016 (Graph Expansion needs populated graph)
+
+## References
+
+- [chokidar documentation](https://github.com/paulmillr/chokidar)

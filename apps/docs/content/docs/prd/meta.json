@@ -1,0 +1,25 @@
+{
+  "title": "PRDs",
+  "pages": [
+    "prd-001-core-task-management",
+    "prd-002-hierarchical-task-structure",
+    "prd-003-dependency-blocking-system",
+    "prd-004-task-scoring-prioritization",
+    "prd-005-llm-deduplication",
+    "prd-006-task-compaction-learnings",
+    "prd-007-multi-interface-integration",
+    "prd-008-observability-opentelemetry",
+    "prd-009-jsonl-git-sync",
+    "prd-010-contextual-learnings-system",
+    "prd-010-dashboard-ux",
+    "prd-011-claude-code-hooks",
+    "prd-012-bun-single-binary",
+    "prd-013-dashboard-ux",
+    "prd-013-test-utilities",
+    "prd-014-graph-schema-edges",
+    "prd-015-jsonl-daemon-promotion",
+    "prd-016-graph-expansion-retrieval",
+    "prd-017-invalidation-maintenance",
+    "prd-018-worker-orchestration"
+  ]
+}

@@ -1,0 +1,273 @@
+---
+title: "PRD-013: Test Utilities Package"
+description: "Centralized test utilities, factories, fixtures, and LLM caching for the tx monorepo"
+---
+
+## Overview
+
+Centralize all test utilities, factories, fixtures, and helpers into a single `@tx/test-utils` package. Provides consistent testing patterns across the monorepo.
+
+## Problem Statement
+
+- Test helpers are duplicated across packages
+- No consistent pattern for creating test data
+- LLM test caching is ad-hoc
+- Database setup/teardown logic repeated everywhere
+- Fixture ID generation inconsistent
+- No shared mocks for external services
+
+## Solution: `@tx/test-utils` Package
+
+```
+packages/test-utils/
+├── src/
+│   ├── index.ts              # Public exports
+│   ├── database.ts           # Test database helpers
+│   ├── factories/            # Entity factories
+│   │   ├── learning.ts
+│   │   ├── task.ts
+│   │   ├── anchor.ts
+│   │   ├── edge.ts
+│   │   └── candidate.ts
+│   ├── fixtures/             # SHA256-based fixtures
+│   │   ├── fixture-id.ts
+│   │   └── snapshots.ts
+│   ├── llm-cache/            # LLM response caching
+│   │   ├── cache.ts
+│   │   └── recorder.ts
+│   ├── mocks/                # Service mocks
+│   │   ├── anthropic.ts
+│   │   ├── ast-grep.ts
+│   │   └── file-system.ts
+│   ├── assertions/           # Custom assertions
+│   │   └── effect.ts
+│   └── setup.ts              # Global test setup
+└── package.json
+```
+
+## Requirements
+
+### Functional Requirements
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| TU-001 | SHA256-based deterministic fixture IDs | P0 |
+| TU-002 | In-memory SQLite database factory | P0 |
+| TU-003 | Entity factories for all core types | P0 |
+| TU-004 | LLM response caching with SHA256 keys | P0 |
+| TU-005 | CLI for cache management | P0 |
+| TU-006 | Effect-TS test runners and assertions | P0 |
+| TU-007 | Mock services for external dependencies | P1 |
+| TU-008 | Temporary file system helpers | P1 |
+| TU-009 | Snapshot testing for LLM outputs | P1 |
+| TU-010 | Test data generators (faker integration) | P2 |
+
+### Non-Functional Requirements
+
+| ID | Requirement | Target |
+|----|-------------|--------|
+| TU-NFR-001 | Test database creation | <50ms |
+| TU-NFR-002 | Fixture ID computation | <1ms |
+| TU-NFR-003 | LLM cache lookup | <5ms |
+| TU-NFR-004 | Zero external dependencies in mocks | 100% |
+
+### Test Co-location Requirements
+
+Tests MUST be co-located alongside their source files for discoverability and maintenance:
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| TU-COL-001 | Unit tests co-located with source files | P0 |
+| TU-COL-002 | Integration tests in `__tests__/` or `.test.ts` suffix | P0 |
+| TU-COL-003 | ESLint rule enforces co-location | P0 |
+
+**Co-location Convention:**
+
+```
+packages/core/src/services/
+├── learning-service.ts           # Service implementation
+├── learning-service.test.ts      # Unit tests (co-located)
+├── task-service.ts
+├── task-service.test.ts
+└── __tests__/                    # Integration tests (optional grouping)
+    └── learning-service.integration.test.ts
+```
+
+**Naming Conventions:**
+
+| Test Type | File Pattern | Location |
+|-----------|--------------|----------|
+| Unit test | `*.test.ts` | Same directory as source |
+| Integration test | `*.integration.test.ts` | Same directory or `__tests__/` |
+| E2E test | `*.e2e.test.ts` | `test/e2e/` directory |
+
+## Core Components
+
+### 1. Fixture ID Generation
+
+Deterministic IDs for reproducible tests:
+
+```typescript
+import * as crypto from 'crypto'
+
+export const fixtureId = (name: string): string => {
+  const hash = crypto.createHash('sha256').update(name).digest('hex')
+  return `tx-${hash.slice(0, 8)}`
+}
+
+export const namespacedFixtureId = (namespace: string, name: string): string => {
+  return fixtureId(`${namespace}:${name}`)
+}
+
+// Usage:
+// fixtureId('task-1') -> 'tx-a1b2c3d4' (always same)
+```
+
+### 2. Test Database
+
+In-memory SQLite with migrations:
+
+```typescript
+export const createTestDatabase = async (): Promise<TestDatabase> => {
+  const db = new Database(':memory:')
+  db.pragma('journal_mode = WAL')
+  await runMigrations(db)
+
+  return {
+    db,
+    client: { db } as SqliteClient,
+    close: async () => db.close(),
+    reset: async () => { /* truncate tables */ },
+    query: (sql, params = []) => db.prepare(sql).all(...params)
+  }
+}
+```
+
+### 3. Entity Factories
+
+Consistent test data creation:
+
+```typescript
+export const createTestLearning = (
+  db: TestDatabase,
+  options: LearningFactoryOptions = {}
+): Effect.Effect<Learning, never, never> =>
+  Effect.gen(function* () {
+    const learning = {
+      id: options.id || learningCounter++,
+      content: options.content || `Test Learning ${learningCounter}`,
+      category: options.category || 'testing',
+      // ...
+    }
+    db.query(`INSERT INTO learnings ...`, [...])
+    return learning
+  })
+```
+
+### 4. LLM Response Caching
+
+Cache expensive LLM calls by SHA256:
+
+```typescript
+export const cachedLLMCall = async <T>(
+  input: string,
+  model: string,
+  call: () => Promise<T>
+): Promise<T> => {
+  if (process.env.TX_NO_LLM_CACHE === '1') {
+    return call()
+  }
+
+  const inputHash = hashInput(input)
+  const cacheFile = path.join(CACHE_DIR, `${inputHash}.json`)
+
+  try {
+    const cached = JSON.parse(await fs.readFile(cacheFile, 'utf-8'))
+    console.log(`[LLM Cache HIT] ${inputHash.slice(0, 12)}...`)
+    return cached.response
+  } catch {
+    // Cache miss - call LLM and store
+    console.log(`[LLM Cache MISS] ${inputHash.slice(0, 12)}... calling ${model}`)
+    const response = await call()
+    await fs.writeFile(cacheFile, JSON.stringify({ response, model, ... }))
+    return response
+  }
+}
+```
+
+### 5. Effect Test Helpers
+
+```typescript
+export const runEffect = async <A, E>(
+  effect: Effect.Effect<A, E, any>,
+  ...layers: Layer.Layer<any, any, any>[]
+): Promise<A> => {
+  const runnable = effect.pipe(Effect.provide(mergedLayers))
+  const exit = await Effect.runPromiseExit(runnable)
+  if (Exit.isFailure(exit)) throw new Error(`Effect failed`)
+  return exit.value
+}
+```
+
+## CLI Commands
+
+```bash
+# Show cache statistics
+tx test:cache-stats
+
+# Clear all caches
+tx test:clear-cache --all
+
+# Clear caches older than 30 days
+tx test:clear-cache --older-than "30 days"
+
+# Run tests without cache
+TX_NO_LLM_CACHE=1 pnpm test
+```
+
+## Usage Examples
+
+### Basic Test Setup
+
+```typescript
+import {
+  createTestDatabase,
+  createTestLearning,
+  fixtureId,
+  runEffect
+} from '@tx/test-utils'
+
+describe('MyFeature', () => {
+  let db: TestDatabase
+
+  beforeEach(async () => {
+    db = await createTestDatabase()
+  })
+
+  afterEach(async () => {
+    await db.close()
+  })
+
+  it('should do something', async () => {
+    const learning = await runEffect(
+      createTestLearning(db, { content: 'Test learning' })
+    )
+    expect(learning.content).toBe('Test learning')
+  })
+})
+```
+
+## Success Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Test setup time | <100ms | Benchmark |
+| LLM cache hit rate | >90% in CI | Monitoring |
+| Code duplication | 0 test helpers in app packages | Lint rule |
+| Coverage of factories | 100% of core entities | Audit |
+
+## References
+
+- [Vitest documentation](https://vitest.dev/)
+- [Effect testing patterns](https://effect.website/docs/guides/testing)
+- DD-007: Testing Strategy

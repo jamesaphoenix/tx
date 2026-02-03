@@ -1,0 +1,225 @@
+---
+title: "PRD-017: Graph RAG - Anchor Invalidation and Graph Maintenance"
+description: "Detecting stale anchors and maintaining graph accuracy as the codebase evolves"
+---
+
+## Overview
+
+Detect stale anchors (code changed, symbols moved), soft-delete edges, and provide tools for bulk maintenance. Keep the knowledge graph accurate as the codebase evolves.
+
+## Problem Statement
+
+- Code changes constantly; anchors become stale
+- Content hashes drift as code evolves
+- Symbols get renamed, moved, or deleted
+- Glob patterns may match different files over time
+- Stale learnings cause confusion rather than help
+- Need automated detection + manual override
+- Large refactors can invalidate many anchors at once
+
+## Solution: Multi-Layered Invalidation
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Invalidation Triggers                    │
+├─────────────────────────────────────────────────────────────┤
+│  Periodic (daily)  │  On-access (lazy)  │  Manual command  │
+│  Agent swarm       │  Git hook          │  Post-refactor   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Verification Engine                       │
+├─────────────────────────────────────────────────────────────┤
+│  File exists?  │  Hash match?  │  Symbol exists?  │  Glob? │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Resolution Actions                        │
+├─────────────────────────────────────────────────────────────┤
+│  Valid (no change)  │  Self-heal (update)  │  Soft-delete  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Requirements
+
+### Functional Requirements
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| IM-001 | Periodic anchor verification (configurable interval) | P0 |
+| IM-002 | On-access verification (lazy check) | P0 |
+| IM-003 | Soft delete (keep history for recovery) | P0 |
+| IM-004 | Bulk invalidation via agent swarm | P1 |
+| IM-005 | Manual override: force valid/invalid | P0 |
+| IM-006 | Notification when anchors drift | P1 |
+| IM-007 | Self-healing: auto-update hash after minor edits | P1 |
+| IM-008 | Audit log of all invalidation actions | P0 |
+| IM-009 | Git hook integration for post-refactor cleanup | P2 |
+
+### Non-Functional Requirements
+
+| ID | Requirement | Target |
+|----|-------------|--------|
+| IM-NFR-001 | Stale anchor detection rate | >95% within 24h |
+| IM-NFR-002 | False positive rate | <5% |
+| IM-NFR-003 | Self-healing success rate | >80% for minor edits |
+| IM-NFR-004 | Verification throughput | 10K anchors/min |
+
+## Invalidation Types
+
+| Type | Detection | Status | Action |
+|------|-----------|--------|--------|
+| File Deleted | File doesn't exist | `invalid` | Soft-delete anchor |
+| Hash Mismatch | Content hash changed | `drifted` | Try self-heal, else mark drifted |
+| Symbol Missing | ast-grep can't find symbol | `invalid` | Soft-delete anchor |
+| Symbol Moved | Symbol in different file | `drifted` | Update file path if found |
+| Glob Changed | Matches different files | `drifted` | Warn, keep valid |
+
+## Verification Modes
+
+### 1. Periodic Verification
+
+Background job that verifies all anchors on a schedule.
+
+```
+Schedule: Daily at 3 AM (configurable)
+Process:
+  1. Get all anchors with status = 'valid'
+  2. For each anchor, run verification
+  3. Update status and log changes
+  4. Send summary notification if enabled
+```
+
+### 2. On-Access Verification (Lazy)
+
+Verify anchor when learning is retrieved, with caching.
+
+```
+On learning retrieval:
+  1. Check verification cache (TTL: 1 hour)
+  2. If cache miss, verify anchor
+  3. Update cache
+  4. Return learning with freshness indicator
+```
+
+### 3. Agent Swarm for Bulk Invalidation
+
+When major refactoring detected (>50 file changes), spawn parallel agents.
+
+## Self-Healing Logic
+
+When content hash drifts but context is similar, automatically update.
+
+```
+Self-Heal Algorithm:
+  1. Content hash doesn't match
+  2. Check if symbol FQName still exists
+     - If yes, compute new content hash
+     - Compare old and new content similarity
+  3. If similarity > 0.8:
+     - Update hash to new value
+     - Log as "self_healed"
+     - Keep status = 'valid'
+  4. If similarity < 0.8:
+     - Mark status = 'drifted'
+     - Queue for review
+```
+
+## Data Model
+
+### Migration: `007_invalidation.sql`
+
+```sql
+-- Invalidation audit log
+CREATE TABLE invalidation_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  anchor_id INTEGER NOT NULL,
+  old_status TEXT NOT NULL,
+  new_status TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  detected_by TEXT NOT NULL,  -- 'periodic', 'lazy', 'manual', 'agent', 'git_hook'
+  old_content_hash TEXT,
+  new_content_hash TEXT,
+  similarity_score REAL,
+  invalidated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (anchor_id) REFERENCES file_anchors(id)
+);
+
+-- Verification cache
+CREATE TABLE verification_cache (
+  anchor_id INTEGER PRIMARY KEY,
+  status TEXT NOT NULL,
+  verified_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  FOREIGN KEY (anchor_id) REFERENCES file_anchors(id)
+);
+```
+
+## API Surface
+
+### CLI Commands
+
+```bash
+# Verify all anchors
+tx graph:verify
+
+# Verify anchors for specific file(s)
+tx graph:verify src/auth.ts
+
+# Verify with verbose output
+tx graph:verify --verbose
+
+# Manual invalidation
+tx graph:invalidate <anchor-id> --reason "Code removed"
+
+# Restore soft-deleted anchor
+tx graph:restore <anchor-id>
+
+# Hard delete old invalid anchors
+tx graph:prune --before "30 days ago"
+
+# Show verification status
+tx graph:status
+
+# Pin/unpin anchors
+tx graph:pin <anchor-id>
+tx graph:unpin <anchor-id>
+```
+
+### Service Interface
+
+```typescript
+interface InvalidationService {
+  verify: (anchorId: number) => Effect<VerificationResult, AnchorNotFoundError | DatabaseError>
+  verifyAll: () => Effect<VerificationSummary, DatabaseError>
+  verifyFile: (filePath: string) => Effect<VerificationSummary, DatabaseError>
+  invalidate: (anchorId: number, reason: string) => Effect<void, AnchorNotFoundError | DatabaseError>
+  restore: (anchorId: number) => Effect<void, AnchorNotFoundError | DatabaseError>
+  prune: (olderThan: Date) => Effect<PruneResult, DatabaseError>
+}
+```
+
+## Success Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Stale detection rate | >95% within 24h | Audit log analysis |
+| False positive rate | <5% | Manual review sample |
+| Self-heal success | >80% for minor edits | Audit log analysis |
+| Verification throughput | 10K anchors/min | Benchmark |
+| Swarm efficiency | 4x speedup vs sequential | Benchmark |
+
+## Dependencies
+
+- **Depends on**: PRD-014 (Graph Schema)
+- **Blocks**: None
+
+## Non-Goals
+
+- Real-time invalidation (too expensive)
+- Cross-repository invalidation
+- Automatic learning content updates (only anchors)
+
+## References
+
+- [Content Hash-Based Deduplication](https://en.wikipedia.org/wiki/Data_deduplication)

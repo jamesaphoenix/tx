@@ -1,0 +1,169 @@
+---
+title: "PRD-013: Dashboard UX Improvements"
+description: "Pagination, filtering, search, and keyboard navigation for the tx dashboard"
+---
+
+**Status**: Draft
+**Priority**: P1 (Should Have)
+**Owner**: TBD
+**Last Updated**: 2026-01-30
+
+---
+
+## Problem Statement
+
+The tx dashboard (`apps/dashboard/`) provides basic visibility into tasks and agent runs, but lacks the UX polish needed for effective monitoring:
+
+1. **No pagination** - Lists load all items at once, causing slow renders with many tasks/runs
+2. **No filtering/search** - Users can't find specific tasks or runs without scrolling
+3. **Limited task detail** - Clicking a task doesn't show full info (description, deps, children)
+4. **No keyboard navigation** - Power users must use the mouse for everything
+5. **Basic loading states** - Simple spinners instead of skeleton placeholders
+
+These limitations make the dashboard frustrating to use when monitoring long-running RALPH loops or large task backlogs.
+
+---
+
+## Target Users
+
+| User Type | Primary Actions | Frequency |
+|-----------|-----------------|-----------|
+| Human Engineers | Monitor RALPH progress, review runs, inspect tasks | High (during dev) |
+| AI Agents | N/A (dashboard is human-facing) | None |
+
+---
+
+## Goals
+
+1. **Scalability**: Support 1000+ tasks and 500+ runs without UI lag
+2. **Discoverability**: Find any task or run within 3 interactions
+3. **Keyboard-first**: Navigate entirely with keyboard (vim-style)
+4. **Visual clarity**: Clear loading, empty, and error states
+
+---
+
+## Non-Goals
+
+- Mobile responsiveness (desktop-first tool)
+- Task creation/editing (use CLI for mutations)
+- Real-time WebSocket updates (polling is sufficient)
+- Authentication (single-user local tool)
+
+---
+
+## Success Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Initial load time | <1s | With 100 tasks visible |
+| Scroll-to-load latency | <200ms | Next page fetch |
+| Find specific task | <5s | Using search |
+| Keyboard navigation adoption | >50% | Of list interactions |
+
+---
+
+## User Stories
+
+### US-013-001: Infinite Scroll Tasks
+```
+As a human engineer,
+I want tasks to load more as I scroll down,
+So that I can browse large backlogs without waiting for all tasks to load.
+```
+**Acceptance Criteria**:
+- Initial load shows 20 tasks
+- Scrolling near bottom triggers next page fetch
+- Loading skeleton appears during fetch
+- Total count displayed in header
+
+### US-013-002: Filter Tasks by Status
+```
+As a human engineer,
+I want to filter tasks by status (ready, active, blocked, done),
+So that I can focus on tasks in a specific state.
+```
+**Acceptance Criteria**:
+- Status toggles appear above task list
+- Multiple statuses can be selected
+- URL updates with filter state (shareable)
+- Count per status shown on toggle
+
+### US-013-003: Search Tasks
+```
+As a human engineer,
+I want to search tasks by title or description,
+So that I can quickly find a specific task I'm looking for.
+```
+**Acceptance Criteria**:
+- Search input with placeholder text
+- Debounced search (300ms delay)
+- Matches highlighted in results
+- "No results" empty state
+
+### US-013-004: View Task Details
+```
+As a human engineer,
+I want to click a task to see full details in a side panel,
+So that I can see description, dependencies, and children without leaving the list.
+```
+**Acceptance Criteria**:
+- Click task opens slide-in panel
+- Panel shows: title, status, score, description, blockedBy, blocks, children
+- Related tasks are clickable (navigate within panel)
+- Escape closes panel
+
+### US-013-005: Keyboard Navigation
+```
+As a power user,
+I want to navigate task/run lists with arrow keys,
+So that I can browse efficiently without touching the mouse.
+```
+**Acceptance Criteria**:
+- Up/Down (or j/k) moves focus
+- Enter selects/opens focused item
+- Escape closes any open panel
+- Focus indicator clearly visible
+
+### US-013-006: Filter Runs
+```
+As a human engineer,
+I want to filter runs by agent type or status,
+So that I can find runs from a specific agent or failed runs.
+```
+**Acceptance Criteria**:
+- Agent dropdown filter
+- Status filter (running, completed, failed)
+- Filters combinable
+
+### US-013-007: Visual Polish
+```
+As a human engineer,
+I want clear loading and empty states,
+So that I understand what's happening and what actions to take.
+```
+**Acceptance Criteria**:
+- Shimmer skeleton during loads (not spinners)
+- Empty state with icon and helpful message
+- Smooth transitions when opening/closing panels
+- Subtle animations on list item appearance
+
+---
+
+## Dependencies
+
+- [PRD-001](/docs/prd/prd-001-core-task-management): Core task model
+- [PRD-007](/docs/prd/prd-007-multi-interface-integration): Multi-interface integration
+
+---
+
+## Open Questions
+
+1. Should filters persist in localStorage or only URL?
+2. Do we need a "Tasks I'm blocked by" view for agents to prioritize?
+3. Should keyboard shortcuts be configurable?
+
+---
+
+## References
+
+- TanStack Query infinite queries: https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries
