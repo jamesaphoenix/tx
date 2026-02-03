@@ -43,6 +43,7 @@ import { AnchorVerificationServiceLive } from "./services/anchor-verification.js
 import { SwarmVerificationServiceLive } from "./services/swarm-verification.js"
 import { PromotionServiceLive } from "./services/promotion-service.js"
 import { FeedbackTrackerServiceLive } from "./services/feedback-tracker.js"
+import { DiversifierServiceLive } from "./services/diversifier-service.js"
 import { WorkerServiceLive } from "./services/worker-service.js"
 import { ClaimServiceLive } from "./services/claim-service.js"
 import { OrchestratorServiceLive } from "./services/orchestrator-service.js"
@@ -132,6 +133,12 @@ export {
   FeedbackTrackerServiceLive,
   type LearningUsageFeedback
 } from "./services/feedback-tracker.js"
+export {
+  DiversifierService,
+  DiversifierServiceNoop,
+  DiversifierServiceLive,
+  DiversifierServiceAuto
+} from "./services/diversifier-service.js"
 export { CandidateRepository, CandidateRepositoryLive } from "./repo/candidate-repo.js"
 export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./repo/tracked-project-repo.js"
 export {
@@ -205,9 +212,9 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, edgeService))
   )
 
-  // RetrieverServiceLive needs repos, embedding, query expansion, reranker, graph expansion, and optionally feedback tracker
+  // RetrieverServiceLive needs repos, embedding, query expansion, reranker, graph expansion, diversifier, and optionally feedback tracker
   const retrieverService = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService, feedbackTrackerService))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService, feedbackTrackerService, DiversifierServiceLive))
   )
 
   // Services need repos, embedding, query expansion, reranker, retriever, and autoSyncService
@@ -304,9 +311,9 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, edgeService))
   )
 
-  // RetrieverServiceLive needs repos, embedding, query expansion, reranker, graph expansion, and optionally feedback tracker
+  // RetrieverServiceLive needs repos, embedding, query expansion, reranker, graph expansion, diversifier, and optionally feedback tracker
   const retrieverService = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService, feedbackTrackerService))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService, feedbackTrackerService, DiversifierServiceLive))
   )
 
   // Services with Noop embedding, query expansion, reranker, retriever, and auto-sync

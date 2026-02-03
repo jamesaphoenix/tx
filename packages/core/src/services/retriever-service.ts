@@ -5,6 +5,7 @@ import { QueryExpansionService } from "./query-expansion-service.js"
 import { RerankerService } from "./reranker-service.js"
 import { GraphExpansionService, type SeedLearning } from "./graph-expansion.js"
 import { FeedbackTrackerService } from "./feedback-tracker.js"
+import { DiversifierService } from "./diversifier-service.js"
 import { RetrievalError, DatabaseError } from "../errors.js"
 import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@jamesaphoenix/tx-types"
 import { cosineSimilarity } from "../utils/math.js"
@@ -299,6 +300,9 @@ export const RetrieverServiceLive = Layer.effect(
     // FeedbackTrackerService is optional - graceful degradation when not available
     const feedbackTrackerServiceOption = yield* Effect.serviceOption(FeedbackTrackerService)
     const feedbackTrackerService = Option.getOrNull(feedbackTrackerServiceOption)
+    // DiversifierService is optional - graceful degradation when not available
+    const diversifierServiceOption = yield* Effect.serviceOption(DiversifierService)
+    const diversifierService = Option.getOrNull(diversifierServiceOption)
 
     // Load recency weight from config
     const recencyWeightStr = yield* learningRepo.getConfig("recency_weight")
@@ -536,8 +540,18 @@ export const RetrieverServiceLive = Layer.effect(
           const topCandidates = withGraphExpansion.slice(0, Math.min(limit * 2, 20))
           const reranked = yield* applyReranking(query, topCandidates)
 
+          // Apply MMR diversification if enabled (after reranking, before final filtering)
+          // Pipeline: query expansion → BM25 → vector → RRF → graph expansion → reranking → DIVERSIFICATION → filter+limit
+          const diversifyOpts = options?.diversification
+          const diversified = (diversifyOpts?.enabled && diversifierService)
+            ? yield* Effect.catchAll(
+                diversifierService.mmrDiversify(reranked, limit * 2, diversifyOpts.lambda ?? 0.7),
+                () => Effect.succeed(reranked)
+              )
+            : reranked
+
           // Filter by minimum score and limit
-          return reranked
+          return diversified
             .filter(r => r.relevanceScore >= minScore)
             .slice(0, limit)
         }),
