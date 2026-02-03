@@ -283,6 +283,52 @@ const readTranscriptToolCalls = (
 }
 
 /**
+ * tx trace transcript <run-id> - Display raw transcript content.
+ *
+ * Outputs raw JSONL content from the transcript file.
+ * Designed to be piped to jq for filtering tool calls.
+ */
+export const traceTranscript = (pos: string[], _flags: Flags) =>
+  Effect.gen(function* () {
+    const runId = pos[0]
+    if (!runId) {
+      console.error("Error: run-id is required")
+      console.error("Usage: tx trace transcript <run-id>")
+      process.exit(1)
+    }
+
+    const runRepo = yield* RunRepository
+
+    // Get run details
+    const run = yield* runRepo.findById(runId as RunId)
+    if (!run) {
+      console.error(`Error: Run not found: ${runId}`)
+      process.exit(1)
+    }
+
+    // Check if transcript path exists
+    if (!run.transcriptPath) {
+      console.error(`Error: No transcript recorded for run: ${runId}`)
+      process.exit(1)
+    }
+
+    // Resolve transcript path relative to .tx directory
+    const txDir = process.cwd() + "/.tx"
+    const fullPath = run.transcriptPath.startsWith("/")
+      ? run.transcriptPath
+      : resolve(txDir, run.transcriptPath)
+
+    if (!existsSync(fullPath)) {
+      console.error(`Error: Transcript file not found: ${fullPath}`)
+      process.exit(1)
+    }
+
+    // Read and output raw content
+    const content = readFileSync(fullPath, "utf-8")
+    process.stdout.write(content)
+  }) as Effect.Effect<void, DatabaseError, RunRepository>
+
+/**
  * tx trace show <run-id> - Show metrics events for a run.
  */
 export const traceShow = (pos: string[], flags: Flags) =>
@@ -513,6 +559,8 @@ Options:
       yield* traceList(pos.slice(1), flags)
     } else if (subcommand === "show") {
       yield* traceShow(pos.slice(1), flags)
+    } else if (subcommand === "transcript") {
+      yield* traceTranscript(pos.slice(1), flags)
     } else {
       console.error(`Unknown trace subcommand: ${subcommand}`)
       console.error(`Run 'tx trace --help' for usage information`)
