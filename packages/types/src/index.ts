@@ -52,6 +52,7 @@ export {
   type LearningRowWithBM25,
   type RetrievalOptions,
   type GraphExpansionQueryOptions,
+  type DiversificationOptions,
 } from "./learning.js";
 
 // File learning types

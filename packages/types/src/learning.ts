@@ -184,6 +184,20 @@ export interface LearningRow {
 }
 
 /**
+ * Options for MMR (Maximal Marginal Relevance) diversification.
+ * Balances relevance with diversity to avoid redundant results.
+ * See PRD-017 for specification.
+ */
+export interface DiversificationOptions {
+  /** Enable MMR diversification (default: false) */
+  readonly enabled?: boolean;
+  /** Trade-off between relevance (1.0) and diversity (0.0) (default: 0.7) */
+  readonly lambda?: number;
+  /** Maximum results per category for top 5 results (default: 2) */
+  readonly maxPerCategory?: number;
+}
+
+/**
  * Options for retrieval operations.
  * Used by RetrieverService.search() and custom retrievers.
  */
@@ -198,6 +212,8 @@ export interface RetrievalOptions {
   readonly sourceType?: LearningSourceType;
   /** Graph expansion options for traversing related learnings */
   readonly graphExpansion?: GraphExpansionQueryOptions;
+  /** MMR diversification options for result variety */
+  readonly diversification?: DiversificationOptions;
 }
 
 /**
