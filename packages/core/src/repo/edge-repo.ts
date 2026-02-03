@@ -20,6 +20,8 @@ export class EdgeRepository extends Context.Tag("EdgeRepository")<
     readonly findBySource: (sourceType: NodeType, sourceId: string) => Effect.Effect<readonly Edge[], DatabaseError>
     readonly findByTarget: (targetType: NodeType, targetId: string) => Effect.Effect<readonly Edge[], DatabaseError>
     readonly findByMultipleSources: (sourceType: NodeType, sourceIds: readonly string[]) => Effect.Effect<ReadonlyMap<string, readonly Edge[]>, DatabaseError>
+    readonly findByEdgeType: (edgeType: EdgeType) => Effect.Effect<readonly Edge[], DatabaseError>
+    readonly countByType: () => Effect.Effect<ReadonlyMap<EdgeType, number>, DatabaseError>
     readonly findNeighbors: (
       nodeType: NodeType,
       nodeId: string,
@@ -140,6 +142,37 @@ export const EdgeRepositoryLive = Layer.effect(
             }
 
             return result as ReadonlyMap<string, readonly Edge[]>
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findByEdgeType: (edgeType) =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              `SELECT * FROM learning_edges
+               WHERE edge_type = ? AND invalidated_at IS NULL
+               ORDER BY weight DESC, created_at ASC`
+            ).all(edgeType) as EdgeRow[]
+            return rows.map(rowToEdge)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      countByType: () =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              `SELECT edge_type, COUNT(*) as count FROM learning_edges
+               WHERE invalidated_at IS NULL
+               GROUP BY edge_type`
+            ).all() as Array<{ edge_type: string; count: number }>
+
+            const result = new Map<EdgeType, number>()
+            for (const row of rows) {
+              result.set(row.edge_type as EdgeType, row.count)
+            }
+            return result as ReadonlyMap<EdgeType, number>
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

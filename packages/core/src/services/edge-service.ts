@@ -275,8 +275,7 @@ export const EdgeServiceLive = Layer.effect(
       findByType: (edgeType) =>
         Effect.gen(function* () {
           yield* validateEdgeType(edgeType)
-          const allEdges = yield* edgeRepo.findAll()
-          return allEdges.filter(e => e.edgeType === edgeType)
+          return yield* edgeRepo.findByEdgeType(edgeType)
         }),
 
       findFromSource: (sourceType, sourceId) =>
@@ -290,7 +289,7 @@ export const EdgeServiceLive = Layer.effect(
 
       countByType: () =>
         Effect.gen(function* () {
-          const allEdges = yield* edgeRepo.findAll()
+          const dbCounts = yield* edgeRepo.countByType()
           const counts = new Map<EdgeType, number>()
 
           // Initialize all types with 0
@@ -298,10 +297,9 @@ export const EdgeServiceLive = Layer.effect(
             counts.set(type, 0)
           }
 
-          // Count each edge type
-          for (const edge of allEdges) {
-            const current = counts.get(edge.edgeType) ?? 0
-            counts.set(edge.edgeType, current + 1)
+          // Merge in the actual counts from database
+          for (const [edgeType, count] of dbCounts) {
+            counts.set(edgeType, count)
           }
 
           return counts
