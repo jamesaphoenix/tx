@@ -3,9 +3,18 @@
  */
 
 import * as path from "node:path"
+import * as fs from "node:fs"
+import * as os from "node:os"
 import { Effect } from "effect"
-import { CandidateRepository, PromotionService, TrackedProjectRepository } from "@tx/core"
-import { CANDIDATE_CONFIDENCES, SOURCE_TYPES, type CandidateConfidence, type SourceType } from "@tx/types"
+import {
+  CandidateRepository,
+  CandidateExtractorService,
+  DeduplicationService,
+  PromotionService,
+  TrackedProjectRepository,
+  matchesGlob
+} from "@tx/core"
+import { CANDIDATE_CONFIDENCES, SOURCE_TYPES, type CandidateConfidence, type SourceType, type TranscriptChunk } from "@tx/types"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 
@@ -21,6 +30,101 @@ function opt(flags: Flags, ...names: string[]): string | undefined {
     if (typeof v === "string") return v
   }
   return undefined
+}
+
+/**
+ * Expand ~ to home directory in a path.
+ */
+function expandTilde(filePath: string): string {
+  if (filePath.startsWith("~")) {
+    return filePath.replace(/^~/, os.homedir())
+  }
+  return filePath
+}
+
+/**
+ * Find all files matching a glob pattern.
+ */
+function findFilesMatchingPattern(pattern: string): string[] {
+  const expanded = expandTilde(pattern)
+
+  // Extract base directory (everything before first glob char)
+  const firstGlobIndex = expanded.search(/[*?[\]{}]/)
+  if (firstGlobIndex === -1) {
+    // No glob chars - treat as literal path
+    if (fs.existsSync(expanded) && fs.statSync(expanded).isFile()) {
+      return [expanded]
+    }
+    return []
+  }
+
+  // Get base directory
+  const beforeGlob = expanded.slice(0, firstGlobIndex)
+  const lastSep = Math.max(beforeGlob.lastIndexOf("/"), beforeGlob.lastIndexOf(path.sep))
+  const baseDir = lastSep > 0 ? expanded.slice(0, lastSep) : "."
+
+  if (!fs.existsSync(baseDir)) {
+    return []
+  }
+
+  // Recursively find all files and filter by pattern
+  const allFiles = getAllFilesRecursive(baseDir)
+  return allFiles.filter(f => matchesGlob(f, expanded))
+}
+
+/**
+ * Recursively get all files in a directory.
+ */
+function getAllFilesRecursive(dir: string): string[] {
+  const results: string[] = []
+
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        // Skip hidden directories and node_modules
+        if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
+          results.push(...getAllFilesRecursive(fullPath))
+        }
+      } else if (entry.isFile()) {
+        results.push(fullPath)
+      }
+    }
+  } catch {
+    // Ignore permission errors etc
+  }
+
+  return results
+}
+
+/**
+ * Find all JSONL files in a directory (recursively).
+ */
+function findJsonlFilesInDirectory(dir: string): string[] {
+  const expanded = expandTilde(dir)
+  if (!fs.existsSync(expanded)) {
+    return []
+  }
+
+  const allFiles = getAllFilesRecursive(expanded)
+  return allFiles.filter(f => f.endsWith(".jsonl"))
+}
+
+/**
+ * Read a JSONL file and return each line as a string.
+ * Skips empty lines.
+ */
+function readJsonlFile(filePath: string): string[] {
+  try {
+    const content = fs.readFileSync(filePath, "utf-8")
+    return content
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+  } catch {
+    return []
+  }
 }
 
 export const daemon = (pos: string[], flags: Flags) =>
@@ -54,9 +158,159 @@ export const daemon = (pos: string[], flags: Flags) =>
       console.error("daemon status: not implemented yet")
       process.exit(1)
     } else if (subcommand === "process") {
-      // TODO: Implement daemon process (tx-b9c33ac5)
-      console.error("daemon process: not implemented yet")
-      process.exit(1)
+      // Process JSONL files to extract learning candidates
+      const candidateRepo = yield* CandidateRepository
+      const extractorService = yield* CandidateExtractorService
+      const dedupService = yield* DeduplicationService
+      const trackedProjectRepo = yield* TrackedProjectRepository
+
+      // Parse --path flag for glob pattern
+      const pathPattern = opt(flags, "path", "p")
+
+      // Find files to process
+      let filesToProcess: string[] = []
+
+      if (pathPattern) {
+        // User specified a path pattern - expand it
+        filesToProcess = findFilesMatchingPattern(pathPattern)
+      } else {
+        // Use tracked projects to find JSONL files
+        const projects = yield* trackedProjectRepo.findAll()
+        const enabledProjects = projects.filter(p => p.enabled)
+
+        if (enabledProjects.length === 0) {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: "no_tracked_projects", message: "No tracked projects found. Use 'tx daemon track <path>' to add one." }))
+          } else {
+            console.error("No tracked projects found. Use 'tx daemon track <path>' to add one.")
+            console.error("Or specify a path pattern with --path <glob>")
+          }
+          process.exit(1)
+        }
+
+        // Find JSONL files in tracked projects
+        for (const project of enabledProjects) {
+          const projectFiles = findJsonlFilesInDirectory(project.projectPath)
+          filesToProcess.push(...projectFiles)
+        }
+      }
+
+      if (filesToProcess.length === 0) {
+        if (flag(flags, "json")) {
+          console.log(toJson({ filesProcessed: 0, candidatesExtracted: 0, message: "No JSONL files found" }))
+        } else {
+          console.log("No JSONL files found to process")
+        }
+        return
+      }
+
+      // Process each file
+      let totalFilesProcessed = 0
+      let totalLinesProcessed = 0
+      let totalNewLines = 0
+      let totalCandidatesExtracted = 0
+      const fileResults: Array<{
+        file: string
+        linesProcessed: number
+        newLines: number
+        candidatesExtracted: number
+      }> = []
+
+      // Check if extractor is available
+      const extractorAvailable = yield* extractorService.isAvailable()
+      if (!extractorAvailable && !flag(flags, "json")) {
+        console.log("Note: LLM extraction not available (no API key configured)")
+        console.log("Processing will track files but not extract candidates")
+      }
+
+      for (const filePath of filesToProcess) {
+        // Read and parse the JSONL file
+        const lines = readJsonlFile(filePath)
+        if (lines.length === 0) {
+          continue
+        }
+
+        // Prepare lines for deduplication
+        const lineInputs = lines.map((content, idx) => ({
+          content,
+          lineNumber: idx + 1
+        }))
+
+        // Process lines through deduplication
+        const dedupResult = yield* dedupService.processLines(lineInputs, filePath)
+
+        // Get the new lines that weren't already processed
+        const newLineContents = lineInputs
+          .filter(l => l.lineNumber > dedupResult.endLine - dedupResult.newLines)
+          .slice(-dedupResult.newLines)
+          .map(l => l.content)
+
+        let candidatesExtracted = 0
+
+        // Extract candidates from new lines if extractor is available
+        if (extractorAvailable && newLineContents.length > 0) {
+          // Combine new lines into a transcript chunk for extraction
+          const combinedContent = newLineContents.join("\n")
+          const chunk: TranscriptChunk = {
+            content: combinedContent,
+            sourceFile: filePath,
+            lineRange: {
+              start: dedupResult.startLine,
+              end: dedupResult.endLine
+            }
+          }
+
+          const extractionResult = yield* Effect.either(extractorService.extract(chunk))
+
+          if (extractionResult._tag === "Right" && extractionResult.right.wasExtracted) {
+            // Store extracted candidates
+            for (const candidate of extractionResult.right.candidates) {
+              yield* candidateRepo.insert({
+                content: candidate.content,
+                confidence: candidate.confidence,
+                category: candidate.category,
+                sourceFile: filePath
+              })
+              candidatesExtracted++
+            }
+          }
+        }
+
+        totalFilesProcessed++
+        totalLinesProcessed += lines.length
+        totalNewLines += dedupResult.newLines
+        totalCandidatesExtracted += candidatesExtracted
+
+        fileResults.push({
+          file: filePath,
+          linesProcessed: lines.length,
+          newLines: dedupResult.newLines,
+          candidatesExtracted
+        })
+      }
+
+      // Output results
+      if (flag(flags, "json")) {
+        console.log(toJson({
+          filesProcessed: totalFilesProcessed,
+          linesProcessed: totalLinesProcessed,
+          newLines: totalNewLines,
+          candidatesExtracted: totalCandidatesExtracted,
+          files: fileResults
+        }))
+      } else {
+        console.log(`Processed ${totalFilesProcessed} file(s)`)
+        console.log(`  Lines processed: ${totalLinesProcessed}`)
+        console.log(`  New lines: ${totalNewLines}`)
+        console.log(`  Candidates extracted: ${totalCandidatesExtracted}`)
+
+        if (fileResults.length > 0 && fileResults.some(f => f.newLines > 0)) {
+          console.log("\nFiles with new content:")
+          for (const f of fileResults.filter(f => f.newLines > 0)) {
+            console.log(`  ${f.file}: ${f.newLines} new lines, ${f.candidatesExtracted} candidates`)
+          }
+        }
+      }
     } else if (subcommand === "review") {
       // List pending learning candidates awaiting promotion
       const repo = yield* CandidateRepository

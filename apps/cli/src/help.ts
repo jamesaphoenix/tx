@@ -1068,21 +1068,21 @@ Examples:
   tx daemon list
   tx daemon list --json`,
 
-  "daemon process": `tx daemon process - Process learning candidates
+  "daemon process": `tx daemon process - Process JSONL files for learning candidates
 
 Usage: tx daemon process [options]
 
-Processes pending learning candidates, extracting insights from
-recent file changes.
+Processes JSONL files to extract learning candidates. By default, processes
+files from tracked projects. Use --path to specify a custom glob pattern.
 
 Options:
-  --limit <n>  Maximum candidates to process (default: 10)
-  --json       Output as JSON
-  --help       Show this help
+  --path, -p <glob>  Glob pattern for JSONL files to process
+  --json             Output as JSON
+  --help             Show this help
 
 Examples:
-  tx daemon process
-  tx daemon process --limit 5`,
+  tx daemon process                              # Process tracked projects
+  tx daemon process --path ~/.claude/**/*.jsonl  # Process specific files`,
 
   "daemon review": `tx daemon review - List pending learning candidates
 
