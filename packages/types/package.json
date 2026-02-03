@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-types",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Shared TypeScript types for tx - zero runtime dependencies",
   "type": "module",
   "main": "./dist/index.js",

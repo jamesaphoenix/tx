@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-test-utils",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Test utilities, factories, fixtures, and helpers for tx monorepo",
   "type": "module",
   "main": "./dist/index.js",
@@ -69,5 +69,12 @@
     "@types/better-sqlite3": "^7.6.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jamesaphoenix/tx.git",
+    "directory": "packages/test-utils"
+  },
+  "author": "James Phoenix",
+  "license": "MIT"
 }
