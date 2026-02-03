@@ -1,8 +1,84 @@
 ---
-title: Introduction
-description: Getting started with tx
+title: tx
+description: TanStack for AI agents. Primitives, not frameworks.
 ---
 
-## Overview
+# tx
 
-tx is a task management system for AI agents.
+**TanStack for AI agents.** Primitives, not frameworks.
+
+Headless infrastructure for memory, tasks, and orchestration.
+
+## The Problem
+
+Your agents lose context between sessions. Tasks collide when multiple agents work in parallel. Learnings vanish into conversation history. You're rebuilding the same infrastructure every project.
+
+## The Solution
+
+Composable primitives that handle the hard parts. You keep control of the orchestration.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Your Orchestration (your code, your rules)             │
+├─────────────────────────────────────────────────────────┤
+│  tx primitives                                          │
+│                                                         │
+│   tx ready     tx done      tx context    tx learn      │
+│   tx claim     tx block     tx handoff    tx sync       │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Why Primitives?
+
+The orchestration flow is where you create value. It encodes your domain knowledge:
+- How your codebase works
+- What your agents are good at
+- Where humans need to intervene
+- How you handle failures
+
+**If we dictate the flow, we're not a tool. We're a competitor.** We don't know your domain, your constraints, or whether you need 3 agents or 30.
+
+TanStack won by saying: "Here's headless table logic. Style it yourself."
+
+tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
+
+## Core Primitives
+
+| Primitive | Purpose |
+|-----------|---------|
+| [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) |
+| [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others |
+| [`tx block`](/docs/primitives/block) | Declare dependencies between tasks |
+| [`tx claim`](/docs/primitives/claim) | Mark task as being worked by an agent |
+| [`tx handoff`](/docs/primitives/handoff) | Transfer task with context to another agent |
+| [`tx checkpoint`](/docs/primitives/checkpoint) | Save progress without completing |
+| [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection |
+| [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge |
+| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL |
+
+## Get Started
+
+Ready to dive in? Follow the [Getting Started guide](/docs/getting-started) to install tx and run your first task loop.
+
+## Design Principles
+
+- **No opinions on orchestration.** Serial, parallel, swarm, human-in-loop. Your call.
+- **Powerful defaults.** `tx ready` just works. So does dependency resolution.
+- **Escape hatches everywhere.** Raw SQL access, JSONL export, custom scoring.
+- **Framework agnostic.** CLI, MCP, REST API, TypeScript SDK. Use what fits.
+- **Local-first.** SQLite + git. No server required. Works offline.
+
+## Interfaces
+
+| Interface | Use Case |
+|-----------|----------|
+| **CLI** | Scripts, terminal workflows, agent loops |
+| **MCP Server** | Claude Code integration (16 tools) |
+| **REST API** | Custom dashboards, external integrations |
+| **TypeScript SDK** | Programmatic access from your agents |
+| **Dashboard** | Visual monitoring and management |
+
+## License
+
+MIT

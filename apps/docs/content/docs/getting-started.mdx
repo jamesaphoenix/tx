@@ -1,0 +1,219 @@
+---
+title: Getting Started
+description: Install tx and run your first agent loop
+---
+
+# Getting Started
+
+Get up and running with tx in minutes.
+
+## Installation
+
+Install tx globally via npm:
+
+```bash
+npm install -g @jamesaphoenix/tx
+```
+
+Or with your preferred package manager:
+
+```bash
+# pnpm
+pnpm add -g @jamesaphoenix/tx
+
+# yarn
+yarn global add @jamesaphoenix/tx
+
+# bun
+bun add -g @jamesaphoenix/tx
+```
+
+## Initialize Your Project
+
+Navigate to your project directory and initialize tx:
+
+```bash
+cd your-project
+tx init
+```
+
+This creates a `.tx/` directory:
+
+```
+.tx/
+├── tasks.db           # SQLite database (gitignored)
+├── tasks.jsonl        # Git-tracked task history
+├── learnings.jsonl    # Git-tracked learnings
+└── runs.jsonl         # Git-tracked run history
+```
+
+## Basic Usage
+
+### Create Tasks
+
+```bash
+# Add a task
+tx add "Implement user authentication"
+
+# Add with priority score (higher = more important)
+tx add "Fix critical security bug" --score 900
+
+# Add as a subtask
+tx add "Write login form" --parent tx-abc123
+```
+
+### View Ready Tasks
+
+```bash
+# List tasks ready to work on (unblocked, sorted by priority)
+tx ready
+
+# Get top 5 as JSON for scripting
+tx ready --limit 5 --json
+```
+
+### Complete Tasks
+
+```bash
+# Mark a task done
+tx done tx-abc123
+
+# This automatically unblocks any tasks that were waiting on it
+```
+
+### Manage Dependencies
+
+```bash
+# Task A blocks task B (B waits for A)
+tx block tx-b tx-a
+
+# View the task tree
+tx tree tx-abc123
+```
+
+## Your First Agent Loop
+
+The simplest agent loop pulls tasks one at a time:
+
+```bash
+#!/bin/bash
+while true; do
+  # Get highest priority ready task
+  TASK=$(tx ready --json --limit 1 | jq -r '.[0].id // empty')
+
+  # Exit if no ready tasks
+  [ -z "$TASK" ] && break
+
+  # Let Claude work on it
+  claude "Your task is $TASK. Run 'tx show $TASK' for details. When done, run 'tx done $TASK'"
+done
+
+echo "All tasks complete!"
+```
+
+## Store and Retrieve Learnings
+
+As you work, capture knowledge that should persist:
+
+```bash
+# Store a learning
+tx learning:add "Use bcrypt for password hashing, not SHA256"
+tx learning:add "The auth service requires Redis for session storage"
+
+# Search learnings
+tx learning:search "authentication"
+
+# Get context for a specific task (relevant learnings auto-selected)
+tx context tx-abc123
+```
+
+## Sync with Git
+
+tx stores data in SQLite for speed, but syncs to JSONL for git:
+
+```bash
+# Export to git-trackable files
+tx sync export
+
+# Import from JSONL (e.g., after git pull)
+tx sync import
+```
+
+Add to your workflow:
+
+```bash
+# Before committing
+tx sync export && git add .tx/*.jsonl
+
+# After pulling
+git pull && tx sync import
+```
+
+## Example Orchestration Patterns
+
+### Parallel Agents
+
+Run multiple agents pulling from the same queue:
+
+```bash
+for i in {1..5}; do
+  (while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
+    claude "Complete $task" && tx done $task
+  done) &
+done
+wait
+```
+
+### Human-in-Loop
+
+Agent proposes, human approves:
+
+```bash
+task=$(tx ready --json --limit 1 | jq -r '.[0].id')
+claude "Plan implementation for $task" > plan.md
+echo "Review plan.md, then press Enter to continue..."
+read
+claude "Execute plan.md"
+tx done $task
+```
+
+## Project Structure
+
+```
+your-project/
+├── .tx/
+│   ├── tasks.db           # SQLite (gitignored)
+│   ├── tasks.jsonl        # Tasks (git-tracked)
+│   ├── learnings.jsonl    # Learnings (git-tracked)
+│   └── runs.jsonl         # Run history (git-tracked)
+├── CLAUDE.md              # Agent instructions (optional)
+└── ...your code
+```
+
+## Next Steps
+
+- **[CLI Primitives](/docs/primitives)** - Full reference for all tx commands
+- **[tx ready](/docs/primitives/ready)** - Deep dive into task readiness detection
+- **[tx context](/docs/primitives/context)** - Contextual learning retrieval
+- **[tx sync](/docs/primitives/sync)** - Git synchronization details
+
+## Quick Reference
+
+```bash
+# Tasks
+tx add <title>              # Create task
+tx ready                    # List unblocked tasks
+tx done <id>                # Complete task
+tx block <id> <blocker>     # Add dependency
+tx tree <id>                # Show hierarchy
+tx show <id>                # View task details
+
+# Memory
+tx learning:add <content>   # Store learning
+tx learning:search <query>  # Find learnings
+tx context <task-id>        # Get relevant context
+
+# Sync
+tx sync export              # SQLite → JSONL
+tx sync import              # JSONL → SQLite
+```
