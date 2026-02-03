@@ -4,7 +4,7 @@
 
 import * as path from "node:path"
 import { Effect } from "effect"
-import { TrackedProjectRepository } from "@tx/core"
+import { PromotionService, TrackedProjectRepository } from "@tx/core"
 import { SOURCE_TYPES, type SourceType } from "@tx/types"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
@@ -67,23 +67,107 @@ export const daemon = (pos: string[], flags: Flags) =>
       console.error("daemon review: not implemented yet")
       process.exit(1)
     } else if (subcommand === "promote") {
-      // TODO: Implement daemon promote (tx-ea4469d5)
-      const candidateId = pos[1]
-      if (!candidateId) {
+      const candidateIdStr = pos[1]
+      if (!candidateIdStr) {
         console.error("Usage: tx daemon promote <candidate-id>")
         process.exit(1)
       }
-      console.error("daemon promote: not implemented yet")
-      process.exit(1)
+
+      const candidateId = parseInt(candidateIdStr, 10)
+      if (isNaN(candidateId)) {
+        console.error(`Invalid candidate ID: ${candidateIdStr}`)
+        process.exit(1)
+      }
+
+      const promotionService = yield* PromotionService
+      const result = yield* Effect.either(promotionService.promote(candidateId))
+
+      if (result._tag === "Left") {
+        const error = result.left
+        if (error._tag === "CandidateNotFoundError") {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: "not_found", candidateId }))
+          } else {
+            console.error(`Candidate not found: ${candidateId}`)
+          }
+        } else {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: "database_error", message: error.message }))
+          } else {
+            console.error(`Database error: ${error.message}`)
+          }
+        }
+        process.exit(1)
+      }
+
+      const { candidate, learning } = result.right
+      if (flag(flags, "json")) {
+        console.log(toJson({
+          promoted: true,
+          candidateId: candidate.id,
+          learningId: learning.id
+        }))
+      } else {
+        console.log(`Promoted candidate ${candidate.id} to learning ${learning.id}`)
+      }
     } else if (subcommand === "reject") {
-      // TODO: Implement daemon reject (tx-ea4469d5)
-      const candidateId = pos[1]
-      if (!candidateId) {
+      const candidateIdStr = pos[1]
+      if (!candidateIdStr) {
         console.error("Usage: tx daemon reject <candidate-id> --reason <reason>")
         process.exit(1)
       }
-      console.error("daemon reject: not implemented yet")
-      process.exit(1)
+
+      const candidateId = parseInt(candidateIdStr, 10)
+      if (isNaN(candidateId)) {
+        console.error(`Invalid candidate ID: ${candidateIdStr}`)
+        process.exit(1)
+      }
+
+      const reason = opt(flags, "reason", "r")
+      if (!reason) {
+        console.error("Usage: tx daemon reject <candidate-id> --reason <reason>")
+        console.error("The --reason flag is required")
+        process.exit(1)
+      }
+
+      const promotionService = yield* PromotionService
+      const result = yield* Effect.either(promotionService.reject(candidateId, reason))
+
+      if (result._tag === "Left") {
+        const error = result.left
+        if (error._tag === "CandidateNotFoundError") {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: "not_found", candidateId }))
+          } else {
+            console.error(`Candidate not found: ${candidateId}`)
+          }
+        } else if (error._tag === "ValidationError") {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: "validation_error", message: error.reason }))
+          } else {
+            console.error(`Validation error: ${error.reason}`)
+          }
+        } else {
+          if (flag(flags, "json")) {
+            console.log(toJson({ error: "database_error", message: error.message }))
+          } else {
+            console.error(`Database error: ${error.message}`)
+          }
+        }
+        process.exit(1)
+      }
+
+      const candidate = result.right
+      if (flag(flags, "json")) {
+        console.log(toJson({
+          rejected: true,
+          candidateId: candidate.id,
+          reason: candidate.rejectionReason
+        }))
+      } else {
+        console.log(`Rejected candidate ${candidate.id}`)
+        console.log(`  Reason: ${candidate.rejectionReason}`)
+      }
     } else if (subcommand === "track") {
       const projectPath = pos[1]
       if (!projectPath) {
