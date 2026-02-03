@@ -4,8 +4,8 @@
 
 import * as path from "node:path"
 import { Effect } from "effect"
-import { PromotionService, TrackedProjectRepository } from "@tx/core"
-import { SOURCE_TYPES, type SourceType } from "@tx/types"
+import { CandidateRepository, PromotionService, TrackedProjectRepository } from "@tx/core"
+import { CANDIDATE_CONFIDENCES, SOURCE_TYPES, type CandidateConfidence, type SourceType } from "@tx/types"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 
@@ -58,14 +58,65 @@ export const daemon = (pos: string[], flags: Flags) =>
       console.error("daemon process: not implemented yet")
       process.exit(1)
     } else if (subcommand === "review") {
-      // TODO: Implement daemon review (tx-bcd789d8)
-      const candidateId = pos[1]
-      if (!candidateId) {
-        console.error("Usage: tx daemon review <candidate-id>")
-        process.exit(1)
+      // List pending learning candidates awaiting promotion
+      const repo = yield* CandidateRepository
+
+      // Parse --confidence flag (comma-separated list)
+      const confidenceOpt = opt(flags, "confidence", "c")
+      let confidences: CandidateConfidence[] | undefined
+      if (confidenceOpt) {
+        const parts = confidenceOpt.split(",").map(s => s.trim())
+        const invalid = parts.filter(p => !CANDIDATE_CONFIDENCES.includes(p as CandidateConfidence))
+        if (invalid.length > 0) {
+          console.error(`Invalid confidence level(s): ${invalid.join(", ")}`)
+          console.error(`Valid levels: ${CANDIDATE_CONFIDENCES.join(", ")}`)
+          process.exit(1)
+        }
+        confidences = parts as CandidateConfidence[]
       }
-      console.error("daemon review: not implemented yet")
-      process.exit(1)
+
+      // Parse --limit flag
+      const limitOpt = opt(flags, "limit", "l")
+      let limit: number | undefined
+      if (limitOpt) {
+        limit = parseInt(limitOpt, 10)
+        if (isNaN(limit) || limit <= 0) {
+          console.error(`Invalid limit: ${limitOpt}`)
+          process.exit(1)
+        }
+      }
+
+      // Query pending candidates
+      const candidates = yield* repo.findByFilter({
+        status: "pending",
+        confidence: confidences,
+        limit
+      })
+
+      if (flag(flags, "json")) {
+        console.log(toJson(candidates.map(c => ({
+          id: c.id,
+          confidence: c.confidence,
+          category: c.category,
+          content: c.content,
+          sourceFile: c.sourceFile,
+          extractedAt: c.extractedAt.toISOString()
+        }))))
+      } else {
+        if (candidates.length === 0) {
+          console.log("No pending candidates")
+        } else {
+          console.log(`Pending candidates (${candidates.length}):`)
+          for (const c of candidates) {
+            // Truncate content for preview (first 60 chars)
+            const preview = c.content.length > 60
+              ? c.content.slice(0, 60) + "..."
+              : c.content
+            console.log(`  [${c.id}] ${c.confidence} - ${preview}`)
+            console.log(`       Source: ${c.sourceFile}`)
+          }
+        }
+      }
     } else if (subcommand === "promote") {
       const candidateIdStr = pos[1]
       if (!candidateIdStr) {

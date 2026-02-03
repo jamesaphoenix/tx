@@ -61,7 +61,7 @@ Commands:
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
   daemon process          Process learning candidates
-  daemon review           Review a learning candidate
+  daemon review           List pending learning candidates
   daemon promote          Promote a candidate to learning
   daemon reject           Reject a learning candidate
   mcp-server              Start MCP server (JSON-RPC over stdio)
@@ -1084,22 +1084,22 @@ Examples:
   tx daemon process
   tx daemon process --limit 5`,
 
-  "daemon review": `tx daemon review - Review a learning candidate
+  "daemon review": `tx daemon review - List pending learning candidates
 
-Usage: tx daemon review <candidate-id> [options]
+Usage: tx daemon review [options]
 
-Shows details of a specific learning candidate for review.
-
-Arguments:
-  <candidate-id>  Required. Candidate ID
+Lists pending learning candidates awaiting promotion.
 
 Options:
-  --json   Output as JSON
-  --help   Show this help
+  --confidence, -c <levels>  Filter by confidence (comma-separated: high,medium,low)
+  --limit, -l <n>            Maximum candidates to show
+  --json                     Output as JSON
+  --help                     Show this help
 
 Examples:
-  tx daemon review 42
-  tx daemon review 42 --json`,
+  tx daemon review
+  tx daemon review --confidence medium,low
+  tx daemon review --limit 10 --json`,
 
   "daemon promote": `tx daemon promote - Promote a candidate to learning
 
