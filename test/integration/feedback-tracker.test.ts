@@ -309,6 +309,35 @@ describe("FeedbackTrackerServiceLive Integration", () => {
       expect(result).toBeCloseTo(0.667, 2)
     })
 
+    it("calculates Bayesian average correctly with 3/4 helpful (~0.667)", async () => {
+      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const feedbackSvc = yield* FeedbackTrackerService
+          const learningSvc = yield* LearningService
+
+          const learning = yield* learningSvc.create({
+            content: "Learning for 3/4 helpful test",
+            sourceType: "manual",
+          })
+
+          // Record 3 helpful and 1 unhelpful usage (3/4 helpful ratio)
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_2, [{ id: learning.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(FIXTURES.RUN_3, [{ id: learning.id, helpful: true }])
+          yield* feedbackSvc.recordUsage(fixtureId("run-4"), [{ id: learning.id, helpful: false }])
+
+          return yield* feedbackSvc.getFeedbackScore(learning.id)
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Bayesian: (3 + 0.5 * 2) / (4 + 2) = 4 / 6 ≈ 0.667
+      // With 3/4 (75%) helpful, the Bayesian average is ~0.667
+      expect(result).toBeCloseTo(0.667, 2)
+    })
+
     it("scores are independent per learning", async () => {
       const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@tx/core")
       const layer = makeAppLayer(":memory:")
@@ -536,5 +565,121 @@ describe("FeedbackTrackerServiceNoop", () => {
     expect(result.get(2)).toBe(0.5)
     expect(result.get(3)).toBe(0.5)
     expect(result.get(100)).toBe(0.5)
+  })
+})
+
+// =============================================================================
+// Retriever Integration Tests (feedbackScore in search results)
+// =============================================================================
+
+describe("FeedbackTracker Retriever Integration", () => {
+  it("search results include feedbackScore field", async () => {
+    const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const retrieverSvc = yield* RetrieverService
+
+        // Create learning
+        yield* learningSvc.create({
+          content: "Database optimization for feedback test",
+          sourceType: "manual",
+        })
+
+        // Search should include feedbackScore
+        return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.length).toBeGreaterThanOrEqual(1)
+
+    // All results should have feedbackScore field
+    for (const r of result) {
+      expect(r).toHaveProperty("feedbackScore")
+      expect(typeof r.feedbackScore).toBe("number")
+      expect(r.feedbackScore).toBeGreaterThanOrEqual(0)
+      expect(r.feedbackScore).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it("feedbackScore defaults to 0.5 for learnings with no feedback", async () => {
+    const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const retrieverSvc = yield* RetrieverService
+
+        // Create learning (no feedback)
+        yield* learningSvc.create({
+          content: "Database indexing for neutral feedback test",
+          sourceType: "manual",
+        })
+
+        return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.length).toBeGreaterThanOrEqual(1)
+
+    // Without feedback, score should be neutral (0.5)
+    expect(result[0].feedbackScore).toBe(0.5)
+  })
+
+  it("learnings with good feedback rank higher than new learnings (same BM25 score)", async () => {
+    const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const feedbackSvc = yield* FeedbackTrackerService
+        const retrieverSvc = yield* RetrieverService
+
+        // Create two learnings with identical content (same BM25 score)
+        const helpfulLearning = yield* learningSvc.create({
+          content: "Database transaction patterns for ranking test",
+          sourceType: "manual",
+        })
+        const newLearning = yield* learningSvc.create({
+          content: "Database transaction patterns for ranking test",
+          sourceType: "manual",
+        })
+
+        // Record positive feedback for first learning only
+        yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: helpfulLearning.id, helpful: true }])
+        yield* feedbackSvc.recordUsage(FIXTURES.RUN_2, [{ id: helpfulLearning.id, helpful: true }])
+        yield* feedbackSvc.recordUsage(FIXTURES.RUN_3, [{ id: helpfulLearning.id, helpful: true }])
+
+        // Search returns both results
+        const searchResults = yield* retrieverSvc.search("database transaction", { limit: 10, minScore: 0 })
+
+        return {
+          searchResults,
+          helpfulId: helpfulLearning.id,
+          newId: newLearning.id
+        }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.searchResults.length).toBeGreaterThanOrEqual(2)
+
+    // Find the helpful and new learnings in results
+    const helpfulResult = result.searchResults.find(r => r.id === result.helpfulId)
+    const newResult = result.searchResults.find(r => r.id === result.newId)
+
+    expect(helpfulResult).toBeDefined()
+    expect(newResult).toBeDefined()
+
+    // Helpful learning should have higher feedbackScore (0.8 vs 0.5)
+    // Bayesian: (3 + 0.5*2) / (3 + 2) = 4/5 = 0.8
+    expect(helpfulResult!.feedbackScore).toBe(0.8)
+    expect(newResult!.feedbackScore).toBe(0.5) // No feedback = neutral
+
+    // Helpful learning should rank higher due to feedback boost
+    expect(helpfulResult!.relevanceScore).toBeGreaterThan(newResult!.relevanceScore)
   })
 })
