@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from "react"
+import { useCallback, useEffect, forwardRef, useImperativeHandle, useRef } from "react"
 import { useInfiniteRuns, type RunFilters } from "../../hooks/useInfiniteRuns"
 import { useIntersectionObserver } from "../../hooks/useIntersectionObserver"
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation"
@@ -144,9 +144,6 @@ export function RunsList({ filters = {}, onSelectRun, onEscape }: RunsListProps)
     error,
   } = useInfiniteRuns(filters)
 
-  // Refs for card elements for scrollIntoView
-  const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-
   // Keyboard navigation
   const handleSelect = useCallback(
     (index: number) => {
@@ -232,13 +229,6 @@ export function RunsList({ filters = {}, onSelectRun, onEscape }: RunsListProps)
         {runs.map((run, index) => (
           <RunCard
             key={run.id}
-            ref={(el) => {
-              if (el) {
-                cardRefs.current.set(index, el)
-              } else {
-                cardRefs.current.delete(index)
-              }
-            }}
             run={run}
             isFocused={index === focusedIndex}
             onClick={() => onSelectRun(run.id)}

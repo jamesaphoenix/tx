@@ -1,4 +1,4 @@
-import { useCallback, useRef, useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { useInfiniteTasks, type TaskFilters } from "../../hooks/useInfiniteTasks"
 import { useReadyTasks } from "../../hooks/useReadyTasks"
 import { useIntersectionObserver } from "../../hooks/useIntersectionObserver"
@@ -64,9 +64,6 @@ export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps
 
   // Pagination controls (only used for infinite scroll mode)
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = infiniteResult
-
-  // Refs for card elements for scrollIntoView
-  const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
   // Keyboard navigation
   const handleSelect = useCallback(
@@ -155,13 +152,6 @@ export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps
         {tasks.map((task, index) => (
           <TaskCard
             key={task.id}
-            ref={(el) => {
-              if (el) {
-                cardRefs.current.set(index, el)
-              } else {
-                cardRefs.current.delete(index)
-              }
-            }}
             task={task}
             isFocused={index === focusedIndex}
             onClick={() => onSelectTask(task.id)}
