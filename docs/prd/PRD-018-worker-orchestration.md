@@ -41,6 +41,40 @@ Kubernetes solved these problems for containers. We need the same patterns for a
 3. **Graceful shutdown** with state preservation
 4. **Parallel workers** with configurable pool size
 5. **Primitives, not frameworks** - composable building blocks
+6. **Headless by design** - developers control what workers do
+
+## Design Philosophy: Headless Orchestration
+
+**tx provides the orchestration primitives. You decide what workers do.**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  YOUR CODE (what workers do)                                │
+│  - Agent selection logic                                    │
+│  - Prompt construction                                      │
+│  - LLM execution (Claude, Codex, local, etc.)              │
+│  - Result handling                                          │
+├─────────────────────────────────────────────────────────────┤
+│  tx primitives (orchestration mechanics)                    │
+│  - Worker registration & heartbeats                         │
+│  - Lease-based task claims                                  │
+│  - Reconciliation & orphan recovery                         │
+│  - Graceful shutdown coordination                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### What tx Controls (Primitives)
+- Worker lifecycle (register, heartbeat, deregister)
+- Task claims with leases (claim, renew, release)
+- Orchestrator state (start, stop, reconcile)
+- Health monitoring and recovery
+
+### What You Control (Your Code)
+- **Agent selection**: Which agent handles which task type
+- **Prompt building**: How to construct prompts for your LLM
+- **Execution**: How to run the LLM (subprocess, API, local)
+- **Result handling**: What to do with success/failure
+- **IO capture**: Whether to capture transcripts, stderr, etc.
 
 ---
 
@@ -141,7 +175,6 @@ CREATE TABLE workers (
   registered_at TEXT NOT NULL,
   last_heartbeat_at TEXT NOT NULL,
   current_task_id TEXT REFERENCES tasks(id),
-  capabilities TEXT DEFAULT '[]',         -- JSON array of agent types
   metadata TEXT DEFAULT '{}'
 );
 
@@ -195,7 +228,6 @@ interface WorkerRegistration {
   name: string
   hostname: string
   pid: number
-  capabilities: string[]  // ['tx-implementer', 'tx-tester', ...]
 }
 ```
 
@@ -239,7 +271,7 @@ tx orchestrator stop [--graceful]
 tx orchestrator status
 
 # Worker management
-tx worker start [--name my-worker] [--capabilities tx-implementer,tx-tester]
+tx worker start [--name my-worker]
 tx worker stop [--graceful]
 tx worker status
 tx worker list
@@ -370,9 +402,416 @@ interface OrchestratorConfig {
 
 interface WorkerConfig {
   name?: string                    // Default: worker-{random}
-  capabilities: string[]           // Default: ['tx-implementer']
   heartbeatIntervalSeconds: number // Default: 30
 }
+```
+
+---
+
+## Worker Hooks (Customization Points)
+
+Two hooks. That's it.
+
+```typescript
+interface WorkerHooks<TContext = {}> {
+  /**
+   * Execute the work - YOUR logic lives here
+   */
+  execute: (task: Task, ctx: WorkerContext & TContext) => Promise<ExecutionResult>
+
+  /**
+   * Where to capture IO (optional)
+   */
+  captureIO?: (runId: string, task: Task) => IOCapture
+}
+
+interface WorkerContext {
+  // tx primitives
+  workerId: string
+  runId: string
+  renewLease: () => Promise<void>
+  log: (message: string) => void
+
+  // Mutable state you can update
+  state: Record<string, unknown>
+}
+
+interface ExecutionResult {
+  success: boolean
+  output?: string
+  error?: string
+}
+
+interface IOCapture {
+  transcriptPath?: string
+  stderrPath?: string
+}
+```
+
+### Extend ctx with Your Own Primitives
+
+```typescript
+// Pass custom context when creating worker
+await runWorker({
+  // Your custom context - merged into ctx
+  context: {
+    db: myDatabaseClient,
+    llm: myLLMClient,
+    notify: (msg: string) => slack.send(msg),
+    config: { maxRetries: 3 }
+  },
+
+  execute: async (task, ctx) => {
+    // Access your custom primitives
+    const history = await ctx.db.getTaskHistory(task.id)
+    const result = await ctx.llm.complete(task.title)
+    await ctx.notify(`Completed ${task.id}`)
+
+    // Update mutable state
+    ctx.state.lastResult = result
+    ctx.state.attempts = (ctx.state.attempts ?? 0) + 1
+
+    // Use tx primitives
+    ctx.log(`Task ${task.id} done`)
+    await ctx.renewLease()
+
+    return { success: true }
+  }
+})
+```
+
+tx provides: `workerId`, `runId`, `renewLease()`, `log()`, `state`
+You provide: anything else you need via `context`
+
+---
+
+## Example Worker Loops
+
+### Bash: Minimal
+
+```bash
+#!/bin/bash
+WORKER_ID=$(tx worker register --name my-worker --json | jq -r '.id')
+trap 'tx worker deregister "$WORKER_ID"; exit 0' SIGTERM SIGINT
+
+while true; do
+  tx worker heartbeat "$WORKER_ID"
+  TASK=$(tx ready --limit 1 --json | jq -r '.[0].id')
+  [ -z "$TASK" ] && sleep 5 && continue
+
+  tx claim "$TASK" "$WORKER_ID" || continue
+
+  # YOUR CODE HERE - do whatever you want
+  my_llm_script "$TASK"
+
+  tx claim:release "$TASK" "$WORKER_ID"
+done
+```
+
+### Bash: Claude CLI with Capture
+
+```bash
+#!/bin/bash
+WORKER_ID=$(tx worker register --name claude-worker --json | jq -r '.id')
+mkdir -p .tx/runs
+trap 'tx worker deregister "$WORKER_ID"; exit 0' SIGTERM SIGINT
+
+while true; do
+  tx worker heartbeat "$WORKER_ID"
+  TASK=$(tx ready --limit 1 --json | jq -r '.[0].id')
+  [ -z "$TASK" ] && sleep 5 && continue
+
+  tx claim "$TASK" "$WORKER_ID" || continue
+  RUN_ID="run-$(openssl rand -hex 4)"
+
+  claude --print --output-format stream-json \
+    "Task: $TASK. Run tx show $TASK, implement, tx done $TASK" \
+    > ".tx/runs/${RUN_ID}.jsonl" \
+    2> ".tx/runs/${RUN_ID}.stderr"
+
+  tx claim:release "$TASK" "$WORKER_ID"
+done
+```
+
+### Bash: Parallel Workers
+
+```bash
+#!/bin/bash
+for i in {1..3}; do
+  (
+    WID=$(tx worker register --name "worker-$i" --json | jq -r '.id')
+    trap 'tx worker deregister "$WID"; exit 0' SIGTERM SIGINT
+    while true; do
+      tx worker heartbeat "$WID"
+      TASK=$(tx ready --limit 1 --json | jq -r '.[0].id')
+      [ -z "$TASK" ] && sleep 5 && continue
+      tx claim "$TASK" "$WID" || continue
+      claude --print "Task: $TASK. tx show $TASK, implement, tx done $TASK"
+      tx claim:release "$TASK" "$WID"
+    done
+  ) &
+done
+wait
+```
+
+### TypeScript: Simple
+
+```typescript
+import { runWorker } from '@tx/core'
+
+await runWorker({
+  execute: async (task, ctx) => {
+    ctx.log(`Starting ${task.id}`)
+    const result = await myLLM.complete(`Complete task ${task.id}: ${task.title}`)
+    return { success: true, output: result }
+  },
+
+  captureIO: (runId) => ({
+    transcriptPath: `.tx/runs/${runId}.jsonl`,
+    stderrPath: `.tx/runs/${runId}.stderr`
+  })
+})
+```
+
+### TypeScript: With Custom Context
+
+```typescript
+import { runWorker } from '@tx/core'
+import Anthropic from '@anthropic-ai/sdk'
+
+const anthropic = new Anthropic()
+
+await runWorker({
+  // Your primitives - available in ctx
+  context: {
+    claude: anthropic,
+    selectAgent: (task: Task) => task.title.includes('test') ? 'tester' : 'implementer',
+    buildPrompt: (task: Task, agent: string) =>
+      `You are ${agent}. Task: ${task.id} - ${task.title}. Run tx done ${task.id} when complete.`
+  },
+
+  execute: async (task, ctx) => {
+    const agent = ctx.selectAgent(task)
+    const prompt = ctx.buildPrompt(task, agent)
+
+    ctx.log(`Using ${agent} for ${task.id}`)
+
+    const response = await ctx.claude.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }]
+    })
+
+    return { success: true, output: response.content[0].text }
+  }
+})
+```
+
+### TypeScript: Claude CLI Subprocess
+
+```typescript
+import { runWorker } from '@tx/core'
+import { spawn } from 'child_process'
+import { createWriteStream } from 'fs'
+
+await runWorker({
+  execute: async (task, ctx) => {
+    const transcript = createWriteStream(`.tx/runs/${ctx.runId}.jsonl`)
+    const stderr = createWriteStream(`.tx/runs/${ctx.runId}.stderr`)
+
+    return new Promise((resolve) => {
+      const proc = spawn('claude', [
+        '--print',
+        '--output-format', 'stream-json',
+        `Task: ${task.id}. Run tx show ${task.id}, implement, tx done ${task.id}`
+      ])
+
+      proc.stdout.pipe(transcript)
+      proc.stderr.pipe(stderr)
+
+      proc.on('close', (code) => {
+        resolve({ success: code === 0 })
+      })
+    })
+  },
+
+  captureIO: (runId) => ({
+    transcriptPath: `.tx/runs/${runId}.jsonl`,
+    stderrPath: `.tx/runs/${runId}.stderr`
+  })
+})
+```
+
+### TypeScript: Agent SDK V2
+
+```typescript
+import { unstable_v2_createSession } from '@anthropic-ai/claude-agent-sdk'
+import { runWorker } from '@tx/core'
+import { createWriteStream } from 'fs'
+
+await runWorker({
+  execute: async (task, ctx) => {
+    const transcript = createWriteStream(`.tx/runs/${ctx.runId}.jsonl`)
+
+    await using session = unstable_v2_createSession({
+      model: 'claude-sonnet-4-5-20250929'
+    })
+
+    const prompt = `Task: ${task.id} - ${task.title}
+Run tx show ${task.id}, implement, then tx done ${task.id}`
+
+    transcript.write(JSON.stringify({ type: 'user', content: prompt }) + '\n')
+    await session.send(prompt)
+
+    let output = ''
+    for await (const msg of session.stream()) {
+      transcript.write(JSON.stringify(msg) + '\n')
+      if (msg.type === 'assistant') {
+        output += msg.message.content
+          .filter(b => b.type === 'text')
+          .map(b => b.text)
+          .join('')
+      }
+    }
+
+    transcript.end()
+    return { success: true, output }
+  },
+
+  captureIO: (runId) => ({
+    transcriptPath: `.tx/runs/${runId}.jsonl`
+  })
+})
+```
+
+### TypeScript: Multi-Turn Conversation
+
+```typescript
+import { unstable_v2_createSession } from '@anthropic-ai/claude-agent-sdk'
+import { runWorker } from '@tx/core'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
+
+await runWorker({
+  execute: async (task, ctx) => {
+    await using session = unstable_v2_createSession({
+      model: 'claude-sonnet-4-5-20250929'
+    })
+
+    // Turn 1: Start task
+    await session.send(`Task: ${task.id}. Run tx show ${task.id}, implement it.`)
+    for await (const msg of session.stream()) { /* consume */ }
+
+    // Turn 2: Verify completion
+    const { stdout } = await execAsync(`tx show ${task.id} --json`)
+    const status = JSON.parse(stdout).status
+
+    if (status !== 'done') {
+      await session.send(`Task not done yet (status: ${status}). Please complete and run tx done ${task.id}`)
+      for await (const msg of session.stream()) { /* consume */ }
+    }
+
+    return { success: true }
+  }
+})
+```
+
+### TypeScript: Chain Multiple LLMs
+
+```typescript
+import { runWorker } from '@tx/core'
+
+await runWorker({
+  execute: async (task, ctx) => {
+    // Step 1: Plan with Claude
+    const plan = await claude.complete(`Plan implementation for: ${task.title}`)
+
+    // Step 2: Generate code with GPT-4
+    const code = await openai.complete(`Implement this plan:\n${plan}`)
+
+    // Step 3: Review with Claude
+    const review = await claude.complete(`Review this code:\n${code}`)
+
+    // Step 4: Apply if approved
+    if (review.includes('APPROVED')) {
+      await applyCode(code)
+      await exec(`tx done ${task.id}`)
+    }
+
+    return { success: true, output: review }
+  }
+})
+```
+
+### TypeScript: Session Resume for Long Tasks
+
+```typescript
+import { unstable_v2_createSession, unstable_v2_resumeSession } from '@anthropic-ai/claude-agent-sdk'
+import { runWorker } from '@tx/core'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
+
+await runWorker({
+  execute: async (task, ctx) => {
+    const sessionFile = `.tx/runs/${ctx.runId}.session`
+
+    // Resume or create session
+    const session = existsSync(sessionFile)
+      ? unstable_v2_resumeSession(readFileSync(sessionFile, 'utf-8'), { model: 'claude-sonnet-4-5-20250929' })
+      : unstable_v2_createSession({ model: 'claude-sonnet-4-5-20250929' })
+
+    await session.send(existsSync(sessionFile)
+      ? 'Continue where you left off'
+      : `Task: ${task.id}. Implement it.`)
+
+    let sessionId: string | undefined
+    for await (const msg of session.stream()) {
+      sessionId = msg.session_id
+
+      // Renew lease periodically for long tasks
+      if (Date.now() % 60000 < 1000) {
+        await ctx.renewLease()
+      }
+    }
+
+    // Save for potential resume
+    if (sessionId) writeFileSync(sessionFile, sessionId)
+
+    session.close()
+    return { success: true }
+  }
+})
+```
+
+### TypeScript: Parallel Subtasks
+
+```typescript
+import { unstable_v2_createSession } from '@anthropic-ai/claude-agent-sdk'
+import { runWorker } from '@tx/core'
+
+await runWorker({
+  execute: async (task, ctx) => {
+    const subtasks = task.children ?? []
+
+    if (subtasks.length === 0) {
+      // Single task
+      await using session = unstable_v2_createSession({ model: 'claude-sonnet-4-5-20250929' })
+      await session.send(`Task: ${task.id}`)
+      for await (const _ of session.stream()) {}
+      return { success: true }
+    }
+
+    // Parallel subtasks
+    await Promise.all(subtasks.map(async (id) => {
+      await using session = unstable_v2_createSession({ model: 'claude-sonnet-4-5-20250929' })
+      await session.send(`Subtask: ${id}`)
+      for await (const _ of session.stream()) {}
+    }))
+
+    return { success: true }
+  }
+})
 ```
 
 ---

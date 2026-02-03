@@ -54,7 +54,6 @@ export const Worker = Schema.Struct({
   registeredAt: Schema.Date,
   lastHeartbeatAt: Schema.Date,
   currentTaskId: Schema.NullOr(Schema.String),
-  capabilities: Schema.Array(Schema.String),
   metadata: Schema.Record(Schema.String, Schema.Unknown)
 })
 export type Worker = typeof Worker.Type
@@ -190,7 +189,6 @@ export const WorkerServiceLive = Layer.effect(
             registeredAt: new Date(),
             lastHeartbeatAt: new Date(),
             currentTaskId: null,
-            capabilities: registration.capabilities || ['tx-implementer'],
             metadata: {}
           }
 
@@ -705,19 +703,122 @@ export const OrchestratorServiceLive = Layer.scoped(
 
 ---
 
+## Headless Worker Design
+
+The worker is split into two parts:
+1. **Worker primitives** (tx provides) - registration, heartbeat, claims
+2. **Execution hooks** (you provide) - what the worker actually does
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  runWorker(config, hooks)                                   │
+├─────────────────────────────────────────────────────────────┤
+│  Worker Loop (tx provides)                                  │
+│  ├── Register with orchestrator                             │
+│  ├── Heartbeat loop                                         │
+│  ├── Claim available tasks                                  │
+│  ├── → hooks.selectAgent(task)                              │
+│  ├── → hooks.buildPrompt(agent, task)                       │
+│  ├── → hooks.execute(prompt, task, context)    ← YOUR CODE  │
+│  ├── → hooks.onSuccess(task, result)                        │
+│  ├── → hooks.onFailure(task, error)                         │
+│  ├── Lease renewal loop                                     │
+│  └── Graceful shutdown                                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Worker Hooks Interface
+
+Two hooks. Extensible context.
+
+```typescript
+// src/worker/hooks.ts
+
+export interface WorkerHooks<TContext = {}> {
+  /**
+   * Execute the work - YOUR logic lives here
+   */
+  execute: (task: Task, ctx: WorkerContext & TContext) => Promise<ExecutionResult>
+
+  /**
+   * Where to capture IO (optional)
+   */
+  captureIO?: (runId: string, task: Task) => IOCapture
+}
+
+export interface WorkerContext {
+  // tx primitives
+  workerId: string
+  runId: string
+  renewLease: () => Promise<void>
+  log: (message: string) => void
+
+  // Mutable state
+  state: Record<string, unknown>
+}
+
+export interface ExecutionResult {
+  success: boolean
+  output?: string
+  error?: string
+}
+
+export interface IOCapture {
+  transcriptPath?: string
+  stderrPath?: string
+}
+```
+
+### WorkerConfig with Custom Context
+
+```typescript
+export interface WorkerConfig<TContext = {}> {
+  name?: string
+  heartbeatIntervalSeconds?: number
+
+  // Your custom context - merged into ctx
+  context?: TContext
+
+  // Hooks
+  execute: (task: Task, ctx: WorkerContext & TContext) => Promise<ExecutionResult>
+  captureIO?: (runId: string, task: Task) => IOCapture
+}
+```
+
+### Building the Context
+
+```typescript
+// In worker loop, build ctx with tx primitives + user context
+const ctx: WorkerContext & TContext = {
+  // tx primitives
+  workerId,
+  runId,
+  renewLease: async () => {
+    await Effect.runPromise(claimService.renew(task.id, workerId))
+  },
+  log: (msg) => console.log(`[${workerId}] ${msg}`),
+  state: {},
+
+  // User's custom context merged in
+  ...config.context
+}
+```
+
+---
+
 ## Worker Process Implementation
 
 ```typescript
 // src/worker/worker-process.ts
 
 import { Effect, Schedule, Duration, Fiber } from "effect"
-import { spawn, ChildProcess } from "child_process"
 
 export interface WorkerProcessConfig {
   name?: string
-  capabilities: string[]
   heartbeatIntervalSeconds: number
-  orchestratorUrl?: string  // For future remote support
+  hooks?: Partial<WorkerHooks>
 }
 
 export const runWorkerProcess = (config: WorkerProcessConfig) =>
@@ -725,18 +826,23 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
     const workerService = yield* WorkerService
     const claimService = yield* ClaimService
     const taskService = yield* TaskService
+    const runService = yield* RunService
+
+    // Merge user hooks with defaults
+    const hooks: Required<WorkerHooks> = {
+      ...defaultHooks,
+      ...config.hooks
+    }
 
     // Register with orchestrator
     const worker = yield* workerService.register({
       name: config.name,
       hostname: os.hostname(),
-      pid: process.pid,
-      capabilities: config.capabilities
+      pid: process.pid
     })
 
     const workerId = worker.id
     let shutdownRequested = false
-    let claudeProcess: ChildProcess | null = null
 
     // Signal handlers for graceful shutdown
     const handleSignal = (signal: string) => {
@@ -786,33 +892,52 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
         const claim = claimResult.right
         yield* Effect.log(`Worker ${workerId} claimed task ${task.id}`)
 
-        // Select agent based on task
-        const agent = selectAgent(task)
+        const runId = generateRunId()
 
-        // Start lease renewal fiber
-        const renewFiber = yield* Effect.fork(
-          runLeaseRenewalLoop(task.id, workerId, config.heartbeatIntervalSeconds * 10)
-        )
+        // Setup IO capture if provided
+        const ioCapture = config.hooks?.captureIO?.(runId, task) ?? {}
+
+        // Create run record
+        yield* runService.create({
+          id: runId,
+          taskId: task.id,
+          agent: workerId,
+          transcriptPath: ioCapture.transcriptPath,
+          stderrPath: ioCapture.stderrPath
+        })
+
+        // Context for execute hook
+        const context: WorkerContext = {
+          workerId,
+          runId,
+          renewLease: async () => {
+            await Effect.runPromise(claimService.renew(task.id, workerId))
+          }
+        }
 
         try {
-          // Run Claude
-          const result = yield* runClaude(agent, task, workerId, (proc) => {
-            claudeProcess = proc
+          // USER HOOK: Execute (all your logic here)
+          const result = await config.hooks!.execute(task, context)
+
+          // Update run status
+          yield* runService.update(runId, {
+            status: result.success ? 'completed' : 'failed',
+            endedAt: new Date()
           })
 
-          claudeProcess = null
-
-          if (result.success) {
-            yield* claimService.release(task.id, workerId)
-            yield* Effect.log(`Task ${task.id} completed successfully`)
-          } else {
-            yield* claimService.release(task.id, workerId)
+          if (!result.success) {
             yield* Effect.log(`Task ${task.id} failed: ${result.error}`)
           }
-        } finally {
-          // Stop renewal fiber
-          yield* Fiber.interrupt(renewFiber)
+        } catch (error) {
+          yield* runService.update(runId, {
+            status: 'failed',
+            endedAt: new Date()
+          })
+          yield* Effect.log(`Task ${task.id} error: ${error}`)
         }
+
+        // Release claim
+        yield* claimService.release(task.id, workerId)
       }
 
       // Graceful shutdown: finish current task then exit
@@ -1069,17 +1194,12 @@ const startCommand = Command.make(
     name: Options.text("name").pipe(
       Options.optional,
       Options.withDescription("Worker name")
-    ),
-    capabilities: Options.text("capabilities").pipe(
-      Options.withDefault("tx-implementer"),
-      Options.withDescription("Comma-separated list of agent capabilities")
     )
   },
-  ({ name, capabilities }) =>
+  ({ name }) =>
     Effect.gen(function* () {
       yield* runWorkerProcess({
         name: name ?? undefined,
-        capabilities: capabilities.split(','),
         heartbeatIntervalSeconds: 30
       })
     })
@@ -1114,7 +1234,6 @@ const statusCommand = Command.make(
         console.log(`    Name: ${worker.name}`)
         console.log(`    Hostname: ${worker.hostname}`)
         console.log(`    PID: ${worker.pid}`)
-        console.log(`    Capabilities: ${worker.capabilities.join(', ')}`)
         console.log(`    Last heartbeat: ${worker.lastHeartbeatAt.toISOString()}`)
         if (worker.currentTaskId) {
           console.log(`    Current task: ${worker.currentTaskId}`)
@@ -1177,7 +1296,6 @@ describe('WorkerService', () => {
         name: 'test-worker',
         hostname: 'localhost',
         pid: 123,
-        capabilities: ['tx-implementer']
       }),
       db
     )
@@ -1191,13 +1309,13 @@ describe('WorkerService', () => {
 
     // Register first worker
     await runEffect(
-      workerService.register({ name: 'worker-1', hostname: 'localhost', pid: 1, capabilities: [] }),
+      workerService.register({ name: 'worker-1', hostname: 'localhost', pid: 1 }),
       db
     )
 
     // Second should fail
     const result = await runEffect(
-      workerService.register({ name: 'worker-2', hostname: 'localhost', pid: 2, capabilities: [] }),
+      workerService.register({ name: 'worker-2', hostname: 'localhost', pid: 2 }),
       db
     ).pipe(Effect.either)
 
@@ -1351,7 +1469,7 @@ tx worker start
 | Run tracking | Task claims with metadata | Planned |
 | Orphan cleanup | Reconciliation loop | Planned |
 | Circuit breaker | Per-worker failure tracking | Planned |
-| Agent selection | Worker capabilities | Planned |
+| Agent selection | Worker hooks | Planned |
 | Review cycles | Scheduled review tasks | Future |
 
 ### Phase 3: Deprecation

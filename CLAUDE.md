@@ -253,6 +253,38 @@ tx sync import              # JSONL → SQLite
 
 ---
 
+## Development Tooling
+
+### Use bun, not npm
+
+All package management and script execution MUST use `bun`:
+
+```bash
+bun install              # NOT npm install
+bun run build            # NOT npm run build
+bun run test             # NOT npm run test
+bun run lint:docs        # Lint PRDs and DDs
+```
+
+### Running the tx CLI
+
+**ALWAYS** run the CLI via the source TypeScript file, **NEVER** via node_modules or dist paths:
+
+```bash
+# CORRECT - use tsx or bun to run source
+bun run dev -- add "My task"           # via package.json script
+tsx apps/cli/src/cli.ts add "My task"  # direct execution
+bun apps/cli/src/cli.ts add "My task"  # bun direct execution
+
+# WRONG - never use these
+node ./node_modules/.bin/tx add "My task"
+./apps/cli/dist/cli.js add "My task"
+```
+
+This ensures you're always testing the latest source code, not stale builds.
+
+---
+
 ## Bootstrapping: tx Builds tx
 
 **All development on tx MUST use tx itself to manage work.**
@@ -292,6 +324,105 @@ done
 ```
 
 **Key insight**: Each task gets a fresh Claude instance. No accumulated context pollution. Memory lives in files, not conversation history.
+
+---
+
+## Development Process: PRD/DD First
+
+**All non-trivial features MUST have documentation before implementation.**
+
+### Why Documentation First?
+
+- **Prevents wasted effort** — catch design issues before writing code
+- **Creates reviewable artifacts** — PRDs and DDs can be reviewed independently
+- **Enables parallelism** — multiple agents can implement from the same spec
+- **Builds institutional knowledge** — docs persist beyond conversation context
+
+### The Process
+
+```
+1. Problem identified → Create PRD (what to build, why, acceptance criteria)
+2. PRD approved → Create DD (how to build, technical decisions, file changes)
+3. DD approved → Implementation (code follows the spec)
+4. Implementation complete → Update docs if design changed
+```
+
+### PRD Structure (docs/prd/PRD-NNN-*.md)
+
+```markdown
+# PRD-NNN: Feature Name
+
+## Problem
+What's broken or missing?
+
+## Solution
+High-level approach (not implementation details)
+
+## Requirements
+- [ ] Requirement 1
+- [ ] Requirement 2
+
+## Acceptance Criteria
+How do we know it's done?
+
+## Out of Scope
+What this PRD explicitly does NOT cover
+```
+
+### DD Structure (docs/design/DD-NNN-*.md)
+
+```markdown
+# DD-NNN: Feature Name
+
+## Overview
+Technical approach summary
+
+## Design
+
+### Data Model
+Schema changes, new tables, migrations
+
+### Service Layer
+New services, interface changes
+
+### API/CLI Changes
+New commands, endpoints, MCP tools
+
+## Implementation Plan
+
+| Phase | Files | Changes |
+|-------|-------|---------|
+| 1 | file.ts | Add X |
+| 2 | other.ts | Modify Y |
+
+## Testing Strategy
+Integration tests, fixtures needed
+
+## Migration
+How existing data/users transition
+```
+
+### Linking Convention
+
+- PRDs reference related DDs: `→ [DD-NNN](docs/design/DD-NNN-*.md)`
+- DDs reference their PRD: `→ [PRD-NNN](docs/prd/PRD-NNN-*.md)`
+- CLAUDE.md DOCTRINE rules link to both PRD and DD
+- Implementation PRs reference both documents
+
+### When to Skip
+
+Skip PRD/DD for:
+- Bug fixes with obvious solutions
+- Typo corrections
+- Single-line changes
+- Test additions for existing features
+
+Create PRD/DD for:
+- New CLI commands
+- New services
+- Schema changes
+- Multi-file features
+- Anything touching the DOCTRINE rules
 
 ---
 

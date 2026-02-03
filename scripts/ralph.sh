@@ -29,6 +29,7 @@ SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_FILE="$PROJECT_DIR/.tx/ralph.log"
 LOCK_FILE="$PROJECT_DIR/.tx/ralph.lock"
+PID_FILE="$PROJECT_DIR/.tx/ralph.pid"
 STATE_FILE="$PROJECT_DIR/.tx/ralph-state"
 FORCED_AGENT=""
 DRY_RUN=false
@@ -78,6 +79,8 @@ fi
 
 cleanup() {
   rm -f "$LOCK_FILE"
+  rm -f "$PID_FILE"
+  set_orchestrator_stopped
   log "RALPH shutdown"
 }
 
@@ -115,6 +118,25 @@ trap 'handle_signal SIGINT' INT
 trap 'handle_signal SIGHUP' HUP
 trap cleanup EXIT
 echo $$ > "$LOCK_FILE"
+echo $$ > "$PID_FILE"
+
+# ==============================================================================
+# Orchestrator State (for dashboard)
+# ==============================================================================
+
+set_orchestrator_running() {
+  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "UPDATE orchestrator_state SET status='running', pid=$$, started_at=datetime('now') WHERE id=1;"
+  fi
+}
+
+set_orchestrator_stopped() {
+  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "UPDATE orchestrator_state SET status='stopped', pid=NULL WHERE id=1;"
+  fi
+}
 
 # ==============================================================================
 # Orphan Run Cleanup
@@ -507,6 +529,9 @@ cancel_orphaned_runs
 
 # Reset any orphaned active tasks from previous sessions
 reset_orphaned_tasks
+
+# Mark orchestrator as running in database (for dashboard)
+set_orchestrator_running
 
 iteration=$(load_state)
 LAST_REVIEW=0

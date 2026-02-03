@@ -39,6 +39,8 @@ export interface Run {
   readonly exitCode: number | null;
   readonly pid: number | null;
   readonly transcriptPath: string | null;
+  readonly stderrPath: string | null;
+  readonly stdoutPath: string | null;
   readonly contextInjected: string | null;
   readonly summary: string | null;
   readonly errorMessage: string | null;
@@ -53,6 +55,8 @@ export interface CreateRunInput {
   readonly agent: string;
   readonly pid?: number;
   readonly transcriptPath?: string;
+  readonly stderrPath?: string;
+  readonly stdoutPath?: string;
   readonly contextInjected?: string;
   readonly metadata?: Record<string, unknown>;
 }
@@ -67,6 +71,8 @@ export interface UpdateRunInput {
   readonly summary?: string;
   readonly errorMessage?: string;
   readonly transcriptPath?: string;
+  readonly stderrPath?: string;
+  readonly stdoutPath?: string;
 }
 
 /**
@@ -82,6 +88,8 @@ export interface RunRow {
   exit_code: number | null;
   pid: number | null;
   transcript_path: string | null;
+  stderr_path: string | null;
+  stdout_path: string | null;
   context_injected: string | null;
   summary: string | null;
   error_message: string | null;

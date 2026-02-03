@@ -19,6 +19,12 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [PRD-011](prd/PRD-011-claude-code-hooks.md)           | Claude Code Hooks Integration | Phase 2 |
 | [PRD-012](prd/PRD-012-bun-single-binary.md)           | Bun Single Binary Distribution| Phase 2 |
 | [PRD-013](prd/PRD-013-dashboard-ux.md)                | Dashboard UX Improvements     | Phase 2 |
+| [PRD-014](prd/PRD-014-graph-schema-edges.md)          | Graph Schema & Edges          | Phase 2 |
+| [PRD-015](prd/PRD-015-jsonl-daemon-promotion.md)      | JSONL Daemon Promotion        | Phase 2 |
+| [PRD-016](prd/PRD-016-graph-expansion-retrieval.md)   | Graph Expansion & Retrieval   | Phase 2 |
+| [PRD-017](prd/PRD-017-invalidation-maintenance.md)    | Invalidation & Maintenance    | Phase 2 |
+| [PRD-018](prd/PRD-018-worker-orchestration.md)        | Worker Orchestration          | Phase 2 |
+| [PRD-019](prd/PRD-019-execution-tracing.md)           | Execution Tracing System      | Phase 2 |
 
 ## Design Documents (DDs)
 
@@ -36,6 +42,13 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [DD-010](design/DD-010-learnings-search-retrieval.md)| Learnings Search & Retrieval| PRD-010          |
 | [DD-011](design/DD-011-claude-code-hooks.md)         | Claude Code Hooks           | PRD-011          |
 | [DD-012](design/DD-012-dashboard-ux.md)              | Dashboard UX Architecture   | PRD-013          |
+| [DD-013](design/DD-013-test-utilities.md)            | Test Utilities              | All              |
+| [DD-014](design/DD-014-graph-schema-edges.md)        | Graph Schema & Edges        | PRD-014          |
+| [DD-015](design/DD-015-jsonl-daemon-promotion.md)    | JSONL Daemon Promotion      | PRD-015          |
+| [DD-016](design/DD-016-graph-expansion-retrieval.md) | Graph Expansion & Retrieval | PRD-016          |
+| [DD-017](design/DD-017-invalidation-maintenance.md)  | Invalidation & Maintenance  | PRD-017          |
+| [DD-018](design/DD-018-worker-orchestration.md)      | Worker Orchestration        | PRD-018          |
+| [DD-019](design/DD-019-execution-tracing.md)         | Execution Tracing System    | PRD-019          |
 
 ## Implementation Phases
 
@@ -114,4 +127,8 @@ PRD-010 (Learnings) ────────────────────
 PRD-011 (Hooks) ───────────────────────────────────────────►  DD-011 (Claude Code Hooks)
         │
 PRD-012 (Bun Binary) ──────────────────────────────────────►  DD-003 (CLI)
+
+PRD-019 (Tracing) ────────────────────────────────────────►  DD-019 (Execution Tracing)
+        │
+        └─────────────────────────────────────────────────►  DD-002 (Effect-TS Layer)
 ```
