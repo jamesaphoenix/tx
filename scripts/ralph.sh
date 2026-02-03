@@ -55,8 +55,11 @@ START_TIME=$(date +%s)
 cd "$PROJECT_DIR"
 mkdir -p "$PROJECT_DIR/.tx"
 
-# Add local node_modules/.bin to PATH for tx command
-export PATH="$PROJECT_DIR/node_modules/.bin:$PATH"
+# Define tx function to run CLI source directly via tsx
+# This ensures changes are immediately reflected without rebuilding
+tx() {
+  npx tsx "$PROJECT_DIR/apps/cli/src/cli.ts" "$@"
+}
 
 # ==============================================================================
 # Lock File (Prevent Multiple Instances)
