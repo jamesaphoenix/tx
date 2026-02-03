@@ -7,12 +7,12 @@
 
 import Database from "better-sqlite3"
 import { Effect } from "effect"
-import type { TaskId } from "@tx/types"
-import type { TestDatabase } from "@tx/test-utils"
+import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import {
   fixtureId as testUtilsFixtureId,
   createTestDatabase
-} from "@tx/test-utils"
+} from "@jamesaphoenix/tx-test-utils"
 
 // Re-export fixtureId from @tx/test-utils
 export const fixtureId = (name: string): TaskId => {

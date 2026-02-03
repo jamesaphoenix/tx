@@ -654,7 +654,7 @@ Custom Retriever Format:
 
   // my-retriever.ts
   import { Layer, Effect } from "effect"
-  import { RetrieverService } from "@tx/core"
+  import { RetrieverService } from "@jamesaphoenix/tx-core"
 
   export default Layer.succeed(RetrieverService, {
     search: (query, options) => Effect.gen(function* () {

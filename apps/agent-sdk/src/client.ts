@@ -327,7 +327,7 @@ class DirectTransport implements Transport {
 
     try {
       // Dynamic import to make @tx/core optional
-      const core = await import("@tx/core")
+      const core = await import("@jamesaphoenix/tx-core")
       const { Effect, ManagedRuntime } = await import("effect")
 
       const layer = core.makeAppLayer(this.dbPath)

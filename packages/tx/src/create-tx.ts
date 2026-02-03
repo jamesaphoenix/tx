@@ -32,7 +32,7 @@ import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 import {
   makeAppLayer,
   RetrieverService
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 /**
  * Options for configuring createTx().
@@ -189,4 +189,4 @@ export const createTx = (options: CreateTxOptions = {}): TxClient => {
 }
 
 // Re-export RetrieverService for custom retriever implementations
-export { RetrieverService } from "@tx/core"
+export { RetrieverService } from "@jamesaphoenix/tx-core"

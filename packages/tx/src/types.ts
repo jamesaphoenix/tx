@@ -9,4 +9,4 @@
  * ```
  */
 
-export * from "@tx/types";
+export * from "@jamesaphoenix/tx-types";

@@ -17,7 +17,7 @@ import {
   SyncService,
   AttemptService,
   RunRepository
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
 // Types

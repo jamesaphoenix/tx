@@ -6,9 +6,9 @@
  *
  * @example
  * ```typescript
- * import { Task, TaskWithDeps, TaskId, TaskStatus } from "@tx/types";
- * import { Learning, LearningWithScore } from "@tx/types";
- * import { Attempt, Run } from "@tx/types";
+ * import { Task, TaskWithDeps, TaskId, TaskStatus } from "@jamesaphoenix/tx-types";
+ * import { Learning, LearningWithScore } from "@jamesaphoenix/tx-types";
+ * import { Attempt, Run } from "@jamesaphoenix/tx-types";
  *
  * // Or import from specific modules:
  * import type { Task, TaskWithDeps } from "@tx/types/task";

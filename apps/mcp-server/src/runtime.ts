@@ -15,7 +15,7 @@ import {
   LearningService,
   FileLearningService,
   SyncService
-} from "@tx/core"
+} from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
 // Types

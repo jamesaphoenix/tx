@@ -14,7 +14,7 @@
 import type {
   TaskStatus as _TaskStatus,
   LearningSourceType as _LearningSourceType
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Re-export for consumers - using local aliases
 export type TaskStatus = _TaskStatus
@@ -32,7 +32,7 @@ export {
   type CreateTaskInput,
   type UpdateTaskInput,
   type TaskFilter
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Learning types
 export {
@@ -45,14 +45,14 @@ export {
   type LearningQuery,
   type ContextResult,
   type LearningSearchResult
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // File learning types
 export {
   type FileLearningId,
   type FileLearning,
   type CreateFileLearningInput
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Attempt types
 export {
@@ -61,7 +61,7 @@ export {
   type AttemptId,
   type Attempt,
   type CreateAttemptInput
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // Run types
 export {
@@ -71,7 +71,7 @@ export {
   type Run,
   type CreateRunInput,
   type UpdateRunInput
-} from "@tx/types"
+} from "@jamesaphoenix/tx-types"
 
 // =============================================================================
 // SDK-Specific Types

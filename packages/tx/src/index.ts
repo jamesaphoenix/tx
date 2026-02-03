@@ -35,8 +35,8 @@
  * ```
  */
 
-// Re-export everything from @tx/core
-export * from "@tx/core";
+// Re-export everything from @jamesaphoenix/tx-core
+export * from "@jamesaphoenix/tx-core";
 
 // Export createTx and related types
 export { createTx, type CreateTxOptions, type TxClient } from "./create-tx.js";
@@ -87,7 +87,7 @@ export type {
   EdgeType,
   Edge,
   CreateEdgeInput,
-} from "@tx/types";
+} from "@jamesaphoenix/tx-types";
 
 // Re-export constants from types
 export {
@@ -100,4 +100,4 @@ export {
   ANCHOR_STATUSES,
   NODE_TYPES,
   EDGE_TYPES,
-} from "@tx/types";
+} from "@jamesaphoenix/tx-types";

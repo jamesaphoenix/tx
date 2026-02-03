@@ -8,7 +8,7 @@
 import { Effect } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { makeAppLayer } from "@tx/core"
+import { makeAppLayer } from "@jamesaphoenix/tx-core"
 import { HELP_TEXT, commandHelp } from "./help.js"
 
 // Command imports
