@@ -1,5 +1,2 @@
-
-> @jamesaphoenix/tx-types@0.4.2 test
-> echo 'Types-only package - no tests needed'
-
+$ echo 'Types-only package - no tests needed'
 Types-only package - no tests needed
