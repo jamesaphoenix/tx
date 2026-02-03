@@ -25,8 +25,16 @@ interface LLMCacheConfig {
   logging: boolean
 }
 
+/**
+ * Get the default cache directory.
+ * Checks TX_LLM_CACHE_DIR environment variable first, then falls back to default.
+ */
+const getDefaultCacheDir = (): string => {
+  return process.env.TX_LLM_CACHE_DIR || "test/fixtures/llm-cache"
+}
+
 let config: LLMCacheConfig = {
-  cacheDir: "test/fixtures/llm-cache",
+  cacheDir: getDefaultCacheDir(),
   logging: !process.env.CI
 }
 
@@ -55,7 +63,7 @@ export const getCacheConfig = (): Readonly<LLMCacheConfig> => config
  */
 export const resetCacheConfig = (): void => {
   config = {
-    cacheDir: "test/fixtures/llm-cache",
+    cacheDir: getDefaultCacheDir(),
     logging: !process.env.CI
   }
 }
