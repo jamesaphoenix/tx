@@ -199,7 +199,9 @@ export {
   WorkerServiceLive,
   type WorkerRegistration,
   type WorkerFilter,
-  type FindDeadConfig
+  type FindDeadConfig,
+  ClaimService,
+  ClaimServiceLive
 } from "./services/index.js"
 
 // =============================================================================

@@ -185,3 +185,7 @@ export {
   type WorkerFilter,
   type FindDeadConfig
 } from "./worker-service.js"
+export {
+  ClaimService,
+  ClaimServiceLive
+} from "./claim-service.js"
