@@ -635,13 +635,30 @@ Options:
   --expand             Enable graph expansion to find related learnings
   --depth <n>          Graph expansion depth (default: 2)
   --edge-types <types> Comma-separated edge types to traverse
+  --retriever <path>   Use custom retriever module (exports Layer<RetrieverService>)
   --help               Show this help
+
+Custom Retriever Format:
+  The module should export a default Layer that provides RetrieverService:
+
+  // my-retriever.ts
+  import { Layer, Effect } from "effect"
+  import { RetrieverService } from "@tx/core"
+
+  export default Layer.succeed(RetrieverService, {
+    search: (query, options) => Effect.gen(function* () {
+      // Custom Pinecone/Weaviate/Chroma implementation
+      return yield* myVectorSearch(query, options)
+    }),
+    isAvailable: () => Effect.succeed(true)
+  })
 
 Examples:
   tx context tx-a1b2c3d4
   tx context tx-a1b2c3d4 --json
   tx context tx-a1b2c3d4 --inject
-  tx context tx-a1b2c3d4 --expand --depth 3`,
+  tx context tx-a1b2c3d4 --expand --depth 3
+  tx context tx-a1b2c3d4 --retriever ./my-retriever.ts`,
 
   learn: `tx learn - Attach a learning to a file path or glob pattern
 
