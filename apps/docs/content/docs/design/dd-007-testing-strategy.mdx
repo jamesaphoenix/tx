@@ -1,0 +1,662 @@
+---
+title: "DD-007: Testing Strategy"
+description: "This document describes how testing works: test categories, SHA256-based fixture strategy, integration test architecture, and coverage targets."
+---
+
+
+**Status**: Draft
+**Implements**: All PRDs
+**Last Updated**: 2025-01-28
+
+---
+
+## Overview
+
+This document describes **how** testing works: test categories, SHA256-based fixture strategy, integration test architecture, and coverage targets.
+
+---
+
+## Test Categories
+
+| Category | Purpose | Tools | Coverage Target |
+|----------|---------|-------|-----------------|
+| Unit Tests | Individual functions/services | Vitest, Effect Test | 80% |
+| Integration Tests | Full system with SQLite | Vitest, real SQLite | 90% core paths |
+| Snapshot Tests | CLI output stability | Vitest snapshots | All commands |
+| E2E Tests | MCP server communication | Custom harness | Happy paths |
+
+---
+
+## SHA256-Based Fixture Strategy
+
+### Why SHA256?
+
+- **Deterministic**: Same fixture name → same ID every time
+- **No collisions**: SHA256 hash space is enormous
+- **Reproducible**: Tests produce identical IDs across runs
+- **Independent**: No shared state between test runs
+
+### Fixture ID Generation
+
+```typescript
+// test/fixtures/index.ts
+import { createHash } from "crypto"
+
+export const fixtureId = (name: string): string => {
+  const hash = createHash("sha256")
+    .update(`fixture:${name}`)
+    .digest("hex")
+    .substring(0, 6)
+  return `tx-${hash}`
+}
+
+// Pre-computed fixture IDs
+export const FIXTURES = {
+  TASK_AUTH:     fixtureId("task-auth"),
+  TASK_LOGIN:    fixtureId("task-login"),
+  TASK_JWT:      fixtureId("task-jwt"),
+  TASK_BLOCKED:  fixtureId("task-blocked"),
+  TASK_PARENT:   fixtureId("task-parent"),
+  TASK_CHILD:    fixtureId("task-child"),
+  TASK_DONE:     fixtureId("task-done"),
+  TASK_BACKLOG:  fixtureId("task-backlog"),
+} as const
+```
+
+### Fixture Data Factory
+
+```typescript
+export const createFixtures = (): TaskFixture[] => [
+  {
+    id: FIXTURES.TASK_AUTH,
+    title: "Implement authentication",
+    description: "Add user auth to the API",
+    status: "active",
+    score: 800,
+    parentId: null,
+    createdAt: new Date("2024-01-01T00:00:00Z"),
+    updatedAt: new Date("2024-01-01T00:00:00Z"),
+    completedAt: null,
+    metadata: {}
+  },
+  {
+    id: FIXTURES.TASK_LOGIN,
+    title: "Add login endpoint",
+    description: "",
+    status: "ready",
+    score: 700,
+    parentId: FIXTURES.TASK_AUTH,
+    createdAt: new Date("2024-01-02T00:00:00Z"),
+    updatedAt: new Date("2024-01-02T00:00:00Z"),
+    completedAt: null,
+    metadata: {}
+  },
+  {
+    id: FIXTURES.TASK_JWT,
+    title: "Implement JWT validation",
+    description: "Token validation middleware",
+    status: "ready",
+    score: 850,
+    parentId: FIXTURES.TASK_AUTH,
+    createdAt: new Date("2024-01-02T00:00:00Z"),
+    updatedAt: new Date("2024-01-02T00:00:00Z"),
+    completedAt: null,
+    metadata: {}
+  },
+  {
+    id: FIXTURES.TASK_BLOCKED,
+    title: "Integration tests",
+    description: "Write integration tests for auth",
+    status: "backlog",
+    score: 600,
+    parentId: FIXTURES.TASK_AUTH,
+    createdAt: new Date("2024-01-03T00:00:00Z"),
+    updatedAt: new Date("2024-01-03T00:00:00Z"),
+    completedAt: null,
+    metadata: {}
+  },
+  {
+    id: FIXTURES.TASK_DONE,
+    title: "Design auth schema",
+    description: "Database schema for auth tables",
+    status: "done",
+    score: 500,
+    parentId: FIXTURES.TASK_AUTH,
+    createdAt: new Date("2024-01-01T00:00:00Z"),
+    updatedAt: new Date("2024-01-05T00:00:00Z"),
+    completedAt: new Date("2024-01-05T00:00:00Z"),
+    metadata: {}
+  }
+]
+
+export const createDependencyFixtures = (): DependencyFixture[] => [
+  {
+    blockerId: FIXTURES.TASK_JWT,
+    blockedId: FIXTURES.TASK_BLOCKED,
+  },
+  {
+    blockerId: FIXTURES.TASK_LOGIN,
+    blockedId: FIXTURES.TASK_BLOCKED,
+  }
+]
+```
+
+---
+
+## Integration Test Architecture
+
+### Test Database Setup
+
+```typescript
+// test/integration/setup.ts
+import Database from "better-sqlite3"
+
+export const createTestDb = (): Database.Database => {
+  const db = new Database(":memory:")
+  db.exec(readFileSync("migrations/001_initial.sql", "utf-8"))
+  return db
+}
+
+export const seedFixtures = (db: Database.Database): void => {
+  const tasks = createFixtures()
+  const deps = createDependencyFixtures()
+
+  const insertTask = db.prepare(`
+    INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  for (const task of tasks) {
+    insertTask.run(
+      task.id, task.title, task.description, task.status, task.score,
+      task.parentId, task.createdAt.toISOString(), task.updatedAt.toISOString(),
+      task.completedAt?.toISOString() ?? null, JSON.stringify(task.metadata)
+    )
+  }
+
+  const insertDep = db.prepare(`
+    INSERT INTO task_dependencies (blocker_id, blocked_id, created_at)
+    VALUES (?, ?, ?)
+  `)
+
+  for (const dep of deps) {
+    insertDep.run(dep.blockerId, dep.blockedId, new Date().toISOString())
+  }
+}
+
+// Test layer with in-memory SQLite
+export const TestLayer = (db: Database.Database) =>
+  Layer.succeed(SqliteClient, db).pipe(
+    Layer.provideMerge(CoreServiceLive)
+  )
+```
+
+---
+
+## Integration Test Examples
+
+### Ready Service
+
+```typescript
+// test/integration/ready-service.test.ts
+describe("ReadyService Integration", () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+  })
+
+  it("returns ready tasks with full dependency info", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getReady(10)
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    expect(result.length).toBeGreaterThan(0)
+
+    for (const task of result) {
+      expect(task).toHaveProperty("blockedBy")
+      expect(task).toHaveProperty("blocks")
+      expect(task).toHaveProperty("children")
+      expect(task).toHaveProperty("isReady")
+      expect(Array.isArray(task.blockedBy)).toBe(true)
+      expect(Array.isArray(task.blocks)).toBe(true)
+      expect(task.isReady).toBe(true)
+    }
+  })
+
+  it("excludes tasks with open blockers", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getReady(100)
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    const blockedTask = result.find(t => t.id === FIXTURES.TASK_BLOCKED)
+    expect(blockedTask).toBeUndefined()
+  })
+
+  it("includes task after all blockers are done", async () => {
+    // Mark both blockers as done
+    const stmtDone = db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?")
+    stmtDone.run(FIXTURES.TASK_JWT)
+    stmtDone.run(FIXTURES.TASK_LOGIN)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getReady(100)
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    const nowReady = result.find(t => t.id === FIXTURES.TASK_BLOCKED)
+    expect(nowReady).toBeDefined()
+    expect(nowReady!.isReady).toBe(true)
+    expect(nowReady!.blockedBy).toEqual(
+      expect.arrayContaining([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+    )
+  })
+
+  it("returns correct blockedBy", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getBlockers(FIXTURES.TASK_BLOCKED)
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    expect(result).toHaveLength(2)
+    expect(result.map(t => t.id)).toEqual(
+      expect.arrayContaining([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+    )
+  })
+
+  it("returns correct blocks (what task blocks)", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getBlocking(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe(FIXTURES.TASK_BLOCKED)
+  })
+})
+```
+
+### Task Service
+
+```typescript
+// test/integration/task-service.test.ts
+describe("TaskService Integration", () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+  })
+
+  it("getWithDeps returns full dependency info", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.getWithDeps(FIXTURES.TASK_AUTH)
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    expect(result.id).toBe(FIXTURES.TASK_AUTH)
+    expect(result.blockedBy).toEqual([])
+    expect(result.children).toContain(FIXTURES.TASK_LOGIN)
+    expect(result.children).toContain(FIXTURES.TASK_JWT)
+    expect(result.children).toContain(FIXTURES.TASK_BLOCKED)
+  })
+
+  it("create generates valid ID", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.create({ title: "Test task", score: 100 })
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    expect(result.id).toMatch(/^tx-[a-z0-9]{6,8}$/)
+    expect(result.status).toBe("backlog")
+    expect(result.score).toBe(100)
+  })
+
+  it("marks task done with correct timestamp", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.update(FIXTURES.TASK_LOGIN, { status: "done" })
+      }).pipe(Effect.provide(TestLayer(db)))
+    )
+
+    expect(result.status).toBe("done")
+    expect(result.completedAt).not.toBeNull()
+  })
+})
+```
+
+### MCP Server
+
+```typescript
+// test/integration/mcp-server.test.ts
+describe("MCP Server Integration", () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+  })
+
+  it("tx_ready returns tasks with blockedBy and blocks", async () => {
+    const result = await callMcpTool(db, "tx_ready", { limit: 10 })
+
+    for (const task of result.structuredContent.tasks) {
+      expect(task).toHaveProperty("blockedBy")
+      expect(task).toHaveProperty("blocks")
+      expect(task).toHaveProperty("children")
+      expect(task).toHaveProperty("isReady")
+    }
+  })
+
+  it("tx_show returns full dependency info", async () => {
+    const result = await callMcpTool(db, "tx_show", { id: FIXTURES.TASK_JWT })
+
+    const task = result.structuredContent.task
+    expect(task.blocks).toContain(FIXTURES.TASK_BLOCKED)
+    expect(Array.isArray(task.blockedBy)).toBe(true)
+    expect(Array.isArray(task.children)).toBe(true)
+  })
+
+  it("tx_done returns newly unblocked tasks", async () => {
+    // First complete one blocker
+    await callMcpTool(db, "tx_done", { id: FIXTURES.TASK_JWT })
+
+    // Then complete the other
+    const result = await callMcpTool(db, "tx_done", { id: FIXTURES.TASK_LOGIN })
+
+    // TASK_BLOCKED should now be unblocked
+    expect(result.structuredContent.nowReady).toContain(FIXTURES.TASK_BLOCKED)
+  })
+
+  it("tx_block returns updated task with new dependency", async () => {
+    const result = await callMcpTool(db, "tx_block", {
+      taskId: FIXTURES.TASK_LOGIN,
+      blockerId: FIXTURES.TASK_AUTH
+    })
+
+    expect(result.structuredContent.success).toBe(true)
+    expect(result.structuredContent.task.blockedBy).toContain(FIXTURES.TASK_AUTH)
+  })
+})
+```
+
+### Dependency Cycle Prevention
+
+```typescript
+// test/integration/dependency-service.test.ts
+describe("DependencyService Integration", () => {
+  it("rejects circular dependencies", async () => {
+    const db = createTestDb()
+    seedFixtures(db)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DependencyService
+        // TASK_JWT blocks TASK_BLOCKED, so TASK_BLOCKED blocking TASK_JWT would be circular
+        return yield* svc.addBlocker(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED)
+      }).pipe(
+        Effect.provide(TestLayer(db)),
+        Effect.either
+      )
+    )
+
+    expect(result._tag).toBe("Left")
+    // Should be CircularDependencyError
+  })
+
+  it("rejects self-blocking", async () => {
+    const db = createTestDb()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DependencyService
+        return yield* svc.addBlocker(FIXTURES.TASK_JWT, FIXTURES.TASK_JWT)
+      }).pipe(
+        Effect.provide(TestLayer(db)),
+        Effect.either
+      )
+    )
+
+    expect(result._tag).toBe("Left")
+  })
+})
+```
+
+---
+
+## Test Configuration
+
+```typescript
+// vitest.config.ts
+import { defineConfig } from "vitest/config"
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: "node",
+    include: [
+      "test/unit/**/*.test.ts",
+      "test/integration/**/*.test.ts"
+    ],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html"],
+      exclude: ["node_modules", "test", "dist"],
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 75,
+        statements: 80
+      }
+    }
+  }
+})
+```
+
+---
+
+## Test File Structure
+
+```
+test/
+├── fixtures/
+│   └── index.ts              # SHA256-based fixture factory
+├── unit/
+│   ├── id-generator.test.ts  # ID generation
+│   ├── score.test.ts         # Score calculation
+│   └── schemas.test.ts       # Schema validation
+├── integration/
+│   ├── setup.ts              # DB creation + seeding
+│   ├── task-service.test.ts  # CRUD + getWithDeps
+│   ├── ready-service.test.ts # Ready detection + deps
+│   ├── dependency-service.test.ts  # Blocking + cycles
+│   ├── hierarchy-service.test.ts   # Tree + path
+│   └── mcp-server.test.ts    # MCP tool responses
+└── e2e/
+    └── cli.test.ts            # CLI command output
+```
+
+---
+
+## OpenTelemetry Tests
+
+### Telemetry Layer Tests
+
+```typescript
+describe("TelemetryNoop", () => {
+  it("withSpan passes through effect unchanged", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const t = yield* Telemetry
+        return yield* t.withSpan({ name: "test" }, Effect.succeed(42))
+      }).pipe(Effect.provide(TelemetryNoop))
+    )
+    expect(result).toBe(42)
+  })
+
+  it("counter/histogram/gauge are all noops", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const t = yield* Telemetry
+        yield* t.incrementCounter("test")
+        yield* t.recordHistogram("test", 100)
+        yield* t.setGauge("test", 5)
+      }).pipe(Effect.provide(TelemetryNoop))
+    )
+  })
+})
+```
+
+### Instrumented Service Tests
+
+```typescript
+describe("Service Telemetry", () => {
+  it("TaskService.create emits task.created.total", async () => {
+    const events: string[] = []
+    const SpyTelemetry = createSpyTelemetry(events)
+
+    await runWithTelemetry(SpyTelemetry, async (svc) => {
+      await svc.create({ title: "Test" })
+    })
+
+    expect(events).toContain("counter:task.created.total")
+  })
+
+  it("TaskService.update with done emits completion metrics", async () => {
+    const events: string[] = []
+    const SpyTelemetry = createSpyTelemetry(events)
+
+    await runWithTelemetry(SpyTelemetry, async (svc) => {
+      await svc.update(FIXTURES.TASK_LOGIN, { status: "done" })
+    })
+
+    expect(events).toContain("counter:task.completed.total")
+    expect(events).toContain("histogram:task.completion.duration_ms")
+  })
+
+  it("DependencyService emits cycle_detected on circular dep", async () => {
+    const events: string[] = []
+    const SpyTelemetry = createSpyTelemetry(events)
+
+    await runWithTelemetry(SpyTelemetry, async (depSvc) => {
+      await depSvc.addBlocker(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED)
+        .catch(() => {})  // Expected to fail
+    })
+
+    expect(events).toContain("counter:dependency.cycle_detected.total")
+  })
+})
+```
+
+### Spy Telemetry Helper
+
+```typescript
+function createSpyTelemetry(events: string[]) {
+  return Layer.succeed(Telemetry, {
+    withSpan: (_opts, effect) => effect,
+    incrementCounter: (name) => Effect.sync(() => events.push(`counter:${name}`)),
+    recordHistogram: (name) => Effect.sync(() => events.push(`histogram:${name}`)),
+    setGauge: (name) => Effect.sync(() => events.push(`gauge:${name}`)),
+    log: () => Effect.void
+  })
+}
+```
+
+---
+
+## LLM Parsing Tests
+
+```typescript
+describe("parseLlmJson", () => {
+  it("parses clean JSON array", () => {
+    expect(parseLlmJson("[1,2,3]")).toEqual([1,2,3])
+  })
+
+  it("strips markdown fences", () => {
+    expect(parseLlmJson("```json\n{\"a\":1}\n```")).toEqual({a:1})
+  })
+
+  it("handles preamble text", () => {
+    expect(parseLlmJson("Here is the result:\n{\"a\":1}")).toEqual({a:1})
+  })
+
+  it("returns null for garbage", () => {
+    expect(parseLlmJson("just words")).toBeNull()
+  })
+})
+```
+
+---
+
+## Running Tests
+
+```bash
+# All tests
+npm test
+
+# Unit tests only
+npm run test:unit
+
+# Integration tests only
+npm run test:integration
+
+# With coverage
+npm run test:coverage
+
+# Watch mode
+npm run test:watch
+```
+
+---
+
+## Test File Structure (Updated)
+
+```
+test/
+├── fixtures/
+│   └── index.ts              # SHA256-based fixture factory
+├── unit/
+│   ├── id-generator.test.ts  # ID generation
+│   ├── score.test.ts         # Score calculation
+│   ├── schemas.test.ts       # Schema validation
+│   ├── llm-parse.test.ts     # LLM JSON parsing
+│   └── telemetry.test.ts     # TelemetryNoop tests
+├── integration/
+│   ├── setup.ts              # DB creation + seeding
+│   ├── task-service.test.ts  # CRUD + getWithDeps
+│   ├── ready-service.test.ts # Ready detection + deps
+│   ├── dependency-service.test.ts  # Blocking + cycles
+│   ├── hierarchy-service.test.ts   # Tree + path
+│   ├── mcp-server.test.ts    # MCP tool responses
+│   ├── telemetry-instrumented.test.ts  # Service telemetry
+│   └── compaction.test.ts    # Compaction + learnings export
+└── e2e/
+    └── cli.test.ts            # CLI command output
+```
+
+---
+
+## Related Documents
+
+- [DD-001: Data Model](/docs/design/dd-001-data-model-storage)
+- [DD-002: Service Layer](/docs/design/dd-002-effect-ts-service-layer)
+- [DD-005: MCP Server](/docs/design/dd-005-mcp-agent-sdk-integration)
+- [DD-008: OpenTelemetry Integration](/docs/design/dd-008-opentelemetry-integration)

@@ -1,0 +1,594 @@
+---
+title: "DD-010: Dashboard UX Architecture"
+description: "This document describes the technical implementation of dashboard UX improvements: cursor-based pagination APIs, infinite scroll, filtering, keyboard navigation, and component architecture."
+---
+
+
+**Status**: Draft
+**Implements**: [PRD-010](/docs/prd/prd-010-dashboard-ux)
+**Last Updated**: 2026-01-30
+
+---
+
+## Overview
+
+This document describes the technical implementation of dashboard UX improvements: cursor-based pagination APIs, infinite scroll, filtering, keyboard navigation, and component architecture.
+
+---
+
+## API Design
+
+### Cursor-Based Pagination
+
+Offset-based pagination (`?page=5`) has issues with real-time data:
+- Insertions/deletions cause items to shift between pages
+- Inefficient for large offsets (`OFFSET 1000` scans 1000 rows)
+
+**Solution**: Cursor-based pagination using composite keys.
+
+#### Tasks Endpoint
+
+```
+GET /api/tasks?cursor=<cursor>&limit=20&status=active,ready&search=<query>
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cursor` | string | `{score}:{id}` - last seen position |
+| `limit` | number | Items per page (default: 20, max: 100) |
+| `status` | string | Comma-separated statuses to include |
+| `search` | string | Full-text search on title/description |
+
+**Response**:
+```typescript
+interface PaginatedTasksResponse {
+  tasks: TaskWithDeps[]
+  nextCursor: string | null  // null = no more pages
+  hasMore: boolean
+  total: number              // total matching filter
+}
+```
+
+**Cursor Format**: `{score}:{id}` enables stable keyset pagination:
+```sql
+-- First page (no cursor)
+SELECT * FROM tasks
+WHERE status IN (?, ?)
+ORDER BY score DESC, id ASC
+LIMIT 21;  -- fetch 1 extra to check hasMore
+
+-- Next page (with cursor "750:tx-abc123")
+SELECT * FROM tasks
+WHERE status IN (?, ?)
+  AND (score < 750 OR (score = 750 AND id > 'tx-abc123'))
+ORDER BY score DESC, id ASC
+LIMIT 21;
+```
+
+#### Runs Endpoint
+
+```
+GET /api/runs?cursor=<cursor>&limit=20&agent=<agent>&status=running,completed
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cursor` | string | `{started_at}:{id}` - ISO timestamp + ID |
+| `limit` | number | Items per page (default: 20) |
+| `agent` | string | Filter by agent name |
+| `status` | string | Comma-separated run statuses |
+
+**Cursor Format**: `{started_at}:{id}` for chronological order:
+```sql
+-- Next page (with cursor "2026-01-30T10:00:00Z:run-abc123")
+SELECT * FROM runs
+WHERE (started_at < '2026-01-30T10:00:00Z'
+       OR (started_at = '2026-01-30T10:00:00Z' AND id > 'run-abc123'))
+ORDER BY started_at DESC, id ASC
+LIMIT 21;
+```
+
+#### Task Detail Endpoint
+
+```
+GET /api/tasks/:id
+```
+
+**Response**:
+```typescript
+interface TaskDetailResponse {
+  task: TaskWithDeps
+  blockedByTasks: TaskWithDeps[]  // Full task objects, not just IDs
+  blocksTasks: TaskWithDeps[]
+  childTasks: TaskWithDeps[]
+}
+```
+
+---
+
+## Frontend Architecture
+
+### Component Structure
+
+```
+src/
+├── components/
+│   ├── ui/                      # Reusable primitives
+│   │   ├── StatusBadge.tsx      # Colored status pill
+│   │   ├── LoadingSkeleton.tsx  # Shimmer placeholder
+│   │   ├── EmptyState.tsx       # Icon + message + action
+│   │   ├── SidePanel.tsx        # Slide-in drawer
+│   │   ├── SearchInput.tsx      # Debounced search field
+│   │   └── InfiniteList.tsx     # Generic infinite scroll
+│   ├── tasks/
+│   │   ├── TaskCard.tsx         # Single task row
+│   │   ├── TaskList.tsx         # Infinite scroll list
+│   │   ├── TaskFilters.tsx      # Status toggles + search
+│   │   └── TaskDetail.tsx       # Full task view
+│   ├── runs/
+│   │   ├── RunCard.tsx
+│   │   ├── RunsList.tsx
+│   │   └── RunFilters.tsx
+│   └── chat/
+│       ├── ChatMessage.tsx
+│       └── ChatView.tsx
+├── hooks/
+│   ├── useIntersectionObserver.ts
+│   ├── useKeyboardNavigation.ts
+│   └── useDebounce.ts
+└── App.tsx                      # Layout + routing
+```
+
+### State Management
+
+| State | Location | Persistence |
+|-------|----------|-------------|
+| Filter values | URL search params | Shareable, survives refresh |
+| Selected task/run | React state | Session only |
+| Focused list item | React context | None |
+| Cached data | TanStack Query | Memory + refetch |
+
+**URL State Pattern**:
+```typescript
+// Reading filters from URL
+const searchParams = new URLSearchParams(window.location.search)
+const statusFilter = searchParams.get('status')?.split(',') ?? []
+const searchQuery = searchParams.get('search') ?? ''
+
+// Updating filters in URL
+const setFilters = (filters: TaskFilters) => {
+  const params = new URLSearchParams()
+  if (filters.status?.length) params.set('status', filters.status.join(','))
+  if (filters.search) params.set('search', filters.search)
+  window.history.replaceState({}, '', `?${params}`)
+}
+```
+
+### TanStack Query Integration
+
+**Infinite Query Pattern**:
+```typescript
+// hooks/useInfiniteTasks.ts
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+export function useInfiniteTasks(filters: TaskFilters) {
+  return useInfiniteQuery({
+    queryKey: ['tasks', 'infinite', filters],
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams()
+      if (pageParam) params.set('cursor', pageParam)
+      if (filters.status?.length) params.set('status', filters.status.join(','))
+      if (filters.search) params.set('search', filters.search)
+      params.set('limit', '20')
+
+      const res = await fetch(`/api/tasks?${params}`)
+      return res.json() as Promise<PaginatedTasksResponse>
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    initialPageParam: undefined as string | undefined,
+    staleTime: 2000,  // Refetch after 2s
+    refetchInterval: 5000,  // Poll every 5s
+  })
+}
+
+// Flattening pages for rendering
+const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteTasks(filters)
+const tasks = data?.pages.flatMap(page => page.tasks) ?? []
+```
+
+### Infinite Scroll Hook
+
+```typescript
+// hooks/useIntersectionObserver.ts
+import { useEffect, useRef } from 'react'
+
+export function useIntersectionObserver(
+  onIntersect: () => void,
+  options: { enabled?: boolean; threshold?: number } = {}
+) {
+  const { enabled = true, threshold = 0.1 } = options
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!enabled || !ref.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onIntersect()
+        }
+      },
+      { threshold, rootMargin: '100px' }
+    )
+
+    observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [enabled, onIntersect, threshold])
+
+  return ref
+}
+```
+
+**Usage in List**:
+```tsx
+function TaskList({ filters }: { filters: TaskFilters }) {
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteTasks(filters)
+  const tasks = data?.pages.flatMap(p => p.tasks) ?? []
+
+  const loadMoreRef = useIntersectionObserver(
+    () => { if (hasNextPage && !isFetchingNextPage) fetchNextPage() },
+    { enabled: hasNextPage }
+  )
+
+  return (
+    <div className="space-y-2">
+      {tasks.map(task => <TaskCard key={task.id} task={task} />)}
+      <div ref={loadMoreRef} className="h-4" />
+      {isFetchingNextPage && <LoadingSkeleton count={3} />}
+    </div>
+  )
+}
+```
+
+---
+
+## Keyboard Navigation
+
+### Implementation Pattern
+
+```typescript
+// hooks/useKeyboardNavigation.ts
+import { useEffect, useState, useCallback } from 'react'
+
+interface UseKeyboardNavigationOptions {
+  itemCount: number
+  onSelect: (index: number) => void
+  onEscape?: () => void
+  enabled?: boolean
+}
+
+export function useKeyboardNavigation({
+  itemCount,
+  onSelect,
+  onEscape,
+  enabled = true,
+}: UseKeyboardNavigationOptions) {
+  const [focusedIndex, setFocusedIndex] = useState(0)
+
+  // Reset focus when item count changes
+  useEffect(() => {
+    setFocusedIndex(i => Math.min(i, Math.max(0, itemCount - 1)))
+  }, [itemCount])
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if focus is in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'j':
+          e.preventDefault()
+          setFocusedIndex(i => Math.min(i + 1, itemCount - 1))
+          break
+        case 'ArrowUp':
+        case 'k':
+          e.preventDefault()
+          setFocusedIndex(i => Math.max(i - 1, 0))
+          break
+        case 'Enter':
+          e.preventDefault()
+          onSelect(focusedIndex)
+          break
+        case 'Escape':
+          e.preventDefault()
+          onEscape?.()
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [enabled, focusedIndex, itemCount, onSelect, onEscape])
+
+  return { focusedIndex, setFocusedIndex }
+}
+```
+
+### Focus Indicators
+
+```tsx
+// In TaskCard.tsx
+function TaskCard({ task, isFocused, onClick }: TaskCardProps) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Scroll into view when focused via keyboard
+  useEffect(() => {
+    if (isFocused) {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [isFocused])
+
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        'p-3 rounded-lg border cursor-pointer transition-all',
+        isFocused && 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900'
+      )}
+      onClick={onClick}
+      tabIndex={isFocused ? 0 : -1}
+    >
+      {/* ... */}
+    </div>
+  )
+}
+```
+
+---
+
+## Visual Design
+
+### Loading Skeleton
+
+```typescript
+// components/ui/LoadingSkeleton.tsx
+export function LoadingSkeleton({ count = 1 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="animate-shimmer bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 bg-[length:200%_100%] rounded-lg h-20"
+        />
+      ))}
+    </>
+  )
+}
+
+// In index.css or tailwind config
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+```
+
+### Empty State
+
+```typescript
+// components/ui/EmptyState.tsx
+interface EmptyStateProps {
+  icon?: React.ReactNode
+  title: string
+  description?: string
+  action?: React.ReactNode
+}
+
+export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      {icon && <div className="text-4xl text-gray-600 mb-4">{icon}</div>}
+      <h3 className="text-lg font-medium text-gray-300">{title}</h3>
+      {description && <p className="text-sm text-gray-500 mt-1 max-w-sm">{description}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  )
+}
+```
+
+### Side Panel
+
+```typescript
+// components/ui/SidePanel.tsx
+interface SidePanelProps {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  children: React.ReactNode
+}
+
+export function SidePanel({ isOpen, onClose, title, children }: SidePanelProps) {
+  // Close on Escape
+  useEffect(() => {
+    if (!isOpen) return
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [isOpen, onClose])
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className={cn(
+          'fixed inset-0 bg-black/50 transition-opacity z-40',
+          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        )}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div
+        className={cn(
+          'fixed right-0 top-0 h-full w-[480px] bg-gray-900 border-l border-gray-700 z-50',
+          'transform transition-transform duration-200 ease-out',
+          isOpen ? 'translate-x-0' : 'translate-x-full'
+        )}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-4 overflow-y-auto h-[calc(100%-60px)]">
+          {children}
+        </div>
+      </div>
+    </>
+  )
+}
+```
+
+---
+
+## Server Implementation
+
+### Pagination Helper
+
+```typescript
+// server/pagination.ts
+interface CursorParams {
+  cursor?: string
+  limit: number
+}
+
+interface PaginatedResult<T> {
+  items: T[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+// Parse composite cursor
+function parseTaskCursor(cursor: string): { score: number; id: string } {
+  const [score, id] = cursor.split(':')
+  return { score: parseInt(score, 10), id }
+}
+
+function parseRunCursor(cursor: string): { startedAt: string; id: string } {
+  const colonIndex = cursor.lastIndexOf(':')
+  return {
+    startedAt: cursor.slice(0, colonIndex),
+    id: cursor.slice(colonIndex + 1),
+  }
+}
+
+// Build cursor from last item
+function buildTaskCursor(task: TaskRow): string {
+  return `${task.score}:${task.id}`
+}
+
+function buildRunCursor(run: RunRow): string {
+  return `${run.started_at}:${run.id}`
+}
+```
+
+### Updated Tasks Endpoint
+
+```typescript
+// In server/index.ts
+app.get('/api/tasks', (c) => {
+  const db = getDb()
+  const cursor = c.req.query('cursor')
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 100)
+  const statusFilter = c.req.query('status')?.split(',').filter(Boolean)
+  const search = c.req.query('search')
+
+  // Build WHERE clauses
+  const conditions: string[] = []
+  const params: unknown[] = []
+
+  if (statusFilter?.length) {
+    conditions.push(`status IN (${statusFilter.map(() => '?').join(',')})`)
+    params.push(...statusFilter)
+  }
+
+  if (search) {
+    conditions.push('(title LIKE ? OR description LIKE ?)')
+    params.push(`%${search}%`, `%${search}%`)
+  }
+
+  if (cursor) {
+    const { score, id } = parseTaskCursor(cursor)
+    conditions.push('(score < ? OR (score = ? AND id > ?))')
+    params.push(score, score, id)
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+  // Fetch limit + 1 to check hasMore
+  const sql = `
+    SELECT * FROM tasks
+    ${whereClause}
+    ORDER BY score DESC, id ASC
+    LIMIT ?
+  `
+  params.push(limit + 1)
+
+  const rows = db.prepare(sql).all(...params) as TaskRow[]
+  const hasMore = rows.length > limit
+  const tasks = hasMore ? rows.slice(0, limit) : rows
+
+  // Get total count for display
+  const countSql = `SELECT COUNT(*) as count FROM tasks ${whereClause}`
+  const total = (db.prepare(countSql).get(...params.slice(0, -1)) as { count: number }).count
+
+  // Enrich with deps (same as before)
+  const enriched = enrichTasksWithDeps(db, tasks)
+
+  return c.json({
+    tasks: enriched,
+    nextCursor: hasMore && tasks.length ? buildTaskCursor(tasks[tasks.length - 1]) : null,
+    hasMore,
+    total,
+  })
+})
+```
+
+---
+
+## Testing Checklist
+
+| Feature | Test Case |
+|---------|-----------|
+| Pagination | Scroll loads more items |
+| Pagination | Cursor survives filter change |
+| Filters | Status toggle updates list |
+| Filters | Search debounces correctly |
+| Filters | URL reflects filter state |
+| Detail panel | Click opens panel |
+| Detail panel | Escape closes panel |
+| Keyboard | Arrow keys navigate |
+| Keyboard | Enter selects |
+| Loading | Skeleton shows during fetch |
+| Empty | Empty state shows for no results |
+
+---
+
+## References
+
+- [PRD-010](/docs/prd/prd-010-dashboard-ux): Requirements document
+- TanStack Query Infinite Queries: https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries
+- Intersection Observer API: https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API

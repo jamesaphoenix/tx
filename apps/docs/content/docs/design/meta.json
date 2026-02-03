@@ -1,0 +1,24 @@
+{
+  "title": "Design Docs",
+  "pages": [
+    "dd-001-data-model-storage",
+    "dd-002-effect-ts-service-layer",
+    "dd-003-cli-implementation",
+    "dd-004-ready-detection-algorithm",
+    "dd-005-mcp-agent-sdk-integration",
+    "dd-006-llm-integration",
+    "dd-007-testing-strategy",
+    "dd-008-opentelemetry-integration",
+    "dd-009-jsonl-git-sync",
+    "dd-010-dashboard-ux",
+    "dd-010-learnings-search-retrieval",
+    "dd-011-claude-code-hooks",
+    "dd-012-dashboard-ux",
+    "dd-013-test-utilities",
+    "dd-014-graph-schema-edges",
+    "dd-015-jsonl-daemon-promotion",
+    "dd-016-graph-expansion-retrieval",
+    "dd-017-invalidation-maintenance",
+    "dd-018-worker-orchestration"
+  ]
+}

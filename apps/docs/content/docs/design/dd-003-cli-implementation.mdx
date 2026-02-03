@@ -1,0 +1,558 @@
+---
+title: "DD-003: CLI Implementation"
+description: "This document describes how the CLI is built: command structure, argument parsing with @effect/cli, output formatting, and error handling."
+---
+
+
+**Status**: Draft
+**Implements**: [PRD-007](/docs/prd/prd-007-multi-interface-integration)
+**Last Updated**: 2025-01-28
+
+---
+
+## Overview
+
+This document describes **how** the CLI is built: command structure, argument parsing with `@effect/cli`, output formatting, and error handling.
+
+---
+
+## Command Structure
+
+```
+tx <command> [arguments] [options]
+
+Commands:
+  init                    Initialize task database
+  add <title>             Create a new task
+  list                    List tasks
+  ready                   List ready tasks (no blockers)
+  show <id>               Show task details
+  update <id>             Update task
+  done <id>               Mark task complete
+  delete <id>             Delete task
+  block <id> <blocker>    Add blocking dependency
+  unblock <id> <blocker>  Remove blocking dependency
+  children <id>           List child tasks
+  tree <id>               Show task subtree
+  path <id>               Show ancestors to root
+  score <id> [value]      Get or set task score
+  blockers <id>           Show what blocks this task
+  blocking <id>           Show what this task blocks
+  dedupe                  Find duplicate tasks
+  compact                 Compact completed tasks
+  history                 Show compaction history
+  export                  Export to JSON
+  import <file>           Import from JSON
+
+Global Options:
+  --json                  Output as JSON
+  --db <path>             Database path (default: .tx/tasks.db)
+  --help                  Show help
+  --version               Show version
+```
+
+---
+
+## Implementation with @effect/cli
+
+### Global Options
+
+```typescript
+const jsonFlag = Options.boolean("json").pipe(
+  Options.withDescription("Output as JSON"),
+  Options.withDefault(false)
+)
+
+const dbOption = Options.file("db").pipe(
+  Options.withDescription("Database path"),
+  Options.optional
+)
+```
+
+### Command Implementations
+
+```typescript
+// tx init
+const initCmd = Command.make(
+  "init",
+  {
+    force: Options.boolean("force").pipe(
+      Options.withDescription("Recreate database (WARNING: destroys existing data)"),
+      Options.withDefault(false)
+    )
+  },
+  ({ force }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const dbDir = ".tx"
+      const dbPath = `${dbDir}/tasks.db`
+
+      // Create directory
+      yield* fs.makeDirectory(dbDir, { recursive: true })
+
+      // Check for existing database
+      const exists = yield* fs.exists(dbPath)
+      if (exists && !force) {
+        yield* Console.log(`Database already exists at ${dbPath}`)
+        yield* Console.log(`Use --force to recreate (WARNING: destroys existing data)`)
+        return
+      }
+
+      if (exists && force) {
+        yield* fs.remove(dbPath)
+        yield* fs.remove(`${dbPath}-wal`).pipe(Effect.catchAll(() => Effect.void))
+        yield* fs.remove(`${dbPath}-shm`).pipe(Effect.catchAll(() => Effect.void))
+      }
+
+      // Run migrations (creates tables, enables WAL mode)
+      const migration = yield* MigrationService
+      yield* migration.run()
+
+      // Create .gitignore
+      yield* fs.writeFileString(`${dbDir}/.gitignore`, "tasks.db\ntasks.db-wal\ntasks.db-shm\n")
+
+      yield* Console.log(`Initialized tx database at ${dbPath}`)
+      yield* Console.log(`  WAL mode: enabled`)
+      yield* Console.log(`  Tables: tasks, task_dependencies, compaction_log`)
+      if (!exists) {
+        yield* Console.log(`  .gitignore: created`)
+      }
+    })
+)
+
+// tx add <title>
+const addCmd = Command.make(
+  "add",
+  {
+    title: Args.text({ name: "title" }),
+    parent: Options.text("parent").pipe(Options.withAlias("p"), Options.optional),
+    score: Options.integer("score").pipe(Options.withAlias("s"), Options.withDefault(0)),
+    description: Options.text("description").pipe(Options.withAlias("d"), Options.optional),
+    json: jsonFlag
+  },
+  ({ title, parent, score, description, json }) =>
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      const task = yield* taskService.create({
+        title, description, parentId: parent ?? null, score
+      })
+
+      if (json) {
+        // Return TaskWithDeps via getWithDeps
+        const full = yield* taskService.getWithDeps(task.id)
+        yield* Console.log(JSON.stringify(full, null, 2))
+      } else {
+        yield* Console.log(`Created task: ${task.id}`)
+        yield* Console.log(`  Title: ${task.title}`)
+        yield* Console.log(`  Score: ${task.score}`)
+        if (task.parentId) yield* Console.log(`  Parent: ${task.parentId}`)
+      }
+    })
+)
+
+// tx ready
+const readyCmd = Command.make(
+  "ready",
+  {
+    limit: Options.integer("limit").pipe(Options.withAlias("n"), Options.withDefault(10)),
+    json: jsonFlag
+  },
+  ({ limit, json }) =>
+    Effect.gen(function* () {
+      const readyService = yield* ReadyService
+      const tasks = yield* readyService.getReady(limit)
+
+      if (json) {
+        yield* Console.log(JSON.stringify(tasks, null, 2))
+      } else {
+        if (tasks.length === 0) {
+          yield* Console.log("No ready tasks")
+        } else {
+          yield* Console.log(`${tasks.length} ready task(s):`)
+          for (const task of tasks) {
+            const blocksInfo = task.blocks.length > 0
+              ? ` (unblocks ${task.blocks.length})`
+              : ""
+            yield* Console.log(`  ${task.id} [${task.score}] ${task.title}${blocksInfo}`)
+            yield* Console.log(`    blocked by: ${task.blockedBy.length > 0 ? task.blockedBy.join(", ") : "(none)"}`)
+            yield* Console.log(`    blocks: ${task.blocks.length > 0 ? task.blocks.join(", ") : "(none)"}`)
+          }
+        }
+      }
+    })
+)
+
+// tx show <id>
+const showCmd = Command.make(
+  "show",
+  {
+    id: Args.text({ name: "id" }),
+    json: jsonFlag
+  },
+  ({ id, json }) =>
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      const task = yield* taskService.getWithDeps(id as TaskId)
+
+      if (json) {
+        yield* Console.log(JSON.stringify(task, null, 2))
+      } else {
+        yield* Console.log(`Task: ${task.id}`)
+        yield* Console.log(`  Title: ${task.title}`)
+        yield* Console.log(`  Status: ${task.status}`)
+        yield* Console.log(`  Score: ${task.score}`)
+        yield* Console.log(`  Ready: ${task.isReady ? "yes" : "no"}`)
+        if (task.description) yield* Console.log(`  Description: ${task.description}`)
+        if (task.parentId) yield* Console.log(`  Parent: ${task.parentId}`)
+        yield* Console.log(`  Blocked by: ${task.blockedBy.length > 0 ? task.blockedBy.join(", ") : "(none)"}`)
+        yield* Console.log(`  Blocks: ${task.blocks.length > 0 ? task.blocks.join(", ") : "(none)"}`)
+        yield* Console.log(`  Children: ${task.children.length > 0 ? task.children.join(", ") : "(none)"}`)
+        yield* Console.log(`  Created: ${task.createdAt.toISOString()}`)
+        yield* Console.log(`  Updated: ${task.updatedAt.toISOString()}`)
+        if (task.completedAt) yield* Console.log(`  Completed: ${task.completedAt.toISOString()}`)
+      }
+    })
+)
+
+// tx done <id>
+const doneCmd = Command.make(
+  "done",
+  { id: Args.text({ name: "id" }), json: jsonFlag },
+  ({ id, json }) =>
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      const readyService = yield* ReadyService
+
+      yield* taskService.update(id as TaskId, { status: "done" })
+      const task = yield* taskService.getWithDeps(id as TaskId)
+
+      // Find newly unblocked tasks
+      const blocking = yield* readyService.getBlocking(id as TaskId)
+      const nowReady: string[] = []
+      for (const blocked of blocking) {
+        if (yield* readyService.isReady(blocked.id)) {
+          nowReady.push(blocked.id)
+        }
+      }
+
+      if (json) {
+        yield* Console.log(JSON.stringify({ task, nowReady }, null, 2))
+      } else {
+        yield* Console.log(`Completed: ${task.id} - ${task.title}`)
+        if (nowReady.length > 0) {
+          yield* Console.log(`Now unblocked: ${nowReady.join(", ")}`)
+        }
+      }
+    })
+)
+
+// tx block <id> <blocker>
+const blockCmd = Command.make(
+  "block",
+  {
+    id: Args.text({ name: "task" }),
+    blocker: Args.text({ name: "blocker" }),
+    json: jsonFlag
+  },
+  ({ id, blocker, json }) =>
+    Effect.gen(function* () {
+      const depService = yield* DependencyService
+      const taskService = yield* TaskService
+
+      yield* depService.addBlocker(id as TaskId, blocker as TaskId)
+      const task = yield* taskService.getWithDeps(id as TaskId)
+
+      if (json) {
+        yield* Console.log(JSON.stringify({ success: true, task }, null, 2))
+      } else {
+        yield* Console.log(`${blocker} now blocks ${id}`)
+        yield* Console.log(`  ${id} blocked by: ${task.blockedBy.join(", ")}`)
+      }
+    })
+)
+
+// tx compact
+const compactCmd = Command.make(
+  "compact",
+  {
+    before: Options.date("before").pipe(Options.optional),
+    output: Options.text("output").pipe(Options.withAlias("o"), Options.withDefault("CLAUDE.md")),
+    dryRun: Options.boolean("dry-run").pipe(Options.withDefault(false)),
+    json: jsonFlag
+  },
+  ({ before, output, dryRun, json }) =>
+    Effect.gen(function* () {
+      const compact = yield* CompactionService
+      const cutoff = before ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+
+      const result = yield* compact.compact({ before: cutoff, outputFile: output, dryRun })
+
+      if (json) {
+        yield* Console.log(JSON.stringify(result, null, 2))
+      } else {
+        if (dryRun) {
+          yield* Console.log(`Would compact ${result.compactedCount} task(s)`)
+          yield* Console.log(`\nSummary preview:\n${result.summary}`)
+          if (result.learnings) yield* Console.log(`\nLearnings preview:\n${result.learnings}`)
+        } else {
+          yield* Console.log(`Compacted ${result.compactedCount} task(s)`)
+          yield* Console.log(`\nSummary:\n${result.summary}`)
+          if (result.learningsExportedTo) {
+            yield* Console.log(`\nLearnings exported to: ${result.learningsExportedTo}`)
+          }
+        }
+      }
+    })
+)
+```
+
+### Main CLI Assembly
+
+```typescript
+const mainCmd = Command.make("tx").pipe(
+  Command.withSubcommands([
+    initCmd, addCmd, listCmd, readyCmd, showCmd,
+    doneCmd, blockCmd, unblockCmd, deleteCmd,
+    childrenCmd, treeCmd, pathCmd, scoreCmd,
+    blockersCmd, blockingCmd,
+    dedupeCmd, compactCmd, historyCmd,
+    exportCmd, importCmd
+  ])
+)
+
+const cli = Command.run(mainCmd, {
+  name: "tx",
+  version: "0.1.0"
+})
+
+// Entry point
+cli.pipe(
+  Effect.provide(AppLive),
+  Effect.provide(NodeContext.layer),
+  NodeRuntime.runMain
+)
+```
+
+---
+
+## Output Formatting
+
+### Human-Readable (Default)
+
+```
+$ tx ready
+3 ready task(s):
+  tx-a1b2c3 [850] Implement JWT validation (unblocks 2)
+    blocked by: (none)
+    blocks: tx-d4e5f6, tx-g7h8i9
+  tx-d4e5f6 [720] Add login endpoint
+    blocked by: (none)
+    blocks: tx-j0k1l2
+  tx-g7h8i9 [650] Write auth tests
+    blocked by: (none)
+    blocks: (none)
+```
+
+### JSON Mode
+
+```json
+[
+  {
+    "id": "tx-a1b2c3",
+    "title": "Implement JWT validation",
+    "status": "ready",
+    "score": 850,
+    "blockedBy": [],
+    "blocks": ["tx-d4e5f6", "tx-g7h8i9"],
+    "children": [],
+    "isReady": true
+  }
+]
+```
+
+---
+
+## Exit Codes
+
+| Code | Meaning | When |
+|------|---------|------|
+| 0 | Success | Normal completion |
+| 1 | Error | Validation, runtime errors |
+| 2 | Not found | Task doesn't exist |
+
+---
+
+## Testing Strategy
+
+### CLI Output Snapshot Tests
+
+Every command's human-readable output must be snapshot-tested to catch unintentional formatting changes:
+
+```typescript
+describe("CLI Output Snapshots", () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = createTestDb()
+    seedFixtures(db)
+  })
+
+  it("tx ready output matches snapshot", async () => {
+    const output = await captureCliOutput(db, ["ready", "--limit=3"])
+    expect(output).toMatchSnapshot()
+  })
+
+  it("tx show output matches snapshot", async () => {
+    const output = await captureCliOutput(db, ["show", FIXTURES.TASK_AUTH])
+    expect(output).toMatchSnapshot()
+  })
+
+  it("tx list output matches snapshot", async () => {
+    const output = await captureCliOutput(db, ["list", "--limit=5"])
+    expect(output).toMatchSnapshot()
+  })
+
+  it("tx tree output matches snapshot", async () => {
+    const output = await captureCliOutput(db, ["tree", FIXTURES.TASK_AUTH])
+    expect(output).toMatchSnapshot()
+  })
+})
+```
+
+### JSON Output Tests
+
+```typescript
+describe("CLI JSON Mode", () => {
+  it("tx ready --json returns valid JSON with TaskWithDeps", async () => {
+    const output = await captureCliOutput(db, ["ready", "--json"])
+    const parsed = JSON.parse(output)
+
+    expect(Array.isArray(parsed)).toBe(true)
+    for (const task of parsed) {
+      expect(task).toHaveProperty("blockedBy")
+      expect(task).toHaveProperty("blocks")
+      expect(task).toHaveProperty("children")
+      expect(task).toHaveProperty("isReady")
+    }
+  })
+
+  it("tx show --json returns valid JSON with TaskWithDeps", async () => {
+    const output = await captureCliOutput(db, ["show", FIXTURES.TASK_AUTH, "--json"])
+    const parsed = JSON.parse(output)
+
+    expect(parsed.id).toBe(FIXTURES.TASK_AUTH)
+    expect(parsed).toHaveProperty("blockedBy")
+    expect(parsed).toHaveProperty("blocks")
+    expect(parsed).toHaveProperty("children")
+  })
+
+  it("tx done --json includes nowReady array", async () => {
+    const output = await captureCliOutput(db, ["done", FIXTURES.TASK_JWT, "--json"])
+    const parsed = JSON.parse(output)
+
+    expect(parsed).toHaveProperty("task")
+    expect(parsed).toHaveProperty("nowReady")
+    expect(Array.isArray(parsed.nowReady)).toBe(true)
+  })
+})
+```
+
+### Exit Code Tests
+
+```typescript
+describe("CLI Exit Codes", () => {
+  it("returns 0 on success", async () => {
+    const code = await runCliCommand(db, ["list"])
+    expect(code).toBe(0)
+  })
+
+  it("returns 2 for nonexistent task", async () => {
+    const code = await runCliCommand(db, ["show", "tx-nonexist"])
+    expect(code).toBe(2)
+  })
+
+  it("returns 1 for validation error", async () => {
+    const code = await runCliCommand(db, ["add", ""])  // Empty title
+    expect(code).toBe(1)
+  })
+})
+```
+
+### Argument Parsing Tests (Unit)
+
+```typescript
+describe("CLI Argument Parsing", () => {
+  it("tx add accepts --parent alias -p", async () => {
+    const output = await captureCliOutput(db, ["add", "Test", "-p", FIXTURES.TASK_AUTH])
+    expect(output).toContain("Parent:")
+  })
+
+  it("tx add accepts --score alias -s", async () => {
+    const output = await captureCliOutput(db, ["add", "Test", "-s", "800"])
+    expect(output).toContain("Score: 800")
+  })
+
+  it("tx ready accepts --limit alias -n", async () => {
+    const output = await captureCliOutput(db, ["ready", "-n", "1"])
+    expect(output).toContain("1 ready task(s)")
+  })
+})
+```
+
+### Test Helper
+
+```typescript
+// test/helpers/cli.ts
+async function captureCliOutput(db: Database.Database, args: string[]): Promise<string> {
+  const output: string[] = []
+  const mockConsole = { log: (msg: string) => output.push(msg) }
+
+  await Effect.runPromise(
+    runCommand(args).pipe(
+      Effect.provide(TestLayer(db)),
+      Effect.provideService(Console, mockConsole)
+    )
+  )
+
+  return output.join("\n")
+}
+
+async function runCliCommand(db: Database.Database, args: string[]): Promise<number> {
+  try {
+    await captureCliOutput(db, args)
+    return 0
+  } catch (e) {
+    return e.exitCode ?? 1
+  }
+}
+```
+
+---
+
+## ANTHROPIC_API_KEY Handling in CLI
+
+Commands are split by layer requirement:
+
+| Commands | Layer | API Key Needed |
+|----------|-------|----------------|
+| `init`, `add`, `list`, `ready`, `show`, `update`, `done`, `delete`, `block`, `unblock`, `children`, `tree`, `path`, `score`, `blockers`, `blocking`, `export`, `import` | `AppMinimalLive` | No |
+| `dedupe`, `compact`, `reprioritize`, `history` (read-only, no key) | `AppLive` or `AppMinimalLive` | Only dedupe/compact/reprioritize |
+
+When a command requiring `ANTHROPIC_API_KEY` is invoked without it:
+
+```
+$ tx dedupe
+Error: ANTHROPIC_API_KEY environment variable is not set.
+Set it to enable LLM-powered features: export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Exit code: 1 (not a crash).
+
+---
+
+## Related Documents
+
+- [PRD-007: Multi-Interface Integration](/docs/prd/prd-007-multi-interface-integration)
+- [DD-002: Effect-TS Service Layer](/docs/design/dd-002-effect-ts-service-layer)
+- [DD-005: MCP Server](/docs/design/dd-005-mcp-agent-sdk-integration)
+- [DD-008: OpenTelemetry Integration](/docs/design/dd-008-opentelemetry-integration)
