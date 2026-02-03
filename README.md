@@ -136,6 +136,15 @@ tx done $task
 
 ---
 
+## Non-Goals
+
+- **Not an agent framework.** You bring your own orchestration.
+- **Not a hosted memory product.** Local-first, your data stays yours.
+- **Not a prompt library.** Primitives, not templates.
+- **Not a replacement for your issue tracker.** (Unless you want it to be.)
+
+---
+
 ## Three Systems
 
 ### 1. Knowledge System
