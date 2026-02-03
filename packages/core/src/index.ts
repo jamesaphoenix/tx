@@ -201,7 +201,10 @@ export {
   type WorkerFilter,
   type FindDeadConfig,
   ClaimService,
-  ClaimServiceLive
+  ClaimServiceLive,
+  OrchestratorService,
+  OrchestratorServiceLive,
+  type OrchestratorConfig
 } from "./services/index.js"
 
 // =============================================================================

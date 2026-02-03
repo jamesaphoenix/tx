@@ -189,3 +189,8 @@ export {
   ClaimService,
   ClaimServiceLive
 } from "./claim-service.js"
+export {
+  OrchestratorService,
+  OrchestratorServiceLive,
+  type OrchestratorConfig
+} from "./orchestrator-service.js"
