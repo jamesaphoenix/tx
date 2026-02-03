@@ -57,6 +57,11 @@ Commands:
   worker stop             Stop a worker process
   worker status           Show worker status
   worker list             List all workers
+  trace list              Show recent runs with event counts
+  trace show              Show metrics events for a run
+  trace transcript        Display raw transcript content
+  trace stderr            Display stderr content
+  trace errors            Show recent errors across all runs
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1326,5 +1331,44 @@ Options:
 Examples:
   tx worker list                    # List all workers
   tx worker list --status idle,busy # Only idle and busy workers
-  tx worker list --json             # Output as JSON for scripting`
+  tx worker list --json             # Output as JSON for scripting`,
+
+  trace: `tx trace - Execution tracing for debugging run failures
+
+Usage: tx trace <subcommand> [options]
+
+Subcommands:
+  list                  Show recent runs with event counts
+  show <run-id>         Show metrics events for a run
+  transcript <run-id>   Display raw transcript content
+  stderr <run-id>       Display stderr content
+  errors                Show recent errors across all runs
+
+Run 'tx trace <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx trace list                    # Recent runs with span counts
+  tx trace list --hours 48         # Runs from last 48 hours
+  tx trace show run-abc123         # Metrics events for a run
+  tx trace transcript run-abc123   # Raw JSONL transcript
+  tx trace stderr run-abc123       # Stderr output for debugging`,
+
+  "trace list": `tx trace list - Show recent runs with event counts
+
+Usage: tx trace list [options]
+
+Lists recent runs from the database with their agent, task, status, span count,
+and relative time. Useful for quick overview of recent execution activity.
+
+Options:
+  --hours <n>       Time window in hours (default: 24)
+  --limit, -n <n>   Maximum number of results (default: 20)
+  --json            Output as JSON
+  --help            Show this help
+
+Examples:
+  tx trace list                    # Recent runs (last 24h)
+  tx trace list --hours 48         # Last 48 hours
+  tx trace list --limit 10         # Top 10 only
+  tx trace list --json             # JSON output for scripting`
 }

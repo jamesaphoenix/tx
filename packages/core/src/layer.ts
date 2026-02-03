@@ -262,7 +262,8 @@ export const makeAppLayer = (dbPath: string) => {
 
   // Also expose RunRepository directly for run tracking
   // (Note: Consider creating RunService in future refactor)
-  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, repos)
+  // Also expose SqliteClient directly for direct database access (e.g., trace commands)
+  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, repos, infra)
 }
 
 /**
