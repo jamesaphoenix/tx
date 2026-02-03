@@ -20,7 +20,7 @@ import {
   FileWatcherServiceLive,
   FileWatcherServiceNoop,
   type FileEvent
-} from "@tx/core/services"
+} from "@jamesaphoenix/tx-core/services"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

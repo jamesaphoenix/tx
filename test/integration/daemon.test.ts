@@ -39,7 +39,7 @@ import {
   generateSystemdService,
   type LaunchdPlistOptions,
   type SystemdServiceOptions
-} from "@tx/core/services"
+} from "@jamesaphoenix/tx-core/services"
 
 // =============================================================================
 // Test Fixtures
