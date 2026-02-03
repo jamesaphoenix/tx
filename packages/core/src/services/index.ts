@@ -198,3 +198,9 @@ export {
   runWorkerProcess,
   type WorkerProcessConfig
 } from "./worker-process.js"
+export {
+  TracingService,
+  TracingServiceLive,
+  TracingServiceNoop,
+  type SpanOptions
+} from "./tracing-service.js"
