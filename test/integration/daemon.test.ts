@@ -19,11 +19,16 @@ import {
   CandidateFactory,
   LearningFactory,
   fixtureId,
+  cachedLLMCall,
+  createMockAnthropicForExtraction,
+  configureLLMCache,
+  resetCacheConfig,
   type TestDatabase
 } from "@tx/test-utils"
 import {
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
+  CandidateExtractorServiceAuto,
   writePid,
   readPid,
   removePid,
@@ -382,6 +387,400 @@ describe("Daemon Candidate Extraction", () => {
 
     expect(result.sourceChunk.content.length).toBe(100000)
     expect(result.wasExtracted).toBe(false)
+  })
+})
+
+// =============================================================================
+// Auto Service Fallback Tests
+// =============================================================================
+
+describe("Daemon Auto Service Fallback", () => {
+  it("uses Noop when no API keys are set", async () => {
+    // CandidateExtractorServiceAuto should fall back to Noop when no API keys are configured
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* svc.extract({
+          content: "Test transcript content about database optimization",
+          sourceFile: FIXTURES.FILE_SESSION_1,
+          sourceRunId: FIXTURES.RUN_SESSION_1
+        })
+      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+    )
+
+    // Without API keys, should behave like Noop
+    expect(result.candidates).toEqual([])
+    expect(result.wasExtracted).toBe(false)
+    expect(result.sourceChunk.sourceFile).toBe(FIXTURES.FILE_SESSION_1)
+  })
+
+  it("isAvailable returns false when no API keys set", async () => {
+    const available = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* svc.isAvailable()
+      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+    )
+
+    expect(available).toBe(false)
+  })
+
+  it("preserves source metadata in fallback mode", async () => {
+    const chunk = {
+      content: "Discussion about error handling patterns",
+      sourceFile: FIXTURES.FILE_SESSION_1,
+      sourceRunId: FIXTURES.RUN_SESSION_1,
+      sourceTaskId: FIXTURES.TASK_AUTH,
+      byteOffset: 4096,
+      lineRange: { start: 100, end: 200 }
+    }
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* svc.extract(chunk)
+      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+    )
+
+    expect(result.sourceChunk.sourceRunId).toBe(FIXTURES.RUN_SESSION_1)
+    expect(result.sourceChunk.sourceTaskId).toBe(FIXTURES.TASK_AUTH)
+    expect(result.sourceChunk.byteOffset).toBe(4096)
+    expect(result.sourceChunk.lineRange).toEqual({ start: 100, end: 200 })
+  })
+
+  it("can process multiple chunks in auto mode", async () => {
+    const chunks = [
+      { content: "Chunk 1 about testing", sourceFile: FIXTURES.FILE_SESSION_1 },
+      { content: "Chunk 2 about debugging", sourceFile: FIXTURES.FILE_SESSION_2 }
+    ]
+
+    const results = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        const r1 = yield* svc.extract(chunks[0])
+        const r2 = yield* svc.extract(chunks[1])
+        return [r1, r2]
+      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+    )
+
+    expect(results).toHaveLength(2)
+    expect(results[0].sourceChunk.sourceFile).toBe(FIXTURES.FILE_SESSION_1)
+    expect(results[1].sourceChunk.sourceFile).toBe(FIXTURES.FILE_SESSION_2)
+    // Both should fall back to Noop behavior
+    expect(results[0].candidates).toEqual([])
+    expect(results[1].candidates).toEqual([])
+  })
+})
+
+// =============================================================================
+// LLM Cache Extraction Tests
+// =============================================================================
+
+describe("Daemon LLM Cache Extraction", () => {
+  let tempCacheDir: string
+
+  beforeEach(() => {
+    // Create a temp cache directory
+    tempCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "tx-llm-cache-test-"))
+    configureLLMCache({ cacheDir: tempCacheDir, logging: false })
+  })
+
+  afterEach(() => {
+    // Reset cache config and clean up temp dir
+    resetCacheConfig()
+    fs.rmSync(tempCacheDir, { recursive: true, force: true })
+  })
+
+  it("cachedLLMCall returns cached response on second call", async () => {
+    let callCount = 0
+    const mockExtract = async () => {
+      callCount++
+      return [
+        { content: "Always validate input data", confidence: "high", category: "security" }
+      ]
+    }
+
+    // First call - cache miss
+    const result1 = await cachedLLMCall(
+      "transcript content about validation",
+      "claude-haiku-4-20250514",
+      mockExtract,
+      { version: 1 }
+    )
+
+    // Second call - cache hit
+    const result2 = await cachedLLMCall(
+      "transcript content about validation",
+      "claude-haiku-4-20250514",
+      mockExtract,
+      { version: 1 }
+    )
+
+    expect(result1).toEqual(result2)
+    expect(callCount).toBe(1) // Only called once, second was cached
+  })
+
+  it("cachedLLMCall invalidates on version mismatch", async () => {
+    let callCount = 0
+    const mockExtract = async () => {
+      callCount++
+      return [
+        { content: `Call number ${callCount}`, confidence: "high", category: "patterns" }
+      ]
+    }
+
+    // First call with version 1
+    await cachedLLMCall(
+      "same input content",
+      "claude-haiku-4-20250514",
+      mockExtract,
+      { version: 1 }
+    )
+
+    // Second call with version 2 - should NOT use cache
+    const result2 = await cachedLLMCall(
+      "same input content",
+      "claude-haiku-4-20250514",
+      mockExtract,
+      { version: 2 }
+    )
+
+    expect(callCount).toBe(2) // Called twice due to version mismatch
+    expect(result2[0].content).toBe("Call number 2")
+  })
+
+  it("cachedLLMCall stores response in cache file", async () => {
+    const mockResult = [
+      { content: "Use Effect-TS for typed errors", confidence: "high", category: "patterns" },
+      { content: "Test edge cases explicitly", confidence: "medium", category: "testing" }
+    ]
+
+    await cachedLLMCall(
+      "transcript about error handling",
+      "claude-haiku-4-20250514",
+      async () => mockResult,
+      { version: 1 }
+    )
+
+    // Verify cache file was created
+    const files = fs.readdirSync(tempCacheDir)
+    expect(files.length).toBe(1)
+    expect(files[0]).toMatch(/^[a-f0-9]{64}\.json$/)
+
+    // Verify cache file content
+    const cacheContent = JSON.parse(fs.readFileSync(path.join(tempCacheDir, files[0]), "utf-8"))
+    expect(cacheContent.response).toEqual(mockResult)
+    expect(cacheContent.model).toBe("claude-haiku-4-20250514")
+    expect(cacheContent.version).toBe(1)
+  })
+
+  it("cachedLLMCall supports forceRefresh option", async () => {
+    let callCount = 0
+    const mockExtract = async () => {
+      callCount++
+      return [{ content: `Result ${callCount}`, confidence: "high", category: "other" }]
+    }
+
+    // First call - caches result
+    await cachedLLMCall(
+      "input to refresh",
+      "claude-haiku-4-20250514",
+      mockExtract,
+      { version: 1 }
+    )
+
+    // Second call with forceRefresh - bypasses cache
+    const result = await cachedLLMCall(
+      "input to refresh",
+      "claude-haiku-4-20250514",
+      mockExtract,
+      { version: 1, forceRefresh: true }
+    )
+
+    expect(callCount).toBe(2) // Called twice due to forceRefresh
+    expect(result[0].content).toBe("Result 2")
+  })
+
+  it("different inputs produce different cache entries", async () => {
+    const mockExtract = async () => [
+      { content: "Generic learning", confidence: "medium", category: "other" }
+    ]
+
+    await cachedLLMCall("input one", "claude-haiku-4-20250514", mockExtract, { version: 1 })
+    await cachedLLMCall("input two", "claude-haiku-4-20250514", mockExtract, { version: 1 })
+    await cachedLLMCall("input three", "claude-haiku-4-20250514", mockExtract, { version: 1 })
+
+    const files = fs.readdirSync(tempCacheDir)
+    expect(files.length).toBe(3) // Three different cache files
+  })
+})
+
+// =============================================================================
+// Mock Transcript Content Tests
+// =============================================================================
+
+describe("Daemon Mock Transcript Content", () => {
+  it("createMockAnthropicForExtraction returns configured candidates", async () => {
+    const expectedCandidates = [
+      { content: "Always use transactions for batch operations", confidence: "high", category: "patterns" },
+      { content: "Test database rollback scenarios", confidence: "medium", category: "testing" }
+    ]
+
+    const mock = createMockAnthropicForExtraction(expectedCandidates)
+
+    const response = await mock.client.messages.create({
+      model: "claude-haiku-4-20250514",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Extract learnings from this transcript" }]
+    })
+
+    expect(response.content[0].text).toBe(JSON.stringify(expectedCandidates))
+    expect(mock.calls).toHaveLength(1)
+  })
+
+  it("mock tracks all API calls", async () => {
+    const mock = createMockAnthropicForExtraction([
+      { content: "Learning 1", confidence: "high", category: "patterns" }
+    ])
+
+    // Make multiple calls
+    await mock.client.messages.create({
+      model: "claude-haiku-4-20250514",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Transcript 1" }]
+    })
+
+    await mock.client.messages.create({
+      model: "claude-haiku-4-20250514",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Transcript 2" }]
+    })
+
+    expect(mock.calls).toHaveLength(2)
+    expect(mock.calls[0].messages[0].content).toBe("Transcript 1")
+    expect(mock.calls[1].messages[0].content).toBe("Transcript 2")
+    expect(mock.getCallCount()).toBe(2)
+    expect(mock.getLastCall()?.messages[0].content).toBe("Transcript 2")
+  })
+
+  it("mock reset clears call history", async () => {
+    const mock = createMockAnthropicForExtraction([
+      { content: "Learning", confidence: "high", category: "patterns" }
+    ])
+
+    await mock.client.messages.create({
+      model: "claude-haiku-4-20250514",
+      max_tokens: 256,
+      messages: [{ role: "user", content: "Test" }]
+    })
+
+    expect(mock.calls).toHaveLength(1)
+
+    mock.reset()
+
+    expect(mock.calls).toHaveLength(0)
+    expect(mock.getCallCount()).toBe(0)
+  })
+
+  it("mock returns proper response structure", async () => {
+    const mock = createMockAnthropicForExtraction([
+      { content: "Security check", confidence: "high", category: "security" }
+    ])
+
+    const response = await mock.client.messages.create({
+      model: "claude-haiku-4-20250514",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Analyze this" }]
+    })
+
+    expect(response.id).toBe("mock-extraction-id")
+    expect(response.type).toBe("message")
+    expect(response.role).toBe("assistant")
+    expect(response.model).toBe("claude-haiku-4-20250514")
+    expect(response.usage).toEqual({ input_tokens: 100, output_tokens: 50 })
+    expect(response.content).toHaveLength(1)
+    expect(response.content[0].type).toBe("text")
+  })
+
+  it("handles empty candidates array", async () => {
+    const mock = createMockAnthropicForExtraction([])
+
+    const response = await mock.client.messages.create({
+      model: "claude-haiku-4-20250514",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "No learnings here" }]
+    })
+
+    expect(response.content[0].text).toBe("[]")
+  })
+
+  it("handles complex transcript content with special characters", async () => {
+    const complexCandidates = [
+      {
+        content: "Handle SQL injection by using parameterized queries: $1, $2",
+        confidence: "high",
+        category: "security"
+      },
+      {
+        content: "Use <T> generics for type-safe collections",
+        confidence: "medium",
+        category: "patterns"
+      }
+    ]
+
+    const mock = createMockAnthropicForExtraction(complexCandidates)
+
+    const response = await mock.client.messages.create({
+      model: "claude-haiku-4-20250514",
+      max_tokens: 1024,
+      messages: [{
+        role: "user",
+        content: "Transcript with special chars: @#$%^&*(){}[]|\\:\";<>?/"
+      }]
+    })
+
+    const parsed = JSON.parse(response.content[0].text!)
+    expect(parsed).toHaveLength(2)
+    expect(parsed[0].content).toContain("$1, $2")
+    expect(parsed[1].content).toContain("<T>")
+  })
+
+  it("simulates extraction pipeline with mock", async () => {
+    // Simulate the full extraction pipeline using mocks
+    const mockCandidates = [
+      { content: "Always validate JWT signatures", confidence: "high", category: "security" },
+      { content: "Use connection pooling for databases", confidence: "high", category: "performance" },
+      { content: "Log errors with context", confidence: "medium", category: "debugging" }
+    ]
+
+    const mock = createMockAnthropicForExtraction(mockCandidates)
+
+    // Simulate transcript chunks being processed
+    const transcriptChunks = [
+      "User asked about authentication best practices...",
+      "We discussed database performance optimization...",
+      "Debugging session for the login error..."
+    ]
+
+    const allResponses = []
+    for (const chunk of transcriptChunks) {
+      const response = await mock.client.messages.create({
+        model: "claude-haiku-4-20250514",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: `Extract learnings from: ${chunk}` }]
+      })
+      allResponses.push(response)
+    }
+
+    expect(mock.calls).toHaveLength(3)
+    expect(allResponses).toHaveLength(3)
+
+    // All responses return the same mock candidates
+    allResponses.forEach(response => {
+      const candidates = JSON.parse(response.content[0].text!)
+      expect(candidates).toHaveLength(3)
+      expect(candidates[0].confidence).toBe("high")
+    })
   })
 })
 
