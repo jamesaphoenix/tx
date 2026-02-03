@@ -22,6 +22,7 @@ import { migrate } from "./commands/migrate.js"
 import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin, graphLink, graphShow, graphNeighbors } from "./commands/graph.js"
 import { hooksInstall, hooksUninstall, hooksStatus } from "./commands/hooks.js"
 import { daemon } from "./commands/daemon.js"
+import { orchestrator } from "./commands/orchestrator.js"
 import { testCacheStats, testClearCache } from "./commands/test.js"
 
 // --- Argv parsing helpers ---
@@ -141,6 +142,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Daemon command (with subcommands)
   daemon,
 
+  // Orchestrator command (with subcommands)
+  orchestrator,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -188,6 +192,13 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
+  if (command === "orchestrator" && positional[0]) {
+    const subcommandKey = `orchestrator ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   // Check if we have a command with specific help
   if (command !== "help" && commandHelp[command]) {
     console.log(commandHelp[command])
@@ -211,6 +222,13 @@ if (command === "help") {
   }
   if (subcommand === "daemon" && positional[1]) {
     const subcommandKey = `daemon ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "orchestrator" && positional[1]) {
+    const subcommandKey = `orchestrator ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)

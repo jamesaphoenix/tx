@@ -49,6 +49,10 @@ Commands:
   daemon start            Start background daemon
   daemon stop             Stop background daemon
   daemon status           Show daemon status
+  orchestrator start      Start the orchestrator
+  orchestrator stop       Stop the orchestrator
+  orchestrator status     Show orchestrator status
+  orchestrator reconcile  Force reconciliation pass
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1097,5 +1101,101 @@ Options:
 
 Examples:
   tx daemon reject 42 --reason "Not relevant"
-  tx daemon reject 42 --reason "Duplicate of existing learning"`
+  tx daemon reject 42 --reason "Duplicate of existing learning"`,
+
+  orchestrator: `tx orchestrator - Worker orchestration system
+
+Usage: tx orchestrator <subcommand> [options]
+
+Manages the worker orchestration system for parallel task processing.
+Provides Kubernetes-style worker health tracking, lease-based claims,
+and automatic orphan detection.
+
+Subcommands:
+  start       Start the orchestrator
+  stop        Stop the orchestrator
+  status      Show orchestrator status
+  reconcile   Force a reconciliation pass
+
+Run 'tx orchestrator <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx orchestrator start               # Start with default settings
+  tx orchestrator start --workers 3   # Start with 3 workers
+  tx orchestrator status              # Show current status
+  tx orchestrator reconcile           # Force orphan detection`,
+
+  "orchestrator start": `tx orchestrator start - Start the orchestrator
+
+Usage: tx orchestrator start [options]
+
+Starts the worker orchestration system. The orchestrator manages worker
+health via heartbeats, handles lease-based task claims, and runs periodic
+reconciliation to detect dead workers and orphaned tasks.
+
+Options:
+  --workers, -w <n>  Worker pool size (default: 1)
+  --daemon, -d       Run as daemon in background
+  --json             Output as JSON
+  --help             Show this help
+
+Examples:
+  tx orchestrator start                  # Start with 1 worker
+  tx orchestrator start --workers 3      # Start with 3 workers
+  tx orchestrator start -w 5 --daemon    # 5 workers in background`,
+
+  "orchestrator stop": `tx orchestrator stop - Stop the orchestrator
+
+Usage: tx orchestrator stop [options]
+
+Stops the running orchestrator. By default, immediately marks all workers
+as dead. With --graceful, signals workers to finish current tasks first.
+
+Options:
+  --graceful, -g  Wait for workers to finish current tasks
+  --json          Output as JSON
+  --help          Show this help
+
+Examples:
+  tx orchestrator stop               # Immediate stop
+  tx orchestrator stop --graceful    # Wait for workers to finish`,
+
+  "orchestrator status": `tx orchestrator status - Show orchestrator status
+
+Usage: tx orchestrator status [options]
+
+Shows the current status of the orchestrator including:
+- Running status (stopped/starting/running/stopping)
+- Process ID if running
+- Worker pool size configuration
+- Heartbeat and lease timing settings
+- Last reconciliation timestamp
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx orchestrator status
+  tx orchestrator status --json`,
+
+  "orchestrator reconcile": `tx orchestrator reconcile - Force reconciliation pass
+
+Usage: tx orchestrator reconcile [options]
+
+Runs a single reconciliation pass immediately. Reconciliation:
+- Detects dead workers (missed 2+ heartbeats)
+- Releases expired task claims
+- Recovers orphaned tasks (active but no claim)
+- Fixes state inconsistencies
+
+Normally runs automatically every 60s, but can be triggered manually.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx orchestrator reconcile
+  tx orchestrator reconcile --json`
 }
