@@ -563,7 +563,18 @@ export const RetrieverServiceLive = Layer.effect(
 
 /**
  * Auto-detecting layer that always uses Live since BM25 is always available.
- * The Live implementation gracefully degrades vector search when embeddings
- * are unavailable, so Auto just delegates to Live.
+ * The Live implementation gracefully degrades:
+ * - Vector search skips when EmbeddingService unavailable
+ * - Query expansion skips when QueryExpansionService unavailable
+ * - Reranking skips when RerankerService unavailable
+ * - Graph expansion skips when GraphExpansionService unavailable
  */
-export const RetrieverServiceAuto = RetrieverServiceLive
+export const RetrieverServiceAuto = Layer.unwrapEffect(
+  Effect.gen(function* () {
+    // Always use Live since BM25 is always available.
+    // The Live implementation gracefully degrades when optional services
+    // (embeddings, query expansion, reranking, graph expansion) are unavailable.
+    yield* Effect.logDebug("RetrieverService: Using Live (BM25 always available, other features gracefully degrade)")
+    return RetrieverServiceLive
+  })
+)
