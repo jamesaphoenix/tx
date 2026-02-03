@@ -825,3 +825,215 @@ describe("EdgeService query operations", () => {
     expect(result.get("IMPORTS")).toBe(1)
   })
 })
+
+// =============================================================================
+// EdgeService Batch Query Tests (findFromMultipleSources)
+// =============================================================================
+
+describe("EdgeService batch operations", () => {
+  it("findFromMultipleSources returns edges grouped by source ID", async () => {
+    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        // Create 3 learnings
+        const learning1 = yield* learningSvc.create({
+          content: "Learning 1",
+          sourceType: "manual",
+        })
+        const learning2 = yield* learningSvc.create({
+          content: "Learning 2",
+          sourceType: "manual",
+        })
+        const learning3 = yield* learningSvc.create({
+          content: "Learning 3",
+          sourceType: "manual",
+        })
+
+        // Create edges from learning1 to 2 files
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning1.id),
+          targetType: "file",
+          targetId: "src/db.ts",
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning1.id),
+          targetType: "file",
+          targetId: "src/layer.ts",
+        })
+
+        // Create edge from learning2 to 1 file
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning2.id),
+          targetType: "file",
+          targetId: "src/services/task-service.ts",
+        })
+
+        // learning3 has no edges
+
+        // Query all three sources at once
+        const edgesMap = yield* edgeSvc.findFromMultipleSources(
+          "learning",
+          [String(learning1.id), String(learning2.id), String(learning3.id)]
+        )
+
+        return {
+          edgesMap,
+          ids: {
+            id1: String(learning1.id),
+            id2: String(learning2.id),
+            id3: String(learning3.id)
+          }
+        }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should have entries for all 3 learnings
+    expect(result.edgesMap.size).toBe(3)
+
+    // Learning 1 should have 2 edges
+    const edges1 = result.edgesMap.get(result.ids.id1)
+    expect(edges1).toBeDefined()
+    expect(edges1!.length).toBe(2)
+
+    // Learning 2 should have 1 edge
+    const edges2 = result.edgesMap.get(result.ids.id2)
+    expect(edges2).toBeDefined()
+    expect(edges2!.length).toBe(1)
+
+    // Learning 3 should have empty array (not undefined)
+    const edges3 = result.edgesMap.get(result.ids.id3)
+    expect(edges3).toBeDefined()
+    expect(edges3!.length).toBe(0)
+  })
+
+  it("findFromMultipleSources returns empty map for empty input", async () => {
+    const { makeAppLayer, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const edgeSvc = yield* EdgeService
+        return yield* edgeSvc.findFromMultipleSources("learning", [])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.size).toBe(0)
+  })
+
+  it("findFromMultipleSources edges are sorted by weight descending", async () => {
+    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        const learning = yield* learningSvc.create({
+          content: "Learning",
+          sourceType: "manual",
+        })
+
+        // Create edges with different weights
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/low-weight.ts",
+          weight: 0.3,
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/high-weight.ts",
+          weight: 0.9,
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/mid-weight.ts",
+          weight: 0.6,
+        })
+
+        const edgesMap = yield* edgeSvc.findFromMultipleSources(
+          "learning",
+          [String(learning.id)]
+        )
+
+        return edgesMap.get(String(learning.id))
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result).toBeDefined()
+    expect(result!.length).toBe(3)
+
+    // Should be sorted by weight descending
+    expect(result![0].weight).toBe(0.9)
+    expect(result![1].weight).toBe(0.6)
+    expect(result![2].weight).toBe(0.3)
+  })
+
+  it("findFromMultipleSources only returns valid (non-invalidated) edges", async () => {
+    const { makeAppLayer, EdgeService, LearningService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        const learning = yield* learningSvc.create({
+          content: "Learning",
+          sourceType: "manual",
+        })
+
+        // Create two edges
+        const edge1 = yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/valid.ts",
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/also-valid.ts",
+        })
+
+        // Invalidate the first edge
+        yield* edgeSvc.invalidateEdge(edge1.id)
+
+        const edgesMap = yield* edgeSvc.findFromMultipleSources(
+          "learning",
+          [String(learning.id)]
+        )
+
+        return edgesMap.get(String(learning.id))
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result).toBeDefined()
+    // Only the non-invalidated edge should remain
+    expect(result!.length).toBe(1)
+    expect(result![0].targetId).toBe("src/also-valid.ts")
+  })
+})

@@ -488,4 +488,199 @@ describe("RetrieverService", () => {
       }
     })
   })
+
+  describe("Feedback Scoring Integration", () => {
+    it("search results include feedbackScore field", async () => {
+      const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const retrieverSvc = yield* RetrieverService
+
+          // Create learning
+          yield* learningSvc.create({
+            content: "Database optimization techniques",
+            sourceType: "manual",
+          })
+
+          // Search should include feedbackScore
+          return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.length).toBeGreaterThanOrEqual(1)
+
+      // All results should have feedbackScore field
+      for (const r of result) {
+        expect(r).toHaveProperty("feedbackScore")
+        expect(typeof r.feedbackScore).toBe("number")
+      }
+    })
+
+    it("feedbackScore defaults to 0.5 for learnings with no feedback", async () => {
+      const { makeAppLayer, RetrieverService, LearningService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const retrieverSvc = yield* RetrieverService
+
+          // Create learning (no feedback)
+          yield* learningSvc.create({
+            content: "Database indexing best practices",
+            sourceType: "manual",
+          })
+
+          return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.length).toBeGreaterThanOrEqual(1)
+
+      // Without feedback, score should be neutral (0.5)
+      expect(result[0].feedbackScore).toBe(0.5)
+    })
+
+    it("feedbackScore reflects recorded usage feedback via batch method", async () => {
+      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const feedbackSvc = yield* FeedbackTrackerService
+          const retrieverSvc = yield* RetrieverService
+
+          // Create learnings with identical content so only feedback differs
+          const helpfulLearning = yield* learningSvc.create({
+            content: "Database transaction patterns for testing feedback scores",
+            sourceType: "manual",
+          })
+          const unhelpfulLearning = yield* learningSvc.create({
+            content: "Database transaction patterns for testing feedback scores",
+            sourceType: "manual",
+          })
+
+          // Record feedback - helpful learning gets positive feedback
+          yield* feedbackSvc.recordUsage("run-1", [
+            { id: helpfulLearning.id, helpful: true },
+          ])
+          yield* feedbackSvc.recordUsage("run-2", [
+            { id: helpfulLearning.id, helpful: true },
+          ])
+          yield* feedbackSvc.recordUsage("run-3", [
+            { id: helpfulLearning.id, helpful: true },
+          ])
+
+          // Record feedback - unhelpful learning gets negative feedback
+          yield* feedbackSvc.recordUsage("run-1", [
+            { id: unhelpfulLearning.id, helpful: false },
+          ])
+          yield* feedbackSvc.recordUsage("run-2", [
+            { id: unhelpfulLearning.id, helpful: false },
+          ])
+          yield* feedbackSvc.recordUsage("run-3", [
+            { id: unhelpfulLearning.id, helpful: false },
+          ])
+
+          // Search and get both results
+          const searchResults = yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
+
+          return {
+            searchResults,
+            helpfulId: helpfulLearning.id,
+            unhelpfulId: unhelpfulLearning.id
+          }
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.searchResults.length).toBeGreaterThanOrEqual(2)
+
+      // Find the helpful and unhelpful learnings in results
+      const helpfulResult = result.searchResults.find(r => r.id === result.helpfulId)
+      const unhelpfulResult = result.searchResults.find(r => r.id === result.unhelpfulId)
+
+      expect(helpfulResult).toBeDefined()
+      expect(unhelpfulResult).toBeDefined()
+
+      // Helpful learning: Bayesian (3 + 0.5*2) / (3 + 2) = 4/5 = 0.8
+      expect(helpfulResult!.feedbackScore).toBe(0.8)
+
+      // Unhelpful learning: Bayesian (0 + 0.5*2) / (3 + 2) = 1/5 = 0.2
+      expect(unhelpfulResult!.feedbackScore).toBe(0.2)
+
+      // Helpful learning should have higher relevance due to feedback boost
+      expect(helpfulResult!.relevanceScore).toBeGreaterThan(unhelpfulResult!.relevanceScore)
+    })
+
+    it("batch feedback method is used for multiple learnings (single query)", async () => {
+      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@tx/core")
+      const layer = makeAppLayer(":memory:")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const feedbackSvc = yield* FeedbackTrackerService
+          const retrieverSvc = yield* RetrieverService
+
+          // Create multiple learnings
+          const learning1 = yield* learningSvc.create({
+            content: "Database query optimization strategy one",
+            sourceType: "manual",
+          })
+          const learning2 = yield* learningSvc.create({
+            content: "Database query tuning strategy two",
+            sourceType: "manual",
+          })
+          const learning3 = yield* learningSvc.create({
+            content: "Database indexing strategy three",
+            sourceType: "manual",
+          })
+
+          // Record different feedback for each
+          yield* feedbackSvc.recordUsage("run-1", [
+            { id: learning1.id, helpful: true },
+            { id: learning2.id, helpful: false },
+          ])
+          yield* feedbackSvc.recordUsage("run-2", [
+            { id: learning1.id, helpful: true },
+            { id: learning3.id, helpful: true },
+          ])
+
+          // Search returns all three
+          const searchResults = yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
+
+          return {
+            searchResults,
+            id1: learning1.id,
+            id2: learning2.id,
+            id3: learning3.id
+          }
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result.searchResults.length).toBeGreaterThanOrEqual(3)
+
+      // All learnings should have feedbackScore computed from batch method
+      const r1 = result.searchResults.find(r => r.id === result.id1)
+      const r2 = result.searchResults.find(r => r.id === result.id2)
+      const r3 = result.searchResults.find(r => r.id === result.id3)
+
+      expect(r1).toBeDefined()
+      expect(r2).toBeDefined()
+      expect(r3).toBeDefined()
+
+      // Learning 1: 2 helpful = (2 + 1) / (2 + 2) = 0.75
+      expect(r1!.feedbackScore).toBe(0.75)
+
+      // Learning 2: 1 unhelpful = (0 + 1) / (1 + 2) = 0.333...
+      expect(r2!.feedbackScore).toBeCloseTo(0.333, 2)
+
+      // Learning 3: 1 helpful = (1 + 1) / (1 + 2) = 0.666...
+      expect(r3!.feedbackScore).toBeCloseTo(0.667, 2)
+    })
+  })
 })
