@@ -1,0 +1,120 @@
+/**
+ * Claim commands: claim, claim:release, claim:renew
+ *
+ * PRD-018: Worker Orchestration System
+ *
+ * Lease-based task claims for worker coordination.
+ */
+
+import { Effect } from "effect"
+import { ClaimService } from "@jamesaphoenix/tx-core"
+import type { TaskId } from "@jamesaphoenix/tx-types"
+import { toJson } from "../output.js"
+
+type Flags = Record<string, string | boolean>
+
+function flag(flags: Flags, ...names: string[]): boolean {
+  return names.some(n => flags[n] === true)
+}
+
+function opt(flags: Flags, ...names: string[]): string | undefined {
+  for (const n of names) {
+    const v = flags[n]
+    if (typeof v === "string") return v
+  }
+  return undefined
+}
+
+/**
+ * Claim a task for a worker with a lease.
+ *
+ * Usage: tx claim <task-id> <worker-id> [--lease <minutes>] [--json]
+ *
+ * Examples:
+ *   tx claim tx-abc123 worker-def456
+ *   tx claim tx-abc123 worker-def456 --lease 60
+ */
+export const claim = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const taskId = pos[0]
+    const workerId = pos[1]
+
+    if (!taskId || !workerId) {
+      console.error("Usage: tx claim <task-id> <worker-id> [--lease <minutes>] [--json]")
+      console.error("")
+      console.error("Options:")
+      console.error("  --lease <m>  Lease duration in minutes (default: 30)")
+      console.error("  --json       Output in JSON format")
+      process.exit(1)
+    }
+
+    const leaseMinutes = opt(flags, "lease") ? parseInt(opt(flags, "lease")!, 10) : undefined
+
+    const svc = yield* ClaimService
+    const claim = yield* svc.claim(taskId as TaskId, workerId, leaseMinutes)
+
+    if (flag(flags, "json")) {
+      console.log(toJson(claim))
+    } else {
+      console.log(`Task ${claim.taskId} claimed by ${claim.workerId}`)
+      console.log(`  Lease expires: ${claim.leaseExpiresAt.toISOString()}`)
+    }
+  })
+
+/**
+ * Release a claim on a task.
+ *
+ * Usage: tx claim:release <task-id> <worker-id> [--json]
+ *
+ * Examples:
+ *   tx claim:release tx-abc123 worker-def456
+ */
+export const claimRelease = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const taskId = pos[0]
+    const workerId = pos[1]
+
+    if (!taskId || !workerId) {
+      console.error("Usage: tx claim:release <task-id> <worker-id> [--json]")
+      process.exit(1)
+    }
+
+    const svc = yield* ClaimService
+    yield* svc.release(taskId as TaskId, workerId)
+
+    if (flag(flags, "json")) {
+      console.log(toJson({ released: true, taskId, workerId }))
+    } else {
+      console.log(`Claim on task ${taskId} released by ${workerId}`)
+    }
+  })
+
+/**
+ * Renew the lease on an existing claim.
+ *
+ * Usage: tx claim:renew <task-id> <worker-id> [--json]
+ *
+ * Examples:
+ *   tx claim:renew tx-abc123 worker-def456
+ */
+export const claimRenew = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const taskId = pos[0]
+    const workerId = pos[1]
+
+    if (!taskId || !workerId) {
+      console.error("Usage: tx claim:renew <task-id> <worker-id> [--json]")
+      process.exit(1)
+    }
+
+    const svc = yield* ClaimService
+    const renewed = yield* svc.renew(taskId as TaskId, workerId)
+
+    if (flag(flags, "json")) {
+      console.log(toJson(renewed))
+    } else {
+      console.log(`Lease on task ${renewed.taskId} renewed`)
+      console.log(`  New expiry: ${renewed.leaseExpiresAt.toISOString()}`)
+      console.log(`  Renewals: ${renewed.renewedCount}/10`)
+    }
+  })

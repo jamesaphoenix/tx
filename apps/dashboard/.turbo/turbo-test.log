@@ -5,11 +5,13 @@
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
 
- ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 17ms
- ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 24ms
- ✓ src/components/ui/__tests__/LoadingSkeleton.test.tsx (6 tests) 19ms
- ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 22ms
- ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 48ms
+ ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 21ms
+ ✓ src/components/ui/__tests__/LoadingSkeleton.test.tsx (6 tests) 31ms
+ ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 29ms
+ ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 37ms
+ ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 94ms
+ ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 75ms
+ ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 94ms
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > loading state > shows LoadingSkeleton while loading
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -26,7 +28,6 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > loading st
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 92ms
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > empty state > shows EmptyState when no runs
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -35,10 +36,8 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > empty stat
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 112ms
- ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 149ms
- ✓ src/components/runs/__tests__/RunFilters.test.tsx (27 tests) 186ms
- ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 134ms
+ ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 189ms
+ ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 162ms
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > empty state > shows filter hint when filters active and no results
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -47,6 +46,7 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > empty stat
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
+ ✓ src/components/runs/__tests__/RunFilters.test.tsx (27 tests) 208ms
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > empty state > shows default hint when no filters and no runs
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -127,36 +127,26 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > keyboard n
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/App.test.tsx > App > renders without crashing
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/ralph
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/stats
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > infinite scroll > shows scroll hint when hasMore is true
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > loading state > shows loading skeleton while fetching
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-loading
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > loading state > shows loading skeleton while fetching
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-loading
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -169,11 +159,32 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > infinite s
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/App.test.tsx (1 test) 34ms
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > infinite scroll > loads more items when cursor is provided
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > fetches and displays task details
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-detail1
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > loading state > shows LoadingSkeleton while loading
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -200,6 +211,32 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
+stderr | src/App.test.tsx > App > renders without crashing
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/ralph
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/stats
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > filtering > passes status filter to API
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -208,7 +245,7 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > filtering 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > loading state > shows LoadingSkeleton while loading
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > empty state > shows EmptyState when no tasks
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/tasks/ready
@@ -218,22 +255,6 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > loading state > shows loading skeleton while fetching
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-loading
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > loading state > shows loading skeleton while fetching
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-loading
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -254,28 +275,7 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: d
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > empty state > shows EmptyState when no tasks
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > fetches and displays task details
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-detail1
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
+ ✓ src/App.test.tsx (1 test) 35ms
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: duration formatting > shows duration in seconds for short runs
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -288,6 +288,36 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: d
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies yellow styling for running status
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > displays task ID
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-myid123
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > empty state > shows filter hint when filters active and no results
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?status=blocked&search=test&limit=20
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -330,14 +360,6 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies yellow styling for running status
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies green styling for completed status
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -346,16 +368,10 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: s
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > empty state > shows filter hint when filters active and no results
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > shows Ready badge when task isReady
 [MSW] Warning: intercepted a request without a matching request handler:
 
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?status=blocked&search=test&limit=20
+  • GET /api/tasks/tx-ready1
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -364,22 +380,6 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: s
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies orange styling for timeout status
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > displays task ID
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-myid123
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -398,18 +398,18 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies gray styling for cancelled status
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > shows timestamps
 [MSW] Warning: intercepted a request without a matching request handler:
 
-  • GET /api/runs?limit=20
+  • GET /api/tasks/tx-timestamps
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > shows Ready badge when task isReady
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies orange styling for timeout status
 [MSW] Warning: intercepted a request without a matching request handler:
 
-  • GET /api/tasks/tx-ready1
+  • GET /api/runs?limit=20
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -424,6 +424,112 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/tasks?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > parent task > shows parent task link when parent_id is set
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-child1
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies gray styling for cancelled status
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies card border styling based on running status
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > rendering tasks > displays total count in header
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blockedBy tasks > shows blockedBy tasks as clickable
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-blocked1
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies card border styling based on failed status
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > rendering tasks > uses singular "task" when count is 1
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blockedBy tasks > shows empty message when no blockers
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-unblocked
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card content > shows error message for failed runs
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > task selection > calls onSelectTask when task is clicked
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blocks tasks > shows blocks tasks as clickable
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-blocker1
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -466,100 +572,10 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies card border styling based on running status
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > fetching and displaying task details > shows timestamps
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-timestamps
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > RunCard: status colors > applies card border styling based on failed status
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > rendering tasks > displays total count in header
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > parent task > shows parent task link when parent_id is set
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-child1
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card content > shows error message for failed runs
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > rendering tasks > uses singular "task" when count is 1
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blockedBy tasks > shows blockedBy tasks as clickable
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-blocked1
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
 stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card content > shows summary for completed runs
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > task selection > calls onSelectTask when task is clicked
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -572,6 +588,67 @@ stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card c
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blocks tasks > shows empty message when task blocks nothing
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-noblockers
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > keyboard navigation > updates focused item on ArrowDown
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card content > shows task ID when no task title
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > children tasks > shows children tasks as clickable
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/tx-parent1
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card content > shows "No task" when run has no associated task
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > keyboard navigation > selects focused task on Enter
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+ ✓ src/components/runs/__tests__/RunsList.test.tsx (34 tests) 311ms
 stderr | src/__tests__/keyboard-navigation.e2e.test.tsx > E2E: Keyboard Navigation and Detail Panel > Arrow Keys Navigation > stops at first task when pressing ArrowUp at top
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -610,23 +687,15 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blockedBy tasks > shows empty message when no blockers
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > children tasks > shows empty message when no children
 [MSW] Warning: intercepted a request without a matching request handler:
 
-  • GET /api/tasks/tx-unblocked
+  • GET /api/tasks/tx-nochildren
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card content > shows task ID when no task title
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > keyboard navigation > updates focused item on ArrowDown
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > keyboard navigation > calls onEscape when Escape is pressed
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/tasks/ready
@@ -640,23 +709,15 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blocks tasks > shows blocks tasks as clickable
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > error state > shows error when API fails
 [MSW] Warning: intercepted a request without a matching request handler:
 
-  • GET /api/tasks/tx-blocker1
+  • GET /api/tasks/tx-notfound
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > run card content > shows "No task" when run has no associated task
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > keyboard navigation > selects focused task on Enter
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > infinite scroll > shows scroll hint when hasMore is true
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/tasks/ready
@@ -670,19 +731,32 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/components/runs/__tests__/RunsList.test.tsx (34 tests) 319ms
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > blocks tasks > shows empty message when task blocks nothing
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > task not found > shows not found message when task is null
 [MSW] Warning: intercepted a request without a matching request handler:
 
-  • GET /api/tasks/tx-noblockers
+  • GET /api/tasks/tx-missing
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > children tasks > shows children tasks as clickable
+stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > related task cards > shows status badges on related tasks
 [MSW] Warning: intercepted a request without a matching request handler:
 
-  • GET /api/tasks/tx-parent1
+  • GET /api/tasks/tx-main
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > infinite scroll > shows end of list when no more pages
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -725,111 +799,8 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > keyboard navigation > calls onEscape when Escape is pressed
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > children tasks > shows empty message when no children
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-nochildren
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > infinite scroll > shows scroll hint when hasMore is true
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > error state > shows error when API fails
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-notfound
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > infinite scroll > shows end of list when no more pages
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/__tests__/keyboard-navigation.e2e.test.tsx > E2E: Keyboard Navigation and Detail Panel > Vim Keys Navigation (j/k) > navigates down through tasks with j key
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/ralph
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/stats
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/runs
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/ready
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks?limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > task not found > shows not found message when task is null
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-missing
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
 stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > ready tasks filter > uses ready endpoint when filtering by ready status only
+ ✓ src/components/tasks/__tests__/TaskDetail.test.tsx (15 tests) 181ms
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/tasks/ready
@@ -839,14 +810,6 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/tasks?status=ready&limit=20
-
-If you still wish to intercept this unhandled request, please create a request handler for it.
-Read more: https://mswjs.io/docs/http/intercepting-requests
-
-stderr | src/components/tasks/__tests__/TaskDetail.test.tsx > TaskDetail > related task cards > shows status badges on related tasks
-[MSW] Warning: intercepted a request without a matching request handler:
-
-  • GET /api/tasks/tx-main
 
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
@@ -865,7 +828,6 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/components/tasks/__tests__/TaskDetail.test.tsx (15 tests) 150ms
 stderr | src/components/tasks/__tests__/TaskList.test.tsx > TaskList > ready tasks filter > uses paginated endpoint when search is active with ready filter
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -880,7 +842,7 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
-stderr | src/__tests__/keyboard-navigation.e2e.test.tsx > E2E: Keyboard Navigation and Detail Panel > Vim Keys Navigation (j/k) > navigates up through tasks with k key
+stderr | src/__tests__/keyboard-navigation.e2e.test.tsx > E2E: Keyboard Navigation and Detail Panel > Vim Keys Navigation (j/k) > navigates down through tasks with j key
 [MSW] Warning: intercepted a request without a matching request handler:
 
   • GET /api/ralph
@@ -932,7 +894,45 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/components/tasks/__tests__/TaskList.test.tsx (17 tests) 176ms
+ ✓ src/components/tasks/__tests__/TaskList.test.tsx (17 tests) 198ms
+stderr | src/__tests__/keyboard-navigation.e2e.test.tsx > E2E: Keyboard Navigation and Detail Panel > Vim Keys Navigation (j/k) > navigates up through tasks with k key
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/ralph
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/stats
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks/ready
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/tasks?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
 stderr | src/__tests__/keyboard-navigation.e2e.test.tsx > E2E: Keyboard Navigation and Detail Panel > Vim Keys Navigation (j/k) > j and k keys work the same as ArrowDown and ArrowUp
 [MSW] Warning: intercepted a request without a matching request handler:
 
@@ -1466,10 +1466,10 @@ Read more: https://mswjs.io/docs/http/intercepting-requests
 If you still wish to intercept this unhandled request, please create a request handler for it.
 Read more: https://mswjs.io/docs/http/intercepting-requests
 
- ✓ src/__tests__/keyboard-navigation.e2e.test.tsx (17 tests) 429ms
+ ✓ src/__tests__/keyboard-navigation.e2e.test.tsx (17 tests) 629ms
 
  Test Files  15 passed (15)
       Tests  223 passed (223)
-   Start at  00:27:33
-   Duration  1.72s (transform 401ms, setup 1.53s, collect 2.81s, tests 1.91s, environment 7.28s, prepare 1.01s)
+   Start at  12:25:33
+   Duration  1.92s (transform 475ms, setup 1.94s, collect 3.98s, tests 2.29s, environment 6.93s, prepare 852ms)
 

@@ -26,6 +26,7 @@ import { orchestrator } from "./commands/orchestrator.js"
 import { worker } from "./commands/worker.js"
 import { testCacheStats, testClearCache } from "./commands/test.js"
 import { trace } from "./commands/trace.js"
+import { claim, claimRelease, claimRenew } from "./commands/claim.js"
 
 // --- Argv parsing helpers ---
 
@@ -140,6 +141,11 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Test commands (colon-prefixed)
   "test:cache-stats": testCacheStats,
   "test:clear-cache": testClearCache,
+
+  // Claim commands (PRD-018)
+  claim,
+  "claim:release": claimRelease,
+  "claim:renew": claimRenew,
 
   // Daemon command (with subcommands)
   daemon,
@@ -339,6 +345,23 @@ Effect.runPromise(
     }
     if (err._tag === "DatabaseError") {
       console.error(err.message ?? `Database error`)
+      process.exit(1)
+    }
+    // Claim-related errors (PRD-018)
+    if (err._tag === "AlreadyClaimedError") {
+      console.error(err.message ?? `Task already claimed`)
+      process.exit(1)
+    }
+    if (err._tag === "ClaimNotFoundError") {
+      console.error(err.message ?? `Claim not found`)
+      process.exit(2)
+    }
+    if (err._tag === "LeaseExpiredError") {
+      console.error(err.message ?? `Lease has expired`)
+      process.exit(1)
+    }
+    if (err._tag === "MaxRenewalsExceededError") {
+      console.error(err.message ?? `Maximum renewals exceeded`)
       process.exit(1)
     }
     console.error(`Error: ${err.message ?? String(error)}`)

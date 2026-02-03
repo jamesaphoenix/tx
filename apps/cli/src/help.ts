@@ -62,6 +62,9 @@ Commands:
   trace transcript        Display raw transcript content
   trace stderr            Display stderr content
   trace errors            Show recent errors across all runs
+  claim                   Claim a task with a lease
+  claim:release           Release a claim on a task
+  claim:renew             Renew the lease on a claim
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1370,5 +1373,70 @@ Examples:
   tx trace list                    # Recent runs (last 24h)
   tx trace list --hours 48         # Last 48 hours
   tx trace list --limit 10         # Top 10 only
-  tx trace list --json             # JSON output for scripting`
+  tx trace list --json             # JSON output for scripting`,
+
+  claim: `tx claim - Claim a task for a worker with a lease
+
+Usage: tx claim <task-id> <worker-id> [options]
+
+Claims a task for a worker, preventing other workers from claiming it.
+The claim has a lease duration; if the lease expires, the task becomes
+claimable again. Workers should renew leases for long-running tasks.
+
+Arguments:
+  <task-id>     Required. Task ID (e.g., tx-a1b2c3d4)
+  <worker-id>   Required. Worker ID (e.g., worker-abc12345)
+
+Options:
+  --lease <m>   Lease duration in minutes (default: 30)
+  --json        Output as JSON
+  --help        Show this help
+
+Examples:
+  tx claim tx-abc123 worker-def456              # Claim with default 30m lease
+  tx claim tx-abc123 worker-def456 --lease 60   # Claim with 60m lease
+  tx claim tx-abc123 worker-def456 --json       # JSON output`,
+
+  "claim:release": `tx claim:release - Release a claim on a task
+
+Usage: tx claim:release <task-id> <worker-id> [options]
+
+Releases a worker's claim on a task, allowing other workers to claim it.
+Only the worker holding the claim can release it.
+
+Arguments:
+  <task-id>     Required. Task ID (e.g., tx-a1b2c3d4)
+  <worker-id>   Required. Worker ID that holds the claim
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx claim:release tx-abc123 worker-def456
+  tx claim:release tx-abc123 worker-def456 --json`,
+
+  "claim:renew": `tx claim:renew - Renew the lease on a claim
+
+Usage: tx claim:renew <task-id> <worker-id> [options]
+
+Extends the lease on an existing claim. Use this for long-running tasks
+to prevent the claim from expiring. Maximum 10 renewals by default.
+
+Arguments:
+  <task-id>     Required. Task ID (e.g., tx-a1b2c3d4)
+  <worker-id>   Required. Worker ID that holds the claim
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Fails if:
+  - No active claim exists for this task and worker
+  - The lease has already expired
+  - Maximum renewals (10) have been exceeded
+
+Examples:
+  tx claim:renew tx-abc123 worker-def456
+  tx claim:renew tx-abc123 worker-def456 --json`
 }
