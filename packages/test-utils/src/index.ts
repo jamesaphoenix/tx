@@ -128,3 +128,47 @@ export {
 
 // Setup (to be implemented)
 // export { default as vitestSetup } from './setup/index.js'
+
+// Chaos Engineering Utilities
+export {
+  // Namespace export
+  chaos,
+  // Process failure simulation
+  crashAfter,
+  CrashSimulationError,
+  type CrashAfterOptions,
+  type CrashAfterResult,
+  // Worker heartbeat manipulation
+  killHeartbeat,
+  WorkerHeartbeatController,
+  type KillHeartbeatOptions,
+  // Race condition testing
+  raceWorkers,
+  type RaceWorkersOptions,
+  type RaceWorkersResult,
+  // State corruption
+  corruptState,
+  type CorruptStateOptions,
+  type CorruptionType,
+  // JSONL replay
+  replayJSONL,
+  type ReplayJSONLOptions,
+  type ReplayJSONLResult,
+  type SyncOperation,
+  // Double completion testing
+  doubleComplete,
+  type DoubleCompleteOptions,
+  type DoubleCompleteResult,
+  // Partial write simulation
+  partialWrite,
+  type PartialWriteOptions,
+  type PartialWriteResult,
+  // Delayed claim testing
+  delayedClaim,
+  type DelayedClaimOptions,
+  type DelayedClaimResult,
+  // Stress testing
+  stressLoad,
+  type StressLoadOptions,
+  type StressLoadResult
+} from "./chaos/index.js"

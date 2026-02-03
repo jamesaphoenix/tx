@@ -37,6 +37,10 @@
     "./setup": {
       "types": "./dist/setup/index.d.ts",
       "import": "./dist/setup/index.js"
+    },
+    "./chaos": {
+      "types": "./dist/chaos/index.d.ts",
+      "import": "./dist/chaos/index.js"
     }
   },
   "files": [
