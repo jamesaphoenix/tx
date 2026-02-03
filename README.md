@@ -40,16 +40,16 @@ Composable primitives that handle the hard parts. You keep control of the orches
 Learnings that persist and surface when relevant.
 
 ```bash
-# Store knowledge
-tx learning:add "Use bcrypt for passwords, not SHA256"
+# Store knowledge (with optional file path)
+tx learning:add "Use bcrypt for passwords, not SHA256" --file src/auth/hash.ts
 tx learning:add "Redis cache invalidation has race conditions"
 
-# Retrieve contextually
+# Retrieve via search or task context
 tx learning:search "authentication"
 tx context tx-abc123  # Get relevant learnings for a task
 ```
 
-Learnings connect to code via a knowledge graph. Working on `auth.ts` automatically surfaces learnings from related files.
+Learnings can be tagged with file paths for organization. Hybrid search (BM25 + vector) finds relevant knowledge.
 
 ### Tasks
 
@@ -149,18 +149,29 @@ tx done $task
 
 ### 1. Knowledge System
 
-```
-Learning: "Always validate JWT expiry"
-    ├── ANCHORED_TO → src/auth/jwt.ts:validateToken
-    ├── DERIVED_FROM → session tx-run-abc123
-    └── SIMILAR_TO → Learning #42 (semantic)
+**Working today:**
+- Learnings stored with file path tags
+- Basic hybrid search (BM25 + vector)
+- Retrieval by task ID via `tx context`
+
+```bash
+tx learning:add "Use bcrypt for passwords" --file src/auth/hash.ts
+tx learning:search "authentication"
+tx context tx-abc123  # Get learnings relevant to a task
 ```
 
-- Hybrid search (BM25 + vector + graph expansion)
-- Code anchoring with symbol resolution
+**Research in progress:**
+- Symbol anchoring (AST-based code references, not just file paths)
+- Knowledge graph expansion (automatic relationship discovery)
 - Auto-invalidation when code changes
 
 ### 2. Task System
+
+**Working today:**
+- N-level hierarchy (epics → tasks → subtasks)
+- Explicit dependencies with cycle detection
+- Priority scoring
+- Claim/release with lease expiry
 
 ```
 Epic: "User Authentication"
@@ -170,19 +181,31 @@ Epic: "User Authentication"
 └── Task: "Write tests" ○ blocked
 ```
 
-- N-level hierarchy
-- Explicit dependencies with cycle detection
-- Priority scoring with optional LLM reprioritization
+**Research in progress:**
+- LLM-based reprioritization
+- Automatic task decomposition
 
 ### 3. Worker System
 
-```
-Claude Code sessions → Daemon → Extract → Score → Promote
+**Working today:**
+- `runWorker()` with execute/captureIO hooks
+- Lease-based claims (prevents collisions)
+- Automatic lease renewal
+- Coordinator reconciliation (dead worker recovery)
+
+```typescript
+runWorker({
+  execute: async (task, ctx) => {
+    await ctx.renewLease()  // For long tasks
+    return { success: true }
+  }
+})
 ```
 
-- Watches `~/.claude/projects/**/*.jsonl`
-- Extracts learnings with confidence scoring
-- Auto-promotes high-confidence, queues others for review
+**Research in progress:**
+- Daemon watching `~/.claude/projects/**/*.jsonl`
+- Automatic learning extraction from sessions
+- Confidence scoring for auto-promotion
 
 ---
 
@@ -414,11 +437,21 @@ Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code
 
 ## Status
 
-**Stable:** Core tasks, learnings, CLI (20+ commands), MCP server (16 tools), 389+ tests
+**Shipping now (concrete, tested):**
+- Core task primitives: add, ready, done, block, claim, handoff
+- Dependency management with cycle detection
+- Worker orchestration via `runWorker()` with claims/leases
+- Learnings with file path tagging
+- Hybrid search (BM25 + vector)
+- CLI (20+ commands), MCP server (16 tools)
+- 389+ tests
 
-**In Progress:** Knowledge graph, daemon extraction, vector search
-
-**Planned:** Agent swarms, anchor invalidation, real-time sync
+**Research in progress (not yet stable):**
+- Symbol anchoring (AST-based code references)
+- Knowledge graph expansion
+- Auto-invalidation when code changes
+- Daemon-based learning extraction
+- LLM reprioritization
 
 ---
 
