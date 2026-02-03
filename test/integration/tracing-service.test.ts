@@ -7,7 +7,7 @@ import {
   TracingServiceLive,
   TracingServiceNoop
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
 /**
  * Integration tests for TracingService - PRD-019 execution tracing.
@@ -24,20 +24,20 @@ const FIXTURE_RUN_ID_2 = fixtureId("tracing-run-2")
  * Create a run record in the database.
  * Required because events.run_id has a foreign key constraint to runs(id).
  */
-function createRunRecord(db: InstanceType<typeof Database>, runId: string): void {
+function createRunRecord(db: Database, runId: string): void {
   db.prepare(`
     INSERT INTO runs (id, agent, started_at, status)
     VALUES (?, 'test-agent', datetime('now'), 'running')
   `).run(runId)
 }
 
-function makeTracingLayer(db: InstanceType<typeof Database>) {
+function makeTracingLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   return TracingServiceLive.pipe(Layer.provide(infra))
 }
 
 describe("TracingServiceLive Integration", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: Layer.Layer<TracingService, never, never>
 
   beforeEach(() => {

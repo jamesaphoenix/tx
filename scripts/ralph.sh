@@ -59,7 +59,7 @@ mkdir -p "$PROJECT_DIR/.tx"
 # Define tx function to run CLI source directly via tsx
 # This ensures changes are immediately reflected without rebuilding
 tx() {
-  npx tsx "$PROJECT_DIR/apps/cli/src/cli.ts" "$@"
+  bun "$PROJECT_DIR/apps/cli/src/cli.ts" "$@"
 }
 
 # ==============================================================================

@@ -5,7 +5,7 @@
  * to the centralized @tx/test-utils package.
  */
 
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 import { Effect } from "effect"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import type { TestDatabase } from "@jamesaphoenix/tx-test-utils"
@@ -35,11 +35,11 @@ export const FIXTURES = {
  *
  * @deprecated Use createTestDatabase from @tx/test-utils directly for new tests
  */
-export function createTestDb(): InstanceType<typeof Database> {
+export function createTestDb(): Database {
   // Synchronously create the test database
   // This is a compatibility shim - new tests should use createTestDatabase()
   const testDb = Effect.runSync(createTestDatabase())
-  return testDb.db as InstanceType<typeof Database>
+  return testDb.db
 }
 
 /**
@@ -52,9 +52,9 @@ export async function createTestDbAsync(): Promise<TestDatabase> {
 
 /**
  * Seed the database with fixture tasks.
- * Works with both raw Database and TestDatabase interfaces.
+ * Works with both raw Database or TestDatabase interfaces.
  */
-export function seedFixtures(db: InstanceType<typeof Database> | TestDatabase): void {
+export function seedFixtures(db: Database | TestDatabase): void {
   const now = new Date().toISOString()
 
   // Determine if we have a TestDatabase or raw Database

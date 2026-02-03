@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, ManagedRuntime, Layer } from "effect"
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 import { z } from "zod"
 
 import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
@@ -71,8 +71,8 @@ export interface ParsedMcpResponse<T = unknown> {
  * @returns ManagedRuntime ready to execute MCP tool Effects
  */
  
-export function makeTestRuntime(db: InstanceType<typeof Database>): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
-  const infra = Layer.succeed(SqliteClient, db as Database.Database)
+export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
+  const infra = Layer.succeed(SqliteClient, db as Database)
 
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -741,7 +741,7 @@ export async function callMcpToolParsed<T extends ToolName, R = unknown>(
 // -----------------------------------------------------------------------------
 
 describe("MCP Test Infrastructure", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -834,7 +834,7 @@ describe("MCP Test Infrastructure", () => {
 })
 
 describe("MCP tx_ready Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -965,7 +965,7 @@ describe("MCP tx_ready Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_show Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1099,7 +1099,7 @@ describe("MCP tx_show Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_list Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1207,7 +1207,7 @@ describe("MCP tx_list Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_children Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1288,7 +1288,7 @@ describe("MCP tx_children Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_add Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1412,7 +1412,7 @@ describe("MCP tx_add Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_update Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1529,7 +1529,7 @@ describe("MCP tx_update Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_done Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1650,7 +1650,7 @@ describe("MCP tx_done Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_delete Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1718,7 +1718,7 @@ describe("MCP tx_delete Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_block Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1844,7 +1844,7 @@ describe("MCP tx_block Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_unblock Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -1942,7 +1942,7 @@ describe("MCP tx_unblock Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_add Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -2066,7 +2066,7 @@ describe("MCP tx_learning_add Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_search Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -2212,7 +2212,7 @@ describe("MCP tx_learning_search Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_helpful Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -2356,7 +2356,7 @@ describe("MCP tx_learning_helpful Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_context Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -2550,7 +2550,7 @@ describe("MCP tx_context Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learn Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {
@@ -2744,7 +2744,7 @@ describe("MCP tx_learn Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_recall Tool", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
   beforeEach(() => {

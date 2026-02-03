@@ -12,7 +12,7 @@ import { Effect, Layer } from "effect"
 import { existsSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 
 import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
@@ -48,8 +48,8 @@ const SYNC_FIXTURES = {
 // Test Layer Factory
 // -----------------------------------------------------------------------------
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
-  const infra = Layer.succeed(SqliteClient, db as Database.Database)
+function makeTestLayer(db: Database) {
+  const infra = Layer.succeed(SqliteClient, db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -105,7 +105,7 @@ function cleanupTempFile(path: string): void {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Export", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
@@ -286,7 +286,7 @@ describe("SyncService Export", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Import", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
@@ -490,7 +490,7 @@ describe("SyncService Import", () => {
  * Seed fixtures with sequential timestamps to ensure proper import order.
  * Parents must have earlier timestamps than children to satisfy FK constraints.
  */
-function seedFixturesWithSequentialTimestamps(db: InstanceType<typeof Database>): void {
+function seedFixturesWithSequentialTimestamps(db: Database): void {
   const baseTime = new Date("2024-01-01T00:00:00.000Z")
   const insert = db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
@@ -530,8 +530,8 @@ function seedFixturesWithSequentialTimestamps(db: InstanceType<typeof Database>)
 }
 
 describe("SyncService Round-Trip", () => {
-  let sourceDb: InstanceType<typeof Database>
-  let targetDb: InstanceType<typeof Database>
+  let sourceDb: Database
+  let targetDb: Database
   let sourceLayer: ReturnType<typeof makeTestLayer>
   let targetLayer: ReturnType<typeof makeTestLayer>
   let tempPath: string
@@ -740,7 +740,7 @@ describe("SyncService Round-Trip", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Conflict Resolution", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
@@ -875,7 +875,7 @@ describe("SyncService Conflict Resolution", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Status", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
@@ -950,7 +950,7 @@ describe("SyncService Status", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Delete Operations", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
@@ -1103,7 +1103,7 @@ describe("SyncService Delete Operations", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Auto-Sync", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -1183,7 +1183,7 @@ describe("SyncService Auto-Sync", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Compact", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 

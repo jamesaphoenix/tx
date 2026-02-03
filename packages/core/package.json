@@ -46,19 +46,15 @@
     "effect": "^3.19.15"
   },
   "peerDependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
-    "better-sqlite3": "^11.0.0"
+    "@anthropic-ai/sdk": "^0.52.0"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/sdk": {
       "optional": true
-    },
-    "better-sqlite3": {
-      "optional": false
     }
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
+    "@types/bun": "^1.2.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

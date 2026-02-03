@@ -33,7 +33,7 @@ import {
   RetrieverServiceLive,
   cosineSimilarity
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 import type { LearningWithScore } from "@jamesaphoenix/tx-types"
 
 // ============================================================================
@@ -202,7 +202,7 @@ const createMockEmbeddingService = () => {
 // Test Layer Setup
 // ============================================================================
 
-function makeTestLayer(db: InstanceType<typeof Database>, useVectorSearch = true) {
+function makeTestLayer(db: Database, useVectorSearch = true) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -268,7 +268,7 @@ const precisionAtK = (
 // ============================================================================
 
 describe("End-to-End Retrieval Pipeline", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningIds: Map<string, number>
 

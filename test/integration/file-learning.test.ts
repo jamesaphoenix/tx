@@ -21,9 +21,9 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -84,7 +84,7 @@ describe("Glob Pattern Matching", () => {
 })
 
 describe("FileLearning CRUD", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -182,7 +182,7 @@ describe("FileLearning CRUD", () => {
 })
 
 describe("FileLearning Recall by Path", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -250,7 +250,7 @@ describe("FileLearning Recall by Path", () => {
 })
 
 describe("FileLearning Validation", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {

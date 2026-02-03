@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Hono } from "hono"
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 import { createTestDb, fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------
@@ -64,7 +64,7 @@ const runFixtureId = (name: string): string => `run-${fixtureId(name).slice(3)}`
  * Seeds 50+ tasks with varying scores for pagination testing.
  * Creates tasks with different statuses, some with same scores (for boundary testing).
  */
-export function seedPaginationFixtures(db: InstanceType<typeof Database>): {
+export function seedPaginationFixtures(db: Database): {
   taskIds: string[]
   runIds: string[]
 } {
@@ -167,7 +167,7 @@ export function seedPaginationFixtures(db: InstanceType<typeof Database>): {
 // Test App Factory
 // -----------------------------------------------------------------------------
 
-function createPaginationTestApp(db: InstanceType<typeof Database>) {
+function createPaginationTestApp(db: Database) {
   const app = new Hono()
 
   // Cursor helpers
@@ -382,7 +382,7 @@ async function request(app: Hono, path: string) {
 // -----------------------------------------------------------------------------
 
 describe("Database Pagination - Tasks", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -758,7 +758,7 @@ describe("Database Pagination - Tasks", () => {
 // -----------------------------------------------------------------------------
 
 describe("Database Pagination - Runs", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {

@@ -30,7 +30,9 @@
   "scripts": {
     "build": "turbo build",
     "build:packages": "turbo build",
-    "dev": "tsx apps/cli/src/cli.ts",
+    "build:binary": "bun run --cwd apps/cli build:binary",
+    "build:binary:all": "bun run --cwd apps/cli build:all",
+    "dev": "bun apps/cli/src/cli.ts",
     "test": "turbo test && vitest --run",
     "test:packages": "turbo test",
     "test:root": "vitest --run",
@@ -45,20 +47,19 @@
     "check": "./scripts/check.sh --all",
     "check:quick": "./scripts/check.sh --quick",
     "check:ci": "./scripts/check-ci.sh",
-    "validate": "npm run build && npm test && npm link"
+    "validate": "bun run build && bun test && bun link"
   },
   "dependencies": {
     "@effect/cli": "^0.73.1",
     "@effect/platform": "^0.94.2",
     "@effect/platform-node": "^0.104.1",
     "@modelcontextprotocol/sdk": "^1.25.3",
-    "better-sqlite3": "^11.7.0",
     "effect": "^3.19.15",
     "node-llama-cpp": "^3.15.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
-    "@types/better-sqlite3": "^7.6.12",
+    "@types/bun": "^1.2.0",
     "@types/node": "^22.10.0",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
@@ -80,5 +81,5 @@
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "npm@11.3.0"
+  "packageManager": "bun@1.2.0"
 }

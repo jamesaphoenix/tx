@@ -73,7 +73,7 @@ export const DeduplicationRepositoryLive = Layer.effect(
             const row = db.prepare(
               "SELECT 1 FROM processed_hashes WHERE content_hash = ? LIMIT 1"
             ).get(contentHash)
-            return row !== undefined
+            return row != null
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

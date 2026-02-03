@@ -7,15 +7,15 @@ import {
   RunRepository
 } from "@jamesaphoenix/tx-core"
 import type { RunId } from "@jamesaphoenix/tx-types"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   return RunRepositoryLive.pipe(Layer.provide(infra))
 }
 
 describe("RunRepository CRUD", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -334,7 +334,7 @@ describe("RunRepository CRUD", () => {
 })
 
 describe("RunRepository status transitions", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -742,7 +742,7 @@ describe("RunRepository status transitions", () => {
 })
 
 describe("RunRepository counting and queries", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -888,7 +888,7 @@ describe("RunRepository counting and queries", () => {
 })
 
 describe("Run-Task relationship", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {

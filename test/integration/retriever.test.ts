@@ -13,7 +13,7 @@ import {
   RetrieverServiceLive,
   RetrieverServiceNoop
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
 /**
  * Create a deterministic embedding from text content.
@@ -63,7 +63,7 @@ function float32ArrayToBuffer(arr: Float32Array): Buffer {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength)
 }
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = LearningRepositoryLive.pipe(Layer.provide(infra))
 
@@ -82,7 +82,7 @@ function makeNoopTestLayer() {
 /**
  * Create test layer with mock embedding service for vector search testing.
  */
-function makeTestLayerWithMockEmbeddings(db: InstanceType<typeof Database>) {
+function makeTestLayerWithMockEmbeddings(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = LearningRepositoryLive.pipe(Layer.provide(infra))
   const mockEmbeddingService = createMockEmbeddingService()
@@ -97,7 +97,7 @@ function makeTestLayerWithMockEmbeddings(db: InstanceType<typeof Database>) {
 
 describe("RetrieverService", () => {
   describe("Service Resolution", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayer>
 
     beforeEach(() => {
@@ -154,7 +154,7 @@ describe("RetrieverService", () => {
   })
 
   describe("BM25 Search", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayer>
 
     beforeEach(() => {
@@ -248,7 +248,7 @@ describe("RetrieverService", () => {
   })
 
   describe("RRF Fusion", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayer>
 
     beforeEach(() => {
@@ -322,7 +322,7 @@ describe("RetrieverService", () => {
   })
 
   describe("Scoring Components", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayer>
 
     beforeEach(() => {
@@ -429,7 +429,7 @@ describe("RetrieverService", () => {
   })
 
   describe("Graceful Degradation", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayer>
 
     beforeEach(() => {
@@ -496,7 +496,7 @@ describe("RetrieverService", () => {
   })
 
   describe("Options", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayer>
 
     beforeEach(() => {
@@ -555,7 +555,7 @@ describe("RetrieverService", () => {
   })
 
   describe("Vector Search with Mock Embeddings", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
 
     beforeEach(() => {
@@ -568,7 +568,7 @@ describe("RetrieverService", () => {
      * Helper to insert learning with embedding directly in DB.
      */
     const insertLearningWithEmbedding = (
-      db: InstanceType<typeof Database>,
+      db: Database,
       content: string
     ): number => {
       const now = new Date().toISOString()
@@ -677,7 +677,7 @@ describe("RetrieverService", () => {
   })
 
   describe("RRF Fusion Boost", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
 
     beforeEach(() => {
@@ -690,7 +690,7 @@ describe("RetrieverService", () => {
      * Helper to insert learning with embedding directly in DB.
      */
     const insertLearningWithEmbedding = (
-      db: InstanceType<typeof Database>,
+      db: Database,
       content: string
     ): number => {
       const now = new Date().toISOString()
@@ -784,7 +784,7 @@ describe("RetrieverService", () => {
   })
 
   describe("Position-Aware Bonuses", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
 
     beforeEach(() => {
@@ -797,7 +797,7 @@ describe("RetrieverService", () => {
      * Helper to insert learning with embedding directly in DB.
      */
     const insertLearningWithEmbedding = (
-      db: InstanceType<typeof Database>,
+      db: Database,
       content: string
     ): number => {
       const now = new Date().toISOString()

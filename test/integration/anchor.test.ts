@@ -7,10 +7,10 @@ import {
   AnchorRepositoryLive,
   LearningRepositoryLive
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 import type { Anchor } from "@jamesaphoenix/tx-types"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   return Layer.mergeAll(
     AnchorRepositoryLive,
@@ -22,7 +22,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
  * Create a test learning and return its ID.
  * Learnings are required since anchors have FK to learnings.
  */
-function createTestLearning(db: InstanceType<typeof Database>, content: string): number {
+function createTestLearning(db: Database, content: string): number {
   const now = new Date().toISOString()
   const result = db.prepare(
     `INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)`
@@ -31,7 +31,7 @@ function createTestLearning(db: InstanceType<typeof Database>, content: string):
 }
 
 describe("AnchorRepository CRUD", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
@@ -263,7 +263,7 @@ describe("AnchorRepository CRUD", () => {
 })
 
 describe("AnchorRepository Status Queries", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
@@ -391,7 +391,7 @@ describe("AnchorRepository Status Queries", () => {
 })
 
 describe("AnchorRepository Anchor Types", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
@@ -481,7 +481,7 @@ describe("AnchorRepository Anchor Types", () => {
 })
 
 describe("AnchorRepository Foreign Key Constraint", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {

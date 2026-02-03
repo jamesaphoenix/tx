@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Hono } from "hono"
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs"
 import { resolve } from "path"
@@ -28,7 +28,7 @@ interface TaskWithDeps extends TaskRow {
 }
 
 // Create test app with injected database
-function createTestApp(db: InstanceType<typeof Database>, txDir: string) {
+function createTestApp(db: Database, txDir: string) {
   const app = new Hono()
 
   // Path validation helper (mirrors server logic)
@@ -442,7 +442,7 @@ async function request(app: Hono, path: string, options?: RequestInit) {
 }
 
 describe("Dashboard API - GET /api/tasks", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -596,7 +596,7 @@ describe("Dashboard API - GET /api/tasks", () => {
 })
 
 describe("Dashboard API - GET /api/tasks/ready", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -660,7 +660,7 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
 })
 
 describe("Dashboard API - GET /api/tasks/:id", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -746,7 +746,7 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
 })
 
 describe("Dashboard API - GET /api/runs", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -876,7 +876,7 @@ describe("Dashboard API - GET /api/runs", () => {
 })
 
 describe("Dashboard API - GET /api/runs/:id", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
   let testDir: string
 
@@ -1016,7 +1016,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
 })
 
 describe("Dashboard API - GET /api/ralph", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -1040,7 +1040,7 @@ describe("Dashboard API - GET /api/ralph", () => {
 })
 
 describe("Dashboard API - GET /api/stats", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -1141,7 +1141,7 @@ describe("Dashboard API - Fixture ID consistency", () => {
 })
 
 describe("Dashboard API - Paginated Tasks with Filters", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {
@@ -1337,7 +1337,7 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
 })
 
 describe("Dashboard API - Paginated Runs with Filters", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let app: Hono
 
   beforeEach(() => {

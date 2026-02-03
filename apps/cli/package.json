@@ -19,6 +19,12 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "build:binary": "bun build ./src/cli.ts --compile --outfile dist/tx --minify --external @anthropic-ai/sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
+    "build:darwin-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-arm64 --target bun-darwin-arm64 --minify --external @anthropic-ai/sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
+    "build:darwin-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-x64 --target bun-darwin-x64 --minify --external @anthropic-ai/sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
+    "build:linux-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-x64 --target bun-linux-x64 --minify --external @anthropic-ai/sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
+    "build:linux-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-arm64 --target bun-linux-arm64 --minify --external @anthropic-ai/sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
+    "build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest run --passWithNoTests"
@@ -30,19 +36,15 @@
     "effect": "^3.19.15"
   },
   "peerDependencies": {
-    "better-sqlite3": "^11.0.0",
     "@modelcontextprotocol/sdk": "^1.25.3"
   },
   "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": false
-    },
     "@modelcontextprotocol/sdk": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
+    "@types/bun": "^1.2.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

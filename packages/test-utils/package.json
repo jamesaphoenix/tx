@@ -58,19 +58,15 @@
     "effect": "^3.19.15"
   },
   "peerDependencies": {
-    "better-sqlite3": "^11.0.0",
     "vitest": "^3.0.0"
   },
   "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": false
-    },
     "vitest": {
       "optional": false
     }
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
+    "@types/bun": "^1.2.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

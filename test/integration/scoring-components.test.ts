@@ -32,9 +32,9 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -63,7 +63,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
 
 /** Helper to insert a learning with a specific timestamp */
 function insertLearningWithTimestamp(
-  db: InstanceType<typeof Database>,
+  db: Database,
   content: string,
   createdAt: Date,
   options: { usageCount?: number; outcomeScore?: number | null } = {}
@@ -95,7 +95,7 @@ function hoursAgo(hours: number): Date {
 }
 
 describe("BM25 Scoring Isolation", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -211,7 +211,7 @@ describe("BM25 Scoring Isolation", () => {
 })
 
 describe("Recency Scoring Isolation", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -319,7 +319,7 @@ describe("Recency Scoring Isolation", () => {
 })
 
 describe("Outcome Boost Isolation", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -443,7 +443,7 @@ describe("Outcome Boost Isolation", () => {
 })
 
 describe("Frequency Boost Isolation", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -580,7 +580,7 @@ describe("Frequency Boost Isolation", () => {
 })
 
 describe("Weight Sensitivity", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
 
   beforeEach(() => {
     db = createTestDb()
@@ -591,7 +591,7 @@ describe("Weight Sensitivity", () => {
    * Helper to make layer with custom recency weight.
    * Note: In the current implementation, recency_weight is loaded from learnings_config table.
    */
-  function makeLayerWithRecencyWeight(db: InstanceType<typeof Database>, recencyWeight: number) {
+  function makeLayerWithRecencyWeight(db: Database, recencyWeight: number) {
     // Insert or update the recency_weight config
     db.prepare(`
       INSERT OR REPLACE INTO learnings_config (key, value) VALUES ('recency_weight', ?)
@@ -729,7 +729,7 @@ describe("Weight Sensitivity", () => {
 })
 
 describe("Combined Scoring Components", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {

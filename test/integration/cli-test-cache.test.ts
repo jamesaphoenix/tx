@@ -27,7 +27,7 @@ interface ExecResult {
  */
 function runTxArgs(args: string[], dbPath: string, env?: Record<string, string>): ExecResult {
   try {
-    const result = spawnSync("node", [TX_BIN, ...args, "--db", dbPath], {
+    const result = spawnSync("bun", [TX_BIN, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd(),

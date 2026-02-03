@@ -18,9 +18,9 @@ import {
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
@@ -73,7 +73,7 @@ describe("Schema constraints", () => {
 })
 
 describe("Task CRUD", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -233,7 +233,7 @@ describe("Task CRUD", () => {
 })
 
 describe("Ready detection", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -376,7 +376,7 @@ describe("Ready detection", () => {
 })
 
 describe("Dependency operations", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -474,7 +474,7 @@ describe("Dependency operations", () => {
 })
 
 describe("Hierarchy operations", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -657,7 +657,7 @@ describe("Hierarchy operations", () => {
 })
 
 describe("Score calculations", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {

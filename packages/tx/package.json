@@ -29,13 +29,7 @@
     "@jamesaphoenix/tx-types": "^0.4.2"
   },
   "peerDependencies": {
-    "better-sqlite3": "^11.0.0",
     "effect": "^3.0.0"
-  },
-  "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": false
-    }
   },
   "repository": {
     "type": "git",

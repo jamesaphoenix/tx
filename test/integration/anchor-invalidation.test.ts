@@ -31,7 +31,7 @@ import {
   AnchorRepositoryLive,
   LearningRepositoryLive
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 import type { AnchorStatus } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
@@ -69,7 +69,7 @@ const FIXTURES = {
 // Helper Functions
 // =============================================================================
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   return Layer.mergeAll(
     AnchorRepositoryLive,
@@ -77,7 +77,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
   ).pipe(Layer.provide(infra))
 }
 
-function createTestLearning(db: InstanceType<typeof Database>, content: string): number {
+function createTestLearning(db: Database, content: string): number {
   const now = new Date().toISOString()
   const result = db.prepare(
     `INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)`
@@ -86,7 +86,7 @@ function createTestLearning(db: InstanceType<typeof Database>, content: string):
 }
 
 function createTestAnchorDirect(
-  db: InstanceType<typeof Database>,
+  db: Database,
   learningId: number,
   opts: {
     anchorType?: string
@@ -735,7 +735,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Pruning", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
@@ -954,7 +954,7 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Self-Healing", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
@@ -1288,7 +1288,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Git Hook Integration", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
@@ -1410,7 +1410,7 @@ describe("Anchor Invalidation - Git Hook Integration", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Stale Detection Metrics", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 

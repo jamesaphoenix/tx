@@ -15,7 +15,7 @@ interface ExecResult {
 
 function runTx(args: string[], dbPath: string): ExecResult {
   try {
-    const result = spawnSync("node", [TX_BIN, ...args, "--db", dbPath], {
+    const result = spawnSync("bun", [TX_BIN, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd()

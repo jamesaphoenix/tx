@@ -14,9 +14,9 @@ import {
   AttemptService,
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -38,7 +38,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
 }
 
 describe("Attempt CRUD", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -165,7 +165,7 @@ describe("Attempt CRUD", () => {
 })
 
 describe("Attempt Failed Count", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -214,7 +214,7 @@ describe("Attempt Failed Count", () => {
 })
 
 describe("getFailedCountsForTasks Batch Query", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -346,7 +346,7 @@ describe("getFailedCountsForTasks Batch Query", () => {
 })
 
 describe("Attempt Integration with Tasks", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {

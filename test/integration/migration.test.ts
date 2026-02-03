@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 import {
   SqliteClient,
   getSchemaVersion,
@@ -11,8 +11,8 @@ import {
   getLatestVersion
 } from "@jamesaphoenix/tx-core"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
-  const infra = Layer.succeed(SqliteClient, db as ReturnType<typeof Database>)
+function makeTestLayer(db: Database) {
+  const infra = Layer.succeed(SqliteClient, db as Database)
   return MigrationServiceLive.pipe(Layer.provide(infra))
 }
 
@@ -50,7 +50,7 @@ describe("Migration system", () => {
   describe("applyMigrations", () => {
     it("applies all migrations to a fresh database", () => {
       const db = new Database(":memory:")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA foreign_keys = ON")
 
       applyMigrations(db)
 
@@ -60,7 +60,7 @@ describe("Migration system", () => {
 
     it("creates all required tables", () => {
       const db = new Database(":memory:")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA foreign_keys = ON")
 
       applyMigrations(db)
 
@@ -91,7 +91,7 @@ describe("Migration system", () => {
 
     it("creates all required indexes", () => {
       const db = new Database(":memory:")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA foreign_keys = ON")
 
       applyMigrations(db)
 
@@ -129,7 +129,7 @@ describe("Migration system", () => {
 
     it("is idempotent (running twice is safe)", () => {
       const db = new Database(":memory:")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA foreign_keys = ON")
 
       applyMigrations(db)
       applyMigrations(db) // Should not throw
@@ -140,7 +140,7 @@ describe("Migration system", () => {
 
     it("only applies pending migrations", () => {
       const db = new Database(":memory:")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA foreign_keys = ON")
 
       // Apply only first migration manually
       db.exec(MIGRATIONS[0].sql)
@@ -154,12 +154,12 @@ describe("Migration system", () => {
   })
 
   describe("MigrationService", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
     let layer: ReturnType<typeof makeTestLayer>
 
     beforeEach(() => {
       db = new Database(":memory:")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA foreign_keys = ON")
       // Apply all migrations so the service can query schema_version
       applyMigrations(db)
       layer = makeTestLayer(db)
@@ -242,7 +242,7 @@ describe("Migration system", () => {
       it("returns correct status for partially migrated database", async () => {
         // Create a database with only first migration
         const partialDb = new Database(":memory:")
-        partialDb.pragma("foreign_keys = ON")
+        partialDb.run("PRAGMA foreign_keys = ON")
         partialDb.exec(MIGRATIONS[0].sql)
 
         const partialLayer = makeTestLayer(partialDb)
@@ -266,7 +266,7 @@ describe("Migration system", () => {
       it("applies pending migrations and returns count", async () => {
         // Create a database with only first migration
         const partialDb = new Database(":memory:")
-        partialDb.pragma("foreign_keys = ON")
+        partialDb.run("PRAGMA foreign_keys = ON")
         partialDb.exec(MIGRATIONS[0].sql)
 
         const partialLayer = makeTestLayer(partialDb)
@@ -299,11 +299,11 @@ describe("Migration system", () => {
   })
 
   describe("Schema constraints", () => {
-    let db: InstanceType<typeof Database>
+    let db: Database
 
     beforeEach(() => {
       db = new Database(":memory:")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA foreign_keys = ON")
       applyMigrations(db)
     })
 

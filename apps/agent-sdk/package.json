@@ -39,17 +39,9 @@
     "@jamesaphoenix/tx-core": "*",
     "effect": "^3.19.15"
   },
-  "peerDependencies": {
-    "better-sqlite3": "^11.0.0"
-  },
-  "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@jamesaphoenix/tx-core": "*",
-    "@types/better-sqlite3": "^7.6.0",
+    "@types/bun": "^1.2.0",
     "@types/node": "^22.10.0",
     "effect": "^3.19.15",
     "typescript": "^5.7.0",

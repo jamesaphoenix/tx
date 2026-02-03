@@ -7,17 +7,17 @@
  * @module @tx/test-utils/database
  */
 
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 import { Context, Effect, Layer } from "effect"
-import { applyMigrations } from "@jamesaphoenix/tx-core"
+import { applyMigrations, type SqliteRunResult } from "@jamesaphoenix/tx-core"
 
 /**
  * Interface for test database operations.
- * Wraps better-sqlite3 with convenience methods for testing.
+ * Wraps bun:sqlite with convenience methods for testing.
  */
 export interface TestDatabase {
-  /** The underlying better-sqlite3 Database instance */
-  readonly db: Database.Database
+  /** The underlying bun:sqlite Database instance */
+  readonly db: Database
   /** Close the database connection */
   readonly close: () => Effect.Effect<void>
   /** Delete all data from tables (preserves schema and migrations table) */
@@ -27,7 +27,7 @@ export interface TestDatabase {
   /** Execute raw SQL (DDL or DML) */
   readonly exec: (sql: string) => void
   /** Execute a parameterized INSERT/UPDATE/DELETE and return run result */
-  readonly run: (sql: string, params?: unknown[]) => Database.RunResult
+  readonly run: (sql: string, params?: unknown[]) => SqliteRunResult
   /** Execute a function within a transaction */
   readonly transaction: <T>(fn: () => T) => T
 }
@@ -69,8 +69,8 @@ export const createTestDatabase = (): Effect.Effect<TestDatabase, Error> =>
       const db = new Database(":memory:")
 
       // Enable WAL mode for better concurrent access (matches production settings)
-      db.pragma("journal_mode = WAL")
-      db.pragma("foreign_keys = ON")
+      db.run("PRAGMA journal_mode = WAL")
+      db.run("PRAGMA foreign_keys = ON")
 
       // Run all migrations
       applyMigrations(db)
@@ -102,23 +102,23 @@ export const createTestDatabase = (): Effect.Effect<TestDatabase, Error> =>
               .all() as Array<{ name: string }>
 
             // Disable foreign keys temporarily to allow deletion in any order
-            db.exec("PRAGMA foreign_keys = OFF")
+            db.run("PRAGMA foreign_keys = OFF")
             for (const { name } of tables) {
               db.exec(`DELETE FROM "${name}"`)
             }
-            db.exec("PRAGMA foreign_keys = ON")
+            db.run("PRAGMA foreign_keys = ON")
           }),
 
         query: <T = unknown>(sql: string, params: unknown[] = []): T[] => {
-          return db.prepare(sql).all(...params) as T[]
+          return db.prepare(sql).all(...(params as any[])) as T[]
         },
 
         exec: (sql: string): void => {
           db.exec(sql)
         },
 
-        run: (sql: string, params: unknown[] = []): Database.RunResult => {
-          return db.prepare(sql).run(...params)
+        run: (sql: string, params: unknown[] = []): SqliteRunResult => {
+          return db.prepare(sql).run(...(params as any[]))
         },
 
         transaction: <T>(fn: () => T): T => {

@@ -48,7 +48,8 @@ export {
   getSchemaVersion,
   applyMigrations,
   type SqliteDatabase,
-  type SqliteStatement
+  type SqliteStatement,
+  type SqliteRunResult
 } from "./db.js"
 
 // =============================================================================

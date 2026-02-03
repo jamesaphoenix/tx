@@ -308,7 +308,7 @@ class HttpTransport implements Transport {
 
 /**
  * Direct SQLite transport using @tx/core.
- * Only available when @tx/core and better-sqlite3 are installed.
+ * Only available when @tx/core is installed and running on Bun runtime.
  */
 class DirectTransport implements Transport {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

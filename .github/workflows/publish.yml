@@ -13,16 +13,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
-      - run: npm ci
-      - run: npm run build
+      - run: bun install
+      - run: bun run build
       # Run package tests only (root tests are slower and tested in CI workflow)
-      - run: npm run test:packages
+      - run: bun run test:packages
 
       # Publish in dependency order: types -> core -> test-utils -> tx
       - name: Publish @jamesaphoenix/tx-types

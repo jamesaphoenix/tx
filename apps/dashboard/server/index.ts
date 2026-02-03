@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-import Database from "better-sqlite3"
+import { Database } from "bun:sqlite"
 import { readFileSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
 import { fileURLToPath } from "url"
@@ -33,7 +33,7 @@ const app = new Hono()
 app.use("/*", cors())
 
 // Lazy DB connection
-let db: Database.Database | null = null
+let db: Database | null = null
 const getDb = () => {
   if (!db) {
     if (!existsSync(dbPath)) {
@@ -86,7 +86,7 @@ function buildRunCursor(run: { started_at: string; id: string }): string {
 
 // Helper to enrich tasks with dependency info
 function enrichTasksWithDeps(
-  db: Database.Database,
+  db: Database,
   tasks: TaskRow[],
   allTasks?: TaskRow[]
 ): TaskRowWithDeps[] {

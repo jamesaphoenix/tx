@@ -19,9 +19,9 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive
 } from "@jamesaphoenix/tx-core"
-import type Database from "better-sqlite3"
+import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: InstanceType<typeof Database>) {
+function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -49,7 +49,7 @@ function makeTestLayer(db: InstanceType<typeof Database>) {
 }
 
 describe("Learning CRUD", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -133,7 +133,7 @@ describe("Learning CRUD", () => {
 })
 
 describe("Learning BM25 Search", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -189,7 +189,7 @@ describe("Learning BM25 Search", () => {
 })
 
 describe("Learning Usage and Outcome Tracking", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -315,7 +315,7 @@ describe("Learning Usage and Outcome Tracking", () => {
 })
 
 describe("Context for Task", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -377,7 +377,7 @@ describe("Context for Task", () => {
 })
 
 describe("Hybrid Scoring", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {
@@ -414,7 +414,7 @@ describe("Hybrid Scoring", () => {
 })
 
 describe("RRF Hybrid Search", () => {
-  let db: InstanceType<typeof Database>
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
   beforeEach(() => {

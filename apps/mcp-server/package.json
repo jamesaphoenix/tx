@@ -50,16 +50,8 @@
     "effect": "^3.19.15",
     "zod": "^3.24.0"
   },
-  "peerDependencies": {
-    "better-sqlite3": "^11.0.0"
-  },
-  "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": false
-    }
-  },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
+    "@types/bun": "^1.2.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

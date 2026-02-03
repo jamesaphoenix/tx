@@ -1,0 +1,73 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            artifact: tx-darwin-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            artifact: tx-darwin-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: tx-linux-x64
+          - os: ubuntu-latest
+            target: bun-linux-arm64
+            artifact: tx-linux-arm64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build packages
+        run: bun run build
+
+      - name: Build binary
+        working-directory: apps/cli
+        run: bun build ./src/cli.ts --compile --outfile ${{ matrix.artifact }} --target ${{ matrix.target }} --minify --external @anthropic-ai/sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: apps/cli/${{ matrix.artifact }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+
+      - name: List artifacts
+        run: find binaries -type f
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            binaries/tx-darwin-arm64/tx-darwin-arm64
+            binaries/tx-darwin-x64/tx-darwin-x64
+            binaries/tx-linux-x64/tx-linux-x64
+            binaries/tx-linux-arm64/tx-linux-arm64
+          generate_release_notes: true

@@ -1,4 +1,1 @@
-
-> @tx/agent-sdk@0.1.0 build
-> tsc -b
-
+$ tsc -b
