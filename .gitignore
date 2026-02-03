@@ -7,3 +7,9 @@ dist/
 .turbo/
 *.tsbuildinfo
 .next/
+
+# Generated config files (compiled from .ts)
+vitest.config.js
+vitest.config.js.map
+vitest.config.d.ts
+vitest.config.d.ts.map

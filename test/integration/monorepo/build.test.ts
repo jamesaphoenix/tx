@@ -388,7 +388,7 @@ describe("No Circular Dependencies", () => {
 
       // Apps should only depend on packages, not other apps
       for (const dep of txDeps) {
-        expect(dep).toMatch(/^@tx\/(types|core)$/)
+        expect(dep).toMatch(/^@tx\/(types|core|test-utils)$/)
       }
     }
   })
