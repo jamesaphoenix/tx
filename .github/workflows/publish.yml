@@ -21,7 +21,8 @@ jobs:
 
       - run: npm ci
       - run: npm run build
-      - run: npm test
+      # Run package tests only (root tests are slower and tested in CI workflow)
+      - run: npm run test:packages
 
       - name: Publish @jamesaphoenix/tx
         working-directory: packages/tx
