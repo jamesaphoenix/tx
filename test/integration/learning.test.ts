@@ -6,6 +6,7 @@ import {
   TaskRepositoryLive,
   DependencyRepositoryLive,
   LearningRepositoryLive,
+  LearningRepository,
   TaskServiceLive,
   DependencyServiceLive,
   ReadyServiceLive,
@@ -235,6 +236,81 @@ describe("Learning Usage and Outcome Tracking", () => {
         }).pipe(Effect.provide(layer))
       )
     ).rejects.toThrow()
+  })
+
+  it("incrementUsageMany batch updates multiple learnings", async () => {
+    // Build a layer that exposes the repository directly
+    const infra = Layer.succeed(SqliteClient, db as any)
+    const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
+
+    const learnings = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        const repo = yield* LearningRepository
+
+        // Create multiple learnings
+        yield* svc.create({ content: "First learning" })
+        yield* svc.create({ content: "Second learning" })
+        yield* svc.create({ content: "Third learning" })
+
+        // Batch increment usage for first two
+        yield* repo.incrementUsageMany([1, 2])
+
+        // Return all learnings to verify
+        return yield* Effect.all([
+          svc.get(1),
+          svc.get(2),
+          svc.get(3)
+        ])
+      }).pipe(Effect.provide(Layer.merge(layer, repoLayer)))
+    )
+
+    // First two should have usage count of 1
+    expect(learnings[0].usageCount).toBe(1)
+    expect(learnings[0].lastUsedAt).not.toBeNull()
+    expect(learnings[1].usageCount).toBe(1)
+    expect(learnings[1].lastUsedAt).not.toBeNull()
+    // Third should have usage count of 0
+    expect(learnings[2].usageCount).toBe(0)
+    expect(learnings[2].lastUsedAt).toBeNull()
+  })
+
+  it("incrementUsageMany handles empty array gracefully", async () => {
+    const infra = Layer.succeed(SqliteClient, db as any)
+    const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
+
+    // Should not throw when given empty array
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        yield* repo.incrementUsageMany([])
+      }).pipe(Effect.provide(repoLayer))
+    )
+  })
+
+  it("incrementUsageMany increments usage for same ID multiple times in batch", async () => {
+    const infra = Layer.succeed(SqliteClient, db as any)
+    const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
+
+    const learning = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        const repo = yield* LearningRepository
+
+        // Create a learning
+        yield* svc.create({ content: "Test learning" })
+
+        // Call batch increment twice (simulating multiple context retrievals)
+        yield* repo.incrementUsageMany([1])
+        yield* repo.incrementUsageMany([1])
+
+        return yield* svc.get(1)
+      }).pipe(Effect.provide(Layer.merge(layer, repoLayer)))
+    )
+
+    // Should have usage count of 2 after two batch calls
+    expect(learning.usageCount).toBe(2)
+    expect(learning.lastUsedAt).not.toBeNull()
   })
 })
 
