@@ -960,6 +960,99 @@ describe("Graph Expansion - Edge Type Filtering", () => {
     expect(result.expanded).toHaveLength(1)
     expect(result.expanded[0].learning.content).toBe("L2")
   })
+
+  it("perHop with top-level fallback: hop 1 uses top-level, hop 2 uses perHop", async () => {
+    const { makeAppLayer, GraphExpansionService, LearningService, EdgeService } = await import("@tx/core")
+    const layer = makeAppLayer(":memory:")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+        const expansionSvc = yield* GraphExpansionService
+
+        // Create graph:
+        // L1 -[SIMILAR_TO]-> L2 (allowed by top-level)
+        // L1 -[LINKS_TO]-> L3 (allowed by top-level)
+        // L1 -[DERIVED_FROM]-> L4 (NOT in top-level include)
+        // L2 -[DERIVED_FROM]-> L5 (allowed by perHop override for hop 2)
+        // L2 -[SIMILAR_TO]-> L6 (NOT allowed by perHop override for hop 2)
+        const l1 = yield* learningSvc.create({ content: "L1-root", sourceType: "manual" })
+        const l2 = yield* learningSvc.create({ content: "L2-via-similar", sourceType: "manual" })
+        const l3 = yield* learningSvc.create({ content: "L3-via-links", sourceType: "manual" })
+        const l4 = yield* learningSvc.create({ content: "L4-via-derived", sourceType: "manual" })
+        const l5 = yield* learningSvc.create({ content: "L5-hop2-derived", sourceType: "manual" })
+        const l6 = yield* learningSvc.create({ content: "L6-hop2-similar", sourceType: "manual" })
+
+        // Hop 1 edges from L1
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l2.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "LINKS_TO",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l3.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l1.id),
+          targetType: "learning",
+          targetId: String(l4.id),
+        })
+
+        // Hop 2 edges from L2
+        yield* edgeSvc.createEdge({
+          edgeType: "DERIVED_FROM",
+          sourceType: "learning",
+          sourceId: String(l2.id),
+          targetType: "learning",
+          targetId: String(l5.id),
+        })
+        yield* edgeSvc.createEdge({
+          edgeType: "SIMILAR_TO",
+          sourceType: "learning",
+          sourceId: String(l2.id),
+          targetType: "learning",
+          targetId: String(l6.id),
+        })
+
+        // Combined filter:
+        // - Top-level: include only SIMILAR_TO and LINKS_TO
+        // - perHop override for hop 2: include only DERIVED_FROM
+        // Result: hop 1 uses top-level, hop 2 uses perHop
+        return yield* expansionSvc.expand(
+          [{ learning: l1, score: 1.0 }],
+          {
+            depth: 2,
+            edgeTypes: {
+              include: ["SIMILAR_TO", "LINKS_TO"], // Top-level fallback
+              perHop: {
+                2: { include: ["DERIVED_FROM"] } // Override for hop 2
+              }
+            }
+          }
+        )
+      }).pipe(Effect.provide(layer))
+    )
+
+    const contents = result.expanded.map((e) => e.learning.content)
+    // Hop 1: L2 (SIMILAR_TO) and L3 (LINKS_TO) - using top-level filter
+    expect(contents).toContain("L2-via-similar")
+    expect(contents).toContain("L3-via-links")
+    // L4 excluded at hop 1: DERIVED_FROM not in top-level include
+    expect(contents).not.toContain("L4-via-derived")
+    // Hop 2: L5 (DERIVED_FROM) - using perHop override
+    expect(contents).toContain("L5-hop2-derived")
+    // L6 excluded at hop 2: SIMILAR_TO not in perHop include
+    expect(contents).not.toContain("L6-hop2-similar")
+  })
 })
 
 // =============================================================================
