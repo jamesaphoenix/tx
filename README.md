@@ -177,6 +177,179 @@ Claude Code sessions → Daemon → Extract → Score → Promote
 
 ---
 
+## Worker Orchestration (TypeScript SDK)
+
+For programmatic control, the TypeScript SDK provides `runWorker()` — a headless worker that executes tasks using your hooks.
+
+### Two Hooks. That's It.
+
+```typescript
+import { runWorker } from "@jamesaphoenix/tx-core"
+
+runWorker({
+  name: "my-worker",
+  execute: async (task, ctx) => {
+    // YOUR LOGIC HERE
+    console.log(`Working on: ${task.title}`)
+
+    // Use ctx.renewLease() for long tasks
+    await ctx.renewLease()
+
+    // Return success or failure
+    return { success: true, output: "Done!" }
+  },
+  captureIO: (runId, task) => ({
+    transcriptPath: `.tx/runs/${runId}.jsonl`,
+    stderrPath: `.tx/runs/${runId}.stderr`
+  })
+})
+```
+
+| Hook | Required | Purpose |
+|------|----------|---------|
+| `execute` | Yes | Your task execution logic |
+| `captureIO` | No | Paths for transcript/stderr/stdout capture |
+
+### WorkerContext
+
+The `ctx` object provides tx primitives:
+
+```typescript
+interface WorkerContext {
+  workerId: string              // This worker's ID
+  runId: string                 // Unique ID for this execution
+  renewLease: () => Promise<void>  // Extend lease for long tasks
+  log: (message: string) => void   // Log with worker prefix
+  state: Record<string, unknown>   // Mutable state within task
+}
+```
+
+### Custom Context
+
+Pass your own primitives via generics:
+
+```typescript
+interface MyContext {
+  llm: AnthropicClient
+  db: Database
+}
+
+runWorker<MyContext>({
+  context: {
+    llm: new Anthropic(),
+    db: myDatabase
+  },
+  execute: async (task, ctx) => {
+    // ctx.llm and ctx.db available here
+    const response = await ctx.llm.messages.create(...)
+    return { success: true }
+  }
+})
+```
+
+### Claims and Leases
+
+Workers use a lease-based system to prevent collisions:
+
+```
+Worker A claims task → Lease expires in 30 min → Renew or lose it
+Worker B tries to claim same task → Rejected (already claimed)
+Worker A dies → Lease expires → Coordinator reclaims task
+```
+
+Key points:
+- **Claims are atomic** — only one worker can claim a task
+- **Leases expire** — prevents stuck tasks from dead workers
+- **Auto-renewal** — `runWorker()` renews automatically; use `ctx.renewLease()` for extra-long tasks
+- **Coordinator reconciles** — dead workers detected, orphaned tasks recovered
+
+### Example Worker Loops
+
+#### Basic: One Worker
+
+```typescript
+import { Effect, Layer } from "effect"
+import { runWorker, makeMinimalLayer, SqliteClientLive } from "@jamesaphoenix/tx-core"
+
+const layer = makeMinimalLayer.pipe(
+  Layer.provide(SqliteClientLive(".tx/tasks.db"))
+)
+
+Effect.runPromise(
+  runWorker({
+    execute: async (task, ctx) => {
+      ctx.log(`Processing: ${task.title}`)
+      // ... your logic
+      return { success: true }
+    }
+  }).pipe(Effect.provide(layer))
+)
+```
+
+#### With Claude Code
+
+```typescript
+import { spawn } from "child_process"
+
+runWorker({
+  execute: async (task, ctx) => {
+    return new Promise((resolve) => {
+      const proc = spawn("claude", [
+        "--print",
+        `Work on task ${task.id}: ${task.title}`
+      ])
+
+      proc.on("close", (code) => {
+        resolve({
+          success: code === 0,
+          error: code !== 0 ? `Exit code ${code}` : undefined
+        })
+      })
+    })
+  }
+})
+```
+
+#### Parallel Workers
+
+```typescript
+// Start N workers (each in its own process or fiber)
+for (let i = 0; i < 5; i++) {
+  Effect.fork(
+    runWorker({
+      name: `worker-${i}`,
+      execute: async (task, ctx) => {
+        // Workers automatically coordinate via claims
+        return { success: true }
+      }
+    })
+  )
+}
+```
+
+#### Long-Running Tasks
+
+```typescript
+runWorker({
+  execute: async (task, ctx) => {
+    for (let step = 0; step < 100; step++) {
+      // Periodic lease renewal for tasks > 30 min
+      if (step % 10 === 0) {
+        await ctx.renewLease()
+      }
+
+      // Track progress in mutable state
+      ctx.state.progress = step
+
+      await doExpensiveWork(step)
+    }
+    return { success: true }
+  }
+})
+```
+
+---
+
 ## Interfaces
 
 | Interface | Use Case |
