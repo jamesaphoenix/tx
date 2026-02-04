@@ -59,6 +59,11 @@
  * - Allows in: migrations/*.sql, test/fixtures/*
  * - Error message: 'SQL schema definitions must be in migrations/*.sql files'
  *
+ * Rule: tx/no-hono
+ * Enforces CLAUDE.md DOCTRINE RULE 10:
+ * - Disallows imports from 'hono', 'hono/*', or '@hono/*'
+ * - Use @effect/platform HttpApi instead
+ *
  * Rule: tx/no-throw-in-services
  * Enforces CLAUDE.md DOCTRINE RULE 5:
  * - Disallows throw statements in service code
@@ -107,6 +112,7 @@ export default [
         allowedPaths: ['migrations/', 'test/fixtures/'],
         ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
       }]
+      // Note: tx/no-hono not applied to test files - legacy Hono imports remain during migration
     }
   },
   // Packages (types, core, etc.)
@@ -141,7 +147,10 @@ export default [
         excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
         allowHttpException: false,
         allowTypedErrors: true
-      }]
+      }],
+
+      // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-hono': 'warn'
     }
   },
   // Apps (api-server, agent-sdk, cli, mcp-server)
@@ -191,7 +200,10 @@ export default [
         excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
         allowHttpException: true,
         allowTypedErrors: true
-      }]
+      }],
+
+      // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-hono': 'warn'
     }
   },
   // Dashboard app files (with separate API test requirements)
@@ -224,7 +236,10 @@ export default [
       'tx/no-inline-sql': ['error', {
         allowedPaths: ['migrations/', 'test/fixtures/'],
         ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
-      }]
+      }],
+
+      // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-hono': 'warn'
     }
   },
   // Dashboard React components and hooks (require component tests)
@@ -255,7 +270,10 @@ export default [
       'tx/require-component-tests': ['error', {
         components: { pattern: 'apps/dashboard/src/components/**/*.tsx', testDir: '__tests__', testSuffix: '.test.tsx' },
         hooks: { pattern: 'apps/dashboard/src/hooks/**/*.ts', testDir: '__tests__', testSuffix: '.test.ts' }
-      }]
+      }],
+
+      // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-hono': 'warn'
     }
   }
 ];

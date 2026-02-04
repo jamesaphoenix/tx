@@ -15,6 +15,7 @@ import interfaceParity from './rules/interface-parity.js';
 import requireDdTestSections from './rules/require-dd-test-sections.js';
 import prdFailureModes from './rules/prd-failure-modes.js';
 import noThrowInServices from './rules/no-throw-in-services.js';
+import noHono from './rules/no-hono.js';
 
 const plugin = {
   meta: {
@@ -34,7 +35,8 @@ const plugin = {
     'interface-parity': interfaceParity,
     'require-dd-test-sections': requireDdTestSections,
     'prd-failure-modes': prdFailureModes,
-    'no-throw-in-services': noThrowInServices
+    'no-throw-in-services': noThrowInServices,
+    'no-hono': noHono
   },
   // Flat config recommended configuration
   configs: {
@@ -107,7 +109,8 @@ const plugin = {
           excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
           allowHttpException: false,
           allowTypedErrors: false
-        }]
+        }],
+        'tx/no-hono': 'warn'
       }
     }
   }
