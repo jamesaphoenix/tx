@@ -2,15 +2,15 @@ $ bun vitest run --passWithNoTests
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
 
- ✓ src/llm-cache/cache.test.ts (26 tests) 76ms
- ✓ src/helpers/effect.test.ts (28 tests) 74ms
- ✓ src/mocks/mocks.test.ts (63 tests) 219ms
+ ✓ src/llm-cache/cache.test.ts (26 tests) 66ms
+ ✓ src/helpers/effect.test.ts (28 tests) 68ms
+ ✓ src/mocks/mocks.test.ts (63 tests) 221ms
 
 ⎯⎯⎯⎯⎯⎯ Failed Suites 3 ⎯⎯⎯⎯⎯⎯⎯
 
  FAIL  test/test-database.test.ts [ test/test-database.test.ts ]
- FAIL  src/factories/factories.test.ts [ src/factories/factories.test.ts ]
  FAIL  src/chaos/chaos.test.ts [ src/chaos/chaos.test.ts ]
+ FAIL  src/factories/factories.test.ts [ src/factories/factories.test.ts ]
 Error: Cannot find package 'bun:sqlite' imported from '/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/database/test-database.ts'
  ❯ src/database/test-database.ts:10:1
       8|  */
@@ -28,8 +28,8 @@ Caused by: Error: Failed to load url bun:sqlite (resolved id: bun:sqlite). Does 
 
  Test Files  3 failed | 3 passed (6)
       Tests  117 passed (117)
-   Start at  20:06:25
-   Duration  613ms (transform 158ms, setup 0ms, collect 476ms, tests 369ms, environment 1ms, prepare 266ms)
+   Start at  20:09:34
+   Duration  667ms (transform 184ms, setup 0ms, collect 608ms, tests 355ms, environment 0ms, prepare 297ms)
 
 error: "vitest" exited with code 1
 error: script "test" exited with code 1
