@@ -3,8 +3,8 @@
  */
 
 import { Effect, Layer } from "effect"
-import { writeFileSync, existsSync } from "node:fs"
-import { resolve } from "node:path"
+import { writeFileSync, existsSync, mkdirSync } from "node:fs"
+import { resolve, dirname } from "node:path"
 import { pathToFileURL } from "node:url"
 import { LearningService, FileLearningService, RetrieverService, TaskService, RetrievalError } from "@jamesaphoenix/tx-core"
 import type { LearningSourceType, TaskId, EdgeType } from "@jamesaphoenix/tx-types"
@@ -233,6 +233,7 @@ export const context = (pos: string[], flags: Flags) =>
       if (flag(flags, "inject")) {
         const contextMd = formatContextMarkdown(result)
         const contextPath = resolve(process.cwd(), ".tx", "context.md")
+        mkdirSync(dirname(contextPath), { recursive: true })
         writeFileSync(contextPath, contextMd)
         console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath} (custom retriever)`)
       } else if (flag(flags, "json")) {
@@ -266,6 +267,7 @@ export const context = (pos: string[], flags: Flags) =>
       // Write to .tx/context.md for injection
       const contextMd = formatContextMarkdown(result)
       const contextPath = resolve(process.cwd(), ".tx", "context.md")
+      mkdirSync(dirname(contextPath), { recursive: true })
       writeFileSync(contextPath, contextMd)
       const expandInfo = expand ? " (with graph expansion)" : ""
       console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath}${expandInfo}`)

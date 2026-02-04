@@ -20,6 +20,13 @@
 export {
   TASK_STATUSES,
   VALID_TRANSITIONS,
+  TASK_ID_PATTERN,
+  isValidTaskId,
+  assertTaskId,
+  InvalidTaskIdError,
+  isValidTaskStatus,
+  assertTaskStatus,
+  InvalidTaskStatusError,
   type TaskStatus,
   type TaskId,
   type Task,

@@ -452,6 +452,83 @@ describe("Golden Path: Conflict Resolution", () => {
     expect(result.importResult.conflicts).toBe(1)
     expect(result.task.title).toBe("Local Title") // Local unchanged
   })
+
+  it("delete operation with newer timestamp deletes local task", async () => {
+    const insert = db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+
+    // Create local task with old timestamp
+    const oldTs = "2024-01-01T00:00:00.000Z"
+    insert.run(SYNC_FIXTURES.TASK_ROOT, "Task to Delete", "", "ready", 500, null, oldTs, oldTs, null, "{}")
+
+    // Create JSONL with newer delete operation
+    const newTs = "2024-01-02T00:00:00.000Z"
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "delete",
+      ts: newTs,
+      id: SYNC_FIXTURES.TASK_ROOT
+    })
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Import - delete should win since it's newer
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const syncSvc = yield* SyncService
+        const taskSvc = yield* TaskService
+
+        const importResult = yield* syncSvc.import(tempPath)
+        const tasks = yield* taskSvc.list()
+
+        return { importResult, tasks }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.importResult.imported).toBe(1) // Delete was applied
+    expect(result.importResult.conflicts).toBe(0)
+    expect(result.tasks.find(t => t.id === SYNC_FIXTURES.TASK_ROOT)).toBeUndefined()
+  })
+
+  it("delete operation with older timestamp reports conflict and preserves local task", async () => {
+    const insert = db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+
+    // Create local task with NEW timestamp (updated after the delete was recorded)
+    const newTs = "2024-01-02T00:00:00.000Z"
+    insert.run(SYNC_FIXTURES.TASK_ROOT, "Task Updated After Delete", "", "active", 999, null, newTs, newTs, null, "{}")
+
+    // Create JSONL with older delete operation
+    const oldTs = "2024-01-01T00:00:00.000Z"
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "delete",
+      ts: oldTs,
+      id: SYNC_FIXTURES.TASK_ROOT
+    })
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Import - local should win since delete is older
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const syncSvc = yield* SyncService
+        const taskSvc = yield* TaskService
+
+        const importResult = yield* syncSvc.import(tempPath)
+        const task = yield* taskSvc.get(SYNC_FIXTURES.TASK_ROOT as TaskId)
+
+        return { importResult, task }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.importResult.imported).toBe(0)
+    expect(result.importResult.conflicts).toBe(1) // Conflict reported
+    expect(result.task.title).toBe("Task Updated After Delete") // Local preserved
+    expect(result.task.status).toBe("active")
+  })
 })
 
 // =============================================================================

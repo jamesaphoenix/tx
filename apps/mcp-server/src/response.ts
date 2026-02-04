@@ -19,6 +19,30 @@ export interface McpResponse {
 }
 
 // -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Safely stringify a value, handling circular references.
+ * Circular references are replaced with "[Circular]".
+ */
+export const safeStringify = (value: unknown): string => {
+  const seen = new WeakSet()
+
+  const replacer = (_key: string, val: unknown): unknown => {
+    if (val !== null && typeof val === "object") {
+      if (seen.has(val)) {
+        return "[Circular]"
+      }
+      seen.add(val)
+    }
+    return val
+  }
+
+  return JSON.stringify(value, replacer)
+}
+
+// -----------------------------------------------------------------------------
 // Response Formatters
 // -----------------------------------------------------------------------------
 
@@ -28,7 +52,7 @@ export interface McpResponse {
 export const mcpResponse = (text: string, data: unknown): McpResponse => ({
   content: [
     { type: "text" as const, text },
-    { type: "text" as const, text: JSON.stringify(data) }
+    { type: "text" as const, text: safeStringify(data) }
   ]
 })
 

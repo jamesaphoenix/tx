@@ -132,6 +132,8 @@ export interface ContextOptions {
   readonly expansionDepth?: number;
   /** Edge types to include in expansion */
   readonly edgeTypes?: readonly EdgeType[];
+  /** Maximum number of learnings to return (default: 10) */
+  readonly maxTokens?: number;
 }
 
 /**

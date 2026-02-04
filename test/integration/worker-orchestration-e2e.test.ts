@@ -79,7 +79,7 @@ async function makeTestLayer() {
   const readyService = ReadyServiceLive.pipe(Layer.provide(repos))
 
   const orchestratorService = OrchestratorServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, workerService, claimService))
+    Layer.provide(Layer.mergeAll(repos, workerService, claimService, readyService))
   )
 
   return Layer.mergeAll(repos, workerService, claimService, readyService, orchestratorService)

@@ -422,20 +422,28 @@ class DirectTransport implements Transport {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const core = (this as any).core
 
-    const statusFilter = Array.isArray(options.status)
-      ? options.status[0]
-      : options.status
+    // Normalize status to array for consistent handling
+    const statusArray = options.status
+      ? (Array.isArray(options.status) ? options.status : [options.status])
+      : []
+
+    // If single status, pass to service for efficiency
+    // If multiple statuses, fetch all and filter locally
+    const serviceStatus = statusArray.length === 1 ? statusArray[0] : undefined
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tasks = await this.run<any[]>(
       Effect.gen(function* () {
         const taskService = yield* core.TaskService
-        return yield* taskService.listWithDeps({ status: statusFilter })
+        return yield* taskService.listWithDeps({ status: serviceStatus })
       })
     )
 
-    // Apply search filter if provided
-    let filtered = tasks
+    // Apply status filter if multiple statuses provided
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let filtered = statusArray.length > 1
+      ? tasks.filter((t: any) => statusArray.includes(t.status))
+      : tasks
     if (options.search) {
       const searchLower = options.search.toLowerCase()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

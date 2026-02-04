@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { AttemptNotFoundError, DatabaseError } from "../errors.js"
 import { rowToAttempt } from "../mappers/attempt.js"
 import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "@jamesaphoenix/tx-types"
 
@@ -23,7 +23,7 @@ export class AttemptRepository extends Context.Tag("AttemptRepository")<
     readonly count: (taskId?: string) => Effect.Effect<number, DatabaseError>
 
     /** Remove an attempt by ID */
-    readonly remove: (id: AttemptId) => Effect.Effect<void, DatabaseError>
+    readonly remove: (id: AttemptId) => Effect.Effect<void, DatabaseError | AttemptNotFoundError>
 
     /** Get failed attempt counts for multiple tasks in a single query */
     readonly getFailedCountsForTasks: (taskIds: readonly string[]) => Effect.Effect<Map<string, number>, DatabaseError>
@@ -104,11 +104,14 @@ export const AttemptRepositoryLive = Layer.effect(
         }),
 
       remove: (id) =>
-        Effect.try({
-          try: () => {
-            db.prepare("DELETE FROM attempts WHERE id = ?").run(id)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () => db.prepare("DELETE FROM attempts WHERE id = ?").run(id),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new AttemptNotFoundError({ id }))
+          }
         }),
 
       getFailedCountsForTasks: (taskIds) =>

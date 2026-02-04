@@ -23,8 +23,23 @@ export const isValidSourceType = (s: string): s is LearningSourceType => {
 
 /**
  * Convert a SQLite BLOB (Buffer) to Float32Array.
+ *
+ * OPTIMIZATION: Uses a view on the existing buffer when byte offset is aligned
+ * to avoid allocating a copy. This significantly reduces memory usage when
+ * loading many learnings with embeddings (e.g., in RetrieverService.findWithEmbeddings).
+ *
+ * Float32Array requires 4-byte alignment. When the buffer's byteOffset is aligned,
+ * we create a view directly on the underlying ArrayBuffer. Otherwise, we fall back
+ * to creating a copy.
  */
 const bufferToFloat32Array = (buffer: Buffer): Float32Array => {
+  // Check if byte offset is 4-byte aligned (required for Float32Array)
+  if (buffer.byteOffset % 4 === 0) {
+    // Create a view directly on the buffer's ArrayBuffer - no copy!
+    return new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4)
+  }
+
+  // Fallback: byte offset not aligned, must copy to a new ArrayBuffer
   const arrayBuffer = buffer.buffer.slice(
     buffer.byteOffset,
     buffer.byteOffset + buffer.byteLength

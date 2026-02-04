@@ -6,8 +6,38 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
+import { resolve, sep } from "node:path"
 import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+
+// -----------------------------------------------------------------------------
+// Path Validation
+// -----------------------------------------------------------------------------
+
+/**
+ * Validate that a user-provided sync file path does not escape the project
+ * directory via path traversal (e.g. "../../etc/passwd" or absolute paths
+ * outside the project root).
+ *
+ * Returns the original path string unchanged when valid; throws when the
+ * resolved path would land outside process.cwd().
+ */
+const validateSyncPath = (userPath: string | undefined): string | undefined => {
+  if (userPath === undefined) return undefined
+
+  const projectRoot = process.cwd()
+  const resolved = resolve(projectRoot, userPath)
+
+  // The resolved path must be strictly inside the project directory.
+  // We append sep to avoid prefix false-positives (e.g. /foo/bar vs /foo/barbaz).
+  if (!resolved.startsWith(projectRoot + sep)) {
+    throw new Error(
+      "Path traversal rejected: sync file path must be within the project directory"
+    )
+  }
+
+  return userPath
+}
 
 // -----------------------------------------------------------------------------
 // Schemas
@@ -141,12 +171,13 @@ const compactRoute = createRoute({
 export const syncRouter = new OpenAPIHono()
 
 syncRouter.openapi(exportRoute, async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { path?: string }
+  const body = c.req.valid("json")
+  const safePath = validateSyncPath(body.path)
 
   const result = await runEffect(
     Effect.gen(function* () {
       const syncService = yield* SyncService
-      return yield* syncService.export(body.path ?? undefined)
+      return yield* syncService.export(safePath ?? undefined)
     })
   )
 
@@ -157,12 +188,13 @@ syncRouter.openapi(exportRoute, async (c) => {
 })
 
 syncRouter.openapi(importRoute, async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { path?: string }
+  const body = c.req.valid("json")
+  const safePath = validateSyncPath(body.path)
 
   const result = await runEffect(
     Effect.gen(function* () {
       const syncService = yield* SyncService
-      return yield* syncService.import(body.path ?? undefined)
+      return yield* syncService.import(safePath ?? undefined)
     })
   )
 
@@ -192,12 +224,13 @@ syncRouter.openapi(statusRoute, async (c) => {
 })
 
 syncRouter.openapi(compactRoute, async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { path?: string }
+  const body = c.req.valid("json")
+  const safePath = validateSyncPath(body.path)
 
   const result = await runEffect(
     Effect.gen(function* () {
       const syncService = yield* SyncService
-      return yield* syncService.compact(body.path ?? undefined)
+      return yield* syncService.compact(safePath ?? undefined)
     })
   )
 

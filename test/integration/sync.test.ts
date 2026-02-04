@@ -481,6 +481,155 @@ describe("SyncService Import", () => {
     expect(task.status).toBe("ready")
     expect(task.score).toBe(200)
   })
+
+  it("imports parent-child tasks correctly when child has earlier timestamp than parent", async () => {
+    // This is the critical test case: child timestamp < parent timestamp
+    // Without topological sorting, this would fail with foreign key constraint error
+    const childTs = "2024-01-01T00:00:00.000Z"  // Earlier
+    const parentTs = "2024-01-02T00:00:00.000Z" // Later
+
+    const parentId = fixtureId("topo-parent")
+    const childId = fixtureId("topo-child")
+
+    // JSONL with child operation first (simulating timestamp order)
+    const jsonl = [
+      // Child has earlier timestamp - would be processed first without topo sort
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: childTs,
+        id: childId,
+        data: {
+          title: "Child Task",
+          description: "I have an earlier timestamp",
+          status: "backlog",
+          score: 50,
+          parentId: parentId,  // References parent that hasn't been imported yet
+          metadata: {}
+        }
+      }),
+      // Parent has later timestamp - would be processed second without topo sort
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: parentTs,
+        id: parentId,
+        data: {
+          title: "Parent Task",
+          description: "I have a later timestamp",
+          status: "backlog",
+          score: 100,
+          parentId: null,
+          metadata: {}
+        }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // This should succeed with topological sorting
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Both tasks should be imported
+    expect(result.imported).toBe(2)
+    expect(result.skipped).toBe(0)
+    expect(result.conflicts).toBe(0)
+
+    // Verify both tasks exist and have correct parent-child relationship
+    const [parent, child] = await Promise.all([
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const taskSvc = yield* TaskService
+          return yield* taskSvc.get(parentId)
+        }).pipe(Effect.provide(layer))
+      ),
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const taskSvc = yield* TaskService
+          return yield* taskSvc.get(childId)
+        }).pipe(Effect.provide(layer))
+      )
+    ])
+
+    expect(parent.id).toBe(parentId)
+    expect(parent.title).toBe("Parent Task")
+    expect(parent.parentId).toBeNull()
+
+    expect(child.id).toBe(childId)
+    expect(child.title).toBe("Child Task")
+    expect(child.parentId).toBe(parentId)
+  })
+
+  it("imports deeply nested hierarchy when timestamps are reversed", async () => {
+    // Test with 3 levels: grandparent -> parent -> child
+    // With timestamps in reverse order (child earliest, grandparent latest)
+    const grandchildTs = "2024-01-01T00:00:00.000Z"
+    const childTs = "2024-01-02T00:00:00.000Z"
+    const parentTs = "2024-01-03T00:00:00.000Z"
+
+    const grandparentId = fixtureId("topo-gp")
+    const parentId = fixtureId("topo-p")
+    const grandchildId = fixtureId("topo-gc")
+
+    // JSONL ordered by timestamp (wrong order for FK constraints)
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: grandchildTs,
+        id: grandchildId,
+        data: { title: "Grandchild", description: "", status: "backlog", score: 25, parentId: parentId, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: childTs,
+        id: parentId,
+        data: { title: "Parent", description: "", status: "backlog", score: 50, parentId: grandparentId, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: parentTs,
+        id: grandparentId,
+        data: { title: "Grandparent", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // All three tasks should be imported
+    expect(result.imported).toBe(3)
+
+    // Verify hierarchy
+    const grandchild = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        return yield* taskSvc.get(grandchildId)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(grandchild.parentId).toBe(parentId)
+
+    const parent = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        return yield* taskSvc.get(parentId)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(parent.parentId).toBe(grandparentId)
+  })
 })
 
 // -----------------------------------------------------------------------------
@@ -940,6 +1089,152 @@ describe("SyncService Status", () => {
     )
 
     expect(status.jsonlOpCount).toBe(8) // 6 tasks + 2 deps
+
+    // Cleanup default path
+    cleanupTempFile(defaultPath)
+  })
+
+  it("reports isDirty: true when dependencies are added after export", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // Export current state
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.export(defaultPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Verify clean after export
+    const statusBefore = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(statusBefore.isDirty).toBe(false)
+
+    // Wait a small amount to ensure timestamp difference
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    // Add a new dependency (between two existing tasks that don't have a dependency)
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const depRepo = yield* DependencyRepository
+        // Add dep: TASK_DONE blocks TASK_ROOT (not in the original fixtures)
+        yield* depRepo.insert(FIXTURES.TASK_DONE, FIXTURES.TASK_ROOT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Check that status now reports dirty
+    const statusAfter = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(statusAfter.isDirty).toBe(true)
+
+    // Cleanup default path
+    cleanupTempFile(defaultPath)
+  })
+
+  it("reports isDirty: false when no changes after export", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // Export current state
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.export(defaultPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Check that status reports not dirty
+    const status = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(status.isDirty).toBe(false)
+
+    // Cleanup default path
+    cleanupTempFile(defaultPath)
+  })
+
+  it("reports isDirty: true when task is deleted after export", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // Export current state (6 tasks)
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.export(defaultPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Verify clean after export
+    const statusBefore = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(statusBefore.isDirty).toBe(false)
+    expect(statusBefore.dbTaskCount).toBe(6)
+
+    // Delete a task directly in the database
+    // Use TASK_DONE since it has no children or dependencies blocking other tasks
+    db.db.prepare("DELETE FROM tasks WHERE id = ?").run(FIXTURES.TASK_DONE)
+
+    // Check that status now reports dirty (5 tasks in DB, 6 in JSONL)
+    const statusAfter = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(statusAfter.isDirty).toBe(true)
+    expect(statusAfter.dbTaskCount).toBe(5)
+
+    // Cleanup default path
+    cleanupTempFile(defaultPath)
+  })
+
+  it("reports isDirty: true when dependency is removed after export", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // Export current state (2 dependencies)
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.export(defaultPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Verify clean after export
+    const statusBefore = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(statusBefore.isDirty).toBe(false)
+
+    // Remove a dependency directly in the database
+    // JWT -> BLOCKED is one of the fixture dependencies
+    db.db.prepare("DELETE FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?")
+      .run(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED)
+
+    // Check that status now reports dirty (1 dep in DB, 2 in JSONL)
+    const statusAfter = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(statusAfter.isDirty).toBe(true)
 
     // Cleanup default path
     cleanupTempFile(defaultPath)

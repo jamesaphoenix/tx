@@ -59,6 +59,14 @@
  * - Allows in: migrations/*.sql, test/fixtures/*
  * - Error message: 'SQL schema definitions must be in migrations/*.sql files'
  *
+ * Rule: tx/no-throw-in-services
+ * Enforces CLAUDE.md DOCTRINE RULE 5:
+ * - Disallows throw statements in service code
+ * - Use Effect.fail() with typed errors instead
+ * - Excludes test files (.test., .spec., __tests__/)
+ * - Excludes scripts directory
+ * - Can optionally allow HTTPException (Hono pattern) and typed errors
+ *
  * Reference: Agent swarm audit findings - services 93-98% covered, CLI 71% covered, dashboard API 0% covered
  * Reference: DD-002 Effect-TS patterns, CLAUDE.md RULE 5
  */
@@ -125,6 +133,14 @@ export default [
       'tx/no-inline-sql': ['error', {
         allowedPaths: ['migrations/', 'test/fixtures/'],
         ddlKeywords: ['CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'DROP TABLE']
+      }],
+
+      // tx plugin rules - ban throw statements (CLAUDE.md DOCTRINE RULE 5)
+      // Allow typed errors since packages/core uses Effect-TS Data.TaggedError pattern
+      'tx/no-throw-in-services': ['warn', {
+        excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
+        allowHttpException: false,
+        allowTypedErrors: true
       }]
     }
   },
@@ -167,6 +183,14 @@ export default [
         checkResponseShapes: true,
         strictFieldTypes: true,
         ignorePaths: ['test/', 'tests/', '__tests__/', '.test.', '.spec.']
+      }],
+
+      // tx plugin rules - ban throw statements (CLAUDE.md DOCTRINE RULE 5)
+      // Allow HTTPException for Hono framework pattern, allow typed errors for Effect-TS
+      'tx/no-throw-in-services': ['warn', {
+        excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
+        allowHttpException: true,
+        allowTypedErrors: true
       }]
     }
   },

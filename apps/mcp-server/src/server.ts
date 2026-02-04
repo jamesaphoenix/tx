@@ -27,6 +27,29 @@ export { registerLearningTools, serializeLearning, serializeLearningWithScore, s
 export { registerSyncTools, serializeExportResult, serializeImportResult, serializeSyncStatus, serializeCompactResult } from "./tools/sync.js"
 
 // -----------------------------------------------------------------------------
+// Signal Handler State (prevents handler accumulation/memory leak)
+// -----------------------------------------------------------------------------
+
+// Store handler references so we can remove them before adding new ones
+let currentSigintHandler: (() => void) | null = null
+let currentSigtermHandler: (() => void) | null = null
+
+/**
+ * Remove any existing signal handlers to prevent accumulation.
+ * Called before registering new handlers.
+ */
+const removeSignalHandlers = (): void => {
+  if (currentSigintHandler) {
+    process.removeListener("SIGINT", currentSigintHandler)
+    currentSigintHandler = null
+  }
+  if (currentSigtermHandler) {
+    process.removeListener("SIGTERM", currentSigtermHandler)
+    currentSigtermHandler = null
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Server Creation
 // -----------------------------------------------------------------------------
 
@@ -91,9 +114,14 @@ export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => 
     process.exit(0)
   }
 
-  // Register shutdown handlers
-  process.on("SIGINT", () => gracefulShutdown("SIGINT"))
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"))
+  // Remove any existing handlers to prevent accumulation (memory leak fix)
+  removeSignalHandlers()
+
+  // Register shutdown handlers and store references for cleanup
+  currentSigintHandler = () => gracefulShutdown("SIGINT")
+  currentSigtermHandler = () => gracefulShutdown("SIGTERM")
+  process.on("SIGINT", currentSigintHandler)
+  process.on("SIGTERM", currentSigtermHandler)
 
   await server.connect(transport)
 }

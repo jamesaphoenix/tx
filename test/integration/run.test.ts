@@ -659,6 +659,24 @@ describe("RunRepository status transitions", () => {
 
       expect(completed!.summary).toBeNull()
     })
+
+    it("throws RunNotFoundError for non-existent run", async () => {
+      const result = await Effect.runPromiseExit(
+        Effect.gen(function* () {
+          const repo = yield* RunRepository
+          yield* repo.complete("run-nonexist" as RunId, 0)
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        const error = result.cause
+        expect(error._tag).toBe("Fail")
+        if (error._tag === "Fail") {
+          expect(error.error._tag).toBe("RunNotFoundError")
+        }
+      }
+    })
   })
 
   describe("fail", () => {
@@ -737,6 +755,24 @@ describe("RunRepository status transitions", () => {
       )
 
       expect(failed!.exitCode).toBeNull()
+    })
+
+    it("throws RunNotFoundError for non-existent run", async () => {
+      const result = await Effect.runPromiseExit(
+        Effect.gen(function* () {
+          const repo = yield* RunRepository
+          yield* repo.fail("run-nonexist" as RunId, "Error message")
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        const error = result.cause
+        expect(error._tag).toBe("Fail")
+        if (error._tag === "Fail") {
+          expect(error.error._tag).toBe("RunNotFoundError")
+        }
+      }
     })
   })
 })

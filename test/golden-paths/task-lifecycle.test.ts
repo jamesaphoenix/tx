@@ -22,7 +22,6 @@ import {
   HierarchyServiceLive,
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
 import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 
@@ -49,7 +48,7 @@ function makeTestLayer(db: TestDatabase) {
 // Golden Path Fixture IDs
 // =============================================================================
 
-const GOLDEN_PATH = {
+const _GOLDEN_PATH = {
   TASK_FEATURE: fixtureId("golden-path:feature"),
   TASK_SUBTASK_1: fixtureId("golden-path:subtask-1"),
   TASK_SUBTASK_2: fixtureId("golden-path:subtask-2"),

@@ -26,10 +26,80 @@ export const TASK_STATUSES = [
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 /**
+ * Check if a string is a valid task status.
+ * @param status - String to validate
+ * @returns true if the string is a valid TaskStatus
+ */
+export const isValidTaskStatus = (status: string): status is TaskStatus => {
+  return TASK_STATUSES.includes(status as TaskStatus);
+};
+
+/**
+ * Error thrown when a task status is invalid.
+ */
+export class InvalidTaskStatusError extends Error {
+  constructor(public readonly status: string) {
+    super(`Invalid task status: "${status}". Valid statuses: ${TASK_STATUSES.join(", ")}`);
+    this.name = "InvalidTaskStatusError";
+  }
+}
+
+/**
+ * Validate and return a TaskStatus, or throw if invalid.
+ * @param status - String to validate
+ * @returns The validated TaskStatus
+ * @throws InvalidTaskStatusError if the status is invalid
+ */
+export const assertTaskStatus = (status: string): TaskStatus => {
+  if (!isValidTaskStatus(status)) {
+    throw new InvalidTaskStatusError(status);
+  }
+  return status;
+};
+
+/**
  * Branded type for task IDs.
  * Format: tx-[a-z0-9]{6,8} (e.g., "tx-abc123")
  */
 export type TaskId = string & { readonly _brand: unique symbol };
+
+/**
+ * Regex pattern for valid task IDs.
+ */
+export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,8}$/;
+
+/**
+ * Check if a string is a valid task ID format.
+ * @param id - String to validate
+ * @returns true if the string matches the TaskId format
+ */
+export const isValidTaskId = (id: string): id is TaskId => {
+  return TASK_ID_PATTERN.test(id);
+};
+
+/**
+ * Error thrown when a task ID is invalid.
+ */
+export class InvalidTaskIdError extends Error {
+  constructor(public readonly id: string) {
+    super(`Invalid task ID: "${id}". Expected format: tx-[a-z0-9]{6,8}`);
+    this.name = "InvalidTaskIdError";
+  }
+}
+
+/**
+ * Validate and return a branded TaskId, or throw if invalid.
+ * Use this instead of bare `as TaskId` casts.
+ * @param id - String to validate and cast
+ * @returns The validated TaskId
+ * @throws InvalidTaskIdError if the ID format is invalid
+ */
+export const assertTaskId = (id: string): TaskId => {
+  if (!isValidTaskId(id)) {
+    throw new InvalidTaskIdError(id);
+  }
+  return id;
+};
 
 /**
  * Core task entity without dependency information.

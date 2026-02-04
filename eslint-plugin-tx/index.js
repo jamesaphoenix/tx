@@ -14,6 +14,7 @@ import requireColocatedTests from './rules/require-colocated-tests.js';
 import interfaceParity from './rules/interface-parity.js';
 import requireDdTestSections from './rules/require-dd-test-sections.js';
 import prdFailureModes from './rules/prd-failure-modes.js';
+import noThrowInServices from './rules/no-throw-in-services.js';
 
 const plugin = {
   meta: {
@@ -32,7 +33,8 @@ const plugin = {
     'require-colocated-tests': requireColocatedTests,
     'interface-parity': interfaceParity,
     'require-dd-test-sections': requireDdTestSections,
-    'prd-failure-modes': prdFailureModes
+    'prd-failure-modes': prdFailureModes,
+    'no-throw-in-services': noThrowInServices
   },
   // Flat config recommended configuration
   configs: {
@@ -100,6 +102,11 @@ const plugin = {
           prdDirectory: 'docs/prd',
           requireFailureModes: true,
           requireRecoveryStrategy: false
+        }],
+        'tx/no-throw-in-services': ['error', {
+          excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
+          allowHttpException: false,
+          allowTypedErrors: false
         }]
       }
     }

@@ -55,6 +55,7 @@ async function makeTestLayer() {
     OrchestratorStateRepositoryLive,
     WorkerServiceLive,
     ClaimServiceLive,
+    ReadyServiceLive,
     OrchestratorServiceLive
   } = await import("@jamesaphoenix/tx-core")
 
@@ -74,12 +75,15 @@ async function makeTestLayer() {
   // ClaimService needs ClaimRepository, TaskRepository, and OrchestratorStateRepository
   const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
+  // ReadyService needs TaskRepository and DependencyRepository
+  const readyService = ReadyServiceLive.pipe(Layer.provide(repos))
+
   // OrchestratorService needs everything
   const orchestratorService = OrchestratorServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, workerService, claimService))
+    Layer.provide(Layer.mergeAll(repos, workerService, claimService, readyService))
   )
 
-  return Layer.mergeAll(repos, workerService, claimService, orchestratorService)
+  return Layer.mergeAll(repos, workerService, claimService, readyService, orchestratorService)
 }
 
 // =============================================================================
@@ -474,6 +478,207 @@ describe("OrchestratorService.reconcile", () => {
 
     expect(result.lastReconcileAt).not.toBeNull()
     expect(result.lastReconcileAt!.getTime()).toBeGreaterThanOrEqual(before.getTime())
+  })
+
+  it("sets orphaned task with incomplete blockers to blocked status", async () => {
+    const { OrchestratorService, TaskRepository, DependencyRepository } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* OrchestratorService
+        const taskRepo = yield* TaskRepository
+        const depRepo = yield* DependencyRepository
+
+        const now = new Date()
+
+        // Insert a blocker task that is NOT done
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_2 as TaskId,
+          title: "Blocker task",
+          description: "This task blocks another",
+          status: "ready", // NOT done
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          metadata: {}
+        })
+
+        // Insert an orphaned task (active status but no claim) that is blocked
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_1 as TaskId,
+          title: "Blocked orphaned task",
+          description: "Test description",
+          status: "active",
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          metadata: {}
+        })
+
+        // Create dependency: TASK_1 is blocked by TASK_2
+        yield* depRepo.insert(FIXTURES.TASK_2, FIXTURES.TASK_1)
+
+        // Run reconciliation
+        const reconcileResult = yield* svc.reconcile()
+
+        // Check task status - should be blocked, not ready
+        const task = yield* taskRepo.findById(FIXTURES.TASK_1)
+
+        return { reconcileResult, task }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.reconcileResult.orphanedTasksRecovered).toBe(1)
+    expect(result.task).not.toBeNull()
+    expect(result.task!.status).toBe("blocked") // CRITICAL: must be blocked, not ready
+  })
+
+  it("sets orphaned task with completed blockers to ready status", async () => {
+    const { OrchestratorService, TaskRepository, DependencyRepository } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* OrchestratorService
+        const taskRepo = yield* TaskRepository
+        const depRepo = yield* DependencyRepository
+
+        const now = new Date()
+
+        // Insert a blocker task that IS done
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_2 as TaskId,
+          title: "Completed blocker task",
+          description: "This task blocks another but is done",
+          status: "done", // done
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: now,
+          metadata: {}
+        })
+
+        // Insert an orphaned task (active status but no claim) that has a completed blocker
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_1 as TaskId,
+          title: "Orphaned task with done blocker",
+          description: "Test description",
+          status: "active",
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          metadata: {}
+        })
+
+        // Create dependency: TASK_1 is blocked by TASK_2 (but TASK_2 is done)
+        yield* depRepo.insert(FIXTURES.TASK_2, FIXTURES.TASK_1)
+
+        // Run reconciliation
+        const reconcileResult = yield* svc.reconcile()
+
+        // Check task status - should be ready since blocker is done
+        const task = yield* taskRepo.findById(FIXTURES.TASK_1)
+
+        return { reconcileResult, task }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.reconcileResult.orphanedTasksRecovered).toBe(1)
+    expect(result.task).not.toBeNull()
+    expect(result.task!.status).toBe("ready")
+  })
+
+  it("sets expired claim task with incomplete blockers to blocked status", async () => {
+    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository, DependencyRepository } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* OrchestratorService
+        const claimRepo = yield* ClaimRepository
+        const taskRepo = yield* TaskRepository
+        const workerRepo = yield* WorkerRepository
+        const depRepo = yield* DependencyRepository
+
+        const now = new Date()
+
+        // Insert a blocker task that is NOT done
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_2 as TaskId,
+          title: "Blocker task",
+          description: "This task blocks another",
+          status: "ready", // NOT done
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          metadata: {}
+        })
+
+        // Insert a task with active status
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_1 as TaskId,
+          title: "Task with expired claim and blocker",
+          description: "Test description",
+          status: "active",
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          metadata: {}
+        })
+
+        // Create dependency: TASK_1 is blocked by TASK_2
+        yield* depRepo.insert(FIXTURES.TASK_2, FIXTURES.TASK_1)
+
+        // Insert a worker (needed for FK constraint on claim)
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "expired-worker",
+          hostname: "localhost",
+          pid: 12345,
+          status: "dead",
+          registeredAt: now,
+          lastHeartbeatAt: now,
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        // Insert an expired claim
+        const pastExpiry = new Date(now.getTime() - 60000) // expired 1 minute ago
+        yield* claimRepo.insert({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          claimedAt: new Date(now.getTime() - 120000),
+          leaseExpiresAt: pastExpiry,
+          renewedCount: 0,
+          status: "active"
+        })
+
+        // Run reconciliation
+        const reconcileResult = yield* svc.reconcile()
+
+        // Check task status - should be blocked, not ready
+        const task = yield* taskRepo.findById(FIXTURES.TASK_1)
+
+        return { reconcileResult, task }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.reconcileResult.expiredClaimsReleased).toBe(1)
+    expect(result.task).not.toBeNull()
+    expect(result.task!.status).toBe("blocked") // CRITICAL: must be blocked, not ready
   })
 })
 

@@ -142,14 +142,14 @@ export function TaskDetail({ taskId, onNavigateToTask }: TaskDetailProps) {
           <span>
             Score: <span className="text-amber-400 font-medium">{task.score}</span>
           </span>
-          {task.parent_id && (
+          {task.parentId && (
             <span>
               Parent:{" "}
               <button
                 className="text-blue-400 hover:underline"
-                onClick={() => onNavigateToTask(task.parent_id!)}
+                onClick={() => onNavigateToTask(task.parentId!)}
               >
-                {task.parent_id}
+                {task.parentId}
               </button>
             </span>
           )}
@@ -168,10 +168,10 @@ export function TaskDetail({ taskId, onNavigateToTask }: TaskDetailProps) {
 
       {/* Timestamps */}
       <div className="text-xs text-gray-500 space-y-1">
-        <div>Created: {new Date(task.created_at).toLocaleString()}</div>
-        <div>Updated: {new Date(task.updated_at).toLocaleString()}</div>
-        {task.completed_at && (
-          <div>Completed: {new Date(task.completed_at).toLocaleString()}</div>
+        <div>Created: {new Date(task.createdAt).toLocaleString()}</div>
+        <div>Updated: {new Date(task.updatedAt).toLocaleString()}</div>
+        {task.completedAt && (
+          <div>Completed: {new Date(task.completedAt).toLocaleString()}</div>
         )}
       </div>
 

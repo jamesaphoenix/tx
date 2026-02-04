@@ -14,6 +14,12 @@ import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
 // -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
+
+type McpToolResult = { content: { type: "text"; text: string }[] }
+
+// -----------------------------------------------------------------------------
 // Path validation
 // -----------------------------------------------------------------------------
 
@@ -84,6 +90,109 @@ export const serializeCompactResult = (result: CompactResult): Record<string, un
 })
 
 // -----------------------------------------------------------------------------
+// Tool Handlers (extracted to avoid deep type inference issues with MCP SDK)
+// -----------------------------------------------------------------------------
+
+const handleExport = async (args: { path?: string }): Promise<McpToolResult> => {
+  try {
+    const safePath = validateSyncPath(args.path)
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const syncService = yield* SyncService
+        return yield* syncService.export(safePath ?? undefined)
+      })
+    )
+    const serialized = serializeExportResult(result)
+    return {
+      content: [
+        { type: "text", text: `Exported ${result.opCount} operation(s) to ${result.path}` },
+        { type: "text", text: JSON.stringify(serialized) }
+      ]
+    }
+  } catch (error) {
+    return {
+      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+    }
+  }
+}
+
+const handleImport = async (args: { path?: string }): Promise<McpToolResult> => {
+  try {
+    const safePath = validateSyncPath(args.path)
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const syncService = yield* SyncService
+        return yield* syncService.import(safePath ?? undefined)
+      })
+    )
+    const serialized = serializeImportResult(result)
+    const summary = result.conflicts > 0
+      ? `Imported ${result.imported}, skipped ${result.skipped}, ${result.conflicts} conflict(s)`
+      : `Imported ${result.imported}, skipped ${result.skipped}`
+    return {
+      content: [
+        { type: "text", text: summary },
+        { type: "text", text: JSON.stringify(serialized) }
+      ]
+    }
+  } catch (error) {
+    return {
+      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+    }
+  }
+}
+
+const handleStatus = async (): Promise<McpToolResult> => {
+  try {
+    const status = await runEffect(
+      Effect.gen(function* () {
+        const syncService = yield* SyncService
+        return yield* syncService.status()
+      })
+    )
+    const serialized = serializeSyncStatus(status)
+    const dirtyStatus = status.isDirty ? " (dirty)" : ""
+    const autoSync = status.autoSyncEnabled ? ", auto-sync on" : ""
+    return {
+      content: [
+        { type: "text", text: `Sync status: ${status.dbTaskCount} tasks in DB, ${status.jsonlOpCount} ops in JSONL${dirtyStatus}${autoSync}` },
+        { type: "text", text: JSON.stringify(serialized) }
+      ]
+    }
+  } catch (error) {
+    return {
+      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+    }
+  }
+}
+
+const handleCompact = async (args: { path?: string }): Promise<McpToolResult> => {
+  try {
+    const safePath = validateSyncPath(args.path)
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const syncService = yield* SyncService
+        return yield* syncService.compact(safePath ?? undefined)
+      })
+    )
+    const serialized = serializeCompactResult(result)
+    const reduction = result.before > 0
+      ? ` (${Math.round((1 - result.after / result.before) * 100)}% reduction)`
+      : ""
+    return {
+      content: [
+        { type: "text", text: `Compacted ${result.before} → ${result.after} operations${reduction}` },
+        { type: "text", text: JSON.stringify(serialized) }
+      ]
+    }
+  } catch (error) {
+    return {
+      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Tool Registration
 // -----------------------------------------------------------------------------
 
@@ -91,148 +200,39 @@ export const serializeCompactResult = (result: CompactResult): Record<string, un
  * Register all sync-related MCP tools on the server.
  */
 export const registerSyncTools = (server: McpServer): void => {
-  // ---------------------------------------------------------------------------
   // tx_sync_export - Export tasks and dependencies to JSONL
-  // ---------------------------------------------------------------------------
   // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.registerTool(
+  server.tool(
     "tx_sync_export",
-    {
-      description: "Export all tasks and dependencies to a JSONL file for git-based synchronization. Uses atomic writes for safety.",
-      inputSchema: {
-        path: z.string().optional().describe("Path to JSONL file (default: .tx/tasks.jsonl)")
-      }
-    },
-    async ({ path }): Promise<{ content: { type: "text"; text: string }[] }> => {
-      try {
-        const safePath = validateSyncPath(path)
-        const result = await runEffect(
-          Effect.gen(function* () {
-            const syncService = yield* SyncService
-            return yield* syncService.export(safePath ?? undefined)
-          })
-        )
-        const serialized = serializeExportResult(result)
-        return {
-          content: [
-            { type: "text", text: `Exported ${result.opCount} operation(s) to ${result.path}` },
-            { type: "text", text: JSON.stringify(serialized) }
-          ]
-        }
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-        }
-      }
-    }
+    "Export all tasks and dependencies to a JSONL file for git-based synchronization. Uses atomic writes for safety.",
+    { path: z.string().optional().describe("Path to JSONL file (default: .tx/tasks.jsonl)") },
+    handleExport as Parameters<typeof server.tool>[3]
   )
 
-  // ---------------------------------------------------------------------------
   // tx_sync_import - Import tasks and dependencies from JSONL
-  // ---------------------------------------------------------------------------
-  server.registerTool(
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
+  server.tool(
     "tx_sync_import",
-    {
-      description: "Import tasks and dependencies from a JSONL file. Uses timestamp-based conflict resolution (later wins).",
-      inputSchema: {
-        path: z.string().optional().describe("Path to JSONL file (default: .tx/tasks.jsonl)")
-      }
-    },
-    async ({ path }): Promise<{ content: { type: "text"; text: string }[] }> => {
-      try {
-        const safePath = validateSyncPath(path)
-        const result = await runEffect(
-          Effect.gen(function* () {
-            const syncService = yield* SyncService
-            return yield* syncService.import(safePath ?? undefined)
-          })
-        )
-        const serialized = serializeImportResult(result)
-        const summary = result.conflicts > 0
-          ? `Imported ${result.imported}, skipped ${result.skipped}, ${result.conflicts} conflict(s)`
-          : `Imported ${result.imported}, skipped ${result.skipped}`
-        return {
-          content: [
-            { type: "text", text: summary },
-            { type: "text", text: JSON.stringify(serialized) }
-          ]
-        }
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-        }
-      }
-    }
+    "Import tasks and dependencies from a JSONL file. Uses timestamp-based conflict resolution (later wins).",
+    { path: z.string().optional().describe("Path to JSONL file (default: .tx/tasks.jsonl)") },
+    handleImport as Parameters<typeof server.tool>[3]
   )
 
-  // ---------------------------------------------------------------------------
   // tx_sync_status - Get current sync status
-  // ---------------------------------------------------------------------------
-  server.registerTool(
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
+  server.tool(
     "tx_sync_status",
-    {
-      description: "Get current synchronization status including task counts, last export/import times, and dirty state."
-    },
-    async (): Promise<{ content: { type: "text"; text: string }[] }> => {
-      try {
-        const status = await runEffect(
-          Effect.gen(function* () {
-            const syncService = yield* SyncService
-            return yield* syncService.status()
-          })
-        )
-        const serialized = serializeSyncStatus(status)
-        const dirtyStatus = status.isDirty ? " (dirty)" : ""
-        const autoSync = status.autoSyncEnabled ? ", auto-sync on" : ""
-        return {
-          content: [
-            { type: "text", text: `Sync status: ${status.dbTaskCount} tasks in DB, ${status.jsonlOpCount} ops in JSONL${dirtyStatus}${autoSync}` },
-            { type: "text", text: JSON.stringify(serialized) }
-          ]
-        }
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-        }
-      }
-    }
+    "Get current synchronization status including task counts, last export/import times, and dirty state.",
+    {},
+    handleStatus as Parameters<typeof server.tool>[3]
   )
 
-  // ---------------------------------------------------------------------------
   // tx_sync_compact - Compact the JSONL file
-  // ---------------------------------------------------------------------------
-  server.registerTool(
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
+  server.tool(
     "tx_sync_compact",
-    {
-      description: "Compact the JSONL file by deduplicating operations. Keeps only the latest state per entity, removing tombstones.",
-      inputSchema: {
-        path: z.string().optional().describe("Path to JSONL file (default: .tx/tasks.jsonl)")
-      }
-    },
-    async ({ path }): Promise<{ content: { type: "text"; text: string }[] }> => {
-      try {
-        const safePath = validateSyncPath(path)
-        const result = await runEffect(
-          Effect.gen(function* () {
-            const syncService = yield* SyncService
-            return yield* syncService.compact(safePath ?? undefined)
-          })
-        )
-        const serialized = serializeCompactResult(result)
-        const reduction = result.before > 0
-          ? ` (${Math.round((1 - result.after / result.before) * 100)}% reduction)`
-          : ""
-        return {
-          content: [
-            { type: "text", text: `Compacted ${result.before} → ${result.after} operations${reduction}` },
-            { type: "text", text: JSON.stringify(serialized) }
-          ]
-        }
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-        }
-      }
-    }
+    "Compact the JSONL file by deduplicating operations. Keeps only the latest state per entity, removing tombstones.",
+    { path: z.string().optional().describe("Path to JSONL file (default: .tx/tasks.jsonl)") },
+    handleCompact as Parameters<typeof server.tool>[3]
   )
 }

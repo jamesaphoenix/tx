@@ -80,7 +80,15 @@ export const worker = (pos: string[], flags: Flags) =>
         : ["tx-implementer"]
 
       const heartbeatOpt = opt(flags, "heartbeat")
-      const heartbeatIntervalSeconds = heartbeatOpt ? parseInt(heartbeatOpt, 10) : 30
+      let heartbeatIntervalSeconds = 30
+      if (heartbeatOpt) {
+        const parsed = parseInt(heartbeatOpt, 10)
+        if (Number.isNaN(parsed) || parsed < 1) {
+          console.error(`Invalid heartbeat value: '${heartbeatOpt}'. Must be a positive integer.`)
+          process.exit(1)
+        }
+        heartbeatIntervalSeconds = parsed
+      }
 
       // Build config
       const config: WorkerProcessConfig = {

@@ -162,6 +162,17 @@ describe("Attempt CRUD", () => {
 
     expect(attempts).toHaveLength(0)
   })
+
+  it("remove throws AttemptNotFoundError for non-existent ID", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* AttemptService
+          return yield* svc.remove(999 as any)
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toThrow("Attempt not found: 999")
+  })
 })
 
 describe("Attempt Failed Count", () => {

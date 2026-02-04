@@ -1,8 +1,11 @@
 import { defineConfig } from "vitest/config"
 
+// NOTE: Root-level tests now use `bun test` instead of vitest for bun:sqlite compatibility.
+// This config is kept for package-level vitest tests that don't use bun:sqlite.
 export default defineConfig({
   test: {
-    include: ["test/**/*.test.ts", "eslint-plugin-tx/tests/**/*.test.js"],
+    // Root tests moved to bun test - this config is for packages only
+    include: [],
     setupFiles: ["./vitest.setup.ts"],
     environment: "node",
     testTimeout: 10000,

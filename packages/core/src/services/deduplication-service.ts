@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { DeduplicationRepository } from "../repo/deduplication-repo.js"
 import { hashContent } from "../mappers/deduplication.js"
-import { DatabaseError } from "../errors.js"
+import { BatchProcessingError, DatabaseError } from "../errors.js"
 import type {
   FileProgress,
   LineProcessResult,
@@ -37,12 +37,13 @@ export class DeduplicationService extends Context.Tag("DeduplicationService")<
     /**
      * Process multiple JSONL lines with batch hash checking.
      * More efficient than calling processLine repeatedly.
+     * Returns BatchProcessingError with partial results if a batch fails.
      */
     readonly processLines: (
       lines: readonly { content: string; lineNumber: number }[],
       filePath: string,
       options?: DeduplicationOptions
-    ) => Effect.Effect<FileProcessResult, DatabaseError>
+    ) => Effect.Effect<FileProcessResult, DatabaseError | BatchProcessingError<FileProcessResult>>
 
     /**
      * Check if a content hash has already been processed.
@@ -50,10 +51,14 @@ export class DeduplicationService extends Context.Tag("DeduplicationService")<
     readonly isProcessed: (content: string) => Effect.Effect<boolean, DatabaseError>
 
     /**
-     * Check multiple content strings at once.
+     * Check multiple content strings at once with batch processing.
      * Returns the set of content strings that have been processed.
+     * Returns BatchProcessingError with partial results if a batch fails.
      */
-    readonly filterProcessed: (contents: readonly string[]) => Effect.Effect<Set<string>, DatabaseError>
+    readonly filterProcessed: (
+      contents: readonly string[],
+      options?: { batchSize?: number }
+    ) => Effect.Effect<Set<string>, DatabaseError | BatchProcessingError<Set<string>>>
 
     /**
      * Get processing progress for a file.
@@ -160,27 +165,77 @@ export const DeduplicationServiceLive = Layer.effect(
             hash: hashContent(l.content)
           }))
 
-          // Check existing hashes in batches
+          // Check existing hashes in batches with error handling
           let existingHashes = new Set<string>()
+          const totalBatches = Math.ceil(lineHashes.length / batchSize)
+
           for (let i = 0; i < lineHashes.length; i += batchSize) {
+            const batchIndex = Math.floor(i / batchSize)
             const batch = lineHashes.slice(i, i + batchSize)
             const batchHashes = batch.map(l => l.hash)
-            const batchExisting = yield* repo.hashesExist(batchHashes)
-            existingHashes = new Set([...existingHashes, ...batchExisting])
+
+            const batchResult = yield* repo.hashesExist(batchHashes).pipe(
+              Effect.mapError((cause) => {
+                // Calculate partial results up to this point
+                const checkedLines = lineHashes.slice(0, i)
+                const newLinesPartial = checkedLines.filter(l => !existingHashes.has(l.hash))
+                const skippedLinesPartial = checkedLines.filter(l => existingHashes.has(l.hash))
+                const lastCheckedLine = checkedLines[checkedLines.length - 1]
+
+                return new BatchProcessingError({
+                  operation: "hashesExist",
+                  batchIndex,
+                  totalBatches,
+                  partialResult: {
+                    filePath,
+                    totalLines: lines.length,
+                    newLines: newLinesPartial.length,
+                    skippedLines: skippedLinesPartial.length,
+                    startLine,
+                    endLine: lastCheckedLine?.lineNumber ?? startLine - 1,
+                    duration: Date.now() - startTime
+                  },
+                  cause
+                })
+              })
+            )
+
+            existingHashes = new Set([...existingHashes, ...batchResult])
           }
 
           // Separate new and existing lines
           const newLines = lineHashes.filter(l => !existingHashes.has(l.hash))
           const skippedLines = lineHashes.filter(l => existingHashes.has(l.hash))
 
-          // Insert new hashes in batches
+          // Insert new hashes with error handling
           if (newLines.length > 0) {
             const hashInputs = newLines.map(l => ({
               contentHash: l.hash,
               sourceFile: filePath,
               sourceLine: l.lineNumber
             }))
-            yield* repo.insertHashes(hashInputs)
+
+            yield* repo.insertHashes(hashInputs).pipe(
+              Effect.mapError((cause) => {
+                // All hash checks completed, but insert failed
+                // Return partial result with check phase complete but no inserts
+                return new BatchProcessingError({
+                  operation: "insertHashes",
+                  batchIndex: 0,
+                  totalBatches: 1,
+                  partialResult: {
+                    filePath,
+                    totalLines: lines.length,
+                    newLines: 0, // None were inserted
+                    skippedLines: skippedLines.length,
+                    startLine,
+                    endLine: lineHashes[lineHashes.length - 1]?.lineNumber ?? startLine - 1,
+                    duration: Date.now() - startTime
+                  },
+                  cause
+                })
+              })
+            )
           }
 
           // Calculate end line
@@ -204,23 +259,45 @@ export const DeduplicationServiceLive = Layer.effect(
           return yield* repo.hashExists(hash)
         }),
 
-      filterProcessed: (contents) =>
+      filterProcessed: (contents, options = {}) =>
         Effect.gen(function* () {
           if (contents.length === 0) return new Set<string>()
 
-          // Compute hashes and check
+          const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE
+
+          // Compute hashes and build content-to-hash mapping
           const contentHashMap = new Map<string, string>()
           for (const content of contents) {
             contentHashMap.set(hashContent(content), content)
           }
 
-          const existingHashes = yield* repo.hashesExist([...contentHashMap.keys()])
-
-          // Return the original content strings that have been processed
+          const allHashes = [...contentHashMap.keys()]
+          const totalBatches = Math.ceil(allHashes.length / batchSize)
           const processedContents = new Set<string>()
-          for (const hash of existingHashes) {
-            const content = contentHashMap.get(hash)
-            if (content) processedContents.add(content)
+
+          // Check hashes in batches with error handling
+          for (let i = 0; i < allHashes.length; i += batchSize) {
+            const batchIndex = Math.floor(i / batchSize)
+            const batchHashes = allHashes.slice(i, i + batchSize)
+
+            const existingHashes = yield* repo.hashesExist(batchHashes).pipe(
+              Effect.mapError((cause) => {
+                // Return partial results collected so far
+                return new BatchProcessingError({
+                  operation: "filterProcessed",
+                  batchIndex,
+                  totalBatches,
+                  partialResult: new Set(processedContents),
+                  cause
+                })
+              })
+            )
+
+            // Add found content strings to the result set
+            for (const hash of existingHashes) {
+              const content = contentHashMap.get(hash)
+              if (content) processedContents.add(content)
+            }
           }
 
           return processedContents

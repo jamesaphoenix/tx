@@ -126,7 +126,6 @@ describe("ReadyService boundary conditions", () => {
 
     it("returns exactly limit items when more are available", async () => {
       // Create more ready tasks
-      const now = new Date().toISOString()
       for (let i = 0; i < 10; i++) {
         db.db.prepare(
           `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)

@@ -1,9 +1,24 @@
+import { Effect } from "effect"
+import { EmbeddingDimensionMismatchError } from "../errors.js"
+
 /**
  * Calculate cosine similarity between two vectors.
  * Returns a value between -1 and 1, where 1 means identical direction.
+ *
+ * @returns Effect that fails with EmbeddingDimensionMismatchError if vectors have different dimensions
  */
-export const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
-  if (a.length !== b.length) return 0
+export const cosineSimilarity = (
+  a: Float32Array,
+  b: Float32Array
+): Effect.Effect<number, EmbeddingDimensionMismatchError> => {
+  if (a.length !== b.length) {
+    return Effect.fail(
+      new EmbeddingDimensionMismatchError({
+        queryDimensions: a.length,
+        documentDimensions: b.length
+      })
+    )
+  }
 
   let dotProduct = 0
   let normA = 0
@@ -16,7 +31,7 @@ export const cosineSimilarity = (a: Float32Array, b: Float32Array): number => {
   }
 
   const magnitude = Math.sqrt(normA) * Math.sqrt(normB)
-  if (magnitude === 0) return 0
+  if (magnitude === 0) return Effect.succeed(0)
 
-  return dotProduct / magnitude
+  return Effect.succeed(dotProduct / magnitude)
 }

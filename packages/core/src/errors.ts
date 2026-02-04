@@ -32,6 +32,14 @@ export class AttemptNotFoundError extends Data.TaggedError("AttemptNotFoundError
   }
 }
 
+export class RunNotFoundError extends Data.TaggedError("RunNotFoundError")<{
+  readonly id: string
+}> {
+  get message() {
+    return `Run not found: ${this.id}`
+  }
+}
+
 export class ValidationError extends Data.TaggedError("ValidationError")<{
   readonly reason: string
 }> {
@@ -65,11 +73,29 @@ export class EmbeddingUnavailableError extends Data.TaggedError("EmbeddingUnavai
   }
 }
 
+export class EmbeddingDimensionMismatchError extends Data.TaggedError("EmbeddingDimensionMismatchError")<{
+  readonly queryDimensions: number
+  readonly documentDimensions: number
+}> {
+  get message() {
+    return `Embedding dimension mismatch: query has ${this.queryDimensions} dims, document has ${this.documentDimensions} dims. Ensure consistent embedding provider.`
+  }
+}
+
 export class RerankerUnavailableError extends Data.TaggedError("RerankerUnavailableError")<{
   readonly reason: string
 }> {
   get message() {
     return `Reranker unavailable: ${this.reason}`
+  }
+}
+
+export class DependencyNotFoundError extends Data.TaggedError("DependencyNotFoundError")<{
+  readonly blockerId: string
+  readonly blockedId: string
+}> {
+  get message() {
+    return `Dependency not found: ${this.blockerId} -> ${this.blockedId}`
   }
 }
 
@@ -231,12 +257,72 @@ export class OrchestratorError extends Data.TaggedError("OrchestratorError")<{
   }
 }
 
+/**
+ * Error that occurs during batch processing operations.
+ * Includes partial results that were successfully processed before the failure.
+ */
+export class BatchProcessingError<T> extends Data.TaggedError("BatchProcessingError")<{
+  readonly operation: string
+  readonly batchIndex: number
+  readonly totalBatches: number
+  readonly partialResult: T
+  readonly cause: unknown
+}> {
+  get message() {
+    return `Batch processing error in ${this.operation} at batch ${this.batchIndex + 1}/${this.totalBatches}: ${String(this.cause)}`
+  }
+}
+
+/**
+ * Error for invalid status values in database rows.
+ * Used when a status column contains an unexpected value.
+ */
+export class InvalidStatusError extends Data.TaggedError("InvalidStatusError")<{
+  readonly entity: string
+  readonly status: string
+  readonly validStatuses: readonly string[]
+}> {
+  get message() {
+    return `Invalid ${this.entity} status: '${this.status}'. Valid statuses: ${this.validStatuses.join(", ")}`
+  }
+}
+
+/**
+ * Error for unexpected row count in database operations.
+ * Used when INSERT/UPDATE/DELETE affects an unexpected number of rows.
+ */
+export class UnexpectedRowCountError extends Data.TaggedError("UnexpectedRowCountError")<{
+  readonly operation: string
+  readonly expected: number
+  readonly actual: number
+}> {
+  get message() {
+    return `${this.operation}: expected ${this.expected} row(s), got ${this.actual}`
+  }
+}
+
+/**
+ * Error when a newly inserted or updated entity cannot be fetched.
+ * Indicates a database consistency issue.
+ */
+export class EntityFetchError extends Data.TaggedError("EntityFetchError")<{
+  readonly entity: string
+  readonly id: string | number
+  readonly operation: "insert" | "update"
+}> {
+  get message() {
+    return `Failed to fetch ${this.entity} after ${this.operation}: id=${this.id}`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
   | CircularDependencyError
   | DatabaseError
+  | DependencyNotFoundError
   | EmbeddingUnavailableError
+  | EmbeddingDimensionMismatchError
   | RerankerUnavailableError
   | ExtractionUnavailableError
   | RetrievalError
@@ -254,3 +340,7 @@ export type TaskError =
   | LeaseExpiredError
   | MaxRenewalsExceededError
   | OrchestratorError
+  | RunNotFoundError
+  | InvalidStatusError
+  | UnexpectedRowCountError
+  | EntityFetchError

@@ -13,12 +13,12 @@ export interface TaskRow {
   title: string
   description: string
   status: string
-  parent_id: string | null
+  parentId: string | null
   score: number
-  created_at: string
-  updated_at: string
-  completed_at: string | null
-  metadata: string
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+  metadata: Record<string, unknown>
 }
 
 export interface TaskWithDeps extends TaskRow {

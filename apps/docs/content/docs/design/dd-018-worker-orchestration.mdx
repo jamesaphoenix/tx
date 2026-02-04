@@ -547,8 +547,8 @@ export const OrchestratorServiceLive = Layer.scoped(
           reconcileTime: 0
         }
 
-        // 1. Detect dead workers
-        const deadWorkers = yield* workerService.findDead({ missedHeartbeats: 2 })
+        // 1. Detect dead workers (1 missed heartbeat = 30s default)
+        const deadWorkers = yield* workerService.findDead({ missedHeartbeats: 1 })
         for (const worker of deadWorkers) {
           yield* workerService.markDead(worker.id)
           result.deadWorkersFound++

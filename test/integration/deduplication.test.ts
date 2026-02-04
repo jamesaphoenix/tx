@@ -13,7 +13,7 @@ import { Effect } from "effect"
 import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 
 // Import services once at module level
-import { DeduplicationService } from "@jamesaphoenix/tx-core"
+import { DeduplicationService, BatchProcessingError } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures
@@ -546,5 +546,168 @@ describe("DeduplicationService edge cases", () => {
 
     expect(result.isNew).toBe(true)
     expect(result.content).toBe(unicodeContent)
+  })
+})
+
+// =============================================================================
+// Batch Processing Tests
+// =============================================================================
+
+describe("DeduplicationService batch processing", () => {
+  let shared: SharedTestLayerResult
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("processLines handles large datasets with custom batch size", async () => {
+    // Create 250 unique lines to test batch processing across multiple batches
+    const lines = Array.from({ length: 250 }, (_, i) => ({
+      content: `{"id": ${i}, "data": "line-${i}-${Date.now()}"}`,
+      lineNumber: i + 1
+    }))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+        return yield* dedupSvc.processLines(lines, FIXTURES.FILE_1, { batchSize: 50 })
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.totalLines).toBe(250)
+    expect(result.newLines).toBe(250)
+    expect(result.skippedLines).toBe(0)
+    expect(result.startLine).toBe(1)
+    expect(result.endLine).toBe(250)
+  })
+
+  it("processLines handles batch boundary correctly", async () => {
+    // Create exactly 100 lines (default batch size boundary)
+    const lines = Array.from({ length: 100 }, (_, i) => ({
+      content: `{"batch_boundary_test": ${i}}`,
+      lineNumber: i + 1
+    }))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+        return yield* dedupSvc.processLines(lines, FIXTURES.FILE_1)
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.newLines).toBe(100)
+    expect(result.endLine).toBe(100)
+  })
+
+  it("filterProcessed handles batching with custom batch size", async () => {
+    // Process 150 lines first
+    const originalLines = Array.from({ length: 150 }, (_, i) => ({
+      content: `{"filter_test": ${i}}`,
+      lineNumber: i + 1
+    }))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        // First process the lines
+        yield* dedupSvc.processLines(originalLines, FIXTURES.FILE_1, { batchSize: 50 })
+
+        // Now filter with a mix of processed and unprocessed
+        const contentsToFilter = [
+          ...originalLines.slice(0, 75).map(l => l.content), // 75 processed
+          '{"filter_test": "new_1"}', // unprocessed
+          '{"filter_test": "new_2"}', // unprocessed
+        ]
+
+        return yield* dedupSvc.filterProcessed(contentsToFilter, { batchSize: 25 })
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.size).toBe(75) // Only the 75 processed ones
+  })
+
+  it("filterProcessed handles empty input", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+        return yield* dedupSvc.filterProcessed([])
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.size).toBe(0)
+  })
+
+  it("filterProcessed with single item", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        // Process one line
+        yield* dedupSvc.processLine(FIXTURES.LINE_1, FIXTURES.FILE_1, 1)
+
+        // Filter with just that one
+        return yield* dedupSvc.filterProcessed([FIXTURES.LINE_1])
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.size).toBe(1)
+    expect(result.has(FIXTURES.LINE_1)).toBe(true)
+  })
+})
+
+// =============================================================================
+// BatchProcessingError Structure Tests
+// =============================================================================
+
+describe("BatchProcessingError structure", () => {
+  it("BatchProcessingError contains expected fields", () => {
+    const error = new BatchProcessingError({
+      operation: "hashesExist",
+      batchIndex: 2,
+      totalBatches: 5,
+      partialResult: {
+        filePath: "/test/file.jsonl",
+        totalLines: 100,
+        newLines: 40,
+        skippedLines: 10,
+        startLine: 1,
+        endLine: 50,
+        duration: 123
+      },
+      cause: new Error("Database connection lost")
+    })
+
+    expect(error._tag).toBe("BatchProcessingError")
+    expect(error.operation).toBe("hashesExist")
+    expect(error.batchIndex).toBe(2)
+    expect(error.totalBatches).toBe(5)
+    expect(error.partialResult.newLines).toBe(40)
+    expect(error.partialResult.skippedLines).toBe(10)
+    expect(error.message).toContain("batch 3/5") // batchIndex + 1
+    expect(error.message).toContain("hashesExist")
+  })
+
+  it("BatchProcessingError works with Set partial result for filterProcessed", () => {
+    const partialSet = new Set(["content1", "content2"])
+    const error = new BatchProcessingError({
+      operation: "filterProcessed",
+      batchIndex: 1,
+      totalBatches: 3,
+      partialResult: partialSet,
+      cause: new Error("Query timeout")
+    })
+
+    expect(error.partialResult).toBeInstanceOf(Set)
+    expect(error.partialResult.size).toBe(2)
+    expect(error.partialResult.has("content1")).toBe(true)
   })
 })

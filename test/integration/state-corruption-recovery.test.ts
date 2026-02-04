@@ -21,7 +21,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
-import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
+import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,

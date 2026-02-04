@@ -11,7 +11,8 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { ClaimRepository } from "../repo/claim-repo.js"
 import { WorkerService } from "./worker-service.js"
 import { ClaimService } from "./claim-service.js"
-import { DatabaseError, OrchestratorError } from "../errors.js"
+import { ReadyService } from "./ready-service.js"
+import { DatabaseError, OrchestratorError, TaskNotFoundError } from "../errors.js"
 import type { OrchestratorState, ReconciliationResult } from "../schemas/worker.js"
 
 /**
@@ -67,7 +68,7 @@ export class OrchestratorService extends Context.Tag("OrchestratorService")<
      * Detects dead workers, expires claims, recovers orphaned tasks,
      * and fixes state inconsistencies.
      */
-    readonly reconcile: () => Effect.Effect<ReconciliationResult, DatabaseError>
+    readonly reconcile: () => Effect.Effect<ReconciliationResult, DatabaseError | TaskNotFoundError>
   }
 >() {}
 
@@ -77,6 +78,7 @@ export const OrchestratorServiceLive = Layer.effect(
     const stateRepo = yield* OrchestratorStateRepository
     const workerService = yield* WorkerService
     const claimService = yield* ClaimService
+    const readyService = yield* ReadyService
     const taskRepo = yield* TaskRepository
     const claimRepo = yield* ClaimRepository
 
@@ -199,9 +201,12 @@ export const OrchestratorServiceLive = Layer.effect(
           let orphanedTasksRecovered = 0
           let staleStatesFixed = 0
 
-          // 1. Detect dead workers (missed 2+ heartbeats)
+          // 1. Detect dead workers (missed 1+ heartbeats)
+          // Changed from 2 to 1 to reduce worst-case detection time from ~90s to ~60s.
+          // With missedHeartbeats: 2, if worker dies at t=1 after heartbeat at t=0,
+          // detection doesn't occur until t=90+ (60s threshold + 30s reconcile delay).
           const deadWorkers = yield* workerService.findDead({
-            missedHeartbeats: 2
+            missedHeartbeats: 1
           })
 
           for (const worker of deadWorkers) {
@@ -222,13 +227,17 @@ export const OrchestratorServiceLive = Layer.effect(
             yield* claimService.expire(claim.id).pipe(
               Effect.catchAll(() => Effect.void)
             )
-            // Return task to ready state if it was active
+            // Return task to appropriate state if it was active
             const task = yield* taskRepo.findById(claim.taskId)
             if (task && task.status === "active") {
+              // Check if all blockers are done before setting to ready
+              const blockers = yield* readyService.getBlockers(task.id)
+              const allBlockersDone = blockers.every(b => b.status === "done")
+              const newStatus = allBlockersDone ? "ready" : "blocked"
               const now = new Date()
               yield* taskRepo.update({
                 ...task,
-                status: "ready",
+                status: newStatus,
                 updatedAt: now
               })
             }
@@ -241,11 +250,14 @@ export const OrchestratorServiceLive = Layer.effect(
           for (const task of activeTasks) {
             const activeClaim = yield* claimRepo.findActiveByTaskId(task.id)
             if (!activeClaim) {
-              // Task is orphaned - return to ready state
+              // Task is orphaned - check blockers before setting status
+              const blockers = yield* readyService.getBlockers(task.id)
+              const allBlockersDone = blockers.every(b => b.status === "done")
+              const newStatus = allBlockersDone ? "ready" : "blocked"
               const now = new Date()
               yield* taskRepo.update({
                 ...task,
-                status: "ready",
+                status: newStatus,
                 updatedAt: now
               })
               orphanedTasksRecovered++

@@ -65,7 +65,7 @@ async function makeTestLayer() {
   const readyService = ReadyServiceLive.pipe(Layer.provide(repos))
 
   const orchestratorService = OrchestratorServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, workerService, claimService))
+    Layer.provide(Layer.mergeAll(repos, workerService, claimService, readyService))
   )
 
   return Layer.mergeAll(repos, workerService, claimService, readyService, orchestratorService)
@@ -254,7 +254,6 @@ describe("runWorker", () => {
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let runRecord: any = null
 
     await Effect.runPromise(
@@ -319,7 +318,6 @@ describe("runWorker", () => {
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let runRecord: any = null
 
     await Effect.runPromise(
@@ -378,7 +376,6 @@ describe("runWorker", () => {
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let runRecord: any = null
 
     await Effect.runPromise(
@@ -437,7 +434,6 @@ describe("runWorker", () => {
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let runRecord: any = null
 
     await Effect.runPromise(

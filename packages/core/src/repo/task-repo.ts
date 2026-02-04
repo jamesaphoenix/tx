@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, TaskNotFoundError, UnexpectedRowCountError } from "../errors.js"
 import { rowToTask } from "../mappers/task.js"
 import type { Task, TaskId, TaskFilter, TaskRow } from "@jamesaphoenix/tx-types"
 
@@ -13,9 +13,12 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
     readonly findByParent: (parentId: string | null) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getChildIds: (id: string) => Effect.Effect<readonly TaskId[], DatabaseError>
     readonly getChildIdsForMany: (ids: readonly string[]) => Effect.Effect<Map<string, readonly TaskId[]>, DatabaseError>
+    readonly getAncestorChain: (id: string) => Effect.Effect<readonly Task[], DatabaseError>
+    readonly getDescendants: (id: string) => Effect.Effect<readonly Task[], DatabaseError>
     readonly insert: (task: Task) => Effect.Effect<void, DatabaseError>
-    readonly update: (task: Task) => Effect.Effect<void, DatabaseError>
-    readonly remove: (id: string) => Effect.Effect<void, DatabaseError>
+    readonly update: (task: Task) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
+    readonly updateMany: (tasks: readonly Task[]) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
+    readonly remove: (id: string) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
     readonly count: (filter?: TaskFilter) => Effect.Effect<number, DatabaseError>
   }
 >() {}
@@ -88,8 +91,13 @@ export const TaskRepositoryLive = Layer.effect(
             }
 
             const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
-            const limit = filter?.limit ? `LIMIT ${filter.limit}` : ""
-            const sql = `SELECT * FROM tasks ${where} ORDER BY score DESC, id ASC ${limit}`
+            // Use parameterized query for LIMIT to prevent SQL injection
+            let limitClause = ""
+            if (filter?.limit != null && filter.limit > 0) {
+              limitClause = "LIMIT ?"
+              params.push(Math.floor(filter.limit))
+            }
+            const sql = `SELECT * FROM tasks ${where} ORDER BY score DESC, id ASC ${limitClause}`
             const rows = db.prepare(sql).all(...params) as TaskRow[]
             return rows.map(rowToTask)
           },
@@ -119,8 +127,8 @@ export const TaskRepositoryLive = Layer.effect(
       getChildIdsForMany: (ids) =>
         Effect.try({
           try: () => {
-            const result = new Map<string, readonly TaskId[]>()
-            if (ids.length === 0) return result
+            const result = new Map<string, TaskId[]>()
+            if (ids.length === 0) return result as Map<string, readonly TaskId[]>
 
             const placeholders = ids.map(() => "?").join(",")
             const rows = db.prepare(
@@ -132,13 +140,53 @@ export const TaskRepositoryLive = Layer.effect(
               result.set(id, [])
             }
 
-            // Group by parent_id
+            // Group by parent_id - use push() for O(1) insertion instead of spread for O(n)
             for (const row of rows) {
-              const existing = result.get(row.parent_id) ?? []
-              result.set(row.parent_id, [...existing, row.id as TaskId])
+              const existing = result.get(row.parent_id)
+              if (existing) {
+                existing.push(row.id as TaskId)
+              }
             }
 
-            return result
+            return result as Map<string, readonly TaskId[]>
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getAncestorChain: (id) =>
+        Effect.try({
+          try: () => {
+            // Use recursive CTE to get the task and all its ancestors in one query
+            // Returns from the given task to root (depth-first ordering)
+            const rows = db.prepare(`
+              WITH RECURSIVE ancestors AS (
+                SELECT t.*, 1 as depth FROM tasks t WHERE t.id = ?
+                UNION ALL
+                SELECT t.*, a.depth + 1 FROM tasks t
+                JOIN ancestors a ON t.id = a.parent_id
+              )
+              SELECT * FROM ancestors ORDER BY depth ASC
+            `).all(id) as TaskRow[]
+            return rows.map(rowToTask)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getDescendants: (id) =>
+        Effect.try({
+          try: () => {
+            // Use recursive CTE to get the task and all its descendants in one query
+            // Returns the root task first, then all descendants ordered by depth
+            const rows = db.prepare(`
+              WITH RECURSIVE descendants AS (
+                SELECT t.*, 1 as depth FROM tasks t WHERE t.id = ?
+                UNION ALL
+                SELECT t.*, d.depth + 1 FROM tasks t
+                JOIN descendants d ON t.parent_id = d.id
+              )
+              SELECT * FROM descendants ORDER BY depth ASC
+            `).all(id) as TaskRow[]
+            return rows.map(rowToTask)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -146,7 +194,7 @@ export const TaskRepositoryLive = Layer.effect(
       insert: (task) =>
         Effect.try({
           try: () => {
-            db.prepare(
+            const result = db.prepare(
               `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
@@ -161,39 +209,101 @@ export const TaskRepositoryLive = Layer.effect(
               task.completedAt?.toISOString() ?? null,
               JSON.stringify(task.metadata)
             )
+            if (result.changes !== 1) {
+              throw new UnexpectedRowCountError({
+                operation: "task insert",
+                expected: 1,
+                actual: result.changes
+              })
+            }
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
 
       update: (task) =>
-        Effect.try({
-          try: () => {
-            db.prepare(
-              `UPDATE tasks SET
-                title = ?, description = ?, status = ?, parent_id = ?,
-                score = ?, updated_at = ?, completed_at = ?, metadata = ?
-               WHERE id = ?`
-            ).run(
-              task.title,
-              task.description,
-              task.status,
-              task.parentId,
-              task.score,
-              task.updatedAt.toISOString(),
-              task.completedAt?.toISOString() ?? null,
-              JSON.stringify(task.metadata),
-              task.id
-            )
-          },
-          catch: (cause) => new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                `UPDATE tasks SET
+                  title = ?, description = ?, status = ?, parent_id = ?,
+                  score = ?, updated_at = ?, completed_at = ?, metadata = ?
+                 WHERE id = ?`
+              ).run(
+                task.title,
+                task.description,
+                task.status,
+                task.parentId,
+                task.score,
+                task.updatedAt.toISOString(),
+                task.completedAt?.toISOString() ?? null,
+                JSON.stringify(task.metadata),
+                task.id
+              ),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new TaskNotFoundError({ id: task.id }))
+          }
+        }),
+
+      updateMany: (tasks) =>
+        Effect.gen(function* () {
+          if (tasks.length === 0) return
+
+          const stmt = db.prepare(
+            `UPDATE tasks SET
+              title = ?, description = ?, status = ?, parent_id = ?,
+              score = ?, updated_at = ?, completed_at = ?, metadata = ?
+             WHERE id = ?`
+          )
+
+          // Use a transaction for atomicity and performance
+          const notFoundId = yield* Effect.try({
+            try: () => {
+              db.exec("BEGIN IMMEDIATE")
+              try {
+                for (const task of tasks) {
+                  const result = stmt.run(
+                    task.title,
+                    task.description,
+                    task.status,
+                    task.parentId,
+                    task.score,
+                    task.updatedAt.toISOString(),
+                    task.completedAt?.toISOString() ?? null,
+                    JSON.stringify(task.metadata),
+                    task.id
+                  )
+                  if (result.changes === 0) {
+                    db.exec("ROLLBACK")
+                    return task.id // Return the ID of the task that wasn't found
+                  }
+                }
+                db.exec("COMMIT")
+                return null // All tasks updated successfully
+              } catch (e) {
+                db.exec("ROLLBACK")
+                throw e
+              }
+            },
+            catch: (cause) => new DatabaseError({ cause })
+          })
+
+          if (notFoundId !== null) {
+            yield* Effect.fail(new TaskNotFoundError({ id: notFoundId }))
+          }
         }),
 
       remove: (id) =>
-        Effect.try({
-          try: () => {
-            db.prepare("DELETE FROM tasks WHERE id = ?").run(id)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () => db.prepare("DELETE FROM tasks WHERE id = ?").run(id),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new TaskNotFoundError({ id }))
+          }
         }),
 
       count: (filter) =>

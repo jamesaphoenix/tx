@@ -11,7 +11,7 @@
  * @see DD-018: Worker Implementation
  */
 
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
 import type { TaskId } from "@jamesaphoenix/tx-types"

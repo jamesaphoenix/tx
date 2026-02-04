@@ -103,31 +103,77 @@ export const TaskServiceLive = Layer.effect(
         return results
       })
 
-    // Auto-complete parent task when all children are done (recursive)
-    const autoCompleteParent = (parentId: TaskId, now: Date): Effect.Effect<void, DatabaseError> =>
+    // Auto-complete parent task when all children are done
+    // Optimized to use batch queries instead of N+1 recursive queries
+    // Old implementation: 3-4 queries per hierarchy level (40+ for deep trees)
+    // New implementation: 3 queries total + 1 batch update
+    const autoCompleteParent = (parentId: TaskId, now: Date): Effect.Effect<void, DatabaseError | TaskNotFoundError> =>
       Effect.gen(function* () {
-        const parent = yield* taskRepo.findById(parentId)
-        if (!parent || parent.status === "done") return
+        // 1. Get all ancestors in one query (recursive CTE)
+        const ancestors = yield* taskRepo.getAncestorChain(parentId)
+        if (ancestors.length === 0) return
 
-        const childIds = yield* taskRepo.getChildIds(parentId)
-        if (childIds.length === 0) return
+        // Filter out already-done ancestors (nothing to auto-complete)
+        const pendingAncestors = ancestors.filter(a => a.status !== "done")
+        if (pendingAncestors.length === 0) return
 
-        const children = yield* taskRepo.findByIds(childIds)
-        const allChildrenDone = children.every(c => c.status === "done")
+        // 2. Batch get all children for all pending ancestors (1 query)
+        const ancestorIds = pendingAncestors.map(a => a.id)
+        const childIdsMap = yield* taskRepo.getChildIdsForMany(ancestorIds)
 
-        if (allChildrenDone) {
-          const updatedParent: Task = {
-            ...parent,
-            status: "done",
-            updatedAt: now,
-            completedAt: now
+        // 3. Collect all unique child IDs and batch fetch them (1 query)
+        const allChildIds = new Set<string>()
+        for (const childIds of childIdsMap.values()) {
+          for (const id of childIds) {
+            allChildIds.add(id)
           }
-          yield* taskRepo.update(updatedParent)
+        }
 
-          // Recursively check grandparent
-          if (parent.parentId) {
-            yield* autoCompleteParent(parent.parentId, now)
+        const childTasks = allChildIds.size > 0
+          ? yield* taskRepo.findByIds([...allChildIds])
+          : []
+
+        // Build status map for quick lookups
+        const childStatusMap = new Map<string, string>()
+        for (const child of childTasks) {
+          childStatusMap.set(child.id, child.status)
+        }
+
+        // 4. Process ancestors in order (parent -> grandparent -> ...)
+        // Track which ones should be auto-completed
+        const toComplete: Task[] = []
+        const nowCompletedIds = new Set<string>()
+
+        for (const ancestor of pendingAncestors) {
+          const childIds = childIdsMap.get(ancestor.id) ?? []
+          if (childIds.length === 0) continue
+
+          // Check if all children are done
+          // Include children we're about to mark as done in this pass
+          const allChildrenDone = childIds.every(childId => {
+            if (nowCompletedIds.has(childId)) return true
+            return childStatusMap.get(childId) === "done"
+          })
+
+          if (allChildrenDone) {
+            // Mark for completion
+            toComplete.push({
+              ...ancestor,
+              status: "done",
+              updatedAt: now,
+              completedAt: now
+            })
+            // Track so parent levels can see this ancestor is now done
+            nowCompletedIds.add(ancestor.id)
+          } else {
+            // If this ancestor can't be completed, neither can its ancestors
+            break
           }
+        }
+
+        // 5. Batch update all auto-completed ancestors (1 transaction)
+        if (toComplete.length > 0) {
+          yield* taskRepo.updateMany(toComplete)
         }
       })
 

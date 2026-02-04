@@ -502,9 +502,17 @@ export const defaultDaemonConfig: DaemonConfig = {
 /**
  * Spawn a daemon process and wait for it to either start successfully or fail.
  * This properly handles the async ENOENT error that spawn emits.
+ *
+ * Uses a settlement flag to prevent race conditions between:
+ * - The synchronous PID check
+ * - The 'error' event handler
+ * - The setImmediate fallback
  */
 const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess; pid: number }> =>
   new Promise((resolve, reject) => {
+    // Track whether the promise has been settled to prevent double resolution/rejection
+    let settled = false
+
     const spawnedProcess = spawn(config.command, [...config.args], {
       detached: true,
       stdio: "ignore",
@@ -514,6 +522,9 @@ const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess
 
     // Handle spawn errors (like ENOENT when command doesn't exist)
     spawnedProcess.on("error", (error: NodeJS.ErrnoException) => {
+      if (settled) return
+      settled = true
+
       if (error.code === "ENOENT") {
         reject(new DaemonError({
           code: "COMMAND_NOT_FOUND",
@@ -531,19 +542,29 @@ const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess
 
     // Check if we got a PID (spawn succeeded synchronously)
     if (spawnedProcess.pid !== undefined) {
-      // Unref to allow parent to exit independently
+      settled = true
       spawnedProcess.unref()
       resolve({ child: spawnedProcess, pid: spawnedProcess.pid })
-    } else {
-      // Wait a tick for the error event to fire
-      setImmediate(() => {
-        if (spawnedProcess.pid !== undefined) {
-          spawnedProcess.unref()
-          resolve({ child: spawnedProcess, pid: spawnedProcess.pid })
-        }
-        // If still no PID, the error handler will reject
-      })
+      return
     }
+
+    // Wait a tick for either the error event to fire or the PID to become available
+    setImmediate(() => {
+      if (settled) return
+      settled = true
+
+      if (spawnedProcess.pid !== undefined) {
+        spawnedProcess.unref()
+        resolve({ child: spawnedProcess, pid: spawnedProcess.pid })
+      } else {
+        // No PID and no error - reject to prevent the promise from hanging forever
+        reject(new DaemonError({
+          code: "SPAWN_FAILED",
+          message: `Failed to spawn daemon process: no PID was assigned`,
+          pid: null
+        }))
+      }
+    })
   })
 
 /**

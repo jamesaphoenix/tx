@@ -23,12 +23,12 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     title: 'Test task',
     description: 'Test description',
     status: 'ready',
-    parent_id: null,
+    parentId: null,
     score: 500,
-    created_at: '2026-01-30T12:00:00Z',
-    updated_at: '2026-01-30T12:00:00Z',
-    completed_at: null,
-    metadata: '{}',
+    createdAt: '2026-01-30T12:00:00Z',
+    updatedAt: '2026-01-30T12:00:00Z',
+    completedAt: null,
+    metadata: {},
     blockedBy: [],
     blocks: [],
     children: [],
@@ -975,7 +975,7 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
         id: 'tx-child1',
         title: 'Child Task',
         description: 'This is the child',
-        parent_id: 'tx-parent1',
+        parentId: 'tx-parent1',
       })
 
       const tasks = [parentTask, childTask]
@@ -1058,7 +1058,7 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
         id: 'tx-child1',
         title: 'Child Task',
         description: 'This is the child',
-        parent_id: 'tx-parent1',
+        parentId: 'tx-parent1',
       })
 
       const tasks = [parentTask, childTask]

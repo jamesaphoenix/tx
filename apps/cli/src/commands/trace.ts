@@ -324,8 +324,14 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
     }
 
     // Read and output raw content
-    const content = readFileSync(fullPath, "utf-8")
-    process.stdout.write(content)
+    try {
+      const content = readFileSync(fullPath, "utf-8")
+      process.stdout.write(content)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`Error: Failed to read transcript file: ${message}`)
+      process.exit(1)
+    }
   }) as Effect.Effect<void, DatabaseError, RunRepository>
 
 /**
@@ -370,8 +376,14 @@ export const traceStderr = (pos: string[], _flags: Flags) =>
     }
 
     // Read and output raw content
-    const content = readFileSync(fullPath, "utf-8")
-    process.stdout.write(content)
+    try {
+      const content = readFileSync(fullPath, "utf-8")
+      process.stdout.write(content)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`Error: Failed to read stderr file: ${message}`)
+      process.exit(1)
+    }
   }) as Effect.Effect<void, DatabaseError, RunRepository>
 
 /**

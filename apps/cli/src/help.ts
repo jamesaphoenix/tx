@@ -65,6 +65,8 @@ Commands:
   claim                   Claim a task with a lease
   claim:release           Release a claim on a task
   claim:renew             Renew the lease on a claim
+  compact                 Compact completed tasks and export learnings
+  history                 View compaction history
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1498,5 +1500,48 @@ Fails if:
 
 Examples:
   tx claim:renew tx-abc123 worker-def456
-  tx claim:renew tx-abc123 worker-def456 --json`
+  tx claim:renew tx-abc123 worker-def456 --json`,
+
+  compact: `tx compact - Compact completed tasks and export learnings
+
+Usage: tx compact [options]
+
+Compacts completed tasks older than a specified date and exports learnings
+to a markdown file (default: CLAUDE.md). Uses LLM to generate summaries
+and extract actionable learnings from completed work.
+
+Options:
+  --before <date>    Compact tasks before this date (default: 7 days ago)
+                     Formats: YYYY-MM-DD or Nd (e.g., 7d for 7 days ago)
+  --output, -o <file>  Output file for learnings (default: CLAUDE.md)
+  --dry-run, --preview Preview without compacting (no API key needed)
+  --json               Output as JSON
+  --help               Show this help
+
+Requirements:
+  - ANTHROPIC_API_KEY environment variable must be set for actual compaction
+  - --dry-run works without an API key
+
+Examples:
+  tx compact                           # Compact tasks older than 7 days
+  tx compact --before 2024-01-15       # Compact tasks before Jan 15
+  tx compact --before 30d              # Compact tasks older than 30 days
+  tx compact --dry-run                 # Preview what would be compacted
+  tx compact --output agents.md        # Export learnings to agents.md
+  tx compact --json                    # Output as JSON`,
+
+  history: `tx history - View compaction history
+
+Usage: tx history [options]
+
+Shows the history of past compaction operations including dates,
+task counts, and where learnings were exported.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx history
+  tx history --json`
 }

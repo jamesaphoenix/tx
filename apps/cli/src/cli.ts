@@ -27,6 +27,7 @@ import { worker } from "./commands/worker.js"
 import { testCacheStats, testClearCache } from "./commands/test.js"
 import { trace } from "./commands/trace.js"
 import { claim, claimRelease, claimRenew } from "./commands/claim.js"
+import { compact, history } from "./commands/compact.js"
 
 // --- Argv parsing helpers ---
 
@@ -158,6 +159,10 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   // Trace command (with subcommands)
   trace,
+
+  // Compaction commands (PRD-006)
+  compact,
+  history,
 
   // Help command
   help: (pos) =>
@@ -362,6 +367,11 @@ Effect.runPromise(
     }
     if (err._tag === "MaxRenewalsExceededError") {
       console.error(err.message ?? `Maximum renewals exceeded`)
+      process.exit(1)
+    }
+    // Compaction-related errors (PRD-006)
+    if (err._tag === "ExtractionUnavailableError") {
+      console.error(err.message ?? `Feature unavailable`)
       process.exit(1)
     }
     console.error(`Error: ${err.message ?? String(error)}`)

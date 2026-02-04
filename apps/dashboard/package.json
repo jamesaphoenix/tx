@@ -7,9 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "server": "tsx server/index.ts",
+    "server": "bun server/index.ts",
     "dev:all": "concurrently \"bun run server\" \"bun run dev\"",
-    "test": "vitest --run",
+    "test": "bun vitest --run",
     "test:watch": "vitest",
     "test:coverage": "vitest --run --coverage"
   },

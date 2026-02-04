@@ -48,7 +48,15 @@ export const coordinator = (pos: string[], flags: Flags) =>
     if (subcommand === "start") {
       // Parse options
       const workersOpt = opt(flags, "workers", "w")
-      const workers = workersOpt ? parseInt(workersOpt, 10) : undefined
+      let workers: number | undefined = undefined
+      if (workersOpt) {
+        const parsed = parseInt(workersOpt, 10)
+        if (Number.isNaN(parsed) || parsed < 1) {
+          console.error(`Invalid workers value: '${workersOpt}'. Must be a positive integer.`)
+          process.exit(1)
+        }
+        workers = parsed
+      }
       const isDaemon = flag(flags, "daemon", "d")
 
       // Build config

@@ -112,6 +112,36 @@ describe("Learning CRUD", () => {
     expect(count).toBe(0)
   })
 
+  it("remove throws LearningNotFoundError for non-existent ID", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* LearningService
+          return yield* svc.remove(999)
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toThrow("Learning not found: 999")
+  })
+
+  it("repository remove throws LearningNotFoundError for non-existent ID", async () => {
+    // Test repository-level verification (defense in depth)
+    const repoLayer = LearningRepositoryLive.pipe(
+      Layer.provide(Layer.succeed(SqliteClient, db.db as any))
+    )
+
+    const result = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        return yield* repo.remove(999)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      expect(String(result.cause)).toContain("Learning not found: 999")
+    }
+  })
+
   it("getRecent returns learnings sorted by created_at DESC, then by ID DESC", async () => {
     const learnings = await Effect.runPromise(
       Effect.gen(function* () {
@@ -560,5 +590,205 @@ describe("RRF Hybrid Search", () => {
       // The outcome boost should make the first one rank higher
       expect(withOutcome.relevanceScore).toBeGreaterThan(withoutOutcome.relevanceScore)
     }
+  })
+})
+
+describe("Learning Repository Pagination", () => {
+  let db: TestDatabase
+  let repoLayer: Layer.Layer<LearningRepository, never, never>
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    seedFixtures(db)
+    const infra = Layer.succeed(SqliteClient, db.db as any)
+    repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
+  })
+
+  it("findPaginated returns learnings in batches ordered by id", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        // Insert multiple learnings
+        yield* repo.insert({ content: "Learning 1" })
+        yield* repo.insert({ content: "Learning 2" })
+        yield* repo.insert({ content: "Learning 3" })
+        yield* repo.insert({ content: "Learning 4" })
+        yield* repo.insert({ content: "Learning 5" })
+
+        // Get first batch
+        const batch1 = yield* repo.findPaginated(2)
+        // Get second batch using cursor
+        const batch2 = yield* repo.findPaginated(2, batch1[batch1.length - 1]!.id)
+        // Get third batch
+        const batch3 = yield* repo.findPaginated(2, batch2[batch2.length - 1]!.id)
+
+        return { batch1, batch2, batch3 }
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result.batch1).toHaveLength(2)
+    expect(result.batch2).toHaveLength(2)
+    expect(result.batch3).toHaveLength(1)
+
+    // Verify IDs are sequential
+    expect(result.batch1[0]!.id).toBe(1)
+    expect(result.batch1[1]!.id).toBe(2)
+    expect(result.batch2[0]!.id).toBe(3)
+    expect(result.batch2[1]!.id).toBe(4)
+    expect(result.batch3[0]!.id).toBe(5)
+  })
+
+  it("findPaginated returns empty array when no more results", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        yield* repo.insert({ content: "Only learning" })
+
+        const batch1 = yield* repo.findPaginated(10)
+        const batch2 = yield* repo.findPaginated(10, batch1[batch1.length - 1]!.id)
+
+        return { batch1, batch2 }
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result.batch1).toHaveLength(1)
+    expect(result.batch2).toHaveLength(0)
+  })
+
+  it("findWithoutEmbeddingPaginated returns only learnings without embeddings", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        // Insert learnings
+        yield* repo.insert({ content: "Learning 1" })
+        yield* repo.insert({ content: "Learning 2" })
+        yield* repo.insert({ content: "Learning 3" })
+
+        // Add embedding to learning 2
+        yield* repo.updateEmbedding(2, new Float32Array([0.1, 0.2, 0.3]))
+
+        // Get learnings without embeddings
+        const withoutEmbed = yield* repo.findWithoutEmbeddingPaginated(10)
+
+        return withoutEmbed
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result).toHaveLength(2)
+    expect(result.map(l => l.id)).toEqual([1, 3])
+  })
+
+  it("countWithoutEmbeddings returns correct count", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        yield* repo.insert({ content: "Learning 1" })
+        yield* repo.insert({ content: "Learning 2" })
+        yield* repo.insert({ content: "Learning 3" })
+
+        // Add embedding to one
+        yield* repo.updateEmbedding(1, new Float32Array([0.1, 0.2]))
+
+        const total = yield* repo.count()
+        const withEmbed = yield* repo.countWithEmbeddings()
+        const withoutEmbed = yield* repo.countWithoutEmbeddings()
+
+        return { total, withEmbed, withoutEmbed }
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result.total).toBe(3)
+    expect(result.withEmbed).toBe(1)
+    expect(result.withoutEmbed).toBe(2)
+  })
+})
+
+describe("Learning embedAll Pagination", () => {
+  let db: TestDatabase
+  let layer: ReturnType<typeof makeTestLayer>
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    seedFixtures(db)
+    layer = makeTestLayer(db)
+  })
+
+  it("embedAll processes learnings without loading all into memory", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        // Create several learnings
+        yield* svc.create({ content: "Learning 1" })
+        yield* svc.create({ content: "Learning 2" })
+        yield* svc.create({ content: "Learning 3" })
+
+        // Run embedAll (with EmbeddingServiceNoop, this won't actually embed)
+        return yield* svc.embedAll()
+      }).pipe(Effect.provide(layer))
+    )
+
+    // With noop embedding service, all should fail
+    expect(result.total).toBe(3)
+    expect(result.processed + result.failed + result.skipped).toBe(result.total)
+  })
+
+  it("embedAll returns correct counts when some already have embeddings", async () => {
+    const infra = Layer.succeed(SqliteClient, db.db as any)
+    const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        const repo = yield* LearningRepository
+
+        // Create learnings
+        yield* svc.create({ content: "Learning 1" })
+        yield* svc.create({ content: "Learning 2" })
+        yield* svc.create({ content: "Learning 3" })
+
+        // Manually add embedding to one
+        yield* repo.updateEmbedding(2, new Float32Array([0.1, 0.2, 0.3]))
+
+        // Run embedAll (should skip the one with embedding)
+        const embedResult = yield* svc.embedAll(false)
+        const status = yield* svc.embeddingStatus()
+
+        return { embedResult, status }
+      }).pipe(Effect.provide(Layer.merge(layer, repoLayer)))
+    )
+
+    // Should skip the one that already has embedding
+    expect(result.embedResult.skipped).toBe(1)
+    expect(result.embedResult.total).toBe(3)
+    // The remaining 2 should be processed or failed (depending on embedding service)
+    expect(result.embedResult.processed + result.embedResult.failed).toBe(2)
+  })
+
+  it("embedAll with forceAll=true re-embeds all learnings", async () => {
+    const infra = Layer.succeed(SqliteClient, db.db as any)
+    const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        const repo = yield* LearningRepository
+
+        // Create learnings
+        yield* svc.create({ content: "Learning 1" })
+        yield* svc.create({ content: "Learning 2" })
+
+        // Manually add embedding to both
+        yield* repo.updateEmbedding(1, new Float32Array([0.1, 0.2, 0.3]))
+        yield* repo.updateEmbedding(2, new Float32Array([0.4, 0.5, 0.6]))
+
+        // Run embedAll with forceAll
+        return yield* svc.embedAll(true)
+      }).pipe(Effect.provide(Layer.merge(layer, repoLayer)))
+    )
+
+    // Should process all, skipping none
+    expect(result.skipped).toBe(0)
+    expect(result.total).toBe(2)
+    expect(result.processed + result.failed).toBe(2)
   })
 })

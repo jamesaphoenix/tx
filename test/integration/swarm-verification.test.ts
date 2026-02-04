@@ -461,7 +461,7 @@ describe("SwarmVerificationService Integration", () => {
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "drifted" as const, action: "drifted" as const },
       ]
 
-      const vote = calculateMajorityVote(results)
+      const vote = await Effect.runPromise(calculateMajorityVote(results))
 
       expect(vote.anchorId).toBe(1)
       expect(vote.consensus).toBe("valid")
@@ -476,7 +476,7 @@ describe("SwarmVerificationService Integration", () => {
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "drifted" as const, action: "drifted" as const },
       ]
 
-      const vote = calculateMajorityVote(results)
+      const vote = await Effect.runPromise(calculateMajorityVote(results))
 
       expect(vote.anchorId).toBe(1)
       expect(vote.consensus).toBe(null)
@@ -491,11 +491,24 @@ describe("SwarmVerificationService Integration", () => {
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "invalid" as const, action: "invalidated" as const },
       ]
 
-      const vote = calculateMajorityVote(results)
+      const vote = await Effect.runPromise(calculateMajorityVote(results))
 
       expect(vote.consensus).toBe("invalid")
       expect(vote.needsReview).toBe(false)
       expect(vote.votes.get("invalid")).toBe(4)
+    })
+
+    it("fails with ValidationError when given empty results array", async () => {
+      const results: Array<{ anchorId: number; previousStatus: "valid"; newStatus: "valid"; action: "unchanged" }> = []
+
+      const error = await Effect.runPromise(
+        calculateMajorityVote(results).pipe(
+          Effect.flip // Convert failure to success so we can inspect the error
+        )
+      )
+
+      expect(error._tag).toBe("ValidationError")
+      expect(error.reason).toBe("Cannot calculate majority vote with empty results")
     })
   })
 

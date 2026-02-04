@@ -1,13 +1,1 @@
 $ eslint src/
-
-/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/runtime.ts
-  37:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
-  74:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
-
-/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/tools/task.ts
-  30:14  error  Interface parity violation: Local serializeTask() duplicates shared function. Import from @jamesaphoenix/tx-types instead  tx/interface-parity
-
-✖ 3 problems (1 error, 2 warnings)
-  0 errors and 2 warnings potentially fixable with the `--fix` option.
-
-error: script "lint" exited with code 1

@@ -8,10 +8,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { z } from "zod"
-import type { TaskId, TaskStatus, TaskWithDeps } from "@jamesaphoenix/tx-types"
-import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import type { TaskStatus } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx-types"
+
+// Re-export for use in other modules
+export { serializeTask }
 import { TaskService, ReadyService, DependencyService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -20,40 +24,16 @@ import { runEffect } from "../runtime.js"
 type McpToolResult = { content: { type: "text"; text: string }[] }
 
 // -----------------------------------------------------------------------------
-// Serialization
-// -----------------------------------------------------------------------------
-
-/**
- * Serialize a TaskWithDeps for JSON output.
- * Converts Date objects to ISO strings for proper serialization.
- */
-export const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
-  id: task.id,
-  title: task.title,
-  description: task.description,
-  status: task.status,
-  parentId: task.parentId,
-  score: task.score,
-  createdAt: task.createdAt.toISOString(),
-  updatedAt: task.updatedAt.toISOString(),
-  completedAt: task.completedAt?.toISOString() ?? null,
-  metadata: task.metadata,
-  blockedBy: task.blockedBy,
-  blocks: task.blocks,
-  children: task.children,
-  isReady: task.isReady
-})
-
-// -----------------------------------------------------------------------------
 // Tool Handlers (extracted to avoid deep type inference issues with MCP SDK)
 // -----------------------------------------------------------------------------
 
 const handleReady = async (args: { limit?: number }): Promise<McpToolResult> => {
   try {
+    const effectiveLimit = normalizeLimit(args.limit)
     const tasks = await runEffect(
       Effect.gen(function* () {
         const ready = yield* ReadyService
-        return yield* ready.getReady(args.limit ?? 100)
+        return yield* ready.getReady(effectiveLimit)
       })
     )
     const serialized = tasks.map(serializeTask)
@@ -72,10 +52,11 @@ const handleReady = async (args: { limit?: number }): Promise<McpToolResult> => 
 
 const handleShow = async (args: { id: string }): Promise<McpToolResult> => {
   try {
+    const taskId = assertTaskId(args.id)
     const task = await runEffect(
       Effect.gen(function* () {
         const taskService = yield* TaskService
-        return yield* taskService.getWithDeps(args.id as TaskId)
+        return yield* taskService.getWithDeps(taskId)
       })
     )
     const serialized = serializeTask(task)
@@ -92,15 +73,16 @@ const handleShow = async (args: { id: string }): Promise<McpToolResult> => {
   }
 }
 
-const handleList = async (args: { status?: string; parentId?: string; limit?: number }): Promise<McpToolResult> => {
+const handleList = async (args: { status?: TaskStatus; parentId?: string; limit?: number }): Promise<McpToolResult> => {
   try {
+    const effectiveLimit = normalizeLimit(args.limit)
     const tasks = await runEffect(
       Effect.gen(function* () {
         const taskService = yield* TaskService
         return yield* taskService.listWithDeps({
-          status: args.status as TaskStatus | undefined,
+          status: args.status,
           parentId: args.parentId ?? undefined,
-          limit: args.limit ?? undefined
+          limit: effectiveLimit
         })
       })
     )
@@ -118,12 +100,13 @@ const handleList = async (args: { status?: string; parentId?: string; limit?: nu
   }
 }
 
-const handleChildren = async (args: { id: string }): Promise<McpToolResult> => {
+const handleChildren = async (args: { id: string; limit?: number }): Promise<McpToolResult> => {
   try {
+    const effectiveLimit = normalizeLimit(args.limit)
     const tasks = await runEffect(
       Effect.gen(function* () {
         const taskService = yield* TaskService
-        return yield* taskService.listWithDeps({ parentId: args.id })
+        return yield* taskService.listWithDeps({ parentId: args.id, limit: effectiveLimit })
       })
     )
     const serialized = tasks.map(serializeTask)
@@ -177,22 +160,23 @@ const handleUpdate = async (args: {
   id: string
   title?: string
   description?: string
-  status?: string
+  status?: TaskStatus
   parentId?: string | null
   score?: number
 }): Promise<McpToolResult> => {
   try {
+    const taskId = assertTaskId(args.id)
     const task = await runEffect(
       Effect.gen(function* () {
         const taskService = yield* TaskService
-        yield* taskService.update(args.id as TaskId, {
+        yield* taskService.update(taskId, {
           title: args.title ?? undefined,
           description: args.description ?? undefined,
-          status: args.status as TaskStatus | undefined,
+          status: args.status,
           parentId: args.parentId,
           score: args.score ?? undefined
         })
-        return yield* taskService.getWithDeps(args.id as TaskId)
+        return yield* taskService.getWithDeps(taskId)
       })
     )
     const serialized = serializeTask(task)
@@ -211,19 +195,20 @@ const handleUpdate = async (args: {
 
 const handleDone = async (args: { id: string }): Promise<McpToolResult> => {
   try {
+    const taskId = assertTaskId(args.id)
     const result = await runEffect(
       Effect.gen(function* () {
         const taskService = yield* TaskService
         const readyService = yield* ReadyService
 
         // Get tasks that this task blocks (before completing)
-        const blocking = yield* readyService.getBlocking(args.id as TaskId)
+        const blocking = yield* readyService.getBlocking(taskId)
 
         // Mark the task as done
-        yield* taskService.update(args.id as TaskId, { status: "done" })
+        yield* taskService.update(taskId, { status: "done" })
 
         // Get the updated task with deps
-        const completedTask = yield* taskService.getWithDeps(args.id as TaskId)
+        const completedTask = yield* taskService.getWithDeps(taskId)
 
         // Find newly unblocked tasks using batch query
         const candidateIds = blocking
@@ -254,10 +239,11 @@ const handleDone = async (args: { id: string }): Promise<McpToolResult> => {
 
 const handleDelete = async (args: { id: string }): Promise<McpToolResult> => {
   try {
+    const taskId = assertTaskId(args.id)
     await runEffect(
       Effect.gen(function* () {
         const taskService = yield* TaskService
-        yield* taskService.remove(args.id as TaskId)
+        yield* taskService.remove(taskId)
       })
     )
     return {
@@ -275,13 +261,15 @@ const handleDelete = async (args: { id: string }): Promise<McpToolResult> => {
 
 const handleBlock = async (args: { taskId: string; blockerId: string }): Promise<McpToolResult> => {
   try {
+    const taskId = assertTaskId(args.taskId)
+    const blockerId = assertTaskId(args.blockerId)
     const task = await runEffect(
       Effect.gen(function* () {
         const depService = yield* DependencyService
         const taskService = yield* TaskService
 
-        yield* depService.addBlocker(args.taskId as TaskId, args.blockerId as TaskId)
-        return yield* taskService.getWithDeps(args.taskId as TaskId)
+        yield* depService.addBlocker(taskId, blockerId)
+        return yield* taskService.getWithDeps(taskId)
       })
     )
     const serialized = serializeTask(task)
@@ -300,13 +288,15 @@ const handleBlock = async (args: { taskId: string; blockerId: string }): Promise
 
 const handleUnblock = async (args: { taskId: string; blockerId: string }): Promise<McpToolResult> => {
   try {
+    const taskId = assertTaskId(args.taskId)
+    const blockerId = assertTaskId(args.blockerId)
     const task = await runEffect(
       Effect.gen(function* () {
         const depService = yield* DependencyService
         const taskService = yield* TaskService
 
-        yield* depService.removeBlocker(args.taskId as TaskId, args.blockerId as TaskId)
-        return yield* taskService.getWithDeps(args.taskId as TaskId)
+        yield* depService.removeBlocker(taskId, blockerId)
+        return yield* taskService.getWithDeps(taskId)
       })
     )
     const serialized = serializeTask(task)
@@ -336,7 +326,7 @@ export const registerTaskTools = (server: McpServer): void => {
   server.tool(
     "tx_ready",
     "List tasks ready to be worked on (no incomplete blockers)",
-    { limit: z.number().int().positive().optional().describe("Maximum number of tasks to return (default: 100)") },
+    { limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of tasks to return (default: 100, max: ${MCP_MAX_LIMIT})`) },
     handleReady as Parameters<typeof server.tool>[3]
   )
 
@@ -355,9 +345,9 @@ export const registerTaskTools = (server: McpServer): void => {
     "tx_list",
     "List tasks with optional filters for status, parent, and limit",
     {
-      status: z.string().optional().describe(`Filter by status: ${TASK_STATUSES.join(", ")}`),
+      status: z.enum(TASK_STATUSES).optional().describe(`Filter by status: ${TASK_STATUSES.join(", ")}`),
       parentId: z.string().optional().describe("Filter by parent task ID"),
-      limit: z.number().int().positive().optional().describe("Maximum number of tasks to return")
+      limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of tasks to return (default: 100, max: ${MCP_MAX_LIMIT})`)
     },
     handleList as Parameters<typeof server.tool>[3]
   )
@@ -367,7 +357,10 @@ export const registerTaskTools = (server: McpServer): void => {
   server.tool(
     "tx_children",
     "List direct children of a task",
-    { id: z.string().describe("Parent task ID") },
+    {
+      id: z.string().describe("Parent task ID"),
+      limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of children to return (default: 100, max: ${MCP_MAX_LIMIT})`)
+    },
     handleChildren as Parameters<typeof server.tool>[3]
   )
 
@@ -394,7 +387,7 @@ export const registerTaskTools = (server: McpServer): void => {
       id: z.string().describe("Task ID to update"),
       title: z.string().optional().describe("New title"),
       description: z.string().optional().describe("New description"),
-      status: z.string().optional().describe(`New status: ${TASK_STATUSES.join(", ")}`),
+      status: z.enum(TASK_STATUSES).optional().describe(`New status: ${TASK_STATUSES.join(", ")}`),
       parentId: z.string().nullable().optional().describe("New parent ID (null to remove parent)"),
       score: z.number().int().optional().describe("New priority score")
     },

@@ -340,13 +340,28 @@ const runLeaseRenewalLoop = (
       const state = yield* Ref.get(shutdownState)
       if (state.requested) break
 
-      yield* claimService
+      const renewResult = yield* claimService
         .renew(taskId, workerId)
         .pipe(
           Effect.tap(() => Effect.log(`runWorker: Renewed lease on task ${taskId}`)),
+          Effect.map(() => true),
           Effect.catchAll((error) =>
-            Effect.log(`runWorker: Lease renewal failed for task ${taskId}: ${error.message}`)
+            Effect.gen(function* () {
+              yield* Effect.log(
+                `runWorker: CRITICAL: Lease renewal failed for task ${taskId}: ${error.message}. Stopping worker to prevent duplicate execution.`
+              )
+              // Stop the worker to prevent duplicate task execution
+              // Another worker may have claimed this task after lease expiry
+              yield* Ref.update(shutdownState, (state) => ({
+                ...state,
+                requested: true
+              }))
+              return false
+            })
           )
         )
+
+      // Exit renewal loop if renewal failed
+      if (!renewResult) break
     }
   })

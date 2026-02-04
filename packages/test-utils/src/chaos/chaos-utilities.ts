@@ -299,47 +299,38 @@ export const raceWorkers = async (
     )
   }
 
-  // Race to claim
+  // Race to claim using atomic INSERT ... WHERE NOT EXISTS
+  // This matches the production ClaimService.claim implementation
   const claimPromises = workers.map(async (workerId, index) => {
     if (delayBetweenMs > 0 && index > 0) {
       await sleep(delayBetweenMs * index)
     }
 
     try {
-      // Check if already claimed
-      const existing = db.query<{ worker_id: string }>(
-        "SELECT worker_id FROM task_claims WHERE task_id = ? AND status = 'active'",
-        [taskId]
-      )[0]
-
-      if (existing) {
-        losers.push(workerId)
-        return
-      }
-
-      // Attempt to claim
+      // Use atomic INSERT ... WHERE NOT EXISTS to prevent race conditions
+      // This is the same pattern used in ClaimRepository.tryInsertAtomic
       const leaseExpiresAt = new Date(Date.now() + leaseDurationMinutes * 60 * 1000)
-      db.run(
+      const result = db.run(
         `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [taskId, workerId, now.toISOString(), leaseExpiresAt.toISOString(), 0, "active"]
+         SELECT ?, ?, ?, ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM task_claims
+           WHERE task_id = ? AND status = 'active'
+         )`,
+        [taskId, workerId, now.toISOString(), leaseExpiresAt.toISOString(), 0, "active", taskId]
       )
 
-      // Check if we actually got it (another worker might have beaten us)
-      const claim = db.query<{ worker_id: string }>(
-        "SELECT worker_id FROM task_claims WHERE task_id = ? AND status = 'active' ORDER BY id LIMIT 1",
-        [taskId]
-      )[0]
-
-      if (claim?.worker_id === workerId) {
+      if (result.changes > 0) {
+        // We won the race
         if (winner === null) {
           winner = workerId
           successfulClaims++
         } else {
-          // Duplicate claim detected - this is a bug
-          errors.push({ workerId, error: "Duplicate successful claim" })
+          // This should never happen with atomic inserts
+          errors.push({ workerId, error: "Duplicate successful claim - atomic insert failed!" })
         }
       } else {
+        // Another worker already claimed
         losers.push(workerId)
       }
     } catch (e) {
@@ -1111,20 +1102,36 @@ export const delayedClaim = async (
     }
   }
 
-  // Attempt to claim if not already claimed
+  // Attempt to claim using atomic INSERT ... WHERE NOT EXISTS
   let claimed = false
   if (!afterDelay) {
     try {
       const leaseExpiresAt = new Date(Date.now() + 30 * 60 * 1000)
-      db.run(
+      const result = db.run(
         `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
-         VALUES (?, ?, datetime('now'), ?, 0, 'active')`,
-        [taskId, workerId, leaseExpiresAt.toISOString()]
+         SELECT ?, ?, datetime('now'), ?, 0, 'active'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM task_claims
+           WHERE task_id = ? AND status = 'active'
+         )`,
+        [taskId, workerId, leaseExpiresAt.toISOString(), taskId]
       )
-      claimed = true
-      claimedBy = workerId
+      if (result.changes > 0) {
+        claimed = true
+        claimedBy = workerId
+      } else {
+        // Another worker claimed during delay
+        const finalCheck = db.query<{ worker_id: string }>(
+          "SELECT worker_id FROM task_claims WHERE task_id = ? AND status = 'active'",
+          [taskId]
+        )[0]
+        if (finalCheck) {
+          claimedBy = finalCheck.worker_id
+          raceDetected = finalCheck.worker_id !== workerId
+        }
+      }
     } catch {
-      // Claim failed (constraint violation or race)
+      // Claim failed
       const finalCheck = db.query<{ worker_id: string }>(
         "SELECT worker_id FROM task_claims WHERE task_id = ? AND status = 'active'",
         [taskId]

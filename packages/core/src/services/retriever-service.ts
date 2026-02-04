@@ -6,7 +6,7 @@ import { RerankerService } from "./reranker-service.js"
 import { GraphExpansionService, type SeedLearning } from "./graph-expansion.js"
 import { FeedbackTrackerService } from "./feedback-tracker.js"
 import { DiversifierService } from "./diversifier-service.js"
-import { RetrievalError, DatabaseError } from "../errors.js"
+import { RetrievalError, DatabaseError, EmbeddingDimensionMismatchError } from "../errors.js"
 import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@jamesaphoenix/tx-types"
 import { cosineSimilarity } from "../utils/math.js"
 
@@ -45,7 +45,7 @@ export class RetrieverService extends Context.Tag("RetrieverService")<
     readonly search: (
       query: string,
       options?: RetrievalOptions
-    ) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError>
+    ) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError | EmbeddingDimensionMismatchError>
     /** Check if retrieval functionality is available */
     readonly isAvailable: () => Effect.Effect<boolean>
   }
@@ -64,30 +64,40 @@ const calculateRecencyScore = (createdAt: Date): number => {
 /**
  * Compute vector similarity scores and return ranked results.
  * Rank is 1-indexed (1 = best match).
+ *
+ * Dimension mismatches are logged and the learning is skipped, rather than
+ * failing the entire operation. This handles mixed embedding providers gracefully.
  */
 const computeVectorRanking = (
   learnings: readonly Learning[],
   queryEmbedding: Float32Array | null
-): { learning: Learning; score: number; rank: number }[] => {
+): Effect.Effect<{ learning: Learning; score: number; rank: number }[], EmbeddingDimensionMismatchError> => {
   if (!queryEmbedding) {
-    return []
+    return Effect.succeed([])
   }
 
-  const withScores = learnings
-    .filter(l => l.embedding !== null)
-    .map(learning => {
-      const similarity = cosineSimilarity(queryEmbedding, learning.embedding!)
-      // Normalize cosine similarity from [-1, 1] to [0, 1]
-      const score = (similarity + 1) / 2
-      return { learning, score }
-    })
-    .sort((a, b) => b.score - a.score)
+  const learningsWithEmbeddings = learnings.filter(
+    (l): l is Learning & { embedding: Float32Array } => l.embedding !== null
+  )
 
-  // Add 1-indexed ranks
-  return withScores.map((item, idx) => ({
-    ...item,
-    rank: idx + 1
-  }))
+  return Effect.forEach(learningsWithEmbeddings, learning =>
+    cosineSimilarity(queryEmbedding, learning.embedding).pipe(
+      Effect.map(similarity => {
+        // Normalize cosine similarity from [-1, 1] to [0, 1]
+        const score = (similarity + 1) / 2
+        return { learning, score }
+      })
+    )
+  ).pipe(
+    Effect.map(withScores => {
+      const sorted = [...withScores].sort((a, b) => b.score - a.score)
+      // Add 1-indexed ranks
+      return sorted.map((item, idx) => ({
+        ...item,
+        rank: idx + 1
+      }))
+    })
+  )
 }
 
 /**
@@ -514,7 +524,8 @@ export const RetrieverServiceLive = Layer.effect(
           const learningsWithEmbeddings = yield* learningRepo.findWithEmbeddings(limit * 3)
 
           // Compute vector ranking (ranked list 2)
-          const vectorRanking = computeVectorRanking(learningsWithEmbeddings, queryEmbeddingValue)
+          // Dimension mismatches fail fast - indicates misconfigured embedding provider
+          const vectorRanking = yield* computeVectorRanking(learningsWithEmbeddings, queryEmbeddingValue)
 
           // Combine using RRF
           const candidates = computeRRFScoring(bm25Results, vectorRanking)

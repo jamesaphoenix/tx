@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, RunNotFoundError } from "../errors.js"
 import { rowToRun, generateRunId } from "../mappers/run.js"
 import type { Run, RunId, RunStatus, RunRow, CreateRunInput, UpdateRunInput } from "@jamesaphoenix/tx-types"
 
@@ -26,10 +26,10 @@ export class RunRepository extends Context.Tag("RunRepository")<
     readonly update: (id: RunId, input: UpdateRunInput) => Effect.Effect<void, DatabaseError>
 
     /** Mark a run as completed */
-    readonly complete: (id: RunId, exitCode: number, summary?: string) => Effect.Effect<void, DatabaseError>
+    readonly complete: (id: RunId, exitCode: number, summary?: string) => Effect.Effect<void, DatabaseError | RunNotFoundError>
 
     /** Mark a run as failed */
-    readonly fail: (id: RunId, errorMessage: string, exitCode?: number) => Effect.Effect<void, DatabaseError>
+    readonly fail: (id: RunId, errorMessage: string, exitCode?: number) => Effect.Effect<void, DatabaseError | RunNotFoundError>
 
     /** Get currently running runs */
     readonly getRunning: () => Effect.Effect<readonly Run[], DatabaseError>
@@ -161,27 +161,35 @@ export const RunRepositoryLive = Layer.effect(
         }),
 
       complete: (id, exitCode, summary) =>
-        Effect.try({
-          try: () => {
-            db.prepare(`
-              UPDATE runs
-              SET status = 'completed', ended_at = ?, exit_code = ?, summary = ?
-              WHERE id = ?
-            `).run(new Date().toISOString(), exitCode, summary ?? null, id)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(`
+                UPDATE runs
+                SET status = 'completed', ended_at = ?, exit_code = ?, summary = ?
+                WHERE id = ?
+              `).run(new Date().toISOString(), exitCode, summary ?? null, id),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new RunNotFoundError({ id }))
+          }
         }),
 
       fail: (id, errorMessage, exitCode) =>
-        Effect.try({
-          try: () => {
-            db.prepare(`
-              UPDATE runs
-              SET status = 'failed', ended_at = ?, exit_code = ?, error_message = ?
-              WHERE id = ?
-            `).run(new Date().toISOString(), exitCode ?? null, errorMessage, id)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(`
+                UPDATE runs
+                SET status = 'failed', ended_at = ?, exit_code = ?, error_message = ?
+                WHERE id = ?
+              `).run(new Date().toISOString(), exitCode ?? null, errorMessage, id),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new RunNotFoundError({ id }))
+          }
         }),
 
       getRunning: () =>

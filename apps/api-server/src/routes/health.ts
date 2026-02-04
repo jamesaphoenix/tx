@@ -6,8 +6,9 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
-import { TaskService } from "@jamesaphoenix/tx-core"
+import { TaskService, LearningService, RunRepository } from "@jamesaphoenix/tx-core"
 import { runEffect, getDbPath } from "../runtime.js"
+import { isRequestAuthenticated } from "../middleware/auth.js"
 
 // -----------------------------------------------------------------------------
 // Schemas
@@ -128,13 +129,18 @@ healthRouter.openapi(healthRoute, async (c) => {
     dbConnected = false
   }
 
+  // Only expose database path to authenticated requests
+  // This prevents information disclosure when auth is enabled
+  const isAuthenticated = isRequestAuthenticated(c)
+  const dbPath = isAuthenticated ? getDbPath() : null
+
   return c.json({
     status: dbConnected ? "healthy" : "degraded",
     timestamp: new Date().toISOString(),
     version: "0.1.0",
     database: {
       connected: dbConnected,
-      path: getDbPath()
+      path: dbPath
     }
   }, 200)
 })
@@ -175,8 +181,12 @@ healthRouter.openapi(statsRoute, async (c) => {
   const stats = await runEffect(
     Effect.gen(function* () {
       const taskService = yield* TaskService
+      const learningService = yield* LearningService
+      const runRepo = yield* RunRepository
 
       const allTasks = yield* taskService.listWithDeps({})
+      const learningsCount = yield* learningService.count()
+      const runCounts = yield* runRepo.countByStatus()
 
       // Count tasks by status
       let done = 0
@@ -186,13 +196,15 @@ healthRouter.openapi(statsRoute, async (c) => {
         if (task.isReady) ready++
       }
 
+      const runsTotal = Object.values(runCounts).reduce((a, b) => a + b, 0)
+
       return {
         tasks: allTasks.length,
         done,
         ready,
-        learnings: 0, // TODO: Add learning count when LearningService is available
-        runsRunning: 0,
-        runsTotal: 0
+        learnings: learningsCount,
+        runsRunning: runCounts.running ?? 0,
+        runsTotal
       }
     })
   )

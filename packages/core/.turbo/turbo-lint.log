@@ -1,1 +1,19 @@
 $ eslint src/
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/deduplication-repo.ts
+  136:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/dep-repo.ts
+  255:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/edge-repo.ts
+  338:53  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/task-repo.ts
+  287:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/compaction-service.ts
+  426:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+✖ 5 problems (0 errors, 5 warnings)
+

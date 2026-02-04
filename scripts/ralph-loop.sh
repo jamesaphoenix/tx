@@ -6,6 +6,7 @@ set -e
 
 # Use bun to run the tx CLI from source
 TX="bun apps/cli/src/cli.ts"
+DB=".tx/tasks.db"
 
 DURATION_HOURS=${1:-8}
 DURATION_SECONDS=$((DURATION_HOURS * 3600))
@@ -17,6 +18,33 @@ mkdir -p .tx
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# Generate a run ID
+generate_run_id() {
+    echo "run-$(echo "$1-$(date +%s)" | shasum -a 256 | cut -c1-8)"
+}
+
+# Create a run record in the database
+start_run() {
+    local run_id="$1"
+    local task_id="$2"
+    local agent="ralph"
+    local started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    sqlite3 "$DB" "INSERT INTO runs (id, task_id, agent, started_at, status, pid) VALUES ('$run_id', '$task_id', '$agent', '$started_at', 'running', $$);"
+    log "Created run: $run_id for task: $task_id"
+}
+
+# Complete a run record
+end_run() {
+    local run_id="$1"
+    local status="$2"
+    local exit_code="${3:-0}"
+    local ended_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    sqlite3 "$DB" "UPDATE runs SET status='$status', ended_at='$ended_at', exit_code=$exit_code WHERE id='$run_id';"
+    log "Ended run: $run_id with status: $status"
 }
 
 log "RALPH Loop started - running for $DURATION_HOURS hours"
@@ -49,38 +77,79 @@ while true; do
     TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.[0].title // "Unknown"')
     log "Starting task: $TASK_ID - $TASK_TITLE"
 
+    # Generate run ID and start tracking
+    RUN_ID=$(generate_run_id "$TASK_ID")
+    start_run "$RUN_ID" "$TASK_ID"
+
+    # Set task status to active
+    $TX update "$TASK_ID" --status active 2>/dev/null || true
+    log "Set task $TASK_ID to active"
+
     # Run Claude on the task
-    if claude --print "Read CLAUDE.md first for project context. Your task ID is: $TASK_ID
+    if claude --print --dangerously-skip-permissions "Your task ID is: $TASK_ID
 
 Run 'bun apps/cli/src/cli.ts show $TASK_ID' to see full details, then implement the task.
 
 When complete, run 'bun apps/cli/src/cli.ts done $TASK_ID' to mark it done.
 
-If blocked, use 'bun apps/cli/src/cli.ts block $TASK_ID <blocker-id>' to add a dependency.
-
-IMPORTANT: Commit your changes with a descriptive message when done." 2>&1 | tee -a "$LOG_FILE"; then
+If blocked, use 'bun apps/cli/src/cli.ts block $TASK_ID <blocker-id>' to add a dependency." 2>&1 | tee -a "$LOG_FILE"; then
 
         # Check if task was completed
         TASK_STATUS=$($TX show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
 
         if [ "$TASK_STATUS" = "done" ]; then
             log "Task $TASK_ID completed successfully"
+            end_run "$RUN_ID" "completed" 0
             ((TASKS_COMPLETED++))
 
             # Auto-commit if there are changes
             if [ -n "$(git status --porcelain)" ]; then
-                git add -A
-                git commit -m "Complete $TASK_ID: $TASK_TITLE
+                # Infer commit type from task title
+                COMMIT_TYPE="feat"
+                case "$TASK_TITLE" in
+                    *[Ff]ix*|*[Bb]ug*|*CRITICAL*|*[Vv]ulnerability*|*[Ss]ecurity*)
+                        COMMIT_TYPE="fix"
+                        ;;
+                    *[Tt]est*|*RULE\ 3*)
+                        COMMIT_TYPE="test"
+                        ;;
+                    *[Rr]efactor*)
+                        COMMIT_TYPE="refactor"
+                        ;;
+                    *[Dd]oc*|*README*|*CLAUDE.md*)
+                        COMMIT_TYPE="docs"
+                        ;;
+                    *[Pp]erf*|*[Oo]ptimiz*)
+                        COMMIT_TYPE="perf"
+                        ;;
+                esac
 
-Automated commit by RALPH loop" || true
+                # Clean up title for commit message (remove CRITICAL:, etc.)
+                CLEAN_TITLE=$(echo "$TASK_TITLE" | sed -E 's/^(CRITICAL|URGENT|HIGH|LOW|RULE [0-9]+( violation)?):? *//i')
+
+                git add -A
+                git commit -m "$(cat <<EOF
+$COMMIT_TYPE: $CLEAN_TITLE
+
+Task: $TASK_ID
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)" || true
                 log "Changes committed for $TASK_ID"
             fi
         else
             log "Task $TASK_ID not marked done (status: $TASK_STATUS)"
+            end_run "$RUN_ID" "failed" 1
+            # Reset task back to ready so it can be picked up again
+            $TX update "$TASK_ID" --status ready 2>/dev/null || true
             ((TASKS_FAILED++))
         fi
     else
         log "Claude execution failed for task $TASK_ID"
+        end_run "$RUN_ID" "failed" 1
+        # Reset task back to ready
+        $TX update "$TASK_ID" --status ready 2>/dev/null || true
         ((TASKS_FAILED++))
     fi
 

@@ -4,7 +4,8 @@
 
 import { Effect } from "effect"
 import { TaskService, ReadyService, AttemptService } from "@jamesaphoenix/tx-core"
-import type { TaskId, TaskStatus } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx-types"
+import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx-types"
 import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from "../output.js"
 
 type Flags = Record<string, string | boolean>
@@ -21,6 +22,17 @@ function opt(flags: Flags, ...names: string[]): string | undefined {
   return undefined
 }
 
+function parseIntOpt(flags: Flags, flagName: string, ...names: string[]): number | undefined {
+  const val = opt(flags, ...names)
+  if (val === undefined) return undefined
+  const parsed = parseInt(val, 10)
+  if (Number.isNaN(parsed)) {
+    console.error(`Invalid value for --${flagName}: "${val}" is not a valid number`)
+    process.exit(1)
+  }
+  return parsed
+}
+
 export const add = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const title = pos[0]
@@ -34,7 +46,7 @@ export const add = (pos: string[], flags: Flags) =>
       title,
       description: opt(flags, "description", "d"),
       parentId: opt(flags, "parent", "p"),
-      score: opt(flags, "score", "s") ? parseInt(opt(flags, "score", "s")!, 10) : undefined,
+      score: parseIntOpt(flags, "score", "score", "s"),
       metadata: {}
     })
 
@@ -53,9 +65,21 @@ export const list = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const svc = yield* TaskService
     const statusFilter = opt(flags, "status")
-    const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : undefined
+    const limit = parseIntOpt(flags, "limit", "limit", "n")
+
+    // Validate status values if provided
+    let validatedStatuses: ReturnType<typeof assertTaskStatus>[] | undefined
+    if (statusFilter) {
+      try {
+        validatedStatuses = statusFilter.split(",").map(s => assertTaskStatus(s.trim()))
+      } catch {
+        console.error(`Invalid status filter. Valid statuses: ${TASK_STATUSES.join(", ")}`)
+        process.exit(1)
+      }
+    }
+
     const tasks = yield* svc.listWithDeps({
-      status: statusFilter ? statusFilter.split(",") as TaskStatus[] : undefined,
+      status: validatedStatuses,
       limit
     })
 
@@ -77,7 +101,7 @@ export const ready = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const svc = yield* ReadyService
     const attemptSvc = yield* AttemptService
-    const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
+    const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
     const tasks = yield* svc.getReady(limit)
 
     // Get failed attempt counts for all tasks in a single query
@@ -153,7 +177,8 @@ export const update = (pos: string[], flags: Flags) =>
     const input: Record<string, unknown> = {}
     if (opt(flags, "status")) input.status = opt(flags, "status")
     if (opt(flags, "title")) input.title = opt(flags, "title")
-    if (opt(flags, "score")) input.score = parseInt(opt(flags, "score")!, 10)
+    const scoreVal = parseIntOpt(flags, "score", "score")
+    if (scoreVal !== undefined) input.score = scoreVal
     if (opt(flags, "description", "d")) input.description = opt(flags, "description", "d")
     if (opt(flags, "parent", "p")) input.parentId = opt(flags, "parent", "p")
 

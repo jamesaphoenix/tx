@@ -13,3 +13,7 @@ vitest.config.js
 vitest.config.js.map
 vitest.config.d.ts
 vitest.config.d.ts.map
+
+# Generated README files (synced from root README.md)
+packages/*/README.md
+apps/*/README.md

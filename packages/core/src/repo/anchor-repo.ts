@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, EntityFetchError, UnexpectedRowCountError } from "../errors.js"
 import { rowToAnchor, rowToInvalidationLog } from "../mappers/anchor.js"
 import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "@jamesaphoenix/tx-types"
 
@@ -70,7 +70,23 @@ export const AnchorRepositoryLive = Layer.effect(
               input.contentHash ?? null,
               input.contentPreview ?? null
             )
-            const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(result.lastInsertRowid) as AnchorRow
+            // Verify exactly one row was inserted
+            if (result.changes !== 1) {
+              throw new UnexpectedRowCountError({
+                operation: "anchor insert",
+                expected: 1,
+                actual: result.changes
+              })
+            }
+            const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(result.lastInsertRowid) as AnchorRow | undefined
+            // Verify the inserted row can be fetched
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "anchor",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToAnchor(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -164,7 +180,15 @@ export const AnchorRepositoryLive = Layer.effect(
               return null
             }
 
-            const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id) as AnchorRow
+            // Verify the updated row can be fetched
+            const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id) as AnchorRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "anchor",
+                id,
+                operation: "update"
+              })
+            }
             return rowToAnchor(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -286,7 +310,23 @@ export const AnchorRepositoryLive = Layer.effect(
               input.newContentHash ?? null,
               input.similarityScore ?? null
             )
-            const row = db.prepare("SELECT * FROM invalidation_log WHERE id = ?").get(result.lastInsertRowid) as InvalidationLogRow
+            // Verify exactly one row was inserted
+            if (result.changes !== 1) {
+              throw new UnexpectedRowCountError({
+                operation: "invalidation log insert",
+                expected: 1,
+                actual: result.changes
+              })
+            }
+            const row = db.prepare("SELECT * FROM invalidation_log WHERE id = ?").get(result.lastInsertRowid) as InvalidationLogRow | undefined
+            // Verify the inserted row can be fetched
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "invalidation_log",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToInvalidationLog(row)
           },
           catch: (cause) => new DatabaseError({ cause })

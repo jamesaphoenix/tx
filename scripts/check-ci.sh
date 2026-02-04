@@ -116,16 +116,21 @@ echo "tx CI Checks"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
+# Increase Node heap size to prevent OOM during builds
+export NODE_OPTIONS="--max-old-space-size=4096"
+
 # Run all checks (continue on failure to report all issues)
-# Build packages in explicit dependency order
-# Use workspace syntax from root and add debug output
-run_and_track "Build (packages)" "npm run build -w @jamesaphoenix/tx-types && ls -la packages/types/dist/ && npm run build -w @jamesaphoenix/tx-core && npx turbo build --concurrency=1"
-run_and_track "TypeScript (packages)" "npx turbo typecheck --concurrency=1"
-run_and_track "ESLint (packages)" "npx turbo lint"
-run_and_track "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
-run_and_track "Tests (packages)" "npx turbo test"
-# Use basic reporter, sequential file execution, and ignore cleanup RPC timeouts in CI
-run_and_track "Tests (root)" "npx vitest --run --reporter=basic --no-file-parallelism --dangerouslyIgnoreUnhandledErrors"
+# Build packages in explicit dependency order with reduced concurrency to prevent OOM
+# Use bun for builds (project uses bun:sqlite)
+run_and_track "Build (packages)" "bun run build -w @jamesaphoenix/tx-types && ls -la packages/types/dist/ && bun run build -w @jamesaphoenix/tx-core && bunx turbo build --concurrency=1"
+run_and_track "TypeScript (packages)" "bunx turbo typecheck --concurrency=1"
+run_and_track "ESLint (packages)" "bunx turbo lint"
+run_and_track "ESLint (root tests)" "bunx eslint test/ --max-warnings 0"
+# Tests must run with Bun to access bun:sqlite
+run_and_track "Tests (packages)" "bunx turbo test"
+# Use bun test (native test runner) for root tests - required for bun:sqlite support
+# Vitest doesn't work with bun:sqlite due to Vite's ESM loader limitations
+run_and_track "Tests (root)" "bun test test/ eslint-plugin-tx/tests/"
 
 # Summary
 echo ""

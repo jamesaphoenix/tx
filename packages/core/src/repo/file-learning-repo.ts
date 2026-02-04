@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, FileLearningNotFoundError } from "../errors.js"
 import { rowToFileLearning, matchesPattern } from "../mappers/file-learning.js"
 import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
 
@@ -11,7 +11,7 @@ export class FileLearningRepository extends Context.Tag("FileLearningRepository"
     readonly findById: (id: number) => Effect.Effect<FileLearning | null, DatabaseError>
     readonly findAll: () => Effect.Effect<readonly FileLearning[], DatabaseError>
     readonly findByPath: (path: string) => Effect.Effect<readonly FileLearning[], DatabaseError>
-    readonly remove: (id: number) => Effect.Effect<void, DatabaseError>
+    readonly remove: (id: number) => Effect.Effect<void, DatabaseError | FileLearningNotFoundError>
     readonly count: () => Effect.Effect<number, DatabaseError>
   }
 >() {}
@@ -78,11 +78,14 @@ export const FileLearningRepositoryLive = Layer.effect(
         }),
 
       remove: (id) =>
-        Effect.try({
-          try: () => {
-            db.prepare("DELETE FROM file_learnings WHERE id = ?").run(id)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () => db.prepare("DELETE FROM file_learnings WHERE id = ?").run(id),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new FileLearningNotFoundError({ id }))
+          }
         }),
 
       count: () =>

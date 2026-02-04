@@ -19,14 +19,42 @@ export const HierarchyServiceLive = Layer.effect(
   Effect.gen(function* () {
     const taskRepo = yield* TaskRepository
 
+    // Build tree from a flat list of tasks (root task first, then descendants)
+    // This is O(n) in-memory after a single O(1) query
+    const buildTreeFromTasks = (tasks: readonly Task[]): TaskTree | null => {
+      if (tasks.length === 0) return null
+
+      const rootTask = tasks[0]
+
+      // Group tasks by parent_id
+      const childrenByParent = new Map<string, Task[]>()
+      for (const task of tasks) {
+        if (task.parentId) {
+          const siblings = childrenByParent.get(task.parentId) ?? []
+          siblings.push(task)
+          childrenByParent.set(task.parentId, siblings)
+        }
+      }
+
+      // Recursively build tree nodes (in-memory, no DB queries)
+      const buildNode = (task: Task): TaskTree => {
+        const childTasks = childrenByParent.get(task.id) ?? []
+        return {
+          task,
+          children: childTasks.map(buildNode)
+        }
+      }
+
+      return buildNode(rootTask)
+    }
+
     const buildTree = (task: Task): Effect.Effect<TaskTree, DatabaseError> =>
       Effect.gen(function* () {
-        const childTasks = yield* taskRepo.findByParent(task.id)
-        const childTrees: TaskTree[] = []
-        for (const child of childTasks) {
-          childTrees.push(yield* buildTree(child))
-        }
-        return { task, children: childTrees }
+        // Single query to get task and all descendants
+        const allTasks = yield* taskRepo.getDescendants(task.id)
+        const tree = buildTreeFromTasks(allTasks)
+        // This should always succeed since we start with a valid task
+        return tree ?? { task, children: [] }
       })
 
     return {
@@ -41,20 +69,14 @@ export const HierarchyServiceLive = Layer.effect(
 
       getAncestors: (id) =>
         Effect.gen(function* () {
-          const task = yield* taskRepo.findById(id)
-          if (!task) {
+          // Use recursive CTE-based query (single query, not N+1)
+          const chain = yield* taskRepo.getAncestorChain(id)
+          if (chain.length === 0) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-
-          const ancestors: Task[] = []
-          let currentId = task.parentId
-          while (currentId !== null) {
-            const parent = yield* taskRepo.findById(currentId)
-            if (!parent) break
-            ancestors.push(parent)
-            currentId = parent.parentId
-          }
-          return ancestors
+          // getAncestorChain returns [task, parent, grandparent, ...]
+          // getAncestors should return [parent, grandparent, ...] (excluding the task itself)
+          return chain.slice(1)
         }),
 
       getTree: (id) =>
@@ -68,20 +90,13 @@ export const HierarchyServiceLive = Layer.effect(
 
       getDepth: (id) =>
         Effect.gen(function* () {
-          const task = yield* taskRepo.findById(id)
-          if (!task) {
+          // Use recursive CTE-based query (single query, not N+1)
+          const chain = yield* taskRepo.getAncestorChain(id)
+          if (chain.length === 0) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-
-          let depth = 0
-          let currentId = task.parentId
-          while (currentId !== null) {
-            const parent = yield* taskRepo.findById(currentId)
-            if (!parent) break
-            depth++
-            currentId = parent.parentId
-          }
-          return depth
+          // chain is [task, parent, grandparent, ...], so depth = chain.length - 1
+          return chain.length - 1
         }),
 
       getRoots: () => taskRepo.findByParent(null)

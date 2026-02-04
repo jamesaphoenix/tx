@@ -12,7 +12,7 @@
 import { Context, Effect, Layer, Queue, Fiber, Ref } from "effect"
 import { AnchorVerificationService, type VerificationResult, type VerifyOptions } from "./anchor-verification.js"
 import { AnchorRepository } from "../repo/anchor-repo.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, ValidationError } from "../errors.js"
 import { matchesGlob } from "../utils/glob.js"
 import type { AnchorStatus } from "@jamesaphoenix/tx-types"
 
@@ -167,42 +167,51 @@ const partitionIntoBatches = (
  */
 export const calculateMajorityVote = (
   results: readonly VerificationResult[]
-): VoteResult => {
-  const anchorId = results[0].anchorId
-  const votes = new Map<AnchorStatus | "error", number>()
-
-  for (const result of results) {
-    const status = result.newStatus
-    votes.set(status, (votes.get(status) ?? 0) + 1)
-  }
-
-  // Find the status with most votes
-  let maxVotes = 0
-  let consensus: AnchorStatus | null = null
-  let tieCount = 0
-
-  for (const [status, count] of votes) {
-    if (status === "error") continue // Don't count errors in consensus
-
-    if (count > maxVotes) {
-      maxVotes = count
-      consensus = status as AnchorStatus
-      tieCount = 1
-    } else if (count === maxVotes) {
-      tieCount++
+): Effect.Effect<VoteResult, ValidationError> =>
+  Effect.gen(function* () {
+    if (results.length === 0) {
+      return yield* Effect.fail(
+        new ValidationError({
+          reason: "Cannot calculate majority vote with empty results"
+        })
+      )
     }
-  }
 
-  // Tie = needs human review
-  const needsReview = tieCount > 1
+    const anchorId = results[0].anchorId
+    const votes = new Map<AnchorStatus | "error", number>()
 
-  return {
-    anchorId,
-    votes,
-    consensus: needsReview ? null : consensus,
-    needsReview
-  }
-}
+    for (const result of results) {
+      const status = result.newStatus
+      votes.set(status, (votes.get(status) ?? 0) + 1)
+    }
+
+    // Find the status with most votes
+    let maxVotes = 0
+    let consensus: AnchorStatus | null = null
+    let tieCount = 0
+
+    for (const [status, count] of votes) {
+      if (status === "error") continue // Don't count errors in consensus
+
+      if (count > maxVotes) {
+        maxVotes = count
+        consensus = status as AnchorStatus
+        tieCount = 1
+      } else if (count === maxVotes) {
+        tieCount++
+      }
+    }
+
+    // Tie = needs human review
+    const needsReview = tieCount > 1
+
+    return {
+      anchorId,
+      votes,
+      consensus: needsReview ? null : consensus,
+      needsReview
+    }
+  })
 
 /**
  * Aggregate batch results into final metrics.

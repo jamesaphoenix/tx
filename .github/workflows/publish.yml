@@ -30,6 +30,8 @@ jobs:
             ${{ runner.os }}-bun-
 
       - run: bun install
+      - name: Sync README to packages
+        run: bun run sync-readme
       - run: bun run build
       # Run package tests only (root tests are slower and tested in CI workflow)
       - run: bun run test:packages

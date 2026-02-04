@@ -1,7 +1,0 @@
-$ vitest --run
-
- RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
-
- ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 18ms
- ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 18ms
-error: script "test" exited with code 130

@@ -75,6 +75,27 @@ export const authMiddleware = async (c: Context, next: Next): Promise<void | Res
 }
 
 /**
+ * Check if a request has valid authentication.
+ * Returns true if auth is disabled OR if request has valid API key.
+ * Use this for endpoints that should work without auth but expose more info when authenticated.
+ */
+export const isRequestAuthenticated = (c: Context): boolean => {
+  const requiredKey = getApiKey()
+
+  // If no API key configured, consider all requests "authenticated" (auth disabled)
+  if (!requiredKey) {
+    return true
+  }
+
+  const providedKey = extractApiKey(c)
+  if (!providedKey) {
+    return false
+  }
+
+  return timingSafeEqual(providedKey, requiredKey)
+}
+
+/**
  * Constant-time string comparison to prevent timing attacks.
  * Uses Node.js crypto.timingSafeEqual for proper constant-time comparison.
  */

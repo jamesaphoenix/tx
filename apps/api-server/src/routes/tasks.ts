@@ -8,7 +8,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
 import type { TaskId, TaskStatus, TaskWithDeps, TaskCursor } from "@jamesaphoenix/tx-types"
-import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES, isValidTaskStatus } from "@jamesaphoenix/tx-types"
 import { TaskService, ReadyService, DependencyService, HierarchyService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
@@ -143,6 +143,10 @@ const listTasksRoute = createRoute({
     200: {
       description: "Paginated list of tasks",
       content: { "application/json": { schema: PaginatedTasksSchema } }
+    },
+    400: {
+      description: "Invalid status filter",
+      content: { "application/json": { schema: z.object({ error: z.string() }) } }
     }
   }
 })
@@ -330,12 +334,20 @@ export const tasksRouter = new OpenAPIHono()
 tasksRouter.openapi(listTasksRoute, async (c) => {
   const { cursor, limit, status, search } = c.req.valid("query")
 
+  // Validate status filter before entering Effect
+  let statusFilter: TaskStatus[] | undefined
+  if (status) {
+    const statuses = status.split(",").filter(Boolean)
+    const invalidStatuses = statuses.filter(s => !isValidTaskStatus(s))
+    if (invalidStatuses.length > 0) {
+      return c.json({ error: `Invalid status values: ${invalidStatuses.join(", ")}. Valid: ${TASK_STATUSES.join(", ")}` }, 400)
+    }
+    statusFilter = statuses as TaskStatus[]
+  }
+
   const result = await runEffect(
     Effect.gen(function* () {
       const taskService = yield* TaskService
-
-      // Parse status filter (comma-separated)
-      const statusFilter = status?.split(",").filter(Boolean) as TaskStatus[] | undefined
 
       // Parse cursor for keyset pagination
       let cursorObj: TaskCursor | undefined

@@ -46,7 +46,7 @@ export class ClaimService extends Context.Tag("ClaimService")<
     readonly release: (
       taskId: string,
       workerId: string
-    ) => Effect.Effect<void, ClaimNotFoundError | DatabaseError>
+    ) => Effect.Effect<void, ClaimNotFoundError | ClaimIdNotFoundError | DatabaseError>
 
     /**
      * Renew the lease on an existing claim.
@@ -55,7 +55,7 @@ export class ClaimService extends Context.Tag("ClaimService")<
     readonly renew: (
       taskId: string,
       workerId: string
-    ) => Effect.Effect<TaskClaim, ClaimNotFoundError | LeaseExpiredError | MaxRenewalsExceededError | DatabaseError>
+    ) => Effect.Effect<TaskClaim, ClaimNotFoundError | ClaimIdNotFoundError | LeaseExpiredError | MaxRenewalsExceededError | DatabaseError>
 
     /**
      * Get all claims that have expired but are still marked as active.
@@ -103,17 +103,6 @@ export const ClaimServiceLive = Layer.effect(
             return yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
           }
 
-          // Check if task is already claimed
-          const existingClaim = yield* claimRepo.findActiveByTaskId(taskId)
-          if (existingClaim) {
-            return yield* Effect.fail(
-              new AlreadyClaimedError({
-                taskId,
-                claimedByWorkerId: existingClaim.workerId
-              })
-            )
-          }
-
           // Get lease duration from config or use provided/default
           const state = yield* orchestratorRepo.get()
           const duration = leaseDurationMinutes ?? state.leaseDurationMinutes
@@ -121,7 +110,9 @@ export const ClaimServiceLive = Layer.effect(
           const now = new Date()
           const leaseExpiresAt = new Date(now.getTime() + duration * 60 * 1000)
 
-          const claim = yield* claimRepo.insert({
+          // Use atomic insert to prevent race condition
+          // This single SQL operation checks for existing claims AND inserts atomically
+          const result = yield* claimRepo.tryInsertAtomic({
             taskId,
             workerId,
             claimedAt: now,
@@ -130,9 +121,19 @@ export const ClaimServiceLive = Layer.effect(
             status: "active"
           })
 
+          if (!result.success) {
+            // Another worker already has an active claim
+            return yield* Effect.fail(
+              new AlreadyClaimedError({
+                taskId,
+                claimedByWorkerId: result.existingClaim?.workerId ?? "unknown"
+              })
+            )
+          }
+
           yield* Effect.log(`Task ${taskId} claimed by worker ${workerId}, expires at ${leaseExpiresAt.toISOString()}`)
 
-          return claim
+          return result.claim!
         }),
 
       release: (taskId, workerId) =>

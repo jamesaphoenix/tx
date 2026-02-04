@@ -78,6 +78,10 @@ export function readTxrc(projectDir: string): TxrcConfig {
  */
 export function writeTxrc(projectDir: string, config: TxrcConfig): void {
   const txrcPath = resolve(projectDir, ".txrc.json")
+  const dir = dirname(txrcPath)
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
   writeFileSync(txrcPath, JSON.stringify(config, null, 2) + "\n")
 }
 

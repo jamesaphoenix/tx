@@ -213,3 +213,12 @@ export {
   type ToolCall,
   type Message
 } from "./transcript-adapter.js"
+export {
+  CompactionService,
+  CompactionServiceNoop,
+  CompactionServiceLive,
+  CompactionServiceAuto,
+  type CompactionResult,
+  type CompactionOptions,
+  type CompactionPreview
+} from "./compaction-service.js"

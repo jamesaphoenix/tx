@@ -1,14 +1,14 @@
 import { Context, Effect, Layer } from "effect"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
-import { ValidationError, CircularDependencyError, TaskNotFoundError, DatabaseError } from "../errors.js"
+import { ValidationError, CircularDependencyError, TaskNotFoundError, DatabaseError, DependencyNotFoundError } from "../errors.js"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 
 export class DependencyService extends Context.Tag("DependencyService")<
   DependencyService,
   {
     readonly addBlocker: (taskId: TaskId, blockerId: TaskId) => Effect.Effect<void, ValidationError | CircularDependencyError | TaskNotFoundError | DatabaseError>
-    readonly removeBlocker: (taskId: TaskId, blockerId: TaskId) => Effect.Effect<void, DatabaseError>
+    readonly removeBlocker: (taskId: TaskId, blockerId: TaskId) => Effect.Effect<void, DatabaseError | DependencyNotFoundError>
   }
 >() {}
 
@@ -35,14 +35,13 @@ export const DependencyServiceLive = Layer.effect(
             return yield* Effect.fail(new TaskNotFoundError({ id: blockerId }))
           }
 
-          // Cycle detection: check if there's already a path from taskId to blockerId
-          // (i.e., blockerId is transitively blocked by taskId)
-          const wouldCycle = yield* depRepo.hasPath(blockerId, taskId)
-          if (wouldCycle) {
+          // Atomically check for cycles and insert dependency in a single transaction.
+          // This prevents race conditions where two concurrent addBlocker calls could
+          // both pass cycle detection before either inserts (DOCTRINE RULE 4).
+          const result = yield* depRepo.insertWithCycleCheck(blockerId, taskId)
+          if (result._tag === "wouldCycle") {
             return yield* Effect.fail(new CircularDependencyError({ taskId, blockerId }))
           }
-
-          yield* depRepo.insert(blockerId, taskId)
         }),
 
       removeBlocker: (taskId, blockerId) =>

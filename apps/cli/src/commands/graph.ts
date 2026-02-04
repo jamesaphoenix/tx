@@ -442,7 +442,8 @@ export const graphNeighbors = (pos: string[], flags: Flags) =>
       process.exit(1)
     }
 
-    const depth = opt(flags, "depth", "d") ? parseInt(opt(flags, "depth", "d")!, 10) : 2
+    const depthStr = opt(flags, "depth", "d")
+    const depth = depthStr !== undefined ? parseInt(depthStr, 10) : 2
     if (isNaN(depth) || depth < 1) {
       console.error("Error: Depth must be a positive integer")
       process.exit(1)

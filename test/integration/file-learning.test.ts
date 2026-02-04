@@ -161,6 +161,17 @@ describe("FileLearning CRUD", () => {
     expect(count).toBe(0)
   })
 
+  it("remove throws FileLearningNotFoundError for non-existent ID", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* FileLearningService
+          return yield* svc.remove(999)
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toThrow()
+  })
+
   it("getAll returns all learnings", async () => {
     const learnings = await Effect.runPromise(
       Effect.gen(function* () {

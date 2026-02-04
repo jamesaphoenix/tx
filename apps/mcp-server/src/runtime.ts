@@ -34,7 +34,6 @@ export type McpServices =
 // Runtime State
 // -----------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let managedRuntime: ManagedRuntime.ManagedRuntime<McpServices, any> | null = null
 
 // -----------------------------------------------------------------------------
@@ -62,7 +61,7 @@ export const runEffect = <A, E>(
   effect: Effect.Effect<A, E, McpServices>
 ): Promise<A> => {
   if (!managedRuntime) {
-    throw new Error("Runtime not initialized. Call initRuntime() first.")
+    return Promise.reject(new Error("Runtime not initialized. Call initRuntime() first."))
   }
   return managedRuntime.runPromise(effect)
 }
@@ -71,7 +70,6 @@ export const runEffect = <A, E>(
  * Get the current runtime for advanced use cases.
  * Returns null if not initialized.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getRuntime = (): ManagedRuntime.ManagedRuntime<McpServices, any> | null => {
   return managedRuntime
 }

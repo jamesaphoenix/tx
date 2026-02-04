@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { LearningWithScore } from "@jamesaphoenix/tx-types"
 import { cosineSimilarity } from "../utils/math.js"
+import { EmbeddingDimensionMismatchError } from "../errors.js"
 
 /**
  * DiversifierService provides Maximal Marginal Relevance (MMR) diversification
@@ -27,7 +28,7 @@ export class DiversifierService extends Context.Tag("DiversifierService")<
       candidates: readonly LearningWithScore[],
       limit: number,
       lambda?: number
-    ) => Effect.Effect<readonly LearningWithScore[]>
+    ) => Effect.Effect<readonly LearningWithScore[], EmbeddingDimensionMismatchError>
   }
 >() {}
 
@@ -52,31 +53,30 @@ const CATEGORY_MAX_PER_TOP_N = 2
 const maxSimilarityToSelected = (
   candidate: LearningWithScore,
   selected: readonly LearningWithScore[]
-): number => {
+): Effect.Effect<number, EmbeddingDimensionMismatchError> => {
   // No embedding means we can't compute similarity
   if (!candidate.embedding) {
-    return 0
+    return Effect.succeed(0)
   }
 
   // No selected items yet
   if (selected.length === 0) {
-    return 0
+    return Effect.succeed(0)
   }
 
-  let maxSim = -Infinity
-  for (const item of selected) {
-    // Skip items without embeddings
-    if (!item.embedding) {
-      continue
-    }
-    const sim = cosineSimilarity(candidate.embedding, item.embedding)
-    if (sim > maxSim) {
-      maxSim = sim
-    }
+  const itemsWithEmbeddings = selected.filter(
+    (item): item is LearningWithScore & { embedding: Float32Array } => item.embedding !== null
+  )
+
+  if (itemsWithEmbeddings.length === 0) {
+    return Effect.succeed(0)
   }
 
-  // If no valid comparisons were made, return 0
-  return maxSim === -Infinity ? 0 : maxSim
+  return Effect.forEach(itemsWithEmbeddings, item =>
+    cosineSimilarity(candidate.embedding!, item.embedding)
+  ).pipe(
+    Effect.map(similarities => Math.max(...similarities))
+  )
 }
 
 /**
@@ -91,11 +91,11 @@ const mmrScore = (
   candidate: LearningWithScore,
   selected: readonly LearningWithScore[],
   lambda: number
-): number => {
+): Effect.Effect<number, EmbeddingDimensionMismatchError> => {
   const relevance = candidate.relevanceScore
-  const maxSim = maxSimilarityToSelected(candidate, selected)
-
-  return lambda * relevance - (1 - lambda) * maxSim
+  return maxSimilarityToSelected(candidate, selected).pipe(
+    Effect.map(maxSim => lambda * relevance - (1 - lambda) * maxSim)
+  )
 }
 
 /**
@@ -141,6 +141,36 @@ export const DiversifierServiceNoop = Layer.succeed(
 )
 
 /**
+ * Find the best candidate from remaining items using MMR scoring.
+ * Returns the candidate with the highest MMR score that doesn't violate category limits.
+ */
+const findBestCandidate = (
+  remaining: Set<LearningWithScore>,
+  selected: readonly LearningWithScore[],
+  lambda: number,
+  checkCategoryLimits: boolean
+): Effect.Effect<{ candidate: LearningWithScore; score: number } | null, EmbeddingDimensionMismatchError> =>
+  Effect.gen(function* () {
+    let bestCandidate: LearningWithScore | null = null
+    let bestScore = -Infinity
+
+    for (const candidate of remaining) {
+      // Skip if would violate category limit (when checking is enabled)
+      if (checkCategoryLimits && wouldViolateCategoryLimit(candidate, selected)) {
+        continue
+      }
+
+      const score = yield* mmrScore(candidate, selected, lambda)
+      if (score > bestScore) {
+        bestScore = score
+        bestCandidate = candidate
+      }
+    }
+
+    return bestCandidate ? { candidate: bestCandidate, score: bestScore } : null
+  })
+
+/**
  * Live implementation with full MMR algorithm and category limits.
  *
  * Algorithm:
@@ -153,7 +183,7 @@ export const DiversifierServiceLive = Layer.succeed(
   DiversifierService,
   {
     mmrDiversify: (candidates, limit, lambda = DEFAULT_LAMBDA) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         // Edge case: empty candidates
         if (candidates.length === 0) {
           return []
@@ -182,41 +212,22 @@ export const DiversifierServiceLive = Layer.succeed(
         const remaining = new Set(candidates)
 
         while (selected.length < limit && remaining.size > 0) {
-          let bestCandidate: LearningWithScore | null = null
-          let bestScore = -Infinity
-
-          for (const candidate of remaining) {
-            // Skip if would violate category limit
-            if (wouldViolateCategoryLimit(candidate, selected)) {
-              continue
-            }
-
-            const score = mmrScore(candidate, selected, lambda)
-            if (score > bestScore) {
-              bestScore = score
-              bestCandidate = candidate
-            }
-          }
+          // Try to find best candidate respecting category limits
+          let result = yield* findBestCandidate(remaining, selected, lambda, true)
 
           // If no valid candidate found (all remaining violate category limits),
           // try to find any candidate without category limit check
-          if (!bestCandidate) {
-            for (const candidate of remaining) {
-              const score = mmrScore(candidate, selected, lambda)
-              if (score > bestScore) {
-                bestScore = score
-                bestCandidate = candidate
-              }
-            }
+          if (!result) {
+            result = yield* findBestCandidate(remaining, selected, lambda, false)
           }
 
           // Still no candidate? We're done
-          if (!bestCandidate) {
+          if (!result) {
             break
           }
 
-          selected.push(bestCandidate)
-          remaining.delete(bestCandidate)
+          selected.push(result.candidate)
+          remaining.delete(result.candidate)
         }
 
         return selected

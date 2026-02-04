@@ -3,7 +3,7 @@ import { LearningRepository } from "../repo/learning-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
 import { RetrieverService } from "./retriever-service.js"
-import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError, RetrievalError } from "../errors.js"
+import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError, RetrievalError, EmbeddingDimensionMismatchError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "@jamesaphoenix/tx-types"
 
 /** Result of embedding operation */
@@ -28,11 +28,11 @@ export class LearningService extends Context.Tag("LearningService")<
     readonly create: (input: CreateLearningInput) => Effect.Effect<Learning, ValidationError | DatabaseError>
     readonly get: (id: number) => Effect.Effect<Learning, LearningNotFoundError | DatabaseError>
     readonly remove: (id: number) => Effect.Effect<void, LearningNotFoundError | DatabaseError>
-    readonly search: (query: LearningQuery) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError>
+    readonly search: (query: LearningQuery) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError | EmbeddingDimensionMismatchError>
     readonly getRecent: (limit?: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly recordUsage: (id: number) => Effect.Effect<void, LearningNotFoundError | DatabaseError>
     readonly updateOutcome: (id: number, score: number) => Effect.Effect<void, LearningNotFoundError | ValidationError | DatabaseError>
-    readonly getContextForTask: (taskId: string, options?: ContextOptions) => Effect.Effect<ContextResult, TaskNotFoundError | RetrievalError | DatabaseError>
+    readonly getContextForTask: (taskId: string, options?: ContextOptions) => Effect.Effect<ContextResult, TaskNotFoundError | RetrievalError | DatabaseError | EmbeddingDimensionMismatchError>
     readonly count: () => Effect.Effect<number, DatabaseError>
     readonly embedAll: (forceAll?: boolean) => Effect.Effect<EmbedResult, DatabaseError>
     readonly embeddingStatus: () => Effect.Effect<EmbedStatus, DatabaseError>
@@ -126,7 +126,7 @@ export const LearningServiceLive = Layer.effect(
 
           // Build retrieval options with optional graph expansion
           const retrievalOptions = {
-            limit: 10,
+            limit: options?.maxTokens ?? 10,
             minScore: 0.05,
             graphExpansion: options?.useGraph
               ? {
@@ -169,33 +169,65 @@ export const LearningServiceLive = Layer.effect(
 
       embedAll: (forceAll = false) =>
         Effect.gen(function* () {
-          // Get learnings to embed
-          const allLearnings = yield* learningRepo.findAll()
-          const toEmbed = forceAll
-            ? allLearnings
-            : allLearnings.filter(l => !l.embedding)
+          const BATCH_SIZE = 100
+
+          // Get total counts upfront for accurate reporting
+          const total = yield* learningRepo.count()
+          const withoutEmbeddings = yield* learningRepo.countWithoutEmbeddings()
 
           let processed = 0
-          let skipped = 0
           let failed = 0
+          let lastId: number | undefined = undefined
 
-          for (const learning of toEmbed) {
-            const result = yield* Effect.either(embeddingService.embed(learning.content))
-            if (result._tag === "Right") {
-              yield* learningRepo.updateEmbedding(learning.id, result.right)
-              processed++
-            } else {
-              failed++
+          if (forceAll) {
+            // Process ALL learnings in batches (re-embed everything)
+            while (true) {
+              const batch: readonly Learning[] = yield* learningRepo.findPaginated(BATCH_SIZE, lastId)
+              if (batch.length === 0) break
+
+              for (const learning of batch) {
+                const result = yield* Effect.either(embeddingService.embed(learning.content))
+                if (result._tag === "Right") {
+                  yield* learningRepo.updateEmbedding(learning.id, result.right)
+                  processed++
+                } else {
+                  failed++
+                }
+              }
+
+              lastId = batch[batch.length - 1]!.id
+              if (batch.length < BATCH_SIZE) break
+            }
+          } else {
+            // Only process learnings without embeddings
+            while (true) {
+              // Always start from beginning since we're updating as we go
+              const batch: readonly Learning[] = yield* learningRepo.findWithoutEmbeddingPaginated(BATCH_SIZE)
+              if (batch.length === 0) break
+
+              for (const learning of batch) {
+                const result = yield* Effect.either(embeddingService.embed(learning.content))
+                if (result._tag === "Right") {
+                  yield* learningRepo.updateEmbedding(learning.id, result.right)
+                  processed++
+                } else {
+                  failed++
+                }
+              }
+
+              // If we processed less than batch size and had failures, we might loop forever
+              // Break if we didn't successfully process any in this batch
+              if (processed === 0 && failed === batch.length) break
             }
           }
 
-          skipped = allLearnings.length - toEmbed.length
+          const skipped = forceAll ? 0 : (total - withoutEmbeddings)
 
           return {
             processed,
             skipped,
             failed,
-            total: allLearnings.length
+            total
           }
         }),
 

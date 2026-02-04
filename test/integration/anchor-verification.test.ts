@@ -615,6 +615,183 @@ describe("AnchorVerificationService Integration", () => {
     })
   })
 
+  describe("hash anchor with line range validation", () => {
+    it("marks as invalid when lineStart is 0", async () => {
+      const content = "line1\nline2\nline3\nline4\nline5"
+      const filePath = await createTestFile(tempDir, "zero-start.ts", content)
+      const hash = computeHash(content)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for zero lineStart",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: hash,
+            contentHash: hash,
+            lineStart: 0, // Invalid: 0 (should be 1-indexed)
+            lineEnd: 3
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("line_range_invalid")
+    })
+
+    it("marks as invalid when lineEnd is 0", async () => {
+      const content = "line1\nline2\nline3\nline4\nline5"
+      const filePath = await createTestFile(tempDir, "zero-end.ts", content)
+      const hash = computeHash(content)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for zero lineEnd",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: hash,
+            contentHash: hash,
+            lineStart: 1,
+            lineEnd: 0 // Invalid: 0 (should be >= 1)
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("line_range_invalid")
+    })
+
+    it("marks as invalid when lineStart is negative", async () => {
+      const content = "line1\nline2\nline3\nline4\nline5"
+      const filePath = await createTestFile(tempDir, "negative-start.ts", content)
+      const hash = computeHash(content)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for negative lineStart",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: hash,
+            contentHash: hash,
+            lineStart: -1, // Invalid: negative
+            lineEnd: 3
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("line_range_invalid")
+    })
+
+    it("marks as invalid when lineEnd < lineStart", async () => {
+      const content = "line1\nline2\nline3\nline4\nline5"
+      const filePath = await createTestFile(tempDir, "invalid-range.ts", content)
+      const hash = computeHash(content)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for invalid range",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: hash,
+            contentHash: hash,
+            lineStart: 5,
+            lineEnd: 2 // Invalid: end < start
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("line_range_invalid")
+    })
+
+    it("succeeds with valid line range", async () => {
+      const content = "line1\nline2\nline3\nline4\nline5"
+      const rangeContent = "line2\nline3\nline4"
+      const filePath = await createTestFile(tempDir, "valid-range.ts", content)
+      const hash = computeHash(rangeContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for valid range",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: hash,
+            contentHash: hash,
+            lineStart: 2,
+            lineEnd: 4
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+  })
+
   describe("detection source tracking", () => {
     it("tracks periodic detection source", async () => {
       const filePath = path.join(tempDir, "nonexistent.ts")

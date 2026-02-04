@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, LearningNotFoundError } from "../errors.js"
 import { rowToLearning, float32ArrayToBuffer } from "../mappers/learning.js"
 import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@jamesaphoenix/tx-types"
 
@@ -16,6 +16,10 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
     readonly insert: (input: CreateLearningInput) => Effect.Effect<Learning, DatabaseError>
     readonly findById: (id: number) => Effect.Effect<Learning | null, DatabaseError>
     readonly findAll: () => Effect.Effect<readonly Learning[], DatabaseError>
+    /** Find learnings with pagination (cursor-based using id for stability) */
+    readonly findPaginated: (limit: number, afterId?: number) => Effect.Effect<readonly Learning[], DatabaseError>
+    /** Find learnings without embeddings with pagination (for batch embedding) */
+    readonly findWithoutEmbeddingPaginated: (limit: number, afterId?: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly findRecent: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly bm25Search: (query: string, limit: number) => Effect.Effect<readonly BM25Result[], DatabaseError>
     /** Find learnings that have embeddings (for vector search) */
@@ -24,9 +28,10 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
     readonly incrementUsageMany: (ids: readonly number[]) => Effect.Effect<void, DatabaseError>
     readonly updateOutcomeScore: (id: number, score: number) => Effect.Effect<void, DatabaseError>
     readonly updateEmbedding: (id: number, embedding: Float32Array) => Effect.Effect<void, DatabaseError>
-    readonly remove: (id: number) => Effect.Effect<void, DatabaseError>
+    readonly remove: (id: number) => Effect.Effect<void, DatabaseError | LearningNotFoundError>
     readonly count: () => Effect.Effect<number, DatabaseError>
     readonly countWithEmbeddings: () => Effect.Effect<number, DatabaseError>
+    readonly countWithoutEmbeddings: () => Effect.Effect<number, DatabaseError>
     readonly getConfig: (key: string) => Effect.Effect<string | null, DatabaseError>
   }
 >() {}
@@ -114,6 +119,36 @@ export const LearningRepositoryLive = Layer.effect(
             const rows = db.prepare(
               `SELECT * FROM learnings ORDER BY created_at ASC`
             ).all() as LearningRow[]
+            return rows.map(rowToLearning)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findPaginated: (limit, afterId) =>
+        Effect.try({
+          try: () => {
+            const rows = afterId !== undefined
+              ? db.prepare(
+                  `SELECT * FROM learnings WHERE id > ? ORDER BY id ASC LIMIT ?`
+                ).all(afterId, limit) as LearningRow[]
+              : db.prepare(
+                  `SELECT * FROM learnings ORDER BY id ASC LIMIT ?`
+                ).all(limit) as LearningRow[]
+            return rows.map(rowToLearning)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findWithoutEmbeddingPaginated: (limit, afterId) =>
+        Effect.try({
+          try: () => {
+            const rows = afterId !== undefined
+              ? db.prepare(
+                  `SELECT * FROM learnings WHERE embedding IS NULL AND id > ? ORDER BY id ASC LIMIT ?`
+                ).all(afterId, limit) as LearningRow[]
+              : db.prepare(
+                  `SELECT * FROM learnings WHERE embedding IS NULL ORDER BY id ASC LIMIT ?`
+                ).all(limit) as LearningRow[]
             return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -214,11 +249,14 @@ export const LearningRepositoryLive = Layer.effect(
         }),
 
       remove: (id) =>
-        Effect.try({
-          try: () => {
-            db.prepare("DELETE FROM learnings WHERE id = ?").run(id)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () => db.prepare("DELETE FROM learnings WHERE id = ?").run(id),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new LearningNotFoundError({ id }))
+          }
         }),
 
       count: () =>
@@ -234,6 +272,15 @@ export const LearningRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NOT NULL").get() as { cnt: number }
+            return result.cnt
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      countWithoutEmbeddings: () =>
+        Effect.try({
+          try: () => {
+            const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NULL").get() as { cnt: number }
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })

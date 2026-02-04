@@ -6,6 +6,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
+import { HTTPException } from "hono/http-exception"
 import { Effect } from "effect"
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
@@ -276,7 +277,7 @@ runsRouter.openapi(getRunRoute, async (c) => {
       const runRepo = yield* RunRepository
       const found = yield* runRepo.findById(id as RunId)
       if (!found) {
-        throw new Error(`Run not found: ${id}`)
+        throw new HTTPException(404, { message: `Run not found: ${id}` })
       }
       return found
     })
@@ -322,7 +323,7 @@ runsRouter.openapi(updateRunRoute, async (c) => {
       })
       const updated = yield* runRepo.findById(id as RunId)
       if (!updated) {
-        throw new Error(`Run not found: ${id}`)
+        throw new HTTPException(404, { message: `Run not found: ${id}` })
       }
       return updated
     })

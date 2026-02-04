@@ -154,8 +154,8 @@ export const QueryExpansionServiceLive = Layer.effect(
           const mod = await import("@anthropic-ai/sdk")
           return mod.default
         },
-        catch: () => new QueryExpansionUnavailableError({
-          reason: "@anthropic-ai/sdk is not installed"
+        catch: (error) => new QueryExpansionUnavailableError({
+          reason: `@anthropic-ai/sdk is not installed or failed to load. Install with: bun add @anthropic-ai/sdk (${error instanceof Error ? error.message : String(error)})`
         })
       })
 

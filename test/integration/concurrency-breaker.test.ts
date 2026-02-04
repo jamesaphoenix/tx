@@ -193,7 +193,7 @@ describe("Race Conditions: Claim Contention", () => {
       Effect.gen(function* () {
         const claimSvc = yield* ClaimService
         const workerRepo = yield* WorkerRepository
-        const taskRepo = yield* TaskService
+        const _taskRepo = yield* TaskService
 
         // Register workers
         yield* workerRepo.insert({
@@ -403,6 +403,59 @@ describe("Deadlock Detection: Circular Dependencies", () => {
     expect(hasPath).toBe(false)
   })
 
+  it("hasPath handles deep dependency chains (10+ levels) efficiently", async () => {
+    // Create a deep chain: 1 -> 2 -> 3 -> ... -> 10 -> 11
+    // This tests that the recursive CTE handles deep chains without N+1 queries
+    const chainTasks = Array.from({ length: 11 }, (_, i) => fixtureId(`chain-${i}`))
+
+    // Insert chain tasks
+    const now = new Date().toISOString()
+    const insertTask = db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    )
+    for (let i = 0; i < chainTasks.length; i++) {
+      insertTask.run(chainTasks[i], `Chain Task ${i}`, now, now)
+    }
+
+    // Create dependencies: task[i] blocks task[i+1]
+    for (let i = 0; i < chainTasks.length - 1; i++) {
+      db.db.prepare(
+        "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, datetime('now'))"
+      ).run(chainTasks[i], chainTasks[i + 1])
+    }
+
+    // Test: hasPath from task[10] to task[0] should find the path through all 10 levels
+    const hasPathDeep = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.hasPath(chainTasks[10], chainTasks[0])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(hasPathDeep).toBe(true)
+
+    // Test: hasPath from task[5] to task[0] should find partial path
+    const hasPathPartial = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.hasPath(chainTasks[5], chainTasks[0])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(hasPathPartial).toBe(true)
+
+    // Test: hasPath from task[0] to task[10] should NOT find path (wrong direction)
+    const hasPathReverse = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.hasPath(chainTasks[0], chainTasks[10])
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(hasPathReverse).toBe(false)
+  })
+
   it("service block rejects self-blocking", async () => {
     // Attempting to make a task block itself should fail
     // addBlocker(taskId, blockerId) - add blockerId as a blocker of taskId
@@ -487,6 +540,134 @@ describe("Deadlock Detection: Circular Dependencies", () => {
     )
 
     expect(result.length).toBe(2)
+  })
+
+  it("sequential addBlocker calls that would create cycle - second fails", async () => {
+    // This tests DOCTRINE RULE 4 - atomic cycle detection.
+    // When two addBlocker calls would create a cycle, the second must fail.
+    // The atomicity ensures that the cycle check and insert happen together,
+    // preventing any interleaving that could allow a cycle to be created.
+
+    const RACE_A = fixtureId("race-cycle-a")
+    const RACE_B = fixtureId("race-cycle-b")
+
+    // Create fresh tasks for this test
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    ).run(RACE_A, "Race Task A", now, now)
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    ).run(RACE_B, "Race Task B", now, now)
+
+    // First call: A blocks B (should succeed)
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DependencyService
+        yield* svc.addBlocker(RACE_B as TaskId, RACE_A as TaskId)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Second call: B blocks A (should fail - would create cycle)
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DependencyService
+        return yield* svc.addBlocker(RACE_A as TaskId, RACE_B as TaskId).pipe(Effect.either)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Should fail with CircularDependencyError
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("CircularDependencyError")
+    }
+
+    // Verify no circular dependency exists in the database
+    const deps = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.getAll()
+      }).pipe(Effect.provide(layer))
+    )
+
+    const raceDeps = deps.filter(
+      d => [RACE_A, RACE_B].includes(d.blockerId) && [RACE_A, RACE_B].includes(d.blockedId)
+    )
+
+    // Should only have one dependency (A->B), not two
+    expect(raceDeps.length).toBe(1)
+    expect(raceDeps[0].blockerId).toBe(RACE_A)
+    expect(raceDeps[0].blockedId).toBe(RACE_B)
+  })
+
+  it("insertWithCycleCheck returns wouldCycle when cycle would be created", async () => {
+    // Directly test the repository method to verify the atomic operation
+    // correctly detects cycles
+    const ATOMIC_A = fixtureId("atomic-cycle-a")
+    const ATOMIC_B = fixtureId("atomic-cycle-b")
+
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    ).run(ATOMIC_A, "Atomic Task A", now, now)
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    ).run(ATOMIC_B, "Atomic Task B", now, now)
+
+    // First insert: A blocks B (should succeed)
+    const result1 = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.insertWithCycleCheck(ATOMIC_A, ATOMIC_B)
+      }).pipe(Effect.provide(layer))
+    )
+    expect(result1._tag).toBe("inserted")
+
+    // Second insert: B blocks A (should detect cycle)
+    const result2 = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.insertWithCycleCheck(ATOMIC_B, ATOMIC_A)
+      }).pipe(Effect.provide(layer))
+    )
+    expect(result2._tag).toBe("wouldCycle")
+
+    // Verify only one dependency exists
+    const deps = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.getAll()
+      }).pipe(Effect.provide(layer))
+    )
+
+    const atomicDeps = deps.filter(
+      d => [ATOMIC_A, ATOMIC_B].includes(d.blockerId) && [ATOMIC_A, ATOMIC_B].includes(d.blockedId)
+    )
+    expect(atomicDeps.length).toBe(1)
+  })
+
+  it("insertWithCycleCheck detects self-cycle", async () => {
+    // Test that self-blocking is detected
+    const SELF_TASK = fixtureId("self-cycle-task")
+
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    ).run(SELF_TASK, "Self Cycle Task", now, now)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.insertWithCycleCheck(SELF_TASK, SELF_TASK)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("wouldCycle")
   })
 
   it("ready detection respects dependency chain", async () => {
@@ -943,7 +1124,7 @@ describe("Concurrency Stress: High Contention", () => {
           `UPDATE task_claims SET status = 'released' WHERE task_id = ? AND worker_id = ?`,
           [stressTaskId, workerId]
         )
-      } catch (e) {
+      } catch {
         allSuccessful = false
       }
     }

@@ -15,10 +15,13 @@ export {
   LearningNotFoundError,
   FileLearningNotFoundError,
   AttemptNotFoundError,
+  RunNotFoundError,
   ValidationError,
   CircularDependencyError,
   DatabaseError,
+  DependencyNotFoundError,
   EmbeddingUnavailableError,
+  EmbeddingDimensionMismatchError,
   EdgeNotFoundError,
   AnchorNotFoundError,
   CandidateNotFoundError,
@@ -35,7 +38,9 @@ export {
   ClaimIdNotFoundError,
   LeaseExpiredError,
   MaxRenewalsExceededError,
-  OrchestratorError
+  OrchestratorError,
+  // Batch processing errors
+  BatchProcessingError
 } from "./errors.js"
 
 // =============================================================================
@@ -89,7 +94,11 @@ export {
   DiversifierService,
   DiversifierServiceNoop,
   DiversifierServiceLive,
-  DiversifierServiceAuto
+  DiversifierServiceAuto,
+  CompactionService,
+  CompactionServiceLive,
+  CompactionServiceNoop,
+  CompactionServiceAuto
 } from "./layer.js"
 
 // =============================================================================
@@ -248,7 +257,11 @@ export {
   ClaimRepositoryLive,
   OrchestratorStateRepository,
   OrchestratorStateRepositoryLive,
-  type OrchestratorStateUpdate
+  type OrchestratorStateUpdate,
+  CompactionRepository,
+  CompactionRepositoryLive,
+  type CompactionLogEntry,
+  type CreateCompactionLogInput
 } from "./repo/index.js"
 
 // =============================================================================

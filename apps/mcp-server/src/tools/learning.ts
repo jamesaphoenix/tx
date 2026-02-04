@@ -11,6 +11,7 @@ import type { Learning, LearningWithScore, FileLearning, LearningSourceType } fr
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -93,8 +94,9 @@ const handleLearn = async (args: { filePattern: string; note: string; taskId?: s
   }
 }
 
-const handleRecall = async (args: { path?: string }): Promise<McpToolResult> => {
+const handleRecall = async (args: { path?: string; limit?: number }): Promise<McpToolResult> => {
   try {
+    const effectiveLimit = normalizeLimit(args.limit)
     const learnings = await runEffect(
       Effect.gen(function* () {
         const fileLearningService = yield* FileLearningService
@@ -104,11 +106,14 @@ const handleRecall = async (args: { path?: string }): Promise<McpToolResult> => 
         return yield* fileLearningService.getAll()
       })
     )
-    const serialized = learnings.map(serializeFileLearning)
+    // Apply limit at MCP layer to prevent memory exhaustion
+    const limited = learnings.slice(0, effectiveLimit)
+    const serialized = limited.map(serializeFileLearning)
     const pathInfo = args.path ? ` for "${args.path}"` : ""
+    const truncatedInfo = learnings.length > effectiveLimit ? ` (truncated from ${learnings.length})` : ""
     return {
       content: [
-        { type: "text", text: `Found ${learnings.length} file learning(s)${pathInfo}` },
+        { type: "text", text: `Found ${limited.length} file learning(s)${pathInfo}${truncatedInfo}` },
         { type: "text", text: JSON.stringify(serialized) }
       ]
     }
@@ -124,7 +129,9 @@ const handleContext = async (args: { taskId: string; maxTokens?: number }): Prom
     const result = await runEffect(
       Effect.gen(function* () {
         const learningService = yield* LearningService
-        return yield* learningService.getContextForTask(args.taskId)
+        return yield* learningService.getContextForTask(args.taskId, {
+          maxTokens: args.maxTokens
+        })
       })
     )
     const serializedLearnings = result.learnings.map(serializeLearningWithScore)
@@ -188,12 +195,13 @@ const handleLearningSearch = async (args: {
   category?: string
 }): Promise<McpToolResult> => {
   try {
+    const effectiveLimit = normalizeLimit(args.limit)
     const learnings = await runEffect(
       Effect.gen(function* () {
         const learningService = yield* LearningService
         return yield* learningService.search({
           query: args.query,
-          limit: args.limit ?? undefined,
+          limit: effectiveLimit,
           minScore: args.minScore ?? undefined,
           category: args.category ?? undefined
         })
@@ -262,7 +270,8 @@ export const registerLearningTools = (server: McpServer): void => {
     "tx_recall",
     "Query file-specific learnings. If path is provided, returns learnings matching that path. Otherwise returns all file learnings.",
     {
-      path: z.string().optional().describe("Optional file path to match against stored patterns")
+      path: z.string().optional().describe("Optional file path to match against stored patterns"),
+      limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of learnings to return (default: 100, max: ${MCP_MAX_LIMIT})`)
     },
     handleRecall as Parameters<typeof server.tool>[3]
   )
@@ -274,7 +283,7 @@ export const registerLearningTools = (server: McpServer): void => {
     "Get contextual learnings relevant to a task. Searches learnings using the task's title and description, returns scored results with BM25, recency, and relevance scores.",
     {
       taskId: z.string().describe("Task ID to get context for"),
-      maxTokens: z.number().int().positive().optional().describe("Maximum tokens for context (reserved for future use)")
+      maxTokens: z.number().int().positive().optional().describe("Maximum number of learnings to return (default: 10)")
     },
     handleContext as Parameters<typeof server.tool>[3]
   )
@@ -301,7 +310,7 @@ export const registerLearningTools = (server: McpServer): void => {
     "Search learnings using BM25 text search. Returns scored results with relevance, BM25, and recency scores.",
     {
       query: z.string().describe("Search query text"),
-      limit: z.number().int().positive().optional().describe("Maximum number of results to return (default: 10)"),
+      limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of results to return (default: 10, max: ${MCP_MAX_LIMIT})`),
       minScore: z.number().min(0).max(1).optional().describe("Minimum relevance score filter (0-1)"),
       category: z.string().optional().describe("Filter by category")
     },
@@ -314,7 +323,7 @@ export const registerLearningTools = (server: McpServer): void => {
     "tx_learning_helpful",
     "Record helpfulness/outcome score for a learning. Use this to provide feedback on whether a learning was useful.",
     {
-      id: z.number().int().describe("Learning ID to update"),
+      id: z.number().int().positive().describe("Learning ID to update"),
       score: z.number().min(0).max(1).optional().describe("Helpfulness score between 0 and 1 (default: 1.0)")
     },
     handleLearningHelpful as Parameters<typeof server.tool>[3]

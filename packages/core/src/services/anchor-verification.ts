@@ -178,6 +178,11 @@ const readLineRange = (
   lineEnd: number
 ): Effect.Effect<string | null, never> =>
   Effect.gen(function* () {
+    // Validate line numbers are positive (1-indexed)
+    if (lineStart < 1 || lineEnd < 1) return null
+    // Validate range is valid (end >= start)
+    if (lineEnd < lineStart) return null
+
     const content = yield* readFile(filePath)
     if (!content) return null
 
@@ -401,7 +406,8 @@ export const AnchorVerificationServiceLive = Layer.effect(
 
           case "hash": {
             // Check content hash
-            if (!anchor.lineStart || !anchor.lineEnd) {
+            // Use explicit null checks: 0 is an invalid line number, not "no line range"
+            if (anchor.lineStart == null || anchor.lineEnd == null) {
               // No line range specified, read whole file
               const content = yield* readFile(fullPath)
               if (!content) {
@@ -424,7 +430,23 @@ export const AnchorVerificationServiceLive = Layer.effect(
 
               const newHash = computeContentHash(content)
 
-              if (anchor.contentHash && newHash === anchor.contentHash) {
+              // If no stored hash, initialize it with current content (can't verify without baseline)
+              if (!anchor.contentHash) {
+                const newPreview = createContentPreview(content)
+                yield* anchorRepo.update(anchor.id, {
+                  contentHash: newHash,
+                  contentPreview: newPreview,
+                  verifiedAt: new Date()
+                })
+                return {
+                  anchorId: anchor.id,
+                  previousStatus: oldStatus,
+                  newStatus: oldStatus,
+                  action: "unchanged" as const
+                }
+              }
+
+              if (newHash === anchor.contentHash) {
                 yield* anchorRepo.updateVerifiedAt(anchor.id)
                 return {
                   anchorId: anchor.id,
@@ -509,7 +531,23 @@ export const AnchorVerificationServiceLive = Layer.effect(
 
             const newHash = computeContentHash(content)
 
-            if (anchor.contentHash && newHash === anchor.contentHash) {
+            // If no stored hash, initialize it with current content (can't verify without baseline)
+            if (!anchor.contentHash) {
+              const newPreview = createContentPreview(content)
+              yield* anchorRepo.update(anchor.id, {
+                contentHash: newHash,
+                contentPreview: newPreview,
+                verifiedAt: new Date()
+              })
+              return {
+                anchorId: anchor.id,
+                previousStatus: oldStatus,
+                newStatus: oldStatus,
+                action: "unchanged" as const
+              }
+            }
+
+            if (newHash === anchor.contentHash) {
               yield* anchorRepo.updateVerifiedAt(anchor.id)
               return {
                 anchorId: anchor.id,

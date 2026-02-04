@@ -24,7 +24,7 @@ const toolSchemas = {
     id: z.string()
   }),
   tx_list: z.object({
-    status: z.string().optional(),
+    status: z.enum(TASK_STATUSES).optional(),
     parentId: z.string().optional(),
     limit: z.number().int().positive().optional()
   }),
@@ -41,7 +41,7 @@ const toolSchemas = {
     id: z.string(),
     title: z.string().optional(),
     description: z.string().optional(),
-    status: z.string().optional(),
+    status: z.enum(TASK_STATUSES).optional(),
     parentId: z.string().nullable().optional(),
     score: z.number().int().optional()
   }),
@@ -352,6 +352,18 @@ describe("Tool Input Schema Validation", () => {
       const result = toolSchemas.tx_list.safeParse({ limit: -5 })
       expect(result.success).toBe(false)
     })
+
+    it("rejects invalid status value", () => {
+      const result = toolSchemas.tx_list.safeParse({ status: "invalid_status" })
+      expect(result.success).toBe(false)
+    })
+
+    it("accepts all valid status values", () => {
+      for (const status of TASK_STATUSES) {
+        const result = toolSchemas.tx_list.safeParse({ status })
+        expect(result.success).toBe(true)
+      }
+    })
   })
 
   describe("tx_children", () => {
@@ -440,6 +452,21 @@ describe("Tool Input Schema Validation", () => {
         score: 75.5
       })
       expect(result.success).toBe(false)
+    })
+
+    it("rejects invalid status value", () => {
+      const result = toolSchemas.tx_update.safeParse({
+        id: "tx-12345678",
+        status: "invalid_status"
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it("accepts all valid status values", () => {
+      for (const status of TASK_STATUSES) {
+        const result = toolSchemas.tx_update.safeParse({ id: "tx-12345678", status })
+        expect(result.success).toBe(true)
+      }
     })
   })
 

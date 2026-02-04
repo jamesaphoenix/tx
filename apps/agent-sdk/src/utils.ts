@@ -7,6 +7,9 @@
 import type { TaskStatus, SerializedTaskWithDeps } from "./types.js"
 import { TASK_STATUSES } from "./types.js"
 
+// Re-export task ID validation from types package for backwards compatibility
+export { isValidTaskId, assertTaskId, InvalidTaskIdError, TASK_ID_PATTERN } from "@jamesaphoenix/tx-types"
+
 // =============================================================================
 // Type Guards
 // =============================================================================
@@ -16,13 +19,6 @@ import { TASK_STATUSES } from "./types.js"
  */
 export const isValidTaskStatus = (status: string): status is TaskStatus => {
   return (TASK_STATUSES as readonly string[]).includes(status)
-}
-
-/**
- * Check if a task ID matches the expected format.
- */
-export const isValidTaskId = (id: string): boolean => {
-  return /^tx-[a-z0-9]{6,8}$/.test(id)
 }
 
 // =============================================================================

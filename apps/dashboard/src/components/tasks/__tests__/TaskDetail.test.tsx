@@ -13,12 +13,12 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     title: 'Test task',
     description: 'Test description',
     status: 'ready',
-    parent_id: null,
+    parentId: null,
     score: 500,
-    created_at: '2026-01-30T12:00:00Z',
-    updated_at: '2026-01-30T12:00:00Z',
-    completed_at: null,
-    metadata: '{}',
+    createdAt: '2026-01-30T12:00:00Z',
+    updatedAt: '2026-01-30T12:00:00Z',
+    completedAt: null,
+    metadata: {},
     blockedBy: [],
     blocks: [],
     children: [],
@@ -171,9 +171,9 @@ describe('TaskDetail', () => {
     it('shows timestamps', async () => {
       const task = createTask({
         id: 'tx-timestamps',
-        created_at: '2026-01-30T12:00:00Z',
-        updated_at: '2026-01-30T14:00:00Z',
-        completed_at: '2026-01-30T16:00:00Z',
+        createdAt: '2026-01-30T12:00:00Z',
+        updatedAt: '2026-01-30T14:00:00Z',
+        completedAt: '2026-01-30T16:00:00Z',
       })
 
       server.use(
@@ -204,7 +204,7 @@ describe('TaskDetail', () => {
     it('shows parent task link when parent_id is set', async () => {
       const task = createTask({
         id: 'tx-child1',
-        parent_id: 'tx-parent1',
+        parentId: 'tx-parent1',
       })
 
       server.use(
@@ -397,19 +397,19 @@ describe('TaskDetail', () => {
       const childTask1 = createTask({
         id: 'tx-child1',
         title: 'Child task 1',
-        parent_id: 'tx-parent1',
+        parentId: 'tx-parent1',
       })
 
       const childTask2 = createTask({
         id: 'tx-child2',
         title: 'Child task 2',
-        parent_id: 'tx-parent1',
+        parentId: 'tx-parent1',
       })
 
       const childTask3 = createTask({
         id: 'tx-child3',
         title: 'Child task 3',
-        parent_id: 'tx-parent1',
+        parentId: 'tx-parent1',
       })
 
       server.use(

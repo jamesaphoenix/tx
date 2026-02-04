@@ -41,11 +41,21 @@ interface ClaudeResult {
 }
 
 /**
- * Shutdown state shared between signal handlers and the main loop.
+ * Mutable shutdown state for signal handler communication.
+ *
+ * Uses simple mutable variables instead of Effect Refs because:
+ * 1. Signal handlers must be synchronous and minimal
+ * 2. Using Effect.runSync in signal handlers violates best practices
+ * 3. These variables are only accessed/mutated from the main thread
+ *
+ * Note: tasksCompleted is NOT included here because it's only accessed
+ * from Effect contexts (fibers), not signal handlers. It uses Effect.Ref
+ * to properly handle concurrent access between the main work loop and
+ * heartbeat fiber.
  */
-interface ShutdownState {
-  readonly requested: boolean
-  readonly claudeProcess: ChildProcess | null
+interface MutableShutdownState {
+  shutdownRequested: boolean
+  claudeProcess: ChildProcess | null
 }
 
 /**
@@ -67,11 +77,17 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
     const readyService = yield* ReadyService
     const taskService = yield* TaskService
 
-    // Shutdown state ref (mutable, shared with signal handlers)
-    const shutdownState = yield* Ref.make<ShutdownState>({
-      requested: false,
+    // Mutable shutdown state (shared with signal handlers via closure)
+    // Using plain object instead of Effect Ref to avoid Effect.runSync in signal handlers
+    const state: MutableShutdownState = {
+      shutdownRequested: false,
       claudeProcess: null
-    })
+    }
+
+    // Effect Ref for tasksCompleted counter - safe for concurrent fiber access
+    // This is separate from MutableShutdownState because it's only accessed
+    // from Effect contexts, never from signal handlers
+    const tasksCompletedRef = yield* Ref.make(0)
 
     // Register with orchestrator
     const worker = yield* workerService.register({
@@ -85,38 +101,25 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
     yield* Effect.log(`Worker ${workerId} registered`)
 
     // Set up signal handlers for graceful shutdown
+    // Uses direct mutation - no Effect.runSync needed
     const handleSignal = (signal: string) => {
       console.log(`Worker ${workerId} received ${signal}`)
 
-      // Mark shutdown as requested (sync since signal handlers can't use async)
-      Effect.runSync(
-        Ref.update(shutdownState, (state) => ({
-          ...state,
-          requested: true
-        }))
-      )
+      // Mark shutdown as requested
+      state.shutdownRequested = true
 
       // Try to terminate Claude subprocess if running
-      Effect.runSync(
-        Ref.get(shutdownState).pipe(
-          Effect.map((state) => {
-            if (state.claudeProcess && !state.claudeProcess.killed) {
-              state.claudeProcess.kill("SIGTERM")
-            }
-          })
-        )
-      )
+      if (state.claudeProcess && !state.claudeProcess.killed) {
+        state.claudeProcess.kill("SIGTERM")
+      }
     }
 
     process.on("SIGTERM", () => handleSignal("SIGTERM"))
     process.on("SIGINT", () => handleSignal("SIGINT"))
 
-    // Completed tasks counter for metrics (shared with heartbeat loop)
-    const tasksCompletedRef = yield* Ref.make(0)
-
     // Heartbeat fiber - runs continuously in background
     const heartbeatFiber = yield* Effect.fork(
-      runHeartbeatLoop(workerId, config.heartbeatIntervalSeconds, shutdownState, tasksCompletedRef)
+      runHeartbeatLoop(workerId, config.heartbeatIntervalSeconds, state, tasksCompletedRef)
     )
 
 
@@ -124,8 +127,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
       // Main work loop
       while (true) {
         // Check if shutdown was requested
-        const state = yield* Ref.get(shutdownState)
-        if (state.requested) {
+        if (state.shutdownRequested) {
           yield* Effect.log(`Worker ${workerId} shutting down gracefully`)
           break
         }
@@ -160,8 +162,8 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
         const _claim = claimResult.right
         yield* Effect.log(`Worker ${workerId} claimed task ${task.id}`)
 
-        const tasksCompleted = yield* Ref.get(tasksCompletedRef)
         // Update worker status to busy with current task
+        const currentTasksCompleted = yield* Ref.get(tasksCompletedRef)
         yield* workerService.heartbeat({
           workerId,
           timestamp: new Date(),
@@ -170,7 +172,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
           metrics: {
             cpuPercent: process.cpuUsage().user / 1000000,
             memoryMb: process.memoryUsage().heapUsed / 1024 / 1024,
-            tasksCompleted
+            tasksCompleted: currentTasksCompleted
           }
         })
 
@@ -183,7 +185,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
           config.heartbeatIntervalSeconds * 10 // Default: 10x heartbeat interval
 
         const renewFiber = yield* Effect.fork(
-          runLeaseRenewalLoop(task.id, workerId, renewalInterval, shutdownState)
+          runLeaseRenewalLoop(task.id, workerId, renewalInterval, state)
         )
 
         try {
@@ -193,7 +195,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
             task,
             workerId,
             config.workingDirectory ?? process.cwd(),
-            shutdownState
+            state
           )
 
           if (result.success) {
@@ -253,22 +255,20 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
 const runHeartbeatLoop = (
   workerId: string,
   intervalSeconds: number,
-  shutdownState: Ref.Ref<ShutdownState>,
+  state: MutableShutdownState,
   tasksCompletedRef: Ref.Ref<number>
 ) =>
   Effect.gen(function* () {
     const workerService = yield* WorkerService
 
-
     while (true) {
       // Check shutdown before heartbeat
-      const state = yield* Ref.get(shutdownState)
-      if (state.requested) break
+      if (state.shutdownRequested) break
 
       // Determine current status based on whether Claude is running
       const status = state.claudeProcess ? "busy" : "idle"
 
-      // Read current completed count from shared ref
+      // Read tasksCompleted from Ref (safe concurrent access)
       const tasksCompleted = yield* Ref.get(tasksCompletedRef)
 
       yield* workerService
@@ -301,7 +301,7 @@ const runLeaseRenewalLoop = (
   taskId: string,
   workerId: string,
   intervalSeconds: number,
-  shutdownState: Ref.Ref<ShutdownState>,
+  state: MutableShutdownState,
 ) =>
   Effect.gen(function* () {
     const claimService = yield* ClaimService
@@ -311,31 +311,47 @@ const runLeaseRenewalLoop = (
       yield* Effect.sleep(Duration.seconds(intervalSeconds))
 
       // Check shutdown before renewal
-      const state = yield* Ref.get(shutdownState)
-      if (state.requested) break
+      if (state.shutdownRequested) break
 
-      yield* claimService
+      const renewResult = yield* claimService
         .renew(taskId, workerId)
         .pipe(
           Effect.tap(() => Effect.log(`Renewed lease on task ${taskId}`)),
+          Effect.map(() => true),
           Effect.catchAll((error) =>
-            Effect.log(
-              `Lease renewal failed for task ${taskId}: ${error.message}`
-            )
+            Effect.gen(function* () {
+              yield* Effect.log(
+                `CRITICAL: Lease renewal failed for task ${taskId}: ${error.message}. Stopping worker to prevent duplicate execution.`
+              )
+              // Stop the worker to prevent duplicate task execution
+              // Another worker may have claimed this task after lease expiry
+              state.shutdownRequested = true
+              // Kill Claude subprocess if running
+              if (state.claudeProcess && !state.claudeProcess.killed) {
+                state.claudeProcess.kill("SIGTERM")
+              }
+              return false
+            })
           )
         )
+
+      // Exit renewal loop if renewal failed
+      if (!renewResult) break
     }
   })
 
 /**
  * Run a Claude subprocess to work on a task.
+ *
+ * Uses direct mutation on state object instead of Effect.runSync
+ * because this function uses Effect.async with process event callbacks.
  */
 const runClaude = (
   agent: string,
   task: TaskWithDeps,
   workerId: string,
   workingDirectory: string,
-  shutdownState: Ref.Ref<ShutdownState>,
+  state: MutableShutdownState,
 ): Effect.Effect<ClaudeResult, never> =>
   Effect.async((resume) => {
     const prompt = buildPrompt(agent, task)
@@ -350,13 +366,8 @@ const runClaude = (
       }
     )
 
-    // Store the process reference for signal handling
-    Effect.runSync(
-      Ref.update(shutdownState, (state) => ({
-        ...state,
-        claudeProcess: proc
-      }))
-    )
+    // Store the process reference for signal handling (direct mutation)
+    state.claudeProcess = proc
 
     let stderr = ""
 
@@ -365,13 +376,8 @@ const runClaude = (
     })
 
     proc.on("close", (code) => {
-      // Clear the process reference
-      Effect.runSync(
-        Ref.update(shutdownState, (state) => ({
-          ...state,
-          claudeProcess: null
-        }))
-      )
+      // Clear the process reference (direct mutation)
+      state.claudeProcess = null
 
       if (code === 0) {
         resume(Effect.succeed({ success: true, exitCode: code ?? 0 }))
@@ -387,13 +393,8 @@ const runClaude = (
     })
 
     proc.on("error", (err) => {
-      // Clear the process reference
-      Effect.runSync(
-        Ref.update(shutdownState, (state) => ({
-          ...state,
-          claudeProcess: null
-        }))
-      )
+      // Clear the process reference (direct mutation)
+      state.claudeProcess = null
 
       resume(
         Effect.succeed({

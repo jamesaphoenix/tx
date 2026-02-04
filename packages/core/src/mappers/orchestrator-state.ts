@@ -2,6 +2,7 @@
  * OrchestratorState mappers - convert database rows to domain objects
  */
 
+import { InvalidStatusError } from "../errors.js"
 import type { OrchestratorState, OrchestratorStatus } from "../schemas/worker.js"
 
 /**
@@ -34,11 +35,15 @@ export const isValidOrchestratorStatus = (s: string): s is OrchestratorStatus =>
 
 /**
  * Convert a database row to an OrchestratorState domain object.
- * Throws if status is invalid.
+ * Throws InvalidStatusError if status is invalid.
  */
 export const rowToOrchestratorState = (row: OrchestratorStateRow): OrchestratorState => {
   if (!isValidOrchestratorStatus(row.status)) {
-    throw new Error(`Invalid orchestrator status: ${row.status}`)
+    throw new InvalidStatusError({
+      entity: "orchestrator",
+      status: row.status,
+      validStatuses: ORCHESTRATOR_STATUSES
+    })
   }
   return {
     status: row.status,

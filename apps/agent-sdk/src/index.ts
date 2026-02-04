@@ -95,9 +95,12 @@ export type {
 // =============================================================================
 
 export {
-  // Type guards
+  // Type guards & validation
   isValidTaskStatus,
   isValidTaskId,
+  assertTaskId,
+  InvalidTaskIdError,
+  TASK_ID_PATTERN,
   // Task helpers
   filterByStatus,
   filterReady,

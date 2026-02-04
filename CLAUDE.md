@@ -230,6 +230,42 @@ it("test", async () => {
 
 **Why?** Creating a new DB per test caused 920 DBs → 54GB RAM. Singleton pattern: 1 DB → <1GB RAM.
 
+### RULE 9: Use Conventional Commits for all git commits
+
+All git commits MUST follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+**Types:**
+- `feat:` — New feature
+- `fix:` — Bug fix
+- `docs:` — Documentation only
+- `style:` — Code style (formatting, semicolons, etc.)
+- `refactor:` — Code change that neither fixes a bug nor adds a feature
+- `perf:` — Performance improvement
+- `test:` — Adding or updating tests
+- `chore:` — Build process, dependencies, tooling
+- `ci:` — CI/CD configuration
+
+**Examples:**
+```bash
+feat(cli): add tx claim command for task locking
+fix(api): prevent path traversal in sync routes
+refactor(core): extract shared validation utilities
+test(mcp): add integration tests for sync tools
+```
+
+**Do NOT use:**
+- `ralph:` prefix
+- Generic messages like "updates" or "changes"
+- Messages without a type prefix
+
 ---
 
 ## Quick Reference

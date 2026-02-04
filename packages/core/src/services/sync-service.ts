@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { writeFileSync, renameSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import { DatabaseError, ValidationError } from "../errors.js"
+import { DatabaseError, TaskNotFoundError, ValidationError } from "../errors.js"
 import { SqliteClient } from "../db.js"
 import { TaskService } from "./task-service.js"
 import { TaskRepository } from "../repo/task-repo.js"
@@ -100,7 +100,7 @@ export class SyncService extends Context.Tag("SyncService")<
      * Uses timestamp-based conflict resolution (later wins).
      * @param path Optional path (default: .tx/tasks.jsonl)
      */
-    readonly import: (path?: string) => Effect.Effect<ImportResult, ValidationError | DatabaseError>
+    readonly import: (path?: string) => Effect.Effect<ImportResult, ValidationError | DatabaseError | TaskNotFoundError>
 
     /**
      * Get current sync status.
@@ -140,6 +140,95 @@ export class SyncService extends Context.Tag("SyncService")<
 >() {}
 
 const DEFAULT_JSONL_PATH = ".tx/tasks.jsonl"
+
+/**
+ * Topologically sort task operations so parents are processed before children.
+ * This ensures foreign key constraints are satisfied during import.
+ *
+ * Uses Kahn's algorithm:
+ * 1. Find all tasks with no parent (or parent not in import set) - these have no deps
+ * 2. Process them and mark as "done"
+ * 3. For remaining tasks, if their parent is "done", add them to the queue
+ * 4. Repeat until all tasks are processed
+ *
+ * @param entries Array of [taskId, { op, ts }] entries from taskStates Map
+ * @returns Sorted array with parents before children
+ */
+function topologicalSortTasks<T extends { op: { op: string; data?: { parentId?: string | null } } }>(
+  entries: Array<[string, T]>
+): Array<[string, T]> {
+  // Separate upserts from deletes - deletes don't have parent dependencies
+  const upsertEntries = entries.filter(([, { op }]) => op.op === "upsert")
+  const deleteEntries = entries.filter(([, { op }]) => op.op === "delete")
+
+  // Build set of task IDs being imported
+  const importingIds = new Set(upsertEntries.map(([id]) => id))
+
+  // Build parent→children adjacency list
+  const children = new Map<string, string[]>()
+  for (const [id] of upsertEntries) {
+    children.set(id, [])
+  }
+  for (const [id, { op }] of upsertEntries) {
+    const parentId = (op as { data?: { parentId?: string | null } }).data?.parentId
+    if (parentId && importingIds.has(parentId)) {
+      const parentChildren = children.get(parentId)
+      if (parentChildren) {
+        parentChildren.push(id)
+      }
+    }
+  }
+
+  // Calculate in-degree (number of parents in import set)
+  const inDegree = new Map<string, number>()
+  for (const [id, { op }] of upsertEntries) {
+    const parentId = (op as { data?: { parentId?: string | null } }).data?.parentId
+    // Only count parent as dependency if it's in the import set
+    const hasParentInSet = parentId && importingIds.has(parentId)
+    inDegree.set(id, hasParentInSet ? 1 : 0)
+  }
+
+  // Queue starts with tasks that have no parent in import set (in-degree 0)
+  const queue: string[] = []
+  for (const [id, degree] of inDegree) {
+    if (degree === 0) {
+      queue.push(id)
+    }
+  }
+
+  // Build sorted result
+  const sorted: Array<[string, T]> = []
+  const entryMap = new Map(upsertEntries)
+
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    const entry = entryMap.get(id)
+    if (entry) {
+      sorted.push([id, entry])
+    }
+
+    // Decrement in-degree of children and add to queue if now 0
+    const childIds = children.get(id) ?? []
+    for (const childId of childIds) {
+      const currentDegree = inDegree.get(childId) ?? 0
+      const newDegree = currentDegree - 1
+      inDegree.set(childId, newDegree)
+      if (newDegree === 0) {
+        queue.push(childId)
+      }
+    }
+  }
+
+  // If we didn't process all tasks, there's a cycle - fall back to original order
+  // (This shouldn't happen with valid data since parent-child can't be circular)
+  if (sorted.length < upsertEntries.length) {
+    // Return original upsert entries followed by deletes
+    return [...upsertEntries, ...deleteEntries]
+  }
+
+  // Return sorted upserts followed by deletes
+  return [...sorted, ...deleteEntries]
+}
 
 /**
  * Convert a Task to a TaskUpsertOp for JSONL export.
@@ -306,8 +395,11 @@ export const SyncServiceLive = Layer.effect(
           let skipped = 0
           let conflicts = 0
 
-          // Apply task operations
-          for (const [id, { op }] of taskStates) {
+          // Apply task operations in topological order (parents before children)
+          // This ensures foreign key constraints are satisfied when importing
+          // tasks where child timestamp < parent timestamp
+          const sortedTaskEntries = topologicalSortTasks([...taskStates.entries()])
+          for (const [id, { op }] of sortedTaskEntries) {
             if (op.op === "upsert") {
               const existing = yield* taskRepo.findById(id)
 
@@ -356,8 +448,19 @@ export const SyncServiceLive = Layer.effect(
             } else if (op.op === "delete") {
               const existing = yield* taskRepo.findById(id)
               if (existing) {
-                yield* taskRepo.remove(id)
-                imported++
+                // Check timestamp - only delete if delete operation is newer
+                // Per DD-009 Scenario 2: delete wins if its timestamp > local update timestamp
+                const existingTs = existing.updatedAt.toISOString()
+                if (op.ts > existingTs) {
+                  yield* taskRepo.remove(id)
+                  imported++
+                } else if (op.ts === existingTs) {
+                  // Same timestamp - skip (ambiguous state, but safe to keep local)
+                  skipped++
+                } else {
+                  // Local is newer - conflict (local update wins over older delete)
+                  conflicts++
+                }
               }
             }
           }
@@ -391,8 +494,14 @@ export const SyncServiceLive = Layer.effect(
           const tasks = yield* taskService.list()
           const dbTaskCount = tasks.length
 
+          // Get all dependencies from database
+          const deps = yield* depRepo.getAll()
+          const dbDepCount = deps.length
+
           // Count operations in JSONL file and get file info
           let jsonlOpCount = 0
+          let jsonlTaskCount = 0
+          let jsonlDepCount = 0
           let lastExport: Date | null = null
 
           if (existsSync(filePath)) {
@@ -410,6 +519,23 @@ export const SyncServiceLive = Layer.effect(
             })
             const lines = content.trim().split("\n").filter(Boolean)
             jsonlOpCount = lines.length
+
+            // Parse JSONL to count task upserts and dep_adds separately
+            // This allows detecting deletions (DB count < JSONL count)
+            for (const line of lines) {
+              try {
+                const op = JSON.parse(line) as { op: string }
+                if (op.op === "upsert") {
+                  jsonlTaskCount++
+                } else if (op.op === "dep_add") {
+                  jsonlDepCount++
+                }
+                // Note: delete and dep_remove ops are not counted since
+                // a clean export only produces upserts and dep_adds
+              } catch {
+                // Skip malformed lines for counting purposes
+              }
+            }
           }
 
           // Get last export/import timestamps from config
@@ -423,12 +549,28 @@ export const SyncServiceLive = Layer.effect(
           const autoSyncEnabled = autoSyncConfig === "true"
 
           // Determine if dirty: DB has changes not in JSONL
+          // Per DD-009: dirty if tasks exist AND (no lastExport OR any task/dep updated after lastExport)
+          // Additionally: dirty if counts differ (indicates deletions/removals)
           let isDirty = false
           if (dbTaskCount > 0 && !existsSync(filePath)) {
+            // No JSONL file but tasks exist → dirty
             isDirty = true
-          } else if (lastExportDate !== null && tasks.length > 0) {
-            // Check if any task was updated after the last export
-            isDirty = tasks.some(task => task.updatedAt > lastExportDate!)
+          } else if (tasks.length > 0 || deps.length > 0) {
+            if (lastExportDate === null) {
+              // Tasks/deps exist but never exported → dirty
+              isDirty = true
+            } else {
+              // Check if any task was updated after the last export
+              const tasksDirty = tasks.some(task => task.updatedAt > lastExportDate)
+              // Check if any dependency was created after the last export
+              const depsDirty = deps.some(dep => dep.createdAt > lastExportDate)
+              // Check if counts differ (indicates deletions occurred since export)
+              // DB count < JSONL count means tasks/deps were deleted
+              // DB count > JSONL count means tasks/deps were added (also caught by timestamp check)
+              const taskCountMismatch = dbTaskCount !== jsonlTaskCount
+              const depCountMismatch = dbDepCount !== jsonlDepCount
+              isDirty = tasksDirty || depsDirty || taskCountMismatch || depCountMismatch
+            }
           }
 
           return {

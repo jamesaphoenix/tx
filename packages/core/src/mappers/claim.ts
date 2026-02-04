@@ -2,6 +2,7 @@
  * Claim mappers - convert database rows to domain objects
  */
 
+import { InvalidStatusError } from "../errors.js"
 import type { TaskClaim, ClaimStatus } from "../schemas/worker.js"
 
 /**
@@ -31,11 +32,15 @@ export const isValidClaimStatus = (s: string): s is ClaimStatus => {
 
 /**
  * Convert a database row to a TaskClaim domain object.
- * Throws if status is invalid.
+ * Throws InvalidStatusError if status is invalid.
  */
 export const rowToClaim = (row: ClaimRow): TaskClaim => {
   if (!isValidClaimStatus(row.status)) {
-    throw new Error(`Invalid claim status: ${row.status}`)
+    throw new InvalidStatusError({
+      entity: "claim",
+      status: row.status,
+      validStatuses: CLAIM_STATUSES
+    })
   }
   return {
     id: row.id,

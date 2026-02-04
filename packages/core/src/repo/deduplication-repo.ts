@@ -49,7 +49,7 @@ export class DeduplicationRepository extends Context.Tag("DeduplicationRepositor
     readonly upsertFileProgress: (input: UpsertFileProgressInput) => Effect.Effect<FileProgress, DatabaseError>
 
     /** Delete progress for a file */
-    readonly deleteFileProgress: (filePath: string) => Effect.Effect<void, DatabaseError>
+    readonly deleteFileProgress: (filePath: string) => Effect.Effect<number, DatabaseError>
 
     /** Get all tracked files */
     readonly getAllFileProgress: () => Effect.Effect<readonly FileProgress[], DatabaseError>
@@ -121,12 +121,20 @@ export const DeduplicationRepositoryLive = Layer.effect(
               VALUES (?, ?, ?)
             `)
 
-            let inserted = 0
-            for (const input of inputs) {
-              const result = stmt.run(input.contentHash, input.sourceFile, input.sourceLine)
-              if (result.changes > 0) inserted++
+            // Use a transaction for atomicity and performance
+            db.exec("BEGIN IMMEDIATE")
+            try {
+              let inserted = 0
+              for (const input of inputs) {
+                const result = stmt.run(input.contentHash, input.sourceFile, input.sourceLine)
+                if (result.changes > 0) inserted++
+              }
+              db.exec("COMMIT")
+              return inserted
+            } catch (e) {
+              db.exec("ROLLBACK")
+              throw e
             }
-            return inserted
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -222,7 +230,8 @@ export const DeduplicationRepositoryLive = Layer.effect(
       deleteFileProgress: (filePath) =>
         Effect.try({
           try: () => {
-            db.prepare("DELETE FROM file_progress WHERE file_path = ?").run(filePath)
+            const result = db.prepare("DELETE FROM file_progress WHERE file_path = ?").run(filePath)
+            return result.changes
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

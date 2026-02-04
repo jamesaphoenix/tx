@@ -12,7 +12,7 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use('/api', async (req, res, next) => {
           try {
-            const url = `http://127.0.0.1:3456/api${req.url}`
+            const url = `http://127.0.0.1:3001/api${req.url}`
             const response = await fetch(url, {
               method: req.method,
               headers: {

@@ -461,3 +461,153 @@ describe("Chaos: Multiple Worker Heartbeat Scenarios", () => {
     expect(deadWorkers[0].id).toBe(FIXTURES.WORKER_2)
   })
 })
+
+// =============================================================================
+// INVARIANT: Lease renewal failure triggers worker shutdown
+// =============================================================================
+
+describe("Chaos: Lease Renewal Failure", () => {
+  it("renew fails when claim has been released (simulating lease expiry)", async () => {
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const claimSvc = yield* ClaimService
+        const taskRepo = yield* TaskRepository
+        const workerRepo = yield* WorkerRepository
+
+        // Setup: Create task and workers
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_1,
+          title: "Lease Renewal Test Task",
+          description: "",
+          status: "ready",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        })
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "Worker 1",
+          hostname: "localhost",
+          pid: 12345,
+          status: "busy",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        // Worker 1 claims the task
+        yield* claimSvc.claim(FIXTURES.TASK_1, FIXTURES.WORKER_1)
+
+        // Verify claim exists
+        const claimBefore = yield* claimSvc.getActiveClaim(FIXTURES.TASK_1)
+
+        // Simulate another worker stealing the claim (as would happen after lease expiry)
+        // This is done by releasing the claim
+        yield* claimSvc.release(FIXTURES.TASK_1, FIXTURES.WORKER_1)
+
+        // Now try to renew - should fail
+        const renewResult = yield* claimSvc.renew(FIXTURES.TASK_1, FIXTURES.WORKER_1).pipe(
+          Effect.map(() => ({ success: true as const })),
+          Effect.catchAll((error) => Effect.succeed({ success: false as const, error: error._tag }))
+        )
+
+        return { claimBefore, renewResult }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Claim existed before release
+    expect(result.claimBefore).not.toBeNull()
+    // Renew fails after claim is released
+    expect(result.renewResult.success).toBe(false)
+  })
+
+  it("renew fails when another worker has claimed the task", async () => {
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const claimSvc = yield* ClaimService
+        const taskRepo = yield* TaskRepository
+        const workerRepo = yield* WorkerRepository
+
+        // Setup: Create task and two workers
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_2,
+          title: "Contested Claim Task",
+          description: "",
+          status: "ready",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        })
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "Worker 1",
+          hostname: "localhost",
+          pid: 12345,
+          status: "busy",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_2,
+          name: "Worker 2",
+          hostname: "localhost",
+          pid: 12346,
+          status: "busy",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        // Worker 1 claims the task
+        yield* claimSvc.claim(FIXTURES.TASK_2, FIXTURES.WORKER_1)
+
+        // Release worker 1's claim (simulating expiry)
+        yield* claimSvc.release(FIXTURES.TASK_2, FIXTURES.WORKER_1)
+
+        // Worker 2 claims the task (as orchestrator would do after detecting expired lease)
+        yield* claimSvc.claim(FIXTURES.TASK_2, FIXTURES.WORKER_2)
+
+        // Worker 1 tries to renew - should fail because worker 2 now has the claim
+        const renewResultWorker1 = yield* claimSvc.renew(FIXTURES.TASK_2, FIXTURES.WORKER_1).pipe(
+          Effect.map(() => ({ success: true as const })),
+          Effect.catchAll((error) => Effect.succeed({ success: false as const, error: error._tag }))
+        )
+
+        // Worker 2 can still renew
+        const renewResultWorker2 = yield* claimSvc.renew(FIXTURES.TASK_2, FIXTURES.WORKER_2).pipe(
+          Effect.map(() => ({ success: true as const })),
+          Effect.catchAll((error) => Effect.succeed({ success: false as const, error: error._tag }))
+        )
+
+        return { renewResultWorker1, renewResultWorker2 }
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Worker 1's renewal fails (they lost the claim)
+    expect(result.renewResultWorker1.success).toBe(false)
+    // Worker 2's renewal succeeds (they have the active claim)
+    expect(result.renewResultWorker2.success).toBe(true)
+  })
+})

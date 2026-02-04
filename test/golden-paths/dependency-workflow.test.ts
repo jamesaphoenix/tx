@@ -26,7 +26,6 @@ import {
   HierarchyServiceLive,
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
 import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 
@@ -54,7 +53,7 @@ function makeTestLayer(db: TestDatabase) {
 // Golden Path Fixture IDs
 // =============================================================================
 
-const DEP_FIXTURES = {
+const _DEP_FIXTURES = {
   TASK_A: fixtureId("dep-workflow:task-a"),
   TASK_B: fixtureId("dep-workflow:task-b"),
   TASK_C: fixtureId("dep-workflow:task-c"),

@@ -2,6 +2,7 @@
  * Worker mappers - convert database rows to domain objects
  */
 
+import { InvalidStatusError } from "../errors.js"
 import type { Worker, WorkerStatus } from "../schemas/worker.js"
 
 /**
@@ -34,11 +35,15 @@ export const isValidWorkerStatus = (s: string): s is WorkerStatus => {
 
 /**
  * Convert a database row to a Worker domain object.
- * Throws if status is invalid.
+ * Throws InvalidStatusError if status is invalid.
  */
 export const rowToWorker = (row: WorkerRow): Worker => {
   if (!isValidWorkerStatus(row.status)) {
-    throw new Error(`Invalid worker status: ${row.status}`)
+    throw new InvalidStatusError({
+      entity: "worker",
+      status: row.status,
+      validStatuses: WORKER_STATUSES
+    })
   }
   return {
     id: row.id,

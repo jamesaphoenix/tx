@@ -44,13 +44,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "vitest run --passWithNoTests"
+    "test": "bun vitest run --passWithNoTests"
   },
   "dependencies": {
     "@jamesaphoenix/tx-core": "*",
