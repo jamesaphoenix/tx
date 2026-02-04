@@ -92,8 +92,16 @@ export const traceList = (_pos: string[], flags: Flags) =>
     // Parse options
     const limitOpt = opt(flags, "limit", "n")
     const limit = limitOpt ? parseInt(limitOpt, 10) : 20
+    if (Number.isNaN(limit)) {
+      console.error(`Invalid value for --limit: "${limitOpt}" is not a valid number`)
+      process.exit(1)
+    }
     const hoursOpt = opt(flags, "hours")
     const hours = hoursOpt ? parseInt(hoursOpt, 10) : 24
+    if (Number.isNaN(hours)) {
+      console.error(`Invalid value for --hours: "${hoursOpt}" is not a valid number`)
+      process.exit(1)
+    }
 
     // Get recent runs - for now we'll get more than needed and filter by time
     // A more efficient approach would be to add a time-filtered query to RunRepository
@@ -625,8 +633,16 @@ export const traceErrors = (_pos: string[], flags: Flags) =>
     // Parse options
     const limitOpt = opt(flags, "limit", "n")
     const limit = limitOpt ? parseInt(limitOpt, 10) : 20
+    if (Number.isNaN(limit)) {
+      console.error(`Invalid value for --limit: "${limitOpt}" is not a valid number`)
+      process.exit(1)
+    }
     const hoursOpt = opt(flags, "hours")
     const hours = hoursOpt ? parseInt(hoursOpt, 10) : 24
+    if (Number.isNaN(hours)) {
+      console.error(`Invalid value for --hours: "${hoursOpt}" is not a valid number`)
+      process.exit(1)
+    }
 
     const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
     const errors: ErrorEntry[] = []
