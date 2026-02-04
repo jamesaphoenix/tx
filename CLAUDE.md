@@ -268,6 +268,84 @@ test(mcp): add integration tests for sync tools
 
 ---
 
+## Common Pitfalls (Bug Scan Findings)
+
+### API Server Body Size Limits
+
+**Issue**: If the API server (REST or MCP over HTTP) does not enforce body size limits, it's vulnerable to denial-of-service via memory exhaustion.
+
+**Mitigation**:
+```typescript
+// Express example
+app.use(express.json({ limit: '1mb' }))
+
+// Hono example
+app.use('*', bodyLimit({ maxSize: 1024 * 1024 }))
+```
+
+**Defaults to set**:
+- JSON body: 1MB max
+- File uploads: 10MB max (if supported)
+- Reject requests exceeding limits with 413 Payload Too Large
+
+### X-Forwarded-For Trust Issues
+
+**Issue**: Trusting `X-Forwarded-For` header without validation allows IP spoofing. Attackers can bypass rate limiting or logging by setting arbitrary source IPs.
+
+**Scenarios where this matters**:
+- Rate limiting by IP
+- Audit logging
+- Geo-blocking
+
+**Mitigation**:
+```typescript
+// Only trust X-Forwarded-For from known proxies
+const trustedProxies = ['10.0.0.0/8', '172.16.0.0/12']
+app.set('trust proxy', trustedProxies)
+
+// Or: never trust, use direct connection IP
+const clientIp = req.socket.remoteAddress
+```
+
+**Rule**: If running behind a reverse proxy (nginx, CloudFlare, etc.), configure `trust proxy` with explicit CIDR ranges. Never use `trust proxy: true` in production.
+
+### Proper Error Typing with Effect
+
+**Issue**: Using `as any` or `unknown` for error types defeats Effect-TS's typed error handling.
+
+**Bad patterns**:
+```typescript
+// WRONG: Loses type information
+const doThing = (): Effect<Result, any> => ...
+
+// WRONG: Error union collapses to unknown
+const combined = Effect.all([effectA, effectB]) // if one returns unknown error
+```
+
+**Correct patterns**:
+```typescript
+// CORRECT: Explicit tagged error union
+type MyErrors = DatabaseError | ValidationError | NotFoundError
+
+const doThing = (): Effect<Result, MyErrors> => ...
+
+// CORRECT: Each error type extends Data.TaggedError
+class NotFoundError extends Data.TaggedError("NotFoundError")<{
+  readonly id: string
+}> {}
+
+// CORRECT: Handle each error case explicitly
+pipe(
+  doThing(),
+  Effect.catchTag("NotFoundError", (e) => ...),
+  Effect.catchTag("DatabaseError", (e) => ...),
+)
+```
+
+**Also see**: DD-002 section on Effect.sync vs Effect.try for related guidance.
+
+---
+
 ## Quick Reference
 
 ### Status Lifecycle
