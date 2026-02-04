@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { AttemptNotFoundError, DatabaseError } from "../errors.js"
+import { AttemptNotFoundError, DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToAttempt } from "../mappers/attempt.js"
 import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "@jamesaphoenix/tx-types"
 
@@ -51,7 +51,14 @@ export const AttemptRepositoryLive = Layer.effect(
               now
             )
             // Fetch the inserted row
-            const row = db.prepare("SELECT * FROM attempts WHERE id = ?").get(result.lastInsertRowid) as AttemptRow
+            const row = db.prepare("SELECT * FROM attempts WHERE id = ?").get(result.lastInsertRowid) as AttemptRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "attempt",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToAttempt(row)
           },
           catch: (cause) => new DatabaseError({ cause })

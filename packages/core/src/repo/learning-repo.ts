@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError, LearningNotFoundError } from "../errors.js"
+import { DatabaseError, EntityFetchError, LearningNotFoundError } from "../errors.js"
 import { rowToLearning, float32ArrayToBuffer } from "../mappers/learning.js"
 import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@jamesaphoenix/tx-types"
 
@@ -98,7 +98,14 @@ export const LearningRepositoryLive = Layer.effect(
               input.category ?? null
             )
             // Fetch the inserted row
-            const row = db.prepare("SELECT * FROM learnings WHERE id = ?").get(result.lastInsertRowid) as LearningRow
+            const row = db.prepare("SELECT * FROM learnings WHERE id = ?").get(result.lastInsertRowid) as LearningRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "learning",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToLearning(row)
           },
           catch: (cause) => new DatabaseError({ cause })

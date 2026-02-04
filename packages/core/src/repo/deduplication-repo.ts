@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToProcessedHash, rowToFileProgress } from "../mappers/deduplication.js"
 import type {
   ProcessedHash,
@@ -111,7 +111,14 @@ export const DeduplicationRepositoryLive = Layer.effect(
 
             const row = db.prepare(
               "SELECT * FROM processed_hashes WHERE content_hash = ?"
-            ).get(input.contentHash) as ProcessedHashRow
+            ).get(input.contentHash) as ProcessedHashRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "processed_hash",
+                id: input.contentHash,
+                operation: "insert"
+              })
+            }
 
             return rowToProcessedHash(row)
           },
@@ -243,7 +250,14 @@ export const DeduplicationRepositoryLive = Layer.effect(
 
             const row = db.prepare(
               "SELECT * FROM file_progress WHERE file_path = ?"
-            ).get(input.filePath) as FileProgressRow
+            ).get(input.filePath) as FileProgressRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "file_progress",
+                id: input.filePath,
+                operation: "insert"
+              })
+            }
 
             return rowToFileProgress(row)
           },

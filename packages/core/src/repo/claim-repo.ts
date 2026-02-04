@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { ClaimIdNotFoundError, DatabaseError } from "../errors.js"
+import { ClaimIdNotFoundError, DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToClaim, type ClaimRow } from "../mappers/claim.js"
 import type { TaskClaim } from "../schemas/worker.js"
 
@@ -83,7 +83,14 @@ export const ClaimRepositoryLive = Layer.effect(
             )
             const row = db.prepare(
               "SELECT * FROM task_claims WHERE id = ?"
-            ).get(result.lastInsertRowid) as ClaimRow
+            ).get(result.lastInsertRowid) as ClaimRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "claim",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToClaim(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -116,7 +123,14 @@ export const ClaimRepositoryLive = Layer.effect(
               // Insert succeeded - fetch the newly created claim
               const row = db.prepare(
                 "SELECT * FROM task_claims WHERE id = ?"
-              ).get(result.lastInsertRowid) as ClaimRow
+              ).get(result.lastInsertRowid) as ClaimRow | undefined
+              if (!row) {
+                throw new EntityFetchError({
+                  entity: "claim",
+                  id: result.lastInsertRowid as number,
+                  operation: "insert"
+                })
+              }
               return {
                 success: true,
                 claim: rowToClaim(row),
@@ -182,7 +196,14 @@ export const ClaimRepositoryLive = Layer.effect(
               // Renewal succeeded - fetch the updated claim
               const row = db.prepare(
                 "SELECT * FROM task_claims WHERE id = ?"
-              ).get(claimId) as ClaimRow
+              ).get(claimId) as ClaimRow | undefined
+              if (!row) {
+                throw new EntityFetchError({
+                  entity: "claim",
+                  id: claimId,
+                  operation: "update"
+                })
+              }
               return {
                 success: true,
                 claim: rowToClaim(row),
