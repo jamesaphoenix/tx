@@ -251,6 +251,11 @@ export const ClaimServiceLive = Layer.effect(
       getActiveClaim: (taskId) =>
         Effect.gen(function* () {
           return yield* claimRepo.findActiveByTaskId(taskId)
+        }),
+
+      getOrphanedClaims: () =>
+        Effect.gen(function* () {
+          return yield* claimRepo.findOrphanedClaims()
         })
     }
   })

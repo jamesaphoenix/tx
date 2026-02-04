@@ -114,6 +114,7 @@ const ReconciliationResultSchema = Schema.Struct({
   deadWorkersFound: Schema.Number.pipe(Schema.int()),
   expiredClaimsReleased: Schema.Number.pipe(Schema.int()),
   orphanedTasksRecovered: Schema.Number.pipe(Schema.int()),
+  orphanedClaimsReleased: Schema.Number.pipe(Schema.int()),
   staleStatesFixed: Schema.Number.pipe(Schema.int()),
   reconcileTime: Schema.Number.pipe(Schema.int())
 })

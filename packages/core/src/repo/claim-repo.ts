@@ -57,6 +57,12 @@ export class ClaimRepository extends Context.Tag("ClaimRepository")<
     readonly findActiveByTaskId: (taskId: string) => Effect.Effect<TaskClaim | null, DatabaseError>
     readonly findExpired: (now: Date) => Effect.Effect<readonly TaskClaim[], DatabaseError>
     readonly releaseAllByWorkerId: (workerId: string) => Effect.Effect<number, DatabaseError>
+    /**
+     * Find active claims where the associated task status is not 'active'.
+     * This detects orphaned claims left behind when claim release fails
+     * after task completion.
+     */
+    readonly findOrphanedClaims: () => Effect.Effect<readonly TaskClaim[], DatabaseError>
   }
 >() {}
 
@@ -278,6 +284,23 @@ export const ClaimRepositoryLive = Layer.effect(
                WHERE worker_id = ? AND status = 'active'`
             ).run(workerId)
             return result.changes
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findOrphanedClaims: () =>
+        Effect.try({
+          try: () => {
+            // Find active claims where the task status is NOT 'active'
+            // This catches claims that weren't released after task completion
+            const rows = db.prepare(
+              `SELECT c.* FROM task_claims c
+               JOIN tasks t ON c.task_id = t.id
+               WHERE c.status = 'active'
+               AND t.status != 'active'
+               ORDER BY c.claimed_at ASC`
+            ).all() as ClaimRow[]
+            return rows.map(rowToClaim)
           },
           catch: (cause) => new DatabaseError({ cause })
         })

@@ -264,6 +264,7 @@ describe("OrchestratorService.reconcile", () => {
     expect(result.deadWorkersFound).toBe(0)
     expect(result.expiredClaimsReleased).toBe(0)
     expect(result.orphanedTasksRecovered).toBe(0)
+    expect(result.orphanedClaimsReleased).toBe(0)
     expect(result.staleStatesFixed).toBe(0)
     expect(result.reconcileTime).toBeGreaterThanOrEqual(0)
   })
@@ -416,6 +417,144 @@ describe("OrchestratorService.reconcile", () => {
     expect(result.reconcileResult.orphanedTasksRecovered).toBe(1)
     expect(result.task).not.toBeNull()
     expect(result.task!.status).toBe("ready")
+  })
+
+  it("releases orphaned claims (active claims on non-active tasks)", async () => {
+    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* OrchestratorService
+        const claimRepo = yield* ClaimRepository
+        const taskRepo = yield* TaskRepository
+        const workerRepo = yield* WorkerRepository
+
+        const now = new Date()
+
+        // Insert a task that is DONE (not active)
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_1 as TaskId,
+          title: "Completed task",
+          description: "Task that is done but has an active claim",
+          status: "done",
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: now,
+          metadata: {}
+        })
+
+        // Insert a worker (needed for FK constraint on claim)
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "orphaned-claim-worker",
+          hostname: "localhost",
+          pid: 12345,
+          status: "dead",
+          registeredAt: now,
+          lastHeartbeatAt: now,
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        // Insert an ACTIVE claim on the DONE task (orphaned claim scenario)
+        // This simulates a claim that wasn't released after task completion
+        const futureExpiry = new Date(now.getTime() + 60000) // still valid
+        yield* claimRepo.insert({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          claimedAt: now,
+          leaseExpiresAt: futureExpiry,
+          renewedCount: 0,
+          status: "active"
+        })
+
+        // Verify the claim is active before reconciliation
+        const claimBefore = yield* claimRepo.findActiveByTaskId(FIXTURES.TASK_1)
+
+        // Run reconciliation
+        const reconcileResult = yield* svc.reconcile()
+
+        // Verify the claim was released (no longer active)
+        const claimAfter = yield* claimRepo.findActiveByTaskId(FIXTURES.TASK_1)
+
+        return { reconcileResult, claimBefore, claimAfter }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.claimBefore).not.toBeNull()
+    expect(result.claimBefore!.status).toBe("active")
+    expect(result.reconcileResult.orphanedClaimsReleased).toBe(1)
+    expect(result.claimAfter).toBeNull() // No longer an active claim
+  })
+
+  it("releases orphaned claims on ready tasks", async () => {
+    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* OrchestratorService
+        const claimRepo = yield* ClaimRepository
+        const taskRepo = yield* TaskRepository
+        const workerRepo = yield* WorkerRepository
+
+        const now = new Date()
+
+        // Insert a task that is READY (not active)
+        yield* taskRepo.insert({
+          id: FIXTURES.TASK_1 as TaskId,
+          title: "Ready task",
+          description: "Task that is ready but has an active claim",
+          status: "ready",
+          parentId: null,
+          score: 500,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          metadata: {}
+        })
+
+        // Insert a worker (needed for FK constraint on claim)
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "orphaned-claim-worker",
+          hostname: "localhost",
+          pid: 12345,
+          status: "dead",
+          registeredAt: now,
+          lastHeartbeatAt: now,
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        // Insert an ACTIVE claim on the READY task
+        const futureExpiry = new Date(now.getTime() + 60000)
+        yield* claimRepo.insert({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          claimedAt: now,
+          leaseExpiresAt: futureExpiry,
+          renewedCount: 0,
+          status: "active"
+        })
+
+        // Run reconciliation
+        const reconcileResult = yield* svc.reconcile()
+
+        // Verify the claim was released
+        const claimAfter = yield* claimRepo.findActiveByTaskId(FIXTURES.TASK_1)
+
+        return { reconcileResult, claimAfter }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.reconcileResult.orphanedClaimsReleased).toBe(1)
+    expect(result.claimAfter).toBeNull()
   })
 
   it("fixes busy workers with no currentTaskId", async () => {

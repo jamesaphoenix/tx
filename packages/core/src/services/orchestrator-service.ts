@@ -235,6 +235,7 @@ export const OrchestratorServiceLive = Layer.effect(
             let deadWorkersFound = 0
             let expiredClaimsReleased = 0
             let orphanedTasksRecovered = 0
+            let orphanedClaimsReleased = 0
             let staleStatesFixed = 0
 
             // 1. Detect dead workers (missed 1+ heartbeats)
@@ -325,6 +326,18 @@ export const OrchestratorServiceLive = Layer.effect(
             }
           }
 
+          // 6. Find orphaned claims (active claims on non-active tasks)
+          // This catches claims that weren't released after task completion
+          // (e.g., if claim release failed after tx done)
+          const orphanedClaims = yield* claimService.getOrphanedClaims()
+
+          for (const claim of orphanedClaims) {
+            yield* claimService.expire(claim.id).pipe(
+              Effect.catchAll(() => Effect.void)
+            )
+            orphanedClaimsReleased++
+          }
+
           const reconcileTime = Date.now() - startTime
 
           // Update last reconcile timestamp
@@ -337,12 +350,14 @@ export const OrchestratorServiceLive = Layer.effect(
             deadWorkersFound > 0 ||
             expiredClaimsReleased > 0 ||
             orphanedTasksRecovered > 0 ||
+            orphanedClaimsReleased > 0 ||
             staleStatesFixed > 0
           ) {
             yield* Effect.log(
               `Reconciliation: ${deadWorkersFound} dead workers, ` +
                 `${expiredClaimsReleased} expired claims, ` +
                 `${orphanedTasksRecovered} orphaned tasks, ` +
+                `${orphanedClaimsReleased} orphaned claims, ` +
                 `${staleStatesFixed} stale states fixed ` +
                 `(${reconcileTime}ms)`
             )
@@ -353,6 +368,7 @@ export const OrchestratorServiceLive = Layer.effect(
               deadWorkersFound,
               expiredClaimsReleased,
               orphanedTasksRecovered,
+              orphanedClaimsReleased,
               staleStatesFixed,
               reconcileTime
             }
