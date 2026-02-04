@@ -315,6 +315,20 @@ export class EntityFetchError extends Data.TaggedError("EntityFetchError")<{
   }
 }
 
+/**
+ * Error when attempting to update a task that has been modified externally.
+ * Used for optimistic locking in batch updates to prevent stale data overwrites.
+ */
+export class StaleDataError extends Data.TaggedError("StaleDataError")<{
+  readonly taskId: string
+  readonly expectedUpdatedAt: string
+  readonly actualUpdatedAt: string
+}> {
+  get message() {
+    return `Task ${this.taskId} was modified externally (expected updated_at: ${this.expectedUpdatedAt}, actual: ${this.actualUpdatedAt})`
+  }
+}
+
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
@@ -344,3 +358,4 @@ export type TaskError =
   | InvalidStatusError
   | UnexpectedRowCountError
   | EntityFetchError
+  | StaleDataError

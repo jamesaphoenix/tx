@@ -40,7 +40,9 @@ export {
   MaxRenewalsExceededError,
   OrchestratorError,
   // Batch processing errors
-  BatchProcessingError
+  BatchProcessingError,
+  // Optimistic locking errors
+  StaleDataError
 } from "./errors.js"
 
 // =============================================================================

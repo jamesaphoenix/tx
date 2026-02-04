@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError, TaskNotFoundError, UnexpectedRowCountError } from "../errors.js"
+import { DatabaseError, TaskNotFoundError, UnexpectedRowCountError, StaleDataError } from "../errors.js"
 import { rowToTask } from "../mappers/task.js"
 import type { Task, TaskId, TaskFilter, TaskRow } from "@jamesaphoenix/tx-types"
 
@@ -17,7 +17,7 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
     readonly getDescendants: (id: string) => Effect.Effect<readonly Task[], DatabaseError>
     readonly insert: (task: Task) => Effect.Effect<void, DatabaseError>
     readonly update: (task: Task) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
-    readonly updateMany: (tasks: readonly Task[]) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
+    readonly updateMany: (tasks: readonly Task[]) => Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError>
     readonly remove: (id: string) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
     readonly count: (filter?: TaskFilter) => Effect.Effect<number, DatabaseError>
   }
@@ -251,20 +251,44 @@ export const TaskRepositoryLive = Layer.effect(
         Effect.gen(function* () {
           if (tasks.length === 0) return
 
-          const stmt = db.prepare(
+          const updateStmt = db.prepare(
             `UPDATE tasks SET
               title = ?, description = ?, status = ?, parent_id = ?,
               score = ?, updated_at = ?, completed_at = ?, metadata = ?
              WHERE id = ?`
           )
 
-          // Use a transaction for atomicity and performance
-          const notFoundId = yield* Effect.try({
+          const selectStmt = db.prepare(
+            `SELECT updated_at FROM tasks WHERE id = ?`
+          )
+
+          // Use a transaction for atomicity with optimistic locking
+          // Re-read updated_at inside transaction to detect stale data
+          const errorInfo = yield* Effect.try({
             try: () => {
               db.exec("BEGIN IMMEDIATE")
               try {
                 for (const task of tasks) {
-                  const result = stmt.run(
+                  // Check for stale data by comparing updated_at
+                  const current = selectStmt.get(task.id) as { updated_at: string } | undefined
+                  if (!current) {
+                    db.exec("ROLLBACK")
+                    return { type: "not_found" as const, id: task.id }
+                  }
+
+                  const currentUpdatedAt = new Date(current.updated_at)
+                  // If the database has a newer version, the data being written is stale
+                  if (currentUpdatedAt > task.updatedAt) {
+                    db.exec("ROLLBACK")
+                    return {
+                      type: "stale" as const,
+                      id: task.id,
+                      expected: task.updatedAt.toISOString(),
+                      actual: current.updated_at
+                    }
+                  }
+
+                  const result = updateStmt.run(
                     task.title,
                     task.description,
                     task.status,
@@ -277,7 +301,7 @@ export const TaskRepositoryLive = Layer.effect(
                   )
                   if (result.changes === 0) {
                     db.exec("ROLLBACK")
-                    return task.id // Return the ID of the task that wasn't found
+                    return { type: "not_found" as const, id: task.id }
                   }
                 }
                 db.exec("COMMIT")
@@ -290,8 +314,16 @@ export const TaskRepositoryLive = Layer.effect(
             catch: (cause) => new DatabaseError({ cause })
           })
 
-          if (notFoundId !== null) {
-            yield* Effect.fail(new TaskNotFoundError({ id: notFoundId }))
+          if (errorInfo !== null) {
+            if (errorInfo.type === "not_found") {
+              yield* Effect.fail(new TaskNotFoundError({ id: errorInfo.id }))
+            } else {
+              yield* Effect.fail(new StaleDataError({
+                taskId: errorInfo.id,
+                expectedUpdatedAt: errorInfo.expected,
+                actualUpdatedAt: errorInfo.actual
+              }))
+            }
           }
         }),
 

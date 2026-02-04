@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import { TaskNotFoundError, ValidationError, DatabaseError } from "../errors.js"
+import { TaskNotFoundError, ValidationError, DatabaseError, StaleDataError } from "../errors.js"
 import { generateTaskId } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
 import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput } from "@jamesaphoenix/tx-types"
@@ -13,7 +13,7 @@ export class TaskService extends Context.Tag("TaskService")<
     readonly get: (id: TaskId) => Effect.Effect<Task, TaskNotFoundError | DatabaseError>
     readonly getWithDeps: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly getWithDepsBatch: (ids: readonly TaskId[]) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
-    readonly update: (id: TaskId, input: UpdateTaskInput) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError>
+    readonly update: (id: TaskId, input: UpdateTaskInput) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
     readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError>
     readonly remove: (id: TaskId) => Effect.Effect<void, TaskNotFoundError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
@@ -107,7 +107,7 @@ export const TaskServiceLive = Layer.effect(
     // Optimized to use batch queries instead of N+1 recursive queries
     // Old implementation: 3-4 queries per hierarchy level (40+ for deep trees)
     // New implementation: 3 queries total + 1 batch update
-    const autoCompleteParent = (parentId: TaskId, now: Date): Effect.Effect<void, DatabaseError | TaskNotFoundError> =>
+    const autoCompleteParent = (parentId: TaskId, now: Date): Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError> =>
       Effect.gen(function* () {
         // 1. Get all ancestors in one query (recursive CTE)
         const ancestors = yield* taskRepo.getAncestorChain(parentId)

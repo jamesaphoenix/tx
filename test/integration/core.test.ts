@@ -5,6 +5,7 @@ import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
+  TaskRepository,
   DependencyRepositoryLive,
   TaskServiceLive,
   TaskService,
@@ -16,7 +17,8 @@ import {
   HierarchyService,
   ScoreServiceLive,
   ScoreService,
-  AutoSyncServiceNoop
+  AutoSyncServiceNoop,
+  StaleDataError
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 
@@ -842,5 +844,191 @@ describe("Score calculations", () => {
     expect(authScore).toBe(790)
     expect(jwtScore).toBe(705)
     // AUTH has higher score due to higher base score despite no blocking bonus
+  })
+})
+
+describe("Task Repository updateMany with staleness detection", () => {
+  let db: TestDatabase
+  let repoLayer: Layer.Layer<TaskRepository, never, never>
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    seedFixtures(db)
+    const infra = Layer.succeed(SqliteClient, db.db as any)
+    repoLayer = TaskRepositoryLive.pipe(Layer.provide(infra))
+  })
+
+  it("updateMany succeeds when tasks are not stale", async () => {
+    // First fetch the tasks
+    const tasks = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findByIds([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    // Update them with new values
+    const now = new Date()
+    const updatedTasks = tasks.map(t => ({
+      ...t,
+      title: `Updated: ${t.title}`,
+      updatedAt: now
+    }))
+
+    // This should succeed since data is not stale
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        yield* repo.updateMany(updatedTasks)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    // Verify the updates were applied
+    const verifyTasks = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findByIds([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(verifyTasks[0].title).toContain("Updated:")
+    expect(verifyTasks[1].title).toContain("Updated:")
+  })
+
+  it("updateMany fails with StaleDataError when task was modified externally", async () => {
+    // First fetch the task
+    const tasks = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findByIds([FIXTURES.TASK_JWT])
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    const originalTask = tasks[0]
+
+    // Simulate external modification by directly updating the database
+    // This sets updated_at to a future time
+    const futureTime = new Date(Date.now() + 10000).toISOString()
+    db.db.prepare("UPDATE tasks SET title = 'Externally modified', updated_at = ? WHERE id = ?")
+      .run(futureTime, FIXTURES.TASK_JWT)
+
+    // Now try to updateMany with the stale data
+    const updatedTask = {
+      ...originalTask,
+      title: "My update attempt",
+      updatedAt: new Date()
+    }
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.updateMany([updatedTask])
+      }).pipe(Effect.provide(repoLayer), Effect.either)
+    )
+
+    // Should fail with StaleDataError
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as StaleDataError)._tag).toBe("StaleDataError")
+      expect((result.left as StaleDataError).taskId).toBe(FIXTURES.TASK_JWT)
+    }
+
+    // Verify the external modification is preserved
+    const verifyTask = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(verifyTask?.title).toBe("Externally modified")
+  })
+
+  it("updateMany detects staleness on second task in batch", async () => {
+    // Fetch multiple tasks
+    const tasks = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findByIds([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    // Externally modify only the second task
+    const futureTime = new Date(Date.now() + 10000).toISOString()
+    db.db.prepare("UPDATE tasks SET title = 'Externally modified LOGIN', updated_at = ? WHERE id = ?")
+      .run(futureTime, FIXTURES.TASK_LOGIN)
+
+    // Try to update both tasks
+    const now = new Date()
+    const updatedTasks = tasks.map(t => ({
+      ...t,
+      title: `Batch update: ${t.title}`,
+      updatedAt: now
+    }))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.updateMany(updatedTasks)
+      }).pipe(Effect.provide(repoLayer), Effect.either)
+    )
+
+    // Should fail with StaleDataError for LOGIN
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as StaleDataError)._tag).toBe("StaleDataError")
+      expect((result.left as StaleDataError).taskId).toBe(FIXTURES.TASK_LOGIN)
+    }
+
+    // Verify no updates were applied (transaction rolled back)
+    const verifyTasks = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findByIds([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN])
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    // JWT should NOT have been updated due to rollback
+    expect(verifyTasks.find(t => t.id === FIXTURES.TASK_JWT)?.title).toBe("JWT validation")
+    // LOGIN should have the external modification
+    expect(verifyTasks.find(t => t.id === FIXTURES.TASK_LOGIN)?.title).toBe("Externally modified LOGIN")
+  })
+
+  it("updateMany succeeds with empty array", async () => {
+    // This should be a no-op
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        yield* repo.updateMany([])
+      }).pipe(Effect.provide(repoLayer))
+    )
+    // No error means success
+  })
+
+  it("updateMany fails with TaskNotFoundError for nonexistent task", async () => {
+    const fakeTask = {
+      id: "tx-nonexist" as TaskId,
+      title: "Fake task",
+      description: "",
+      status: "backlog" as const,
+      parentId: null,
+      score: 100,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      completedAt: null,
+      metadata: {}
+    }
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.updateMany([fakeTask])
+      }).pipe(Effect.provide(repoLayer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
   })
 })
