@@ -311,7 +311,7 @@ class HttpTransport implements Transport {
  * Only available when @tx/core is installed and running on Bun runtime.
  */
 class DirectTransport implements Transport {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private runtime: any
   private dbPath: string
 
@@ -334,9 +334,9 @@ class DirectTransport implements Transport {
       this.runtime = ManagedRuntime.make(layer)
 
       // Store Effect for running operations
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       ;(this as any).Effect = Effect
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       ;(this as any).core = core
     } catch {
       throw new TxError(
@@ -346,13 +346,13 @@ class DirectTransport implements Transport {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private async run<T>(effect: any): Promise<T> {
     await this.ensureRuntime()
     return this.runtime.runPromise(effect)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private serializeTask(task: any): SerializedTaskWithDeps {
     return {
       id: task.id,
@@ -372,7 +372,7 @@ class DirectTransport implements Transport {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private serializeLearning(learning: any): SerializedLearning {
     return {
       id: learning.id,
@@ -388,7 +388,7 @@ class DirectTransport implements Transport {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private serializeLearningWithScore(learning: any): SerializedLearningWithScore {
     return {
       ...this.serializeLearning(learning),
@@ -403,7 +403,7 @@ class DirectTransport implements Transport {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private serializeFileLearning(learning: any): SerializedFileLearning {
     return {
       id: learning.id,
@@ -417,9 +417,9 @@ class DirectTransport implements Transport {
   // Tasks
   async listTasks(options: ListOptions): Promise<PaginatedResponse<SerializedTaskWithDeps>> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     // Normalize status to array for consistent handling
@@ -431,7 +431,7 @@ class DirectTransport implements Transport {
     // If multiple statuses, fetch all and filter locally
     const serviceStatus = statusArray.length === 1 ? statusArray[0] : undefined
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const tasks = await this.run<any[]>(
       Effect.gen(function* () {
         const taskService = yield* core.TaskService
@@ -440,13 +440,13 @@ class DirectTransport implements Transport {
     )
 
     // Apply status filter if multiple statuses provided
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     let filtered = statusArray.length > 1
       ? tasks.filter((t: any) => statusArray.includes(t.status))
       : tasks
     if (options.search) {
       const searchLower = options.search.toLowerCase()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       filtered = tasks.filter((t: any) =>
         t.title.toLowerCase().includes(searchLower) ||
         t.description.toLowerCase().includes(searchLower)
@@ -454,7 +454,7 @@ class DirectTransport implements Transport {
     }
 
     // Sort by score DESC
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     filtered.sort((a: any, b: any) => b.score - a.score)
 
     // Apply pagination
@@ -475,9 +475,9 @@ class DirectTransport implements Transport {
 
   async getTask(id: string): Promise<SerializedTaskWithDeps> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const task = await this.run(
@@ -498,9 +498,9 @@ class DirectTransport implements Transport {
     metadata?: Record<string, unknown>
   }): Promise<SerializedTaskWithDeps> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const task = await this.run(
@@ -526,9 +526,9 @@ class DirectTransport implements Transport {
     }
   ): Promise<SerializedTaskWithDeps> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const task = await this.run(
@@ -544,9 +544,9 @@ class DirectTransport implements Transport {
 
   async deleteTask(id: string): Promise<void> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     await this.run(
@@ -559,9 +559,9 @@ class DirectTransport implements Transport {
 
   async completeTask(id: string): Promise<CompleteResult> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
     const self = this
 
@@ -581,19 +581,19 @@ class DirectTransport implements Transport {
 
         // Find newly ready tasks
         const candidateIds = blocking
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           .filter((t: any) => ["backlog", "ready", "planning"].includes(t.status))
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           .map((t: any) => t.id)
         const candidates = yield* taskService.getWithDepsBatch(candidateIds)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const nowReady = candidates.filter((t: any) => t.isReady)
 
         return { task, nowReady }
       })
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const typedResult = result as { task: any; nowReady: any[] }
     return {
       task: self.serializeTask(typedResult.task),
@@ -603,9 +603,9 @@ class DirectTransport implements Transport {
 
   async readyTasks(options: ReadyOptions): Promise<SerializedTaskWithDeps[]> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const tasks = await this.run(
@@ -615,15 +615,15 @@ class DirectTransport implements Transport {
       })
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     return (tasks as any[]).map(t => this.serializeTask(t))
   }
 
   async blockTask(id: string, blockerId: string): Promise<SerializedTaskWithDeps> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const task = await this.run(
@@ -640,9 +640,9 @@ class DirectTransport implements Transport {
 
   async unblockTask(id: string, blockerId: string): Promise<SerializedTaskWithDeps> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const task = await this.run(
@@ -659,9 +659,9 @@ class DirectTransport implements Transport {
 
   async getTaskTree(id: string): Promise<SerializedTaskWithDeps[]> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const tasks = await this.run(
@@ -672,7 +672,7 @@ class DirectTransport implements Transport {
         const tree = yield* hierarchyService.getTree(id)
 
         // Flatten tree
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const flattenTree = (node: any): string[] => {
           const ids: string[] = [node.task.id]
           for (const child of node.children) {
@@ -686,16 +686,16 @@ class DirectTransport implements Transport {
       })
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     return (tasks as any[]).map(t => this.serializeTask(t))
   }
 
   // Learnings
   async searchLearnings(options: SearchLearningsOptions): Promise<SerializedLearningWithScore[]> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const learnings = await this.run(
@@ -713,15 +713,15 @@ class DirectTransport implements Transport {
       })
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     return (learnings as any[]).map(l => this.serializeLearningWithScore(l))
   }
 
   async getLearning(id: number): Promise<SerializedLearning> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const learning = await this.run(
@@ -736,9 +736,9 @@ class DirectTransport implements Transport {
 
   async createLearning(data: CreateLearningData): Promise<SerializedLearning> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const learning = await this.run(
@@ -759,9 +759,9 @@ class DirectTransport implements Transport {
 
   async recordHelpful(id: number, score = 1.0): Promise<void> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     await this.run(
@@ -775,9 +775,9 @@ class DirectTransport implements Transport {
   // File Learnings
   async listFileLearnings(path?: string): Promise<SerializedFileLearning[]> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const learnings = await this.run(
@@ -790,15 +790,15 @@ class DirectTransport implements Transport {
       })
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     return (learnings as any[]).map(l => this.serializeFileLearning(l))
   }
 
   async createFileLearning(data: CreateFileLearningData): Promise<SerializedFileLearning> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
 
     const learning = await this.run(
@@ -814,9 +814,9 @@ class DirectTransport implements Transport {
   // Context
   async getContext(taskId: string): Promise<SerializedContextResult> {
     await this.ensureRuntime()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Effect = (this as any).Effect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const core = (this as any).core
     const self = this
 
@@ -828,15 +828,15 @@ class DirectTransport implements Transport {
     )
 
     return {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       taskId: (result as any).taskId,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       taskTitle: (result as any).taskTitle,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       learnings: (result as any).learnings.map((l: any) => self.serializeLearningWithScore(l)),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       searchQuery: (result as any).searchQuery,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       searchDuration: (result as any).searchDuration
     }
   }

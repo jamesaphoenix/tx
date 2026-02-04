@@ -160,6 +160,7 @@ export {
   CompactionServiceLive,
   CompactionServiceNoop,
   CompactionServiceAuto,
+  type CompactionOutputMode,
   type CompactionResult,
   type CompactionOptions,
   type CompactionPreview

@@ -31,6 +31,14 @@ interface AnthropicClient {
 }
 
 /**
+ * Output mode for compaction learnings.
+ * - 'database': Store in compaction_log table only
+ * - 'markdown': Append to markdown file only
+ * - 'both': Store in DB AND append to markdown (default, per DOCTRINE RULE 2)
+ */
+export type CompactionOutputMode = 'database' | 'markdown' | 'both'
+
+/**
  * Result of a compaction operation.
  */
 export interface CompactionResult {
@@ -39,6 +47,7 @@ export interface CompactionResult {
   readonly learnings: string
   readonly taskIds: readonly string[]
   readonly learningsExportedTo: string | null
+  readonly outputMode: CompactionOutputMode
 }
 
 /**
@@ -51,6 +60,11 @@ export interface CompactionOptions {
   readonly outputFile?: string
   /** If true, preview only without actually compacting */
   readonly dryRun?: boolean
+  /**
+   * Output mode for learnings: 'database', 'markdown', or 'both'.
+   * Default: 'both' (per DOCTRINE RULE 2)
+   */
+  readonly outputMode?: CompactionOutputMode
 }
 
 /**
@@ -364,6 +378,8 @@ export const CompactionServiceLive = Layer.effect(
       compact: (options) =>
         Effect.gen(function* () {
           const tasks = yield* findCompactableTasks(options.before)
+          // Default to 'both' per DOCTRINE RULE 2
+          const outputMode = options.outputMode ?? 'both'
 
           if (tasks.length === 0) {
             return {
@@ -371,7 +387,8 @@ export const CompactionServiceLive = Layer.effect(
               summary: "No tasks to compact",
               learnings: "",
               taskIds: [],
-              learningsExportedTo: null
+              learningsExportedTo: null,
+              outputMode
             }
           }
 
@@ -380,6 +397,8 @@ export const CompactionServiceLive = Layer.effect(
 
           const taskIds = tasks.map(t => t.id)
           const outputFile = options.outputFile ?? "CLAUDE.md"
+          const shouldExportToMarkdown = outputMode === 'markdown' || outputMode === 'both'
+          const shouldStoreInDatabase = outputMode === 'database' || outputMode === 'both'
 
           if (options.dryRun) {
             // Preview mode: return what would be compacted without making changes
@@ -388,7 +407,8 @@ export const CompactionServiceLive = Layer.effect(
               summary,
               learnings,
               taskIds,
-              learningsExportedTo: outputFile
+              learningsExportedTo: shouldExportToMarkdown ? outputFile : null,
+              outputMode
             }
           }
 
@@ -397,20 +417,32 @@ export const CompactionServiceLive = Layer.effect(
           // learnings_exported_to but the file export actually failed.
           // If file export fails, we fail loudly here before any DB changes.
           // See task tx-b2aa12e1 and regression test in compaction.test.ts.
-          yield* exportLearningsToFile(learnings, outputFile)
+          if (shouldExportToMarkdown) {
+            yield* exportLearningsToFile(learnings, outputFile)
+          }
 
-          // Transaction: store log (with learnings backup) + delete tasks atomically
+          // Transaction: store log (optionally with learnings) + delete tasks atomically
           yield* Effect.try({
             try: () => {
               db.exec("BEGIN IMMEDIATE")
               try {
-                // Insert compaction log WITH learnings stored in database
-                // Learnings are stored in DB as backup even though they're exported to file
-                const now = new Date().toISOString()
-                db.prepare(
-                  `INSERT INTO compaction_log (compacted_at, task_count, summary, task_ids, learnings_exported_to, learnings)
-                   VALUES (?, ?, ?, ?, ?, ?)`
-                ).run(now, tasks.length, summary, JSON.stringify(taskIds), outputFile, learnings)
+                if (shouldStoreInDatabase) {
+                  // Insert compaction log
+                  // When outputMode is 'both', store learnings in DB as backup
+                  // When outputMode is 'database', learnings are stored only in DB
+                  const now = new Date().toISOString()
+                  db.prepare(
+                    `INSERT INTO compaction_log (compacted_at, task_count, summary, task_ids, learnings_exported_to, learnings)
+                     VALUES (?, ?, ?, ?, ?, ?)`
+                  ).run(
+                    now,
+                    tasks.length,
+                    summary,
+                    JSON.stringify(taskIds),
+                    shouldExportToMarkdown ? outputFile : null,
+                    learnings
+                  )
+                }
 
                 // Delete compacted tasks
                 for (const task of tasks) {
@@ -434,7 +466,8 @@ export const CompactionServiceLive = Layer.effect(
             summary,
             learnings,
             taskIds,
-            learningsExportedTo: outputFile
+            learningsExportedTo: shouldExportToMarkdown ? outputFile : null,
+            outputMode
           }
         }),
 

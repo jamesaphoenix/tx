@@ -98,7 +98,8 @@ export {
   CompactionService,
   CompactionServiceLive,
   CompactionServiceNoop,
-  CompactionServiceAuto
+  CompactionServiceAuto,
+  type CompactionOutputMode
 } from "./layer.js"
 
 // =============================================================================

@@ -242,7 +242,7 @@ export const deleteTask = (pos: string[], flags: Flags) =>
     yield* svc.remove(id as TaskId)
 
     if (flag(flags, "json")) {
-      console.log(toJson({ deleted: true, id: task.id, title: task.title }))
+      console.log(toJson({ success: true, message: `Deleted task ${task.id}`, data: { id: task.id, title: task.title } }))
     } else {
       console.log(`Deleted: ${task.id} - ${task.title}`)
     }

@@ -8,7 +8,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
 import type { TaskId, TaskStatus, TaskWithDeps, TaskCursor } from "@jamesaphoenix/tx-types"
-import { TASK_STATUSES, isValidTaskStatus } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES, isValidTaskStatus, serializeTask } from "@jamesaphoenix/tx-types"
 import { TaskService, ReadyService, DependencyService, HierarchyService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 
@@ -78,26 +78,21 @@ const BlockDependencySchema = z.object({
   blockerId: TaskIdSchema
 }).openapi("BlockDependency")
 
-// -----------------------------------------------------------------------------
-// Serialization
-// -----------------------------------------------------------------------------
+// Type alias for Zod-inferred task type (mutable arrays required by Zod)
+type ZodTask = z.infer<typeof TaskWithDepsSchema>
 
-const serializeTask = (task: TaskWithDeps): z.infer<typeof TaskWithDepsSchema> => ({
-  id: task.id,
-  title: task.title,
-  description: task.description,
-  status: task.status,
-  parentId: task.parentId,
-  score: task.score,
-  createdAt: task.createdAt.toISOString(),
-  updatedAt: task.updatedAt.toISOString(),
-  completedAt: task.completedAt?.toISOString() ?? null,
-  metadata: task.metadata,
-  blockedBy: task.blockedBy,
-  blocks: task.blocks,
-  children: task.children,
-  isReady: task.isReady
-})
+// Helper to convert readonly TaskWithDepsSerialized to mutable ZodTask
+// This is needed because the shared serializeTask returns readonly arrays
+// but Zod's inferred type expects mutable arrays
+const toZodTask = (task: TaskWithDeps): ZodTask => {
+  const serialized = serializeTask(task)
+  return {
+    ...serialized,
+    blockedBy: [...serialized.blockedBy],
+    blocks: [...serialized.blocks],
+    children: [...serialized.children]
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Cursor Pagination Helpers
@@ -390,7 +385,7 @@ tasksRouter.openapi(listTasksRoute, async (c) => {
   )
 
   return c.json({
-    tasks: result.tasks.map(serializeTask),
+    tasks: result.tasks.map(toZodTask),
     nextCursor: result.nextCursor,
     hasMore: result.hasMore,
     total: result.total
@@ -407,7 +402,7 @@ tasksRouter.openapi(readyTasksRoute, async (c) => {
     })
   )
 
-  return c.json({ tasks: tasks.map(serializeTask) }, 200)
+  return c.json({ tasks: tasks.map(toZodTask) }, 200)
 })
 
 tasksRouter.openapi(getTaskRoute, async (c) => {
@@ -429,10 +424,10 @@ tasksRouter.openapi(getTaskRoute, async (c) => {
   )
 
   return c.json({
-    task: serializeTask(detail.task),
-    blockedByTasks: detail.blockedByTasks.map(serializeTask),
-    blocksTasks: detail.blocksTasks.map(serializeTask),
-    childTasks: detail.childTasks.map(serializeTask)
+    task: toZodTask(detail.task),
+    blockedByTasks: detail.blockedByTasks.map(toZodTask),
+    blocksTasks: detail.blocksTasks.map(toZodTask),
+    childTasks: detail.childTasks.map(toZodTask)
   }, 200)
 })
 
@@ -453,7 +448,7 @@ tasksRouter.openapi(createTaskRoute, async (c) => {
     })
   )
 
-  return c.json(serializeTask(task), 201)
+  return c.json(toZodTask(task), 201)
 })
 
 tasksRouter.openapi(updateTaskRoute, async (c) => {
@@ -475,7 +470,7 @@ tasksRouter.openapi(updateTaskRoute, async (c) => {
     })
   )
 
-  return c.json(serializeTask(task), 200)
+  return c.json(toZodTask(task), 200)
 })
 
 tasksRouter.openapi(completeTaskRoute, async (c) => {
@@ -507,8 +502,8 @@ tasksRouter.openapi(completeTaskRoute, async (c) => {
   )
 
   return c.json({
-    task: serializeTask(result.task),
-    nowReady: result.nowReady.map(serializeTask)
+    task: toZodTask(result.task),
+    nowReady: result.nowReady.map(toZodTask)
   }, 200)
 })
 
@@ -539,7 +534,7 @@ tasksRouter.openapi(blockTaskRoute, async (c) => {
     })
   )
 
-  return c.json(serializeTask(task), 200)
+  return c.json(toZodTask(task), 200)
 })
 
 tasksRouter.openapi(unblockTaskRoute, async (c) => {
@@ -555,7 +550,7 @@ tasksRouter.openapi(unblockTaskRoute, async (c) => {
     })
   )
 
-  return c.json(serializeTask(task), 200)
+  return c.json(toZodTask(task), 200)
 })
 
 tasksRouter.openapi(getTaskTreeRoute, async (c) => {
@@ -583,5 +578,5 @@ tasksRouter.openapi(getTaskTreeRoute, async (c) => {
     })
   )
 
-  return c.json({ tasks: tasks.map(serializeTask) }, 200)
+  return c.json({ tasks: tasks.map(toZodTask) }, 200)
 })

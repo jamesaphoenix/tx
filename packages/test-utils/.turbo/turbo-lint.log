@@ -1,1 +1,24 @@
 $ eslint src/
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/chaos/chaos-utilities.ts
+   90:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+  960:7  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/helpers/effect.ts
+   79:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+  122:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+  180:7  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+  183:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+  269:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/llm-cache/cache.ts
+  194:7  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/mocks/anthropic.mock.ts
+  162:11  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/mocks/openai.mock.ts
+  181:13  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+✖ 10 problems (0 errors, 10 warnings)
+

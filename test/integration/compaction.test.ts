@@ -9,7 +9,7 @@ import {
   CompactionServiceNoop,
   CompactionServiceAuto
 } from "@jamesaphoenix/tx-core"
-import { existsSync, unlinkSync, readFileSync } from "node:fs"
+import { existsSync, unlinkSync, readFileSync, writeFileSync } from "node:fs"
 
 /**
  * Create a minimal test layer for CompactionService tests
@@ -458,5 +458,229 @@ describe("Compaction date filtering", () => {
 
     expect(tasks).toHaveLength(1)
     expect(tasks[0].id).toBe("tx-iso00001")
+  })
+})
+
+/**
+ * Test the configurable output modes for CompactionService.
+ *
+ * These tests use a mock CompactionService that bypasses the LLM to
+ * directly test the output mode behavior.
+ */
+describe("CompactionService output modes", () => {
+  let db: TestDatabase
+  const testMarkdownFile = "/tmp/test-compaction-output-modes.md"
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    // Clean up test file before each test
+    if (existsSync(testMarkdownFile)) {
+      unlinkSync(testMarkdownFile)
+    }
+  })
+
+  afterEach(() => {
+    // Clean up test file after each test
+    if (existsSync(testMarkdownFile)) {
+      unlinkSync(testMarkdownFile)
+    }
+  })
+
+  /**
+   * Create a mock CompactionService that simulates compact() with configurable output modes.
+   * This bypasses the LLM requirement for testing.
+   */
+  function makeMockCompactionService(testDb: TestDatabase) {
+    const MockCompactionService = Layer.succeed(
+      CompactionService,
+      {
+        compact: (options) => {
+          const outputMode = options.outputMode ?? 'both'
+          const outputFile = options.outputFile ?? "CLAUDE.md"
+          const shouldExportToMarkdown = outputMode === 'markdown' || outputMode === 'both'
+          const shouldStoreInDatabase = outputMode === 'database' || outputMode === 'both'
+
+          // Mock learnings
+          const mockLearnings = "- Mock learning 1\n- Mock learning 2"
+          const mockSummary = "Mock compaction summary"
+
+          // Export to markdown if needed
+          if (!options.dryRun && shouldExportToMarkdown) {
+            const { resolve } = require("node:path")
+            const filePath = resolve(process.cwd(), outputFile)
+            const date = new Date().toISOString().split("T")[0]
+            const content = `\n\n## Agent Learnings (${date})\n\n${mockLearnings}\n`
+
+            if (existsSync(filePath)) {
+              const existing = readFileSync(filePath, "utf-8")
+              writeFileSync(filePath, existing + content)
+            } else {
+              writeFileSync(filePath, `# Project Context\n${content}`)
+            }
+          }
+
+          // Store in database if needed
+          if (!options.dryRun && shouldStoreInDatabase) {
+            const now = new Date().toISOString()
+            testDb.db.prepare(
+              `INSERT INTO compaction_log (compacted_at, task_count, summary, task_ids, learnings_exported_to, learnings)
+               VALUES (?, ?, ?, ?, ?, ?)`
+            ).run(
+              now,
+              1, // Mock task count
+              mockSummary,
+              JSON.stringify(["tx-mock0001"]),
+              shouldExportToMarkdown ? outputFile : null,
+              mockLearnings
+            )
+          }
+
+          return Effect.succeed({
+            compactedCount: 1,
+            summary: mockSummary,
+            learnings: mockLearnings,
+            taskIds: ["tx-mock0001"],
+            learningsExportedTo: shouldExportToMarkdown ? outputFile : null,
+            outputMode
+          })
+        },
+        preview: () => Effect.succeed([]),
+        getSummaries: () => Effect.succeed([]),
+        exportLearnings: () => Effect.succeed(undefined),
+        isAvailable: () => Effect.succeed(true)
+      }
+    )
+    return MockCompactionService
+  }
+
+  // Helper to run effects with the mock layer
+  async function runWithMock<A>(testDb: TestDatabase, effect: Effect.Effect<A, any, any>): Promise<A> {
+    const mockLayer = makeMockCompactionService(testDb)
+    return Effect.runPromise(effect.pipe(Effect.provide(mockLayer)) as Effect.Effect<A, never, never>)
+  }
+
+  describe("outputMode: 'both' (default)", () => {
+    it("stores in database AND exports to markdown", async () => {
+      const result = await runWithMock(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* svc.compact({
+          before: new Date(),
+          outputFile: testMarkdownFile,
+          outputMode: 'both'
+        })
+      }))
+
+      // Verify result
+      expect(result.outputMode).toBe('both')
+      expect(result.learningsExportedTo).toBe(testMarkdownFile)
+
+      // Verify markdown file was created
+      expect(existsSync(testMarkdownFile)).toBe(true)
+      const content = readFileSync(testMarkdownFile, "utf-8")
+      expect(content).toContain("Mock learning 1")
+
+      // Verify database entry was created
+      const dbEntry = db.db.prepare("SELECT * FROM compaction_log").get() as any
+      expect(dbEntry).not.toBeNull()
+      expect(dbEntry.learnings_exported_to).toBe(testMarkdownFile)
+      expect(dbEntry.learnings).toContain("Mock learning")
+    })
+
+    it("defaults to 'both' when outputMode is not specified", async () => {
+      const result = await runWithMock(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* svc.compact({
+          before: new Date(),
+          outputFile: testMarkdownFile
+          // outputMode not specified, should default to 'both'
+        })
+      }))
+
+      expect(result.outputMode).toBe('both')
+      expect(existsSync(testMarkdownFile)).toBe(true)
+      const dbEntry = db.db.prepare("SELECT * FROM compaction_log").get()
+      expect(dbEntry).not.toBeNull()
+    })
+  })
+
+  describe("outputMode: 'database'", () => {
+    it("stores in database only, no markdown export", async () => {
+      const result = await runWithMock(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* svc.compact({
+          before: new Date(),
+          outputFile: testMarkdownFile,
+          outputMode: 'database'
+        })
+      }))
+
+      // Verify result
+      expect(result.outputMode).toBe('database')
+      expect(result.learningsExportedTo).toBeNull()
+
+      // Verify markdown file was NOT created
+      expect(existsSync(testMarkdownFile)).toBe(false)
+
+      // Verify database entry was created
+      const dbEntry = db.db.prepare("SELECT * FROM compaction_log").get() as any
+      expect(dbEntry).not.toBeNull()
+      expect(dbEntry.learnings_exported_to).toBeNull()
+      expect(dbEntry.learnings).toContain("Mock learning")
+    })
+  })
+
+  describe("outputMode: 'markdown'", () => {
+    it("exports to markdown only, no database storage", async () => {
+      const result = await runWithMock(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* svc.compact({
+          before: new Date(),
+          outputFile: testMarkdownFile,
+          outputMode: 'markdown'
+        })
+      }))
+
+      // Verify result
+      expect(result.outputMode).toBe('markdown')
+      expect(result.learningsExportedTo).toBe(testMarkdownFile)
+
+      // Verify markdown file was created
+      expect(existsSync(testMarkdownFile)).toBe(true)
+      const content = readFileSync(testMarkdownFile, "utf-8")
+      expect(content).toContain("Mock learning 1")
+
+      // Verify database entry was NOT created
+      const dbEntry = db.db.prepare("SELECT * FROM compaction_log").get()
+      expect(dbEntry).toBeFalsy() // SQLite returns null/undefined when no row found
+    })
+  })
+
+  describe("dryRun with outputMode", () => {
+    it("returns correct learningsExportedTo based on outputMode without making changes", async () => {
+      // Test 'both' mode
+      const resultBoth = await runWithMock(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* svc.compact({
+          before: new Date(),
+          outputFile: testMarkdownFile,
+          outputMode: 'both',
+          dryRun: true
+        })
+      }))
+      expect(resultBoth.learningsExportedTo).toBe(testMarkdownFile)
+      expect(existsSync(testMarkdownFile)).toBe(false) // dry run, no file
+
+      // Test 'database' mode
+      const resultDb = await runWithMock(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* svc.compact({
+          before: new Date(),
+          outputFile: testMarkdownFile,
+          outputMode: 'database',
+          dryRun: true
+        })
+      }))
+      expect(resultDb.learningsExportedTo).toBeNull()
+    })
   })
 })

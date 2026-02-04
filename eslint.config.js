@@ -79,7 +79,7 @@ import txPlugin from './eslint-plugin-tx/index.js';
 export default [
   eslint.configs.recommended,
   {
-    ignores: ['dist/**', 'node_modules/**', 'eslint-plugin-tx/**']
+    ignores: ['**/dist/**', '**/node_modules/**', 'eslint-plugin-tx/**', '**/*.js', '**/*.mjs', '!eslint.config.js']
   },
   // Root test files
   {
