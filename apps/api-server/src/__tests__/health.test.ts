@@ -5,7 +5,9 @@
  * when authentication is enabled.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import fs from "node:fs"
+import path from "node:path"
 import { createApp } from "../server-lib.js"
 
 interface HealthResponse {
@@ -106,6 +108,126 @@ describe("Health endpoint security", () => {
       expect(response.status).toBe(200)
       expect(body).toHaveProperty("database")
     })
+  })
+})
+
+interface RalphResponse {
+  running: boolean
+  pid: number | null
+  currentIteration: number
+  currentTask: string | null
+  recentActivity: unknown[]
+}
+
+describe("RALPH endpoint", () => {
+  const stateFile = path.join(process.cwd(), ".tx", "ralph-state")
+  let stateExistedBefore: boolean
+
+  beforeEach(() => {
+    stateExistedBefore = fs.existsSync(stateFile)
+  })
+
+  afterEach(() => {
+    // Clean up: remove state file if we created it, restore if it existed
+    if (!stateExistedBefore && fs.existsSync(stateFile)) {
+      fs.unlinkSync(stateFile)
+    }
+  })
+
+  it("should return defaults when no state file exists", async () => {
+    // Temporarily rename state file if it exists
+    const backup = stateFile + ".test-backup"
+    if (fs.existsSync(stateFile)) {
+      fs.renameSync(stateFile, backup)
+    }
+
+    try {
+      const app = createApp()
+      const response = await app.request("/api/ralph")
+      const body = (await response.json()) as RalphResponse
+
+      expect(response.status).toBe(200)
+      expect(body.running).toBe(false)
+      expect(body.pid).toBeNull()
+      expect(body.currentIteration).toBe(0)
+      expect(body.currentTask).toBeNull()
+      expect(body.recentActivity).toEqual([])
+    } finally {
+      if (fs.existsSync(backup)) {
+        fs.renameSync(backup, stateFile)
+      }
+    }
+  })
+
+  it("should return state from valid state file", async () => {
+    const backup = stateFile + ".test-backup"
+    if (fs.existsSync(stateFile)) {
+      fs.renameSync(stateFile, backup)
+    }
+
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true })
+    fs.writeFileSync(stateFile, JSON.stringify({
+      running: true,
+      pid: 12345,
+      iteration: 3,
+      currentTask: "tx-abc123"
+    }))
+
+    try {
+      const app = createApp()
+      const response = await app.request("/api/ralph")
+      const body = (await response.json()) as RalphResponse
+
+      expect(response.status).toBe(200)
+      expect(body.running).toBe(true)
+      expect(body.pid).toBe(12345)
+      expect(body.currentIteration).toBe(3)
+      expect(body.currentTask).toBe("tx-abc123")
+    } finally {
+      if (fs.existsSync(stateFile)) {
+        fs.unlinkSync(stateFile)
+      }
+      if (fs.existsSync(backup)) {
+        fs.renameSync(backup, stateFile)
+      }
+    }
+  })
+
+  it("should log warning and return defaults for invalid JSON state file", async () => {
+    const backup = stateFile + ".test-backup"
+    if (fs.existsSync(stateFile)) {
+      fs.renameSync(stateFile, backup)
+    }
+
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true })
+    fs.writeFileSync(stateFile, "not valid json {{{")
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    try {
+      const app = createApp()
+      const response = await app.request("/api/ralph")
+      const body = (await response.json()) as RalphResponse
+
+      expect(response.status).toBe(200)
+      expect(body.running).toBe(false)
+      expect(body.pid).toBeNull()
+      expect(body.currentIteration).toBe(0)
+      expect(body.currentTask).toBeNull()
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[health] Failed to parse RALPH state file"),
+        expect.any(String)
+      )
+    } finally {
+      warnSpy.mockRestore()
+      if (fs.existsSync(stateFile)) {
+        fs.unlinkSync(stateFile)
+      }
+      if (fs.existsSync(backup)) {
+        fs.renameSync(backup, stateFile)
+      }
+    }
   })
 })
 

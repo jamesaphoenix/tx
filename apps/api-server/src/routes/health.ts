@@ -164,8 +164,11 @@ healthRouter.openapi(ralphRoute, async (c) => {
       currentIteration = state.iteration ?? 0
       currentTask = state.currentTask ?? null
     }
-  } catch {
-    // State file doesn't exist or is invalid
+  } catch (error) {
+    console.warn(
+      `[health] Failed to parse RALPH state file at ${stateFile}:`,
+      error instanceof Error ? error.message : String(error)
+    )
   }
 
   return c.json({
