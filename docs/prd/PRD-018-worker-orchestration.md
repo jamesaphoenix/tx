@@ -854,6 +854,44 @@ await runWorker({
 
 ---
 
+## Known Issues (Bug Scan Findings)
+
+### Race Conditions in Claim Service
+
+**Issue**: The `ClaimService.claim()` implementation may have TOCTOU (time-of-check-time-of-use) race conditions when multiple workers attempt to claim the same task simultaneously.
+
+**Scenario**:
+1. Worker A checks if task is unclaimed → true
+2. Worker B checks if task is unclaimed → true
+3. Worker A inserts claim
+4. Worker B inserts claim → either fails (good) or creates duplicate (bad)
+
+**Mitigation**:
+- Use `INSERT ... ON CONFLICT` or `INSERT ... WHERE NOT EXISTS` patterns
+- Wrap check-and-insert in a transaction with `IMMEDIATE` locking
+- Integration tests must cover concurrent claim attempts
+
+### Race Conditions in Orchestrator Reconciliation
+
+**Issue**: The reconciliation loop may incorrectly mark workers as dead or tasks as orphaned if heartbeats arrive during the reconciliation window.
+
+**Scenario**:
+1. Reconciliation starts, reads `last_heartbeat_at` for Worker A
+2. Worker A sends heartbeat (updates `last_heartbeat_at`)
+3. Reconciliation marks Worker A as dead (based on stale read)
+4. Worker A's current task is orphaned
+
+**Mitigation**:
+- Use `SELECT ... FOR UPDATE` or advisory locks during reconciliation
+- Add grace period buffer (e.g., mark dead only if 3+ missed heartbeats)
+- Reconciliation should re-check worker status before taking action
+
+### Test Coverage Gap
+
+**Note**: `worker-process.ts` lacks integration tests for these race conditions. See DD-007 for testing strategy updates.
+
+---
+
 ## Dependencies
 
 - **Depends on**: PRD-001 (Core Task Management), DD-001 (Data Model)

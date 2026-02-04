@@ -385,6 +385,76 @@ const handleError = (error: TaskError): Effect.Effect<never> => {
 
 ---
 
+## Effect.sync vs Effect.try (Bug Scan Finding)
+
+### The Problem
+
+`Effect.sync` assumes the wrapped function is **pure and cannot throw**. If the function throws, the error is not caught and propagates as a defect (unrecoverable).
+
+`Effect.try` (or `Effect.tryPromise`) wraps functions that **may throw** and converts exceptions into typed failures.
+
+### Common Mistake
+
+```typescript
+// WRONG: JSON.parse can throw
+const parseConfig = (raw: string) =>
+  Effect.sync(() => JSON.parse(raw))
+
+// WRONG: Database operations can throw
+const getUser = (id: string) =>
+  Effect.sync(() => db.prepare("SELECT * FROM users WHERE id = ?").get(id))
+```
+
+### Correct Usage
+
+```typescript
+// CORRECT: Use Effect.try for operations that may throw
+const parseConfig = (raw: string) =>
+  Effect.try({
+    try: () => JSON.parse(raw),
+    catch: (error) => new ParseError({ cause: error })
+  })
+
+// CORRECT: Use Effect.try for database operations
+const getUser = (id: string) =>
+  Effect.try({
+    try: () => db.prepare("SELECT * FROM users WHERE id = ?").get(id),
+    catch: (error) => new DatabaseError({ cause: error })
+  })
+
+// CORRECT: Effect.sync is fine for pure computations
+const calculateScore = (base: number, multiplier: number) =>
+  Effect.sync(() => base * multiplier)
+```
+
+### Guidelines
+
+| Use | When |
+|-----|------|
+| `Effect.sync` | Pure computations, accessing already-validated data, no I/O |
+| `Effect.try` | JSON parsing, file I/O, database queries, external calls |
+| `Effect.tryPromise` | Async operations that may reject |
+| `Effect.succeed` | Wrapping a known value |
+
+### Service Layer Convention
+
+All repository methods that interact with SQLite MUST use `Effect.try`:
+
+```typescript
+readonly findById: (id: TaskId) => Effect.Effect<Task | null, DatabaseError>
+
+// Implementation
+findById: (id) =>
+  Effect.try({
+    try: () => db.prepare("SELECT * FROM tasks WHERE id = ?").get(id),
+    catch: (e) => new DatabaseError({ cause: e })
+  }).pipe(
+    Effect.map((row) => row ? rowToTask(row) : null)
+  )
+```
+
+---
+
 ## Repository Pattern
 
 ```typescript

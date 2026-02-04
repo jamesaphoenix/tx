@@ -274,6 +274,24 @@ When `ANTHROPIC_API_KEY` is not set:
 
 ---
 
+## Known Issues (Bug Scan Findings)
+
+### RULE 2 Violation Risk
+
+**Issue**: Implementations MUST ensure learnings are appended to a markdown file (default: `CLAUDE.md`), not just stored in the `compaction_log` table.
+
+**Why this matters**: Storing learnings only in the database makes them invisible to future agent sessions. The `compaction_log` table is for internal bookkeeping; the markdown export is what agents actually read.
+
+**Compliance checklist**:
+- [ ] `CompactionService.compact()` writes to `learningsExportedTo` path
+- [ ] File append is atomic with database transaction (RULE CO-018)
+- [ ] Integration tests verify file output, not just DB insertion
+- [ ] Error on file write failure (don't silently drop learnings)
+
+See: [CLAUDE.md DOCTRINE RULE 2](../../CLAUDE.md)
+
+---
+
 ## Related Documents
 
 - [PRD-001: Core Task Management](./PRD-001-core-task-management.md)
