@@ -6,7 +6,7 @@
  * Uses Effect-TS patterns per DD-002.
  */
 
-import { Effect, Duration, Fiber, Ref } from "effect"
+import { Effect, Duration, Fiber, Ref, Schedule } from "effect"
 import { spawn, type ChildProcess } from "child_process"
 import * as os from "os"
 import { WorkerService } from "./worker-service.js"
@@ -209,11 +209,18 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
             )
           }
 
-          // Release the claim
+          // Release the claim with retry logic
+          // If release fails after retries, log and continue - reconciliation will eventually clean up
           yield* claimService.release(task.id, workerId).pipe(
+            Effect.retry(
+              Schedule.exponential(Duration.seconds(1)).pipe(
+                Schedule.jittered,
+                Schedule.compose(Schedule.recurs(3))
+              )
+            ),
             Effect.catchAll((error) =>
               Effect.log(
-                `Failed to release claim for task ${task.id}: ${error.message}`
+                `Failed to release claim for task ${task.id} after retries: ${error.message}`
               )
             )
           )
