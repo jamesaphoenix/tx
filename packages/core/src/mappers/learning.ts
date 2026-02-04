@@ -2,12 +2,37 @@
  * Learning mappers - convert database rows to domain objects
  */
 
+import { Schema } from "effect"
 import type {
   Learning,
   LearningId,
   LearningSourceType,
   LearningRow
 } from "@jamesaphoenix/tx-types"
+
+/**
+ * Schema for keywords - an array of strings.
+ * Used to validate JSON.parse output before casting to string[].
+ */
+const KeywordsSchema = Schema.Array(Schema.String)
+
+/**
+ * Safely parse and validate keywords JSON string.
+ * Returns empty array if parsing fails or validation fails.
+ */
+const parseKeywords = (keywordsJson: string | null): string[] => {
+  if (!keywordsJson) return []
+
+  try {
+    const parsed: unknown = JSON.parse(keywordsJson)
+    const result = Schema.decodeUnknownSync(KeywordsSchema)(parsed)
+    // Spread to convert readonly array to mutable array
+    return [...result]
+  } catch {
+    // Return empty array on parse error or validation failure
+    return []
+  }
+}
 
 // Re-export types and constants from @tx/types for convenience
 export type { LearningRow } from "@jamesaphoenix/tx-types"
@@ -63,7 +88,7 @@ export const rowToLearning = (row: LearningRow): Learning => ({
   sourceType: row.source_type as LearningSourceType,
   sourceRef: row.source_ref,
   createdAt: new Date(row.created_at),
-  keywords: row.keywords ? JSON.parse(row.keywords) : [],
+  keywords: parseKeywords(row.keywords),
   category: row.category,
   usageCount: row.usage_count,
   lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,

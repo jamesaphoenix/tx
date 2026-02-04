@@ -1,7 +1,101 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { spawn } from "child_process"
 import { AstGrepError } from "../errors.js"
 import type { SymbolInfo, ImportInfo, Match, SymbolKind, SymbolPattern } from "@jamesaphoenix/tx-types"
+
+// ----- Schema Definitions for JSON Parsing -----
+
+/**
+ * Schema for optional text holder { text?: string }
+ */
+const TextHolderSchema = Schema.Struct({
+  text: Schema.optional(Schema.String)
+})
+
+/**
+ * Schema for AstGrepMatch - the output from ast-grep --json for symbol extraction.
+ */
+const AstGrepMatchSchema = Schema.Struct({
+  range: Schema.optional(Schema.Struct({
+    start: Schema.optional(Schema.Struct({
+      line: Schema.optional(Schema.Number)
+    }))
+  })),
+  metaVariables: Schema.optional(Schema.Struct({
+    NAME: Schema.optional(TextHolderSchema)
+  })),
+  file: Schema.optional(Schema.String),
+  text: Schema.optional(Schema.String)
+})
+
+/**
+ * Schema for ImportMatch - the output from ast-grep --json for import extraction.
+ */
+const ImportMatchSchema = Schema.Struct({
+  metaVariables: Schema.optional(Schema.Struct({
+    SOURCE: Schema.optional(TextHolderSchema),
+    SPECS: Schema.optional(TextHolderSchema),
+    ALIAS: Schema.optional(TextHolderSchema),
+    DEFAULT: Schema.optional(TextHolderSchema)
+  }))
+})
+
+/**
+ * Schema for PatternMatch - the output from ast-grep --json for pattern matching.
+ */
+const PatternMatchSchema = Schema.Struct({
+  file: Schema.optional(Schema.String),
+  range: Schema.optional(Schema.Struct({
+    start: Schema.optional(Schema.Struct({
+      line: Schema.optional(Schema.Number),
+      column: Schema.optional(Schema.Number)
+    }))
+  })),
+  text: Schema.optional(Schema.String),
+  metaVariables: Schema.optional(Schema.Record({ key: Schema.String, value: TextHolderSchema }))
+})
+
+/**
+ * Safely parse and validate ast-grep match array output.
+ * Returns empty array if parsing fails or validation fails.
+ */
+const parseAstGrepMatches = (output: string): readonly (typeof AstGrepMatchSchema.Type)[] => {
+  try {
+    const parsed: unknown = JSON.parse(output)
+    const result = Schema.decodeUnknownSync(Schema.Array(AstGrepMatchSchema))(parsed)
+    return result
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Safely parse and validate import match array output.
+ * Returns empty array if parsing fails or validation fails.
+ */
+const parseImportMatches = (output: string): readonly (typeof ImportMatchSchema.Type)[] => {
+  try {
+    const parsed: unknown = JSON.parse(output)
+    const result = Schema.decodeUnknownSync(Schema.Array(ImportMatchSchema))(parsed)
+    return result
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Safely parse and validate pattern match array output.
+ * Returns empty array if parsing fails or validation fails.
+ */
+const parsePatternMatches = (output: string): readonly (typeof PatternMatchSchema.Type)[] => {
+  try {
+    const parsed: unknown = JSON.parse(output)
+    const result = Schema.decodeUnknownSync(Schema.Array(PatternMatchSchema))(parsed)
+    return result
+  } catch {
+    return []
+  }
+}
 
 /**
  * File extension to ast-grep language mapping.
@@ -262,20 +356,6 @@ const runAstGrep = (args: readonly string[]): Effect.Effect<string, AstGrepError
   })
 
 /**
- * Parse ast-grep JSON output to extract symbols.
- */
-interface AstGrepMatch {
-  readonly range?: {
-    readonly start?: { readonly line?: number }
-  }
-  readonly metaVariables?: {
-    readonly NAME?: { readonly text?: string }
-  }
-  readonly file?: string
-  readonly text?: string
-}
-
-/**
  * Live implementation that spawns ast-grep CLI.
  * Requires ast-grep to be installed and available in PATH.
  */
@@ -295,12 +375,7 @@ export const AstGrepServiceLive = Layer.succeed(AstGrepService, {
           Effect.catchAll(() => Effect.succeed("[]"))
         )
 
-        let matches: AstGrepMatch[]
-        try {
-          matches = JSON.parse(output) as AstGrepMatch[]
-        } catch {
-          matches = []
-        }
+        const matches = parseAstGrepMatches(output)
 
         for (const m of matches) {
           const name = m.metaVariables?.NAME?.text
@@ -342,21 +417,7 @@ export const AstGrepServiceLive = Layer.succeed(AstGrepService, {
           Effect.catchAll(() => Effect.succeed("[]"))
         )
 
-        interface ImportMatch {
-          readonly metaVariables?: {
-            readonly SOURCE?: { readonly text?: string }
-            readonly SPECS?: { readonly text?: string }
-            readonly ALIAS?: { readonly text?: string }
-            readonly DEFAULT?: { readonly text?: string }
-          }
-        }
-
-        let matches: ImportMatch[]
-        try {
-          matches = JSON.parse(output) as ImportMatch[]
-        } catch {
-          matches = []
-        }
+        const matches = parseImportMatches(output)
 
         for (const m of matches) {
           const source = m.metaVariables?.SOURCE?.text ?? ""
@@ -396,24 +457,7 @@ export const AstGrepServiceLive = Layer.succeed(AstGrepService, {
     Effect.gen(function* () {
       const output = yield* runAstGrep(["--pattern", pattern, "--json", path])
 
-      interface PatternMatch {
-        readonly file?: string
-        readonly range?: {
-          readonly start?: {
-            readonly line?: number
-            readonly column?: number
-          }
-        }
-        readonly text?: string
-        readonly metaVariables?: Record<string, { readonly text?: string }>
-      }
-
-      let matches: PatternMatch[]
-      try {
-        matches = JSON.parse(output) as PatternMatch[]
-      } catch {
-        return []
-      }
+      const matches = parsePatternMatches(output)
 
       return matches.map((m) => ({
         file: m.file ?? path,
