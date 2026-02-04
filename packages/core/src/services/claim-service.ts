@@ -84,6 +84,13 @@ export class ClaimService extends Context.Tag("ClaimService")<
     readonly getActiveClaim: (
       taskId: string
     ) => Effect.Effect<TaskClaim | null, DatabaseError>
+
+    /**
+     * Get active claims on tasks that are not in 'active' status.
+     * These are orphaned claims left behind when claim release fails
+     * after task completion.
+     */
+    readonly getOrphanedClaims: () => Effect.Effect<readonly TaskClaim[], DatabaseError>
   }
 >() {}
 

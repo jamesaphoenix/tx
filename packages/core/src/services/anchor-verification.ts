@@ -229,13 +229,17 @@ const symbolExistsInFile = (
     const escapedName = escapeRegex(simpleName.trim())
 
     // Check for common patterns: function, class, const, export, interface, type
+    // Use explicit boundaries (?<![...]) and (?![...]) instead of \b because
+    // \b doesn't work with $ (not a word char), causing symbols like $store to fail
+    const idStart = `(?<![a-zA-Z0-9_$])` // negative lookbehind for identifier chars
+    const idEnd = `(?![a-zA-Z0-9_$])` // negative lookahead for identifier chars
     const patterns = [
-      new RegExp(`\\b(function|const|let|var)\\s+${escapedName}\\b`),
-      new RegExp(`\\bclass\\s+${escapedName}\\b`),
-      new RegExp(`\\binterface\\s+${escapedName}\\b`),
-      new RegExp(`\\btype\\s+${escapedName}\\b`),
-      new RegExp(`\\bexport\\s+(default\\s+)?(function|class|const|let|var|interface|type)\\s+${escapedName}\\b`),
-      new RegExp(`\\bexport\\s+\\{[^}]*\\b${escapedName}\\b[^}]*\\}`) // export { Symbol }
+      new RegExp(`\\b(function|const|let|var)\\s+${escapedName}${idEnd}`),
+      new RegExp(`\\bclass\\s+${escapedName}${idEnd}`),
+      new RegExp(`\\binterface\\s+${escapedName}${idEnd}`),
+      new RegExp(`\\btype\\s+${escapedName}${idEnd}`),
+      new RegExp(`\\bexport\\s+(default\\s+)?(function|class|const|let|var|interface|type)\\s+${escapedName}${idEnd}`),
+      new RegExp(`\\bexport\\s+\\{[^}]*${idStart}${escapedName}${idEnd}[^}]*\\}`) // export { Symbol }
     ]
 
     return patterns.some(p => p.test(content))

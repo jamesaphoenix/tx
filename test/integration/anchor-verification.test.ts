@@ -439,6 +439,220 @@ describe("AnchorVerificationService Integration", () => {
       expect(result.newStatus).toBe("valid")
     })
 
+    it("finds $-prefixed symbol names (e.g., $store from Vue/Svelte)", async () => {
+      // Bug fix: \b word boundary doesn't work with $ since it's not a word character
+      const filePath = await createTestFile(
+        tempDir,
+        "dollar-symbol.ts",
+        `export const $store = createStore(); const otherVar = 1;`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for $-prefixed symbol",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "$store",
+            symbolFqname: "dollar-symbol.ts::$store"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
+    it("finds _-prefixed symbol names (private convention)", async () => {
+      // Underscore-prefixed private methods/variables should be found
+      const filePath = await createTestFile(
+        tempDir,
+        "underscore-symbol.ts",
+        `export const _privateMethod = () => { return "internal"; };`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for _-prefixed symbol",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "_privateMethod",
+            symbolFqname: "underscore-symbol.ts::_privateMethod"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
+    it("finds $computed reactive symbol", async () => {
+      // Vue/Svelte computed reactive values often use $computed
+      const filePath = await createTestFile(
+        tempDir,
+        "computed-symbol.ts",
+        `export const $computed = computed(() => state.value * 2);`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for $computed symbol",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "$computed",
+            symbolFqname: "computed-symbol.ts::$computed"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
+    it("reports $store as missing when it does not exist", async () => {
+      // Ensure we don't have false positives - missing $store should be invalid
+      const filePath = await createTestFile(
+        tempDir,
+        "no-dollar-symbol.ts",
+        `export const store = createStore(); const $other = 1;`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for missing $-prefixed symbol",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "$store",
+            symbolFqname: "no-dollar-symbol.ts::$store"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("symbol_missing")
+    })
+
+    it("finds exported $-prefixed symbol in named export", async () => {
+      // Test export { $symbol } syntax
+      const filePath = await createTestFile(
+        tempDir,
+        "export-dollar.ts",
+        `const $data = []; export { $data };`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for exported $-prefixed symbol",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "$data",
+            symbolFqname: "export-dollar.ts::$data"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
+    it("does not match $store when only $stored exists (proper boundary)", async () => {
+      // Ensure we don't match partial prefixes
+      const filePath = await createTestFile(
+        tempDir,
+        "partial-match.ts",
+        `export const $stored = {}; const $storeManager = {};`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for partial match protection",
+            sourceType: "manual"
+          })
+
+          // Looking for exactly "$store" which doesn't exist
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "$store",
+            symbolFqname: "partial-match.ts::$store"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // Should NOT match $stored or $storeManager
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("symbol_missing")
+    })
+
     it("skips verification for pinned anchors", async () => {
       // Create file then delete it - but anchor is pinned so should remain unchanged
       const filePath = await createTestFile(tempDir, "pinned.ts", "export const pinned = true")
