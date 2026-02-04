@@ -2,3 +2,45 @@ $ bun vitest --run
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
 
+ ✓ src/hooks/__tests__/useIntersectionObserver.test.ts (9 tests) 21ms
+ ✓ src/components/ui/__tests__/LoadingSkeleton.test.tsx (6 tests) 47ms
+ ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 20ms
+ ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 22ms
+ ✓ src/components/tasks/__tests__/TaskCard.test.tsx (21 tests) 48ms
+ ✓ src/components/ui/__tests__/SearchInput.test.tsx (10 tests) 74ms
+ ✓ src/components/ui/__tests__/EmptyState.test.tsx (8 tests) 66ms
+ ✓ src/components/tasks/__tests__/TaskFilters.test.tsx (22 tests) 145ms
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > loading state > shows LoadingSkeleton while loading
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > loading state > shows LoadingSkeleton while loading
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+ ✓ src/components/ui/__tests__/SidePanel.test.tsx (11 tests) 127ms
+ ✓ src/components/runs/__tests__/RunFilters.test.tsx (27 tests) 160ms
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > empty state > shows EmptyState when no runs
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
+stderr | src/components/runs/__tests__/RunsList.test.tsx > RunsList > empty state > shows filter hint when filters active and no results
+[MSW] Warning: intercepted a request without a matching request handler:
+
+  • GET /api/runs?agent=tx-tester&status=failed&limit=20
+
+If you still wish to intercept this unhandled request, please create a request handler for it.
+Read more: https://mswjs.io/docs/http/intercepting-requests
+
