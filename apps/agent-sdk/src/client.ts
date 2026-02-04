@@ -307,11 +307,19 @@ class HttpTransport implements Transport {
 // =============================================================================
 
 /**
+ * Module-level cache for ManagedRuntime instances.
+ * Keyed by dbPath to ensure singleton per database.
+ * This prevents DOCTRINE RULE 8 violations - multiple clients
+ * using the same dbPath share the same runtime/layer.
+ */
+const runtimeCache = new Map<string, { runtime: any; refCount: number; core: any; Effect: any }>()
+
+/**
  * Direct SQLite transport using @tx/core.
  * Only available when @tx/core is installed and running on Bun runtime.
  */
 class DirectTransport implements Transport {
-   
+
   private runtime: any
   private dbPath: string
 
@@ -325,18 +333,33 @@ class DirectTransport implements Transport {
   private async ensureRuntime(): Promise<void> {
     if (this.runtime) return
 
+    // Check if we already have a cached runtime for this dbPath
+    const cached = runtimeCache.get(this.dbPath)
+    if (cached) {
+      cached.refCount++
+      this.runtime = cached.runtime
+      ;(this as any).Effect = cached.Effect
+      ;(this as any).core = cached.core
+      return
+    }
+
     try {
       // Dynamic import to make @tx/core optional
       const core = await import("@jamesaphoenix/tx-core")
       const { Effect, ManagedRuntime } = await import("effect")
 
       const layer = core.makeAppLayer(this.dbPath)
-      this.runtime = ManagedRuntime.make(layer)
+      const runtime = ManagedRuntime.make(layer)
+
+      // Cache the runtime for reuse by other clients
+      runtimeCache.set(this.dbPath, { runtime, refCount: 1, core, Effect })
+
+      this.runtime = runtime
 
       // Store Effect for running operations
-       
+
       ;(this as any).Effect = Effect
-       
+
       ;(this as any).core = core
     } catch {
       throw new TxError(
@@ -843,10 +866,19 @@ class DirectTransport implements Transport {
 
   /**
    * Dispose of the runtime and release resources.
+   * Only actually disposes when all clients using this dbPath have disposed.
    */
   async dispose(): Promise<void> {
     if (this.runtime) {
-      await this.runtime.dispose()
+      const cached = runtimeCache.get(this.dbPath)
+      if (cached) {
+        cached.refCount--
+        if (cached.refCount <= 0) {
+          // Last client - actually dispose the runtime
+          runtimeCache.delete(this.dbPath)
+          await this.runtime.dispose()
+        }
+      }
       this.runtime = null
     }
   }
