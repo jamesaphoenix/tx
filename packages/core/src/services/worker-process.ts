@@ -32,9 +32,9 @@ export interface WorkerProcessConfig {
 }
 
 /**
- * Result from a Claude subprocess execution.
+ * Result from an agent subprocess execution.
  */
-interface ClaudeResult {
+interface AgentResult {
   readonly success: boolean
   readonly error?: string
   readonly exitCode?: number
@@ -376,7 +376,7 @@ const runClaude = (
   workerId: string,
   workingDirectory: string,
   state: MutableWorkerState,
-): Effect.Effect<ClaudeResult, never> =>
+): Effect.Effect<AgentResult, never> =>
   Effect.async((resume) => {
     const prompt = buildPrompt(agent, task)
 
