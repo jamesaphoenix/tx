@@ -15,6 +15,7 @@ import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx-ty
 export { serializeTask }
 import { TaskService, ReadyService, DependencyService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+import { handleToolError } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 
 // -----------------------------------------------------------------------------
@@ -44,9 +45,7 @@ const handleReady = async (args: { limit?: number }): Promise<McpToolResult> => 
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_ready", args, error)
   }
 }
 
@@ -67,9 +66,7 @@ const handleShow = async (args: { id: string }): Promise<McpToolResult> => {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_show", args, error)
   }
 }
 
@@ -94,9 +91,7 @@ const handleList = async (args: { status?: TaskStatus; parentId?: string; limit?
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_list", args, error)
   }
 }
 
@@ -117,9 +112,7 @@ const handleChildren = async (args: { id: string; limit?: number }): Promise<Mcp
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_children", args, error)
   }
 }
 
@@ -150,9 +143,7 @@ const handleAdd = async (args: {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_add", args, error)
   }
 }
 
@@ -187,9 +178,7 @@ const handleUpdate = async (args: {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_update", args, error)
   }
 }
 
@@ -231,9 +220,7 @@ const handleDone = async (args: { id: string }): Promise<McpToolResult> => {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_done", args, error)
   }
 }
 
@@ -253,9 +240,7 @@ const handleDelete = async (args: { id: string }): Promise<McpToolResult> => {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_delete", args, error)
   }
 }
 
@@ -280,9 +265,7 @@ const handleBlock = async (args: { taskId: string; blockerId: string }): Promise
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_block", args, error)
   }
 }
 
@@ -307,9 +290,7 @@ const handleUnblock = async (args: { taskId: string; blockerId: string }): Promi
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_unblock", args, error)
   }
 }
 

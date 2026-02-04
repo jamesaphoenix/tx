@@ -2,6 +2,7 @@
  * MCP Response Formatters
  *
  * Provides helpers for formatting MCP tool responses.
+ * Includes structured error classification and logging for tool handlers.
  */
 
 // -----------------------------------------------------------------------------
@@ -16,6 +17,14 @@ export interface McpContent {
 export interface McpResponse {
   content: McpContent[]
   isError?: boolean
+}
+
+export interface StructuredError {
+  errorType: string
+  message: string
+  tool: string
+  args: Record<string, unknown>
+  timestamp: string
 }
 
 // -----------------------------------------------------------------------------
@@ -43,6 +52,33 @@ export const safeStringify = (value: unknown): string => {
 }
 
 // -----------------------------------------------------------------------------
+// Error Classification
+// -----------------------------------------------------------------------------
+
+/**
+ * Extract the error type tag from an error.
+ * Effect-TS tagged errors have a `_tag` property.
+ * Falls back to the constructor name or "UnknownError".
+ */
+export const classifyError = (error: unknown): string => {
+  if (error !== null && typeof error === "object" && "_tag" in error && typeof error._tag === "string") {
+    return error._tag
+  }
+  if (error instanceof Error) {
+    return error.constructor.name === "Error" ? "Error" : error.constructor.name
+  }
+  return "UnknownError"
+}
+
+/**
+ * Extract the error message from an error value.
+ */
+export const extractErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+// -----------------------------------------------------------------------------
 // Response Formatters
 // -----------------------------------------------------------------------------
 
@@ -57,12 +93,61 @@ export const mcpResponse = (text: string, data: unknown): McpResponse => ({
 })
 
 /**
- * Format an error MCP response.
+ * Format an error MCP response with structured error data.
  */
 export const mcpError = (error: unknown): McpResponse => ({
   content: [{
     type: "text" as const,
-    text: `Error: ${error instanceof Error ? error.message : String(error)}`
+    text: `Error: ${extractErrorMessage(error)}`
   }],
   isError: true
 })
+
+// -----------------------------------------------------------------------------
+// Structured Error Logging
+// -----------------------------------------------------------------------------
+
+/**
+ * Build a structured error object with full context.
+ */
+export const buildStructuredError = (
+  tool: string,
+  args: Record<string, unknown>,
+  error: unknown
+): StructuredError => ({
+  errorType: classifyError(error),
+  message: extractErrorMessage(error),
+  tool,
+  args,
+  timestamp: new Date().toISOString()
+})
+
+/**
+ * Log a structured error to stderr.
+ * MCP uses stdio for protocol communication so stderr is the correct channel.
+ */
+export const logToolError = (structured: StructuredError): void => {
+  console.error(JSON.stringify(structured))
+}
+
+/**
+ * Handle a tool error: log structured context to stderr and return
+ * a structured MCP error response with error type and details.
+ *
+ * Use this in tool handler catch blocks instead of inline error formatting.
+ */
+export const handleToolError = (
+  tool: string,
+  args: Record<string, unknown>,
+  error: unknown
+): McpResponse => {
+  const structured = buildStructuredError(tool, args, error)
+  logToolError(structured)
+  return {
+    content: [
+      { type: "text" as const, text: `Error [${structured.errorType}]: ${structured.message}` },
+      { type: "text" as const, text: safeStringify(structured) }
+    ],
+    isError: true
+  }
+}

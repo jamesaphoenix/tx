@@ -12,6 +12,7 @@ import { z } from "zod"
 import type { ExportResult, ImportResult, SyncStatus, CompactResult } from "@jamesaphoenix/tx-core"
 import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+import { handleToolError } from "../response.js"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -110,9 +111,7 @@ const handleExport = async (args: { path?: string }): Promise<McpToolResult> => 
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_sync_export", args, error)
   }
 }
 
@@ -136,9 +135,7 @@ const handleImport = async (args: { path?: string }): Promise<McpToolResult> => 
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_sync_import", args, error)
   }
 }
 
@@ -160,9 +157,7 @@ const handleStatus = async (): Promise<McpToolResult> => {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_sync_status", {}, error)
   }
 }
 
@@ -186,9 +181,7 @@ const handleCompact = async (args: { path?: string }): Promise<McpToolResult> =>
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_sync_compact", args, error)
   }
 }
 

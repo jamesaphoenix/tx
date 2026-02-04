@@ -11,6 +11,7 @@ import type { Learning, LearningWithScore, FileLearning, LearningSourceType } fr
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+import { handleToolError } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 
 // -----------------------------------------------------------------------------
@@ -88,9 +89,7 @@ const handleLearn = async (args: { filePattern: string; note: string; taskId?: s
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_learn", args, error)
   }
 }
 
@@ -118,9 +117,7 @@ const handleRecall = async (args: { path?: string; limit?: number }): Promise<Mc
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_recall", args, error)
   }
 }
 
@@ -148,9 +145,7 @@ const handleContext = async (args: { taskId: string; maxTokens?: number }): Prom
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_context", args, error)
   }
 }
 
@@ -182,9 +177,7 @@ const handleLearningAdd = async (args: {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_learning_add", args, error)
   }
 }
 
@@ -215,9 +208,7 @@ const handleLearningSearch = async (args: {
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_learning_search", args, error)
   }
 }
 
@@ -237,9 +228,7 @@ const handleLearningHelpful = async (args: { id: number; score?: number }): Prom
       ]
     }
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }]
-    }
+    return handleToolError("tx_learning_helpful", args, error)
   }
 }
 

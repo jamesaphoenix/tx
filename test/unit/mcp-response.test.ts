@@ -3,8 +3,9 @@
  *
  * Tests safeStringify and response formatters, including circular reference handling.
  */
-import { describe, it, expect } from "vitest"
-import { safeStringify, mcpResponse, mcpError } from "../../apps/mcp-server/src/response.js"
+import { describe, it, expect, vi } from "vitest"
+import { safeStringify, mcpResponse, mcpError, classifyError, extractErrorMessage, buildStructuredError, handleToolError } from "../../apps/mcp-server/src/response.js"
+import { Data } from "effect"
 
 // -----------------------------------------------------------------------------
 // safeStringify Tests
@@ -260,5 +261,153 @@ describe("mcpError", () => {
 
     expect(result.content[0].text).toBe("Error: undefined")
     expect(result.isError).toBe(true)
+  })
+})
+
+// -----------------------------------------------------------------------------
+// classifyError Tests
+// -----------------------------------------------------------------------------
+
+describe("classifyError", () => {
+  it("extracts _tag from Effect-TS tagged errors", () => {
+    class TestTaggedError extends Data.TaggedError("TestTaggedError")<{
+      readonly reason: string
+    }> {}
+
+    const error = new TestTaggedError({ reason: "test" })
+    expect(classifyError(error)).toBe("TestTaggedError")
+  })
+
+  it("uses constructor name for standard Error subclasses", () => {
+    class CustomError extends Error {
+      constructor(message: string) {
+        super(message)
+        this.name = "CustomError"
+      }
+    }
+
+    expect(classifyError(new CustomError("test"))).toBe("CustomError")
+  })
+
+  it("returns 'Error' for plain Error instances", () => {
+    expect(classifyError(new Error("test"))).toBe("Error")
+  })
+
+  it("returns 'UnknownError' for non-Error values", () => {
+    expect(classifyError("a string")).toBe("UnknownError")
+    expect(classifyError(42)).toBe("UnknownError")
+    expect(classifyError(null)).toBe("UnknownError")
+    expect(classifyError(undefined)).toBe("UnknownError")
+  })
+
+  it("prefers _tag over constructor name", () => {
+    const taggedObj = { _tag: "MyCustomTag", message: "test" }
+    expect(classifyError(taggedObj)).toBe("MyCustomTag")
+  })
+})
+
+// -----------------------------------------------------------------------------
+// extractErrorMessage Tests
+// -----------------------------------------------------------------------------
+
+describe("extractErrorMessage", () => {
+  it("extracts message from Error instances", () => {
+    expect(extractErrorMessage(new Error("hello"))).toBe("hello")
+  })
+
+  it("converts non-Error values to string", () => {
+    expect(extractErrorMessage("raw string")).toBe("raw string")
+    expect(extractErrorMessage(404)).toBe("404")
+    expect(extractErrorMessage(null)).toBe("null")
+  })
+})
+
+// -----------------------------------------------------------------------------
+// buildStructuredError Tests
+// -----------------------------------------------------------------------------
+
+describe("buildStructuredError", () => {
+  it("builds structured error with full context", () => {
+    const error = new Error("not found")
+    const result = buildStructuredError("tx_show", { id: "tx-abc123" }, error)
+
+    expect(result.errorType).toBe("Error")
+    expect(result.message).toBe("not found")
+    expect(result.tool).toBe("tx_show")
+    expect(result.args).toEqual({ id: "tx-abc123" })
+    expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  })
+
+  it("classifies Effect-TS tagged errors", () => {
+    class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
+      readonly id: string
+    }> {
+      get message() { return `Task not found: ${this.id}` }
+    }
+
+    const error = new TaskNotFoundError({ id: "tx-abc123" })
+    const result = buildStructuredError("tx_show", { id: "tx-abc123" }, error)
+
+    expect(result.errorType).toBe("TaskNotFoundError")
+    expect(result.message).toBe("Task not found: tx-abc123")
+  })
+})
+
+// -----------------------------------------------------------------------------
+// handleToolError Tests
+// -----------------------------------------------------------------------------
+
+describe("handleToolError", () => {
+  it("returns structured MCP error response", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const error = new Error("something broke")
+    const result = handleToolError("tx_done", { id: "tx-abc123" }, error)
+
+    expect(result.isError).toBe(true)
+    expect(result.content).toHaveLength(2)
+    expect(result.content[0].text).toBe("Error [Error]: something broke")
+
+    const data = JSON.parse(result.content[1].text)
+    expect(data.errorType).toBe("Error")
+    expect(data.message).toBe("something broke")
+    expect(data.tool).toBe("tx_done")
+    expect(data.args).toEqual({ id: "tx-abc123" })
+
+    consoleSpy.mockRestore()
+  })
+
+  it("logs structured JSON to stderr", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const error = new Error("db failure")
+    handleToolError("tx_add", { title: "My task" }, error)
+
+    expect(consoleSpy).toHaveBeenCalledOnce()
+    const logged = JSON.parse(consoleSpy.mock.calls[0][0] as string)
+    expect(logged.errorType).toBe("Error")
+    expect(logged.tool).toBe("tx_add")
+    expect(logged.message).toBe("db failure")
+
+    consoleSpy.mockRestore()
+  })
+
+  it("classifies Effect-TS tagged errors in response", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    class CircularDependencyError extends Data.TaggedError("CircularDependencyError")<{
+      readonly taskId: string
+      readonly blockerId: string
+    }> {
+      get message() { return `Circular dependency: ${this.taskId} and ${this.blockerId}` }
+    }
+
+    const error = new CircularDependencyError({ taskId: "tx-aaa", blockerId: "tx-bbb" })
+    const result = handleToolError("tx_block", { taskId: "tx-aaa", blockerId: "tx-bbb" }, error)
+
+    expect(result.content[0].text).toBe("Error [CircularDependencyError]: Circular dependency: tx-aaa and tx-bbb")
+
+    const data = JSON.parse(result.content[1].text)
+    expect(data.errorType).toBe("CircularDependencyError")
+
+    consoleSpy.mockRestore()
   })
 })
