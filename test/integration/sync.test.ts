@@ -1683,3 +1683,266 @@ describe("SyncService Compact", () => {
     expect(depOps).toHaveLength(1)
   })
 })
+
+// -----------------------------------------------------------------------------
+// Transaction Atomicity Tests
+// -----------------------------------------------------------------------------
+
+describe("SyncService Import Transaction Atomicity", () => {
+  let db: TestDatabase
+  let layer: ReturnType<typeof makeTestLayer>
+  let tempPath: string
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    layer = makeTestLayer(db)
+    tempPath = createTempJsonlPath()
+  })
+
+  afterEach(() => {
+    cleanupTempFile(tempPath)
+  })
+
+  it("rolls back all changes when import fails mid-operation (foreign key violation)", async () => {
+    // This test verifies that if an error occurs during import, all changes are rolled back.
+    // We create a scenario where:
+    // 1. First task would be imported successfully
+    // 2. Second task has a parentId pointing to a non-existent task (not in import)
+    // 3. Due to topological sorting, the second task will be processed (no parent in import set)
+    // 4. The insert should fail due to foreign key constraint
+    // 5. The first task should be rolled back
+
+    const ts = "2024-01-01T00:00:00.000Z"
+    const validTaskId = fixtureId("tx-valid-task")
+    const invalidParentTaskId = fixtureId("tx-child-bad-parent")
+    const nonExistentParentId = fixtureId("tx-nonexistent")
+
+    // JSONL with two tasks:
+    // 1. A valid task with no parent
+    // 2. A task with a parentId that doesn't exist in the import or database
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: validTaskId,
+        data: { title: "Valid Task", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: invalidParentTaskId,
+        data: {
+          title: "Task with Invalid Parent",
+          description: "",
+          status: "backlog",
+          score: 50,
+          parentId: nonExistentParentId, // This parent doesn't exist!
+          metadata: {}
+        }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Count tasks before import
+    const countBefore = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(countBefore.count).toBe(0)
+
+    // Attempt import - should fail due to foreign key constraint
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    // Import should fail
+    expect(result._tag).toBe("Left")
+
+    // CRITICAL: Both tasks should be rolled back - database should still be empty
+    const countAfter = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(countAfter.count).toBe(0)
+  })
+
+  it("rolls back dependencies when import fails", async () => {
+    // Create a scenario where tasks import successfully but then a subsequent operation fails
+    // We'll use a task with invalid parent to trigger the rollback
+
+    const ts = "2024-01-01T00:00:00.000Z"
+    const taskA = fixtureId("tx-rollback-a")
+    const taskB = fixtureId("tx-rollback-b")
+    const taskWithBadParent = fixtureId("tx-rollback-bad")
+    const nonExistentParent = fixtureId("tx-rollback-ghost")
+
+    // JSONL with three tasks and a dependency:
+    // 1. Task A (valid)
+    // 2. Task B (valid)
+    // 3. Dependency: A -> B
+    // 4. Task with invalid parent (will cause FK violation)
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskA,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskB,
+        data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_add",
+        ts,
+        blockerId: taskA,
+        blockedId: taskB
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskWithBadParent,
+        data: {
+          title: "Bad Parent Task",
+          description: "",
+          status: "backlog",
+          score: 25,
+          parentId: nonExistentParent,
+          metadata: {}
+        }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Count before
+    const taskCountBefore = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    const depCountBefore = db.db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
+    expect(taskCountBefore.count).toBe(0)
+    expect(depCountBefore.count).toBe(0)
+
+    // Attempt import - should fail
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+
+    // All changes should be rolled back
+    const taskCountAfter = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    const depCountAfter = db.db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
+    expect(taskCountAfter.count).toBe(0)
+    expect(depCountAfter.count).toBe(0)
+  })
+
+  it("does not roll back on successful import", async () => {
+    // Verify that successful imports actually persist
+    const ts = "2024-01-01T00:00:00.000Z"
+    const taskA = fixtureId("tx-success-a")
+    const taskB = fixtureId("tx-success-b")
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskA,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskB,
+        data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_add",
+        ts,
+        blockerId: taskA,
+        blockedId: taskB
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.imported).toBe(2)
+
+    // Verify data persisted
+    const taskCount = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    const depCount = db.db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
+    expect(taskCount.count).toBe(2)
+    expect(depCount.count).toBe(1)
+  })
+
+  it("preserves existing data when import fails", async () => {
+    // First, add some existing data
+    const existingTs = "2024-01-01T00:00:00.000Z"
+    const existingTask = fixtureId("tx-existing")
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(existingTask, "Existing Task", "", "ready", 100, null, existingTs, existingTs, null, "{}")
+
+    // Now try to import with a bad task
+    const ts = "2024-01-02T00:00:00.000Z"
+    const newTask = fixtureId("tx-new-task")
+    const badTask = fixtureId("tx-bad-import")
+    const ghostParent = fixtureId("tx-ghost-parent")
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: newTask,
+        data: { title: "New Task", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: badTask,
+        data: { title: "Bad Task", description: "", status: "backlog", score: 25, parentId: ghostParent, metadata: {} }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Attempt import - should fail
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+
+    // Existing data should still be there
+    const existingData = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(existingTask) as { title: string } | undefined
+    expect(existingData).toBeDefined()
+    expect(existingData?.title).toBe("Existing Task")
+
+    // New task should NOT be there (rolled back)
+    const newData = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(newTask)
+    expect(newData).toBeNull()
+
+    // Total count should be 1 (only the existing task)
+    const taskCount = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(taskCount.count).toBe(1)
+  })
+})

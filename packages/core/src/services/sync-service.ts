@@ -4,9 +4,8 @@ import { dirname, resolve } from "node:path"
 import { DatabaseError, TaskNotFoundError, ValidationError } from "../errors.js"
 import { SqliteClient } from "../db.js"
 import { TaskService } from "./task-service.js"
-import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import type { Task, TaskDependency, TaskId, TaskStatus } from "@jamesaphoenix/tx-types"
+import type { Task, TaskDependency } from "@jamesaphoenix/tx-types"
 import {
   type TaskUpsertOp,
   type TaskDeleteOp,
@@ -276,7 +275,6 @@ export const SyncServiceLive = Layer.effect(
   SyncService,
   Effect.gen(function* () {
     const taskService = yield* TaskService
-    const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
     const db = yield* SqliteClient
 
@@ -341,12 +339,12 @@ export const SyncServiceLive = Layer.effect(
         Effect.gen(function* () {
           const filePath = resolve(path ?? DEFAULT_JSONL_PATH)
 
-          // Check if file exists
+          // Check if file exists (outside transaction - no DB access)
           if (!existsSync(filePath)) {
             return { imported: 0, skipped: 0, conflicts: 0 }
           }
 
-          // Read and parse JSONL file
+          // Read and parse JSONL file (outside transaction - no DB access)
           const content = yield* Effect.try({
             try: () => readFileSync(filePath, "utf-8"),
             catch: (cause) => new DatabaseError({ cause })
@@ -357,7 +355,7 @@ export const SyncServiceLive = Layer.effect(
             return { imported: 0, skipped: 0, conflicts: 0 }
           }
 
-          // Parse all operations with Schema validation
+          // Parse all operations with Schema validation (outside transaction - no DB access)
           const ops: SyncOperation[] = []
           for (const line of lines) {
             const parsed = yield* Effect.try({
@@ -391,99 +389,130 @@ export const SyncServiceLive = Layer.effect(
             }
           }
 
-          let imported = 0
-          let skipped = 0
-          let conflicts = 0
-
           // Apply task operations in topological order (parents before children)
           // This ensures foreign key constraints are satisfied when importing
           // tasks where child timestamp < parent timestamp
           const sortedTaskEntries = topologicalSortTasks([...taskStates.entries()])
-          for (const [id, { op }] of sortedTaskEntries) {
-            if (op.op === "upsert") {
-              const existing = yield* taskRepo.findById(id)
 
-              if (!existing) {
-                // Create new task with the specified ID
-                const now = new Date()
-                const task: Task = {
-                  id: id as TaskId,
-                  title: op.data.title,
-                  description: op.data.description,
-                  status: op.data.status as TaskStatus,
-                  parentId: op.data.parentId as TaskId | null,
-                  score: op.data.score,
-                  createdAt: new Date(op.ts),
-                  updatedAt: new Date(op.ts),
-                  completedAt: op.data.status === "done" ? now : null,
-                  metadata: op.data.metadata as Record<string, unknown>
-                }
-                yield* taskRepo.insert(task)
-                imported++
-              } else {
-                // Update if JSONL timestamp is newer than existing
-                const existingTs = existing.updatedAt.toISOString()
-                if (op.ts > existingTs) {
-                  const updated: Task = {
-                    ...existing,
-                    title: op.data.title,
-                    description: op.data.description,
-                    status: op.data.status as TaskStatus,
-                    parentId: op.data.parentId as TaskId | null,
-                    score: op.data.score,
-                    updatedAt: new Date(op.ts),
-                    completedAt: op.data.status === "done" ? (existing.completedAt ?? new Date()) : null,
-                    metadata: op.data.metadata as Record<string, unknown>
+          // ALL database operations inside a single transaction for atomicity
+          // If any operation fails, the entire import is rolled back
+          return yield* Effect.try({
+            try: () => {
+              db.exec("BEGIN IMMEDIATE")
+              try {
+                let imported = 0
+                let skipped = 0
+                let conflicts = 0
+
+                // Prepare statements for efficiency
+                const findTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?")
+                const insertTaskStmt = db.prepare(
+                  `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                )
+                const updateTaskStmt = db.prepare(
+                  `UPDATE tasks SET title = ?, description = ?, status = ?, parent_id = ?,
+                   score = ?, updated_at = ?, completed_at = ?, metadata = ? WHERE id = ?`
+                )
+                const deleteTaskStmt = db.prepare("DELETE FROM tasks WHERE id = ?")
+                const insertDepStmt = db.prepare(
+                  "INSERT OR IGNORE INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
+                )
+                const deleteDepStmt = db.prepare(
+                  "DELETE FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
+                )
+                const setConfigStmt = db.prepare(
+                  "INSERT OR REPLACE INTO sync_config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+                )
+
+                // Apply task operations
+                for (const [id, { op }] of sortedTaskEntries) {
+                  if (op.op === "upsert") {
+                    const existingRow = findTaskStmt.get(id) as { updated_at: string; completed_at: string | null } | undefined
+
+                    if (!existingRow) {
+                      // Create new task with the specified ID
+                      const now = new Date()
+                      insertTaskStmt.run(
+                        id,
+                        op.data.title,
+                        op.data.description,
+                        op.data.status,
+                        op.data.parentId,
+                        op.data.score,
+                        op.ts,
+                        op.ts,
+                        op.data.status === "done" ? now.toISOString() : null,
+                        JSON.stringify(op.data.metadata)
+                      )
+                      imported++
+                    } else {
+                      // Update if JSONL timestamp is newer than existing
+                      const existingTs = existingRow.updated_at
+                      if (op.ts > existingTs) {
+                        updateTaskStmt.run(
+                          op.data.title,
+                          op.data.description,
+                          op.data.status,
+                          op.data.parentId,
+                          op.data.score,
+                          op.ts,
+                          op.data.status === "done" ? (existingRow.completed_at ?? new Date().toISOString()) : null,
+                          JSON.stringify(op.data.metadata),
+                          id
+                        )
+                        imported++
+                      } else if (op.ts === existingTs) {
+                        // Same timestamp - skip
+                        skipped++
+                      } else {
+                        // Local is newer - conflict
+                        conflicts++
+                      }
+                    }
+                  } else if (op.op === "delete") {
+                    const existingRow = findTaskStmt.get(id) as { updated_at: string } | undefined
+                    if (existingRow) {
+                      // Check timestamp - only delete if delete operation is newer
+                      // Per DD-009 Scenario 2: delete wins if its timestamp > local update timestamp
+                      const existingTs = existingRow.updated_at
+                      if (op.ts > existingTs) {
+                        deleteTaskStmt.run(id)
+                        imported++
+                      } else if (op.ts === existingTs) {
+                        // Same timestamp - skip (ambiguous state, but safe to keep local)
+                        skipped++
+                      } else {
+                        // Local is newer - conflict (local update wins over older delete)
+                        conflicts++
+                      }
+                    }
                   }
-                  yield* taskRepo.update(updated)
-                  imported++
-                } else if (op.ts === existingTs) {
-                  // Same timestamp - skip
-                  skipped++
-                } else {
-                  // Local is newer - conflict
-                  conflicts++
                 }
-              }
-            } else if (op.op === "delete") {
-              const existing = yield* taskRepo.findById(id)
-              if (existing) {
-                // Check timestamp - only delete if delete operation is newer
-                // Per DD-009 Scenario 2: delete wins if its timestamp > local update timestamp
-                const existingTs = existing.updatedAt.toISOString()
-                if (op.ts > existingTs) {
-                  yield* taskRepo.remove(id)
-                  imported++
-                } else if (op.ts === existingTs) {
-                  // Same timestamp - skip (ambiguous state, but safe to keep local)
-                  skipped++
-                } else {
-                  // Local is newer - conflict (local update wins over older delete)
-                  conflicts++
+
+                // Apply dependency operations
+                for (const { op } of depStates.values()) {
+                  if (op.op === "dep_add") {
+                    // Add dependency, ignore if already exists (INSERT OR IGNORE)
+                    insertDepStmt.run(op.blockerId, op.blockedId, op.ts)
+                  } else if (op.op === "dep_remove") {
+                    // Remove dependency, ignore if doesn't exist
+                    deleteDepStmt.run(op.blockerId, op.blockedId)
+                  }
                 }
+
+                // Record import time
+                setConfigStmt.run("last_import", new Date().toISOString())
+
+                db.exec("COMMIT")
+                return { imported, skipped, conflicts }
+              } catch (e) {
+                db.exec("ROLLBACK")
+                throw e
               }
-            }
-          }
-
-          // Apply dependency operations
-          for (const { op } of depStates.values()) {
-            if (op.op === "dep_add") {
-              // Add dependency, ignore if already exists
-              yield* depRepo.insert(op.blockerId, op.blockedId).pipe(
-                Effect.catchAll(() => Effect.void)
-              )
-            } else if (op.op === "dep_remove") {
-              // Remove dependency, ignore if doesn't exist
-              yield* depRepo.remove(op.blockerId, op.blockedId).pipe(
-                Effect.catchAll(() => Effect.void)
-              )
-            }
-          }
-
-          // Record import time
-          yield* setConfig("last_import", new Date().toISOString())
-
-          return { imported, skipped, conflicts }
+            },
+            catch: (cause) => new DatabaseError({ cause })
+          })
         }),
 
       status: () =>
