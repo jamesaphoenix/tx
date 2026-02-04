@@ -8,6 +8,7 @@
 import { Effect } from "effect"
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from "node:fs"
 import { resolve, dirname } from "node:path"
+import { toJson } from "../output.js"
 
 type Flags = Record<string, string | boolean>
 
@@ -191,7 +192,13 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
     const projectDir = process.cwd()
     const gitRoot = findGitRoot(projectDir)
 
+    const jsonOutput = flag(flags, "json")
+
     if (!gitRoot) {
+      if (jsonOutput) {
+        console.log(toJson({ success: false, error: "Not a git repository (or any parent up to mount point)" }))
+        return
+      }
       console.error("Error: Not a git repository (or any parent up to mount point)")
       process.exit(1)
     }
@@ -203,8 +210,16 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
     if (existsSync(hookPath) && !flag(flags, "force", "f")) {
       const content = readFileSync(hookPath, "utf-8")
       if (content.includes("tx post-commit hook")) {
+        if (jsonOutput) {
+          console.log(toJson({ success: false, error: "already_installed", message: "tx post-commit hook is already installed. Use --force to reinstall." }))
+          return
+        }
         console.log("tx post-commit hook is already installed.")
         console.log("Use --force to reinstall.")
+        return
+      }
+      if (jsonOutput) {
+        console.log(toJson({ success: false, error: "hook_exists", message: "A post-commit hook already exists. Use --force to overwrite." }))
         return
       }
       console.error("Error: A post-commit hook already exists.")
@@ -250,6 +265,20 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
     // Save config to .txrc.json
     writeTxrc(projectDir, config)
 
+    if (jsonOutput) {
+      console.log(toJson({
+        success: true,
+        hookPath,
+        config: {
+          fileThreshold: config.hooks.fileThreshold ?? DEFAULT_FILE_THRESHOLD,
+          highValueFiles: config.hooks.highValueFiles ?? DEFAULT_HIGH_VALUE_FILES,
+          enabled: true,
+          verifyOnCommit: true,
+        }
+      }))
+      return
+    }
+
     console.log("tx post-commit hook installed successfully!")
     console.log()
     console.log("Configuration:")
@@ -267,12 +296,17 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
  * tx hooks:uninstall
  * Remove post-commit hook
  */
-export const hooksUninstall = (_pos: string[], _flags: Flags) =>
+export const hooksUninstall = (_pos: string[], flags: Flags) =>
   Effect.sync(() => {
     const projectDir = process.cwd()
     const gitRoot = findGitRoot(projectDir)
+    const jsonOutput = flag(flags, "json")
 
     if (!gitRoot) {
+      if (jsonOutput) {
+        console.log(toJson({ success: false, error: "Not a git repository (or any parent up to mount point)" }))
+        return
+      }
       console.error("Error: Not a git repository (or any parent up to mount point)")
       process.exit(1)
     }
@@ -280,12 +314,20 @@ export const hooksUninstall = (_pos: string[], _flags: Flags) =>
     const hookPath = resolve(gitRoot, ".git", "hooks", "post-commit")
 
     if (!existsSync(hookPath)) {
+      if (jsonOutput) {
+        console.log(toJson({ success: false, error: "not_found", message: "No post-commit hook found." }))
+        return
+      }
       console.log("No post-commit hook found.")
       return
     }
 
     const content = readFileSync(hookPath, "utf-8")
     if (!content.includes("tx post-commit hook")) {
+      if (jsonOutput) {
+        console.log(toJson({ success: false, error: "not_tx_hook", message: "Existing post-commit hook was not installed by tx." }))
+        return
+      }
       console.error("Error: Existing post-commit hook was not installed by tx.")
       console.error("Please manually remove the hook if desired.")
       process.exit(1)
@@ -299,6 +341,11 @@ export const hooksUninstall = (_pos: string[], _flags: Flags) =>
       config.hooks.enabled = false
       config.hooks.verifyOnCommit = false
       writeTxrc(projectDir, config)
+    }
+
+    if (jsonOutput) {
+      console.log(toJson({ success: true, hookPath, message: "tx post-commit hook uninstalled." }))
+      return
     }
 
     console.log("tx post-commit hook uninstalled.")
@@ -340,7 +387,7 @@ export const hooksStatus = (_pos: string[], flags: Flags) =>
     status.enabled = status.hookInstalled && (status.config.hooks?.enabled !== false)
 
     if (flag(flags, "json")) {
-      console.log(JSON.stringify(status, null, 2))
+      console.log(toJson(status))
       return
     }
 

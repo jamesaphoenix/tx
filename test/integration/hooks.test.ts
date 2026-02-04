@@ -18,6 +18,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync }
 import { resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { execSync } from "node:child_process"
+import { Effect } from "effect"
 
 // Import hooks module functions for testing
 import {
@@ -25,6 +26,9 @@ import {
   writeTxrc,
   findGitRoot,
   generatePostCommitHook,
+  hooksInstall,
+  hooksUninstall,
+  hooksStatus,
   type TxrcConfig
 } from "../../apps/cli/src/commands/hooks.js"
 
@@ -576,5 +580,359 @@ describe("Edge Cases", () => {
     // Dots are escaped for regex, brackets are kept as-is (valid in grep -E)
     expect(hook).toContain("file[1]\\.json")
     expect(hook).toContain("test-file\\.ts")
+  })
+})
+
+// =============================================================================
+// Command Function Tests (hooksInstall, hooksUninstall, hooksStatus)
+// =============================================================================
+
+/**
+ * Helper to capture console output and mock process.cwd for command testing.
+ * Returns captured output arrays and cleanup function.
+ */
+function setupCommandTest(testDir: string) {
+  const logs: string[] = []
+  const errors: string[] = []
+  const origCwd = process.cwd
+  const origLog = console.log
+  const origError = console.error
+
+  process.cwd = () => testDir
+  console.log = (...args: unknown[]) => logs.push(args.map(String).join(" "))
+  console.error = (...args: unknown[]) => errors.push(args.map(String).join(" "))
+
+  return {
+    logs,
+    errors,
+    cleanup() {
+      process.cwd = origCwd
+      console.log = origLog
+      console.error = origError
+    }
+  }
+}
+
+describe("hooksInstall command", () => {
+  let testDir: string
+
+  beforeEach(() => {
+    testDir = createTestDir("cmd-install", true)
+  })
+
+  afterEach(() => {
+    cleanupTestDir(testDir)
+  })
+
+  it("installs hook and outputs text by default", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], {}))
+      expect(logs.some(l => l.includes("installed successfully"))).toBe(true)
+
+      const hookPath = resolve(testDir, ".git", "hooks", "post-commit")
+      expect(existsSync(hookPath)).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("installs hook and outputs JSON with --json flag", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true }))
+      expect(logs.length).toBe(1)
+
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(true)
+      expect(result.hookPath).toContain("post-commit")
+      expect(result.config.enabled).toBe(true)
+      expect(result.config.fileThreshold).toBe(10)
+      expect(result.config.highValueFiles).toBeInstanceOf(Array)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("returns JSON error when already installed without --force", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      // Install first
+      Effect.runSync(hooksInstall([], { json: true }))
+      logs.length = 0
+
+      // Try again without --force
+      Effect.runSync(hooksInstall([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("already_installed")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("reinstalls with --force and --json", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true }))
+      logs.length = 0
+
+      Effect.runSync(hooksInstall([], { json: true, force: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("returns JSON error when non-tx hook exists", () => {
+    const hooksDir = resolve(testDir, ".git", "hooks")
+    mkdirSync(hooksDir, { recursive: true })
+    writeFileSync(resolve(hooksDir, "post-commit"), "#!/bin/bash\necho custom\n")
+
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("hook_exists")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("returns JSON error when not a git repo", () => {
+    const nonGitDir = createTestDir("cmd-install-nogit", false)
+    const { logs, cleanup } = setupCommandTest(nonGitDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toContain("Not a git repository")
+    } finally {
+      cleanup()
+      cleanupTestDir(nonGitDir)
+    }
+  })
+
+  it("applies custom threshold and high-value with --json", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true, threshold: "5", "high-value": "a.ts,b.ts" }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(true)
+      expect(result.config.fileThreshold).toBe(5)
+      expect(result.config.highValueFiles).toEqual(["a.ts", "b.ts"])
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+describe("hooksUninstall command", () => {
+  let testDir: string
+
+  beforeEach(() => {
+    testDir = createTestDir("cmd-uninstall", true)
+  })
+
+  afterEach(() => {
+    cleanupTestDir(testDir)
+  })
+
+  it("uninstalls hook and outputs text by default", () => {
+    // Install first
+    const { cleanup: installCleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], {}))
+    } finally {
+      installCleanup()
+    }
+
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksUninstall([], {}))
+      expect(logs.some(l => l.includes("uninstalled"))).toBe(true)
+
+      const hookPath = resolve(testDir, ".git", "hooks", "post-commit")
+      expect(existsSync(hookPath)).toBe(false)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("uninstalls hook and outputs JSON with --json flag", () => {
+    // Install first
+    const { cleanup: installCleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], {}))
+    } finally {
+      installCleanup()
+    }
+
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksUninstall([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(true)
+      expect(result.hookPath).toContain("post-commit")
+      expect(result.message).toContain("uninstalled")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("returns JSON error when no hook found", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksUninstall([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("not_found")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("returns JSON error when hook is not tx-installed", () => {
+    const hooksDir = resolve(testDir, ".git", "hooks")
+    mkdirSync(hooksDir, { recursive: true })
+    writeFileSync(resolve(hooksDir, "post-commit"), "#!/bin/bash\necho custom\n")
+
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksUninstall([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("not_tx_hook")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("returns JSON error when not a git repo", () => {
+    const nonGitDir = createTestDir("cmd-uninstall-nogit", false)
+    const { logs, cleanup } = setupCommandTest(nonGitDir)
+    try {
+      Effect.runSync(hooksUninstall([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toContain("Not a git repository")
+    } finally {
+      cleanup()
+      cleanupTestDir(nonGitDir)
+    }
+  })
+})
+
+describe("hooksStatus command", () => {
+  let testDir: string
+
+  beforeEach(() => {
+    testDir = createTestDir("cmd-status", true)
+  })
+
+  afterEach(() => {
+    cleanupTestDir(testDir)
+  })
+
+  it("outputs text status by default", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksStatus([], {}))
+      expect(logs.some(l => l.includes("Git Hook Status"))).toBe(true)
+      expect(logs.some(l => l.includes("Hook installed"))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("outputs JSON status with --json flag", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksStatus([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result).toHaveProperty("gitRoot")
+      expect(result).toHaveProperty("hookInstalled")
+      expect(result).toHaveProperty("hookPath")
+      expect(result).toHaveProperty("config")
+      expect(result).toHaveProperty("enabled")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("reports hook not installed in JSON", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksStatus([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.hookInstalled).toBe(false)
+      expect(result.enabled).toBe(false)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("reports hook installed and enabled in JSON", () => {
+    // Install hook first
+    const { cleanup: installCleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], {}))
+    } finally {
+      installCleanup()
+    }
+
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksStatus([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.hookInstalled).toBe(true)
+      expect(result.enabled).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("reports hook installed but disabled in JSON", () => {
+    // Install hook first
+    const { cleanup: installCleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], {}))
+    } finally {
+      installCleanup()
+    }
+
+    // Disable in config
+    writeTxrc(testDir, { hooks: { enabled: false } })
+
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksStatus([], { json: true }))
+      const result = JSON.parse(logs[0])
+      expect(result.hookInstalled).toBe(true)
+      expect(result.enabled).toBe(false)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("shows config details in text mode when config exists", () => {
+    // Install hook first to create config
+    const { cleanup: installCleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], {}))
+    } finally {
+      installCleanup()
+    }
+
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksStatus([], {}))
+      expect(logs.some(l => l.includes("Configuration"))).toBe(true)
+      expect(logs.some(l => l.includes("File threshold"))).toBe(true)
+    } finally {
+      cleanup()
+    }
   })
 })

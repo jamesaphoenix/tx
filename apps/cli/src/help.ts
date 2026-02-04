@@ -879,27 +879,31 @@ Options:
   --force, -f              Overwrite existing hook
   --threshold, -t <n>      File count threshold (default: 10)
   --high-value, -h <list>  Comma-separated list of high-value file patterns
+  --json                   Output as JSON
   --help                   Show this help
 
 Examples:
   tx hooks:install                           # Install with defaults
   tx hooks:install --threshold 5             # Trigger on 5+ files
   tx hooks:install --high-value "*.config.ts,schema.prisma"
-  tx hooks:install --force                   # Reinstall hook`,
+  tx hooks:install --force                   # Reinstall hook
+  tx hooks:install --json                    # JSON output for scripting`,
 
   "hooks:uninstall": `tx hooks:uninstall - Remove post-commit hook
 
-Usage: tx hooks:uninstall [--help]
+Usage: tx hooks:uninstall [options]
 
 Removes the tx post-commit hook. Only removes hooks that were
 installed by tx (identified by marker comment). Updates .txrc.json
 to disable hook settings.
 
 Options:
+  --json   Output as JSON
   --help   Show this help
 
 Examples:
-  tx hooks:uninstall`,
+  tx hooks:uninstall
+  tx hooks:uninstall --json                  # JSON output for scripting`,
 
   "hooks:status": `tx hooks:status - Show git hook status
 
