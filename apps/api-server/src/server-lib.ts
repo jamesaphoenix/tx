@@ -85,7 +85,7 @@ export const startServer = async (options: {
   hostname?: string
 }): Promise<void> => {
   const port = options.port ?? parseInt(process.env.TX_API_PORT ?? "3456", 10)
-  const hostname = options.hostname ?? process.env.TX_API_HOST ?? "localhost"
+  const hostname = options.hostname ?? process.env.TX_API_HOST ?? "0.0.0.0"
   const dbPath = options.dbPath ?? process.env.TX_DB_PATH ?? ".tx/tasks.db"
 
   // Initialize Effect runtime

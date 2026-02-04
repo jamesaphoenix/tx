@@ -6,7 +6,7 @@
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { Effect } from "effect"
-import { TaskService, SyncService } from "@jamesaphoenix/tx-core"
+import { TaskService } from "@jamesaphoenix/tx-core"
 import { runEffect, getDbPath } from "../runtime.js"
 
 // -----------------------------------------------------------------------------
@@ -24,16 +24,29 @@ const HealthResponseSchema = z.object({
 })
 
 const StatsResponseSchema = z.object({
-  tasks: z.object({
-    total: z.number(),
-    byStatus: z.record(z.string(), z.number())
-  }),
-  sync: z.object({
-    dbTaskCount: z.number(),
-    jsonlOpCount: z.number(),
-    isDirty: z.boolean(),
-    autoSyncEnabled: z.boolean()
-  })
+  tasks: z.number(),
+  done: z.number(),
+  ready: z.number(),
+  learnings: z.number(),
+  runsRunning: z.number().optional(),
+  runsTotal: z.number().optional()
+})
+
+const RalphActivitySchema = z.object({
+  timestamp: z.string(),
+  iteration: z.number(),
+  task: z.string(),
+  taskTitle: z.string(),
+  agent: z.string(),
+  status: z.enum(["started", "completed", "failed"])
+})
+
+const RalphResponseSchema = z.object({
+  running: z.boolean(),
+  pid: z.number().nullable(),
+  currentIteration: z.number(),
+  currentTask: z.string().nullable(),
+  recentActivity: z.array(RalphActivitySchema)
 })
 
 // -----------------------------------------------------------------------------
@@ -76,6 +89,24 @@ const statsRoute = createRoute({
   }
 })
 
+const ralphRoute = createRoute({
+  method: "get",
+  path: "/api/ralph",
+  tags: ["Health"],
+  summary: "RALPH loop status",
+  description: "Returns the status of the RALPH automation loop",
+  responses: {
+    200: {
+      description: "RALPH status retrieved successfully",
+      content: {
+        "application/json": {
+          schema: RalphResponseSchema
+        }
+      }
+    }
+  }
+})
+
 // -----------------------------------------------------------------------------
 // Router
 // -----------------------------------------------------------------------------
@@ -108,32 +139,60 @@ healthRouter.openapi(healthRoute, async (c) => {
   }, 200)
 })
 
+healthRouter.openapi(ralphRoute, async (c) => {
+  // Check if RALPH is running by looking for the state file
+  const fs = await import("node:fs")
+  const path = await import("node:path")
+
+  const stateFile = path.join(process.cwd(), ".tx", "ralph-state")
+  let running = false
+  let pid: number | null = null
+  let currentIteration = 0
+  let currentTask: string | null = null
+
+  try {
+    if (fs.existsSync(stateFile)) {
+      const state = JSON.parse(fs.readFileSync(stateFile, "utf-8"))
+      running = state.running ?? false
+      pid = state.pid ?? null
+      currentIteration = state.iteration ?? 0
+      currentTask = state.currentTask ?? null
+    }
+  } catch {
+    // State file doesn't exist or is invalid
+  }
+
+  return c.json({
+    running,
+    pid,
+    currentIteration,
+    currentTask,
+    recentActivity: []
+  }, 200)
+})
+
 healthRouter.openapi(statsRoute, async (c) => {
   const stats = await runEffect(
     Effect.gen(function* () {
       const taskService = yield* TaskService
-      const syncService = yield* SyncService
 
       const allTasks = yield* taskService.listWithDeps({})
-      const syncStatus = yield* syncService.status()
 
       // Count tasks by status
-      const byStatus: Record<string, number> = {}
+      let done = 0
+      let ready = 0
       for (const task of allTasks) {
-        byStatus[task.status] = (byStatus[task.status] ?? 0) + 1
+        if (task.status === "done") done++
+        if (task.isReady) ready++
       }
 
       return {
-        tasks: {
-          total: allTasks.length,
-          byStatus
-        },
-        sync: {
-          dbTaskCount: syncStatus.dbTaskCount,
-          jsonlOpCount: syncStatus.jsonlOpCount,
-          isDirty: syncStatus.isDirty,
-          autoSyncEnabled: syncStatus.autoSyncEnabled
-        }
+        tasks: allTasks.length,
+        done,
+        ready,
+        learnings: 0, // TODO: Add learning count when LearningService is available
+        runsRunning: 0,
+        runsTotal: 0
       }
     })
   )

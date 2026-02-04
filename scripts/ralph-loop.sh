@@ -4,6 +4,9 @@
 
 set -e
 
+# Use bun to run the tx CLI from source
+TX="bun apps/cli/src/cli.ts"
+
 DURATION_HOURS=${1:-8}
 DURATION_SECONDS=$((DURATION_HOURS * 3600))
 START_TIME=$(date +%s)
@@ -34,7 +37,7 @@ while true; do
     log "Time remaining: $((REMAINING / 3600))h $((REMAINING % 3600 / 60))m"
 
     # Get next ready task
-    TASK_JSON=$(tx ready --json --limit 1 2>/dev/null || echo "[]")
+    TASK_JSON=$($TX ready --json --limit 1 2>/dev/null || echo "[]")
     TASK_ID=$(echo "$TASK_JSON" | jq -r '.[0].id // empty')
 
     if [ -z "$TASK_ID" ]; then
@@ -49,16 +52,16 @@ while true; do
     # Run Claude on the task
     if claude --print "Read CLAUDE.md first for project context. Your task ID is: $TASK_ID
 
-Run 'tx show $TASK_ID' to see full details, then implement the task.
+Run 'bun apps/cli/src/cli.ts show $TASK_ID' to see full details, then implement the task.
 
-When complete, run 'tx done $TASK_ID' to mark it done.
+When complete, run 'bun apps/cli/src/cli.ts done $TASK_ID' to mark it done.
 
-If blocked, use 'tx block $TASK_ID <blocker-id>' to add a dependency.
+If blocked, use 'bun apps/cli/src/cli.ts block $TASK_ID <blocker-id>' to add a dependency.
 
 IMPORTANT: Commit your changes with a descriptive message when done." 2>&1 | tee -a "$LOG_FILE"; then
 
         # Check if task was completed
-        TASK_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
+        TASK_STATUS=$($TX show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
 
         if [ "$TASK_STATUS" = "done" ]; then
             log "Task $TASK_ID completed successfully"

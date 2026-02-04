@@ -47,6 +47,7 @@ const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
       if (!endedAt) return "running..."
       const start = new Date(startedAt)
       const end = new Date(endedAt)
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return "—"
       const durationMs = end.getTime() - start.getTime()
       const seconds = Math.floor(durationMs / 1000)
       if (seconds < 60) return `${seconds}s`
@@ -57,8 +58,10 @@ const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
 
     // Format time ago
     const formatTimeAgo = (date: string): string => {
+      if (!date) return "—"
       const now = new Date()
       const then = new Date(date)
+      if (isNaN(then.getTime())) return "—"
       const diffMs = now.getTime() - then.getTime()
       const diffMins = Math.floor(diffMs / (1000 * 60))
       if (diffMins < 1) return "just now"
@@ -97,8 +100,8 @@ const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
             </div>
             {run.taskTitle ? (
               <h3 className="text-sm font-medium text-white truncate">{run.taskTitle}</h3>
-            ) : run.task_id ? (
-              <h3 className="text-sm font-medium text-gray-400 truncate">Task: {run.task_id}</h3>
+            ) : run.taskId ? (
+              <h3 className="text-sm font-medium text-gray-400 truncate">Task: {run.taskId}</h3>
             ) : (
               <h3 className="text-sm font-medium text-gray-500 truncate italic">No task</h3>
             )}
@@ -106,21 +109,21 @@ const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
           <RunStatusBadge status={run.status} />
         </div>
         <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
-          <span>{formatTimeAgo(run.started_at)}</span>
+          <span>{formatTimeAgo(run.startedAt)}</span>
           <span>•</span>
-          <span>{formatDuration(run.started_at, run.ended_at)}</span>
-          {run.exit_code !== null && run.exit_code !== 0 && (
+          <span>{formatDuration(run.startedAt, run.endedAt)}</span>
+          {run.exitCode !== null && run.exitCode !== 0 && (
             <>
               <span>•</span>
-              <span className="text-red-400">exit {run.exit_code}</span>
+              <span className="text-red-400">exit {run.exitCode}</span>
             </>
           )}
         </div>
         {run.summary && (
           <p className="mt-2 text-xs text-gray-400 line-clamp-2">{run.summary}</p>
         )}
-        {run.error_message && (
-          <p className="mt-2 text-xs text-red-400 line-clamp-2">{run.error_message}</p>
+        {run.errorMessage && (
+          <p className="mt-2 text-xs text-red-400 line-clamp-2">{run.errorMessage}</p>
         )}
       </div>
     )

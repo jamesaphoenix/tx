@@ -80,15 +80,16 @@ export interface StatsResponse {
 // Run types
 export interface Run {
   id: string
-  task_id: string | null
+  taskId: string | null
   agent: string
-  started_at: string
-  ended_at: string | null
+  startedAt: string
+  endedAt: string | null
   status: string
-  exit_code: number | null
-  transcript_path: string | null
+  exitCode: number | null
+  pid: number | null
+  transcriptPath: string | null
   summary: string | null
-  error_message: string | null
+  errorMessage: string | null
   taskTitle?: string | null
 }
 

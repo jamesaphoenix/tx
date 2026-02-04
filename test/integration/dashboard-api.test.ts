@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
 import { Hono } from "hono"
-import { Database } from "bun:sqlite"
 import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs"
 import { resolve } from "path"
+import { homedir } from "os"
 import { tmpdir } from "os"
 
 // Types matching the server
@@ -30,16 +30,22 @@ interface TaskWithDeps extends TaskRow {
 }
 
 // Create test app with injected database
-function createTestApp(db: Database, txDir: string) {
+function createTestApp(db: TestDatabase, txDir: string) {
   const app = new Hono()
 
   // Path validation helper (mirrors server logic)
-  const validatePathWithinTx = (filePath: string): string | null => {
+  const claudeDir = resolve(homedir(), ".claude")
+  const validateTranscriptPath = (filePath: string): string | null => {
     const resolved = resolve(filePath)
-    if (!resolved.startsWith(txDir + "/") && resolved !== txDir) {
-      return null
+    // Allow paths within the .tx directory
+    if (resolved.startsWith(txDir + "/") || resolved === txDir) {
+      return resolved
     }
-    return resolved
+    // Allow paths within ~/.claude directory (Claude Code transcripts)
+    if (resolved.startsWith(claudeDir + "/") || resolved === claudeDir) {
+      return resolved
+    }
+    return null
   }
 
   // Helper to enrich tasks with dependency info (mirrors server logic)
@@ -361,7 +367,7 @@ function createTestApp(db: Database, txDir: string) {
 
       let transcript: string | null = null
       if (run.transcript_path) {
-        const validatedPath = validatePathWithinTx(run.transcript_path)
+        const validatedPath = validateTranscriptPath(run.transcript_path)
         if (validatedPath && existsSync(validatedPath)) {
           const { readFileSync } = require("fs")
           transcript = readFileSync(validatedPath, "utf-8")
@@ -1014,6 +1020,27 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     const data = await res.json()
 
     expect(data.transcript).toBeNull()
+  })
+
+  it("returns transcript content when path is within ~/.claude", async () => {
+    // Create a temporary file inside ~/.claude for testing
+    const claudeTestDir = resolve(homedir(), ".claude", "tx-test-" + Date.now())
+    mkdirSync(claudeTestDir, { recursive: true })
+    const transcriptPath = resolve(claudeTestDir, "transcript.jsonl")
+    writeFileSync(transcriptPath, JSON.stringify({type: "assistant", content: "hello"}))
+
+    const now = new Date().toISOString()
+    db.db.prepare(
+      "INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run("run-claude01", null, "agent-1", now, "completed", transcriptPath, "{}")
+
+    const res = await request(app, "/api/runs/run-claude01")
+    const data = await res.json()
+
+    expect(data.transcript).toBe(JSON.stringify({type: "assistant", content: "hello"}))
+
+    // Clean up
+    rmSync(claudeTestDir, { recursive: true })
   })
 })
 

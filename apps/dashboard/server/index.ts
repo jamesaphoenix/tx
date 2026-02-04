@@ -4,6 +4,7 @@ import { cors } from "hono/cors"
 import { Database } from "bun:sqlite"
 import { readFileSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
+import { homedir } from "os"
 import { fileURLToPath } from "url"
 import type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
 
@@ -13,19 +14,27 @@ const dbPath = resolve(projectRoot, ".tx/tasks.db")
 const ralphLogPath = resolve(projectRoot, ".tx/ralph-output.log")
 const ralphPidPath = resolve(projectRoot, ".tx/ralph.pid")
 const txDir = resolve(projectRoot, ".tx")
+const claudeDir = resolve(homedir(), ".claude")
 
 /**
- * Validate that a file path is within the allowed .tx directory.
+ * Validate that a file path is within an allowed directory.
+ * Allows paths within:
+ *   - .tx/ directory (locally stored transcripts)
+ *   - ~/.claude/ directory (Claude Code native transcripts)
  * Prevents path traversal attacks (e.g., ../../etc/passwd).
  * Returns the resolved absolute path if valid, null if invalid.
  */
-const validatePathWithinTx = (filePath: string): string | null => {
+const validateTranscriptPath = (filePath: string): string | null => {
   const resolved = resolve(projectRoot, filePath)
-  // Check that resolved path starts with the .tx directory
-  if (!resolved.startsWith(txDir + "/") && resolved !== txDir) {
-    return null
+  // Allow paths within the .tx directory
+  if (resolved.startsWith(txDir + "/") || resolved === txDir) {
+    return resolved
   }
-  return resolved
+  // Allow paths within ~/.claude directory (Claude Code transcripts)
+  if (resolved.startsWith(claudeDir + "/") || resolved === claudeDir) {
+    return resolved
+  }
+  return null
 }
 
 const app = new Hono()
@@ -546,7 +555,7 @@ app.get("/api/runs/:id", (c) => {
     // Try to read transcript if it exists and path is valid
     let transcript: string | null = null
     if (run.transcript_path) {
-      const validatedPath = validatePathWithinTx(run.transcript_path)
+      const validatedPath = validateTranscriptPath(run.transcript_path)
       if (validatedPath && existsSync(validatedPath)) {
         transcript = readFileSync(validatedPath, "utf-8")
       }

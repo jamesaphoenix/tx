@@ -10,15 +10,16 @@ import type { PaginatedRunsResponse, Run } from '../../../api/client'
 function createRun(overrides: Partial<Run> = {}): Run {
   return {
     id: `run-${Math.random().toString(36).slice(2, 10)}`,
-    task_id: 'tx-abc123',
+    taskId: 'tx-abc123',
     agent: 'tx-tester',
-    started_at: '2026-01-30T12:00:00Z',
-    ended_at: '2026-01-30T12:05:00Z',
+    startedAt: '2026-01-30T12:00:00Z',
+    endedAt: '2026-01-30T12:05:00Z',
     status: 'completed',
-    exit_code: 0,
-    transcript_path: null,
+    exitCode: 0,
+    pid: null,
+    transcriptPath: null,
     summary: 'Test run summary',
-    error_message: null,
+    errorMessage: null,
     taskTitle: 'Test Task',
     ...overrides,
   }
@@ -581,8 +582,8 @@ describe('RunsList', () => {
         createRun({
           id: 'run-running',
           status: 'running',
-          started_at: '2026-01-30T12:00:00Z',
-          ended_at: null,
+          startedAt: '2026-01-30T12:00:00Z',
+          endedAt: null,
         }),
       ]
 
@@ -609,8 +610,8 @@ describe('RunsList', () => {
         createRun({
           id: 'run-short',
           status: 'completed',
-          started_at: '2026-01-30T12:00:00Z',
-          ended_at: '2026-01-30T12:00:30Z', // 30 seconds
+          startedAt: '2026-01-30T12:00:00Z',
+          endedAt: '2026-01-30T12:00:30Z', // 30 seconds
         }),
       ]
 
@@ -637,8 +638,8 @@ describe('RunsList', () => {
         createRun({
           id: 'run-longer',
           status: 'completed',
-          started_at: '2026-01-30T12:00:00Z',
-          ended_at: '2026-01-30T12:05:30Z', // 5 minutes 30 seconds
+          startedAt: '2026-01-30T12:00:00Z',
+          endedAt: '2026-01-30T12:05:30Z', // 5 minutes 30 seconds
         }),
       ]
 
@@ -827,7 +828,7 @@ describe('RunsList', () => {
         createRun({
           id: 'run-failed',
           status: 'failed',
-          error_message: 'Task execution timed out',
+          errorMessage: 'Task execution timed out',
         }),
       ]
 
@@ -881,7 +882,7 @@ describe('RunsList', () => {
         createRun({
           id: 'run-failed',
           status: 'failed',
-          exit_code: 1,
+          exitCode: 1,
         }),
       ]
 
@@ -907,7 +908,7 @@ describe('RunsList', () => {
       const runs = [
         createRun({
           id: 'run-1',
-          task_id: 'tx-abc123',
+          taskId: 'tx-abc123',
           taskTitle: null,
         }),
       ]
@@ -934,7 +935,7 @@ describe('RunsList', () => {
       const runs = [
         createRun({
           id: 'run-notask',
-          task_id: null,
+          taskId: null,
           taskTitle: null,
         }),
       ]

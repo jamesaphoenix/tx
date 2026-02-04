@@ -113,16 +113,16 @@ function ChatView({ runId }: { runId: string }) {
             </div>
             <StatusBadge status={run.status} />
           </div>
-          {run.task_id && (
+          {run.taskId && (
             <div className="text-sm text-gray-300 mt-1">
-              Task: <code className="text-xs">{run.task_id}</code>
+              Task: <code className="text-xs">{run.taskId}</code>
             </div>
           )}
           {run.summary && (
             <div className="text-sm text-gray-400 mt-2">{run.summary}</div>
           )}
-          {run.error_message && (
-            <div className="text-sm text-red-400 mt-2">{run.error_message}</div>
+          {run.errorMessage && (
+            <div className="text-sm text-red-400 mt-2">{run.errorMessage}</div>
           )}
         </div>
       )}
