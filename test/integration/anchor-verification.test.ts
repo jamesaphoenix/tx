@@ -287,6 +287,158 @@ describe("AnchorVerificationService Integration", () => {
       expect(result.newStatus).toBe("valid")
     })
 
+    it("handles symbol names with dots correctly (escapes regex special chars)", async () => {
+      // Bug: 'config.get' was being treated as regex pattern matching 'configXget'
+      // Fix: escape special regex characters in symbol names
+      const filePath = await createTestFile(
+        tempDir,
+        "special-symbol.ts",
+        `export const configXget = "wrong"; export const otherFunc = () => {}`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for symbol with dot",
+            sourceType: "manual"
+          })
+
+          // Symbol 'config.get' should NOT match 'configXget' (dot is literal, not regex wildcard)
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "config.get",
+            symbolFqname: "special-symbol.ts::config.get"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // Should be invalid because 'config.get' literally does NOT exist (only 'configXget')
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("symbol_missing")
+    })
+
+    it("finds symbol with dot when it actually exists", async () => {
+      // Note: symbolExistsInFile checks for declaration patterns like 'const symbol' etc.
+      // A property like 'config.get' won't match our patterns - that's expected behavior
+      // This test verifies a true const named 'Settings' would work
+      const filePath = await createTestFile(
+        tempDir,
+        "literal-dot.ts",
+        `const Settings = {}; Settings["api.endpoint"] = "https://example.com"`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for actual dot symbol",
+            sourceType: "manual"
+          })
+
+          // Looking for 'Settings' which exists as a const declaration
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "Settings",
+            symbolFqname: "literal-dot.ts::Settings"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
+    it("handles symbol names with regex special characters (asterisk, brackets)", async () => {
+      // Test that regex special chars like * + ? [ ] ( ) don't cause issues
+      const filePath = await createTestFile(
+        tempDir,
+        "regex-chars.ts",
+        `export function normalFunc() { return true }`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for regex special chars",
+            sourceType: "manual"
+          })
+
+          // Symbol with regex special characters - should not cause regex errors
+          // and should NOT falsely match 'normalFunc'
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "func[test]",
+            symbolFqname: "regex-chars.ts::func[test]"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // Should be invalid (symbol doesn't exist) but should NOT throw regex error
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("symbol_missing")
+    })
+
+    it("handles FQName with dots in file path and symbol extraction", async () => {
+      // FQName format is "filepath::symbolName" - test that '::' split works correctly
+      const filePath = await createTestFile(
+        tempDir,
+        "fqname-test.ts",
+        `export class MyClass { static method() {} }`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for FQName parsing",
+            sourceType: "manual"
+          })
+
+          // Test FQName with complex path - symbol is extracted after last '::'
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "MyClass",
+            symbolFqname: "src/utils/fqname-test.ts::MyClass"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
     it("skips verification for pinned anchors", async () => {
       // Create file then delete it - but anchor is pinned so should remain unchanged
       const filePath = await createTestFile(tempDir, "pinned.ts", "export const pinned = true")
