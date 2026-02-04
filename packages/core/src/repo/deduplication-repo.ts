@@ -25,6 +25,13 @@ export class DeduplicationRepository extends Context.Tag("DeduplicationRepositor
     /** Record a processed hash */
     readonly insertHash: (input: CreateProcessedHashInput) => Effect.Effect<ProcessedHash, DatabaseError>
 
+    /**
+     * Atomically try to insert a hash, returning whether it was actually inserted.
+     * Uses INSERT OR IGNORE to handle race conditions safely.
+     * Returns { inserted: true } if this was a new hash, { inserted: false } if it already existed.
+     */
+    readonly tryInsertHash: (input: CreateProcessedHashInput) => Effect.Effect<{ inserted: boolean }, DatabaseError>
+
     /** Record multiple hashes at once (batch operation) */
     readonly insertHashes: (inputs: readonly CreateProcessedHashInput[]) => Effect.Effect<number, DatabaseError>
 
@@ -107,6 +114,22 @@ export const DeduplicationRepositoryLive = Layer.effect(
             ).get(input.contentHash) as ProcessedHashRow
 
             return rowToProcessedHash(row)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      tryInsertHash: (input) =>
+        Effect.try({
+          try: () => {
+            // Use INSERT OR IGNORE to atomically handle duplicates
+            // This is race-condition safe: if two processes try to insert
+            // the same hash concurrently, one succeeds and the other gets changes=0
+            const result = db.prepare(`
+              INSERT OR IGNORE INTO processed_hashes (content_hash, source_file, source_line)
+              VALUES (?, ?, ?)
+            `).run(input.contentHash, input.sourceFile, input.sourceLine)
+
+            return { inserted: result.changes > 0 }
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

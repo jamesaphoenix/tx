@@ -108,19 +108,13 @@ export const DeduplicationServiceLive = Layer.effect(
       processLine: (content, filePath, lineNumber) =>
         Effect.gen(function* () {
           const hash = hashContent(content)
-          const exists = yield* repo.hashExists(hash)
 
-          if (exists) {
-            return {
-              hash,
-              isNew: false,
-              lineNumber,
-              content
-            }
-          }
-
-          // Record the new hash
-          yield* repo.insertHash({
+          // Use atomic insert-or-ignore to handle race conditions safely.
+          // If two concurrent calls try to process the same content:
+          // - First one succeeds with inserted=true
+          // - Second one gets inserted=false (hash already exists)
+          // No race window between check and insert.
+          const { inserted } = yield* repo.tryInsertHash({
             contentHash: hash,
             sourceFile: filePath,
             sourceLine: lineNumber
@@ -128,7 +122,7 @@ export const DeduplicationServiceLive = Layer.effect(
 
           return {
             hash,
-            isNew: true,
+            isNew: inserted,
             lineNumber,
             content
           }

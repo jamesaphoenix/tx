@@ -665,6 +665,140 @@ describe("DeduplicationService batch processing", () => {
 })
 
 // =============================================================================
+// Race Condition / Concurrency Tests
+// =============================================================================
+
+describe("DeduplicationService race condition handling", () => {
+  let shared: SharedTestLayerResult
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("concurrent processLine calls for same content result in exactly one isNew=true", async () => {
+    // This tests the race condition fix: when multiple concurrent calls try to
+    // process the same content, only one should succeed with isNew=true.
+    // The atomic INSERT OR IGNORE approach ensures no duplicates are created.
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        // Launch 10 concurrent calls for the same content
+        const concurrentCalls = Array.from({ length: 10 }, () =>
+          dedupSvc.processLine(FIXTURES.LINE_1, FIXTURES.FILE_1, 1)
+        )
+
+        const results = yield* Effect.all(concurrentCalls, { concurrency: "unbounded" })
+        return results
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    // Exactly one should be new, the rest should be duplicates
+    const newCount = result.filter(r => r.isNew).length
+    const duplicateCount = result.filter(r => !r.isNew).length
+
+    expect(newCount).toBe(1)
+    expect(duplicateCount).toBe(9)
+
+    // All should have the same hash
+    const hashes = new Set(result.map(r => r.hash))
+    expect(hashes.size).toBe(1)
+  })
+
+  it("concurrent processLine calls for different content all succeed with isNew=true", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        // Launch concurrent calls for different content
+        const concurrentCalls = [
+          dedupSvc.processLine(FIXTURES.LINE_1, FIXTURES.FILE_1, 1),
+          dedupSvc.processLine(FIXTURES.LINE_2, FIXTURES.FILE_1, 2),
+          dedupSvc.processLine(FIXTURES.LINE_3, FIXTURES.FILE_1, 3),
+        ]
+
+        const results = yield* Effect.all(concurrentCalls, { concurrency: "unbounded" })
+        return results
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    // All should be new since they're different content
+    expect(result.every(r => r.isNew)).toBe(true)
+
+    // All should have different hashes
+    const hashes = new Set(result.map(r => r.hash))
+    expect(hashes.size).toBe(3)
+  })
+
+  it("rapid sequential processLine calls handle duplicates correctly", async () => {
+    // Test that even rapid sequential calls handle duplicates without errors
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        // Call processLine many times in rapid sequence
+        const results: Array<{ isNew: boolean; hash: string }> = []
+        for (let i = 0; i < 20; i++) {
+          const r = yield* dedupSvc.processLine(FIXTURES.LINE_1, FIXTURES.FILE_1, 1)
+          results.push(r)
+        }
+
+        return results
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    // First call should be new, all subsequent should be duplicates
+    expect(result[0].isNew).toBe(true)
+    expect(result.slice(1).every(r => !r.isNew)).toBe(true)
+  })
+
+  it("concurrent processLines batches don't create duplicates across batches", async () => {
+    // Create lines with some overlap
+    const lines1 = [
+      { content: FIXTURES.LINE_1, lineNumber: 1 },
+      { content: FIXTURES.LINE_2, lineNumber: 2 },
+    ]
+    const lines2 = [
+      { content: FIXTURES.LINE_1, lineNumber: 1 }, // overlap with lines1
+      { content: FIXTURES.LINE_3, lineNumber: 2 },
+    ]
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        // Process both batches concurrently
+        const [result1, result2] = yield* Effect.all(
+          [
+            dedupSvc.processLines(lines1, FIXTURES.FILE_1),
+            dedupSvc.processLines(lines2, FIXTURES.FILE_2),
+          ],
+          { concurrency: "unbounded" }
+        )
+
+        // Check final state
+        const stats = yield* dedupSvc.getStats()
+
+        return { result1, result2, stats }
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    // Combined, we should have processed 3 unique lines (LINE_1 appears in both)
+    // Total new lines should be 3 across both results
+    expect(result.result1.newLines + result.result2.newLines).toBe(3)
+    expect(result.stats.totalHashes).toBe(3)
+  })
+})
+
+// =============================================================================
 // BatchProcessingError Structure Tests
 // =============================================================================
 
