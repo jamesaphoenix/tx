@@ -19,6 +19,7 @@ import { RunsLive } from "./routes/runs.js"
 import { SyncLive } from "./routes/sync.js"
 import { TxApi } from "./api.js"
 import { isAuthEnabled } from "./middleware/auth.js"
+import { getCorsConfig } from "./middleware/cors.js"
 
 // -----------------------------------------------------------------------------
 // API Implementation Layer
@@ -34,26 +35,6 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(RunsLive),
   Layer.provide(SyncLive),
 )
-
-// -----------------------------------------------------------------------------
-// CORS Configuration
-// -----------------------------------------------------------------------------
-
-const getCorsConfig = () => {
-  const originEnv = process.env.TX_API_CORS_ORIGIN
-  return {
-    allowedOrigins: originEnv
-      ? originEnv === "*"
-        ? ["*" as const]
-        : originEnv.split(",").map((o) => o.trim())
-      : ["*" as const],
-    allowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Api-Key"],
-    exposedHeaders: ["X-Total-Count", "X-Next-Cursor"],
-    maxAge: 86400,
-    credentials: process.env.TX_API_CORS_CREDENTIALS === "true",
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Server Layer Factory
@@ -105,7 +86,8 @@ Environment Variables:
   TX_API_HOST              Server hostname (default: localhost)
   TX_DB_PATH               Database path (default: .tx/tasks.db)
   TX_API_KEY               API key for authentication (optional)
-  TX_API_CORS_ORIGIN       Allowed CORS origins (comma-separated, default: *)
+  TX_API_CORS_ORIGIN       Allowed CORS origins (comma-separated, default: localhost only)
+                           Use "*" to allow all origins (not recommended for production)
 
 Examples:
   tx-api                           # Start with defaults

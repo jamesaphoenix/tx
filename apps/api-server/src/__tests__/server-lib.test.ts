@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { isAuthEnabled } from "../middleware/auth.js"
+import { getCorsConfig } from "../middleware/cors.js"
 
 // =============================================================================
 // Auth Configuration Tests
@@ -51,6 +52,79 @@ describe("Server auth configuration", () => {
   it("should detect auth disabled for empty TX_API_KEY", () => {
     process.env.TX_API_KEY = ""
     expect(isAuthEnabled()).toBe(false)
+  })
+})
+
+// =============================================================================
+// CORS Configuration Tests
+// =============================================================================
+
+describe("CORS configuration", () => {
+  let savedEnv: Record<string, string | undefined>
+
+  beforeEach(() => {
+    savedEnv = {
+      TX_API_CORS_ORIGIN: process.env.TX_API_CORS_ORIGIN,
+      TX_API_CORS_CREDENTIALS: process.env.TX_API_CORS_CREDENTIALS,
+    }
+  })
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+  })
+
+  it("should default to localhost origins when TX_API_CORS_ORIGIN is not set", () => {
+    delete process.env.TX_API_CORS_ORIGIN
+    const config = getCorsConfig()
+    expect(config.allowedOrigins).toEqual([
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:5173",
+      "http://127.0.0.1:3000",
+      "http://127.0.0.1:3001",
+      "http://127.0.0.1:5173",
+    ])
+    // Must NOT include wildcard by default
+    expect(config.allowedOrigins).not.toContain("*")
+  })
+
+  it("should allow wildcard only when explicitly set to *", () => {
+    process.env.TX_API_CORS_ORIGIN = "*"
+    const config = getCorsConfig()
+    expect(config.allowedOrigins).toEqual(["*"])
+  })
+
+  it("should parse comma-separated origins", () => {
+    process.env.TX_API_CORS_ORIGIN = "https://app.example.com, https://admin.example.com"
+    const config = getCorsConfig()
+    expect(config.allowedOrigins).toEqual([
+      "https://app.example.com",
+      "https://admin.example.com",
+    ])
+  })
+
+  it("should handle single custom origin", () => {
+    process.env.TX_API_CORS_ORIGIN = "https://myapp.com"
+    const config = getCorsConfig()
+    expect(config.allowedOrigins).toEqual(["https://myapp.com"])
+  })
+
+  it("should enable credentials when TX_API_CORS_CREDENTIALS is true", () => {
+    process.env.TX_API_CORS_CREDENTIALS = "true"
+    const config = getCorsConfig()
+    expect(config.credentials).toBe(true)
+  })
+
+  it("should disable credentials by default", () => {
+    delete process.env.TX_API_CORS_CREDENTIALS
+    const config = getCorsConfig()
+    expect(config.credentials).toBe(false)
   })
 })
 
