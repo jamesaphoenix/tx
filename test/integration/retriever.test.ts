@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDb, seedFixtures } from "../fixtures.js"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import {
   SqliteClient,
   LearningRepositoryLive,
   LearningRepository,
+  LearningService,
+  FeedbackTrackerService,
   EmbeddingService,
   EmbeddingServiceNoop,
   QueryExpansionServiceNoop,
@@ -13,7 +15,6 @@ import {
   RetrieverServiceLive,
   RetrieverServiceNoop
 } from "@jamesaphoenix/tx-core"
-import type { Database } from "bun:sqlite"
 
 /**
  * Create a deterministic embedding from text content.
@@ -63,7 +64,7 @@ function float32ArrayToBuffer(arr: Float32Array): Buffer {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength)
 }
 
-function makeTestLayer(db: Database) {
+function makeTestLayer(db: any) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = LearningRepositoryLive.pipe(Layer.provide(infra))
 
@@ -82,7 +83,7 @@ function makeNoopTestLayer() {
 /**
  * Create test layer with mock embedding service for vector search testing.
  */
-function makeTestLayerWithMockEmbeddings(db: Database) {
+function makeTestLayerWithMockEmbeddings(db: any) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = LearningRepositoryLive.pipe(Layer.provide(infra))
   const mockEmbeddingService = createMockEmbeddingService()
@@ -97,13 +98,20 @@ function makeTestLayerWithMockEmbeddings(db: Database) {
 
 describe("RetrieverService", () => {
   describe("Service Resolution", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayer>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayer(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayer(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     it("service resolves in test layer", async () => {
@@ -154,13 +162,20 @@ describe("RetrieverService", () => {
   })
 
   describe("BM25 Search", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayer>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayer(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayer(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     it("exact match query returns matching learning", async () => {
@@ -178,7 +193,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -202,7 +217,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -238,7 +253,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -248,13 +263,20 @@ describe("RetrieverService", () => {
   })
 
   describe("RRF Fusion", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayer>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayer(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayer(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     it("results include RRF score fields", async () => {
@@ -271,7 +293,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -303,7 +325,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -322,13 +344,20 @@ describe("RetrieverService", () => {
   })
 
   describe("Scoring Components", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayer>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayer(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayer(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     it("recency boost applied to results", async () => {
@@ -344,7 +373,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -376,7 +405,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -411,7 +440,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -429,13 +458,20 @@ describe("RetrieverService", () => {
   })
 
   describe("Graceful Degradation", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayer>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayer(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayer(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     it("works with Noop EmbeddingService (BM25-only fallback)", async () => {
@@ -452,7 +488,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -480,7 +516,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -496,13 +532,20 @@ describe("RetrieverService", () => {
   })
 
   describe("Options", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayer>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayer(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayer(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     it("respects limit parameter", async () => {
@@ -521,7 +564,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -542,7 +585,7 @@ describe("RetrieverService", () => {
         createAndSearch.pipe(
           Effect.provide(Layer.mergeAll(
             layer,
-            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, db as any)))
+            LearningRepositoryLive.pipe(Layer.provide(Layer.succeed(SqliteClient, shared.getDb() as any)))
           ))
         )
       )
@@ -555,20 +598,27 @@ describe("RetrieverService", () => {
   })
 
   describe("Vector Search with Mock Embeddings", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayerWithMockEmbeddings(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayerWithMockEmbeddings(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     /**
      * Helper to insert learning with embedding directly in DB.
      */
     const insertLearningWithEmbedding = (
-      db: Database,
+      db: any,
       content: string
     ): number => {
       const now = new Date().toISOString()
@@ -586,6 +636,7 @@ describe("RetrieverService", () => {
     }
 
     it("semantic query returns content with similar embeddings", async () => {
+      const db = shared.getDb()
       // Insert learnings with embeddings for vector search
       insertLearningWithEmbedding(db, "database optimization techniques")
       insertLearningWithEmbedding(db, "database performance tuning")
@@ -610,6 +661,7 @@ describe("RetrieverService", () => {
     })
 
     it("mock embeddings produce consistent results across searches", async () => {
+      const db = shared.getDb()
       insertLearningWithEmbedding(db, "consistent embedding test")
 
       // Run same search twice
@@ -638,6 +690,7 @@ describe("RetrieverService", () => {
     })
 
     it("vector rank is positive when embeddings are available", async () => {
+      const db = shared.getDb()
       insertLearningWithEmbedding(db, "vector rank test content")
 
       const results = await Effect.runPromise(
@@ -655,6 +708,7 @@ describe("RetrieverService", () => {
     })
 
     it("vector score is normalized between 0 and 1", async () => {
+      const db = shared.getDb()
       insertLearningWithEmbedding(db, "normalization test alpha")
       insertLearningWithEmbedding(db, "normalization test beta")
       insertLearningWithEmbedding(db, "normalization test gamma")
@@ -677,20 +731,27 @@ describe("RetrieverService", () => {
   })
 
   describe("RRF Fusion Boost", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayerWithMockEmbeddings(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayerWithMockEmbeddings(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     /**
      * Helper to insert learning with embedding directly in DB.
      */
     const insertLearningWithEmbedding = (
-      db: Database,
+      db: any,
       content: string
     ): number => {
       const now = new Date().toISOString()
@@ -708,6 +769,7 @@ describe("RetrieverService", () => {
     }
 
     it("items in both BM25 and vector rankings get RRF boost", async () => {
+      const db = shared.getDb()
       // Insert learnings with embeddings
       insertLearningWithEmbedding(db, "database optimization strategies")
       insertLearningWithEmbedding(db, "database optimization techniques")
@@ -732,6 +794,7 @@ describe("RetrieverService", () => {
     })
 
     it("RRF score is higher for items ranking well in both systems", async () => {
+      const db = shared.getDb()
       // Insert learnings with embeddings
       insertLearningWithEmbedding(db, "fusion test exact match")
       insertLearningWithEmbedding(db, "fusion test partial")
@@ -757,6 +820,7 @@ describe("RetrieverService", () => {
     })
 
     it("RRF formula: 1/(k + rank) produces expected scores", async () => {
+      const db = shared.getDb()
       insertLearningWithEmbedding(db, "rrf formula test")
 
       const results = await Effect.runPromise(
@@ -784,20 +848,27 @@ describe("RetrieverService", () => {
   })
 
   describe("Position-Aware Bonuses", () => {
-    let db: Database
+    let shared: SharedTestLayerResult
     let layer: ReturnType<typeof makeTestLayerWithMockEmbeddings>
 
-    beforeEach(() => {
-      db = createTestDb()
-      seedFixtures(db)
-      layer = makeTestLayerWithMockEmbeddings(db)
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+      layer = makeTestLayerWithMockEmbeddings(shared.getDb())
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
     })
 
     /**
      * Helper to insert learning with embedding directly in DB.
      */
     const insertLearningWithEmbedding = (
-      db: Database,
+      db: any,
       content: string
     ): number => {
       const now = new Date().toISOString()
@@ -815,6 +886,7 @@ describe("RetrieverService", () => {
     }
 
     it("top ranked items get position bonus", async () => {
+      const db = shared.getDb()
       // Insert multiple learnings to test ranking
       insertLearningWithEmbedding(db, "position bonus primary test")
       insertLearningWithEmbedding(db, "position bonus secondary test")
@@ -848,6 +920,7 @@ describe("RetrieverService", () => {
     })
 
     it("position bonuses are applied based on rank", async () => {
+      const db = shared.getDb()
       // Position bonuses are applied:
       // - TOP_1_BONUS = 0.05 for rank 1 in any system
       // - TOP_3_BONUS = 0.02 for ranks 2-3 in any system
@@ -882,10 +955,21 @@ describe("RetrieverService", () => {
   })
 
   describe("Feedback Scoring Integration", () => {
-    it("search results include feedbackScore field", async () => {
-      const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
+    let shared: SharedTestLayerResult
 
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
+    })
+
+    it("search results include feedbackScore field", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const learningSvc = yield* LearningService
@@ -899,7 +983,7 @@ describe("RetrieverService", () => {
 
           // Search should include feedbackScore
           return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.length).toBeGreaterThanOrEqual(1)
@@ -912,9 +996,6 @@ describe("RetrieverService", () => {
     })
 
     it("feedbackScore defaults to 0.5 for learnings with no feedback", async () => {
-      const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const learningSvc = yield* LearningService
@@ -927,7 +1008,7 @@ describe("RetrieverService", () => {
           })
 
           return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.length).toBeGreaterThanOrEqual(1)
@@ -937,9 +1018,6 @@ describe("RetrieverService", () => {
     })
 
     it("feedbackScore reflects recorded usage feedback via batch method", async () => {
-      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const learningSvc = yield* LearningService
@@ -986,7 +1064,7 @@ describe("RetrieverService", () => {
             helpfulId: helpfulLearning.id,
             unhelpfulId: unhelpfulLearning.id
           }
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.searchResults.length).toBeGreaterThanOrEqual(2)
@@ -1009,9 +1087,6 @@ describe("RetrieverService", () => {
     })
 
     it("batch feedback method is used for multiple learnings (single query)", async () => {
-      const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const learningSvc = yield* LearningService
@@ -1051,7 +1126,7 @@ describe("RetrieverService", () => {
             id2: learning2.id,
             id3: learning3.id
           }
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.searchResults.length).toBeGreaterThanOrEqual(3)

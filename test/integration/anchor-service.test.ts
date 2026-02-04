@@ -3,11 +3,18 @@
  *
  * Tests the AnchorService at the service layer with full dependency injection.
  * Uses real SQLite database (in-memory) and SHA256-based fixture IDs per Rule 3.
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ * Previously created a new database per test, now creates 1 per describe block.
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import { AnchorService, LearningService } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -36,10 +43,21 @@ const FIXTURES = {
 // =============================================================================
 
 describe("AnchorService Integration via @tx/core", () => {
-  it("createAnchor creates a glob anchor with valid input", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("createAnchor creates a glob anchor with valid input", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -58,7 +76,7 @@ describe("AnchorService Integration via @tx/core", () => {
           filePath: FIXTURES.FILE_PATH_1,
           value: FIXTURES.GLOB_PATTERN,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.id).toBe(1)
@@ -69,9 +87,6 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("createAnchor creates a hash anchor with valid SHA256", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -90,7 +105,7 @@ describe("AnchorService Integration via @tx/core", () => {
           lineStart: 10,
           lineEnd: 20,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorType).toBe("hash")
@@ -100,9 +115,6 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("createAnchor creates a symbol anchor with FQName", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -120,7 +132,7 @@ describe("AnchorService Integration via @tx/core", () => {
           value: "TaskService",
           symbolFqname: FIXTURES.SYMBOL_FQNAME,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorType).toBe("symbol")
@@ -128,9 +140,6 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("createAnchor creates a line_range anchor with line numbers", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -149,7 +158,7 @@ describe("AnchorService Integration via @tx/core", () => {
           lineStart: 10,
           lineEnd: 25,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorType).toBe("line_range")
@@ -158,9 +167,6 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("get returns anchor by ID", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -179,7 +185,7 @@ describe("AnchorService Integration via @tx/core", () => {
         })
 
         return yield* anchorSvc.get(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.id).toBe(1)
@@ -187,14 +193,11 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("get fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.get(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -204,9 +207,6 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("remove soft deletes an anchor (sets status='invalid')", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -231,7 +231,7 @@ describe("AnchorService Integration via @tx/core", () => {
         const anchor = yield* anchorSvc.get(1)
 
         return { removed, anchor }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.removed.status).toBe("invalid")
@@ -240,9 +240,6 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("hardDelete permanently removes an anchor", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -263,21 +260,18 @@ describe("AnchorService Integration via @tx/core", () => {
         yield* anchorSvc.hardDelete(1)
 
         return yield* anchorSvc.get(1).pipe(Effect.either)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result._tag).toBe("Left")
   })
 
   it("remove fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.remove(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -287,14 +281,11 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("hardDelete fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.hardDelete(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -304,9 +295,6 @@ describe("AnchorService Integration via @tx/core", () => {
   })
 
   it("remove logs status change to invalidation_log", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -328,7 +316,7 @@ describe("AnchorService Integration via @tx/core", () => {
 
         // Check the status via getStatus which returns recent invalidation logs
         return yield* anchorSvc.getStatus()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.invalid).toBe(1)
@@ -343,10 +331,21 @@ describe("AnchorService Integration via @tx/core", () => {
 // =============================================================================
 
 describe("AnchorService validation", () => {
-  it("createAnchor fails with ValidationError for invalid anchor type", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("createAnchor fails with ValidationError for invalid anchor type", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -363,7 +362,7 @@ describe("AnchorService validation", () => {
           filePath: FIXTURES.FILE_PATH_1,
           value: "test",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -373,9 +372,6 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for empty file path", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -392,7 +388,7 @@ describe("AnchorService validation", () => {
           filePath: "",
           value: FIXTURES.GLOB_PATTERN,
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -402,9 +398,6 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for empty value", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -421,7 +414,7 @@ describe("AnchorService validation", () => {
           filePath: FIXTURES.FILE_PATH_1,
           value: "",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -431,9 +424,6 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for invalid hash format", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -450,7 +440,7 @@ describe("AnchorService validation", () => {
           filePath: FIXTURES.FILE_PATH_1,
           value: "not-a-valid-hash",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -460,9 +450,6 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for symbol without FQName", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -479,7 +466,7 @@ describe("AnchorService validation", () => {
           filePath: FIXTURES.FILE_PATH_1,
           value: "TaskService",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -489,9 +476,6 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with ValidationError for line_range without lineStart", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -508,7 +492,7 @@ describe("AnchorService validation", () => {
           filePath: FIXTURES.FILE_PATH_1,
           value: "10-25",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -518,9 +502,6 @@ describe("AnchorService validation", () => {
   })
 
   it("createAnchor fails with LearningNotFoundError for nonexistent learning", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
@@ -531,7 +512,7 @@ describe("AnchorService validation", () => {
           filePath: FIXTURES.FILE_PATH_1,
           value: FIXTURES.GLOB_PATTERN,
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -546,10 +527,21 @@ describe("AnchorService validation", () => {
 // =============================================================================
 
 describe("AnchorService query operations", () => {
-  it("findAnchorsForFile returns all anchors for a file path", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("findAnchorsForFile returns all anchors for a file path", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -585,7 +577,7 @@ describe("AnchorService query operations", () => {
         })
 
         return yield* anchorSvc.findAnchorsForFile(FIXTURES.FILE_PATH_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -593,9 +585,6 @@ describe("AnchorService query operations", () => {
   })
 
   it("findAnchorsForLearning returns all anchors for a learning", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -631,7 +620,7 @@ describe("AnchorService query operations", () => {
         })
 
         return yield* anchorSvc.findAnchorsForLearning(learning1.id)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -643,10 +632,21 @@ describe("AnchorService query operations", () => {
 // =============================================================================
 
 describe("AnchorService status operations", () => {
-  it("updateAnchorStatus changes anchor status", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("updateAnchorStatus changes anchor status", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -665,16 +665,13 @@ describe("AnchorService status operations", () => {
         })
 
         return yield* anchorSvc.updateAnchorStatus(1, "drifted")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.status).toBe("drifted")
   })
 
   it("updateAnchorStatus fails with ValidationError for invalid status", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -693,7 +690,7 @@ describe("AnchorService status operations", () => {
         })
 
         return yield* anchorSvc.updateAnchorStatus(1, "unknown" as any)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -703,14 +700,11 @@ describe("AnchorService status operations", () => {
   })
 
   it("updateAnchorStatus fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.updateAnchorStatus(999, "drifted")
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -720,9 +714,6 @@ describe("AnchorService status operations", () => {
   })
 
   it("findDrifted returns only drifted anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -748,7 +739,7 @@ describe("AnchorService status operations", () => {
         yield* anchorSvc.updateAnchorStatus(2, "drifted")
 
         return yield* anchorSvc.findDrifted()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -757,9 +748,6 @@ describe("AnchorService status operations", () => {
   })
 
   it("findInvalid returns only invalid anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -785,7 +773,7 @@ describe("AnchorService status operations", () => {
         yield* anchorSvc.updateAnchorStatus(2, "invalid")
 
         return yield* anchorSvc.findInvalid()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -799,10 +787,21 @@ describe("AnchorService status operations", () => {
 // =============================================================================
 
 describe("AnchorService verification operations", () => {
-  it("verifyAnchor returns verification result", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("verifyAnchor returns verification result", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -821,7 +820,7 @@ describe("AnchorService verification operations", () => {
         })
 
         return yield* anchorSvc.verifyAnchor(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorId).toBe(1)
@@ -831,14 +830,11 @@ describe("AnchorService verification operations", () => {
   })
 
   it("verifyAnchor fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.verifyAnchor(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -848,9 +844,6 @@ describe("AnchorService verification operations", () => {
   })
 
   it("verifyAnchorsForFile returns batch verification result", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -876,7 +869,7 @@ describe("AnchorService verification operations", () => {
         })
 
         return yield* anchorSvc.verifyAnchorsForFile(FIXTURES.FILE_PATH_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.total).toBe(2)
@@ -886,9 +879,6 @@ describe("AnchorService verification operations", () => {
   })
 
   it("verifyAnchorsForFile handles mixed statuses", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -921,7 +911,7 @@ describe("AnchorService verification operations", () => {
         yield* anchorSvc.updateAnchorStatus(3, "invalid")
 
         return yield* anchorSvc.verifyAnchorsForFile(FIXTURES.FILE_PATH_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.total).toBe(3)

@@ -3,10 +3,17 @@
  *
  * Tests the DeduplicationService for JSONL line hash-based deduplication.
  * Uses real SQLite database (in-memory) and SHA256-based fixture IDs per Rule 3.
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ * Previously created a new database per test, now creates 1 per describe block.
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import { DeduplicationService } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures
@@ -25,15 +32,26 @@ const FIXTURES = {
 // =============================================================================
 
 describe("DeduplicationService Integration", () => {
-  it("processLine records new hash and returns isNew=true", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("processLine records new hash and returns isNew=true", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLine(FIXTURES.LINE_1, FIXTURES.FILE_1, 1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.isNew).toBe(true)
@@ -44,9 +62,6 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLine returns isNew=false for duplicate content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -58,7 +73,7 @@ describe("DeduplicationService Integration", () => {
         const second = yield* dedupSvc.processLine(FIXTURES.LINE_1, FIXTURES.FILE_2, 5)
 
         return { first, second }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.first.isNew).toBe(true)
@@ -67,9 +82,6 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines handles batch processing efficiently", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const lines = [
       { content: FIXTURES.LINE_1, lineNumber: 1 },
       { content: FIXTURES.LINE_2, lineNumber: 2 },
@@ -80,7 +92,7 @@ describe("DeduplicationService Integration", () => {
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLines(lines, FIXTURES.FILE_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.filePath).toBe(FIXTURES.FILE_1)
@@ -93,9 +105,6 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines skips already processed lines", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -115,7 +124,7 @@ describe("DeduplicationService Integration", () => {
         const second = yield* dedupSvc.processLines(lines2, FIXTURES.FILE_2)
 
         return { first, second }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.first.newLines).toBe(2)
@@ -125,9 +134,6 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines respects startLine option for incremental processing", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const lines = [
       { content: FIXTURES.LINE_1, lineNumber: 1 },
       { content: FIXTURES.LINE_2, lineNumber: 2 },
@@ -138,7 +144,7 @@ describe("DeduplicationService Integration", () => {
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLines(lines, FIXTURES.FILE_1, { startLine: 2 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.newLines).toBe(2) // Only lines 2 and 3
@@ -147,9 +153,6 @@ describe("DeduplicationService Integration", () => {
   })
 
   it("processLines respects maxLines option", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const lines = [
       { content: FIXTURES.LINE_1, lineNumber: 1 },
       { content: FIXTURES.LINE_2, lineNumber: 2 },
@@ -160,7 +163,7 @@ describe("DeduplicationService Integration", () => {
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLines(lines, FIXTURES.FILE_1, { maxLines: 2 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.newLines).toBe(2)
@@ -173,24 +176,32 @@ describe("DeduplicationService Integration", () => {
 // =============================================================================
 
 describe("DeduplicationService hash checking", () => {
-  it("isProcessed returns false for new content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("isProcessed returns false for new content", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.isProcessed(FIXTURES.LINE_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBe(false)
   })
 
   it("isProcessed returns true after processing", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -200,16 +211,13 @@ describe("DeduplicationService hash checking", () => {
 
         // Check if processed
         return yield* dedupSvc.isProcessed(FIXTURES.LINE_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBe(true)
   })
 
   it("filterProcessed returns set of processed contents", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -224,7 +232,7 @@ describe("DeduplicationService hash checking", () => {
           FIXTURES.LINE_2, // processed
           FIXTURES.LINE_3, // not processed
         ])
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.size).toBe(2)
@@ -234,9 +242,6 @@ describe("DeduplicationService hash checking", () => {
   })
 
   it("computeHash returns consistent SHA256 hash", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -246,7 +251,7 @@ describe("DeduplicationService hash checking", () => {
         const hash3 = dedupSvc.computeHash(FIXTURES.LINE_2)
 
         return { hash1, hash2, hash3 }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.hash1).toBe(result.hash2) // Same content = same hash
@@ -260,24 +265,32 @@ describe("DeduplicationService hash checking", () => {
 // =============================================================================
 
 describe("DeduplicationService file progress", () => {
-  it("getProgress returns null for unknown file", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("getProgress returns null for unknown file", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.getProgress("/unknown/file.jsonl")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeNull()
   })
 
   it("updateProgress creates new progress record", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -288,7 +301,7 @@ describe("DeduplicationService file progress", () => {
           10000,
           "abc123"
         )
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.filePath).toBe(FIXTURES.FILE_1)
@@ -300,9 +313,6 @@ describe("DeduplicationService file progress", () => {
   })
 
   it("updateProgress updates existing progress record", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -314,7 +324,7 @@ describe("DeduplicationService file progress", () => {
         const updated = yield* dedupSvc.updateProgress(FIXTURES.FILE_1, 100, 5000)
 
         return updated
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.lastLineProcessed).toBe(100)
@@ -322,9 +332,6 @@ describe("DeduplicationService file progress", () => {
   })
 
   it("getProgress returns saved progress", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -332,7 +339,7 @@ describe("DeduplicationService file progress", () => {
         yield* dedupSvc.updateProgress(FIXTURES.FILE_1, 100, 5000, 10000, "abc123")
 
         return yield* dedupSvc.getProgress(FIXTURES.FILE_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -346,10 +353,21 @@ describe("DeduplicationService file progress", () => {
 // =============================================================================
 
 describe("DeduplicationService reset", () => {
-  it("resetFile clears hashes and progress for a file", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("resetFile clears hashes and progress for a file", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -372,7 +390,7 @@ describe("DeduplicationService reset", () => {
         const reprocess = yield* dedupSvc.processLines(lines, FIXTURES.FILE_1)
 
         return { resetResult, progress, reprocess }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.resetResult.hashesDeleted).toBe(2)
@@ -381,9 +399,6 @@ describe("DeduplicationService reset", () => {
   })
 
   it("resetFile only affects specified file", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -400,7 +415,7 @@ describe("DeduplicationService reset", () => {
         const isLine2Processed = yield* dedupSvc.isProcessed(FIXTURES.LINE_2)
 
         return { isLine1Processed, isLine2Processed }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.isLine1Processed).toBe(false) // Reset
@@ -413,10 +428,21 @@ describe("DeduplicationService reset", () => {
 // =============================================================================
 
 describe("DeduplicationService statistics", () => {
-  it("getStats returns counts", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("getStats returns counts", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
@@ -430,7 +456,7 @@ describe("DeduplicationService statistics", () => {
         yield* dedupSvc.updateProgress(FIXTURES.FILE_2, 1, 500)
 
         return yield* dedupSvc.getStats()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.totalHashes).toBe(3)
@@ -438,14 +464,11 @@ describe("DeduplicationService statistics", () => {
   })
 
   it("getStats returns zeros for empty database", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.getStats()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.totalHashes).toBe(0)
@@ -458,15 +481,26 @@ describe("DeduplicationService statistics", () => {
 // =============================================================================
 
 describe("DeduplicationService edge cases", () => {
-  it("handles empty lines array", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("handles empty lines array", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLines([], FIXTURES.FILE_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.totalLines).toBe(0)
@@ -475,14 +509,11 @@ describe("DeduplicationService edge cases", () => {
   })
 
   it("handles empty content string", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLine("", FIXTURES.FILE_1, 1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.isNew).toBe(true)
@@ -490,16 +521,13 @@ describe("DeduplicationService edge cases", () => {
   })
 
   it("handles very long content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const longContent = "x".repeat(100000)
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLine(longContent, FIXTURES.FILE_1, 1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.isNew).toBe(true)
@@ -507,16 +535,13 @@ describe("DeduplicationService edge cases", () => {
   })
 
   it("handles unicode content", async () => {
-    const { makeAppLayer, DeduplicationService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const unicodeContent = '{"message": "Hello 世界 🌍 مرحبا"}'
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const dedupSvc = yield* DeduplicationService
         return yield* dedupSvc.processLine(unicodeContent, FIXTURES.FILE_1, 1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.isNew).toBe(true)

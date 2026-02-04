@@ -14,7 +14,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Database } from "bun:sqlite"
 
-import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -48,8 +49,8 @@ const SYNC_FIXTURES = {
 // Test Layer Factory
 // -----------------------------------------------------------------------------
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as Database)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -105,12 +106,12 @@ function cleanupTempFile(path: string): void {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Export", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
@@ -264,7 +265,7 @@ describe("SyncService Export", () => {
   })
 
   it("handles empty database gracefully", async () => {
-    const emptyDb = createTestDb()
+    const emptyDb = await Effect.runPromise(createTestDatabase())
     const emptyLayer = makeTestLayer(emptyDb)
 
     const result = await Effect.runPromise(
@@ -286,12 +287,12 @@ describe("SyncService Export", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Import", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
@@ -490,14 +491,14 @@ describe("SyncService Import", () => {
  * Seed fixtures with sequential timestamps to ensure proper import order.
  * Parents must have earlier timestamps than children to satisfy FK constraints.
  */
-function seedFixturesWithSequentialTimestamps(db: Database): void {
+function seedFixturesWithSequentialTimestamps(db: TestDatabase): void {
   const baseTime = new Date("2024-01-01T00:00:00.000Z")
-  const insert = db.prepare(
+  const insert = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
 
-  const insertDep = db.prepare(
+  const insertDep = db.db.prepare(
     `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
   )
 
@@ -530,19 +531,19 @@ function seedFixturesWithSequentialTimestamps(db: Database): void {
 }
 
 describe("SyncService Round-Trip", () => {
-  let sourceDb: Database
-  let targetDb: Database
+  let sourceDb: TestDatabase
+  let targetDb: TestDatabase
   let sourceLayer: ReturnType<typeof makeTestLayer>
   let targetLayer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    sourceDb = createTestDb()
+  beforeEach(async () => {
+    sourceDb = await Effect.runPromise(createTestDatabase())
     // Use sequential timestamps to ensure proper import order
     seedFixturesWithSequentialTimestamps(sourceDb)
     sourceLayer = makeTestLayer(sourceDb)
 
-    targetDb = createTestDb()
+    targetDb = await Effect.runPromise(createTestDatabase())
     targetLayer = makeTestLayer(targetDb)
 
     tempPath = createTempJsonlPath()
@@ -740,12 +741,12 @@ describe("SyncService Round-Trip", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Conflict Resolution", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
@@ -757,7 +758,7 @@ describe("SyncService Conflict Resolution", () => {
   it("updates existing task when JSONL timestamp is newer", async () => {
     // Create a task with old timestamp
     const oldTs = "2024-01-01T00:00:00.000Z"
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Old Title", "", "backlog", 100, null, oldTs, oldTs, null, "{}")
@@ -800,7 +801,7 @@ describe("SyncService Conflict Resolution", () => {
   it("reports conflict when local timestamp is newer than JSONL", async () => {
     // Create a task with new timestamp
     const newTs = "2024-01-02T00:00:00.000Z"
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Local Title", "", "ready", 200, null, newTs, newTs, null, "{}")
@@ -842,7 +843,7 @@ describe("SyncService Conflict Resolution", () => {
   it("skips when timestamps are identical", async () => {
     // Create a task with exact timestamp
     const ts = "2024-01-01T00:00:00.000Z"
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Same Title", "", "backlog", 100, null, ts, ts, null, "{}")
@@ -875,12 +876,12 @@ describe("SyncService Conflict Resolution", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Status", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
@@ -950,12 +951,12 @@ describe("SyncService Status", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Delete Operations", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
@@ -967,7 +968,7 @@ describe("SyncService Delete Operations", () => {
   it("handles delete operation to remove existing task", async () => {
     // First create a task
     const createTs = "2024-01-01T00:00:00.000Z"
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "To Delete", "", "backlog", 100, null, createTs, createTs, null, "{}")
@@ -1005,15 +1006,15 @@ describe("SyncService Delete Operations", () => {
   it("handles dep_remove operation", async () => {
     // Create tasks and dependency
     const now = new Date().toISOString()
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, SYNC_FIXTURES.SYNC_TASK_B, now)
 
@@ -1049,11 +1050,11 @@ describe("SyncService Delete Operations", () => {
   it("last operation wins for same dependency (add then remove)", async () => {
     // Create tasks
     const now = new Date().toISOString()
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
@@ -1103,11 +1104,11 @@ describe("SyncService Delete Operations", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Auto-Sync", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
   })
 
@@ -1183,12 +1184,12 @@ describe("SyncService Auto-Sync", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Compact", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })

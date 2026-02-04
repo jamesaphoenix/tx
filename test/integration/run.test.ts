@@ -1,25 +1,25 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   RunRepositoryLive,
   RunRepository
 } from "@jamesaphoenix/tx-core"
 import type { RunId } from "@jamesaphoenix/tx-types"
-import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   return RunRepositoryLive.pipe(Layer.provide(infra))
 }
 
 describe("RunRepository CRUD", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -146,7 +146,7 @@ describe("RunRepository CRUD", () => {
       // Insert a run with invalid JSON metadata via raw SQL
       const runId = "run-badjson" as RunId
       const now = new Date().toISOString()
-      db.prepare(`
+      db.db.prepare(`
         INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
         VALUES (?, NULL, 'test-agent', ?, 'running', 'not valid json {{{')
       `).run(runId, now)
@@ -334,11 +334,11 @@ describe("RunRepository CRUD", () => {
 })
 
 describe("RunRepository status transitions", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -742,11 +742,11 @@ describe("RunRepository status transitions", () => {
 })
 
 describe("RunRepository counting and queries", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -888,11 +888,11 @@ describe("RunRepository counting and queries", () => {
 })
 
 describe("Run-Task relationship", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })

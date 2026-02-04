@@ -132,3 +132,59 @@ PRD-019 (Tracing) ────────────────────�
         │
         └─────────────────────────────────────────────────►  DD-002 (Effect-TS Layer)
 ```
+
+## CI/CD Pipeline
+
+The project uses GitHub Actions for continuous integration and deployment.
+
+### Workflows
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [ci.yml](.github/workflows/ci.yml) | Push/PR to main, nightly | Run all checks (types, lint, build, tests) |
+| [publish.yml](.github/workflows/publish.yml) | Release published | Publish packages to npm |
+| [release.yml](.github/workflows/release.yml) | Tag push (v*) | Build cross-platform binaries |
+
+### CI Checks
+
+The main CI workflow runs `./scripts/check-ci.sh` which executes:
+
+1. **Build** - Compile TypeScript packages in dependency order
+2. **TypeScript** - Type checking across all packages
+3. **ESLint** - Linting for packages and root tests
+4. **Tests (packages)** - Run tests in each package
+5. **Tests (root)** - Run integration and unit tests
+
+### Slow Tests
+
+Expensive tests (downloads, stress tests) run:
+- Nightly at 3am UTC
+- On commits containing `[slow]` tag
+
+### Local Development
+
+```bash
+# Quick checks (types + lint)
+./scripts/check.sh --quick
+
+# Full checks (types + lint + build + tests)
+./scripts/check.sh --all
+
+# Individual checks
+./scripts/check.sh --types
+./scripts/check.sh --lint
+./scripts/check.sh --build
+./scripts/check.sh --test
+```
+
+### Git Hooks (Husky)
+
+- **pre-commit**: Fast checks (types + lint)
+- **pre-push**: Full checks (types + lint + build + tests)
+
+### Dependency Updates
+
+Dependabot is configured to:
+- Check npm dependencies weekly (Monday)
+- Check GitHub Actions weekly
+- Group minor/patch updates to reduce noise

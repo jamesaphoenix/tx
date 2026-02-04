@@ -20,7 +20,8 @@ import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 import { Hono } from "hono"
 
-import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -111,7 +112,7 @@ function runTxArgs(args: string[], dbPath: string): CliExecResult {
 type McpTestServices = TaskService | ReadyService | DependencyService
 
 function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
-  const infra = Layer.succeed(SqliteClient, db as Database)
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
 
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -285,7 +286,7 @@ function createTestApiApp(db: Database) {
   const app = new Hono()
 
   function enrichTasksWithDeps(tasks: TaskRow[]): ApiTaskWithDeps[] {
-    const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
+    const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
       blocker_id: string
       blocked_id: string
     }>
@@ -301,7 +302,7 @@ function createTestApiApp(db: Database) {
       blocksMap.set(dep.blocker_id, [...existingBlocks, dep.blocked_id])
     }
 
-    const allTasks = db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
+    const allTasks = db.db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
       id: string
       parent_id: string | null
       status: string
@@ -350,7 +351,7 @@ function createTestApiApp(db: Database) {
       const limitParam = c.req.query("limit")
       const limit = limitParam ? parseInt(limitParam, 10) : 100
 
-      const tasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
+      const tasks = db.db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
       const enriched = enrichTasksWithDeps(tasks)
       const ready = enriched.filter(t => t.isReady).slice(0, limit)
 
@@ -364,7 +365,7 @@ function createTestApiApp(db: Database) {
   app.get("/api/tasks/:id", (c) => {
     try {
       const id = c.req.param("id")
-      const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+      const task = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
       if (!task) {
         return c.json({ error: "Task not found" }, 404)
       }
@@ -394,7 +395,7 @@ function createTestApiApp(db: Database) {
       sql += " ORDER BY score DESC LIMIT ?"
       params.push(String(limit))
 
-      const tasks = db.prepare(sql).all(...params) as TaskRow[]
+      const tasks = db.db.prepare(sql).all(...params) as TaskRow[]
       const enriched = enrichTasksWithDeps(tasks)
 
       return c.json({ tasks: enriched })
@@ -468,11 +469,11 @@ function assertTaskListsEqual(label: string, list1: NormalizedTask[], list2: Nor
 describe("Interface Parity", () => {
   let tmpDir: string
   let dbPath: string
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
   let apiApp: ReturnType<typeof createTestApiApp>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create temp directory for CLI database
     tmpDir = mkdtempSync(join(tmpdir(), "tx-parity-test-"))
     dbPath = join(tmpDir, "test.db")
@@ -481,7 +482,7 @@ describe("Interface Parity", () => {
     runTxArgs(["init"], dbPath)
 
     // Create shared in-memory database for MCP/API
-    db = createTestDb()
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
 
     // Seed CLI database with same fixtures

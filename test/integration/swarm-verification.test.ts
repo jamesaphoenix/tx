@@ -12,15 +12,27 @@
  * 6. Swarm metrics tracked correctly (duration, counts, concurrency)
  * 7. Majority vote helper function works correctly
  *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ *
  * @see docs/prd/PRD-017-invalidation-maintenance.md
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import * as os from "node:os"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import {
+  SwarmVerificationService,
+  LearningService,
+  AnchorService,
+  AnchorRepository,
+  calculateMajorityVote
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs for determinism)
@@ -73,19 +85,27 @@ async function createTestFile(dir: string, fileName: string, content: string): P
 // =============================================================================
 
 describe("SwarmVerificationService Integration", () => {
+  let shared: SharedTestLayerResult
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
     tempDir = await createTempDir()
   })
 
   afterEach(async () => {
     await cleanupTempDir(tempDir)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   describe("verifyAnchors - batch verification", () => {
     it("uses sequential processing for small batches", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       // Create test files
       const file1 = await createTestFile(tempDir, FIXTURES.FILE_1, "export const a = 1")
       const file2 = await createTestFile(tempDir, FIXTURES.FILE_2, "export const b = 2")
@@ -116,7 +136,7 @@ describe("SwarmVerificationService Integration", () => {
           })
 
           return yield* swarmSvc.verifyAnchors([1, 2], { baseDir: tempDir })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(2)
@@ -126,9 +146,6 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("uses swarm processing when forceSwarm is true", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       // Create test files
       const files: string[] = []
       for (let i = 0; i < 5; i++) {
@@ -162,7 +179,7 @@ describe("SwarmVerificationService Integration", () => {
             forceSwarm: true,
             batchSize: 2 // 5 anchors / 2 per batch = 3 batches
           })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(5)
@@ -172,14 +189,11 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("handles empty anchor list gracefully", async () => {
-      const { makeAppLayer, SwarmVerificationService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const swarmSvc = yield* SwarmVerificationService
           return yield* swarmSvc.verifyAnchors([], { baseDir: tempDir })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(0)
@@ -191,9 +205,6 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("verifyAll - verify all valid anchors", () => {
     it("processes all valid anchors using swarm for large batches", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       // Create many test files to trigger swarm
       const files: string[] = []
       for (let i = 0; i < 25; i++) {
@@ -223,7 +234,7 @@ describe("SwarmVerificationService Integration", () => {
           }
 
           return yield* swarmSvc.verifyAll({ baseDir: tempDir })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(25)
@@ -232,9 +243,6 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("skips pinned anchors when skipPinned is true", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const file1 = await createTestFile(tempDir, FIXTURES.FILE_1, "export const a = 1")
       const file2 = await createTestFile(tempDir, FIXTURES.FILE_2, "export const b = 2")
 
@@ -266,7 +274,7 @@ describe("SwarmVerificationService Integration", () => {
           yield* anchorSvc.pin(1)
 
           return yield* swarmSvc.verifyAll({ baseDir: tempDir, skipPinned: true })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Only unpinned anchor should be verified
@@ -277,9 +285,6 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("verifyGlob - verify anchors matching glob", () => {
     it("verifies only anchors matching glob pattern", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const tsFile = await createTestFile(tempDir, "code.ts", "export const ts = true")
       const jsFile = await createTestFile(tempDir, "code.js", "export const js = true")
 
@@ -312,7 +317,7 @@ describe("SwarmVerificationService Integration", () => {
 
           // Verify only .ts files
           return yield* swarmSvc.verifyGlob("**/*.ts", { baseDir: tempDir })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(1) // Only .ts anchor
@@ -322,9 +327,6 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("verifyChangedFiles - verify anchors for specific files", () => {
     it("verifies anchors for changed files only", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const file1 = await createTestFile(tempDir, FIXTURES.FILE_1, "export const a = 1")
       const file2 = await createTestFile(tempDir, FIXTURES.FILE_2, "export const b = 2")
       const file3 = await createTestFile(tempDir, FIXTURES.FILE_3, "export const c = 3")
@@ -362,7 +364,7 @@ describe("SwarmVerificationService Integration", () => {
 
           // Only file1 and file2 changed
           return yield* swarmSvc.verifyChangedFiles([file1, file2], { baseDir: tempDir })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(2) // Only file1 and file2
@@ -370,9 +372,6 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("sets detectedBy to git_hook by default", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       // File doesn't exist, so it will be marked invalid
       const filePath = path.join(tempDir, "nonexistent.ts")
 
@@ -400,7 +399,7 @@ describe("SwarmVerificationService Integration", () => {
           // Check invalidation log
           const logs = yield* anchorRepo.getInvalidationLogs(1)
           return logs
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result[0].detectedBy).toBe("git_hook")
@@ -409,9 +408,6 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("swarm metrics tracking", () => {
     it("tracks all metrics correctly", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       // Create some valid files and some that will be invalid
       const validFile = await createTestFile(tempDir, "valid.ts", "export const v = 1")
       const invalidFilePath = path.join(tempDir, "invalid.ts") // Does not exist
@@ -444,7 +440,7 @@ describe("SwarmVerificationService Integration", () => {
           })
 
           return yield* swarmSvc.verifyAnchors([1, 2], { baseDir: tempDir })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(2)
@@ -459,8 +455,6 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("calculateMajorityVote utility", () => {
     it("returns consensus when majority agrees", async () => {
-      const { calculateMajorityVote } = await import("@jamesaphoenix/tx-core")
-
       const results = [
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "valid" as const, action: "unchanged" as const },
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "valid" as const, action: "unchanged" as const },
@@ -477,8 +471,6 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("marks as needsReview when there is a tie", async () => {
-      const { calculateMajorityVote } = await import("@jamesaphoenix/tx-core")
-
       const results = [
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "valid" as const, action: "unchanged" as const },
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "drifted" as const, action: "drifted" as const },
@@ -492,8 +484,6 @@ describe("SwarmVerificationService Integration", () => {
     })
 
     it("handles unanimous agreement", async () => {
-      const { calculateMajorityVote } = await import("@jamesaphoenix/tx-core")
-
       const results = [
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "invalid" as const, action: "invalidated" as const },
         { anchorId: 1, previousStatus: "valid" as const, newStatus: "invalid" as const, action: "invalidated" as const },
@@ -511,9 +501,6 @@ describe("SwarmVerificationService Integration", () => {
 
   describe("concurrent agent processing", () => {
     it("limits concurrent agents to maxConcurrent setting", async () => {
-      const { makeAppLayer, SwarmVerificationService, LearningService, AnchorService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       // Create many files
       const files: string[] = []
       for (let i = 0; i < 20; i++) {
@@ -549,7 +536,7 @@ describe("SwarmVerificationService Integration", () => {
             batchSize: 5, // 20 anchors / 5 per batch = 4 batches
             maxConcurrent: 2 // Limit to 2 concurrent agents
           })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.metrics.totalAnchors).toBe(20)

@@ -202,6 +202,34 @@ LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Cor
 
 → [DD-002](docs/design/DD-002-effect-ts-service-layer.md), [DD-006](docs/design/DD-006-llm-integration.md)
 
+### RULE 8: Tests use singleton database - NEVER create DB per test
+
+Integration tests MUST use the singleton test database pattern:
+- ONE database for the entire test suite (managed by `vitest.setup.ts`)
+- Tests get the layer via `getSharedTestLayer()` from `@jamesaphoenix/tx-test-utils`
+- Global `afterEach` resets all tables for isolation
+- NEVER create `makeAppLayer(":memory:")` inside a test
+
+```typescript
+// CORRECT - use singleton
+import { getSharedTestLayer } from "@jamesaphoenix/tx-test-utils"
+
+it("test", async () => {
+  const { layer } = await getSharedTestLayer()
+  const result = await Effect.runPromise(
+    myEffect.pipe(Effect.provide(layer))
+  )
+})
+
+// WRONG - creates new DB per test (causes 54GB memory usage)
+it("test", async () => {
+  const layer = makeAppLayer(":memory:")  // NO!
+  // ...
+})
+```
+
+**Why?** Creating a new DB per test caused 920 DBs → 54GB RAM. Singleton pattern: 1 DB → <1GB RAM.
+
 ---
 
 ## Quick Reference

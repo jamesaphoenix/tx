@@ -1,4 +1,1 @@
-
-> @tx/mcp-server@0.1.0 typecheck
-> tsc --noEmit
-
+$ NODE_OPTIONS='--max-old-space-size=8192' tsc --noEmit

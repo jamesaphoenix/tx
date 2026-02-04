@@ -29,7 +29,8 @@ export {
   createTestDatabase,
   TestDatabaseService,
   TestDatabaseLive,
-  createTestDatabaseLayer
+  createTestDatabaseLayer,
+  wrapDbAsTestDatabase
 } from "./database/index.js"
 export type { TestDatabase } from "./database/index.js"
 
@@ -99,6 +100,21 @@ export {
   type RunEffectOptions,
   type EffectResult
 } from "./helpers/index.js"
+
+// Shared Test Layer - memory-efficient integration testing
+export {
+  createSharedTestLayer,
+  type SharedTestLayer,
+  type SharedTestLayerResult
+} from "./helpers/index.js"
+
+// Singleton Test Database - ONE DB for entire test suite
+export {
+  getSharedTestLayer,
+  resetTestDb,
+  closeTestDb,
+  isTestDbInitialized
+} from "./singleton.js"
 
 // Temp Files (to be implemented)
 // export { createTempDir, writeTestTypeScriptFile, createTestSourceFiles } from './helpers/index.js'

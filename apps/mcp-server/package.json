@@ -38,8 +38,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc --noEmit",
+    "build": "NODE_OPTIONS='--max-old-space-size=8192' tsc -b",
+    "typecheck": "NODE_OPTIONS='--max-old-space-size=8192' tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest run --passWithNoTests"
   },

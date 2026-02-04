@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { Effect } from "effect"
 import { Hono } from "hono"
 import { Database } from "bun:sqlite"
-import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs"
 import { resolve } from "path"
 import { tmpdir } from "os"
@@ -45,7 +47,7 @@ function createTestApp(db: Database, txDir: string) {
     tasks: TaskRow[],
     allTasks?: TaskRow[]
   ): TaskWithDeps[] {
-    const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
+    const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
       blocker_id: string
       blocked_id: string
     }>
@@ -61,7 +63,7 @@ function createTestApp(db: Database, txDir: string) {
       blocksMap.set(dep.blocker_id, [...existingBlocks, dep.blocked_id])
     }
 
-    const tasksForChildren = allTasks ?? db.prepare("SELECT id, parent_id FROM tasks").all() as Array<{ id: string; parent_id: string | null }>
+    const tasksForChildren = allTasks ?? db.db.prepare("SELECT id, parent_id FROM tasks").all() as Array<{ id: string; parent_id: string | null }>
     const childrenMap = new Map<string, string[]>()
     for (const task of tasksForChildren) {
       if (task.parent_id) {
@@ -70,7 +72,7 @@ function createTestApp(db: Database, txDir: string) {
       }
     }
 
-    const allTasksForStatus = allTasks ?? db.prepare("SELECT id, status FROM tasks").all() as Array<{ id: string; status: string }>
+    const allTasksForStatus = allTasks ?? db.db.prepare("SELECT id, status FROM tasks").all() as Array<{ id: string; status: string }>
     const statusMap = new Map(allTasksForStatus.map(t => [t.id, t.status]))
     const workableStatuses = ["backlog", "ready", "planning"]
 
@@ -147,7 +149,7 @@ function createTestApp(db: Database, txDir: string) {
       `
       params.push(limit + 1)
 
-      const rows = db.prepare(sql).all(...params) as TaskRow[]
+      const rows = db.db.prepare(sql).all(...params) as TaskRow[]
       const hasMore = rows.length > limit
       const tasks = hasMore ? rows.slice(0, limit) : rows
 
@@ -156,11 +158,11 @@ function createTestApp(db: Database, txDir: string) {
       })
       const countParams = cursor ? params.slice(0, -4) : params.slice(0, -1)
       const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
-      const total = (db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
+      const total = (db.db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
 
       const enriched = enrichTasksWithDeps(tasks)
 
-      const summaryRows = db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
+      const summaryRows = db.db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
       const byStatus = summaryRows.reduce((acc, r) => {
         acc[r.status] = r.count
         return acc
@@ -181,8 +183,8 @@ function createTestApp(db: Database, txDir: string) {
   // GET /api/tasks/ready
   app.get("/api/tasks/ready", (c) => {
     try {
-      const tasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
-      const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
+      const tasks = db.db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
+      const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
         blocker_id: string
         blocked_id: string
       }>
@@ -213,27 +215,27 @@ function createTestApp(db: Database, txDir: string) {
     try {
       const id = c.req.param("id")
 
-      const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+      const task = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
       if (!task) {
         return c.json({ error: "Task not found" }, 404)
       }
 
-      const blockedByIds = db.prepare(
+      const blockedByIds = db.db.prepare(
         "SELECT blocker_id FROM task_dependencies WHERE blocked_id = ?"
       ).all(id) as Array<{ blocker_id: string }>
 
-      const blocksIds = db.prepare(
+      const blocksIds = db.db.prepare(
         "SELECT blocked_id FROM task_dependencies WHERE blocker_id = ?"
       ).all(id) as Array<{ blocked_id: string }>
 
-      const childIds = db.prepare(
+      const childIds = db.db.prepare(
         "SELECT id FROM tasks WHERE parent_id = ?"
       ).all(id) as Array<{ id: string }>
 
       const fetchTasksByIds = (ids: string[]): TaskWithDeps[] => {
         if (ids.length === 0) return []
         const placeholders = ids.map(() => "?").join(",")
-        const tasks = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
+        const tasks = db.db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
         return enrichTasksWithDeps(tasks)
       }
 
@@ -305,7 +307,7 @@ function createTestApp(db: Database, txDir: string) {
           LIMIT ?
         `
         params.push(limit + 1)
-        runs = db.prepare(sql).all(...params) as typeof runs
+        runs = db.db.prepare(sql).all(...params) as typeof runs
       } catch {
         return c.json({ runs: [], nextCursor: null, hasMore: false })
       }
@@ -316,7 +318,7 @@ function createTestApp(db: Database, txDir: string) {
       const enriched = pagedRuns.map(run => {
         let taskTitle: string | null = null
         if (run.task_id) {
-          const task = db.prepare("SELECT title FROM tasks WHERE id = ?").get(run.task_id) as { title: string } | undefined
+          const task = db.db.prepare("SELECT title FROM tasks WHERE id = ?").get(run.task_id) as { title: string } | undefined
           taskTitle = task?.title ?? null
         }
         return { ...run, taskTitle }
@@ -337,7 +339,7 @@ function createTestApp(db: Database, txDir: string) {
     try {
       const id = c.req.param("id")
 
-      const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as {
+      const run = db.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as {
         id: string
         task_id: string | null
         agent: string
@@ -386,9 +388,9 @@ function createTestApp(db: Database, txDir: string) {
   // GET /api/stats
   app.get("/api/stats", (c) => {
     try {
-      const taskCount = (db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }).count
-      const doneCount = (db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'done'").get() as { count: number }).count
-      const readyCount = (db.prepare(`
+      const taskCount = (db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }).count
+      const doneCount = (db.db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'done'").get() as { count: number }).count
+      const readyCount = (db.db.prepare(`
         SELECT COUNT(*) as count FROM tasks t
         WHERE t.status IN ('backlog', 'ready', 'planning')
         AND NOT EXISTS (
@@ -400,7 +402,7 @@ function createTestApp(db: Database, txDir: string) {
 
       let learningsCount = 0
       try {
-        learningsCount = (db.prepare("SELECT COUNT(*) as count FROM learnings").get() as { count: number }).count
+        learningsCount = (db.db.prepare("SELECT COUNT(*) as count FROM learnings").get() as { count: number }).count
       } catch {
         // Table doesn't exist
       }
@@ -408,8 +410,8 @@ function createTestApp(db: Database, txDir: string) {
       let runsRunning = 0
       let runsTotal = 0
       try {
-        runsRunning = (db.prepare("SELECT COUNT(*) as count FROM runs WHERE status = 'running'").get() as { count: number }).count
-        runsTotal = (db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }).count
+        runsRunning = (db.db.prepare("SELECT COUNT(*) as count FROM runs WHERE status = 'running'").get() as { count: number }).count
+        runsTotal = (db.db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }).count
       } catch {
         // Table doesn't exist
       }
@@ -442,11 +444,11 @@ async function request(app: Hono, path: string, options?: RequestInit) {
 }
 
 describe("Dashboard API - GET /api/tasks", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
   })
@@ -596,11 +598,11 @@ describe("Dashboard API - GET /api/tasks", () => {
 })
 
 describe("Dashboard API - GET /api/tasks/ready", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
   })
@@ -638,7 +640,7 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
 
   it("includes tasks when ALL blockers are done", async () => {
     // Mark both blockers as done
-    db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id IN (?, ?)").run(
+    db.db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id IN (?, ?)").run(
       new Date().toISOString(), FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN
     )
 
@@ -660,11 +662,11 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
 })
 
 describe("Dashboard API - GET /api/tasks/:id", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
   })
@@ -746,11 +748,11 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
 })
 
 describe("Dashboard API - GET /api/runs", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
   })
@@ -768,7 +770,7 @@ describe("Dashboard API - GET /api/runs", () => {
   it("returns runs with task titles enriched", async () => {
     // Create some runs
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-test0001", FIXTURES.TASK_JWT, "tx-implementer", now, "running", "{}")
@@ -783,7 +785,7 @@ describe("Dashboard API - GET /api/runs", () => {
 
   it("returns null taskTitle when task_id is null", async () => {
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-test0002", null, "tx-planner", now, "completed", "{}")
@@ -797,7 +799,7 @@ describe("Dashboard API - GET /api/runs", () => {
   it("respects limit parameter", async () => {
     for (let i = 0; i < 5; i++) {
       const ts = new Date(Date.now() - i * 1000).toISOString()
-      db.prepare(`
+      db.db.prepare(`
         INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(`run-test000${i}`, null, "agent-1", ts, "running", "{}")
@@ -813,11 +815,11 @@ describe("Dashboard API - GET /api/runs", () => {
 
   it("filters by agent", async () => {
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-agent-a", null, "tx-implementer", now, "running", "{}")
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-agent-b", null, "tx-reviewer", now, "running", "{}")
@@ -831,11 +833,11 @@ describe("Dashboard API - GET /api/runs", () => {
 
   it("filters by status", async () => {
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-stat-a", null, "agent-1", now, "running", "{}")
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-stat-b", null, "agent-1", now, "completed", "{}")
@@ -851,7 +853,7 @@ describe("Dashboard API - GET /api/runs", () => {
     // Create runs with different timestamps for proper ordering
     for (let i = 0; i < 5; i++) {
       const ts = new Date(Date.now() - (4 - i) * 10000).toISOString()
-      db.prepare(`
+      db.db.prepare(`
         INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(`run-page-${i}`, null, "agent-1", ts, "running", "{}")
@@ -876,12 +878,12 @@ describe("Dashboard API - GET /api/runs", () => {
 })
 
 describe("Dashboard API - GET /api/runs/:id", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
   let testDir: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     // Create a temporary test directory for transcript files
     testDir = resolve(tmpdir(), `tx-test-${Date.now()}`)
@@ -906,7 +908,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
 
   it("returns run details", async () => {
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-detail01", FIXTURES.TASK_JWT, "tx-implementer", now, "running", '{"key":"value"}')
@@ -927,7 +929,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     writeFileSync(transcriptPath, '{"messages": ["hello"]}')
 
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run("run-transc01", null, "agent-1", now, "completed", transcriptPath, "{}")
@@ -944,7 +946,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     writeFileSync(outsidePath, "secret content")
 
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run("run-secur01", null, "agent-1", now, "completed", outsidePath, "{}")
@@ -971,7 +973,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     const now = new Date().toISOString()
     // Try to use path traversal to escape the .tx directory
     const traversalPath = resolve(testDir, "../outside-secret.txt")
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run("run-secur02", null, "agent-1", now, "completed", traversalPath, "{}")
@@ -990,7 +992,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     const nonexistentPath = resolve(testDir, "nonexistent.json")
 
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run("run-nofile1", null, "agent-1", now, "completed", nonexistentPath, "{}")
@@ -1003,7 +1005,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
 
   it("returns null transcript when transcript_path is null", async () => {
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run("run-nopath1", null, "agent-1", now, "completed", null, "{}")
@@ -1016,11 +1018,11 @@ describe("Dashboard API - GET /api/runs/:id", () => {
 })
 
 describe("Dashboard API - GET /api/ralph", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
   })
@@ -1040,11 +1042,11 @@ describe("Dashboard API - GET /api/ralph", () => {
 })
 
 describe("Dashboard API - GET /api/stats", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
   })
@@ -1086,15 +1088,15 @@ describe("Dashboard API - GET /api/stats", () => {
 
   it("counts running runs correctly", async () => {
     const now = new Date().toISOString()
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-stats-a", null, "agent-1", now, "running", "{}")
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-stats-b", null, "agent-1", now, "completed", "{}")
-    db.prepare(`
+    db.db.prepare(`
       INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("run-stats-c", null, "agent-1", now, "running", "{}")
@@ -1113,7 +1115,7 @@ describe("Dashboard API - GET /api/stats", () => {
     expect(data1.done).toBe(1)
 
     // Complete another task
-    db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?").run(
+    db.db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?").run(
       new Date().toISOString(), FIXTURES.TASK_JWT
     )
 
@@ -1141,11 +1143,11 @@ describe("Dashboard API - Fixture ID consistency", () => {
 })
 
 describe("Dashboard API - Paginated Tasks with Filters", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
   })
@@ -1154,7 +1156,7 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
     // Add more ready tasks to test pagination with filter
     const now = new Date().toISOString()
     for (let i = 0; i < 5; i++) {
-      db.prepare(
+      db.db.prepare(
         `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(fixtureId(`ready-extra-${i}`), `Ready task ${i}`, `Description ${i}`, "ready", null, 400 - i * 10, now, now, "{}")
@@ -1189,7 +1191,7 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
     // Add tasks with searchable content
     const now = new Date().toISOString()
     for (let i = 0; i < 5; i++) {
-      db.prepare(
+      db.db.prepare(
         `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(fixtureId(`search-${i}`), `Searchable task ${i}`, `Has keyword FINDME`, "backlog", null, 300 - i * 10, now, now, "{}")
@@ -1219,13 +1221,13 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
     // Add tasks with specific status and searchable content
     const now = new Date().toISOString()
     for (let i = 0; i < 4; i++) {
-      db.prepare(
+      db.db.prepare(
         `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(fixtureId(`combo-${i}`), `Combo task ${i}`, `Has COMBOKEY`, "planning", null, 200 - i * 10, now, now, "{}")
     }
     // Add one with different status (should be excluded)
-    db.prepare(
+    db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(fixtureId("combo-done"), "Done combo", "Has COMBOKEY", "done", null, 250, now, now, "{}")
@@ -1337,11 +1339,11 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
 })
 
 describe("Dashboard API - Paginated Runs with Filters", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
 
@@ -1353,7 +1355,7 @@ describe("Dashboard API - Paginated Runs with Filters", () => {
       const status = i % 3 === 0 ? "completed" : i % 3 === 1 ? "running" : "failed"
       const agent = i % 2 === 0 ? "tx-implementer" : "tx-reviewer"
       const runId = `run-pagtest${String(i).padStart(4, '0')}`
-      db.prepare(`
+      db.db.prepare(`
         INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(runId, null, agent, ts, status, "{}")

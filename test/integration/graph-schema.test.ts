@@ -11,11 +11,21 @@
  * - Edge type filtering
  * - Cycle detection
  * - Bidirectional queries
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ * Previously created a new database per test, now creates 1 per describe block.
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import { fixtureId } from "@jamesaphoenix/tx-test-utils"
+import { fixtureId, createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import {
+  AnchorService,
+  EdgeService,
+  LearningService
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -56,10 +66,21 @@ const FIXTURES = {
 // =============================================================================
 
 describe("Graph Schema - Anchor CRUD", () => {
-  it("creates a glob anchor and retrieves it", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("creates a glob anchor and retrieves it", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -79,7 +100,7 @@ describe("Graph Schema - Anchor CRUD", () => {
 
         const retrieved = yield* anchorSvc.get(anchor.id)
         return { created: anchor, retrieved }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.created.id).toBe(result.retrieved.id)
@@ -89,9 +110,6 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("creates a hash anchor with content hash and line range", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -110,7 +128,7 @@ describe("Graph Schema - Anchor CRUD", () => {
           lineStart: 10,
           lineEnd: 25,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorType).toBe("hash")
@@ -120,9 +138,6 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("creates a symbol anchor with fully qualified name", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -140,7 +155,7 @@ describe("Graph Schema - Anchor CRUD", () => {
           value: "TaskService",
           symbolFqname: FIXTURES.SYMBOL_FQNAME_1,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorType).toBe("symbol")
@@ -149,9 +164,6 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("creates a line_range anchor with line numbers", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -170,7 +182,7 @@ describe("Graph Schema - Anchor CRUD", () => {
           lineStart: 50,
           lineEnd: 75,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorType).toBe("line_range")
@@ -179,9 +191,6 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("soft deletes an anchor (sets status='invalid')", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -205,7 +214,7 @@ describe("Graph Schema - Anchor CRUD", () => {
         const retrieved = yield* anchorSvc.get(anchor.id)
 
         return { removed, retrieved }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.removed.status).toBe("invalid")
@@ -213,9 +222,6 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("finds all anchors for a specific file path", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -253,7 +259,7 @@ describe("Graph Schema - Anchor CRUD", () => {
         })
 
         return yield* anchorSvc.findAnchorsForFile(FIXTURES.FILE_PATH_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -261,9 +267,6 @@ describe("Graph Schema - Anchor CRUD", () => {
   })
 
   it("finds all anchors for a specific learning", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -297,7 +300,7 @@ describe("Graph Schema - Anchor CRUD", () => {
         })
 
         return yield* anchorSvc.findAnchorsForLearning(learning.id)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(3)
@@ -309,10 +312,21 @@ describe("Graph Schema - Anchor CRUD", () => {
 // =============================================================================
 
 describe("Graph Schema - Edge CRUD", () => {
-  it("creates an edge between two learnings", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("creates an edge between two learnings", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -335,7 +349,7 @@ describe("Graph Schema - Edge CRUD", () => {
           targetId: String(learning2.id),
           weight: 0.85,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.edgeType).toBe("SIMILAR_TO")
@@ -345,9 +359,6 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("creates ANCHORED_TO edge from learning to file", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -366,7 +377,7 @@ describe("Graph Schema - Edge CRUD", () => {
           targetId: FIXTURES.FILE_PATH_1,
           weight: 1.0,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.edgeType).toBe("ANCHORED_TO")
@@ -375,9 +386,6 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("creates DERIVED_FROM edge for provenance tracking", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -397,7 +405,7 @@ describe("Graph Schema - Edge CRUD", () => {
           weight: 1.0,
           metadata: { session: "test-session" },
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.edgeType).toBe("DERIVED_FROM")
@@ -406,9 +414,6 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("updates edge weight", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -429,16 +434,13 @@ describe("Graph Schema - Edge CRUD", () => {
         })
 
         return yield* edgeSvc.update(edge.id, { weight: 0.95 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.weight).toBe(0.95)
   })
 
   it("invalidates (soft-deletes) an edge", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -461,16 +463,13 @@ describe("Graph Schema - Edge CRUD", () => {
 
         // After invalidation, get should fail
         return yield* edgeSvc.get(edge.id).pipe(Effect.either)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result._tag).toBe("Left")
   })
 
   it("validates edge types at creation", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -482,7 +481,7 @@ describe("Graph Schema - Edge CRUD", () => {
           targetType: "file",
           targetId: FIXTURES.FILE_PATH_1,
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -492,9 +491,6 @@ describe("Graph Schema - Edge CRUD", () => {
   })
 
   it("validates weight bounds (0-1)", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -507,7 +503,7 @@ describe("Graph Schema - Edge CRUD", () => {
           targetId: FIXTURES.FILE_PATH_1,
           weight: 1.5, // Invalid: > 1
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -522,10 +518,21 @@ describe("Graph Schema - Edge CRUD", () => {
 // =============================================================================
 
 describe("Graph Schema - Multi-hop Traversal", () => {
-  it("traverses a linear chain with depth limit", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("traverses a linear chain with depth limit", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -564,7 +571,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
           depth: 2,
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.length).toBe(2)
@@ -576,9 +583,6 @@ describe("Graph Schema - Multi-hop Traversal", () => {
   })
 
   it("traverses a branching graph structure", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -617,7 +621,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
           depth: 2,
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should find L2, L3 at depth 1 and L4 at depth 2
@@ -627,9 +631,6 @@ describe("Graph Schema - Multi-hop Traversal", () => {
   })
 
   it("finds path between two nodes", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -661,7 +662,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
           "learning",
           String(l3.id)
         )
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -669,9 +670,6 @@ describe("Graph Schema - Multi-hop Traversal", () => {
   })
 
   it("returns null when no path exists", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -689,7 +687,7 @@ describe("Graph Schema - Multi-hop Traversal", () => {
           "learning",
           String(l2.id)
         )
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeNull()
@@ -701,10 +699,21 @@ describe("Graph Schema - Multi-hop Traversal", () => {
 // =============================================================================
 
 describe("Graph Schema - Edge Type Filtering", () => {
-  it("filters neighbors by edge type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("filters neighbors by edge type", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -734,7 +743,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
         return yield* edgeSvc.findNeighbors("learning", String(l1.id), {
           edgeTypes: ["SIMILAR_TO"],
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -742,9 +751,6 @@ describe("Graph Schema - Edge Type Filtering", () => {
   })
 
   it("filters by multiple edge types", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -781,7 +787,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
         return yield* edgeSvc.findNeighbors("learning", String(l1.id), {
           edgeTypes: ["SIMILAR_TO", "LINKS_TO"],
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -792,9 +798,6 @@ describe("Graph Schema - Edge Type Filtering", () => {
   })
 
   it("finds edges by type globally", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -827,7 +830,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
         })
 
         return yield* edgeSvc.findByType("SIMILAR_TO")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -835,9 +838,6 @@ describe("Graph Schema - Edge Type Filtering", () => {
   })
 
   it("counts edges by type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -869,7 +869,7 @@ describe("Graph Schema - Edge Type Filtering", () => {
         })
 
         return yield* edgeSvc.countByType()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.get("SIMILAR_TO")).toBe(1)
@@ -882,10 +882,21 @@ describe("Graph Schema - Edge Type Filtering", () => {
 // =============================================================================
 
 describe("Graph Schema - Cycle Detection", () => {
-  it("handles cycles in traversal without infinite loop", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("handles cycles in traversal without infinite loop", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -923,7 +934,7 @@ describe("Graph Schema - Cycle Detection", () => {
           depth: 5,
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should visit each node once
@@ -934,9 +945,6 @@ describe("Graph Schema - Cycle Detection", () => {
   })
 
   it("handles self-referential cycles in simple two-node case", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -965,7 +973,7 @@ describe("Graph Schema - Cycle Detection", () => {
           depth: 10,
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should only visit L2 once
@@ -975,9 +983,6 @@ describe("Graph Schema - Cycle Detection", () => {
   })
 
   it("detects diamond pattern in graph", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1022,7 +1027,7 @@ describe("Graph Schema - Cycle Detection", () => {
           depth: 3,
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should find L2, L3 at depth 1 and L4 at depth 2 (only once)
@@ -1038,10 +1043,21 @@ describe("Graph Schema - Cycle Detection", () => {
 // =============================================================================
 
 describe("Graph Schema - Bidirectional Queries", () => {
-  it("finds outgoing neighbors only", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("finds outgoing neighbors only", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1070,7 +1086,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
         return yield* edgeSvc.findNeighbors("learning", String(l1.id), {
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -1078,9 +1094,6 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("finds incoming neighbors only", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1109,7 +1122,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
         return yield* edgeSvc.findNeighbors("learning", String(l2.id), {
           direction: "incoming",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -1117,9 +1130,6 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("finds both incoming and outgoing neighbors (bidirectional)", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1156,7 +1166,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
         return yield* edgeSvc.findNeighbors("learning", String(l2.id), {
           direction: "both",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(3) // L1, L3, L4
@@ -1166,9 +1176,6 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("queries edges to a specific target", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1194,7 +1201,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
         })
 
         return yield* edgeSvc.findToTarget("file", FIXTURES.FILE_PATH_1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -1205,9 +1212,6 @@ describe("Graph Schema - Bidirectional Queries", () => {
   })
 
   it("queries edges from a specific source", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1239,7 +1243,7 @@ describe("Graph Schema - Bidirectional Queries", () => {
         })
 
         return yield* edgeSvc.findFromSource("learning", String(l1.id))
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(3)
@@ -1255,10 +1259,21 @@ describe("Graph Schema - Bidirectional Queries", () => {
 // =============================================================================
 
 describe("Graph Schema - Anchor and Edge Integration", () => {
-  it("creates anchor and corresponding ANCHORED_TO edge", async () => {
-    const { makeAppLayer, AnchorService, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("creates anchor and corresponding ANCHORED_TO edge", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1290,7 +1305,7 @@ describe("Graph Schema - Anchor and Edge Integration", () => {
         })
 
         return { anchor, edge }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchor.id).toBeDefined()
@@ -1299,9 +1314,6 @@ describe("Graph Schema - Anchor and Edge Integration", () => {
   })
 
   it("finds learnings related to a file via both anchors and edges", async () => {
-    const { makeAppLayer, AnchorService, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1338,7 +1350,7 @@ describe("Graph Schema - Anchor and Edge Integration", () => {
         const edges = yield* edgeSvc.findToTarget("file", FIXTURES.FILE_PATH_1)
 
         return { anchors, edges }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchors).toHaveLength(1)
@@ -1351,10 +1363,21 @@ describe("Graph Schema - Anchor and Edge Integration", () => {
 // =============================================================================
 
 describe("Graph Schema - Anchor Status Management", () => {
-  it("updates anchor status to drifted", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("updates anchor status to drifted", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1375,16 +1398,13 @@ describe("Graph Schema - Anchor Status Management", () => {
         })
 
         return yield* anchorSvc.updateAnchorStatus(anchor.id, "drifted")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.status).toBe("drifted")
   })
 
   it("updates anchor status to invalid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1404,16 +1424,13 @@ describe("Graph Schema - Anchor Status Management", () => {
         })
 
         return yield* anchorSvc.updateAnchorStatus(anchor.id, "invalid")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.status).toBe("invalid")
   })
 
   it("finds only drifted anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1440,7 +1457,7 @@ describe("Graph Schema - Anchor Status Management", () => {
         yield* anchorSvc.updateAnchorStatus(2, "drifted")
 
         return yield* anchorSvc.findDrifted()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -1448,9 +1465,6 @@ describe("Graph Schema - Anchor Status Management", () => {
   })
 
   it("finds only invalid anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1477,7 +1491,7 @@ describe("Graph Schema - Anchor Status Management", () => {
         yield* anchorSvc.updateAnchorStatus(2, "invalid")
 
         return yield* anchorSvc.findInvalid()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -1486,10 +1500,21 @@ describe("Graph Schema - Anchor Status Management", () => {
 })
 
 describe("Graph Schema - Edge Metadata", () => {
-  it("stores and retrieves edge metadata", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("stores and retrieves edge metadata", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1512,7 +1537,7 @@ describe("Graph Schema - Edge Metadata", () => {
             confidence: 0.92,
           },
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.metadata).toEqual({
@@ -1523,9 +1548,6 @@ describe("Graph Schema - Edge Metadata", () => {
   })
 
   it("updates edge metadata", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1548,7 +1570,7 @@ describe("Graph Schema - Edge Metadata", () => {
         return yield* edgeSvc.update(edge.id, {
           metadata: { helpful: true, rating: 5 },
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.metadata).toEqual({ helpful: true, rating: 5 })

@@ -8,6 +8,7 @@ export {
   createTestDatabase,
   TestDatabaseService,
   TestDatabaseLive,
-  createTestDatabaseLayer
+  createTestDatabaseLayer,
+  wrapDbAsTestDatabase
 } from "./test-database.js"
 export type { TestDatabase } from "./test-database.js"

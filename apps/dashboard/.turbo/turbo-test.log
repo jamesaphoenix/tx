@@ -1,15 +1,7 @@
 $ vitest --run
-failed to load config from /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard/vitest.config.ts
 
-⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯
-Error: The service was stopped: write EPIPE
-    at /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/node_modules/esbuild/lib/main.js:949:34
-    at responseCallbacks.<computed> (/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/node_modules/esbuild/lib/main.js:603:9)
-    at afterClose (/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/node_modules/esbuild/lib/main.js:594:28)
-    at /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/node_modules/esbuild/lib/main.js:1986:18
-    at onwriteError (node:internal/streams/writable:603:3)
-    at process.processTicksAndRejections (node:internal/process/task_queues:91:21)
+ RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
 
-
-
-error: script "test" exited with code 1
+ ✓ src/hooks/__tests__/useDebounce.test.ts (7 tests) 18ms
+ ✓ src/hooks/__tests__/useKeyboardNavigation.test.ts (18 tests) 18ms
+error: script "test" exited with code 130

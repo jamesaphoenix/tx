@@ -1,17 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDb } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import {
   SqliteClient,
   AnchorRepository,
   AnchorRepositoryLive,
   LearningRepositoryLive
 } from "@jamesaphoenix/tx-core"
-import type { Database } from "bun:sqlite"
 import type { Anchor } from "@jamesaphoenix/tx-types"
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   return Layer.mergeAll(
     AnchorRepositoryLive,
     LearningRepositoryLive
@@ -22,28 +21,28 @@ function makeTestLayer(db: Database) {
  * Create a test learning and return its ID.
  * Learnings are required since anchors have FK to learnings.
  */
-function createTestLearning(db: Database, content: string): number {
+function createTestLearning(db: TestDatabase, content: string): number {
   const now = new Date().toISOString()
-  const result = db.prepare(
+  const result = db.db.prepare(
     `INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)`
   ).run(content, now)
   return Number(result.lastInsertRowid)
 }
 
 describe("AnchorRepository CRUD", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     // Create a learning that anchors will reference
     learningId = createTestLearning(db, "Use transactions for DB operations")
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await Effect.runPromise(db.close())
   })
 
   it("create returns an anchor with valid ID", async () => {
@@ -263,18 +262,18 @@ describe("AnchorRepository CRUD", () => {
 })
 
 describe("AnchorRepository Status Queries", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     learningId = createTestLearning(db, "Test learning for status queries")
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await Effect.runPromise(db.close())
   })
 
   it("findDrifted returns only drifted anchors", async () => {
@@ -391,18 +390,18 @@ describe("AnchorRepository Status Queries", () => {
 })
 
 describe("AnchorRepository Anchor Types", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let learningId: number
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     learningId = createTestLearning(db, "Test learning for anchor types")
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await Effect.runPromise(db.close())
   })
 
   it("supports glob anchor type", async () => {
@@ -481,16 +480,16 @@ describe("AnchorRepository Anchor Types", () => {
 })
 
 describe("AnchorRepository Foreign Key Constraint", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await Effect.runPromise(db.close())
   })
 
   it("fails to create anchor with non-existent learning ID", async () => {
@@ -515,7 +514,7 @@ describe("AnchorRepository Foreign Key Constraint", () => {
         const repo = yield* AnchorRepository
         // Create learning and anchor manually
         const now = new Date().toISOString()
-        const learningResult = db.prepare(
+        const learningResult = db.db.prepare(
           `INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)`
         ).run("Cascade test learning", now)
         const learningId = Number(learningResult.lastInsertRowid)
@@ -531,7 +530,7 @@ describe("AnchorRepository Foreign Key Constraint", () => {
         const beforeDelete = yield* repo.findByLearningId(learningId)
 
         // Delete the learning
-        db.prepare("DELETE FROM learnings WHERE id = ?").run(learningId)
+        db.db.prepare("DELETE FROM learnings WHERE id = ?").run(learningId)
 
         // Anchor should be gone due to CASCADE
         const afterDelete = yield* repo.findByLearningId(learningId)

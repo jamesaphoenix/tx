@@ -7,10 +7,40 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
+import { resolve, sep } from "node:path"
 import { z } from "zod"
 import type { ExportResult, ImportResult, SyncStatus, CompactResult } from "@jamesaphoenix/tx-core"
 import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+
+// -----------------------------------------------------------------------------
+// Path validation
+// -----------------------------------------------------------------------------
+
+/**
+ * Validate that a user-provided sync file path does not escape the project
+ * directory via path traversal (e.g. "../../etc/passwd" or absolute paths
+ * outside the project root).
+ *
+ * Returns the original path string unchanged when valid; throws when the
+ * resolved path would land outside process.cwd().
+ */
+export const validateSyncPath = (userPath: string | undefined): string | undefined => {
+  if (userPath === undefined) return undefined
+
+  const projectRoot = process.cwd()
+  const resolved = resolve(projectRoot, userPath)
+
+  // The resolved path must be strictly inside the project directory.
+  // We append sep to avoid prefix false-positives (e.g. /foo/bar vs /foo/barbaz).
+  if (!resolved.startsWith(projectRoot + sep)) {
+    throw new Error(
+      "Path traversal rejected: sync file path must be within the project directory"
+    )
+  }
+
+  return userPath
+}
 
 // -----------------------------------------------------------------------------
 // Serialization
@@ -64,6 +94,7 @@ export const registerSyncTools = (server: McpServer): void => {
   // ---------------------------------------------------------------------------
   // tx_sync_export - Export tasks and dependencies to JSONL
   // ---------------------------------------------------------------------------
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.registerTool(
     "tx_sync_export",
     {
@@ -74,10 +105,11 @@ export const registerSyncTools = (server: McpServer): void => {
     },
     async ({ path }): Promise<{ content: { type: "text"; text: string }[] }> => {
       try {
+        const safePath = validateSyncPath(path)
         const result = await runEffect(
           Effect.gen(function* () {
             const syncService = yield* SyncService
-            return yield* syncService.export(path ?? undefined)
+            return yield* syncService.export(safePath ?? undefined)
           })
         )
         const serialized = serializeExportResult(result)
@@ -108,10 +140,11 @@ export const registerSyncTools = (server: McpServer): void => {
     },
     async ({ path }): Promise<{ content: { type: "text"; text: string }[] }> => {
       try {
+        const safePath = validateSyncPath(path)
         const result = await runEffect(
           Effect.gen(function* () {
             const syncService = yield* SyncService
-            return yield* syncService.import(path ?? undefined)
+            return yield* syncService.import(safePath ?? undefined)
           })
         )
         const serialized = serializeImportResult(result)
@@ -178,10 +211,11 @@ export const registerSyncTools = (server: McpServer): void => {
     },
     async ({ path }): Promise<{ content: { type: "text"; text: string }[] }> => {
       try {
+        const safePath = validateSyncPath(path)
         const result = await runEffect(
           Effect.gen(function* () {
             const syncService = yield* SyncService
-            return yield* syncService.compact(path ?? undefined)
+            return yield* syncService.compact(safePath ?? undefined)
           })
         )
         const serialized = serializeCompactResult(result)

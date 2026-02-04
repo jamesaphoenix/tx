@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# Pre-commit hook: Fast checks only (types + lint)
+# Full build + tests run on pre-push
+
+echo "🔍 Running pre-commit checks..."
+
+# Run type checking and linting only (fast feedback)
+./scripts/check.sh --types && ./scripts/check.sh --lint

@@ -17,22 +17,29 @@
  * - >80% self-healing success rate for minor edits
  * - 10K anchors/min verification throughput
  *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ * Previously created a new database per test, now creates 1 per describe block.
+ *
  * @see docs/prd/PRD-017-invalidation-maintenance.md
  * @see docs/design/DD-017-invalidation-maintenance.md
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import { createTestDb } from "../fixtures.js"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services at module level (no more dynamic imports)
 import {
   SqliteClient,
   AnchorRepository,
   AnchorRepositoryLive,
-  LearningRepositoryLive
+  LearningRepositoryLive,
+  AnchorService,
+  LearningService
 } from "@jamesaphoenix/tx-core"
-import type { Database } from "bun:sqlite"
 import type { AnchorStatus } from "@jamesaphoenix/tx-types"
+import type { Database } from "bun:sqlite"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs for determinism)
@@ -66,7 +73,7 @@ const FIXTURES = {
 } as const
 
 // =============================================================================
-// Helper Functions
+// Helper Functions for Repository-Level Tests
 // =============================================================================
 
 function makeTestLayer(db: Database) {
@@ -123,14 +130,25 @@ function createTestAnchorDirect(
 }
 
 // =============================================================================
-// Periodic Verification Tests (via AnchorService using makeAppLayer)
+// Periodic Verification Tests (via AnchorService)
 // =============================================================================
 
 describe("Anchor Invalidation - Periodic Verification", () => {
-  it("verifyAll returns summary of all anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("verifyAll returns summary of all anchors", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -169,7 +187,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
         yield* anchorSvc.updateAnchorStatus(3, "invalid")
 
         return yield* anchorSvc.verifyAll()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.total).toBe(3)
@@ -179,9 +197,6 @@ describe("Anchor Invalidation - Periodic Verification", () => {
   })
 
   it("verifyAnchorsForFile verifies only anchors for specified file", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -217,7 +232,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
         })
 
         return yield* anchorSvc.verifyAnchorsForFile(FIXTURES.FILE_EXISTS)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.total).toBe(2) // Only FILE_EXISTS anchors
@@ -226,9 +241,6 @@ describe("Anchor Invalidation - Periodic Verification", () => {
   })
 
   it("verifyAll skips pinned anchors from verification changes", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -260,7 +272,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
         const pinnedAnchor = yield* anchorSvc.get(1)
 
         return { summary, pinnedAnchor }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.summary.total).toBe(2)
@@ -269,9 +281,6 @@ describe("Anchor Invalidation - Periodic Verification", () => {
   })
 
   it("getStatus returns graph health summary", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -318,7 +327,7 @@ describe("Anchor Invalidation - Periodic Verification", () => {
         yield* anchorSvc.pin(5)
 
         return yield* anchorSvc.getStatus()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.total).toBe(5)
@@ -334,10 +343,21 @@ describe("Anchor Invalidation - Periodic Verification", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - On-Access Verification", () => {
-  it("verifyAnchor returns verification result for valid anchor", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("verifyAnchor returns verification result for valid anchor", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -356,7 +376,7 @@ describe("Anchor Invalidation - On-Access Verification", () => {
         })
 
         return yield* anchorSvc.verifyAnchor(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.anchorId).toBe(1)
@@ -366,9 +386,6 @@ describe("Anchor Invalidation - On-Access Verification", () => {
   })
 
   it("verifyAnchor updates verifiedAt timestamp", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -391,7 +408,7 @@ describe("Anchor Invalidation - On-Access Verification", () => {
         const afterVerify = yield* anchorSvc.get(1)
 
         return { beforeVerify, afterVerify }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.beforeVerify.verifiedAt).toBeNull()
@@ -400,14 +417,11 @@ describe("Anchor Invalidation - On-Access Verification", () => {
   })
 
   it("verifyAnchor fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.verifyAnchor(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -417,9 +431,6 @@ describe("Anchor Invalidation - On-Access Verification", () => {
   })
 
   it("verifyAnchor handles different anchor types", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const results = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -473,7 +484,7 @@ describe("Anchor Invalidation - On-Access Verification", () => {
           hash: yield* anchorSvc.verifyAnchor(3),
           lineRange: yield* anchorSvc.verifyAnchor(4)
         }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(results.glob.verified).toBe(true)
@@ -488,10 +499,21 @@ describe("Anchor Invalidation - On-Access Verification", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Soft Delete and Restore", () => {
-  it("invalidate marks anchor as invalid with reason", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("invalidate marks anchor as invalid with reason", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -510,16 +532,13 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
         })
 
         return yield* anchorSvc.invalidate(1, "File was deleted")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.status).toBe("invalid")
   })
 
   it("restore returns invalid anchor to valid status", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -540,7 +559,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
         // Invalidate then restore
         yield* anchorSvc.invalidate(1, "Test invalidation")
         return yield* anchorSvc.restore(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.status).toBe("valid")
@@ -548,14 +567,11 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("invalidate fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.invalidate(999, "Test reason")
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -565,14 +581,11 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.restore(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -582,9 +595,6 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore uses old_status from invalidation log (drifted -> invalid -> restored to drifted)", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -614,7 +624,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
         const restored = yield* anchorSvc.restore(1)
 
         return { drifted, invalidated, restored }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.drifted.status).toBe("drifted")
@@ -623,9 +633,6 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore restores old_content_hash from invalidation log", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -670,7 +677,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
         const restored = yield* anchorSvc.restore(1)
 
         return { original, invalidated, restored }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.original.contentHash).toBe(FIXTURES.HASH_VALID)
@@ -680,9 +687,6 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
   })
 
   it("restore logs the action with detected_by='manual'", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const logs = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -709,7 +713,7 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
 
         // Get all invalidation logs
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should have 2 logs: one for invalidation, one for restore
@@ -735,21 +739,24 @@ describe("Anchor Invalidation - Soft Delete and Restore", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Pruning", () => {
-  let db: Database
-  let layer: ReturnType<typeof makeTestLayer>
+  let shared: SharedTestLayerResult
   let learningId: number
 
-  beforeEach(() => {
-    db = createTestDb()
-    layer = makeTestLayer(db)
-    learningId = createTestLearning(db, "Test learning for pruning")
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("prune deletes old invalid anchors via repository", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for pruning")
     const learning2 = createTestLearning(db, "Another learning")
 
     // Create old invalid anchor (backdated to 100 days ago)
@@ -773,6 +780,7 @@ describe("Anchor Invalidation - Pruning", () => {
       createdAt: oldDate
     })
 
+    const layer = makeTestLayer(db)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* AnchorRepository
@@ -788,6 +796,8 @@ describe("Anchor Invalidation - Pruning", () => {
   })
 
   it("prune does not delete valid anchors regardless of age", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for pruning")
     const oldDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) // 1 year ago
 
     createTestAnchorDirect(db, learningId, {
@@ -796,6 +806,7 @@ describe("Anchor Invalidation - Pruning", () => {
       createdAt: oldDate
     })
 
+    const layer = makeTestLayer(db)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* AnchorRepository
@@ -812,10 +823,21 @@ describe("Anchor Invalidation - Pruning", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Pinned Anchors", () => {
-  it("pin sets pinned flag to true", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("pin sets pinned flag to true", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -834,16 +856,13 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
         })
 
         return yield* anchorSvc.pin(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.pinned).toBe(true)
   })
 
   it("unpin sets pinned flag to false", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -863,21 +882,18 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
 
         yield* anchorSvc.pin(1)
         return yield* anchorSvc.unpin(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.pinned).toBe(false)
   })
 
   it("pin fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.pin(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -887,14 +903,11 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
   })
 
   it("unpin fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.unpin(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -904,9 +917,6 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
   })
 
   it("pinned anchors are tracked in status summary", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -941,7 +951,7 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
         })
 
         return yield* anchorSvc.getStatus()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.pinned).toBe(2)
@@ -954,21 +964,24 @@ describe("Anchor Invalidation - Pinned Anchors", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Self-Healing", () => {
-  let db: Database
-  let layer: ReturnType<typeof makeTestLayer>
+  let shared: SharedTestLayerResult
   let learningId: number
 
-  beforeEach(() => {
-    db = createTestDb()
-    layer = makeTestLayer(db)
-    learningId = createTestLearning(db, "Test learning for self-healing")
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("hash anchor maintains contentHash for similarity comparison", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for self-healing")
     const anchorId = createTestAnchorDirect(db, learningId, {
       anchorType: "hash",
       anchorValue: FIXTURES.HASH_VALID,
@@ -978,6 +991,7 @@ describe("Anchor Invalidation - Self-Healing", () => {
       lineEnd: 20
     })
 
+    const layer = makeTestLayer(db)
     const anchor = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* AnchorRepository
@@ -992,12 +1006,15 @@ describe("Anchor Invalidation - Self-Healing", () => {
   })
 
   it("anchor can be updated with new contentHash after self-healing", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for self-healing")
     const anchorId = createTestAnchorDirect(db, learningId, {
       anchorType: "hash",
       filePath: FIXTURES.FILE_EXISTS,
       contentHash: FIXTURES.HASH_OLD
     })
 
+    const layer = makeTestLayer(db)
     // Simulate self-healing by updating the hash
     const updated = await Effect.runPromise(
       Effect.gen(function* () {
@@ -1011,6 +1028,8 @@ describe("Anchor Invalidation - Self-Healing", () => {
   })
 
   it("invalidation log tracks hash changes for self-healing auditing", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for self-healing")
     const anchorId = createTestAnchorDirect(db, learningId, {
       anchorType: "hash",
       filePath: FIXTURES.FILE_DRIFTED,
@@ -1018,6 +1037,7 @@ describe("Anchor Invalidation - Self-Healing", () => {
       status: "valid"
     })
 
+    const layer = makeTestLayer(db)
     // Simulate failed self-healing - content changed too much
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -1049,6 +1069,8 @@ describe("Anchor Invalidation - Self-Healing", () => {
   })
 
   it("successful self-healing logs with high similarity score", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for self-healing")
     const anchorId = createTestAnchorDirect(db, learningId, {
       anchorType: "hash",
       filePath: FIXTURES.FILE_EXISTS,
@@ -1056,6 +1078,7 @@ describe("Anchor Invalidation - Self-Healing", () => {
       status: "valid"
     })
 
+    const layer = makeTestLayer(db)
     // Simulate successful self-healing
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -1091,10 +1114,21 @@ describe("Anchor Invalidation - Self-Healing", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Swarm Verification", () => {
-  it("verifyAll handles large number of anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("verifyAll handles large number of anchors", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1120,7 +1154,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
         }
 
         return yield* anchorSvc.verifyAll()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.total).toBe(20)
@@ -1129,8 +1163,6 @@ describe("Anchor Invalidation - Swarm Verification", () => {
   })
 
   it("verifyAnchorsForFile handles multiple anchors per file", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
     const targetFile = "src/multi-anchor-file.ts"
 
     const result = await Effect.runPromise(
@@ -1174,7 +1206,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
         })
 
         return yield* anchorSvc.verifyAnchorsForFile(targetFile)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.total).toBe(4)
@@ -1183,9 +1215,6 @@ describe("Anchor Invalidation - Swarm Verification", () => {
   })
 
   it("findDrifted returns anchors that need review", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const drifted = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1225,7 +1254,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
         yield* anchorSvc.updateAnchorStatus(4, "invalid")
 
         return yield* anchorSvc.findDrifted()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(drifted).toHaveLength(2)
@@ -1233,9 +1262,6 @@ describe("Anchor Invalidation - Swarm Verification", () => {
   })
 
   it("findInvalid returns soft-deleted anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const invalid = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1275,7 +1301,7 @@ describe("Anchor Invalidation - Swarm Verification", () => {
         yield* anchorSvc.updateAnchorStatus(4, "drifted")
 
         return yield* anchorSvc.findInvalid()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(invalid).toHaveLength(2)
@@ -1288,26 +1314,30 @@ describe("Anchor Invalidation - Swarm Verification", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Git Hook Integration", () => {
-  let db: Database
-  let layer: ReturnType<typeof makeTestLayer>
+  let shared: SharedTestLayerResult
   let learningId: number
 
-  beforeEach(() => {
-    db = createTestDb()
-    layer = makeTestLayer(db)
-    learningId = createTestLearning(db, "Test learning for git hooks")
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("invalidation supports git_hook as detection source", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for git hooks")
     const anchorId = createTestAnchorDirect(db, learningId, {
       filePath: "changed-by-commit.ts",
       status: "valid"
     })
 
+    const layer = makeTestLayer(db)
     await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* AnchorRepository
@@ -1333,6 +1363,9 @@ describe("Anchor Invalidation - Git Hook Integration", () => {
   })
 
   it("findByFilePath enables targeted post-commit verification", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for git hooks")
+
     // Simulate files changed in a commit
     const changedFiles = [
       "src/services/auth.ts",
@@ -1348,6 +1381,7 @@ describe("Anchor Invalidation - Git Hook Integration", () => {
     // Also create anchors for unrelated files
     createTestAnchorDirect(db, learningId, { filePath: "src/unrelated.ts" })
 
+    const layer = makeTestLayer(db)
     // Verify only changed files (simulating git hook)
     let totalVerified = 0
     for (const file of changedFiles) {
@@ -1364,6 +1398,9 @@ describe("Anchor Invalidation - Git Hook Integration", () => {
   })
 
   it("invalidation supports all detection sources", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for git hooks")
+
     const sources: Array<"periodic" | "lazy" | "manual" | "agent" | "git_hook"> = [
       "periodic",
       "lazy",
@@ -1372,6 +1409,7 @@ describe("Anchor Invalidation - Git Hook Integration", () => {
       "git_hook"
     ]
 
+    const layer = makeTestLayer(db)
     for (const source of sources) {
       const anchorId = createTestAnchorDirect(db, learningId, {
         filePath: `file-${source}.ts`,
@@ -1410,26 +1448,30 @@ describe("Anchor Invalidation - Git Hook Integration", () => {
 // =============================================================================
 
 describe("Anchor Invalidation - Stale Detection Metrics", () => {
-  let db: Database
-  let layer: ReturnType<typeof makeTestLayer>
+  let shared: SharedTestLayerResult
   let learningId: number
 
-  beforeEach(() => {
-    db = createTestDb()
-    layer = makeTestLayer(db)
-    learningId = createTestLearning(db, "Test learning for metrics")
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
   })
 
-  afterEach(() => {
-    db.close()
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("status changes are tracked accurately in audit log", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for metrics")
     const anchorId = createTestAnchorDirect(db, learningId, {
       filePath: "tracked.ts",
       status: "valid"
     })
 
+    const layer = makeTestLayer(db)
     // Simulate lifecycle: valid -> drifted -> invalid -> restored (valid)
     const statusChanges = [
       { from: "valid", to: "drifted", reason: "content_changed" },
@@ -1482,6 +1524,9 @@ describe("Anchor Invalidation - Stale Detection Metrics", () => {
   })
 
   it("getStatusSummary provides metrics for monitoring", async () => {
+    const db = shared.getDb()
+    learningId = createTestLearning(db, "Test learning for metrics")
+
     // Create a distribution of anchors
     for (let i = 0; i < 10; i++) {
       createTestAnchorDirect(db, learningId, { filePath: `valid-${i}.ts`, status: "valid" })
@@ -1494,6 +1539,7 @@ describe("Anchor Invalidation - Stale Detection Metrics", () => {
     }
     createTestAnchorDirect(db, learningId, { filePath: "pinned.ts", status: "valid", pinned: true })
 
+    const layer = makeTestLayer(db)
     const status = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* AnchorRepository
@@ -1518,10 +1564,21 @@ describe("Anchor Invalidation - Stale Detection Metrics", () => {
 // =============================================================================
 
 describe("Anchor Invalidation via makeAppLayer", () => {
-  it("invalidation workflow via makeAppLayer", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("invalidation workflow via makeAppLayer", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1554,7 +1611,7 @@ describe("Anchor Invalidation via makeAppLayer", () => {
         const finalStatus = yield* anchorSvc.getStatus()
 
         return { invalidated, status, restored, finalStatus }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.invalidated.status).toBe("invalid")

@@ -179,3 +179,71 @@ export const createTestDatabaseLayer = (): Layer.Layer<TestDatabaseService, Erro
     TestDatabaseService,
     Effect.acquireRelease(createTestDatabase(), (db) => db.close())
   )
+
+/**
+ * Wrap a raw bun:sqlite Database as a TestDatabase interface.
+ *
+ * Use this to wrap the singleton test database from getSharedTestLayer()
+ * for use with factories that require a TestDatabase.
+ *
+ * @param db - The raw bun:sqlite Database instance
+ * @returns A TestDatabase wrapper
+ *
+ * @example
+ * ```typescript
+ * import { getSharedTestLayer, wrapDbAsTestDatabase, CandidateFactory } from '@jamesaphoenix/tx-test-utils'
+ *
+ * const shared = await getSharedTestLayer()
+ * const testDb = wrapDbAsTestDatabase(shared.getDb())
+ * const factory = new CandidateFactory(testDb)
+ * ```
+ */
+export const wrapDbAsTestDatabase = (db: Database): TestDatabase => ({
+  db,
+
+  close: () =>
+    Effect.sync(() => {
+      db.close()
+    }),
+
+  reset: () =>
+    Effect.sync(() => {
+      // Get all user tables (exclude sqlite internals, migrations tracking, and FTS tables)
+      const tables = db
+        .prepare(
+          `
+          SELECT name FROM sqlite_master
+          WHERE type='table'
+            AND name NOT LIKE 'sqlite_%'
+            AND name != 'schema_version'
+            AND name NOT LIKE '%_fts'
+            AND name NOT LIKE '%_fts_%'
+            AND name NOT LIKE '%_config'
+        `
+        )
+        .all() as Array<{ name: string }>
+
+      // Disable foreign keys temporarily to allow deletion in any order
+      db.run("PRAGMA foreign_keys = OFF")
+      for (const { name } of tables) {
+        db.exec(`DELETE FROM "${name}"`)
+      }
+      db.run("PRAGMA foreign_keys = ON")
+    }),
+
+  query: <T = unknown>(sql: string, params: unknown[] = []): T[] => {
+    return db.prepare(sql).all(...(params as any[])) as T[]
+  },
+
+  exec: (sql: string): void => {
+    db.exec(sql)
+  },
+
+  run: (sql: string, params: unknown[] = []): SqliteRunResult => {
+    return db.prepare(sql).run(...(params as any[]))
+  },
+
+  transaction: <T>(fn: () => T): T => {
+    return db.transaction(fn)()
+  }
+})

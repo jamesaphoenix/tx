@@ -20,7 +20,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Database } from "bun:sqlite"
 
-import { createTestDb, fixtureId } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepository,
@@ -87,7 +88,7 @@ async function measurePerformance<T>(
  * Create test layer for task/dependency/hierarchy services
  */
 function makeTaskTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as Database)
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
   )
@@ -106,7 +107,7 @@ function makeTaskTestLayer(db: Database) {
  * Create test layer for learning services
  */
 function makeLearningTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as Database)
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -130,7 +131,7 @@ function makeLearningTestLayer(db: Database) {
  * Create test layer for sync services
  */
 function makeSyncTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as Database)
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -159,7 +160,7 @@ function makeSyncTestLayer(db: Database) {
  */
 function seedBulkTasks(db: Database, count: number, prefix: string = "bulk"): TaskId[] {
   const now = new Date().toISOString()
-  const insert = db.prepare(
+  const insert = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
@@ -182,7 +183,7 @@ function seedBulkTasks(db: Database, count: number, prefix: string = "bulk"): Ta
  */
 function seedBulkLearnings(db: Database, count: number): number[] {
   const now = new Date().toISOString()
-  const insert = db.prepare(
+  const insert = db.db.prepare(
     `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category)
      VALUES (?, ?, ?, ?, ?, ?)`
   )
@@ -213,7 +214,7 @@ function seedBulkLearnings(db: Database, count: number): number[] {
  */
 function seedDeepHierarchy(db: Database, depth: number): TaskId[] {
   const now = new Date().toISOString()
-  const insert = db.prepare(
+  const insert = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
@@ -237,11 +238,11 @@ function seedDeepHierarchy(db: Database, depth: number): TaskId[] {
  */
 function seedDeepDependencyChain(db: Database, depth: number): TaskId[] {
   const now = new Date().toISOString()
-  const insertTask = db.prepare(
+  const insertTask = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-  const insertDep = db.prepare(
+  const insertDep = db.db.prepare(
     `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
   )
 
@@ -286,12 +287,12 @@ function cleanupTempFile(path: string): void {
 // =============================================================================
 
 describe.skipIf(SKIP_STRESS)("Stress: TaskRepository.findByIds", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTaskTestLayer>
   let taskIds: TaskId[]
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTaskTestLayer(db)
     taskIds = seedBulkTasks(db, 1000, "findbyids")
   })
@@ -370,11 +371,11 @@ describe.skipIf(SKIP_STRESS)("Stress: TaskRepository.findByIds", () => {
 })
 
 describe.skipIf(SKIP_STRESS)("Stress: BM25 Search with 10,000+ learnings", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeLearningTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeLearningTestLayer(db)
     seedBulkLearnings(db, 10000)
   })
@@ -434,12 +435,12 @@ describe.skipIf(SKIP_STRESS)("Stress: BM25 Search with 10,000+ learnings", () =>
 })
 
 describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeSyncTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeSyncTestLayer(db)
     tempPath = createTempJsonlPath()
   })
@@ -473,7 +474,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
 
   it("imports 5000 tasks within threshold", async () => {
     // First export tasks from a seeded database
-    const sourceDb = createTestDb()
+    const sourceDb = await Effect.runPromise(createTestDatabase())
     const sourceLayer = makeSyncTestLayer(sourceDb)
     seedBulkTasks(sourceDb, 5000, "sync-import")
 
@@ -514,7 +515,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
     const ids = seedBulkTasks(db, 1000, "sync-deps")
 
     // Add some dependencies (every 10th task blocks the next)
-    const insertDep = db.prepare(
+    const insertDep = db.db.prepare(
       `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
     )
     const now = new Date().toISOString()
@@ -538,12 +539,12 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
 })
 
 describe.skipIf(SKIP_STRESS)("Stress: Deep Dependency Chains (100+ levels)", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTaskTestLayer>
   let chainIds: TaskId[]
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTaskTestLayer(db)
     chainIds = seedDeepDependencyChain(db, 100)
   })
@@ -588,7 +589,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Deep Dependency Chains (100+ levels)", () 
 
   it("completing blockers propagates through chain", async () => {
     // Complete first 50 tasks
-    const completeStmt = db.prepare(
+    const completeStmt = db.db.prepare(
       "UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?"
     )
     const now = new Date().toISOString()
@@ -615,12 +616,12 @@ describe.skipIf(SKIP_STRESS)("Stress: Deep Dependency Chains (100+ levels)", () 
 })
 
 describe.skipIf(SKIP_STRESS)("Stress: Deep Hierarchy (100+ levels)", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTaskTestLayer>
   let hierarchyIds: TaskId[]
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTaskTestLayer(db)
     hierarchyIds = seedDeepHierarchy(db, 100)
   })
@@ -752,12 +753,12 @@ describe.skipIf(SKIP_STRESS)("Stress: Batch Embedding Generation", () => {
 })
 
 describe.skipIf(SKIP_STRESS)("Stress: Combined Operations", () => {
-  let db: Database
+  let db: TestDatabase
   let taskLayer: ReturnType<typeof makeTaskTestLayer>
   let learningLayer: ReturnType<typeof makeLearningTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     taskLayer = makeTaskTestLayer(db)
     learningLayer = makeLearningTestLayer(db)
   })

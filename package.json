@@ -47,7 +47,8 @@
     "check": "./scripts/check.sh --all",
     "check:quick": "./scripts/check.sh --quick",
     "check:ci": "./scripts/check-ci.sh",
-    "validate": "bun run build && bun test && bun link"
+    "validate": "bun run build && bun test && bun link",
+    "prepare": "husky"
   },
   "dependencies": {
     "@effect/cli": "^0.73.1",
@@ -64,6 +65,7 @@
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",
+    "husky": "^9.1.7",
     "mdast-util-to-string": "^4.0.0",
     "remark-cli": "^12.0.1",
     "remark-frontmatter": "^5.0.0",

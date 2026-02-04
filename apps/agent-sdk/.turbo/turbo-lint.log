@@ -1,7 +1,4 @@
-
-> @tx/agent-sdk@0.1.0 lint
-> eslint src/
-
+$ eslint src/
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/agent-sdk/src/client.ts
   314:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')

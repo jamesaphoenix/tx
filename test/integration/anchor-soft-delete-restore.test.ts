@@ -11,12 +11,22 @@
  * 5. hardDelete() actually removes record
  * 6. Cannot restore anchor that was never invalidated (graceful handling)
  *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ *
  * @see docs/prd/PRD-017-invalidation-maintenance.md
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import {
+  AnchorService,
+  AnchorRepository,
+  LearningService
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs for determinism)
@@ -44,10 +54,21 @@ const FIXTURES = {
 // =============================================================================
 
 describe("Soft Delete - remove() marks as invalid", () => {
-  it("remove() sets anchor status to 'invalid' instead of deleting", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("remove() sets anchor status to 'invalid' instead of deleting", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -73,7 +94,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
         const anchor = yield* anchorSvc.get(1)
 
         return { removed, anchor }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // The anchor should still exist
@@ -84,9 +105,6 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() preserves anchor data after soft delete", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -112,7 +130,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
         const afterRemove = yield* anchorSvc.get(original.id)
 
         return { original, afterRemove }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // All original data should be preserved
@@ -126,9 +144,6 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() from valid status changes to invalid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -150,7 +165,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
         const afterRemove = yield* anchorSvc.remove(1)
 
         return { beforeRemove, afterRemove }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.beforeRemove.status).toBe("valid")
@@ -158,9 +173,6 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() from drifted status changes to invalid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -186,7 +198,7 @@ describe("Soft Delete - remove() marks as invalid", () => {
         const afterRemove = yield* anchorSvc.remove(1)
 
         return { beforeRemove, afterRemove }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.beforeRemove.status).toBe("drifted")
@@ -194,14 +206,11 @@ describe("Soft Delete - remove() marks as invalid", () => {
   })
 
   it("remove() fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.remove(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -216,10 +225,21 @@ describe("Soft Delete - remove() marks as invalid", () => {
 // =============================================================================
 
 describe("Soft Delete - remove() logs to invalidation_log", () => {
-  it("remove() creates invalidation_log entry", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("remove() creates invalidation_log entry", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -241,7 +261,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
 
         // Check status which returns recent invalidation logs
         return yield* anchorSvc.getStatus()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.recentInvalidations.length).toBeGreaterThan(0)
@@ -253,9 +273,6 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
   })
 
   it("remove() logs with detected_by='manual'", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -278,7 +295,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
 
         // Get logs directly from repo
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.length).toBe(1)
@@ -286,9 +303,6 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
   })
 
   it("remove() logs preserve old_content_hash when present", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -311,7 +325,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
         yield* anchorSvc.remove(1, "Test with content hash")
 
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.length).toBe(1)
@@ -319,9 +333,6 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
   })
 
   it("remove() uses default reason when none provided", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -344,7 +355,7 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
         yield* anchorSvc.remove(1)
 
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.length).toBe(1)
@@ -357,10 +368,21 @@ describe("Soft Delete - remove() logs to invalidation_log", () => {
 // =============================================================================
 
 describe("Restore - restore() reverts status", () => {
-  it("restore() changes status from invalid to valid", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("restore() changes status from invalid to valid", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -386,7 +408,7 @@ describe("Restore - restore() reverts status", () => {
         const restored = yield* anchorSvc.restore(1)
 
         return { afterRemove, restored }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.afterRemove.status).toBe("invalid")
@@ -394,9 +416,6 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() restores to old_status from invalidation log", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -426,7 +445,7 @@ describe("Restore - restore() reverts status", () => {
         const restored = yield* anchorSvc.restore(1)
 
         return { asDrifted, asInvalid, restored }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.asDrifted.status).toBe("drifted")
@@ -435,9 +454,6 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() updates verifiedAt timestamp", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -461,7 +477,7 @@ describe("Restore - restore() reverts status", () => {
         const restored = yield* anchorSvc.restore(1)
 
         return { original, restored }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.original.verifiedAt).toBeNull()
@@ -469,9 +485,6 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() restores old_content_hash when available", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -516,7 +529,7 @@ describe("Restore - restore() reverts status", () => {
         const restored = yield* anchorSvc.restore(1)
 
         return { original, invalidated, restored }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.original.contentHash).toBe(FIXTURES.CONTENT_HASH)
@@ -525,14 +538,11 @@ describe("Restore - restore() reverts status", () => {
   })
 
   it("restore() fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.restore(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -547,10 +557,21 @@ describe("Restore - restore() reverts status", () => {
 // =============================================================================
 
 describe("Restore - restore() logs action", () => {
-  it("restore() creates invalidation_log entry", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("restore() creates invalidation_log entry", async () => {
     const logs = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -573,7 +594,7 @@ describe("Restore - restore() logs action", () => {
         yield* anchorSvc.restore(1)
 
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should have 2 logs: invalidation and restore
@@ -586,9 +607,6 @@ describe("Restore - restore() logs action", () => {
   })
 
   it("restore() logs with detected_by='manual'", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const logs = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -612,7 +630,7 @@ describe("Restore - restore() logs action", () => {
         yield* anchorSvc.restore(1)
 
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Restore log should always use 'manual' as detectedBy
@@ -625,9 +643,6 @@ describe("Restore - restore() logs action", () => {
   })
 
   it("restore() log includes reason mentioning old status", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const logs = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -650,7 +665,7 @@ describe("Restore - restore() logs action", () => {
         yield* anchorSvc.restore(1)
 
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     const restoreLog = logs[0]
@@ -663,10 +678,21 @@ describe("Restore - restore() logs action", () => {
 // =============================================================================
 
 describe("Hard Delete - hardDelete() removes record", () => {
-  it("hardDelete() permanently removes anchor from database", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("hardDelete() permanently removes anchor from database", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -692,7 +718,7 @@ describe("Hard Delete - hardDelete() removes record", () => {
 
         // Try to get anchor - should fail
         return yield* anchorSvc.get(1).pipe(Effect.either)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result._tag).toBe("Left")
@@ -702,9 +728,6 @@ describe("Hard Delete - hardDelete() removes record", () => {
   })
 
   it("hardDelete() differs from remove() - record is gone", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -741,7 +764,7 @@ describe("Hard Delete - hardDelete() removes record", () => {
         const hardDeletedResult = yield* anchorSvc.get(2).pipe(Effect.either)
 
         return { softDeleted, hardDeletedResult }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Soft deleted anchor is still accessible
@@ -753,14 +776,11 @@ describe("Hard Delete - hardDelete() removes record", () => {
   })
 
   it("hardDelete() fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.hardDelete(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -770,9 +790,6 @@ describe("Hard Delete - hardDelete() removes record", () => {
   })
 
   it("hardDelete() works on already-invalidated anchors", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -798,7 +815,7 @@ describe("Hard Delete - hardDelete() removes record", () => {
 
         // Should be gone
         return yield* anchorSvc.get(1).pipe(Effect.either)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result._tag).toBe("Left")
@@ -810,10 +827,21 @@ describe("Hard Delete - hardDelete() removes record", () => {
 // =============================================================================
 
 describe("Restore - anchor never invalidated", () => {
-  it("restore() on valid anchor defaults to valid (graceful handling)", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("restore() on valid anchor defaults to valid (graceful handling)", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -837,7 +865,7 @@ describe("Restore - anchor never invalidated", () => {
         const afterRestore = yield* anchorSvc.restore(1)
 
         return { beforeRestore, afterRestore }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Anchor was already valid, restore keeps it valid
@@ -846,9 +874,6 @@ describe("Restore - anchor never invalidated", () => {
   })
 
   it("restore() on never-invalidated anchor logs with 'Manual restoration' reason", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const logs = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -871,7 +896,7 @@ describe("Restore - anchor never invalidated", () => {
         yield* anchorSvc.restore(1)
 
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should create a restore log even without prior invalidation
@@ -882,9 +907,6 @@ describe("Restore - anchor never invalidated", () => {
   })
 
   it("restore() on drifted (never invalidated) anchor restores to valid by default", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -910,7 +932,7 @@ describe("Restore - anchor never invalidated", () => {
         const afterRestore = yield* anchorSvc.restore(1)
 
         return { beforeRestore, afterRestore }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.beforeRestore.status).toBe("drifted")
@@ -919,9 +941,6 @@ describe("Restore - anchor never invalidated", () => {
   })
 
   it("restore() updates verifiedAt even on never-invalidated anchor", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -944,7 +963,7 @@ describe("Restore - anchor never invalidated", () => {
         const after = yield* anchorSvc.get(1)
 
         return { before, after }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.before.verifiedAt).toBeNull()
@@ -957,10 +976,21 @@ describe("Restore - anchor never invalidated", () => {
 // =============================================================================
 
 describe("Integration - Full Lifecycle", () => {
-  it("complete lifecycle: create -> remove -> restore -> hardDelete", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("complete lifecycle: create -> remove -> restore -> hardDelete", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -994,7 +1024,7 @@ describe("Integration - Full Lifecycle", () => {
         expect(checkDeleted._tag).toBe("Left")
 
         return { created, removed, restored, checkDeleted }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.created.status).toBe("valid")
@@ -1004,9 +1034,6 @@ describe("Integration - Full Lifecycle", () => {
   })
 
   it("multiple soft delete / restore cycles maintain correct logs", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const logs = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1034,7 +1061,7 @@ describe("Integration - Full Lifecycle", () => {
         yield* anchorSvc.restore(1)
 
         return yield* anchorRepo.getInvalidationLogs(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should have 4 log entries: invalidate, restore, invalidate, restore

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -19,10 +20,9 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive
 } from "@jamesaphoenix/tx-core"
-import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -49,11 +49,11 @@ function makeTestLayer(db: Database) {
 }
 
 describe("Learning CRUD", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -133,11 +133,11 @@ describe("Learning CRUD", () => {
 })
 
 describe("Learning BM25 Search", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -189,11 +189,11 @@ describe("Learning BM25 Search", () => {
 })
 
 describe("Learning Usage and Outcome Tracking", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -240,7 +240,7 @@ describe("Learning Usage and Outcome Tracking", () => {
 
   it("incrementUsageMany batch updates multiple learnings", async () => {
     // Build a layer that exposes the repository directly
-    const infra = Layer.succeed(SqliteClient, db as any)
+    const infra = Layer.succeed(SqliteClient, db.db as any)
     const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
 
     const learnings = await Effect.runPromise(
@@ -276,7 +276,7 @@ describe("Learning Usage and Outcome Tracking", () => {
   })
 
   it("incrementUsageMany handles empty array gracefully", async () => {
-    const infra = Layer.succeed(SqliteClient, db as any)
+    const infra = Layer.succeed(SqliteClient, db.db as any)
     const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
 
     // Should not throw when given empty array
@@ -289,7 +289,7 @@ describe("Learning Usage and Outcome Tracking", () => {
   })
 
   it("incrementUsageMany increments usage for same ID multiple times in batch", async () => {
-    const infra = Layer.succeed(SqliteClient, db as any)
+    const infra = Layer.succeed(SqliteClient, db.db as any)
     const repoLayer = LearningRepositoryLive.pipe(Layer.provide(infra))
 
     const learning = await Effect.runPromise(
@@ -315,11 +315,11 @@ describe("Learning Usage and Outcome Tracking", () => {
 })
 
 describe("Context for Task", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -377,11 +377,11 @@ describe("Context for Task", () => {
 })
 
 describe("Hybrid Scoring", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -414,11 +414,11 @@ describe("Hybrid Scoring", () => {
 })
 
 describe("RRF Hybrid Search", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })

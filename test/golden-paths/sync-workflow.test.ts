@@ -36,15 +36,14 @@ import {
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
-import { fixtureId } from "@jamesaphoenix/tx-test-utils"
-import { createTestDb } from "../fixtures.js"
+import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 
 // =============================================================================
 // Test Layer Factory
 // =============================================================================
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as Database)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -102,12 +101,12 @@ function cleanupTempFile(path: string): void {
 // =============================================================================
 
 describe("Golden Path: Basic Export/Import", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
@@ -154,7 +153,7 @@ describe("Golden Path: Basic Export/Import", () => {
   })
 
   it("import restores tasks from JSONL", async () => {
-    const targetDb = createTestDb()
+    const targetDb = await Effect.runPromise(createTestDatabase())
     const targetLayer = makeTestLayer(targetDb)
 
     // Create and export tasks from source
@@ -195,15 +194,15 @@ describe("Golden Path: Basic Export/Import", () => {
 // =============================================================================
 
 describe("Golden Path: Round-Trip Preservation", () => {
-  let sourceDb: Database
-  let targetDb: Database
+  let sourceDb: TestDatabase
+  let targetDb: TestDatabase
   let sourceLayer: ReturnType<typeof makeTestLayer>
   let targetLayer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    sourceDb = createTestDb()
-    targetDb = createTestDb()
+  beforeEach(async () => {
+    sourceDb = await Effect.runPromise(createTestDatabase())
+    targetDb = await Effect.runPromise(createTestDatabase())
     sourceLayer = makeTestLayer(sourceDb)
     targetLayer = makeTestLayer(targetDb)
     tempPath = createTempJsonlPath()
@@ -350,12 +349,12 @@ describe("Golden Path: Round-Trip Preservation", () => {
 // =============================================================================
 
 describe("Golden Path: Conflict Resolution", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
@@ -365,8 +364,7 @@ describe("Golden Path: Conflict Resolution", () => {
   })
 
   it("newer JSONL timestamp wins over older local data", async () => {
-    const now = new Date().toISOString()
-    const insert = db.prepare(
+    const insert = db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -411,7 +409,7 @@ describe("Golden Path: Conflict Resolution", () => {
   })
 
   it("older JSONL timestamp reports conflict", async () => {
-    const insert = db.prepare(
+    const insert = db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -461,12 +459,12 @@ describe("Golden Path: Conflict Resolution", () => {
 // =============================================================================
 
 describe("Golden Path: Status and Compact", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })

@@ -10,10 +10,42 @@
  * - @tx/api-server imports @tx/core correctly
  * - @tx/agent-sdk imports @tx/types correctly
  * - All packages resolve workspace dependencies
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import core services at module level
+import {
+  TaskService,
+  ReadyService,
+  DependencyService,
+  HierarchyService,
+  LearningService,
+  SyncService,
+  TaskNotFoundError,
+  ValidationError,
+  CircularDependencyError,
+  DatabaseError,
+  SqliteClient,
+  makeSqliteClient,
+  applyMigrations,
+  getSchemaVersion,
+  generateTaskId,
+  fixtureId,
+  TaskRepository,
+  TaskRepositoryLive,
+  DependencyRepository,
+  LearningRepository,
+  rowToTask,
+  rowToLearning,
+  rowToAttempt,
+  isValidStatus,
+  makeAppLayer
+} from "@jamesaphoenix/tx-core"
 
 describe("Package Resolution: @tx/types", () => {
   it("exports TaskStatus type constants", async () => {
@@ -53,96 +85,89 @@ describe("Package Resolution: @tx/types", () => {
 })
 
 describe("Package Resolution: @tx/core", () => {
-  it("exports makeAppLayer for Effect service composition", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
+  let shared: SharedTestLayerResult
 
-    expect(core.makeAppLayer).toBeDefined()
-    expect(typeof core.makeAppLayer).toBe("function")
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
   })
 
-  it("exports all Effect service tags", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
-
-    expect(core.TaskService).toBeDefined()
-    expect(core.ReadyService).toBeDefined()
-    expect(core.DependencyService).toBeDefined()
-    expect(core.HierarchyService).toBeDefined()
-    expect(core.LearningService).toBeDefined()
-    expect(core.SyncService).toBeDefined()
+  afterEach(async () => {
+    await shared.reset()
   })
 
-  it("exports error types", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
-
-    expect(core.TaskNotFoundError).toBeDefined()
-    expect(core.ValidationError).toBeDefined()
-    expect(core.CircularDependencyError).toBeDefined()
-    expect(core.DatabaseError).toBeDefined()
+  afterAll(async () => {
+    await shared.close()
   })
 
-  it("exports database utilities", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
-
-    expect(core.SqliteClient).toBeDefined()
-    expect(core.makeSqliteClient).toBeDefined()
-    expect(core.applyMigrations).toBeDefined()
-    expect(core.getSchemaVersion).toBeDefined()
+  it("exports makeAppLayer for Effect service composition", () => {
+    expect(makeAppLayer).toBeDefined()
+    expect(typeof makeAppLayer).toBe("function")
   })
 
-  it("exports ID generation utilities", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
+  it("exports all Effect service tags", () => {
+    expect(TaskService).toBeDefined()
+    expect(ReadyService).toBeDefined()
+    expect(DependencyService).toBeDefined()
+    expect(HierarchyService).toBeDefined()
+    expect(LearningService).toBeDefined()
+    expect(SyncService).toBeDefined()
+  })
 
-    expect(core.generateTaskId).toBeDefined()
-    expect(core.fixtureId).toBeDefined()
+  it("exports error types", () => {
+    expect(TaskNotFoundError).toBeDefined()
+    expect(ValidationError).toBeDefined()
+    expect(CircularDependencyError).toBeDefined()
+    expect(DatabaseError).toBeDefined()
+  })
+
+  it("exports database utilities", () => {
+    expect(SqliteClient).toBeDefined()
+    expect(makeSqliteClient).toBeDefined()
+    expect(applyMigrations).toBeDefined()
+    expect(getSchemaVersion).toBeDefined()
+  })
+
+  it("exports ID generation utilities", () => {
+    expect(generateTaskId).toBeDefined()
+    expect(fixtureId).toBeDefined()
 
     // Verify fixtureId is deterministic
-    const id1 = core.fixtureId("test-task")
-    const id2 = core.fixtureId("test-task")
+    const id1 = fixtureId("test-task")
+    const id2 = fixtureId("test-task")
     expect(id1).toBe(id2)
     expect(id1).toMatch(/^tx-[a-z0-9]{8}$/)
   })
 
-  it("exports repository implementations", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
-
-    expect(core.TaskRepository).toBeDefined()
-    expect(core.TaskRepositoryLive).toBeDefined()
-    expect(core.DependencyRepository).toBeDefined()
-    expect(core.LearningRepository).toBeDefined()
+  it("exports repository implementations", () => {
+    expect(TaskRepository).toBeDefined()
+    expect(TaskRepositoryLive).toBeDefined()
+    expect(DependencyRepository).toBeDefined()
+    expect(LearningRepository).toBeDefined()
   })
 
-  it("exports mappers for data transformation", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
-
-    expect(core.rowToTask).toBeDefined()
-    expect(core.rowToLearning).toBeDefined()
-    expect(core.rowToAttempt).toBeDefined()
-    expect(core.isValidStatus).toBeDefined()
+  it("exports mappers for data transformation", () => {
+    expect(rowToTask).toBeDefined()
+    expect(rowToLearning).toBeDefined()
+    expect(rowToAttempt).toBeDefined()
+    expect(isValidStatus).toBeDefined()
   })
 
-  it("can create an in-memory database layer", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
-
-    // Create layer with in-memory database
-    const layer = core.makeAppLayer(":memory:")
-    expect(layer).toBeDefined()
+  it("can create an in-memory database layer", () => {
+    // Use the shared layer which is already an in-memory database
+    expect(shared.layer).toBeDefined()
 
     // Verify it's a valid Effect Layer
-    expect(Layer.isLayer(layer)).toBe(true)
+    expect(Layer.isLayer(shared.layer)).toBe(true)
   })
 
   it("can run effects against the layer", async () => {
-    const core = await import("@jamesaphoenix/tx-core")
-
-    const layer = core.makeAppLayer(":memory:")
-
     // Run a simple effect to verify services work
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const taskService = yield* core.TaskService
+        const taskService = yield* TaskService
         const tasks = yield* taskService.list()
         return tasks.length
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBe(0) // Empty database

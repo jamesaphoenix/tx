@@ -11,7 +11,8 @@ import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 import { z } from "zod"
 
-import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -67,12 +68,12 @@ export interface ParsedMcpResponse<T = unknown> {
  * Creates a ManagedRuntime configured with an in-memory test database.
  * Each call creates a fresh runtime with isolated state.
  *
- * @param db - Pre-configured Database instance (from createTestDb)
+ * @param db - Pre-configured TestDatabase instance (from createTestDatabase)
  * @returns ManagedRuntime ready to execute MCP tool Effects
  */
- 
-export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
-  const infra = Layer.succeed(SqliteClient, db as Database)
+
+export function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
 
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -741,11 +742,11 @@ export async function callMcpToolParsed<T extends ToolName, R = unknown>(
 // -----------------------------------------------------------------------------
 
 describe("MCP Test Infrastructure", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -770,7 +771,7 @@ describe("MCP Test Infrastructure", () => {
 
     it("provides isolated state per runtime instance", async () => {
       // Create a second runtime with fresh db
-      const db2 = createTestDb()
+      const db2 = await Effect.runPromise(createTestDatabase())
       // Don't seed - should be empty
       const runtime2 = makeTestRuntime(db2)
 
@@ -834,11 +835,11 @@ describe("MCP Test Infrastructure", () => {
 })
 
 describe("MCP tx_ready Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -965,11 +966,11 @@ describe("MCP tx_ready Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_show Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1099,11 +1100,11 @@ describe("MCP tx_show Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_list Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1207,11 +1208,11 @@ describe("MCP tx_list Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_children Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1288,11 +1289,11 @@ describe("MCP tx_children Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_add Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1412,11 +1413,11 @@ describe("MCP tx_add Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_update Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1529,11 +1530,11 @@ describe("MCP tx_update Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_done Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1650,11 +1651,11 @@ describe("MCP tx_done Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_delete Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1718,11 +1719,11 @@ describe("MCP tx_delete Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_block Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1844,11 +1845,11 @@ describe("MCP tx_block Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_unblock Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -1942,11 +1943,11 @@ describe("MCP tx_unblock Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_add Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -2066,11 +2067,11 @@ describe("MCP tx_learning_add Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_search Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -2212,11 +2213,11 @@ describe("MCP tx_learning_search Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_helpful Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -2356,11 +2357,11 @@ describe("MCP tx_learning_helpful Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_context Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -2550,11 +2551,11 @@ describe("MCP tx_context Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learn Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })
@@ -2744,11 +2745,11 @@ describe("MCP tx_learn Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_recall Tool", () => {
-  let db: Database
+  let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     runtime = makeTestRuntime(db)
   })

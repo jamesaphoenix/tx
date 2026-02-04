@@ -14,7 +14,8 @@
  */
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDb, seedFixtures } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -32,10 +33,9 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive
 } from "@jamesaphoenix/tx-core"
-import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -68,7 +68,7 @@ function insertLearningWithTimestamp(
   createdAt: Date,
   options: { usageCount?: number; outcomeScore?: number | null } = {}
 ): number {
-  const result = db.prepare(
+  const result = db.db.prepare(
     `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category, usage_count, outcome_score)
      VALUES (?, 'manual', NULL, ?, NULL, NULL, ?, ?)`
   ).run(
@@ -95,11 +95,11 @@ function hoursAgo(hours: number): Date {
 }
 
 describe("BM25 Scoring Isolation", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -211,11 +211,11 @@ describe("BM25 Scoring Isolation", () => {
 })
 
 describe("Recency Scoring Isolation", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -319,11 +319,11 @@ describe("Recency Scoring Isolation", () => {
 })
 
 describe("Outcome Boost Isolation", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -443,11 +443,11 @@ describe("Outcome Boost Isolation", () => {
 })
 
 describe("Frequency Boost Isolation", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -580,10 +580,10 @@ describe("Frequency Boost Isolation", () => {
 })
 
 describe("Weight Sensitivity", () => {
-  let db: Database
+  let db: TestDatabase
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
   })
 
@@ -593,11 +593,11 @@ describe("Weight Sensitivity", () => {
    */
   function makeLayerWithRecencyWeight(db: Database, recencyWeight: number) {
     // Insert or update the recency_weight config
-    db.prepare(`
+    db.db.prepare(`
       INSERT OR REPLACE INTO learnings_config (key, value) VALUES ('recency_weight', ?)
     `).run(recencyWeight.toString())
 
-    const infra = Layer.succeed(SqliteClient, db as any)
+    const infra = Layer.succeed(SqliteClient, db.db as any)
     const repos = Layer.mergeAll(
       TaskRepositoryLive,
       DependencyRepositoryLive,
@@ -729,11 +729,11 @@ describe("Weight Sensitivity", () => {
 })
 
 describe("Combined Scoring Components", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })

@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDb, fixtureId } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TracingService,
   TracingServiceLive,
   TracingServiceNoop
 } from "@jamesaphoenix/tx-core"
-import type { Database } from "bun:sqlite"
 
 /**
  * Integration tests for TracingService - PRD-019 execution tracing.
@@ -25,23 +25,23 @@ const FIXTURE_RUN_ID_2 = fixtureId("tracing-run-2")
  * Required because events.run_id has a foreign key constraint to runs(id).
  */
 function createRunRecord(db: Database, runId: string): void {
-  db.prepare(`
+  db.db.prepare(`
     INSERT INTO runs (id, agent, started_at, status)
     VALUES (?, 'test-agent', datetime('now'), 'running')
   `).run(runId)
 }
 
 function makeTracingLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   return TracingServiceLive.pipe(Layer.provide(infra))
 }
 
 describe("TracingServiceLive Integration", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: Layer.Layer<TracingService, never, never>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTracingLayer(db)
   })
 
@@ -62,7 +62,7 @@ describe("TracingServiceLive Integration", () => {
       expect(result).toBe(42)
 
       // Check events table
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
       expect(events).toHaveLength(1)
       expect(events[0].content).toBe("test.operation")
       expect(events[0].duration_ms).toBeGreaterThanOrEqual(0)
@@ -91,7 +91,7 @@ describe("TracingServiceLive Integration", () => {
       expect(result._tag).toBe("Left")
 
       // Check events table for error span
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
       expect(events).toHaveLength(1)
       expect(events[0].content).toBe("failing.operation")
 
@@ -117,7 +117,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
       expect(events).toHaveLength(1)
       // Duration should be at least the delay (with some tolerance)
       expect(events[0].duration_ms).toBeGreaterThanOrEqual(delay - 10)
@@ -141,7 +141,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
       const metadata = JSON.parse(events[0].metadata)
 
       expect(metadata.attributes.stringAttr).toBe("hello")
@@ -165,7 +165,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'span' ORDER BY id").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'span' ORDER BY id").all() as any[]
       expect(events).toHaveLength(2)
 
       // Inner span should complete first
@@ -183,7 +183,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'metric'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'metric'").all() as any[]
       expect(events).toHaveLength(1)
       expect(events[0].content).toBe("task.count")
       expect(events[0].duration_ms).toBe(42) // Value stored in duration_ms
@@ -202,7 +202,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'metric'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'metric'").all() as any[]
       expect(events).toHaveLength(1)
 
       const metadata = JSON.parse(events[0].metadata)
@@ -220,7 +220,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'metric' ORDER BY id").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'metric' ORDER BY id").all() as any[]
       expect(events).toHaveLength(3)
       expect(events.map((e: any) => e.content)).toEqual(["metric.one", "metric.two", "metric.three"])
       expect(events.map((e: any) => e.duration_ms)).toEqual([10, 20, 30])
@@ -242,7 +242,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'span'").all() as any[]
       expect(events).toHaveLength(1)
       expect(events[0].run_id).toBe(FIXTURE_RUN_ID)
     })
@@ -261,7 +261,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'metric'").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'metric'").all() as any[]
       expect(events).toHaveLength(1)
       expect(events[0].run_id).toBe(FIXTURE_RUN_ID)
     })
@@ -288,7 +288,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'metric' ORDER BY id").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'metric' ORDER BY id").all() as any[]
       expect(events).toHaveLength(3)
 
       // Outer context
@@ -315,7 +315,7 @@ describe("TracingServiceLive Integration", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      const events = db.prepare("SELECT * FROM events WHERE event_type = 'metric' ORDER BY id").all() as any[]
+      const events = db.db.prepare("SELECT * FROM events WHERE event_type = 'metric' ORDER BY id").all() as any[]
       expect(events).toHaveLength(3)
 
       expect(events[0].run_id).toBeNull()
@@ -419,7 +419,7 @@ describe("TracingServiceLive Integration", () => {
       )
 
       // Check all events were recorded
-      const allEvents = db.prepare("SELECT * FROM events ORDER BY id").all() as any[]
+      const allEvents = db.db.prepare("SELECT * FROM events ORDER BY id").all() as any[]
       expect(allEvents.length).toBeGreaterThanOrEqual(5)
 
       // All should have the run context

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDb, seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -18,10 +19,9 @@ import {
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
-import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
   )
@@ -50,22 +50,22 @@ describe("Schema constraints", () => {
     }
   })
 
-  it("self-blocking is prevented by CHECK constraint", () => {
-    const db = createTestDb()
+  it("self-blocking is prevented by CHECK constraint", async () => {
+    const db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     expect(() => {
-      db.prepare(
+      db.db.prepare(
         "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
       ).run(FIXTURES.TASK_JWT, FIXTURES.TASK_JWT, new Date().toISOString())
     }).toThrow()
   })
 
-  it("duplicate dependencies are prevented by UNIQUE constraint", () => {
-    const db = createTestDb()
+  it("duplicate dependencies are prevented by UNIQUE constraint", async () => {
+    const db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     // JWT -> BLOCKED already exists from seed
     expect(() => {
-      db.prepare(
+      db.db.prepare(
         "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
       ).run(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED, new Date().toISOString())
     }).toThrow()
@@ -73,11 +73,11 @@ describe("Schema constraints", () => {
 })
 
 describe("Task CRUD", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -233,11 +233,11 @@ describe("Task CRUD", () => {
 })
 
 describe("Ready detection", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -281,7 +281,7 @@ describe("Ready detection", () => {
 
   it("includes tasks when ALL blockers are done", async () => {
     // Mark both blockers as done
-    db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id IN (?, ?)").run(
+    db.db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id IN (?, ?)").run(
       new Date().toISOString(), FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN
     )
 
@@ -299,7 +299,7 @@ describe("Ready detection", () => {
 
   it("excludes if only SOME blockers are done", async () => {
     // Only mark JWT as done, LOGIN still not done
-    db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?").run(
+    db.db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?").run(
       new Date().toISOString(), FIXTURES.TASK_JWT
     )
 
@@ -376,11 +376,11 @@ describe("Ready detection", () => {
 })
 
 describe("Dependency operations", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -394,7 +394,7 @@ describe("Dependency operations", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    const rows = db.prepare(
+    const rows = db.db.prepare(
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_LOGIN, FIXTURES.TASK_AUTH) as any[]
     expect(rows.length).toBe(1)
@@ -408,7 +408,7 @@ describe("Dependency operations", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    const rows = db.prepare(
+    const rows = db.db.prepare(
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT) as any[]
     expect(rows.length).toBe(0)
@@ -466,7 +466,7 @@ describe("Dependency operations", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    const rows = db.prepare(
+    const rows = db.db.prepare(
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_AUTH, FIXTURES.TASK_ROOT) as any[]
     expect(rows.length).toBe(1)
@@ -474,11 +474,11 @@ describe("Dependency operations", () => {
 })
 
 describe("Hierarchy operations", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -657,11 +657,11 @@ describe("Hierarchy operations", () => {
 })
 
 describe("Score calculations", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -713,7 +713,7 @@ describe("Score calculations", () => {
 
   it("calculate applies blocked penalty for blocked status", async () => {
     // Update a task to blocked status
-    db.prepare("UPDATE tasks SET status = 'blocked' WHERE id = ?").run(FIXTURES.TASK_JWT)
+    db.db.prepare("UPDATE tasks SET status = 'blocked' WHERE id = ?").run(FIXTURES.TASK_JWT)
 
     const score = await Effect.runPromise(
       Effect.gen(function* () {

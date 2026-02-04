@@ -4,13 +4,20 @@
  * Tests the CandidateRepository at the repository layer with full dependency injection.
  * Uses real SQLite database (in-memory) and SHA256-based fixture IDs per Rule 3.
  *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ * Previously created a new database per test, now creates 1 per describe block.
+ *
  * @see PRD-015 for the knowledge promotion pipeline
  * @see DD-007 for testing strategy
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import { CandidateRepository, LearningService } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -36,10 +43,21 @@ const FIXTURES = {
 // =============================================================================
 
 describe("CandidateRepository.insert", () => {
-  it("creates a candidate with required fields", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("creates a candidate with required fields", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -48,7 +66,7 @@ describe("CandidateRepository.insert", () => {
           confidence: "high",
           sourceFile: "src/validation.ts"
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.id).toBe(1)
@@ -67,9 +85,6 @@ describe("CandidateRepository.insert", () => {
   })
 
   it("creates a candidate with all optional fields", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -81,7 +96,7 @@ describe("CandidateRepository.insert", () => {
           sourceRunId: FIXTURES.RUN_1,
           sourceTaskId: FIXTURES.TASK_1
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.id).toBe(1)
@@ -95,9 +110,6 @@ describe("CandidateRepository.insert", () => {
   })
 
   it("auto-increments IDs for multiple inserts", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -119,7 +131,7 @@ describe("CandidateRepository.insert", () => {
         })
 
         return { c1, c2, c3 }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.c1.id).toBe(1)
@@ -129,10 +141,21 @@ describe("CandidateRepository.insert", () => {
 })
 
 describe("CandidateRepository.findById", () => {
-  it("returns candidate by ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("returns candidate by ID", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -144,7 +167,7 @@ describe("CandidateRepository.findById", () => {
         })
 
         return yield* repo.findById(inserted.id)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -153,14 +176,11 @@ describe("CandidateRepository.findById", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
         return yield* repo.findById(999)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeNull()
@@ -172,10 +192,21 @@ describe("CandidateRepository.findById", () => {
 // =============================================================================
 
 describe("CandidateRepository.findByFilter", () => {
-  it("returns all candidates when no filter applied", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("returns all candidates when no filter applied", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -197,30 +228,24 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({})
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(3)
   })
 
   it("returns empty array when no candidates exist", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
         return yield* repo.findByFilter({})
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toEqual([])
   })
 
   it("filters by single status", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -238,7 +263,7 @@ describe("CandidateRepository.findByFilter", () => {
         yield* repo.updateStatus(c2.id, "promoted")
 
         return yield* repo.findByFilter({ status: "pending" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -246,9 +271,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by multiple statuses", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -273,7 +295,7 @@ describe("CandidateRepository.findByFilter", () => {
         yield* repo.updateStatus(c3.id, "rejected")
 
         return yield* repo.findByFilter({ status: ["pending", "promoted"] })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -283,9 +305,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by single confidence level", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -307,7 +326,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({ confidence: "high" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -315,9 +334,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by multiple confidence levels", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -339,7 +355,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({ confidence: ["high", "medium"] })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -349,9 +365,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by single category", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -370,7 +383,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({ category: "security" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -378,9 +391,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by multiple categories", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -405,7 +415,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({ category: ["security", "testing"] })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -415,9 +425,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by sourceFile", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -434,7 +441,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({ sourceFile: "src/db.ts" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -442,9 +449,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by sourceRunId", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -463,7 +467,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({ sourceRunId: FIXTURES.RUN_1 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -471,9 +475,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("filters by sourceTaskId", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -492,7 +493,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({ sourceTaskId: FIXTURES.TASK_1 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -500,9 +501,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("supports pagination with limit", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -516,16 +514,13 @@ describe("CandidateRepository.findByFilter", () => {
         }
 
         return yield* repo.findByFilter({ limit: 2 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
   })
 
   it("supports pagination with limit and offset", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -542,7 +537,7 @@ describe("CandidateRepository.findByFilter", () => {
         const secondPage = yield* repo.findByFilter({ limit: 2, offset: 2 })
 
         return { firstPage, secondPage }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.firstPage).toHaveLength(2)
@@ -555,9 +550,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("combines multiple filters", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -585,7 +577,7 @@ describe("CandidateRepository.findByFilter", () => {
           confidence: "high",
           category: "security"
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -593,9 +585,6 @@ describe("CandidateRepository.findByFilter", () => {
   })
 
   it("orders results by extracted_at DESC", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -618,7 +607,7 @@ describe("CandidateRepository.findByFilter", () => {
         })
 
         return yield* repo.findByFilter({})
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Most recently inserted should be first (DESC order by extracted_at)
@@ -634,10 +623,21 @@ describe("CandidateRepository.findByFilter", () => {
 // =============================================================================
 
 describe("CandidateRepository.update", () => {
-  it("updates status field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("updates status field", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -649,7 +649,7 @@ describe("CandidateRepository.update", () => {
         })
 
         return yield* repo.update(candidate.id, { status: "promoted" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -657,9 +657,6 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates reviewedAt field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const reviewedAt = new Date()
 
     const result = await Effect.runPromise(
@@ -673,7 +670,7 @@ describe("CandidateRepository.update", () => {
         })
 
         return yield* repo.update(candidate.id, { reviewedAt })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -683,9 +680,6 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates reviewedBy field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -697,7 +691,7 @@ describe("CandidateRepository.update", () => {
         })
 
         return yield* repo.update(candidate.id, { reviewedBy: "auto" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -705,9 +699,6 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates promotedLearningId field", async () => {
-    const { makeAppLayer, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -725,7 +716,7 @@ describe("CandidateRepository.update", () => {
         })
 
         return yield* repo.update(candidate.id, { promotedLearningId: learning.id })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -733,9 +724,6 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates rejectionReason field", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -750,7 +738,7 @@ describe("CandidateRepository.update", () => {
           status: "rejected",
           rejectionReason: "Duplicate content"
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -759,9 +747,6 @@ describe("CandidateRepository.update", () => {
   })
 
   it("updates multiple fields at once", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const reviewedAt = new Date()
 
     const result = await Effect.runPromise(
@@ -779,7 +764,7 @@ describe("CandidateRepository.update", () => {
           reviewedAt,
           reviewedBy: "manual"
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -789,9 +774,6 @@ describe("CandidateRepository.update", () => {
   })
 
   it("returns current row when no updates provided", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -803,7 +785,7 @@ describe("CandidateRepository.update", () => {
         })
 
         return yield* repo.update(candidate.id, {})
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -812,14 +794,11 @@ describe("CandidateRepository.update", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
         return yield* repo.update(999, { status: "promoted" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeNull()
@@ -827,10 +806,21 @@ describe("CandidateRepository.update", () => {
 })
 
 describe("CandidateRepository.updateStatus", () => {
-  it("updates status to promoted", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("updates status to promoted", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -842,7 +832,7 @@ describe("CandidateRepository.updateStatus", () => {
         })
 
         return yield* repo.updateStatus(candidate.id, "promoted")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -850,9 +840,6 @@ describe("CandidateRepository.updateStatus", () => {
   })
 
   it("updates status to rejected", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -864,7 +851,7 @@ describe("CandidateRepository.updateStatus", () => {
         })
 
         return yield* repo.updateStatus(candidate.id, "rejected")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -872,9 +859,6 @@ describe("CandidateRepository.updateStatus", () => {
   })
 
   it("updates status to merged", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -886,7 +870,7 @@ describe("CandidateRepository.updateStatus", () => {
         })
 
         return yield* repo.updateStatus(candidate.id, "merged")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -894,23 +878,17 @@ describe("CandidateRepository.updateStatus", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
         return yield* repo.updateStatus(999, "promoted")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeNull()
   })
 
   it("preserves other fields when updating status", async () => {
-    const { makeAppLayer, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -925,7 +903,7 @@ describe("CandidateRepository.updateStatus", () => {
         })
 
         return yield* repo.updateStatus(candidate.id, "promoted")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()

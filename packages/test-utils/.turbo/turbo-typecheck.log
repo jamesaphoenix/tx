@@ -1,4 +1,1 @@
-
-> @jamesaphoenix/tx-test-utils@0.4.2 typecheck
-> tsc --noEmit
-
+$ tsc --noEmit

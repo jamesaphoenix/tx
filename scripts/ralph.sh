@@ -26,6 +26,7 @@ MAX_ITERATIONS=${MAX_ITERATIONS:-100}
 MAX_HOURS=${MAX_HOURS:-3}
 REVIEW_EVERY=${REVIEW_EVERY:-10}
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
+TASK_TIMEOUT=${TASK_TIMEOUT:-1800}  # 30 minutes max per task
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_FILE="$PROJECT_DIR/.tx/ralph.log"
 LOCK_FILE="$PROJECT_DIR/.tx/ralph.lock"
@@ -141,6 +142,49 @@ set_orchestrator_stopped() {
 # ==============================================================================
 # Orphan Run Cleanup
 # ==============================================================================
+
+# Kill any Claude processes that have been running too long (zombie detection)
+kill_zombie_claude_processes() {
+  log "Checking for zombie Claude processes..."
+
+  # Find Claude processes running longer than 2 hours (7200 seconds)
+  local max_age=7200
+  local now=$(date +%s)
+  local killed=0
+
+  # Get all claude --print processes with their start times
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local pid=$(echo "$line" | awk '{print $1}')
+    local start_time=$(echo "$line" | awk '{print $2}')
+
+    # Calculate age (macOS ps shows elapsed time differently, so we check the lstart)
+    local process_start
+    process_start=$(ps -o lstart= -p "$pid" 2>/dev/null || echo "")
+    [ -z "$process_start" ] && continue
+
+    # Convert to epoch (macOS compatible)
+    local start_epoch
+    start_epoch=$(date -j -f "%c" "$process_start" +%s 2>/dev/null || echo "0")
+    [ "$start_epoch" = "0" ] && continue
+
+    local age=$((now - start_epoch))
+
+    if [ $age -gt $max_age ]; then
+      log "Found zombie Claude process $pid (age: ${age}s, max: ${max_age}s)"
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+      killed=$((killed + 1))
+    fi
+  done < <(pgrep -f "claude.*--print" | while read pid; do echo "$pid"; done)
+
+  if [ $killed -gt 0 ]; then
+    log "Killed $killed zombie Claude process(es)"
+  fi
+}
 
 # Cancel runs from previous sessions where RALPH died unexpectedly
 cancel_orphaned_runs() {
@@ -432,17 +476,41 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
     sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
       "UPDATE runs SET pid=$CLAUDE_PID WHERE id='$escaped_run_id';"
   fi
-  log "Claude PID: $CLAUDE_PID"
+  log "Claude PID: $CLAUDE_PID (timeout: ${TASK_TIMEOUT}s)"
 
-  # Wait for Claude to complete
+  # Wait for Claude with timeout
   local exit_code=0
-  if wait "$CLAUDE_PID"; then
+  local waited=0
+  local check_interval=10
+
+  while kill -0 "$CLAUDE_PID" 2>/dev/null; do
+    if [ $waited -ge $TASK_TIMEOUT ]; then
+      log "Task timeout after ${TASK_TIMEOUT}s - killing Claude process"
+      kill "$CLAUDE_PID" 2>/dev/null || true
+      sleep 2
+      # Force kill if still running
+      if kill -0 "$CLAUDE_PID" 2>/dev/null; then
+        kill -9 "$CLAUDE_PID" 2>/dev/null || true
+      fi
+      CLAUDE_PID=""
+      complete_run "$CURRENT_RUN_ID" "failed" 124 "Task timed out after ${TASK_TIMEOUT}s"
+      CURRENT_RUN_ID=""
+      return 1
+    fi
+    sleep $check_interval
+    waited=$((waited + check_interval))
+  done
+
+  # Process exited, get exit code
+  wait "$CLAUDE_PID" 2>/dev/null
+  exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
     CLAUDE_PID=""
     complete_run "$CURRENT_RUN_ID" "completed" 0
     CURRENT_RUN_ID=""
     return 0
   else
-    exit_code=$?
     CLAUDE_PID=""
     complete_run "$CURRENT_RUN_ID" "failed" "$exit_code" "Claude exited with code $exit_code"
     CURRENT_RUN_ID=""
@@ -523,6 +591,9 @@ log "Max iterations: $MAX_ITERATIONS"
 log "Max runtime: $MAX_HOURS hours"
 log "Review every: $REVIEW_EVERY iterations"
 log ""
+
+# Kill any zombie Claude processes (running too long)
+kill_zombie_claude_processes
 
 # Clean up any orphaned runs from previous crashed sessions
 cancel_orphaned_runs

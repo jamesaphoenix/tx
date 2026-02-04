@@ -8,11 +8,21 @@
  * 4. Anchor never verified (null verified_at) triggers verification
  *
  * Uses real in-memory SQLite and SHA256-based fixture IDs per Rule 3.
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
  */
 
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import {
+  AnchorService,
+  LearningService,
+  AnchorRepository
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -38,10 +48,21 @@ const FIXTURES = {
 // =============================================================================
 
 describe("Anchor TTL Cache - Never Verified", () => {
-  it("anchor with null verified_at triggers verification", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("anchor with null verified_at triggers verification", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -68,7 +89,7 @@ describe("Anchor TTL Cache - Never Verified", () => {
         const withVerification = yield* anchorSvc.getWithVerification(1)
 
         return { anchor, withVerification }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Initial anchor should have null verified_at
@@ -88,10 +109,21 @@ describe("Anchor TTL Cache - Never Verified", () => {
 // =============================================================================
 
 describe("Anchor TTL Cache - Fresh Anchor", () => {
-  it("fresh anchor (just verified) returns cached result without re-verification", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("fresh anchor (just verified) returns cached result without re-verification", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -122,7 +154,7 @@ describe("Anchor TTL Cache - Fresh Anchor", () => {
         const withVerification = yield* anchorSvc.getWithVerification(1)
 
         return { anchor, withVerification }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Anchor should have verified_at set
@@ -142,10 +174,21 @@ describe("Anchor TTL Cache - Fresh Anchor", () => {
 // =============================================================================
 
 describe("Anchor TTL Cache - Stale Anchor", () => {
-  it("stale anchor (verified_at older than TTL) triggers re-verification", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("stale anchor (verified_at older than TTL) triggers re-verification", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -180,7 +223,7 @@ describe("Anchor TTL Cache - Stale Anchor", () => {
         const anchorAfter = yield* anchorSvc.get(1)
 
         return { anchorBefore, withVerification, anchorAfter }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Before: verified_at should be 2 hours ago
@@ -202,9 +245,6 @@ describe("Anchor TTL Cache - Stale Anchor", () => {
   })
 
   it("stale anchor returns unchanged action when status doesn't change", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -231,7 +271,7 @@ describe("Anchor TTL Cache - Stale Anchor", () => {
 
         // getWithVerification should trigger re-verification
         return yield* anchorSvc.getWithVerification(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.wasVerified).toBe(true)
@@ -248,23 +288,30 @@ describe("Anchor TTL Cache - Stale Anchor", () => {
 // =============================================================================
 
 describe("Anchor TTL Cache - Custom TTL", () => {
+  let shared: SharedTestLayerResult
   const originalEnv = process.env.TX_ANCHOR_CACHE_TTL
 
-  afterEach(() => {
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
     // Restore original env var
     if (originalEnv === undefined) {
       delete process.env.TX_ANCHOR_CACHE_TTL
     } else {
       process.env.TX_ANCHOR_CACHE_TTL = originalEnv
     }
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("respects custom TX_ANCHOR_CACHE_TTL env var (short TTL makes anchor stale)", async () => {
     // Set a very short TTL (1 second)
     process.env.TX_ANCHOR_CACHE_TTL = "1"
-
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -292,7 +339,7 @@ describe("Anchor TTL Cache - Custom TTL", () => {
 
         // getWithVerification should trigger re-verification with custom TTL
         return yield* anchorSvc.getWithVerification(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // With 1 second TTL and verified_at 5 seconds ago, should be stale
@@ -303,9 +350,6 @@ describe("Anchor TTL Cache - Custom TTL", () => {
   it("respects custom TX_ANCHOR_CACHE_TTL env var (long TTL keeps anchor fresh)", async () => {
     // Set a very long TTL (1 hour = 3600 seconds)
     process.env.TX_ANCHOR_CACHE_TTL = "3600"
-
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -333,7 +377,7 @@ describe("Anchor TTL Cache - Custom TTL", () => {
 
         // getWithVerification should return cached result with long TTL
         return yield* anchorSvc.getWithVerification(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // With 1 hour TTL and verified_at 30 minutes ago, should be fresh
@@ -347,15 +391,26 @@ describe("Anchor TTL Cache - Custom TTL", () => {
 // =============================================================================
 
 describe("Anchor TTL Cache - Edge Cases", () => {
-  it("getWithVerification fails with AnchorNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, AnchorService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("getWithVerification fails with AnchorNotFoundError for nonexistent ID", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const anchorSvc = yield* AnchorService
         return yield* anchorSvc.getWithVerification(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -365,9 +420,6 @@ describe("Anchor TTL Cache - Edge Cases", () => {
   })
 
   it("verified_at exactly at TTL boundary is considered stale", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     // Default TTL is 3600 seconds (1 hour)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -394,7 +446,7 @@ describe("Anchor TTL Cache - Edge Cases", () => {
         yield* anchorRepo.update(1, { verifiedAt: exactlyAtTTL })
 
         return yield* anchorSvc.getWithVerification(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // At or beyond TTL boundary should be stale
@@ -403,9 +455,6 @@ describe("Anchor TTL Cache - Edge Cases", () => {
   })
 
   it("verified_at just before TTL boundary is considered fresh", async () => {
-    const { makeAppLayer, AnchorService, LearningService, AnchorRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     // Default TTL is 3600 seconds (1 hour)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -432,7 +481,7 @@ describe("Anchor TTL Cache - Edge Cases", () => {
         yield* anchorRepo.update(1, { verifiedAt: justBeforeTTL })
 
         return yield* anchorSvc.getWithVerification(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Just before TTL boundary should be fresh
@@ -441,9 +490,6 @@ describe("Anchor TTL Cache - Edge Cases", () => {
   })
 
   it("multiple getWithVerification calls on same anchor within TTL only verify once", async () => {
-    const { makeAppLayer, AnchorService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -473,7 +519,7 @@ describe("Anchor TTL Cache - Edge Cases", () => {
         const third = yield* anchorSvc.getWithVerification(1)
 
         return { first, second, third }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // First call should have triggered verification
@@ -489,4 +535,3 @@ describe("Anchor TTL Cache - Edge Cases", () => {
     expect(result.third.isFresh).toBe(true)
   })
 })
-

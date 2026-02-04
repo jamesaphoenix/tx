@@ -172,3 +172,42 @@ export {
   type CreateTrackedProjectInput,
   type TrackedProjectRow,
 } from "./tracked-project.js";
+
+// Response types (shared schemas for CLI, MCP, API, SDK)
+export {
+  // Serialized entity types
+  type TaskWithDepsSerialized,
+  type LearningSerialized,
+  type LearningWithScoreSerialized,
+  type FileLearningsSerialized,
+  type RunSerialized,
+  type AttemptSerialized,
+  // Serialization functions
+  serializeTask,
+  serializeLearning,
+  serializeLearningWithScore,
+  serializeFileLearning,
+  serializeRun,
+  serializeAttempt,
+  // Response envelopes
+  type ListResponse,
+  type PaginatedResponse,
+  type ActionResponse,
+  type ErrorResponse,
+  // Task response types
+  type TaskReadyResponse,
+  type TaskListResponse,
+  type TaskDetailResponse,
+  type TaskCompletionResponse,
+  type TaskTreeResponse,
+  // Learning response types
+  type LearningSearchResponse,
+  type ContextResponse,
+  type FileLearningListResponse,
+  // Run response types
+  type RunListResponse,
+  type RunDetailResponse,
+  // Sync response types
+  type SyncExportResponse,
+  type SyncImportResponse,
+} from "./response.js";

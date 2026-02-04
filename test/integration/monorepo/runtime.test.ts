@@ -8,12 +8,27 @@
  *
  * Uses real SQLite databases (in-memory) for true integration testing.
  * Uses SHA256-based fixture IDs per Rule 3.
+ *
+ * OPTIMIZED: Uses global singleton test layer per RULE 8 for memory efficiency.
+ * Database reset is handled globally by vitest.setup.ts.
+ * MCP/API runtime tests use their own :memory: databases to test initialization APIs.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { getSharedTestLayer } from "@jamesaphoenix/tx-test-utils"
 import type { TaskId } from "@jamesaphoenix/tx-types"
+
+// Import services once at module level
+import {
+  TaskService,
+  ReadyService,
+  DependencyService,
+  LearningService,
+  SyncService,
+  fixtureId as coreFixtureId,
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -42,18 +57,15 @@ void FIXTURES
 // =============================================================================
 
 describe("Runtime Integration: @tx/core", () => {
-  it("can create layer with in-memory database", async () => {
-    const { makeAppLayer } = await import("@jamesaphoenix/tx-core")
+  // Uses global singleton from vitest.setup.ts - no local lifecycle hooks needed
 
-    const layer = makeAppLayer(":memory:")
+  it("can create layer with in-memory database", async () => {
+    const { layer } = await getSharedTestLayer()
     expect(layer).toBeDefined()
   })
 
   it("can run TaskService.create through layer", async () => {
-    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
-
-    const layer = makeAppLayer(":memory:")
-
+    const { layer } = await getSharedTestLayer()
     const task = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -71,10 +83,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run TaskService.list through layer", async () => {
-    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
-
-    const layer = makeAppLayer(":memory:")
-
+    const { layer } = await getSharedTestLayer()
     // Create a task, then list
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -91,10 +100,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run ReadyService.getReady through layer", async () => {
-    const { makeAppLayer, TaskService, ReadyService } = await import("@jamesaphoenix/tx-core")
-
-    const layer = makeAppLayer(":memory:")
-
+    const { layer } = await getSharedTestLayer()
     const ready = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -116,10 +122,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run DependencyService.addBlocker through layer", async () => {
-    const { makeAppLayer, TaskService, DependencyService } = await import("@jamesaphoenix/tx-core")
-
-    const layer = makeAppLayer(":memory:")
-
+    const { layer } = await getSharedTestLayer()
     await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -139,10 +142,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run LearningService.create through layer", async () => {
-    const { makeAppLayer, LearningService } = await import("@jamesaphoenix/tx-core")
-
-    const layer = makeAppLayer(":memory:")
-
+    const { layer } = await getSharedTestLayer()
     const learning = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* LearningService
@@ -159,10 +159,7 @@ describe("Runtime Integration: @tx/core", () => {
   })
 
   it("can run SyncService.export through layer", async () => {
-    const { makeAppLayer, TaskService, SyncService } = await import("@jamesaphoenix/tx-core")
-
-    const layer = makeAppLayer(":memory:")
-
+    const { layer } = await getSharedTestLayer()
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -217,8 +214,6 @@ describe("Runtime Integration: @tx/mcp-server", () => {
   })
 
   it("can run effects after initialization", async () => {
-    const { TaskService } = await import("@jamesaphoenix/tx-core")
-
     await initRuntime(":memory:")
 
     const task = await runEffect(
@@ -300,8 +295,6 @@ describe("Runtime Integration: @tx/api-server", () => {
   })
 
   it("can run effects after initialization", async () => {
-    const { TaskService } = await import("@jamesaphoenix/tx-core")
-
     await initRuntime(":memory:")
 
     const task = await runEffect(
@@ -516,8 +509,6 @@ describe("Cross-Package Integration", () => {
   })
 
   it("fixture IDs are deterministic across packages", async () => {
-    const { fixtureId: coreFixtureId } = await import("@jamesaphoenix/tx-core")
-
     // Our test fixture ID should be consistent with core's fixtureId
     const testId = coreFixtureId("test-id")
     const testId2 = coreFixtureId("test-id")
@@ -526,19 +517,17 @@ describe("Cross-Package Integration", () => {
   })
 
   it("services work consistently across initialization methods", async () => {
-    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
-
-    // Test 1: Direct layer creation
-    const layer1 = makeAppLayer(":memory:")
+    // Test 1: Shared singleton layer (per RULE 8)
+    const { layer } = await getSharedTestLayer()
     const task1 = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
         return yield* svc.create({ title: "Layer test task" })
-      }).pipe(Effect.provide(layer1))
+      }).pipe(Effect.provide(layer))
     )
     expect(task1.title).toBe("Layer test task")
 
-    // Test 2: MCP runtime
+    // Test 2: MCP runtime (testing MCP server's initialization API)
     const { initRuntime, runEffect, disposeRuntime } = await import("@tx/mcp-server")
     await initRuntime(":memory:")
     const task2 = await runEffect(
@@ -550,7 +539,7 @@ describe("Cross-Package Integration", () => {
     expect(task2.title).toBe("MCP runtime test task")
     await disposeRuntime()
 
-    // Test 3: API runtime
+    // Test 3: API runtime (testing API server's initialization API)
     const {
       initRuntime: initApiRuntime,
       runEffect: runApiEffect,
@@ -578,11 +567,10 @@ describe("Cross-Package Integration", () => {
 // =============================================================================
 
 describe("Error Handling Across Packages", () => {
+  // Uses global singleton from vitest.setup.ts - no local lifecycle hooks needed
+
   it("@tx/core errors are properly typed", async () => {
-    const { makeAppLayer, TaskService } = await import("@jamesaphoenix/tx-core")
-
-    const layer = makeAppLayer(":memory:")
-
+    const { layer } = await getSharedTestLayer()
     // TaskNotFoundError
     const result1 = await Effect.runPromise(
       Effect.gen(function* () {

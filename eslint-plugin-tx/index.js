@@ -11,6 +11,9 @@ import requireTaskwithdepsReturn from './rules/require-taskwithdeps-return.js';
 import testCoverageThresholds from './rules/test-coverage-thresholds.js';
 import requireFactoryParity from './rules/require-factory-parity.js';
 import requireColocatedTests from './rules/require-colocated-tests.js';
+import interfaceParity from './rules/interface-parity.js';
+import requireDdTestSections from './rules/require-dd-test-sections.js';
+import prdFailureModes from './rules/prd-failure-modes.js';
 
 const plugin = {
   meta: {
@@ -26,7 +29,10 @@ const plugin = {
     'require-taskwithdeps-return': requireTaskwithdepsReturn,
     'test-coverage-thresholds': testCoverageThresholds,
     'require-factory-parity': requireFactoryParity,
-    'require-colocated-tests': requireColocatedTests
+    'require-colocated-tests': requireColocatedTests,
+    'interface-parity': interfaceParity,
+    'require-dd-test-sections': requireDdTestSections,
+    'prd-failure-modes': prdFailureModes
   },
   // Flat config recommended configuration
   configs: {
@@ -75,6 +81,25 @@ const plugin = {
           ignorePatterns: ['index.ts', 'index.js', '*.d.ts', '*.config.*', 'types.ts', 'constants.ts', 'schema.ts'],
           minLinesForTest: 20,
           allowTestsDirectory: true
+        }],
+        'tx/interface-parity': ['error', {
+          checkSerializerDuplication: true,
+          checkResponseShapes: true,
+          strictFieldTypes: true,
+          ignorePaths: ['test/', 'tests/', '__tests__/', '.test.', '.spec.']
+        }],
+        'tx/require-dd-test-sections': ['error', {
+          ddPattern: '^DD-\\d{3}-.+\\.md$',
+          ddDirectory: 'docs/design',
+          requireTestingStrategy: true,
+          requireIntegrationTests: true,
+          requireUnitTests: true
+        }],
+        'tx/prd-failure-modes': ['error', {
+          prdPattern: '^PRD-\\d{3}-.+\\.md$',
+          prdDirectory: 'docs/prd',
+          requireFailureModes: true,
+          requireRecoveryStrategy: false
         }]
       }
     }

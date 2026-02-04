@@ -10,7 +10,8 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Hono } from "hono"
 import { Database } from "bun:sqlite"
-import { createTestDb, fixtureId } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------
 // Types
@@ -72,12 +73,12 @@ export function seedPaginationFixtures(db: Database): {
   const taskIds: string[] = []
   const runIds: string[] = []
 
-  const insertTask = db.prepare(
+  const insertTask = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
 
-  const insertRun = db.prepare(
+  const insertRun = db.db.prepare(
     `INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
      VALUES (?, ?, ?, ?, ?, ?)`
   )
@@ -197,7 +198,7 @@ function createPaginationTestApp(db: Database) {
 
   // Enrich tasks with deps info
   function enrichTasksWithDeps(tasks: TaskRow[]): TaskWithDeps[] {
-    const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
+    const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
       blocker_id: string
       blocked_id: string
     }>
@@ -213,7 +214,7 @@ function createPaginationTestApp(db: Database) {
       blocksMap.set(dep.blocker_id, [...existingBlocks, dep.blocked_id])
     }
 
-    const allTasks = db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
+    const allTasks = db.db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
       id: string
       parent_id: string | null
       status: string
@@ -279,7 +280,7 @@ function createPaginationTestApp(db: Database) {
       `
       params.push(limit + 1)
 
-      const rows = db.prepare(sql).all(...params) as TaskRow[]
+      const rows = db.db.prepare(sql).all(...params) as TaskRow[]
       const hasMore = rows.length > limit
       const tasks = hasMore ? rows.slice(0, limit) : rows
 
@@ -291,7 +292,7 @@ function createPaginationTestApp(db: Database) {
         ? params.slice(0, -4) // Remove cursor params (score, score, id) and limit
         : params.slice(0, -1) // Just remove limit
       const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
-      const total = (db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
+      const total = (db.db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
 
       const enriched = enrichTasksWithDeps(tasks)
 
@@ -343,7 +344,7 @@ function createPaginationTestApp(db: Database) {
       `
       params.push(limit + 1)
 
-      const rows = db.prepare(sql).all(...params) as RunRow[]
+      const rows = db.db.prepare(sql).all(...params) as RunRow[]
       const hasMore = rows.length > limit
       const runs = hasMore ? rows.slice(0, limit) : rows
 
@@ -351,7 +352,7 @@ function createPaginationTestApp(db: Database) {
       const countConditions = cursor ? conditions.slice(0, -1) : conditions
       const countParams = cursor ? params.slice(0, -4) : params.slice(0, -1)
       const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
-      const total = (db.prepare(`SELECT COUNT(*) as count FROM runs ${countWhereClause}`).get(...countParams) as { count: number }).count
+      const total = (db.db.prepare(`SELECT COUNT(*) as count FROM runs ${countWhereClause}`).get(...countParams) as { count: number }).count
 
       return c.json({
         runs,
@@ -382,11 +383,11 @@ async function request(app: Hono, path: string) {
 // -----------------------------------------------------------------------------
 
 describe("Database Pagination - Tasks", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedPaginationFixtures(db)
     app = createPaginationTestApp(db)
   })
@@ -649,7 +650,7 @@ describe("Database Pagination - Tasks", () => {
     it("total count is accurate with combined filters", async () => {
       // Add a specific searchable ready task for this test
       const now = new Date().toISOString()
-      db.prepare(
+      db.db.prepare(
         `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, metadata)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(paginationFixtureId("ready-searchable"), "Ready searchable", "Contains COMBO_TEST", "ready", null, 999, now, now, "{}")
@@ -758,11 +759,11 @@ describe("Database Pagination - Tasks", () => {
 // -----------------------------------------------------------------------------
 
 describe("Database Pagination - Runs", () => {
-  let db: Database
+  let db: TestDatabase
   let app: Hono
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedPaginationFixtures(db)
     app = createPaginationTestApp(db)
   })

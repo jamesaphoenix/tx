@@ -4,13 +4,25 @@
  * Tests the PromotionService at the service layer with full dependency injection.
  * Uses real SQLite database (in-memory) and SHA256-based fixture IDs per Rule 3.
  *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ * Previously created a new database per test, now creates 1 per describe block.
+ *
  * @see PRD-015 for the knowledge promotion pipeline
  * @see DD-007 for testing strategy
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import {
+  PromotionService,
+  CandidateRepository,
+  LearningService,
+  EdgeService
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -38,24 +50,32 @@ void FIXTURES
 // =============================================================================
 
 describe("PromotionService.list", () => {
-  it("returns empty array when no candidates exist", async () => {
-    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("returns empty array when no candidates exist", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* PromotionService
         return yield* svc.list({})
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toEqual([])
   })
 
   it("returns all candidates when no filter is applied", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -74,16 +94,13 @@ describe("PromotionService.list", () => {
         })
 
         return yield* svc.list({})
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
   })
 
   it("filters by status", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -105,7 +122,7 @@ describe("PromotionService.list", () => {
         const promoted = yield* svc.list({ status: "promoted" })
 
         return { pending, promoted }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.pending).toHaveLength(2)
@@ -113,9 +130,6 @@ describe("PromotionService.list", () => {
   })
 
   it("filters by confidence level", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -138,7 +152,7 @@ describe("PromotionService.list", () => {
         })
 
         return yield* svc.list({ confidence: "high" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -146,9 +160,6 @@ describe("PromotionService.list", () => {
   })
 
   it("filters by category", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -168,7 +179,7 @@ describe("PromotionService.list", () => {
         })
 
         return yield* svc.list({ category: "security" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -176,9 +187,6 @@ describe("PromotionService.list", () => {
   })
 
   it("supports pagination with limit and offset", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -197,7 +205,7 @@ describe("PromotionService.list", () => {
         const secondPage = yield* svc.list({ limit: 2, offset: 2 })
 
         return { firstPage, secondPage }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.firstPage).toHaveLength(2)
@@ -215,10 +223,21 @@ describe("PromotionService.list", () => {
 // =============================================================================
 
 describe("PromotionService.promote", () => {
-  it("promotes a candidate to a learning", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("promotes a candidate to a learning", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -238,7 +257,7 @@ describe("PromotionService.promote", () => {
         const learning = yield* learningSvc.get(promotionResult.learning.id)
 
         return { promotionResult, learning, candidate }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.promotionResult.candidate.id).toBe(result.candidate.id)
@@ -251,14 +270,11 @@ describe("PromotionService.promote", () => {
   })
 
   it("fails with CandidateNotFoundError for nonexistent candidate", async () => {
-    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* PromotionService
         return yield* svc.promote(99999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -268,9 +284,6 @@ describe("PromotionService.promote", () => {
   })
 
   it("sets reviewedAt timestamp on promotion", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const before = new Date()
 
     const result = await Effect.runPromise(
@@ -285,7 +298,7 @@ describe("PromotionService.promote", () => {
         })
 
         return yield* svc.promote(candidate.id)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     const after = new Date()
@@ -297,9 +310,6 @@ describe("PromotionService.promote", () => {
   })
 
   it("links promoted learning to source run via DERIVED_FROM edge", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -319,7 +329,7 @@ describe("PromotionService.promote", () => {
         const edges = yield* edgeSvc.findFromSource("learning", String(promotionResult.learning.id))
 
         return { promotionResult, edges }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     const derivedEdge = result.edges.find(e => e.edgeType === "DERIVED_FROM")
@@ -329,9 +339,6 @@ describe("PromotionService.promote", () => {
   })
 
   it("links promoted learning to source task via DERIVED_FROM edge", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -351,7 +358,7 @@ describe("PromotionService.promote", () => {
         const edges = yield* edgeSvc.findFromSource("learning", String(promotionResult.learning.id))
 
         return { promotionResult, edges }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     const derivedEdge = result.edges.find(e => e.edgeType === "DERIVED_FROM")
@@ -361,9 +368,6 @@ describe("PromotionService.promote", () => {
   })
 
   it("does not create edge when candidate has no source run or task", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -383,7 +387,7 @@ describe("PromotionService.promote", () => {
         const edges = yield* edgeSvc.findFromSource("learning", String(promotionResult.learning.id))
 
         return { promotionResult, edges }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should not have any DERIVED_FROM edges
@@ -397,10 +401,21 @@ describe("PromotionService.promote", () => {
 // =============================================================================
 
 describe("PromotionService.reject", () => {
-  it("rejects a candidate with a reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("rejects a candidate with a reason", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -413,7 +428,7 @@ describe("PromotionService.reject", () => {
         })
 
         return yield* svc.reject(candidate.id, "Not accurate enough")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.status).toBe("rejected")
@@ -422,14 +437,11 @@ describe("PromotionService.reject", () => {
   })
 
   it("fails with CandidateNotFoundError for nonexistent candidate", async () => {
-    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* PromotionService
         return yield* svc.reject(99999, "Some reason")
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -439,9 +451,6 @@ describe("PromotionService.reject", () => {
   })
 
   it("fails with ValidationError for empty rejection reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -454,7 +463,7 @@ describe("PromotionService.reject", () => {
         })
 
         return yield* svc.reject(candidate.id, "")
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -464,9 +473,6 @@ describe("PromotionService.reject", () => {
   })
 
   it("fails with ValidationError for whitespace-only rejection reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -479,7 +485,7 @@ describe("PromotionService.reject", () => {
         })
 
         return yield* svc.reject(candidate.id, "   ")
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -489,9 +495,6 @@ describe("PromotionService.reject", () => {
   })
 
   it("trims whitespace from rejection reason", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -504,16 +507,13 @@ describe("PromotionService.reject", () => {
         })
 
         return yield* svc.reject(candidate.id, "  Duplicate content  ")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.rejectionReason).toBe("Duplicate content")
   })
 
   it("sets reviewedAt timestamp on rejection", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const before = new Date()
 
     const result = await Effect.runPromise(
@@ -528,7 +528,7 @@ describe("PromotionService.reject", () => {
         })
 
         return yield* svc.reject(candidate.id, "Not relevant")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     const after = new Date()
@@ -545,10 +545,21 @@ describe("PromotionService.reject", () => {
 // =============================================================================
 
 describe("PromotionService.autoPromote", () => {
-  it("promotes high-confidence pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("promotes high-confidence pending candidates", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -577,7 +588,7 @@ describe("PromotionService.autoPromote", () => {
         })
 
         return yield* svc.autoPromote()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Only high-confidence candidates should be promoted
@@ -586,9 +597,6 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("returns zero counts when no high-confidence candidates exist", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -601,7 +609,7 @@ describe("PromotionService.autoPromote", () => {
         })
 
         return yield* svc.autoPromote()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.promoted).toBe(0)
@@ -611,9 +619,6 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("skips candidates that are duplicates of existing learnings", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -634,7 +639,7 @@ describe("PromotionService.autoPromote", () => {
         })
 
         return yield* svc.autoPromote()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Since the content is identical, it may be detected as duplicate
@@ -644,9 +649,6 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("uses 'auto' as reviewer identifier", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -662,7 +664,7 @@ describe("PromotionService.autoPromote", () => {
 
         // Check the candidate's reviewedBy field
         return yield* svc.list({ status: "promoted" })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -670,9 +672,6 @@ describe("PromotionService.autoPromote", () => {
   })
 
   it("does not promote non-pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -688,16 +687,13 @@ describe("PromotionService.autoPromote", () => {
         yield* repo.updateStatus(candidate.id, "rejected")
 
         return yield* svc.autoPromote()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.promoted).toBe(0)
   })
 
   it("creates DERIVED_FROM edge during auto-promotion", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -724,7 +720,7 @@ describe("PromotionService.autoPromote", () => {
         const learning = yield* learningSvc.get(autoResult.learningIds[0])
 
         return { autoResult, edges, learning }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.autoResult.promoted).toBe(1)
@@ -742,10 +738,21 @@ describe("PromotionService.autoPromote", () => {
 // =============================================================================
 
 describe("PromotionService.getPending", () => {
-  it("returns only pending candidates", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("returns only pending candidates", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -775,7 +782,7 @@ describe("PromotionService.getPending", () => {
         yield* svc.promote(candidate1.id)
 
         return yield* svc.getPending()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -784,14 +791,11 @@ describe("PromotionService.getPending", () => {
   })
 
   it("returns empty array when no pending candidates exist", async () => {
-    const { makeAppLayer, PromotionService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const pending = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* PromotionService
         return yield* svc.getPending()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(pending).toEqual([])
@@ -803,10 +807,21 @@ describe("PromotionService.getPending", () => {
 // =============================================================================
 
 describe("PromotionService candidate lifecycle", () => {
-  it("candidate transitions correctly: pending → promoted", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("candidate transitions correctly: pending -> promoted", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -825,7 +840,7 @@ describe("PromotionService candidate lifecycle", () => {
         const promotionResult = yield* svc.promote(candidate.id)
 
         return { initialCandidate, promotionResult }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.initialCandidate.status).toBe("pending")
@@ -833,10 +848,7 @@ describe("PromotionService candidate lifecycle", () => {
     expect(result.promotionResult.candidate.promotedLearningId).not.toBeNull()
   })
 
-  it("candidate transitions correctly: pending → rejected", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
+  it("candidate transitions correctly: pending -> rejected", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -855,7 +867,7 @@ describe("PromotionService candidate lifecycle", () => {
         const rejectedCandidate = yield* svc.reject(candidate.id, "Not useful")
 
         return { initialCandidate, rejectedCandidate }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.initialCandidate.status).toBe("pending")
@@ -865,9 +877,6 @@ describe("PromotionService candidate lifecycle", () => {
   })
 
   it("promoted learning inherits candidate category", async () => {
-    const { makeAppLayer, PromotionService, CandidateRepository, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
@@ -887,7 +896,7 @@ describe("PromotionService candidate lifecycle", () => {
         const learning = yield* learningSvc.get(promotionResult.learning.id)
 
         return { promotionResult, learning }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.learning.category).toBe("architecture")

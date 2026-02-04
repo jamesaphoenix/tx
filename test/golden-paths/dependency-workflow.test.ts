@@ -13,7 +13,6 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { Database } from "bun:sqlite"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -28,15 +27,15 @@ import {
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
-import { fixtureId } from "@jamesaphoenix/tx-test-utils"
-import { createTestDb, seedFixtures, FIXTURES } from "../fixtures.js"
+import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures, FIXTURES } from "../fixtures.js"
 
 // =============================================================================
 // Test Layer Factory
 // =============================================================================
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+function makeTestLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
   )
@@ -67,11 +66,11 @@ const DEP_FIXTURES = {
 // =============================================================================
 
 describe("Golden Path: Dependency Chain", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
   })
 
@@ -204,11 +203,11 @@ describe("Golden Path: Dependency Chain", () => {
 // =============================================================================
 
 describe("Golden Path: Dependency Constraints", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -278,11 +277,11 @@ describe("Golden Path: Dependency Constraints", () => {
 // =============================================================================
 
 describe("Golden Path: Blocks vs BlockedBy", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db)
   })
@@ -342,11 +341,11 @@ describe("Golden Path: Blocks vs BlockedBy", () => {
 // =============================================================================
 
 describe("Golden Path: Complex Dependency Scenarios", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
     layer = makeTestLayer(db)
   })
 

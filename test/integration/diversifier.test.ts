@@ -1,14 +1,26 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import type { LearningWithScore, LearningId } from "@jamesaphoenix/tx-types"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import {
+  DiversifierService,
+  DiversifierServiceLive,
+  DiversifierServiceNoop,
+  RetrieverService,
+  LearningService
+} from "@jamesaphoenix/tx-core"
 
 /**
  * DiversifierService Integration Tests
  *
  * Tests MMR (Maximal Marginal Relevance) diversification following Rule 3:
- * - Real in-memory SQLite via makeAppLayer(":memory:")
+ * - Real in-memory SQLite via shared test layer
  * - Deterministic numeric IDs for learnings
  * - Full service path: DiversifierService -> cosineSimilarity
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
  */
 
 // Deterministic numeric IDs for test learnings (LearningId is a branded number)
@@ -102,24 +114,33 @@ function createMockLearning(
 }
 
 describe("DiversifierService Integration", () => {
+  let shared: SharedTestLayerResult
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
   describe("Service Resolution", () => {
     it("DiversifierService resolves in app layer", async () => {
-      const { makeAppLayer, DiversifierService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* DiversifierService
           return typeof svc.mmrDiversify === "function"
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result).toBe(true)
     })
 
     it("Noop implementation returns truncated candidates", async () => {
-      const { DiversifierService, DiversifierServiceNoop } = await import("@jamesaphoenix/tx-core")
-
       const embedding = createDeterministicEmbedding(1)
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.9, embedding),
@@ -143,8 +164,6 @@ describe("DiversifierService Integration", () => {
 
   describe("MMR Selection", () => {
     it("selects diverse results over similar ones", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // Create base embedding and similar/diverse variants
       const baseEmbedding = createDeterministicEmbedding(1)
       const similarEmbedding = createSimilarEmbedding(baseEmbedding, 0.02) // Very similar
@@ -177,8 +196,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("first result is always highest relevance", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const embedding = createDeterministicEmbedding(1)
       // Candidates in random relevance order
       const candidates = [
@@ -201,8 +218,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("lambda=0.9 prefers relevance over diversity", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const baseEmbedding = createDeterministicEmbedding(1)
       const similarEmbedding = createSimilarEmbedding(baseEmbedding, 0.01)
       const diverseEmbedding = createDeterministicEmbedding(999)
@@ -229,8 +244,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("lambda=0.3 prefers diversity over relevance", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const baseEmbedding = createDeterministicEmbedding(1)
       const similarEmbedding = createSimilarEmbedding(baseEmbedding, 0.01)
       const diverseEmbedding = createDeterministicEmbedding(999)
@@ -261,8 +274,6 @@ describe("DiversifierService Integration", () => {
 
   describe("Category Limits", () => {
     it("category limits influence selection order", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // Create candidates - 4 from "database" category, 1 from "api"
       // All with different embeddings to avoid diversity penalty
       const candidates = [
@@ -290,8 +301,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("works with null categories (no limit applied)", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // All null categories - no category limit applies
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.95, createDeterministicEmbedding(1), null),
@@ -316,8 +325,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("mixed null and non-null categories respected", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // Mix of categories including null
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.95, createDeterministicEmbedding(1), "database"),
@@ -349,8 +356,6 @@ describe("DiversifierService Integration", () => {
 
   describe("Edge Cases", () => {
     it("empty candidates returns empty", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* DiversifierService
@@ -362,8 +367,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("single candidate returns that candidate", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const embedding = createDeterministicEmbedding(1)
       const candidates = [createMockLearning(FIXTURES.LEARNING_1, 0.9, embedding)]
 
@@ -379,8 +382,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("no embeddings: falls back to relevance-only ordering", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // All candidates have null embeddings
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.95, null, "database"),
@@ -406,8 +407,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("limit larger than candidates returns all candidates", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.9, createDeterministicEmbedding(1)),
         createMockLearning(FIXTURES.LEARNING_2, 0.8, createDeterministicEmbedding(2)),
@@ -424,8 +423,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("limit of 0 returns empty", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.9, createDeterministicEmbedding(1)),
       ]
@@ -441,8 +438,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("limit of 1 returns first candidate (expects pre-sorted input)", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // Per implementation: limit=1 returns candidates.slice(0, 1)
       // The service expects candidates to be pre-sorted by relevance (highest first)
       const candidates = [
@@ -465,8 +460,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("handles partially embedded candidates", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // Mix of embedded and non-embedded candidates
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.95, createDeterministicEmbedding(1)),
@@ -492,9 +485,6 @@ describe("DiversifierService Integration", () => {
 
   describe("Integration with RetrieverService", () => {
     it("search with diversification enabled returns results", async () => {
-      const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const learningSvc = yield* LearningService
@@ -531,7 +521,7 @@ describe("DiversifierService Integration", () => {
               lambda: 0.7,
             },
           })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Should return results with diversification applied
@@ -539,9 +529,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("default lambda (0.7) produces balanced results", async () => {
-      const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const learningSvc = yield* LearningService
@@ -565,7 +552,7 @@ describe("DiversifierService Integration", () => {
               enabled: true,
             },
           })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.length).toBeGreaterThanOrEqual(1)
@@ -577,9 +564,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("diversification integrates with retriever search", async () => {
-      const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const learningSvc = yield* LearningService
@@ -619,7 +603,7 @@ describe("DiversifierService Integration", () => {
               enabled: true,
             },
           })
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Diversification should work with retriever search
@@ -634,8 +618,6 @@ describe("DiversifierService Integration", () => {
 
   describe("MMR Score Calculation", () => {
     it("identical embeddings produce high similarity penalty with low lambda", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const embedding = createDeterministicEmbedding(42)
       // Three candidates with identical embeddings but different relevance
       const candidates = [
@@ -656,8 +638,8 @@ describe("DiversifierService Integration", () => {
       // First is highest relevance
       expect(result[0]!.id).toBe(FIXTURES.LEARNING_1)
       // Second item is selected based on MMR score (balancing relevance and diversity)
-      // The exact ordering depends on the MMR formula: λ * relevance - (1-λ) * max_similarity
-      // With λ=0.3 and high similarity, LEARNING_2 gets heavy penalty
+      // The exact ordering depends on the MMR formula: lambda * relevance - (1-lambda) * max_similarity
+      // With lambda=0.3 and high similarity, LEARNING_2 gets heavy penalty
       // But if cosine similarity is high enough, it might still beat LEARNING_3
       // Verify all candidates are returned
       const ids = result.map(r => r.id)
@@ -667,8 +649,6 @@ describe("DiversifierService Integration", () => {
     })
 
     it("different embeddings maintain diversity benefits", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       // Create embeddings that are different
       const candidates = [
         createMockLearning(FIXTURES.LEARNING_1, 0.90, createDeterministicEmbedding(1)),
@@ -697,8 +677,6 @@ describe("DiversifierService Integration", () => {
 
   describe("Default Lambda Value", () => {
     it("default lambda is 0.7 (favors relevance)", async () => {
-      const { DiversifierService, DiversifierServiceLive } = await import("@jamesaphoenix/tx-core")
-
       const baseEmbedding = createDeterministicEmbedding(1)
       const similarEmbedding = createSimilarEmbedding(baseEmbedding, 0.02)
       const diverseEmbedding = createDeterministicEmbedding(999)

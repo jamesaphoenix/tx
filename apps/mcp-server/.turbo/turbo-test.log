@@ -1,12 +1,9 @@
-
-> @tx/mcp-server@0.1.0 test
-> vitest run --passWithNoTests
-
+$ vitest run --passWithNoTests
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server
 
 No test files found, exiting with code 0
-
 include: test/**/*.test.ts, eslint-plugin-tx/tests/**/*.test.js
 exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+
 

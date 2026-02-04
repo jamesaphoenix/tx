@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# Pre-push hook: Block push unless build + tests pass
+# Uses the existing check.sh script for comprehensive validation
+
+echo "🔍 Running pre-push checks..."
+echo ""
+
+# Run all checks (types, lint, build, tests)
+./scripts/check.sh --all
+
+exit_code=$?
+
+if [ $exit_code -ne 0 ]; then
+    echo ""
+    echo "❌ Push blocked: checks failed"
+    echo "Fix the issues above and try again."
+    exit 1
+fi
+
+echo ""
+echo "✅ All checks passed. Pushing..."

@@ -42,6 +42,13 @@
  * - Dashboard components/hooks: 75% line coverage
  * Run separately: npm run lint:coverage (after npm test -- --coverage)
  *
+ * Rule: tx/interface-parity
+ * Enforces that CLI, MCP, and API handlers return identical response shapes:
+ * - done/complete operations MUST return { task: TaskWithDepsSerialized, nowReady: TaskWithDepsSerialized[] }
+ * - ready operations MUST return { tasks: TaskWithDepsSerialized[], count?: number }
+ * - Flags duplicate serializeTask() definitions (should import from @jamesaphoenix/tx-types)
+ * - Flags ID arrays where task arrays expected (nowReady should be tasks, not IDs)
+ *
  * Detection logic for require-integration-tests:
  * - Parses source files for exported functions/classes
  * - Checks for corresponding describe() blocks in test files
@@ -152,6 +159,14 @@ export default [
         externalPaths: ['apps/mcp-server/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
         internalPaths: ['packages/core/src/repo/', 'packages/core/src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
         checkObjectLiterals: true
+      }],
+
+      // tx plugin rules - enforce interface parity across CLI, MCP, and API
+      'tx/interface-parity': ['error', {
+        checkSerializerDuplication: true,
+        checkResponseShapes: true,
+        strictFieldTypes: true,
+        ignorePaths: ['test/', 'tests/', '__tests__/', '.test.', '.spec.']
       }]
     }
   },

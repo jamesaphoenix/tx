@@ -13,7 +13,8 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "crypto"
-import { createTestDb, seedFixtures } from "../fixtures.js"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { seedFixtures } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
@@ -33,7 +34,6 @@ import {
   RetrieverServiceLive,
   cosineSimilarity
 } from "@jamesaphoenix/tx-core"
-import type { Database } from "bun:sqlite"
 import type { LearningWithScore } from "@jamesaphoenix/tx-types"
 
 // ============================================================================
@@ -203,7 +203,7 @@ const createMockEmbeddingService = () => {
 // ============================================================================
 
 function makeTestLayer(db: Database, useVectorSearch = true) {
-  const infra = Layer.succeed(SqliteClient, db as any)
+  const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -268,12 +268,12 @@ const precisionAtK = (
 // ============================================================================
 
 describe("End-to-End Retrieval Pipeline", () => {
-  let db: Database
+  let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
   let learningIds: Map<string, number>
 
   beforeEach(async () => {
-    db = createTestDb()
+    db = await Effect.runPromise(createTestDatabase())
     seedFixtures(db)
     layer = makeTestLayer(db, true)
     learningIds = new Map()
@@ -503,7 +503,7 @@ describe("End-to-End Retrieval Pipeline", () => {
     it("recency score decays with age", async () => {
       // Insert a learning with old timestamp directly
       const oldDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      db.prepare(`
+      db.db.prepare(`
         INSERT INTO learnings (content, source_type, created_at)
         VALUES (?, ?, ?)
       `).run("old learning about ancient data", "manual", oldDate)

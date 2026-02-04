@@ -3,11 +3,24 @@
  *
  * Tests the FeedbackTrackerService at the service layer with full dependency injection.
  * Uses real SQLite database (in-memory) and SHA256-based fixture IDs per Rule 3.
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
+ * Previously created ~17 databases, now creates 1 per describe block (~4 total).
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import {
+  FeedbackTrackerService,
+  FeedbackTrackerServiceNoop,
+  LearningService,
+  EdgeService,
+  RetrieverService
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -33,10 +46,21 @@ const FIXTURES = {
 
 describe("FeedbackTrackerServiceLive Integration", () => {
   describe("recordUsage", () => {
-    it("creates USED_IN_RUN edges for each learning", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
+    let shared: SharedTestLayerResult
 
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
+    })
+
+    it("creates USED_IN_RUN edges for each learning", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -64,7 +88,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           const edges2 = yield* edgeSvc.findFromSource("learning", String(learning2.id))
 
           return { edges1, edges2 }
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Check edges were created
@@ -85,9 +109,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("stores position in metadata", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -121,7 +142,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           const edges3 = yield* edgeSvc.findFromSource("learning", String(learning3.id))
 
           return { edges1, edges2, edges3 }
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Check positions in metadata
@@ -131,9 +152,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("stores recordedAt in metadata", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService, EdgeService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -155,7 +173,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           const edges = yield* edgeSvc.findFromSource("learning", String(learning.id))
 
           return edges[0]
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Check recordedAt is ISO string
@@ -165,24 +183,32 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("handles empty learnings array", async () => {
-      const { makeAppLayer, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       // Should not throw
       await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
           yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [])
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
     })
   })
 
   describe("getFeedbackScore", () => {
-    it("returns 0.5 for learning with no feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
+    let shared: SharedTestLayerResult
 
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
+    })
+
+    it("returns 0.5 for learning with no feedback", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -195,16 +221,13 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           })
 
           return yield* feedbackSvc.getFeedbackScore(learning.id)
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result).toBe(0.5)
     })
 
     it("returns higher score for all helpful feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -221,7 +244,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           yield* feedbackSvc.recordUsage(FIXTURES.RUN_3, [{ id: learning.id, helpful: true }])
 
           return yield* feedbackSvc.getFeedbackScore(learning.id)
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Bayesian: (3 + 0.5 * 2) / (3 + 2) = 4 / 5 = 0.8
@@ -229,9 +252,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns lower score for all unhelpful feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -248,7 +268,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           yield* feedbackSvc.recordUsage(FIXTURES.RUN_3, [{ id: learning.id, helpful: false }])
 
           return yield* feedbackSvc.getFeedbackScore(learning.id)
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Bayesian: (0 + 0.5 * 2) / (3 + 2) = 1 / 5 = 0.2
@@ -256,9 +276,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns balanced score for mixed feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -276,7 +293,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           yield* feedbackSvc.recordUsage(fixtureId("run-4"), [{ id: learning.id, helpful: false }])
 
           return yield* feedbackSvc.getFeedbackScore(learning.id)
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Bayesian: (2 + 0.5 * 2) / (4 + 2) = 3 / 6 = 0.5
@@ -284,9 +301,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("score regresses to prior with less data", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -301,7 +315,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           yield* feedbackSvc.recordUsage(FIXTURES.RUN_1, [{ id: learning.id, helpful: true }])
 
           return yield* feedbackSvc.getFeedbackScore(learning.id)
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Bayesian: (1 + 0.5 * 2) / (1 + 2) = 2 / 3 ≈ 0.667
@@ -310,9 +324,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("calculates Bayesian average correctly with 3/4 helpful (~0.667)", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -330,7 +341,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           yield* feedbackSvc.recordUsage(fixtureId("run-4"), [{ id: learning.id, helpful: false }])
 
           return yield* feedbackSvc.getFeedbackScore(learning.id)
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Bayesian: (3 + 0.5 * 2) / (4 + 2) = 4 / 6 ≈ 0.667
@@ -339,9 +350,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("scores are independent per learning", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -368,7 +376,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           const score2 = yield* feedbackSvc.getFeedbackScore(learning2.id)
 
           return { score1, score2 }
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Learning 1: (2 + 1) / (2 + 2) = 0.75
@@ -379,10 +387,21 @@ describe("FeedbackTrackerServiceLive Integration", () => {
   })
 
   describe("getFeedbackScores (batch)", () => {
-    it("returns map with all 0.5 for learnings with no feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
+    let shared: SharedTestLayerResult
 
+    beforeAll(async () => {
+      shared = await createSharedTestLayer()
+    })
+
+    afterEach(async () => {
+      await shared.reset()
+    })
+
+    afterAll(async () => {
+      await shared.close()
+    })
+
+    it("returns map with all 0.5 for learnings with no feedback", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -403,7 +422,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           })
 
           return yield* feedbackSvc.getFeedbackScores([learning1.id, learning2.id, learning3.id])
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.size).toBe(3)
@@ -413,9 +432,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns correct scores for multiple learnings with mixed feedback", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -450,7 +466,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
             scores: yield* feedbackSvc.getFeedbackScores([learning1.id, learning2.id, learning3.id]),
             ids: { id1: learning1.id, id2: learning2.id, id3: learning3.id }
           }
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       // Learning 1: (3 + 0.5 * 2) / (3 + 2) = 4 / 5 = 0.8
@@ -462,23 +478,17 @@ describe("FeedbackTrackerServiceLive Integration", () => {
     })
 
     it("returns empty map for empty input array", async () => {
-      const { makeAppLayer, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
           return yield* feedbackSvc.getFeedbackScores([])
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.size).toBe(0)
     })
 
     it("returns same scores as single getFeedbackScore calls", async () => {
-      const { makeAppLayer, FeedbackTrackerService, LearningService } = await import("@jamesaphoenix/tx-core")
-      const layer = makeAppLayer(":memory:")
-
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const feedbackSvc = yield* FeedbackTrackerService
@@ -506,7 +516,7 @@ describe("FeedbackTrackerServiceLive Integration", () => {
           const batch = yield* feedbackSvc.getFeedbackScores([learning1.id, learning2.id])
 
           return { single1, single2, batch1: batch.get(learning1.id), batch2: batch.get(learning2.id) }
-        }).pipe(Effect.provide(layer))
+        }).pipe(Effect.provide(shared.layer))
       )
 
       expect(result.batch1).toBe(result.single1)
@@ -521,9 +531,6 @@ describe("FeedbackTrackerServiceLive Integration", () => {
 
 describe("FeedbackTrackerServiceNoop", () => {
   it("recordUsage does nothing", async () => {
-    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-    const { Effect } = await import("effect")
-
     await Effect.runPromise(
       Effect.gen(function* () {
         const feedbackSvc = yield* FeedbackTrackerService
@@ -536,9 +543,6 @@ describe("FeedbackTrackerServiceNoop", () => {
   })
 
   it("getFeedbackScore always returns 0.5", async () => {
-    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-    const { Effect } = await import("effect")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const feedbackSvc = yield* FeedbackTrackerService
@@ -550,9 +554,6 @@ describe("FeedbackTrackerServiceNoop", () => {
   })
 
   it("getFeedbackScores returns all 0.5 scores", async () => {
-    const { FeedbackTrackerServiceNoop, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-    const { Effect } = await import("effect")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const feedbackSvc = yield* FeedbackTrackerService
@@ -573,10 +574,21 @@ describe("FeedbackTrackerServiceNoop", () => {
 // =============================================================================
 
 describe("FeedbackTracker Retriever Integration", () => {
-  it("search results include feedbackScore field", async () => {
-    const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("search results include feedbackScore field", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -590,7 +602,7 @@ describe("FeedbackTracker Retriever Integration", () => {
 
         // Search should include feedbackScore
         return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.length).toBeGreaterThanOrEqual(1)
@@ -605,9 +617,6 @@ describe("FeedbackTracker Retriever Integration", () => {
   })
 
   it("feedbackScore defaults to 0.5 for learnings with no feedback", async () => {
-    const { makeAppLayer, RetrieverService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -620,7 +629,7 @@ describe("FeedbackTracker Retriever Integration", () => {
         })
 
         return yield* retrieverSvc.search("database", { limit: 10, minScore: 0 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.length).toBeGreaterThanOrEqual(1)
@@ -630,9 +639,6 @@ describe("FeedbackTracker Retriever Integration", () => {
   })
 
   it("learnings with good feedback rank higher than new learnings (same BM25 score)", async () => {
-    const { makeAppLayer, RetrieverService, LearningService, FeedbackTrackerService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -662,7 +668,7 @@ describe("FeedbackTracker Retriever Integration", () => {
           helpfulId: helpfulLearning.id,
           newId: newLearning.id
         }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.searchResults.length).toBeGreaterThanOrEqual(2)

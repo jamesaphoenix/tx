@@ -3,11 +3,17 @@
  *
  * Tests the EdgeService at the service layer with full dependency injection.
  * Uses real SQLite database (in-memory) and SHA256-based fixture IDs per Rule 3.
+ *
+ * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+
+// Import services once at module level
+import { EdgeService, LearningService } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -38,10 +44,21 @@ void FIXTURES
 // =============================================================================
 
 describe("EdgeService Integration via @tx/core", () => {
-  it("createEdge creates an edge with valid input", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("createEdge creates an edge with valid input", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -66,7 +83,7 @@ describe("EdgeService Integration via @tx/core", () => {
           targetId: String(learning2.id),
           weight: 0.8,
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.id).toBe(1)
@@ -77,9 +94,6 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("createEdge uses default weight of 1.0", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -97,16 +111,13 @@ describe("EdgeService Integration via @tx/core", () => {
           targetType: "file",
           targetId: "src/db.ts",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.weight).toBe(1.0)
   })
 
   it("get returns edge by ID", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -126,7 +137,7 @@ describe("EdgeService Integration via @tx/core", () => {
         })
 
         return yield* edgeSvc.get(1)
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.id).toBe(1)
@@ -134,14 +145,11 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("get fails with EdgeNotFoundError for nonexistent ID", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
         return yield* edgeSvc.get(999)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -151,9 +159,6 @@ describe("EdgeService Integration via @tx/core", () => {
   })
 
   it("update changes edge weight", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -174,16 +179,13 @@ describe("EdgeService Integration via @tx/core", () => {
         })
 
         return yield* edgeSvc.update(1, { weight: 0.9 })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.weight).toBe(0.9)
   })
 
   it("invalidateEdge soft deletes an edge", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -208,7 +210,7 @@ describe("EdgeService Integration via @tx/core", () => {
         const getResult = yield* edgeSvc.get(1).pipe(Effect.either)
 
         return { invalidated, getResult }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.invalidated).toBe(true)
@@ -221,10 +223,21 @@ describe("EdgeService Integration via @tx/core", () => {
 // =============================================================================
 
 describe("EdgeService validation", () => {
-  it("createEdge fails with ValidationError for invalid edge type", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("createEdge fails with ValidationError for invalid edge type", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -235,7 +248,7 @@ describe("EdgeService validation", () => {
           targetType: "file",
           targetId: "src/db.ts",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -245,9 +258,6 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for invalid source type", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -258,7 +268,7 @@ describe("EdgeService validation", () => {
           targetType: "file",
           targetId: "src/db.ts",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -268,9 +278,6 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for invalid target type", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -281,7 +288,7 @@ describe("EdgeService validation", () => {
           targetType: "invalid" as any,
           targetId: "src/db.ts",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -291,9 +298,6 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for empty source ID", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -304,7 +308,7 @@ describe("EdgeService validation", () => {
           targetType: "file",
           targetId: "src/db.ts",
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -314,9 +318,6 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for weight > 1", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -328,7 +329,7 @@ describe("EdgeService validation", () => {
           targetId: "src/db.ts",
           weight: 1.5,
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -338,9 +339,6 @@ describe("EdgeService validation", () => {
   })
 
   it("createEdge fails with ValidationError for weight < 0", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
@@ -352,7 +350,7 @@ describe("EdgeService validation", () => {
           targetId: "src/db.ts",
           weight: -0.5,
         })
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(shared.layer), Effect.either)
     )
 
     expect(result._tag).toBe("Left")
@@ -367,10 +365,21 @@ describe("EdgeService validation", () => {
 // =============================================================================
 
 describe("EdgeService neighbor operations", () => {
-  it("findNeighbors returns outgoing neighbors", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("findNeighbors returns outgoing neighbors", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -399,7 +408,7 @@ describe("EdgeService neighbor operations", () => {
         return yield* edgeSvc.findNeighbors("learning", String(learning.id), {
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -407,9 +416,6 @@ describe("EdgeService neighbor operations", () => {
   })
 
   it("findNeighbors returns incoming neighbors", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -435,7 +441,7 @@ describe("EdgeService neighbor operations", () => {
         return yield* edgeSvc.findNeighbors("learning", String(learning2.id), {
           direction: "incoming",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -443,9 +449,6 @@ describe("EdgeService neighbor operations", () => {
   })
 
   it("findNeighbors filters by edge type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -474,7 +477,7 @@ describe("EdgeService neighbor operations", () => {
         return yield* edgeSvc.findNeighbors("learning", String(learning.id), {
           edgeTypes: ["ANCHORED_TO"],
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -482,9 +485,6 @@ describe("EdgeService neighbor operations", () => {
   })
 
   it("findNeighbors with depth > 1 traverses multiple hops", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -523,7 +523,7 @@ describe("EdgeService neighbor operations", () => {
           depth: 2,
           direction: "outgoing",
         })
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
@@ -539,10 +539,21 @@ describe("EdgeService neighbor operations", () => {
 // =============================================================================
 
 describe("EdgeService path finding", () => {
-  it("findPath returns path between two nodes", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("findPath returns path between two nodes", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -571,7 +582,7 @@ describe("EdgeService path finding", () => {
           "learning",
           String(learning2.id)
         )
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -580,9 +591,6 @@ describe("EdgeService path finding", () => {
   })
 
   it("findPath returns null when no path exists", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -605,16 +613,13 @@ describe("EdgeService path finding", () => {
           "learning",
           String(learning2.id)
         )
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeNull()
   })
 
   it("findPath finds multi-hop path", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -655,7 +660,7 @@ describe("EdgeService path finding", () => {
           "learning",
           String(learning3.id)
         )
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).not.toBeNull()
@@ -668,10 +673,21 @@ describe("EdgeService path finding", () => {
 // =============================================================================
 
 describe("EdgeService query operations", () => {
-  it("findByType returns edges of specific type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("findByType returns edges of specific type", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -698,7 +714,7 @@ describe("EdgeService query operations", () => {
         })
 
         return yield* edgeSvc.findByType("ANCHORED_TO")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(1)
@@ -706,9 +722,6 @@ describe("EdgeService query operations", () => {
   })
 
   it("findFromSource returns all edges from a source", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -735,16 +748,13 @@ describe("EdgeService query operations", () => {
         })
 
         return yield* edgeSvc.findFromSource("learning", String(learning.id))
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
   })
 
   it("findToTarget returns all edges to a target", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -775,16 +785,13 @@ describe("EdgeService query operations", () => {
         })
 
         return yield* edgeSvc.findToTarget("file", "src/db.ts")
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toHaveLength(2)
   })
 
   it("countByType returns counts for each edge type", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -818,7 +825,7 @@ describe("EdgeService query operations", () => {
         })
 
         return yield* edgeSvc.countByType()
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.get("ANCHORED_TO")).toBe(2)
@@ -831,10 +838,21 @@ describe("EdgeService query operations", () => {
 // =============================================================================
 
 describe("EdgeService batch operations", () => {
-  it("findFromMultipleSources returns edges grouped by source ID", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
+  let shared: SharedTestLayerResult
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("findFromMultipleSources returns edges grouped by source ID", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -895,7 +913,7 @@ describe("EdgeService batch operations", () => {
             id3: String(learning3.id)
           }
         }
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     // Should have entries for all 3 learnings
@@ -918,23 +936,17 @@ describe("EdgeService batch operations", () => {
   })
 
   it("findFromMultipleSources returns empty map for empty input", async () => {
-    const { makeAppLayer, EdgeService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const edgeSvc = yield* EdgeService
         return yield* edgeSvc.findFromMultipleSources("learning", [])
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result.size).toBe(0)
   })
 
   it("findFromMultipleSources edges are sorted by weight descending", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -977,7 +989,7 @@ describe("EdgeService batch operations", () => {
         )
 
         return edgesMap.get(String(learning.id))
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeDefined()
@@ -990,9 +1002,6 @@ describe("EdgeService batch operations", () => {
   })
 
   it("findFromMultipleSources only returns valid (non-invalidated) edges", async () => {
-    const { makeAppLayer, EdgeService, LearningService } = await import("@jamesaphoenix/tx-core")
-    const layer = makeAppLayer(":memory:")
-
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -1028,7 +1037,7 @@ describe("EdgeService batch operations", () => {
         )
 
         return edgesMap.get(String(learning.id))
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toBeDefined()

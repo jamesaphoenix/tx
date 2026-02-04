@@ -1,4 +1,1 @@
-
-> @tx/api-server@0.1.0 typecheck
-> tsc --noEmit
-
+$ tsc --noEmit
