@@ -25,6 +25,17 @@ function opt(flags: Flags, ...names: string[]): string | undefined {
   return undefined
 }
 
+function parseFloatOpt(flags: Flags, flagName: string, defaultValue: number, ...names: string[]): number {
+  const val = opt(flags, ...names)
+  if (val === undefined) return defaultValue
+  const parsed = parseFloat(val)
+  if (Number.isNaN(parsed)) {
+    console.error(`Invalid value for --${flagName}: "${val}" is not a valid number`)
+    process.exit(1)
+  }
+  return parsed
+}
+
 export const learningAdd = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const content = pos[0]
@@ -69,7 +80,7 @@ export const learningSearch = (pos: string[], flags: Flags) =>
 
     const svc = yield* LearningService
     const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
-    const minScore = opt(flags, "min-score") ? parseFloat(opt(flags, "min-score")!) : 0.3
+    const minScore = parseFloatOpt(flags, "min-score", 0.3, "min-score")
 
     // Graph expansion options
     const expand = flag(flags, "expand")
@@ -138,7 +149,7 @@ export const learningHelpful = (pos: string[], flags: Flags) =>
     }
 
     const svc = yield* LearningService
-    const score = opt(flags, "score") ? parseFloat(opt(flags, "score")!) : 1.0
+    const score = parseFloatOpt(flags, "score", 1.0, "score")
 
     yield* svc.updateOutcome(id, score)
     const learning = yield* svc.get(id)
