@@ -71,7 +71,7 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-lint-check.sh",
-            "timeout": 30
+            "timeout": 60
           }
         ]
       }
@@ -82,7 +82,7 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-ensure-completion.sh",
-            "timeout": 15
+            "timeout": 30
           }
         ]
       },
@@ -100,7 +100,7 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-check-tests.sh",
-            "timeout": 10
+            "timeout": 60
           }
         ]
       },
@@ -109,7 +109,7 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-check-coverage.sh",
-            "timeout": 15
+            "timeout": 60
           }
         ]
       },
