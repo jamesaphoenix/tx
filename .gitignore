@@ -6,6 +6,7 @@ dist/
 *.db-shm
 .turbo/
 *.tsbuildinfo
+coverage/
 .next/
 
 # Generated config files (compiled from .ts)
