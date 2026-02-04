@@ -407,7 +407,25 @@ export const AnchorVerificationServiceLive = Layer.effect(
         // Step 2: Type-specific verification
         switch (anchor.anchorType) {
           case "glob": {
-            // For glob anchors, the file exists and matches - valid
+            // For glob anchors, the file exists and matches - should be valid
+            // If previously drifted/invalid, recover to valid
+            if (oldStatus !== "valid") {
+              yield* anchorRepo.updateStatus(anchor.id, "valid")
+              yield* anchorRepo.logInvalidation({
+                anchorId: anchor.id,
+                oldStatus,
+                newStatus: "valid",
+                reason: "recovered",
+                detectedBy
+              })
+              return {
+                anchorId: anchor.id,
+                previousStatus: oldStatus,
+                newStatus: "valid" as const,
+                action: "self_healed" as const,
+                reason: "file_restored"
+              }
+            }
             yield* anchorRepo.updateVerifiedAt(anchor.id)
             return {
               anchorId: anchor.id,
@@ -460,6 +478,24 @@ export const AnchorVerificationServiceLive = Layer.effect(
               }
 
               if (newHash === anchor.contentHash) {
+                // Hash matches - if previously drifted/invalid, recover to valid
+                if (oldStatus !== "valid") {
+                  yield* anchorRepo.updateStatus(anchor.id, "valid")
+                  yield* anchorRepo.logInvalidation({
+                    anchorId: anchor.id,
+                    oldStatus,
+                    newStatus: "valid",
+                    reason: "recovered",
+                    detectedBy
+                  })
+                  return {
+                    anchorId: anchor.id,
+                    previousStatus: oldStatus,
+                    newStatus: "valid" as const,
+                    action: "self_healed" as const,
+                    reason: "content_restored"
+                  }
+                }
                 yield* anchorRepo.updateVerifiedAt(anchor.id)
                 return {
                   anchorId: anchor.id,
@@ -562,6 +598,24 @@ export const AnchorVerificationServiceLive = Layer.effect(
             }
 
             if (newHash === anchor.contentHash) {
+              // Hash matches - if previously drifted/invalid, recover to valid
+              if (oldStatus !== "valid") {
+                yield* anchorRepo.updateStatus(anchor.id, "valid")
+                yield* anchorRepo.logInvalidation({
+                  anchorId: anchor.id,
+                  oldStatus,
+                  newStatus: "valid",
+                  reason: "recovered",
+                  detectedBy
+                })
+                return {
+                  anchorId: anchor.id,
+                  previousStatus: oldStatus,
+                  newStatus: "valid" as const,
+                  action: "self_healed" as const,
+                  reason: "content_restored"
+                }
+              }
               yield* anchorRepo.updateVerifiedAt(anchor.id)
               return {
                 anchorId: anchor.id,
@@ -653,6 +707,24 @@ export const AnchorVerificationServiceLive = Layer.effect(
             const symbolExists = yield* symbolExistsInFile(fullPath, symbolName)
 
             if (symbolExists) {
+              // Symbol found - if previously drifted/invalid, recover to valid
+              if (oldStatus !== "valid") {
+                yield* anchorRepo.updateStatus(anchor.id, "valid")
+                yield* anchorRepo.logInvalidation({
+                  anchorId: anchor.id,
+                  oldStatus,
+                  newStatus: "valid",
+                  reason: "recovered",
+                  detectedBy
+                })
+                return {
+                  anchorId: anchor.id,
+                  previousStatus: oldStatus,
+                  newStatus: "valid" as const,
+                  action: "self_healed" as const,
+                  reason: "symbol_restored"
+                }
+              }
               yield* anchorRepo.updateVerifiedAt(anchor.id)
               return {
                 anchorId: anchor.id,
@@ -687,6 +759,24 @@ export const AnchorVerificationServiceLive = Layer.effect(
             const requiredLines = anchor.lineEnd ?? anchor.lineStart ?? 1
 
             if (lineCount >= requiredLines) {
+              // Line count sufficient - if previously drifted/invalid, recover to valid
+              if (oldStatus !== "valid") {
+                yield* anchorRepo.updateStatus(anchor.id, "valid")
+                yield* anchorRepo.logInvalidation({
+                  anchorId: anchor.id,
+                  oldStatus,
+                  newStatus: "valid",
+                  reason: "recovered",
+                  detectedBy
+                })
+                return {
+                  anchorId: anchor.id,
+                  previousStatus: oldStatus,
+                  newStatus: "valid" as const,
+                  action: "self_healed" as const,
+                  reason: "line_count_restored"
+                }
+              }
               yield* anchorRepo.updateVerifiedAt(anchor.id)
               return {
                 anchorId: anchor.id,
@@ -796,7 +886,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
           const baseDir = options.baseDir ?? process.cwd()
           const skipPinned = options.skipPinned ?? true
 
-          const anchors = yield* anchorRepo.findAllValid()
+          const anchors = yield* anchorRepo.findAll()
           const results: VerificationResult[] = []
           let errors = 0
 

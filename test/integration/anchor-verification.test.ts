@@ -409,6 +409,177 @@ describe("AnchorVerificationService Integration", () => {
       expect(result.unchanged).toBe(2)
       expect(result.invalid).toBe(0)
     })
+
+    it("includes drifted anchors in verification (bug fix: verifyAll should verify ALL anchors)", async () => {
+      // Create a file that will be modified
+      const initialContent = "export const original = true"
+      const driftedFile = await createTestFile(tempDir, "drifted-all.ts", initialContent)
+      const originalHash = computeHash(initialContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for drifted anchor in verifyAll",
+            sourceType: "manual"
+          })
+
+          // Create hash anchor
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: driftedFile,
+            value: originalHash,
+            contentHash: originalHash
+          })
+
+          // Modify the file to cause drift
+          yield* Effect.promise(() => fs.writeFile(driftedFile, "export const modified = true", "utf-8"))
+
+          // First verification marks as drifted
+          yield* verificationSvc.verify(1, { baseDir: tempDir })
+
+          // Verify anchor is now drifted
+          const anchorAfterDrift = yield* anchorRepo.findById(1)
+          if (anchorAfterDrift?.status !== "drifted") {
+            throw new Error(`Expected status 'drifted' but got '${anchorAfterDrift?.status}'`)
+          }
+
+          // Now restore the original content
+          yield* Effect.promise(() => fs.writeFile(driftedFile, initialContent, "utf-8"))
+
+          // verifyAll should include the drifted anchor and verify it
+          // With original content restored, the hash matches and it should become valid again
+          const summary = yield* verificationSvc.verifyAll({ baseDir: tempDir })
+
+          // Check that the anchor was included in verification
+          const anchorAfterVerifyAll = yield* anchorRepo.findById(1)
+
+          return { summary, anchorAfterVerifyAll }
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // The drifted anchor should have been included in verifyAll
+      expect(result.summary.total).toBe(1)
+      // After restoring original content, anchor should be unchanged (hash matches)
+      expect(result.anchorAfterVerifyAll?.status).toBe("valid")
+    })
+
+    it("includes invalid anchors in verification (bug fix: verifyAll should verify ALL anchors)", async () => {
+      // File that will be deleted and then restored
+      const filePath = path.join(tempDir, "invalid-restore.ts")
+      const content = "export const restored = true"
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for invalid anchor restoration",
+            sourceType: "manual"
+          })
+
+          // Create glob anchor for non-existent file
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "glob",
+            filePath: filePath,
+            value: "*.ts"
+          })
+
+          // First verification marks as invalid (file doesn't exist)
+          yield* verificationSvc.verify(1, { baseDir: tempDir })
+
+          // Verify anchor is now invalid
+          const anchorAfterInvalid = yield* anchorRepo.findById(1)
+          if (anchorAfterInvalid?.status !== "invalid") {
+            throw new Error(`Expected status 'invalid' but got '${anchorAfterInvalid?.status}'`)
+          }
+
+          // Now create/restore the file
+          yield* Effect.promise(() => fs.writeFile(filePath, content, "utf-8"))
+
+          // verifyAll should include the invalid anchor and verify it
+          // With file restored, the glob anchor should become valid again
+          const summary = yield* verificationSvc.verifyAll({ baseDir: tempDir })
+
+          // Check that the anchor was re-verified
+          const anchorAfterVerifyAll = yield* anchorRepo.findById(1)
+
+          return { summary, anchorAfterVerifyAll }
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // The invalid anchor should have been included in verifyAll
+      expect(result.summary.total).toBe(1)
+      // After restoring the file, glob anchor should be valid
+      expect(result.anchorAfterVerifyAll?.status).toBe("valid")
+    })
+
+    it("can self-heal drifted anchors through verifyAll", async () => {
+      // Original content with preview for self-healing
+      const originalContent = "export function calculate(x: number) { return x * 2 }"
+      const filePath = await createTestFile(tempDir, "self-heal-all.ts", originalContent)
+      const originalHash = computeHash(originalContent)
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for self-healing in verifyAll",
+            sourceType: "manual"
+          })
+
+          // Create hash anchor with content preview for self-healing
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "hash",
+            filePath: filePath,
+            value: originalHash,
+            contentHash: originalHash,
+            contentPreview: originalContent
+          })
+
+          // Major modification to cause drift (low similarity)
+          yield* Effect.promise(() => fs.writeFile(filePath, "class Unrelated { }", "utf-8"))
+
+          // First verification marks as drifted
+          yield* verificationSvc.verify(1, { baseDir: tempDir })
+
+          const anchorAfterDrift = yield* anchorRepo.findById(1)
+          if (anchorAfterDrift?.status !== "drifted") {
+            throw new Error(`Expected status 'drifted' but got '${anchorAfterDrift?.status}'`)
+          }
+
+          // Now change to similar content (high similarity, >80%)
+          const similarContent = "export function calculate(x: number): number { return x * 2 }"
+          yield* Effect.promise(() => fs.writeFile(filePath, similarContent, "utf-8"))
+
+          // verifyAll should include drifted anchor and self-heal it
+          const summary = yield* verificationSvc.verifyAll({ baseDir: tempDir })
+
+          const anchorAfterVerifyAll = yield* anchorRepo.findById(1)
+
+          return { summary, anchorAfterVerifyAll }
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // Drifted anchor was included and self-healed
+      expect(result.summary.total).toBe(1)
+      expect(result.summary.selfHealed).toBe(1)
+      expect(result.anchorAfterVerifyAll?.status).toBe("valid")
+    })
   })
 
   describe("verifyFile - file-specific verification", () => {

@@ -2,8 +2,10 @@ $ bun vitest run --passWithNoTests
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/agent-sdk
 
-No test files found, exiting with code 0
+ ✓ src/client.test.ts (14 tests) 2ms
 
-include: 
-exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  19:19:50
+   Duration  194ms (transform 37ms, setup 0ms, collect 46ms, tests 2ms, environment 0ms, prepare 30ms)
 
