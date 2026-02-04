@@ -195,6 +195,7 @@ export {
   type ExpandedLearning,
   type GraphExpansionOptions,
   type GraphExpansionResult,
+  type FailedAnchor,
   type VerificationResult,
   type VerificationSummary,
   type VerifyOptions,

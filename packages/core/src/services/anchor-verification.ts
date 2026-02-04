@@ -39,6 +39,13 @@ export interface VerificationResult {
   readonly newContentHash?: string | null
 }
 
+/** Details of an anchor that failed verification due to an error */
+export interface FailedAnchor {
+  readonly anchorId: number
+  readonly filePath: string
+  readonly error: string
+}
+
 /** Summary of batch verification */
 export interface VerificationSummary {
   readonly total: number
@@ -48,6 +55,8 @@ export interface VerificationSummary {
   readonly invalid: number
   readonly errors: number
   readonly duration: number
+  /** Anchors that failed with errors (for debugging) */
+  readonly failedAnchors: ReadonlyArray<FailedAnchor>
 }
 
 /** Options for verification */
@@ -826,7 +835,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
      */
     const aggregateResults = (
       results: VerificationResult[],
-      errors: number,
+      failedAnchors: FailedAnchor[],
       startTime: number
     ): VerificationSummary => {
       let unchanged = 0
@@ -852,13 +861,14 @@ export const AnchorVerificationServiceLive = Layer.effect(
       }
 
       return {
-        total: results.length + errors,
+        total: results.length + failedAnchors.length,
         unchanged,
         selfHealed,
         drifted,
         invalid,
-        errors,
-        duration: Date.now() - startTime
+        errors: failedAnchors.length,
+        duration: Date.now() - startTime,
+        failedAnchors
       }
     }
 
@@ -892,7 +902,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
 
           const anchors = yield* anchorRepo.findAll()
           const results: VerificationResult[] = []
-          let errors = 0
+          const failedAnchors: FailedAnchor[] = []
 
           for (const anchor of anchors) {
             if (skipPinned && anchor.pinned) {
@@ -906,8 +916,14 @@ export const AnchorVerificationServiceLive = Layer.effect(
             }
 
             const result = yield* verifyAnchor(anchor, detectedBy, baseDir).pipe(
-              Effect.catchAll(() => {
-                errors++
+              Effect.catchAll((error) => {
+                const errorMessage = error instanceof Error ? error.message : String(error)
+                console.error(`[AnchorVerification] Failed to verify anchor ${anchor.id} (${anchor.filePath}): ${errorMessage}`)
+                failedAnchors.push({
+                  anchorId: anchor.id,
+                  filePath: anchor.filePath,
+                  error: errorMessage
+                })
                 return Effect.succeed(null)
               })
             )
@@ -917,7 +933,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
             }
           }
 
-          return aggregateResults(results, errors, startTime)
+          return aggregateResults(results, failedAnchors, startTime)
         }),
 
       verifyFile: (filePath, options = {}) =>
@@ -929,7 +945,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
 
           const anchors = yield* anchorRepo.findByFilePath(filePath)
           const results: VerificationResult[] = []
-          let errors = 0
+          const failedAnchors: FailedAnchor[] = []
 
           for (const anchor of anchors) {
             if (skipPinned && anchor.pinned) {
@@ -943,8 +959,14 @@ export const AnchorVerificationServiceLive = Layer.effect(
             }
 
             const result = yield* verifyAnchor(anchor, detectedBy, baseDir).pipe(
-              Effect.catchAll(() => {
-                errors++
+              Effect.catchAll((error) => {
+                const errorMessage = error instanceof Error ? error.message : String(error)
+                console.error(`[AnchorVerification] Failed to verify anchor ${anchor.id} (${anchor.filePath}): ${errorMessage}`)
+                failedAnchors.push({
+                  anchorId: anchor.id,
+                  filePath: anchor.filePath,
+                  error: errorMessage
+                })
                 return Effect.succeed(null)
               })
             )
@@ -954,7 +976,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
             }
           }
 
-          return aggregateResults(results, errors, startTime)
+          return aggregateResults(results, failedAnchors, startTime)
         }),
 
       verifyGlob: (globPattern, options = {}) =>
@@ -971,7 +993,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
           )
 
           const results: VerificationResult[] = []
-          let errors = 0
+          const failedAnchors: FailedAnchor[] = []
 
           for (const anchor of matchingAnchors) {
             if (skipPinned && anchor.pinned) {
@@ -985,8 +1007,14 @@ export const AnchorVerificationServiceLive = Layer.effect(
             }
 
             const result = yield* verifyAnchor(anchor, detectedBy, baseDir).pipe(
-              Effect.catchAll(() => {
-                errors++
+              Effect.catchAll((error) => {
+                const errorMessage = error instanceof Error ? error.message : String(error)
+                console.error(`[AnchorVerification] Failed to verify anchor ${anchor.id} (${anchor.filePath}): ${errorMessage}`)
+                failedAnchors.push({
+                  anchorId: anchor.id,
+                  filePath: anchor.filePath,
+                  error: errorMessage
+                })
                 return Effect.succeed(null)
               })
             )
@@ -996,7 +1024,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
             }
           }
 
-          return aggregateResults(results, errors, startTime)
+          return aggregateResults(results, failedAnchors, startTime)
         })
     }
   })

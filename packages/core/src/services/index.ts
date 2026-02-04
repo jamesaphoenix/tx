@@ -109,6 +109,7 @@ export {
   getAnchorTTL,
   isStale,
   DEFAULT_ANCHOR_CACHE_TTL,
+  type FailedAnchor,
   type VerificationResult,
   type VerificationSummary,
   type VerifyOptions
