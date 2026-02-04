@@ -13,6 +13,7 @@
 
 import type { Context, Next } from "hono"
 import type { HttpBindings } from "@hono/node-server"
+import { randomUUID } from "node:crypto"
 
 /**
  * Rate limit configuration options.
@@ -200,8 +201,15 @@ const getClientId = (c: Context<{ Bindings: HttpBindings }>): string => {
   }
 
   // Fallback when connection info is not available
-  // This is a secure default - all requests share one bucket, so rate limiting still works
-  return "unknown"
+  // Generate unique ID per request to prevent shared bucket DoS attacks
+  // SECURITY NOTE: This means rate limiting is ineffective for unidentifiable clients,
+  // but it's better than a shared bucket that allows attackers to block all anonymous users.
+  // In production with @hono/node-server, connection IP should be available.
+  console.warn(
+    "[rate-limit] Unable to identify client IP - rate limiting degraded for this request. " +
+      "Ensure your server runtime exposes socket info or configure a trusted reverse proxy."
+  )
+  return `anon-${randomUUID()}`
 }
 
 /**

@@ -70,10 +70,12 @@ describe("Rate limiting security", () => {
       process.env.TX_API_RATE_LIMIT = "2" // Allow only 2 requests
     })
 
-    it("should ignore X-Forwarded-For header and rate limit all requests together", async () => {
+    it("should ignore X-Forwarded-For header (not treated as client identity)", async () => {
       const app = createApp()
 
-      // First two requests should succeed (from different "IPs" but they should be ignored)
+      // When trust proxy is off, X-Forwarded-For is ignored
+      // Without connection IP available (in test env), each request gets unique anon-{uuid}
+      // This means requests are NOT rate limited against each other (no shared bucket)
       const response1 = await app.request("/health", {
         headers: { "X-Forwarded-For": "1.1.1.1" }
       })
@@ -84,26 +86,49 @@ describe("Rate limiting security", () => {
       })
       expect(response2.status).toBe(200)
 
-      // Third request should be rate limited even with a different X-Forwarded-For
-      // because the header is not trusted - all requests share the same bucket
+      // Third request also succeeds - no shared bucket to exhaust
+      // This prevents DoS attacks where one client exhausts the "unknown" bucket
       const response3 = await app.request("/health", {
         headers: { "X-Forwarded-For": "3.3.3.3" }
       })
-      expect(response3.status).toBe(429)
+      expect(response3.status).toBe(200)
     })
 
-    it("should ignore X-Real-IP header", async () => {
+    it("should ignore X-Real-IP header (not treated as client identity)", async () => {
       const app = createApp()
 
-      // Use up the rate limit
-      await app.request("/health", { headers: { "X-Real-IP": "10.0.0.1" } })
-      await app.request("/health", { headers: { "X-Real-IP": "10.0.0.2" } })
+      // Without trust proxy, X-Real-IP is ignored
+      // Each request gets unique ID, preventing shared bucket exhaustion
+      const response1 = await app.request("/health", { headers: { "X-Real-IP": "10.0.0.1" } })
+      expect(response1.status).toBe(200)
 
-      // Third request with different X-Real-IP should still be rate limited
-      const response = await app.request("/health", {
+      const response2 = await app.request("/health", { headers: { "X-Real-IP": "10.0.0.2" } })
+      expect(response2.status).toBe(200)
+
+      // Third request also succeeds - no shared bucket DoS vulnerability
+      const response3 = await app.request("/health", {
         headers: { "X-Real-IP": "10.0.0.3" }
       })
-      expect(response.status).toBe(429)
+      expect(response3.status).toBe(200)
+    })
+
+    it("should NOT allow shared bucket DoS (security fix)", async () => {
+      const app = createApp()
+
+      // Security test: Verify that anonymous requests do NOT share a rate limit bucket
+      // Previously, all requests without identifiable IP used "unknown" as client ID,
+      // allowing an attacker to exhaust the shared bucket and block all anonymous users.
+      // Now each request gets a unique anon-{uuid}, preventing this attack vector.
+
+      // Make many requests - none should be rate limited since each has unique ID
+      const responses = await Promise.all(
+        Array.from({ length: 5 }, () => app.request("/health"))
+      )
+
+      // All requests should succeed (no shared bucket to exhaust)
+      responses.forEach((response) => {
+        expect(response.status).toBe(200)
+      })
     })
   })
 
@@ -142,19 +167,23 @@ describe("Rate limiting security", () => {
     it("should reject malformed X-Forwarded-For values", async () => {
       const app = createApp()
 
-      // Malformed IPs should fall back to connection IP (shared bucket)
-      await app.request("/health", {
+      // Malformed IPs should fall back to unique anon-{uuid} (no shared bucket)
+      // This prevents DoS via malformed headers exhausting a shared bucket
+      const response1 = await app.request("/health", {
         headers: { "X-Forwarded-For": "not-an-ip" }
       })
-      await app.request("/health", {
+      expect(response1.status).toBe(200)
+
+      const response2 = await app.request("/health", {
         headers: { "X-Forwarded-For": "malicious<script>" }
       })
+      expect(response2.status).toBe(200)
 
-      // Both malformed requests should share a bucket and trigger rate limit
-      const response = await app.request("/health", {
+      // Each malformed request gets unique ID, so no rate limit triggered
+      const response3 = await app.request("/health", {
         headers: { "X-Forwarded-For": "another-invalid" }
       })
-      expect(response.status).toBe(429)
+      expect(response3.status).toBe(200)
     })
 
     it("should take first IP from X-Forwarded-For chain", async () => {
@@ -194,10 +223,13 @@ describe("Rate limiting security", () => {
 
     it("should include Retry-After header when rate limited", async () => {
       process.env.TX_API_RATE_LIMIT = "1"
+      // Enable trust proxy to allow rate limiting via X-Forwarded-For
+      process.env.TX_API_TRUST_PROXY = "true"
       const app = createApp()
 
-      await app.request("/health")
-      const response = await app.request("/health")
+      // Use same IP to trigger rate limiting
+      await app.request("/health", { headers: { "X-Forwarded-For": "10.10.10.10" } })
+      const response = await app.request("/health", { headers: { "X-Forwarded-For": "10.10.10.10" } })
 
       expect(response.status).toBe(429)
       expect(response.headers.get("Retry-After")).toBeDefined()
