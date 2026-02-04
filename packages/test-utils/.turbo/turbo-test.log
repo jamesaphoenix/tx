@@ -2,9 +2,9 @@ $ bun vitest run --passWithNoTests
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
 
- ✓ src/llm-cache/cache.test.ts (26 tests) 46ms
- ✓ src/helpers/effect.test.ts (28 tests) 73ms
- ✓ src/mocks/mocks.test.ts (63 tests) 224ms
+ ✓ src/llm-cache/cache.test.ts (26 tests) 70ms
+ ✓ src/helpers/effect.test.ts (28 tests) 68ms
+ ✓ src/mocks/mocks.test.ts (63 tests) 221ms
 
 ⎯⎯⎯⎯⎯⎯ Failed Suites 3 ⎯⎯⎯⎯⎯⎯⎯
 
@@ -14,14 +14,8 @@ $ bun vitest run --passWithNoTests
 Error: Cannot find package 'bun:sqlite' imported from '/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/database/test-database.ts'
  ❯ src/database/test-database.ts:10:1
       8|  */
-
- Test Files  3 failed | 3 passed (6)
       9| 
-      Tests  117 passed (117)
      10| import { Database } from "bun:sqlite"
-   Start at  20:31:26
-   Duration  642ms (transform 188ms, setup 0ms, collect 509ms, tests 342ms, environment 0ms, prepare 310ms)
-
        | ^
      11| import { Context, Effect, Layer } from "effect"
      12| import { applyMigrations, type SqliteRunResult } from "@jamesaphoenix/…
@@ -30,6 +24,12 @@ Caused by: Error: Failed to load url bun:sqlite (resolved id: bun:sqlite). Does 
  ❯ loadAndTransform ../../node_modules/vitest/node_modules/vite/dist/node/chunks/config.js:22663:33
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  3 failed | 3 passed (6)
+      Tests  117 passed (117)
+   Start at  21:12:55
+   Duration  936ms (transform 201ms, setup 0ms, collect 832ms, tests 360ms, environment 0ms, prepare 558ms)
 
 error: "vitest" exited with code 1
 error: script "test" exited with code 1
