@@ -205,19 +205,25 @@ export const LearningServiceLive = Layer.effect(
               const batch: readonly Learning[] = yield* learningRepo.findWithoutEmbeddingPaginated(BATCH_SIZE)
               if (batch.length === 0) break
 
+              // Track per-batch progress to detect complete failures
+              let batchProcessed = 0
               for (const learning of batch) {
                 const result = yield* Effect.either(embeddingService.embed(learning.content))
                 if (result._tag === "Right") {
                   yield* learningRepo.updateEmbedding(learning.id, result.right)
                   processed++
+                  batchProcessed++
                 } else {
                   failed++
                 }
               }
 
-              // If we processed less than batch size and had failures, we might loop forever
-              // Break if we didn't successfully process any in this batch
-              if (processed === 0 && failed === batch.length) break
+              // If we didn't successfully process any in this batch, abort to prevent infinite loop
+              // This handles cases like API rate limits or network errors affecting the entire batch
+              if (batchProcessed === 0 && batch.length > 0) {
+                console.error(`Batch embedding completely failed (0/${batch.length} succeeded), aborting to prevent infinite loop`)
+                break
+              }
             }
           }
 
