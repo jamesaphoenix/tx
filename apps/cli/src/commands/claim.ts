@@ -48,7 +48,12 @@ export const claim = (pos: string[], flags: Flags) =>
       process.exit(1)
     }
 
-    const leaseMinutes = opt(flags, "lease") ? parseInt(opt(flags, "lease")!, 10) : undefined
+    const leaseOpt = opt(flags, "lease")
+    const leaseMinutes = leaseOpt ? parseInt(leaseOpt, 10) : undefined
+    if (leaseMinutes !== undefined && Number.isNaN(leaseMinutes)) {
+      console.error(`Invalid value for --lease: "${leaseOpt}" is not a valid number`)
+      process.exit(1)
+    }
 
     const svc = yield* ClaimService
     const claim = yield* svc.claim(taskId as TaskId, workerId, leaseMinutes)
