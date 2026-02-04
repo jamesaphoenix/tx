@@ -12,6 +12,7 @@ import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
 import { RunRepository } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
+import { parseTranscript, findMatchingTranscript, type ChatMessage } from "../utils/transcript-parser.js"
 
 // -----------------------------------------------------------------------------
 // Schemas
@@ -67,6 +68,19 @@ const UpdateRunSchema = z.object({
   errorMessage: z.string().optional(),
   transcriptPath: z.string().optional()
 }).openapi("UpdateRun")
+
+const ChatMessageSchema = z.object({
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.union([z.string(), z.unknown()]),
+  type: z.enum(["tool_use", "tool_result", "text", "thinking"]).optional(),
+  tool_name: z.string().optional(),
+  timestamp: z.string().optional()
+}).openapi("ChatMessage")
+
+const RunDetailResponseSchema = z.object({
+  run: RunSchema,
+  messages: z.array(ChatMessageSchema)
+}).openapi("RunDetailResponse")
 
 // -----------------------------------------------------------------------------
 // Serialization
@@ -141,14 +155,15 @@ const getRunRoute = createRoute({
   method: "get",
   path: "/api/runs/{id}",
   tags: ["Runs"],
-  summary: "Get run details",
+  summary: "Get run details with transcript messages",
+  description: "Returns run details along with parsed conversation transcript messages",
   request: {
     params: z.object({ id: RunIdSchema })
   },
   responses: {
     200: {
-      description: "Run details",
-      content: { "application/json": { schema: RunSchema } }
+      description: "Run details with messages",
+      content: { "application/json": { schema: RunDetailResponseSchema } }
     },
     404: { description: "Run not found" }
   }
@@ -283,7 +298,31 @@ runsRouter.openapi(getRunRoute, async (c) => {
     })
   )
 
-  return c.json(serializeRun(run), 200)
+  // Parse transcript if available
+  let messages: ChatMessage[] = []
+  let transcriptPath = run.transcriptPath
+
+  // If no explicit transcript path, try to find one by timestamp correlation
+  if (!transcriptPath) {
+    // Get the current working directory from environment or default to a known project path
+    const cwd = process.cwd()
+    try {
+      transcriptPath = await findMatchingTranscript(cwd, run.startedAt, run.endedAt)
+    } catch {
+      // Ignore errors in transcript discovery
+    }
+  }
+
+  if (transcriptPath) {
+    try {
+      messages = await Effect.runPromise(parseTranscript(transcriptPath))
+    } catch {
+      // If transcript parsing fails, return empty messages
+      messages = []
+    }
+  }
+
+  return c.json({ run: serializeRun(run), messages }, 200)
 })
 
 runsRouter.openapi(createRunRoute, async (c) => {

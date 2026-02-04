@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type ChatMessage } from "./api/client"
 import { TaskList, TaskFilters, TaskDetail, useTaskFiltersWithUrl } from "./components/tasks"
@@ -35,7 +35,7 @@ function StatusBadge({ status }: { status: string }) {
 // Chat/Conversation View
 // =============================================================================
 
-function ChatMessage({ message }: { message: ChatMessage }) {
+function ChatMessageComponent({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user"
   const isAssistant = message.role === "assistant"
   const isSystem = message.role === "system"
@@ -80,11 +80,40 @@ function ChatMessage({ message }: { message: ChatMessage }) {
 }
 
 function ChatView({ runId }: { runId: string }) {
-  const { data, isLoading, error } = useQuery({
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
+
+  const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["run", runId],
     queryFn: () => fetchers.runDetail(runId),
     enabled: !!runId,
+    // Poll every 2 seconds when run is in progress
+    refetchInterval: (query) => {
+      const status = query.state.data?.run?.status
+      return status === "running" ? 2000 : false
+    },
   })
+
+  const run = data?.run
+  const messages = data?.messages ?? []
+  const isRunning = run?.status === "running"
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (autoScroll && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [messages.length, autoScroll])
+
+  // Detect if user has scrolled up (disable auto-scroll)
+  const handleScroll = () => {
+    if (messagesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 100
+      setAutoScroll(isAtBottom)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -98,24 +127,35 @@ function ChatView({ runId }: { runId: string }) {
     return <div className="text-red-400 p-4">Error loading run: {String(error)}</div>
   }
 
-  const run = data?.run
-  const messages = data?.messages ?? []
-
   return (
     <div className="flex flex-col h-full">
       {/* Run Header */}
       {run && (
         <div className="p-4 border-b border-gray-700 bg-gray-800/50">
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex items-center gap-2">
               <code className="text-sm text-gray-400">{run.id}</code>
-              <span className="ml-2 text-purple-400">{run.agent}</span>
+              <span className="text-purple-400">{run.agent}</span>
+              {isRunning && (
+                <span className="flex items-center gap-1 text-xs text-yellow-400">
+                  <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                  Live
+                </span>
+              )}
+              {isFetching && !isLoading && (
+                <span className="w-3 h-3 border border-gray-500 border-t-transparent rounded-full animate-spin" />
+              )}
             </div>
             <StatusBadge status={run.status} />
           </div>
           {run.taskId && (
             <div className="text-sm text-gray-300 mt-1">
               Task: <code className="text-xs">{run.taskId}</code>
+            </div>
+          )}
+          {run.transcriptPath && (
+            <div className="text-xs text-gray-500 mt-1 truncate" title={run.transcriptPath}>
+              Transcript: {run.transcriptPath}
             </div>
           )}
           {run.summary && (
@@ -128,18 +168,52 @@ function ChatView({ runId }: { runId: string }) {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-2"
+      >
         {messages.length === 0 ? (
           <div className="text-gray-500 text-center py-8">
-            No conversation transcript available
-            <div className="text-xs mt-2">
-              Transcripts are stored at ~/.claude/projects/...
-            </div>
+            {isRunning ? (
+              <>
+                <div className="animate-pulse">Waiting for transcript...</div>
+                <div className="text-xs mt-2">
+                  The conversation will appear here as the agent works
+                </div>
+              </>
+            ) : (
+              <>
+                No conversation transcript available
+                <div className="text-xs mt-2">
+                  {run?.transcriptPath
+                    ? "Transcript file could not be read"
+                    : "No transcript path associated with this run"
+                  }
+                </div>
+              </>
+            )}
           </div>
         ) : (
-          messages.map((msg, i) => <ChatMessage key={i} message={msg} />)
+          <>
+            {messages.map((msg, i) => <ChatMessageComponent key={i} message={msg} />)}
+            <div ref={messagesEndRef} />
+          </>
         )}
       </div>
+
+      {/* Auto-scroll indicator */}
+      {!autoScroll && messages.length > 0 && (
+        <button
+          onClick={() => {
+            setAutoScroll(true)
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+          }}
+          className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-full shadow-lg transition"
+        >
+          Scroll to bottom
+        </button>
+      )}
     </div>
   )
 }
