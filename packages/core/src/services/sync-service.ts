@@ -611,20 +611,43 @@ export const SyncServiceLive = Layer.effect(
             const lines = content.trim().split("\n").filter(Boolean)
             jsonlOpCount = lines.length
 
-            // Parse JSONL to count task upserts and dep_adds separately
-            // This allows detecting deletions (DB count < JSONL count)
+            // Parse JSONL to count EFFECTIVE task and dependency states
+            // After git merges, the file may have multiple operations for the same entity
+            // We need to deduplicate by ID and track the latest operation (timestamp wins)
+            // to get accurate counts that match what the DB state should be after import
+            const taskStates = new Map<string, { op: string; ts: string }>()
+            const depStates = new Map<string, { op: string; ts: string }>()
+
             for (const line of lines) {
               try {
-                const op = JSON.parse(line) as { op: string }
-                if (op.op === "upsert") {
-                  jsonlTaskCount++
-                } else if (op.op === "dep_add") {
-                  jsonlDepCount++
+                const op = JSON.parse(line) as { op: string; id?: string; ts: string; blockerId?: string; blockedId?: string }
+                if (op.op === "upsert" || op.op === "delete") {
+                  const existing = taskStates.get(op.id!)
+                  if (!existing || op.ts > existing.ts) {
+                    taskStates.set(op.id!, { op: op.op, ts: op.ts })
+                  }
+                } else if (op.op === "dep_add" || op.op === "dep_remove") {
+                  const key = `${op.blockerId}:${op.blockedId}`
+                  const existing = depStates.get(key)
+                  if (!existing || op.ts > existing.ts) {
+                    depStates.set(key, { op: op.op, ts: op.ts })
+                  }
                 }
-                // Note: delete and dep_remove ops are not counted since
-                // a clean export only produces upserts and dep_adds
               } catch {
                 // Skip malformed lines for counting purposes
+              }
+            }
+
+            // Count only entities whose latest operation is an "add" operation
+            // (upsert for tasks, dep_add for dependencies)
+            for (const state of taskStates.values()) {
+              if (state.op === "upsert") {
+                jsonlTaskCount++
+              }
+            }
+            for (const state of depStates.values()) {
+              if (state.op === "dep_add") {
+                jsonlDepCount++
               }
             }
           }

@@ -1242,6 +1242,256 @@ describe("SyncService Status", () => {
 })
 
 // -----------------------------------------------------------------------------
+// Status Dirty Detection Edge Cases (Requires Fresh DB without fixtures)
+// -----------------------------------------------------------------------------
+
+describe("SyncService Status Dirty Detection Edge Cases", () => {
+  let db: TestDatabase
+  let layer: ReturnType<typeof makeTestLayer>
+
+  beforeEach(async () => {
+    // Create fresh DB WITHOUT fixtures - these tests need precise control over data
+    db = await Effect.runPromise(createTestDatabase())
+    layer = makeTestLayer(db)
+  })
+
+  afterEach(() => {
+    cleanupTempFile(".tx/tasks.jsonl")
+  })
+
+  it("reports isDirty: false when JSONL has duplicate upserts for same task (git merge scenario)", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // Timestamps: DB task must have timestamp <= lastExport to avoid timestamp-based dirty detection
+    const earlier = "2024-01-01T00:00:00.000Z"
+    const later = "2024-01-02T00:00:00.000Z"
+    const exportTs = "2024-01-03T00:00:00.000Z"
+
+    // Create a single task in DB with timestamp BEFORE lastExport
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, later, later, null, "{}")
+
+    // Manually create a JSONL file with DUPLICATE upserts for the same task (simulating git merge)
+    // This was the bug: raw counting would give jsonlTaskCount=2 vs dbTaskCount=1 → false positive
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: earlier,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A (old)", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: later,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      })
+    ].join("\n")
+    writeFileSync(defaultPath, jsonl + "\n", "utf-8")
+
+    // Set last export to after the latest operation
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.setLastExport(new Date(exportTs))
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Status should NOT report dirty - the effective count is 1 task in JSONL, matching 1 in DB
+    const status = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(status.dbTaskCount).toBe(1)
+    expect(status.isDirty).toBe(false) // Should NOT be a false positive
+
+    // Cleanup
+    cleanupTempFile(defaultPath)
+  })
+
+  it("reports isDirty: false when JSONL has task created then deleted", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // DB is empty (no tasks)
+
+    // JSONL has a task that was created then deleted (delete has later timestamp)
+    // Effective count should be 0 tasks
+    const createTs = "2024-01-01T00:00:00.000Z"
+    const deleteTs = "2024-01-02T00:00:00.000Z"
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: createTs,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "delete",
+        ts: deleteTs,
+        id: SYNC_FIXTURES.SYNC_TASK_A
+      })
+    ].join("\n")
+    writeFileSync(defaultPath, jsonl + "\n", "utf-8")
+
+    // Set last export to after the delete
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.setLastExport(new Date("2024-01-03T00:00:00.000Z"))
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Status should NOT report dirty - effective count is 0 in JSONL, 0 in DB
+    const status = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(status.dbTaskCount).toBe(0)
+    expect(status.isDirty).toBe(false)
+
+    // Cleanup
+    cleanupTempFile(defaultPath)
+  })
+
+  it("reports isDirty: false when JSONL has dep_add then dep_remove", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // Timestamps: DB tasks must have timestamp <= lastExport to avoid timestamp-based dirty detection
+    const baseTs = "2024-01-01T00:00:00.000Z"
+    const removeTs = "2024-01-02T00:00:00.000Z"
+    const exportTs = "2024-01-03T00:00:00.000Z"
+
+    // Create two tasks in DB with no dependency between them (timestamp before lastExport)
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, baseTs, baseTs, null, "{}")
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, baseTs, baseTs, null, "{}")
+
+    // JSONL has dep added then removed (remove has later timestamp)
+    // Effective count should be 0 deps
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: baseTs,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: baseTs,
+        id: SYNC_FIXTURES.SYNC_TASK_B,
+        data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_add",
+        ts: baseTs,
+        blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+        blockedId: SYNC_FIXTURES.SYNC_TASK_B
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_remove",
+        ts: removeTs,
+        blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+        blockedId: SYNC_FIXTURES.SYNC_TASK_B
+      })
+    ].join("\n")
+    writeFileSync(defaultPath, jsonl + "\n", "utf-8")
+
+    // Set last export to after the remove
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.setLastExport(new Date(exportTs))
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Status should NOT report dirty - effective count is 0 deps in JSONL, 0 in DB
+    const status = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(status.dbTaskCount).toBe(2)
+    expect(status.isDirty).toBe(false) // 0 deps in DB matches 0 effective deps in JSONL
+
+    // Cleanup
+    cleanupTempFile(defaultPath)
+  })
+
+  it("reports isDirty: true when JSONL effective count differs from DB count", async () => {
+    const defaultPath = ".tx/tasks.jsonl"
+
+    // Timestamps: DB tasks have timestamp <= lastExport so only count mismatch triggers dirty
+    const baseTs = "2024-01-01T00:00:00.000Z"
+    const exportTs = "2024-01-03T00:00:00.000Z"
+
+    // Create two tasks in DB (timestamp before lastExport)
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, baseTs, baseTs, null, "{}")
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, baseTs, baseTs, null, "{}")
+
+    // JSONL has only one task (Task A is not in JSONL - simulating out-of-sync state)
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "upsert",
+      ts: baseTs,
+      id: SYNC_FIXTURES.SYNC_TASK_B,
+      data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+    })
+    writeFileSync(defaultPath, jsonl + "\n", "utf-8")
+
+    // Set last export to after the operations
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        yield* sync.setLastExport(new Date(exportTs))
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Status SHOULD report dirty - 2 tasks in DB but only 1 in JSONL (count mismatch)
+    const status = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.status()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(status.dbTaskCount).toBe(2)
+    expect(status.isDirty).toBe(true) // Real mismatch detected
+
+    // Cleanup
+    cleanupTempFile(defaultPath)
+  })
+})
+
+// -----------------------------------------------------------------------------
 // Delete Operation Tests
 // -----------------------------------------------------------------------------
 
