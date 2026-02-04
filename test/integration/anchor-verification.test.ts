@@ -439,6 +439,119 @@ describe("AnchorVerificationService Integration", () => {
       expect(result.newStatus).toBe("valid")
     })
 
+    it("handles FQName with trailing :: (empty symbol after separator)", async () => {
+      // Edge case: symbolFqname ends with "::" producing empty symbol name after split
+      const filePath = await createTestFile(
+        tempDir,
+        "trailing-sep.ts",
+        `export function MyFunc() { return true }`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for trailing :: edge case",
+            sourceType: "manual"
+          })
+
+          // FQName ends with "::" - symbol extraction should handle gracefully
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "MyFunc",
+            symbolFqname: "trailing-sep.ts::"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // With || fallback, the empty string after :: falls back to full FQName "trailing-sep.ts::"
+      // which won't match any declaration pattern, so symbol is not found
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("symbol_missing")
+    })
+
+    it("handles FQName with multiple :: separators (nested namespaces)", async () => {
+      // Edge case: "module::namespace::ClassName" - should extract "ClassName" (after last ::)
+      const filePath = await createTestFile(
+        tempDir,
+        "multi-sep.ts",
+        `export class ClassName { constructor() {} }`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for multiple :: separators",
+            sourceType: "manual"
+          })
+
+          // Multiple :: separators - should extract after LAST ::
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "ClassName",
+            symbolFqname: "module::namespace::ClassName"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
+    it("handles bare :: as symbolFqname", async () => {
+      // Edge case: symbolFqname is just "::" - both segments empty
+      const filePath = await createTestFile(
+        tempDir,
+        "bare-sep.ts",
+        `export const foo = 1`
+      )
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for bare :: edge case",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: filePath,
+            value: "foo",
+            symbolFqname: "::"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      // "::" after lastIndexOf+slice gives "" which || falls back to "::"
+      // "::" won't match any declaration, so symbol is missing
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("symbol_missing")
+    })
+
     it("finds $-prefixed symbol names (e.g., $store from Vue/Svelte)", async () => {
       // Bug fix: \b word boundary doesn't work with $ since it's not a word character
       const filePath = await createTestFile(

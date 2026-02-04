@@ -224,8 +224,12 @@ const symbolExistsInFile = (
     if (!content) return false
 
     // Extract just the symbol name from FQName (e.g., "file.ts::ClassName" -> "ClassName")
-    const simpleName = symbolName.includes("::")
-      ? symbolName.split("::").pop() ?? symbolName
+    // Uses lastIndexOf+slice instead of split+pop to avoid:
+    // - Array allocation for a single value extraction
+    // - The ?? fallback not catching empty strings (pop() returns "" for "file.ts::", and "" ?? x === "")
+    const lastSep = symbolName.lastIndexOf("::")
+    const simpleName = lastSep >= 0
+      ? symbolName.slice(lastSep + 2) || symbolName
       : symbolName
 
     // If symbol name is empty or whitespace-only, symbol is not found
