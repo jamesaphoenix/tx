@@ -15,5 +15,8 @@ $ eslint src/
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/compaction-service.ts
   458:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
 
-✖ 5 problems (0 errors, 5 warnings)
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/sync-service.ts
+  511:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+✖ 6 problems (0 errors, 6 warnings)
 

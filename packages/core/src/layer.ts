@@ -264,9 +264,9 @@ export const makeAppLayer = (dbPath: string) => {
   // ClaimServiceLive needs ClaimRepository and OrchestratorStateRepository (from repos)
   const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
-  // OrchestratorServiceLive needs WorkerService, ClaimService, TaskService, and OrchestratorStateRepository
+  // OrchestratorServiceLive needs WorkerService, ClaimService, TaskService, OrchestratorStateRepository, and SqliteClient
   const orchestratorService = OrchestratorServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, services, workerService, claimService))
+    Layer.provide(Layer.mergeAll(repos, services, workerService, claimService, infra))
   )
 
   // TracingServiceLive needs SqliteClient

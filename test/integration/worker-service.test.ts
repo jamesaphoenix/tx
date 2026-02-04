@@ -63,8 +63,9 @@ async function makeTestLayer() {
   const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const readyService = ReadyServiceLive.pipe(Layer.provide(repos))
 
+  // OrchestratorService needs SqliteClient for transaction support
   const orchestratorService = OrchestratorServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, workerService, claimService, readyService))
+    Layer.provide(Layer.mergeAll(repos, workerService, claimService, readyService, infra))
   )
 
   return Layer.mergeAll(repos, workerService, claimService, readyService, orchestratorService)

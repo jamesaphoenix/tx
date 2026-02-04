@@ -5,7 +5,8 @@
  * Uses Effect-TS patterns per DD-002.
  */
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Exit, Layer } from "effect"
+import { SqliteClient } from "../db.js"
 import { OrchestratorStateRepository } from "../repo/orchestrator-state-repo.js"
 import { TaskRepository } from "../repo/task-repo.js"
 import { ClaimRepository } from "../repo/claim-repo.js"
@@ -75,12 +76,43 @@ export class OrchestratorService extends Context.Tag("OrchestratorService")<
 export const OrchestratorServiceLive = Layer.effect(
   OrchestratorService,
   Effect.gen(function* () {
+    const db = yield* SqliteClient
     const stateRepo = yield* OrchestratorStateRepository
     const workerService = yield* WorkerService
     const claimService = yield* ClaimService
     const readyService = yield* ReadyService
     const taskRepo = yield* TaskRepository
     const claimRepo = yield* ClaimRepository
+
+    /**
+     * Helper to wrap an Effect in a database transaction.
+     * Ensures atomicity: either all operations succeed and COMMIT,
+     * or any failure triggers ROLLBACK.
+     */
+    const withTransaction = <A, E>(
+      effect: Effect.Effect<A, E>
+    ): Effect.Effect<A, E | DatabaseError> =>
+      Effect.acquireUseRelease(
+        // Acquire: Begin transaction
+        Effect.try({
+          try: () => {
+            db.exec("BEGIN IMMEDIATE")
+            return undefined
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+        // Use: Run the wrapped effect
+        () => effect,
+        // Release: Commit on success, rollback on failure
+        (_, exit) =>
+          Effect.sync(() => {
+            if (Exit.isSuccess(exit)) {
+              db.exec("COMMIT")
+            } else {
+              db.exec("ROLLBACK")
+            }
+          })
+      )
 
     return {
       start: (config) =>
@@ -194,14 +226,18 @@ export const OrchestratorServiceLive = Layer.effect(
       status: () => stateRepo.get(),
 
       reconcile: () =>
-        Effect.gen(function* () {
-          const startTime = Date.now()
-          let deadWorkersFound = 0
-          let expiredClaimsReleased = 0
-          let orphanedTasksRecovered = 0
-          let staleStatesFixed = 0
+        // Wrap entire reconciliation in a transaction for atomicity.
+        // Prevents race conditions where state changes between steps.
+        // See: tx-a1c2b151 - OrchestratorService missing transaction boundaries
+        withTransaction(
+          Effect.gen(function* () {
+            const startTime = Date.now()
+            let deadWorkersFound = 0
+            let expiredClaimsReleased = 0
+            let orphanedTasksRecovered = 0
+            let staleStatesFixed = 0
 
-          // 1. Detect dead workers (missed 1+ heartbeats)
+            // 1. Detect dead workers (missed 1+ heartbeats)
           // Changed from 2 to 1 to reduce worst-case detection time from ~90s to ~60s.
           // With missedHeartbeats: 2, if worker dies at t=1 after heartbeat at t=0,
           // detection doesn't occur until t=90+ (60s threshold + 30s reconcile delay).
@@ -312,17 +348,18 @@ export const OrchestratorServiceLive = Layer.effect(
             )
           }
 
-          // Build and return the result
-          const result: ReconciliationResult = {
-            deadWorkersFound,
-            expiredClaimsReleased,
-            orphanedTasksRecovered,
-            staleStatesFixed,
-            reconcileTime
-          }
+            // Build and return the result
+            const result: ReconciliationResult = {
+              deadWorkersFound,
+              expiredClaimsReleased,
+              orphanedTasksRecovered,
+              staleStatesFixed,
+              reconcileTime
+            }
 
-          return result
-        })
+            return result
+          })
+        )
     }
   })
 )

@@ -17,3 +17,12 @@ vitest.config.d.ts.map
 # Generated README files (synced from root README.md)
 packages/*/README.md
 apps/*/README.md
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
