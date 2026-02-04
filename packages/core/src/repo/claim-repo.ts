@@ -16,6 +16,18 @@ export interface AtomicInsertResult {
   existingClaim: TaskClaim | null
 }
 
+/**
+ * Result of an atomic lease renewal attempt.
+ */
+export interface AtomicRenewResult {
+  /** Whether the renewal succeeded */
+  success: boolean
+  /** The renewed claim if successful, null otherwise */
+  claim: TaskClaim | null
+  /** Reason for failure if not successful */
+  failureReason: "not_found" | "expired" | null
+}
+
 export class ClaimRepository extends Context.Tag("ClaimRepository")<
   ClaimRepository,
   {
@@ -26,6 +38,21 @@ export class ClaimRepository extends Context.Tag("ClaimRepository")<
      */
     readonly tryInsertAtomic: (claim: Omit<TaskClaim, "id">) => Effect.Effect<AtomicInsertResult, DatabaseError>
     readonly update: (claim: TaskClaim) => Effect.Effect<void, DatabaseError | ClaimIdNotFoundError>
+    /**
+     * Atomically renew a lease only if it hasn't expired yet.
+     * Uses a single SQL operation to prevent race conditions between
+     * checking expiration and performing the renewal.
+     *
+     * @param claimId - The ID of the claim to renew
+     * @param workerId - The worker ID that must own the claim
+     * @param newLeaseExpiresAt - The new expiration time
+     * @returns AtomicRenewResult indicating success/failure and reason
+     */
+    readonly tryRenewAtomic: (
+      claimId: number,
+      workerId: string,
+      newLeaseExpiresAt: Date
+    ) => Effect.Effect<AtomicRenewResult, DatabaseError>
     readonly findById: (id: number) => Effect.Effect<TaskClaim | null, DatabaseError>
     readonly findActiveByTaskId: (taskId: string) => Effect.Effect<TaskClaim | null, DatabaseError>
     readonly findExpired: (now: Date) => Effect.Effect<readonly TaskClaim[], DatabaseError>
@@ -133,6 +160,58 @@ export const ClaimRepositoryLive = Layer.effect(
           if (result.changes === 0) {
             yield* Effect.fail(new ClaimIdNotFoundError({ claimId: claim.id }))
           }
+        }),
+
+      tryRenewAtomic: (claimId, workerId, newLeaseExpiresAt) =>
+        Effect.try({
+          try: () => {
+            const now = new Date().toISOString()
+            // Atomic update: only succeeds if claim is active, owned by worker, and not expired
+            const result = db.prepare(
+              `UPDATE task_claims
+               SET lease_expires_at = ?, renewed_count = renewed_count + 1
+               WHERE id = ? AND worker_id = ? AND status = 'active' AND lease_expires_at >= ?`
+            ).run(
+              newLeaseExpiresAt.toISOString(),
+              claimId,
+              workerId,
+              now
+            )
+
+            if (result.changes > 0) {
+              // Renewal succeeded - fetch the updated claim
+              const row = db.prepare(
+                "SELECT * FROM task_claims WHERE id = ?"
+              ).get(claimId) as ClaimRow
+              return {
+                success: true,
+                claim: rowToClaim(row),
+                failureReason: null
+              } satisfies AtomicRenewResult
+            } else {
+              // Renewal failed - determine why
+              // Check if claim exists and is owned by this worker
+              const existingRow = db.prepare(
+                "SELECT * FROM task_claims WHERE id = ? AND worker_id = ? AND status = 'active'"
+              ).get(claimId, workerId) as ClaimRow | undefined
+
+              if (!existingRow) {
+                return {
+                  success: false,
+                  claim: null,
+                  failureReason: "not_found"
+                } satisfies AtomicRenewResult
+              }
+
+              // Claim exists but lease has expired
+              return {
+                success: false,
+                claim: null,
+                failureReason: "expired"
+              } satisfies AtomicRenewResult
+            }
+          },
+          catch: (cause) => new DatabaseError({ cause })
         }),
 
       findById: (id) =>

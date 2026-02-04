@@ -339,6 +339,92 @@ describe("Chaos: Claim Lifecycle", () => {
 // INVARIANT: Service layer claim operations via Effect-TS
 // =============================================================================
 
+describe("Chaos: Lease Renewal Race Conditions", () => {
+  it("atomic renewal prevents extending already-expired lease", async () => {
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } =
+      await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    // This test verifies the fix for tx-4e88dcf9:
+    // Lease renewal must be atomic - a lease that expires between the
+    // expiration check and the renewal operation must NOT be extended.
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const claimSvc = yield* ClaimService
+        const claimRepo = yield* ClaimRepository
+        const taskRepo = yield* TaskRepository
+        const workerRepo = yield* WorkerRepository
+
+        yield* taskRepo.insert(createTaskData(FIXTURES.TASK_1))
+        yield* workerRepo.insert(createWorkerData(FIXTURES.WORKER_1))
+
+        // Create a claim with a valid lease
+        const claim = yield* claimSvc.claim(FIXTURES.TASK_1, FIXTURES.WORKER_1)
+
+        // Simulate race condition: expire the lease after the initial check
+        // but before the renewal would be written (if non-atomic)
+        const expiredTime = new Date(Date.now() - 1000) // 1 second ago
+        yield* claimRepo.update({
+          ...claim,
+          leaseExpiresAt: expiredTime
+        })
+
+        // The renewal should fail because the lease has expired
+        // With the atomic fix, this correctly detects the expiration
+        const renewError = yield* claimSvc
+          .renew(FIXTURES.TASK_1, FIXTURES.WORKER_1)
+          .pipe(Effect.flip)
+
+        return { claim, renewError }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.renewError._tag).toBe("LeaseExpiredError")
+  })
+
+  it("concurrent renewal attempts with expiring lease", async () => {
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } =
+      await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    // Test that when a lease is about to expire, only valid renewals succeed
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const claimSvc = yield* ClaimService
+        const claimRepo = yield* ClaimRepository
+        const taskRepo = yield* TaskRepository
+        const workerRepo = yield* WorkerRepository
+
+        yield* taskRepo.insert(createTaskData(FIXTURES.TASK_1))
+        yield* workerRepo.insert(createWorkerData(FIXTURES.WORKER_1))
+
+        // Create claim with short lease
+        const claim = yield* claimSvc.claim(FIXTURES.TASK_1, FIXTURES.WORKER_1)
+
+        // First renewal should succeed (lease still valid)
+        const renew1 = yield* claimSvc.renew(FIXTURES.TASK_1, FIXTURES.WORKER_1)
+
+        // Expire the lease
+        yield* claimRepo.update({
+          ...renew1,
+          leaseExpiresAt: new Date(Date.now() - 1000)
+        })
+
+        // Second renewal should fail (lease expired)
+        const renew2Error = yield* claimSvc
+          .renew(FIXTURES.TASK_1, FIXTURES.WORKER_1)
+          .pipe(Effect.flip)
+
+        return { claim, renew1, renew2Error }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.renew1.renewedCount).toBe(1)
+    expect(result.renew2Error._tag).toBe("LeaseExpiredError")
+  })
+})
+
 describe("Chaos: Service Layer Claim Operations", () => {
   it("claim service rejects concurrent claims properly", async () => {
     const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")

@@ -159,6 +159,7 @@ export const ClaimServiceLive = Layer.effect(
 
       renew: (taskId, workerId) =>
         Effect.gen(function* () {
+          // First fetch the claim to check ownership and max renewals
           const claim = yield* claimRepo.findActiveByTaskId(taskId)
           if (!claim) {
             return yield* Effect.fail(new ClaimNotFoundError({ taskId, workerId }))
@@ -169,18 +170,7 @@ export const ClaimServiceLive = Layer.effect(
             return yield* Effect.fail(new ClaimNotFoundError({ taskId, workerId }))
           }
 
-          // Check if claim has already expired
-          const now = new Date()
-          if (claim.leaseExpiresAt < now) {
-            return yield* Effect.fail(
-              new LeaseExpiredError({
-                taskId,
-                expiredAt: claim.leaseExpiresAt.toISOString()
-              })
-            )
-          }
-
-          // Check max renewals
+          // Check max renewals before attempting atomic renewal
           if (claim.renewedCount >= DEFAULT_MAX_RENEWALS) {
             return yield* Effect.fail(
               new MaxRenewalsExceededError({
@@ -193,20 +183,32 @@ export const ClaimServiceLive = Layer.effect(
 
           // Get lease duration from config
           const state = yield* orchestratorRepo.get()
+          const now = new Date()
           const newLeaseExpiresAt = new Date(
             now.getTime() + state.leaseDurationMinutes * 60 * 1000
           )
 
-          const updatedClaim: TaskClaim = {
-            ...claim,
-            leaseExpiresAt: newLeaseExpiresAt,
-            renewedCount: claim.renewedCount + 1
+          // Use atomic renewal to prevent race condition between expiration check and update
+          // The renewal only succeeds if the lease hasn't expired at the moment of update
+          const result = yield* claimRepo.tryRenewAtomic(claim.id, workerId, newLeaseExpiresAt)
+
+          if (!result.success) {
+            if (result.failureReason === "expired") {
+              // The lease expired between our initial check and the atomic renewal attempt
+              return yield* Effect.fail(
+                new LeaseExpiredError({
+                  taskId,
+                  expiredAt: claim.leaseExpiresAt.toISOString()
+                })
+              )
+            }
+            // not_found - claim was released or expired by another process
+            return yield* Effect.fail(new ClaimNotFoundError({ taskId, workerId }))
           }
 
-          yield* claimRepo.update(updatedClaim)
-          yield* Effect.log(`Task ${taskId} lease renewed (${updatedClaim.renewedCount}/${DEFAULT_MAX_RENEWALS}), new expiry: ${newLeaseExpiresAt.toISOString()}`)
+          yield* Effect.log(`Task ${taskId} lease renewed (${result.claim!.renewedCount}/${DEFAULT_MAX_RENEWALS}), new expiry: ${newLeaseExpiresAt.toISOString()}`)
 
-          return updatedClaim
+          return result.claim!
         }),
 
       getExpired: () =>

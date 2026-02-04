@@ -14,6 +14,6 @@ export { DeduplicationRepository, DeduplicationRepositoryLive } from "./deduplic
 export { CandidateRepository, CandidateRepositoryLive } from "./candidate-repo.js"
 export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./tracked-project-repo.js"
 export { WorkerRepository, WorkerRepositoryLive } from "./worker-repo.js"
-export { ClaimRepository, ClaimRepositoryLive, type AtomicInsertResult } from "./claim-repo.js"
+export { ClaimRepository, ClaimRepositoryLive, type AtomicInsertResult, type AtomicRenewResult } from "./claim-repo.js"
 export { OrchestratorStateRepository, OrchestratorStateRepositoryLive, type OrchestratorStateUpdate } from "./orchestrator-state-repo.js"
 export { CompactionRepository, CompactionRepositoryLive, type CompactionLogEntry, type CreateCompactionLogInput } from "./compaction-repo.js"

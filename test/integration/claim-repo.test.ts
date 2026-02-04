@@ -657,3 +657,342 @@ describe("ClaimRepository.releaseAllByWorkerId", () => {
     expect(result).toBe(0)
   })
 })
+
+// =============================================================================
+// ClaimRepository.tryRenewAtomic Tests
+// =============================================================================
+
+describe("ClaimRepository.tryRenewAtomic", () => {
+  it("renews a valid active claim atomically", async () => {
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+
+    const infra = SqliteClientLive(":memory:")
+    const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
+      Layer.provide(infra)
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const workerRepo = yield* WorkerRepository
+        const taskRepo = yield* TaskRepository
+        const claimRepo = yield* ClaimRepository
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "worker-1",
+          hostname: "localhost",
+          pid: 1001,
+          status: "idle",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        const task1: Task = {
+          id: FIXTURES.TASK_1,
+          title: "Task 1",
+          description: "",
+          status: "backlog",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        }
+        yield* taskRepo.insert(task1)
+
+        // Create a claim with valid (future) lease
+        const claim = yield* claimRepo.insert(createClaimData({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          leaseExpiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 mins in future
+          renewedCount: 0
+        }))
+
+        const newLeaseExpires = new Date(Date.now() + 60 * 60 * 1000) // 60 mins
+        const renewResult = yield* claimRepo.tryRenewAtomic(claim.id, FIXTURES.WORKER_1, newLeaseExpires)
+
+        return { claim, renewResult }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.renewResult.success).toBe(true)
+    expect(result.renewResult.claim).not.toBeNull()
+    expect(result.renewResult.claim!.renewedCount).toBe(1)
+    expect(result.renewResult.failureReason).toBeNull()
+  })
+
+  it("fails with 'expired' when lease has already expired", async () => {
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+
+    const infra = SqliteClientLive(":memory:")
+    const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
+      Layer.provide(infra)
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const workerRepo = yield* WorkerRepository
+        const taskRepo = yield* TaskRepository
+        const claimRepo = yield* ClaimRepository
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "worker-1",
+          hostname: "localhost",
+          pid: 1001,
+          status: "idle",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        const task1: Task = {
+          id: FIXTURES.TASK_1,
+          title: "Task 1",
+          description: "",
+          status: "backlog",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        }
+        yield* taskRepo.insert(task1)
+
+        // Create a claim with EXPIRED lease (in the past)
+        const claim = yield* claimRepo.insert(createClaimData({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          leaseExpiresAt: new Date(Date.now() - 60 * 1000), // 1 min in past
+          renewedCount: 0
+        }))
+
+        const newLeaseExpires = new Date(Date.now() + 60 * 60 * 1000)
+        const renewResult = yield* claimRepo.tryRenewAtomic(claim.id, FIXTURES.WORKER_1, newLeaseExpires)
+
+        return renewResult
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.claim).toBeNull()
+    expect(result.failureReason).toBe("expired")
+  })
+
+  it("fails with 'not_found' when claim does not exist", async () => {
+    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+
+    const infra = SqliteClientLive(":memory:")
+    const layer = ClaimRepositoryLive.pipe(Layer.provide(infra))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const claimRepo = yield* ClaimRepository
+        const newLeaseExpires = new Date(Date.now() + 60 * 60 * 1000)
+        return yield* claimRepo.tryRenewAtomic(999, FIXTURES.WORKER_1, newLeaseExpires)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.claim).toBeNull()
+    expect(result.failureReason).toBe("not_found")
+  })
+
+  it("fails with 'not_found' when worker does not own the claim", async () => {
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+
+    const infra = SqliteClientLive(":memory:")
+    const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
+      Layer.provide(infra)
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const workerRepo = yield* WorkerRepository
+        const taskRepo = yield* TaskRepository
+        const claimRepo = yield* ClaimRepository
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "worker-1",
+          hostname: "localhost",
+          pid: 1001,
+          status: "idle",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        const task1: Task = {
+          id: FIXTURES.TASK_1,
+          title: "Task 1",
+          description: "",
+          status: "backlog",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        }
+        yield* taskRepo.insert(task1)
+
+        // Create a claim owned by WORKER_1
+        const claim = yield* claimRepo.insert(createClaimData({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          leaseExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+          renewedCount: 0
+        }))
+
+        // Try to renew with WORKER_2 (wrong worker)
+        const newLeaseExpires = new Date(Date.now() + 60 * 60 * 1000)
+        const renewResult = yield* claimRepo.tryRenewAtomic(claim.id, FIXTURES.WORKER_2, newLeaseExpires)
+
+        return renewResult
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.claim).toBeNull()
+    expect(result.failureReason).toBe("not_found")
+  })
+
+  it("fails with 'not_found' when claim is not active", async () => {
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+
+    const infra = SqliteClientLive(":memory:")
+    const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
+      Layer.provide(infra)
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const workerRepo = yield* WorkerRepository
+        const taskRepo = yield* TaskRepository
+        const claimRepo = yield* ClaimRepository
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "worker-1",
+          hostname: "localhost",
+          pid: 1001,
+          status: "idle",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        const task1: Task = {
+          id: FIXTURES.TASK_1,
+          title: "Task 1",
+          description: "",
+          status: "backlog",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        }
+        yield* taskRepo.insert(task1)
+
+        // Create a claim and mark it as released
+        const claim = yield* claimRepo.insert(createClaimData({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          leaseExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+          renewedCount: 0
+        }))
+        yield* claimRepo.update({ ...claim, status: "released" })
+
+        // Try to renew a released claim
+        const newLeaseExpires = new Date(Date.now() + 60 * 60 * 1000)
+        const renewResult = yield* claimRepo.tryRenewAtomic(claim.id, FIXTURES.WORKER_1, newLeaseExpires)
+
+        return renewResult
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.claim).toBeNull()
+    expect(result.failureReason).toBe("not_found")
+  })
+
+  it("increments renewedCount on each successful renewal", async () => {
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+
+    const infra = SqliteClientLive(":memory:")
+    const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
+      Layer.provide(infra)
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const workerRepo = yield* WorkerRepository
+        const taskRepo = yield* TaskRepository
+        const claimRepo = yield* ClaimRepository
+
+        yield* workerRepo.insert({
+          id: FIXTURES.WORKER_1,
+          name: "worker-1",
+          hostname: "localhost",
+          pid: 1001,
+          status: "idle",
+          registeredAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          currentTaskId: null,
+          capabilities: [],
+          metadata: {}
+        })
+
+        const task1: Task = {
+          id: FIXTURES.TASK_1,
+          title: "Task 1",
+          description: "",
+          status: "backlog",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        }
+        yield* taskRepo.insert(task1)
+
+        const claim = yield* claimRepo.insert(createClaimData({
+          taskId: FIXTURES.TASK_1,
+          workerId: FIXTURES.WORKER_1,
+          leaseExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+          renewedCount: 0
+        }))
+
+        // Renew multiple times
+        const newLeaseExpires = new Date(Date.now() + 60 * 60 * 1000)
+        const renew1 = yield* claimRepo.tryRenewAtomic(claim.id, FIXTURES.WORKER_1, newLeaseExpires)
+        const renew2 = yield* claimRepo.tryRenewAtomic(claim.id, FIXTURES.WORKER_1, newLeaseExpires)
+        const renew3 = yield* claimRepo.tryRenewAtomic(claim.id, FIXTURES.WORKER_1, newLeaseExpires)
+
+        return { renew1, renew2, renew3 }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.renew1.success).toBe(true)
+    expect(result.renew1.claim!.renewedCount).toBe(1)
+    expect(result.renew2.success).toBe(true)
+    expect(result.renew2.claim!.renewedCount).toBe(2)
+    expect(result.renew3.success).toBe(true)
+    expect(result.renew3.claim!.renewedCount).toBe(3)
+  })
+})
