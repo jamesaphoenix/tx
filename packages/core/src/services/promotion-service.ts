@@ -106,7 +106,7 @@ export const PromotionServiceLive = Layer.effect(
           }),
           (error) =>
             error._tag === "ValidationError"
-              ? new DatabaseError({ cause: error.reason })
+              ? new DatabaseError({ cause: error })
               : error
         )
 
