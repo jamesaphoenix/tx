@@ -64,6 +64,11 @@
  * - Disallows imports from 'hono', 'hono/*', or '@hono/*'
  * - Use @effect/platform HttpApi instead
  *
+ * Rule: tx/no-zod
+ * Enforces CLAUDE.md DOCTRINE RULE 10:
+ * - Disallows imports from 'zod', 'zod/*', or '@hono/zod-*'
+ * - Use Effect Schema (import { Schema } from "effect") instead
+ *
  * Rule: tx/no-throw-in-services
  * Enforces CLAUDE.md DOCTRINE RULE 5:
  * - Disallows throw statements in service code
@@ -150,7 +155,10 @@ export default [
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn'
+      'tx/no-hono': 'warn',
+
+      // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-zod': 'warn'
     }
   },
   // Apps (api-server, agent-sdk, cli, mcp-server)
@@ -203,7 +211,10 @@ export default [
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn'
+      'tx/no-hono': 'warn',
+
+      // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-zod': 'warn'
     }
   },
   // Dashboard app files (with separate API test requirements)
@@ -239,7 +250,10 @@ export default [
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn'
+      'tx/no-hono': 'warn',
+
+      // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-zod': 'warn'
     }
   },
   // Dashboard React components and hooks (require component tests)
@@ -273,7 +287,10 @@ export default [
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn'
+      'tx/no-hono': 'warn',
+
+      // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-zod': 'warn'
     }
   }
 ];

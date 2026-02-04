@@ -16,6 +16,7 @@ import requireDdTestSections from './rules/require-dd-test-sections.js';
 import prdFailureModes from './rules/prd-failure-modes.js';
 import noThrowInServices from './rules/no-throw-in-services.js';
 import noHono from './rules/no-hono.js';
+import noZod from './rules/no-zod.js';
 
 const plugin = {
   meta: {
@@ -36,7 +37,8 @@ const plugin = {
     'require-dd-test-sections': requireDdTestSections,
     'prd-failure-modes': prdFailureModes,
     'no-throw-in-services': noThrowInServices,
-    'no-hono': noHono
+    'no-hono': noHono,
+    'no-zod': noZod
   },
   // Flat config recommended configuration
   configs: {
@@ -110,7 +112,8 @@ const plugin = {
           allowHttpException: false,
           allowTypedErrors: false
         }],
-        'tx/no-hono': 'warn'
+        'tx/no-hono': 'warn',
+        'tx/no-zod': 'warn'
       }
     }
   }
