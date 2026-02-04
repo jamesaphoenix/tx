@@ -266,6 +266,43 @@ test(mcp): add integration tests for sync tools
 - Generic messages like "updates" or "changes"
 - Messages without a type prefix
 
+### RULE 10: Use Effect Schema and Effect HTTP server for all type definitions and API routes
+
+All domain types MUST be defined using Effect Schema (`import { Schema } from "effect"`):
+
+```typescript
+// CORRECT: Schema-based type definition
+import { Schema } from "effect"
+
+export const TaskSchema = Schema.Struct({
+  id: TaskIdSchema,
+  title: Schema.String,
+  status: TaskStatusSchema,
+})
+export type Task = typeof TaskSchema.Type
+
+// WRONG: Plain TypeScript interface
+export interface Task {
+  id: TaskId
+  title: string
+  status: TaskStatus
+}
+```
+
+**Schema rules:**
+- All types MUST be defined as `Schema.Struct` (or other Schema combinators)
+- Plain TypeScript interfaces for domain types are NOT allowed
+- `Zod` schemas are NOT allowed anywhere in the codebase
+- Database row types (internal) MAY remain as interfaces
+
+**API server rules:**
+- API server MUST use `@effect/platform` `HttpApi`, `HttpApiEndpoint`, `HttpApiGroup`
+- `Hono` framework is NOT allowed
+- Route handlers use `HttpApiBuilder.group` with Effect.gen
+- Error types use `HttpApiSchema.annotations({ status: N })` for HTTP status mapping
+
+→ No PRD/DD yet (architectural migration in progress)
+
 ---
 
 ## Common Pitfalls (Bug Scan Findings)

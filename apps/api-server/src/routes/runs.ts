@@ -1,106 +1,16 @@
 /**
- * Run Routes
+ * Run Route Handlers
  *
- * Provides REST API endpoints for agent run tracking with cursor-based pagination.
- * Runs track Claude agent sessions for observability.
+ * Implements run tracking endpoint handlers.
  */
 
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
-import { HTTPException } from "hono/http-exception"
+import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
-import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
+import { serializeRun } from "@jamesaphoenix/tx-types"
 import { RunRepository } from "@jamesaphoenix/tx-core"
-import { runEffect } from "../runtime.js"
+import { TxApi, NotFound, mapCoreError } from "../api.js"
 import { parseTranscript, findMatchingTranscript, type ChatMessage } from "../utils/transcript-parser.js"
-
-// -----------------------------------------------------------------------------
-// Schemas
-// -----------------------------------------------------------------------------
-
-const RunIdSchema = z.string().regex(/^run-[a-f0-9]{8}$/).openapi({
-  example: "run-abc12345",
-  description: "Run ID in format run-<8 hex chars>"
-})
-
-const RunStatusSchema = z.enum(RUN_STATUSES).openapi({
-  example: "running",
-  description: "Run status"
-})
-
-const RunSchema = z.object({
-  id: RunIdSchema,
-  taskId: z.string().nullable(),
-  agent: z.string(),
-  startedAt: z.string().datetime(),
-  endedAt: z.string().datetime().nullable(),
-  status: RunStatusSchema,
-  exitCode: z.number().int().nullable(),
-  pid: z.number().int().nullable(),
-  transcriptPath: z.string().nullable(),
-  contextInjected: z.string().nullable(),
-  summary: z.string().nullable(),
-  errorMessage: z.string().nullable(),
-  metadata: z.record(z.unknown())
-}).openapi("Run")
-
-const PaginatedRunsSchema = z.object({
-  runs: z.array(RunSchema),
-  nextCursor: z.string().nullable(),
-  hasMore: z.boolean(),
-  total: z.number().int()
-}).openapi("PaginatedRuns")
-
-const CreateRunSchema = z.object({
-  taskId: z.string().optional(),
-  agent: z.string(),
-  pid: z.number().int().optional(),
-  transcriptPath: z.string().optional(),
-  contextInjected: z.string().optional(),
-  metadata: z.record(z.unknown()).optional()
-}).openapi("CreateRun")
-
-const UpdateRunSchema = z.object({
-  status: RunStatusSchema.optional(),
-  endedAt: z.string().datetime().optional(),
-  exitCode: z.number().int().optional(),
-  summary: z.string().optional(),
-  errorMessage: z.string().optional(),
-  transcriptPath: z.string().optional()
-}).openapi("UpdateRun")
-
-const ChatMessageSchema = z.object({
-  role: z.enum(["user", "assistant", "system"]),
-  content: z.union([z.string(), z.unknown()]),
-  type: z.enum(["tool_use", "tool_result", "text", "thinking"]).optional(),
-  tool_name: z.string().optional(),
-  timestamp: z.string().optional()
-}).openapi("ChatMessage")
-
-const RunDetailResponseSchema = z.object({
-  run: RunSchema,
-  messages: z.array(ChatMessageSchema)
-}).openapi("RunDetailResponse")
-
-// -----------------------------------------------------------------------------
-// Serialization
-// -----------------------------------------------------------------------------
-
-const serializeRun = (run: Run): z.infer<typeof RunSchema> => ({
-  id: run.id,
-  taskId: run.taskId,
-  agent: run.agent,
-  startedAt: run.startedAt.toISOString(),
-  endedAt: run.endedAt?.toISOString() ?? null,
-  status: run.status,
-  exitCode: run.exitCode,
-  pid: run.pid,
-  transcriptPath: run.transcriptPath,
-  contextInjected: run.contextInjected,
-  summary: run.summary,
-  errorMessage: run.errorMessage,
-  metadata: run.metadata
-})
 
 // -----------------------------------------------------------------------------
 // Cursor Pagination Helpers
@@ -116,7 +26,7 @@ const parseRunCursor = (cursor: string): ParsedRunCursor | null => {
   if (colonIndex === -1) return null
   return {
     startedAt: cursor.slice(0, colonIndex),
-    id: cursor.slice(colonIndex + 1)
+    id: cursor.slice(colonIndex + 1),
   }
 }
 
@@ -125,248 +35,149 @@ const buildRunCursor = (run: Run): string => {
 }
 
 // -----------------------------------------------------------------------------
-// Route Definitions
+// Handler Layer
 // -----------------------------------------------------------------------------
 
-const listRunsRoute = createRoute({
-  method: "get",
-  path: "/api/runs",
-  tags: ["Runs"],
-  summary: "List runs with cursor-based pagination",
-  description: "Returns paginated agent runs with optional filtering",
-  request: {
-    query: z.object({
-      cursor: z.string().optional().openapi({ description: "Pagination cursor (format: startedAt:id)" }),
-      limit: z.coerce.number().int().min(1).max(100).default(20).openapi({ description: "Items per page" }),
-      agent: z.string().optional().openapi({ description: "Filter by agent name" }),
-      status: z.string().optional().openapi({ description: "Comma-separated statuses to filter" }),
-      taskId: z.string().optional().openapi({ description: "Filter by task ID" })
-    })
-  },
-  responses: {
-    200: {
-      description: "Paginated list of runs",
-      content: { "application/json": { schema: PaginatedRunsSchema } }
-    }
-  }
-})
+export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
+  handlers
+    .handle("listRuns", ({ urlParams }) =>
+      Effect.gen(function* () {
+        const runRepo = yield* RunRepository
+        const limit = urlParams.limit ?? 20
 
-const getRunRoute = createRoute({
-  method: "get",
-  path: "/api/runs/{id}",
-  tags: ["Runs"],
-  summary: "Get run details with transcript messages",
-  description: "Returns run details along with parsed conversation transcript messages",
-  request: {
-    params: z.object({ id: RunIdSchema })
-  },
-  responses: {
-    200: {
-      description: "Run details with messages",
-      content: { "application/json": { schema: RunDetailResponseSchema } }
-    },
-    404: { description: "Run not found" }
-  }
-})
-
-const createRunRoute = createRoute({
-  method: "post",
-  path: "/api/runs",
-  tags: ["Runs"],
-  summary: "Create a new run",
-  request: {
-    body: { content: { "application/json": { schema: CreateRunSchema } } }
-  },
-  responses: {
-    201: {
-      description: "Run created",
-      content: { "application/json": { schema: RunSchema } }
-    }
-  }
-})
-
-const updateRunRoute = createRoute({
-  method: "patch",
-  path: "/api/runs/{id}",
-  tags: ["Runs"],
-  summary: "Update a run",
-  request: {
-    params: z.object({ id: RunIdSchema }),
-    body: { content: { "application/json": { schema: UpdateRunSchema } } }
-  },
-  responses: {
-    200: {
-      description: "Run updated",
-      content: { "application/json": { schema: RunSchema } }
-    },
-    404: { description: "Run not found" }
-  }
-})
-
-// -----------------------------------------------------------------------------
-// Router
-// -----------------------------------------------------------------------------
-
-export const runsRouter = new OpenAPIHono()
-
-runsRouter.openapi(listRunsRoute, async (c) => {
-  const { cursor, limit, agent, status, taskId } = c.req.valid("query")
-
-  const result = await runEffect(
-    Effect.gen(function* () {
-      const runRepo = yield* RunRepository
-
-      // Get runs based on filters
-      let allRuns: readonly Run[]
-      if (taskId) {
-        allRuns = yield* runRepo.findByTaskId(taskId)
-      } else if (status && status.split(",").length === 1) {
-        allRuns = yield* runRepo.findByStatus(status as RunStatus)
-      } else {
-        allRuns = yield* runRepo.findRecent(1000) // Get all for filtering
-      }
-
-      // Apply additional filters in memory
-      let filtered: Run[] = [...allRuns]
-
-      if (agent) {
-        filtered = filtered.filter(r => r.agent === agent)
-      }
-
-      if (status && status.split(",").length > 1) {
-        const statusFilter = status.split(",").filter(Boolean) as RunStatus[]
-        filtered = filtered.filter(r => statusFilter.includes(r.status))
-      }
-
-      // Sort by startedAt DESC, id ASC
-      filtered.sort((a: Run, b: Run) => {
-        const aTime = a.startedAt.getTime()
-        const bTime = b.startedAt.getTime()
-        if (aTime !== bTime) return bTime - aTime
-        return a.id.localeCompare(b.id)
-      })
-
-      // Apply cursor pagination
-      let startIndex = 0
-      if (cursor) {
-        const parsed = parseRunCursor(cursor)
-        if (parsed) {
-          const cursorTime = new Date(parsed.startedAt).getTime()
-          startIndex = filtered.findIndex(r =>
-            r.startedAt.getTime() < cursorTime ||
-            (r.startedAt.getTime() === cursorTime && r.id > parsed.id)
-          )
-          if (startIndex === -1) startIndex = filtered.length
+        // Get runs based on filters
+        let allRuns: readonly Run[]
+        if (urlParams.taskId) {
+          allRuns = yield* runRepo.findByTaskId(urlParams.taskId)
+        } else if (urlParams.status && urlParams.status.split(",").length === 1) {
+          allRuns = yield* runRepo.findByStatus(urlParams.status as RunStatus)
+        } else {
+          allRuns = yield* runRepo.findRecent(1000)
         }
-      }
 
-      const total = filtered.length
-      const paginated = filtered.slice(startIndex, startIndex + limit + 1)
-      const hasMore = paginated.length > limit
-      const resultRuns = hasMore ? paginated.slice(0, limit) : paginated
+        // Apply additional filters in memory
+        let filtered: Run[] = [...allRuns]
 
-      return {
-        runs: resultRuns,
-        hasMore,
-        total,
-        nextCursor: hasMore && resultRuns.length > 0
-          ? buildRunCursor(resultRuns[resultRuns.length - 1])
-          : null
-      }
-    })
-  )
+        if (urlParams.agent) {
+          filtered = filtered.filter(r => r.agent === urlParams.agent)
+        }
 
-  return c.json({
-    runs: result.runs.map(serializeRun),
-    nextCursor: result.nextCursor,
-    hasMore: result.hasMore,
-    total: result.total
-  }, 200)
-})
+        if (urlParams.status && urlParams.status.split(",").length > 1) {
+          const statusFilter = urlParams.status.split(",").filter(Boolean) as RunStatus[]
+          filtered = filtered.filter(r => statusFilter.includes(r.status))
+        }
 
-runsRouter.openapi(getRunRoute, async (c) => {
-  const { id } = c.req.valid("param")
+        // Sort by startedAt DESC, id ASC
+        filtered.sort((a: Run, b: Run) => {
+          const aTime = a.startedAt.getTime()
+          const bTime = b.startedAt.getTime()
+          if (aTime !== bTime) return bTime - aTime
+          return a.id.localeCompare(b.id)
+        })
 
-  const run = await runEffect(
-    Effect.gen(function* () {
-      const runRepo = yield* RunRepository
-      const found = yield* runRepo.findById(id as RunId)
-      if (!found) {
-        throw new HTTPException(404, { message: `Run not found: ${id}` })
-      }
-      return found
-    })
-  )
+        // Apply cursor pagination
+        let startIndex = 0
+        if (urlParams.cursor) {
+          const parsed = parseRunCursor(urlParams.cursor)
+          if (parsed) {
+            const cursorTime = new Date(parsed.startedAt).getTime()
+            startIndex = filtered.findIndex(r =>
+              r.startedAt.getTime() < cursorTime ||
+              (r.startedAt.getTime() === cursorTime && r.id > parsed.id)
+            )
+            if (startIndex === -1) startIndex = filtered.length
+          }
+        }
 
-  // Parse transcript if available
-  let messages: ChatMessage[] = []
-  let transcriptPath = run.transcriptPath
+        const total = filtered.length
+        const paginated = filtered.slice(startIndex, startIndex + limit + 1)
+        const hasMore = paginated.length > limit
+        const resultRuns = hasMore ? paginated.slice(0, limit) : paginated
 
-  // If no explicit transcript path, try to find one by timestamp correlation
-  if (!transcriptPath) {
-    // Get the current working directory from environment or default to a known project path
-    const cwd = process.cwd()
-    try {
-      transcriptPath = await findMatchingTranscript(cwd, run.startedAt, run.endedAt)
-    } catch {
-      // Ignore errors in transcript discovery
-    }
-  }
+        return {
+          runs: resultRuns.map(serializeRun),
+          nextCursor: hasMore && resultRuns.length > 0
+            ? buildRunCursor(resultRuns[resultRuns.length - 1])
+            : null,
+          hasMore,
+          total,
+        }
+      }).pipe(Effect.mapError(mapCoreError))
+    )
 
-  if (transcriptPath) {
-    try {
-      messages = await Effect.runPromise(parseTranscript(transcriptPath))
-    } catch {
-      // If transcript parsing fails, return empty messages
-      messages = []
-    }
-  }
+    .handle("getRun", ({ path }) =>
+      Effect.gen(function* () {
+        const runRepo = yield* RunRepository
+        const found = yield* runRepo.findById(path.id as RunId)
+        if (!found) {
+          return yield* Effect.fail(new NotFound({ message: `Run not found: ${path.id}` }))
+        }
 
-  return c.json({ run: serializeRun(run), messages }, 200)
-})
+        // Parse transcript if available
+        let messages: ChatMessage[] = []
+        let transcriptPath = found.transcriptPath
 
-runsRouter.openapi(createRunRoute, async (c) => {
-  const body = c.req.valid("json")
+        // If no explicit transcript path, try to find one by timestamp correlation
+        if (!transcriptPath) {
+          const cwd = process.cwd()
+          const discovered = yield* Effect.tryPromise({
+            try: () => findMatchingTranscript(cwd, found.startedAt, found.endedAt),
+            catch: () => null,
+          })
+          transcriptPath = discovered
+        }
 
-  const run = await runEffect(
-    Effect.gen(function* () {
-      const runRepo = yield* RunRepository
-      return yield* runRepo.create({
-        taskId: body.taskId,
-        agent: body.agent,
-        pid: body.pid,
-        transcriptPath: body.transcriptPath,
-        contextInjected: body.contextInjected,
-        metadata: body.metadata
-      })
-    })
-  )
+        if (transcriptPath) {
+          const parsed = yield* parseTranscript(transcriptPath).pipe(
+            Effect.catchAll(() => Effect.succeed([] as ChatMessage[]))
+          )
+          messages = parsed
+        }
 
-  return c.json(serializeRun(run), 201)
-})
+        return {
+          run: serializeRun(found),
+          messages: messages as Array<{
+            role: "user" | "assistant" | "system"
+            content: unknown
+            type?: "tool_use" | "tool_result" | "text" | "thinking"
+            tool_name?: string
+            timestamp?: string
+          }>,
+        }
+      }).pipe(Effect.mapError(mapCoreError))
+    )
 
-runsRouter.openapi(updateRunRoute, async (c) => {
-  const { id } = c.req.valid("param")
-  const body = c.req.valid("json")
+    .handle("createRun", ({ payload }) =>
+      Effect.gen(function* () {
+        const runRepo = yield* RunRepository
+        const run = yield* runRepo.create({
+          taskId: payload.taskId,
+          agent: payload.agent,
+          pid: payload.pid,
+          transcriptPath: payload.transcriptPath,
+          contextInjected: payload.contextInjected,
+          metadata: payload.metadata,
+        })
+        return serializeRun(run)
+      }).pipe(Effect.mapError(mapCoreError))
+    )
 
-  const run = await runEffect(
-    Effect.gen(function* () {
-      const runRepo = yield* RunRepository
-      yield* runRepo.update(id as RunId, {
-        status: body.status,
-        endedAt: body.endedAt ? new Date(body.endedAt) : undefined,
-        exitCode: body.exitCode,
-        summary: body.summary,
-        errorMessage: body.errorMessage,
-        transcriptPath: body.transcriptPath
-      })
-      const updated = yield* runRepo.findById(id as RunId)
-      if (!updated) {
-        throw new HTTPException(404, { message: `Run not found: ${id}` })
-      }
-      return updated
-    })
-  )
-
-  return c.json(serializeRun(run), 200)
-})
+    .handle("updateRun", ({ path, payload }) =>
+      Effect.gen(function* () {
+        const runRepo = yield* RunRepository
+        yield* runRepo.update(path.id as RunId, {
+          status: payload.status,
+          endedAt: payload.endedAt ? new Date(payload.endedAt) : undefined,
+          exitCode: payload.exitCode,
+          summary: payload.summary,
+          errorMessage: payload.errorMessage,
+          transcriptPath: payload.transcriptPath,
+        })
+        const updated = yield* runRepo.findById(path.id as RunId)
+        if (!updated) {
+          return yield* Effect.fail(new NotFound({ message: `Run not found: ${path.id}` }))
+        }
+        return serializeRun(updated)
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+)

@@ -1,7 +1,7 @@
 {
   "name": "@jamesaphoenix/tx-types",
   "version": "0.4.2",
-  "description": "Shared TypeScript types for tx - zero runtime dependencies",
+  "description": "Shared TypeScript types for tx - Effect Schema definitions",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -40,6 +40,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "echo 'Types-only package - no tests needed'"
+  },
+  "dependencies": {
+    "effect": "^3.19.15"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

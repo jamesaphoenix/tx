@@ -93,5 +93,5 @@ export const rowToLearning = (row: LearningRow): Learning => ({
   usageCount: row.usage_count,
   lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
   outcomeScore: row.outcome_score,
-  embedding: row.embedding ? bufferToFloat32Array(row.embedding) : null
+  embedding: row.embedding ? bufferToFloat32Array(row.embedding) as Float32Array<ArrayBuffer> : null
 })

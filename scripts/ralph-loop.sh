@@ -88,10 +88,37 @@ while true; do
     $TX update "$TASK_ID" --status active 2>/dev/null || true
     log "Set task $TASK_ID to active"
 
+    # Write current task for hooks (capture-learning.sh reads this)
+    echo "$TASK_ID" > .tx/current-task
+
+    # Fetch relevant learnings/context for this task
+    CONTEXT=""
+    CONTEXT_OUTPUT=$($TX context "$TASK_ID" 2>/dev/null || echo "")
+    if [ -n "$CONTEXT_OUTPUT" ]; then
+        CONTEXT="
+
+## Relevant Learnings from Previous Work
+
+$CONTEXT_OUTPUT
+
+Use these learnings to inform your implementation. Avoid repeating past mistakes."
+        log "Injected $(echo "$CONTEXT_OUTPUT" | wc -l | tr -d ' ') lines of context for $TASK_ID"
+    else
+        log "No relevant context found for $TASK_ID"
+    fi
+
     # Run Claude on the task
     if claude --print --dangerously-skip-permissions "Your task ID is: $TASK_ID
+$CONTEXT
 
 Run 'bun apps/cli/src/cli.ts show $TASK_ID' to see full details, then implement the task.
+
+IMPORTANT: Before marking the task done, record any learnings you discovered during this task.
+Use 'bun apps/cli/src/cli.ts learning:add \"<insight>\"' for each useful insight, e.g.:
+- Patterns that worked or failed
+- Gotchas or non-obvious behaviors
+- Architecture decisions and why
+- Test strategies that proved effective
 
 When complete, run 'bun apps/cli/src/cli.ts done $TASK_ID' to mark it done.
 
@@ -171,6 +198,9 @@ EOF
         $TX update "$TASK_ID" --status ready 2>/dev/null || true
         ((TASKS_FAILED++))
     fi
+
+    # Clean up current-task marker
+    rm -f .tx/current-task
 
     # Brief pause between tasks
     sleep 5

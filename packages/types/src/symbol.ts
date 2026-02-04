@@ -3,8 +3,15 @@
  *
  * Type definitions for code intelligence and symbol extraction.
  * Used by ast-grep integration for structural code analysis.
- * Zero runtime dependencies - pure TypeScript types only.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
+ * Schema definitions provide both compile-time types and runtime validation.
  */
+
+import { Schema } from "effect"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 /**
  * All valid symbol kinds for code extraction.
@@ -25,66 +32,68 @@ export const SYMBOL_KINDS = [
 ] as const;
 
 /**
- * Symbol kind - one of the valid code construct types.
- */
-export type SymbolKind = (typeof SYMBOL_KINDS)[number];
-
-/**
- * Information about an extracted symbol.
- */
-export interface SymbolInfo {
-  /** Symbol name (e.g., function name, class name) */
-  readonly name: string;
-  /** Kind of symbol */
-  readonly kind: SymbolKind;
-  /** Line number where the symbol is defined (1-indexed) */
-  readonly line: number;
-  /** Whether the symbol is exported */
-  readonly exported: boolean;
-}
-
-/**
  * Import kind - static (import/require) or dynamic (import()).
  */
 export const IMPORT_KINDS = ["static", "dynamic"] as const;
-export type ImportKind = (typeof IMPORT_KINDS)[number];
 
-/**
- * Information about an import statement.
- */
-export interface ImportInfo {
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
+
+/** Symbol kind - one of the valid code construct types. */
+export const SymbolKindSchema = Schema.Literal(...SYMBOL_KINDS)
+export type SymbolKind = typeof SymbolKindSchema.Type
+
+/** Import kind schema. */
+export const ImportKindSchema = Schema.Literal(...IMPORT_KINDS)
+export type ImportKind = typeof ImportKindSchema.Type
+
+/** Information about an extracted symbol. */
+export const SymbolInfoSchema = Schema.Struct({
+  /** Symbol name (e.g., function name, class name) */
+  name: Schema.String,
+  /** Kind of symbol */
+  kind: SymbolKindSchema,
+  /** Line number where the symbol is defined (1-indexed) */
+  line: Schema.Number.pipe(Schema.int()),
+  /** Whether the symbol is exported */
+  exported: Schema.Boolean,
+})
+export type SymbolInfo = typeof SymbolInfoSchema.Type
+
+/** Information about an import statement. */
+export const ImportInfoSchema = Schema.Struct({
   /** Source module path or package name */
-  readonly source: string;
+  source: Schema.String,
   /** Imported specifiers (names) */
-  readonly specifiers: readonly string[];
+  specifiers: Schema.Array(Schema.String),
   /** Kind of import */
-  readonly kind: ImportKind;
-}
+  kind: ImportKindSchema,
+})
+export type ImportInfo = typeof ImportInfoSchema.Type
 
-/**
- * Pattern for matching symbols with ast-grep.
- */
-export interface SymbolPattern {
+/** Pattern for matching symbols with ast-grep. */
+export const SymbolPatternSchema = Schema.Struct({
   /** ast-grep pattern string */
-  readonly pattern: string;
+  pattern: Schema.String,
   /** Kind of symbol this pattern matches */
-  readonly kind: SymbolKind;
+  kind: SymbolKindSchema,
   /** If specified, only match exported/non-exported symbols */
-  readonly exported?: boolean;
-}
+  exported: Schema.optional(Schema.Boolean),
+})
+export type SymbolPattern = typeof SymbolPatternSchema.Type
 
-/**
- * A match result from ast-grep pattern matching.
- */
-export interface Match {
+/** A match result from ast-grep pattern matching. */
+export const MatchSchema = Schema.Struct({
   /** File path where the match was found */
-  readonly file: string;
+  file: Schema.String,
   /** Line number (1-indexed) */
-  readonly line: number;
+  line: Schema.Number.pipe(Schema.int()),
   /** Column number (1-indexed) */
-  readonly column: number;
+  column: Schema.Number.pipe(Schema.int()),
   /** Matched text */
-  readonly text: string;
+  text: Schema.String,
   /** Named captures from the pattern (e.g., $NAME -> value) */
-  readonly captures: Readonly<Record<string, string>>;
-}
+  captures: Schema.Record({ key: Schema.String, value: Schema.String }),
+})
+export type Match = typeof MatchSchema.Type

@@ -13,8 +13,4 @@
 
 import { main } from "./server-lib.js"
 
-// Run the server
-main().catch((error) => {
-  console.error("Fatal error:", error)
-  process.exit(1)
-})
+main()

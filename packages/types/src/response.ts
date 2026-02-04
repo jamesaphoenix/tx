@@ -4,27 +4,32 @@
  * Shared response schemas optimized for agent consumption.
  * All types use consistent camelCase naming and provide full context in every response.
  * Serialized types convert Date objects to ISO strings for JSON output.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
  *
  * Design principles:
  * - Consistent field naming across CLI, MCP, API, and SDK
  * - Full context in every response (no bare Task, always TaskWithDeps)
  * - Serialized types ready for JSON.stringify without custom replacers
  * - Standard envelopes for lists, pagination, and actions
- *
- * Zero runtime dependencies - pure TypeScript types only.
  */
 
-import type { TaskId, TaskWithDeps, TaskStatus } from "./task.js"
-import type { Learning, LearningWithScore, LearningSourceType } from "./learning.js"
-import type { FileLearning, FileLearningId } from "./file-learning.js"
-import type { Run, RunStatus, RunId } from "./run.js"
-import type { Attempt, AttemptOutcome, AttemptId } from "./attempt.js"
-import type { EdgeType } from "./edge.js"
+import { Schema } from "effect"
+import { TaskIdSchema, TaskStatusSchema } from "./task.js"
+import type { TaskWithDeps } from "./task.js"
+import { LearningSourceTypeSchema } from "./learning.js"
+import type { Learning, LearningWithScore } from "./learning.js"
+import { FileLearningIdSchema } from "./file-learning.js"
+import type { FileLearning } from "./file-learning.js"
+import { RunIdSchema, RunStatusSchema } from "./run.js"
+import type { Run } from "./run.js"
+import { AttemptIdSchema, AttemptOutcomeSchema } from "./attempt.js"
+import type { Attempt } from "./attempt.js"
+import { EdgeTypeSchema } from "./edge.js"
 
 // =============================================================================
-// SERIALIZED ENTITY TYPES
+// SERIALIZED ENTITY SCHEMAS
 // =============================================================================
-// These types mirror their domain counterparts but with Date fields as ISO strings.
+// These schemas mirror their domain counterparts but with Date fields as ISO strings.
 // Use these for JSON responses across CLI, MCP, API, and SDK.
 
 /**
@@ -32,121 +37,128 @@ import type { EdgeType } from "./edge.js"
  * All Date fields converted to ISO strings.
  * This is the REQUIRED return type for all external APIs (per Doctrine Rule 1).
  */
-export interface TaskWithDepsSerialized {
-  readonly id: TaskId
-  readonly title: string
-  readonly description: string
-  readonly status: TaskStatus
-  readonly parentId: TaskId | null
-  readonly score: number
-  readonly createdAt: string // ISO string
-  readonly updatedAt: string // ISO string
-  readonly completedAt: string | null // ISO string
-  readonly metadata: Record<string, unknown>
+export const TaskWithDepsSerializedSchema = Schema.Struct({
+  id: TaskIdSchema,
+  title: Schema.String,
+  description: Schema.String,
+  status: TaskStatusSchema,
+  parentId: Schema.NullOr(TaskIdSchema),
+  score: Schema.Number.pipe(Schema.int()),
+  createdAt: Schema.String, // ISO string
+  updatedAt: Schema.String, // ISO string
+  completedAt: Schema.NullOr(Schema.String), // ISO string
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
   /** Task IDs that block this task */
-  readonly blockedBy: readonly TaskId[]
+  blockedBy: Schema.Array(TaskIdSchema),
   /** Task IDs this task blocks */
-  readonly blocks: readonly TaskId[]
+  blocks: Schema.Array(TaskIdSchema),
   /** Direct child task IDs */
-  readonly children: readonly TaskId[]
+  children: Schema.Array(TaskIdSchema),
   /** Whether this task can be worked on (status is workable AND all blockers are done) */
-  readonly isReady: boolean
-}
+  isReady: Schema.Boolean,
+})
+export type TaskWithDepsSerialized = typeof TaskWithDepsSerializedSchema.Type
 
 /**
  * Learning serialized for JSON output.
  * All Date fields converted to ISO strings.
  * Embedding as number array instead of Float32Array.
  */
-export interface LearningSerialized {
-  readonly id: number
-  readonly content: string
-  readonly sourceType: LearningSourceType
-  readonly sourceRef: string | null
-  readonly createdAt: string // ISO string
-  readonly keywords: readonly string[]
-  readonly category: string | null
-  readonly usageCount: number
-  readonly lastUsedAt: string | null // ISO string
-  readonly outcomeScore: number | null
+export const LearningSerializedSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  content: Schema.String,
+  sourceType: LearningSourceTypeSchema,
+  sourceRef: Schema.NullOr(Schema.String),
+  createdAt: Schema.String, // ISO string
+  keywords: Schema.Array(Schema.String),
+  category: Schema.NullOr(Schema.String),
+  usageCount: Schema.Number.pipe(Schema.int()),
+  lastUsedAt: Schema.NullOr(Schema.String), // ISO string
+  outcomeScore: Schema.NullOr(Schema.Number),
   /** Embedding vector as number array (null if not computed) */
-  readonly embedding: readonly number[] | null
-}
+  embedding: Schema.NullOr(Schema.Array(Schema.Number)),
+})
+export type LearningSerialized = typeof LearningSerializedSchema.Type
 
 /**
  * LearningWithScore serialized for JSON output.
  * Extends LearningSerialized with relevance scoring fields.
  */
-export interface LearningWithScoreSerialized extends LearningSerialized {
+export const LearningWithScoreSerializedSchema = Schema.Struct({
+  ...LearningSerializedSchema.fields,
   /** Combined relevance score (0-1) */
-  readonly relevanceScore: number
+  relevanceScore: Schema.Number,
   /** BM25 text search score */
-  readonly bm25Score: number
+  bm25Score: Schema.Number,
   /** Vector similarity score (0-1) */
-  readonly vectorScore: number
+  vectorScore: Schema.Number,
   /** Recency score (0-1, higher for newer) */
-  readonly recencyScore: number
+  recencyScore: Schema.Number,
   /** RRF (Reciprocal Rank Fusion) score from combining BM25 and vector rankings */
-  readonly rrfScore: number
+  rrfScore: Schema.Number,
   /** Rank in BM25 results (1-indexed, 0 if not in BM25 results) */
-  readonly bm25Rank: number
+  bm25Rank: Schema.Number.pipe(Schema.int()),
   /** Rank in vector similarity results (1-indexed, 0 if not in vector results) */
-  readonly vectorRank: number
+  vectorRank: Schema.Number.pipe(Schema.int()),
   /** LLM reranker score (0-1, optional - only present when reranking is applied) */
-  readonly rerankerScore?: number
+  rerankerScore: Schema.optional(Schema.Number),
   /** Number of hops from seed (0 = direct match from RRF, 1+ = expanded via graph) */
-  readonly expansionHops?: number
+  expansionHops: Schema.optional(Schema.Number.pipe(Schema.int())),
   /** Path of learning IDs from seed to this learning (only for expanded results) */
-  readonly expansionPath?: readonly number[]
+  expansionPath: Schema.optional(Schema.Array(Schema.Number.pipe(Schema.int()))),
   /** Edge type that led to this learning (null for direct matches) */
-  readonly sourceEdge?: EdgeType | null
+  sourceEdge: Schema.optional(Schema.NullOr(EdgeTypeSchema)),
   /** Feedback score from historical usage (0-1, 0.5 = neutral, optional) */
-  readonly feedbackScore?: number
-}
+  feedbackScore: Schema.optional(Schema.Number),
+})
+export type LearningWithScoreSerialized = typeof LearningWithScoreSerializedSchema.Type
 
 /**
  * FileLearning serialized for JSON output.
  */
-export interface FileLearningsSerialized {
-  readonly id: FileLearningId
-  readonly filePattern: string
-  readonly note: string
-  readonly taskId: string | null
-  readonly createdAt: string // ISO string
-}
+export const FileLearningsSerializedSchema = Schema.Struct({
+  id: FileLearningIdSchema,
+  filePattern: Schema.String,
+  note: Schema.String,
+  taskId: Schema.NullOr(Schema.String),
+  createdAt: Schema.String, // ISO string
+})
+export type FileLearningsSerialized = typeof FileLearningsSerializedSchema.Type
 
 /**
  * Run serialized for JSON output.
  */
-export interface RunSerialized {
-  readonly id: RunId
-  readonly taskId: string | null
-  readonly agent: string
-  readonly startedAt: string // ISO string
-  readonly endedAt: string | null // ISO string
-  readonly status: RunStatus
-  readonly exitCode: number | null
-  readonly pid: number | null
-  readonly transcriptPath: string | null
-  readonly stderrPath: string | null
-  readonly stdoutPath: string | null
-  readonly contextInjected: string | null
-  readonly summary: string | null
-  readonly errorMessage: string | null
-  readonly metadata: Record<string, unknown>
-}
+export const RunSerializedSchema = Schema.Struct({
+  id: RunIdSchema,
+  taskId: Schema.NullOr(Schema.String),
+  agent: Schema.String,
+  startedAt: Schema.String, // ISO string
+  endedAt: Schema.NullOr(Schema.String), // ISO string
+  status: RunStatusSchema,
+  exitCode: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  pid: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  transcriptPath: Schema.NullOr(Schema.String),
+  stderrPath: Schema.NullOr(Schema.String),
+  stdoutPath: Schema.NullOr(Schema.String),
+  contextInjected: Schema.NullOr(Schema.String),
+  summary: Schema.NullOr(Schema.String),
+  errorMessage: Schema.NullOr(Schema.String),
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+})
+export type RunSerialized = typeof RunSerializedSchema.Type
 
 /**
  * Attempt serialized for JSON output.
  */
-export interface AttemptSerialized {
-  readonly id: AttemptId
-  readonly taskId: TaskId
-  readonly approach: string
-  readonly outcome: AttemptOutcome
-  readonly reason: string | null
-  readonly createdAt: string // ISO string
-}
+export const AttemptSerializedSchema = Schema.Struct({
+  id: AttemptIdSchema,
+  taskId: TaskIdSchema,
+  approach: Schema.String,
+  outcome: AttemptOutcomeSchema,
+  reason: Schema.NullOr(Schema.String),
+  createdAt: Schema.String, // ISO string
+})
+export type AttemptSerialized = typeof AttemptSerializedSchema.Type
 
 // =============================================================================
 // SERIALIZATION FUNCTIONS
@@ -261,6 +273,7 @@ export const serializeAttempt = (attempt: Attempt): AttemptSerialized => ({
 // RESPONSE ENVELOPES
 // =============================================================================
 // Standard response wrappers used across all interfaces.
+// These remain as interfaces since they are generic container types.
 
 /**
  * Standard list response with count.
@@ -301,161 +314,151 @@ export interface ActionResponse<T = void> {
  * Error response with structured error info.
  * Use for all error responses.
  */
-export interface ErrorResponse {
-  readonly error: {
+export const ErrorResponseSchema = Schema.Struct({
+  error: Schema.Struct({
     /** Error code (e.g., "NOT_FOUND", "VALIDATION_ERROR") */
-    readonly code: string
+    code: Schema.String,
     /** Human-readable error message */
-    readonly message: string
+    message: Schema.String,
     /** Additional error details */
-    readonly details?: Record<string, unknown>
-  }
-}
+    details: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+  }),
+})
+export type ErrorResponse = typeof ErrorResponseSchema.Type
 
 // =============================================================================
-// TASK RESPONSE TYPES
+// TASK RESPONSE SCHEMAS
 // =============================================================================
 // Standard task response shapes used across CLI, MCP, API, and SDK.
 
-/**
- * Response for listing ready tasks.
- */
-export interface TaskReadyResponse {
-  readonly tasks: readonly TaskWithDepsSerialized[]
-  readonly count: number
-}
+/** Response for listing ready tasks. */
+export const TaskReadyResponseSchema = Schema.Struct({
+  tasks: Schema.Array(TaskWithDepsSerializedSchema),
+  count: Schema.Number.pipe(Schema.int()),
+})
+export type TaskReadyResponse = typeof TaskReadyResponseSchema.Type
 
-/**
- * Response for listing tasks with pagination.
- */
-export interface TaskListResponse extends PaginatedResponse<TaskWithDepsSerialized> {
-  // Alias for clarity: items contains tasks
-  readonly tasks: readonly TaskWithDepsSerialized[]
-}
+/** Response for listing tasks with pagination. */
+export const TaskListResponseSchema = Schema.Struct({
+  items: Schema.Array(TaskWithDepsSerializedSchema),
+  tasks: Schema.Array(TaskWithDepsSerializedSchema),
+  total: Schema.Number.pipe(Schema.int()),
+  nextCursor: Schema.NullOr(Schema.String),
+  hasMore: Schema.Boolean,
+})
+export type TaskListResponse = typeof TaskListResponseSchema.Type
 
-/**
- * Response for getting a single task with full details.
- * Includes related tasks for full context.
- */
-export interface TaskDetailResponse {
-  readonly task: TaskWithDepsSerialized
+/** Response for getting a single task with full details. */
+export const TaskDetailResponseSchema = Schema.Struct({
+  task: TaskWithDepsSerializedSchema,
   /** Tasks that block this task (full details, not just IDs) */
-  readonly blockedByTasks: readonly TaskWithDepsSerialized[]
+  blockedByTasks: Schema.Array(TaskWithDepsSerializedSchema),
   /** Tasks that this task blocks (full details, not just IDs) */
-  readonly blocksTasks: readonly TaskWithDepsSerialized[]
+  blocksTasks: Schema.Array(TaskWithDepsSerializedSchema),
   /** Child tasks (full details, not just IDs) */
-  readonly childTasks: readonly TaskWithDepsSerialized[]
-}
+  childTasks: Schema.Array(TaskWithDepsSerializedSchema),
+})
+export type TaskDetailResponse = typeof TaskDetailResponseSchema.Type
 
-/**
- * Response for completing a task.
- * Includes list of tasks that became ready as a result.
- */
-export interface TaskCompletionResponse {
+/** Response for completing a task. */
+export const TaskCompletionResponseSchema = Schema.Struct({
   /** The completed task */
-  readonly task: TaskWithDepsSerialized
+  task: TaskWithDepsSerializedSchema,
   /** Tasks that became ready after this completion */
-  readonly nowReady: readonly TaskWithDepsSerialized[]
-}
+  nowReady: Schema.Array(TaskWithDepsSerializedSchema),
+})
+export type TaskCompletionResponse = typeof TaskCompletionResponseSchema.Type
 
-/**
- * Response for task tree/hierarchy queries.
- */
-export interface TaskTreeResponse {
-  readonly tasks: readonly TaskWithDepsSerialized[]
+/** Response for task tree/hierarchy queries. */
+export const TaskTreeResponseSchema = Schema.Struct({
+  tasks: Schema.Array(TaskWithDepsSerializedSchema),
   /** Root task ID */
-  readonly rootId: TaskId
-}
+  rootId: TaskIdSchema,
+})
+export type TaskTreeResponse = typeof TaskTreeResponseSchema.Type
 
 // =============================================================================
-// LEARNING RESPONSE TYPES
+// LEARNING RESPONSE SCHEMAS
 // =============================================================================
 // Standard learning response shapes.
 
-/**
- * Response for searching learnings.
- */
-export interface LearningSearchResponse {
-  readonly learnings: readonly LearningWithScoreSerialized[]
-  readonly query: string
-  readonly count: number
-}
+/** Response for searching learnings. */
+export const LearningSearchResponseSchema = Schema.Struct({
+  learnings: Schema.Array(LearningWithScoreSerializedSchema),
+  query: Schema.String,
+  count: Schema.Number.pipe(Schema.int()),
+})
+export type LearningSearchResponse = typeof LearningSearchResponseSchema.Type
 
-/**
- * Response for getting contextual learnings for a task.
- */
-export interface ContextResponse {
-  readonly taskId: string
-  readonly taskTitle: string
-  readonly learnings: readonly LearningWithScoreSerialized[]
-  readonly searchQuery: string
+/** Response for getting contextual learnings for a task. */
+export const ContextResponseSchema = Schema.Struct({
+  taskId: Schema.String,
+  taskTitle: Schema.String,
+  learnings: Schema.Array(LearningWithScoreSerializedSchema),
+  searchQuery: Schema.String,
   /** Search duration in milliseconds */
-  readonly searchDuration: number
+  searchDuration: Schema.Number,
   /** Graph expansion statistics (only present when useGraph=true) */
-  readonly graphExpansion?: {
-    readonly enabled: boolean
-    readonly seedCount: number
-    readonly expandedCount: number
-    readonly maxDepthReached: number
-  }
-}
+  graphExpansion: Schema.optional(Schema.Struct({
+    enabled: Schema.Boolean,
+    seedCount: Schema.Number.pipe(Schema.int()),
+    expandedCount: Schema.Number.pipe(Schema.int()),
+    maxDepthReached: Schema.Number.pipe(Schema.int()),
+  })),
+})
+export type ContextResponse = typeof ContextResponseSchema.Type
 
-/**
- * Response for file learnings.
- */
-export interface FileLearningListResponse {
-  readonly learnings: readonly FileLearningsSerialized[]
-  readonly count: number
+/** Response for file learnings. */
+export const FileLearningListResponseSchema = Schema.Struct({
+  learnings: Schema.Array(FileLearningsSerializedSchema),
+  count: Schema.Number.pipe(Schema.int()),
   /** File path used for matching (if provided) */
-  readonly matchedPath?: string
-}
+  matchedPath: Schema.optional(Schema.String),
+})
+export type FileLearningListResponse = typeof FileLearningListResponseSchema.Type
 
 // =============================================================================
-// RUN RESPONSE TYPES
+// RUN RESPONSE SCHEMAS
 // =============================================================================
 // Standard run response shapes.
 
-/**
- * Response for listing runs.
- */
-export interface RunListResponse {
-  readonly runs: readonly RunSerialized[]
-  readonly count: number
-}
+/** Response for listing runs. */
+export const RunListResponseSchema = Schema.Struct({
+  runs: Schema.Array(RunSerializedSchema),
+  count: Schema.Number.pipe(Schema.int()),
+})
+export type RunListResponse = typeof RunListResponseSchema.Type
 
-/**
- * Response for getting a single run with details.
- */
-export interface RunDetailResponse {
-  readonly run: RunSerialized
+/** Response for getting a single run with details. */
+export const RunDetailResponseSchema = Schema.Struct({
+  run: RunSerializedSchema,
   /** Associated task (if any) */
-  readonly task?: TaskWithDepsSerialized
+  task: Schema.optional(TaskWithDepsSerializedSchema),
   /** Attempts made during this run */
-  readonly attempts: readonly AttemptSerialized[]
-}
+  attempts: Schema.Array(AttemptSerializedSchema),
+})
+export type RunDetailResponse = typeof RunDetailResponseSchema.Type
 
 // =============================================================================
-// SYNC RESPONSE TYPES
+// SYNC RESPONSE SCHEMAS
 // =============================================================================
 // Standard sync operation response shapes.
 
-/**
- * Response for sync export operation.
- */
-export interface SyncExportResponse {
-  readonly success: boolean
-  readonly outputPath: string
-  readonly taskCount: number
-  readonly learningCount: number
-}
+/** Response for sync export operation. */
+export const SyncExportResponseSchema = Schema.Struct({
+  success: Schema.Boolean,
+  outputPath: Schema.String,
+  taskCount: Schema.Number.pipe(Schema.int()),
+  learningCount: Schema.Number.pipe(Schema.int()),
+})
+export type SyncExportResponse = typeof SyncExportResponseSchema.Type
 
-/**
- * Response for sync import operation.
- */
-export interface SyncImportResponse {
-  readonly success: boolean
-  readonly inputPath: string
-  readonly tasksImported: number
-  readonly learningsImported: number
-  readonly conflicts: number
-}
+/** Response for sync import operation. */
+export const SyncImportResponseSchema = Schema.Struct({
+  success: Schema.Boolean,
+  inputPath: Schema.String,
+  tasksImported: Schema.Number.pipe(Schema.int()),
+  learningsImported: Schema.Number.pipe(Schema.int()),
+  conflicts: Schema.Number.pipe(Schema.int()),
+})
+export type SyncImportResponse = typeof SyncImportResponseSchema.Type

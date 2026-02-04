@@ -52,16 +52,14 @@
   "dependencies": {
     "@jamesaphoenix/tx-core": "*",
     "@jamesaphoenix/tx-types": "*",
-    "hono": "^4.5.0",
-    "@hono/node-server": "^1.12.0",
-    "@hono/zod-openapi": "^0.18.0",
-    "@hono/swagger-ui": "^0.4.0",
-    "effect": "^3.19.15",
-    "zod": "^3.24.0"
+    "@effect/platform": "^0.94.2",
+    "@effect/platform-node": "^0.104.1",
+    "effect": "^3.19.15"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^3.2.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

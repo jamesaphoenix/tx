@@ -1,26 +1,37 @@
 /**
  * @tx/types - Shared TypeScript types for tx
  *
- * Zero runtime dependencies - pure TypeScript types only.
+ * Effect Schema definitions providing both compile-time types and runtime validation.
  * Works with any runtime (Node, Bun, Deno).
  *
  * @example
  * ```typescript
  * import { Task, TaskWithDeps, TaskId, TaskStatus } from "@jamesaphoenix/tx-types";
+ * import { TaskSchema, TaskWithDepsSchema } from "@jamesaphoenix/tx-types";
  * import { Learning, LearningWithScore } from "@jamesaphoenix/tx-types";
  * import { Attempt, Run } from "@jamesaphoenix/tx-types";
  *
  * // Or import from specific modules:
- * import type { Task, TaskWithDeps } from "@tx/types/task";
- * import type { Learning } from "@tx/types/learning";
+ * import { TaskSchema, type Task, type TaskWithDeps } from "@tx/types/task";
+ * import { LearningSchema, type Learning } from "@tx/types/learning";
  * ```
  */
 
-// Task types
+// Task types & schemas
 export {
   TASK_STATUSES,
   VALID_TRANSITIONS,
   TASK_ID_PATTERN,
+  TaskStatusSchema,
+  TaskIdSchema,
+  TaskSchema,
+  TaskWithDepsSchema,
+  TaskTreeSchema,
+  TaskDependencySchema,
+  CreateTaskInputSchema,
+  UpdateTaskInputSchema,
+  TaskCursorSchema,
+  TaskFilterSchema,
   isValidTaskId,
   assertTaskId,
   InvalidTaskIdError,
@@ -41,9 +52,23 @@ export {
   type DependencyRow,
 } from "./task.js";
 
-// Learning types
+// Learning types & schemas
 export {
   LEARNING_SOURCE_TYPES,
+  LearningSourceTypeSchema,
+  LearningIdSchema,
+  LearningSchema,
+  LearningWithScoreSchema,
+  CreateLearningInputSchema,
+  UpdateLearningInputSchema,
+  GraphExpansionQueryOptionsSchema,
+  LearningQuerySchema,
+  ContextOptionsSchema,
+  GraphExpansionStatsSchema,
+  ContextResultSchema,
+  LearningSearchResultSchema,
+  DiversificationOptionsSchema,
+  RetrievalOptionsSchema,
   type LearningSourceType,
   type LearningId,
   type Learning,
@@ -62,17 +87,24 @@ export {
   type DiversificationOptions,
 } from "./learning.js";
 
-// File learning types
+// File learning types & schemas
 export {
+  FileLearningIdSchema,
+  FileLearningSchema,
+  CreateFileLearningInputSchema,
   type FileLearningId,
   type FileLearning,
   type CreateFileLearningInput,
   type FileLearningRow,
 } from "./file-learning.js";
 
-// Attempt types
+// Attempt types & schemas
 export {
   ATTEMPT_OUTCOMES,
+  AttemptOutcomeSchema,
+  AttemptIdSchema,
+  AttemptSchema,
+  CreateAttemptInputSchema,
   type AttemptOutcome,
   type AttemptId,
   type Attempt,
@@ -80,9 +112,14 @@ export {
   type AttemptRow,
 } from "./attempt.js";
 
-// Run types
+// Run types & schemas
 export {
   RUN_STATUSES,
+  RunStatusSchema,
+  RunIdSchema,
+  RunSchema,
+  CreateRunInputSchema,
+  UpdateRunInputSchema,
   type RunId,
   type RunStatus,
   type Run,
@@ -91,11 +128,19 @@ export {
   type RunRow,
 } from "./run.js";
 
-// Anchor types
+// Anchor types & schemas
 export {
   ANCHOR_TYPES,
   ANCHOR_STATUSES,
   INVALIDATION_SOURCES,
+  AnchorIdSchema,
+  AnchorTypeSchema,
+  AnchorStatusSchema,
+  InvalidationSourceSchema,
+  AnchorSchema,
+  CreateAnchorInputSchema,
+  UpdateAnchorInputSchema,
+  InvalidationLogSchema,
   type AnchorId,
   type AnchorType,
   type AnchorStatus,
@@ -109,10 +154,17 @@ export {
   type InvalidationLogRow,
 } from "./anchor.js"
 
-// Edge types
+// Edge types & schemas
 export {
   NODE_TYPES,
   EDGE_TYPES,
+  NodeTypeSchema,
+  EdgeTypeSchema,
+  EdgeIdSchema,
+  EdgeSchema,
+  CreateEdgeInputSchema,
+  UpdateEdgeInputSchema,
+  NeighborNodeSchema,
   type EdgeId,
   type NodeType,
   type EdgeType,
@@ -123,8 +175,16 @@ export {
   type NeighborNode,
 } from "./edge.js";
 
-// Deduplication types
+// Deduplication types & schemas
 export {
+  ProcessedHashSchema,
+  CreateProcessedHashInputSchema,
+  FileProgressSchema,
+  UpsertFileProgressInputSchema,
+  HashCheckResultSchema,
+  LineProcessResultSchema,
+  FileProcessResultSchema,
+  DeduplicationOptionsSchema,
   type ProcessedHashId,
   type ProcessedHash,
   type CreateProcessedHashInput,
@@ -139,11 +199,21 @@ export {
   type DeduplicationOptions,
 } from "./deduplication.js";
 
-// Candidate types (learning extraction from transcripts)
+// Candidate types & schemas (learning extraction from transcripts)
 export {
   CANDIDATE_CONFIDENCES,
   CANDIDATE_CATEGORIES,
   CANDIDATE_STATUSES,
+  CandidateConfidenceSchema,
+  CandidateCategorySchema,
+  CandidateStatusSchema,
+  TranscriptChunkSchema,
+  ExtractedCandidateSchema,
+  LearningCandidateSchema,
+  CreateCandidateInputSchema,
+  UpdateCandidateInputSchema,
+  CandidateFilterSchema,
+  ExtractionResultSchema,
   type CandidateConfidence,
   type CandidateCategory,
   type CandidateStatus,
@@ -158,10 +228,16 @@ export {
   type CandidateRow,
 } from "./candidate.js";
 
-// Symbol extraction types (code intelligence)
+// Symbol extraction types & schemas (code intelligence)
 export {
   SYMBOL_KINDS,
   IMPORT_KINDS,
+  SymbolKindSchema,
+  ImportKindSchema,
+  SymbolInfoSchema,
+  ImportInfoSchema,
+  SymbolPatternSchema,
+  MatchSchema,
   type SymbolKind,
   type SymbolInfo,
   type ImportKind,
@@ -170,9 +246,12 @@ export {
   type Match,
 } from "./symbol.js"
 
-// Tracked project types (daemon monitoring)
+// Tracked project types & schemas (daemon monitoring)
 export {
   SOURCE_TYPES,
+  SourceTypeSchema,
+  TrackedProjectSchema,
+  CreateTrackedProjectInputSchema,
   type SourceType,
   type TrackedProjectId,
   type TrackedProject,
@@ -180,8 +259,15 @@ export {
   type TrackedProjectRow,
 } from "./tracked-project.js";
 
-// Response types (shared schemas for CLI, MCP, API, SDK)
+// Response types & schemas (shared schemas for CLI, MCP, API, SDK)
 export {
+  // Serialized entity schemas
+  TaskWithDepsSerializedSchema,
+  LearningSerializedSchema,
+  LearningWithScoreSerializedSchema,
+  FileLearningsSerializedSchema,
+  RunSerializedSchema,
+  AttemptSerializedSchema,
   // Serialized entity types
   type TaskWithDepsSerialized,
   type LearningSerialized,
@@ -196,25 +282,39 @@ export {
   serializeFileLearning,
   serializeRun,
   serializeAttempt,
+  // Response envelope schemas
+  ErrorResponseSchema,
   // Response envelopes
   type ListResponse,
   type PaginatedResponse,
   type ActionResponse,
   type ErrorResponse,
-  // Task response types
+  // Task response schemas & types
+  TaskReadyResponseSchema,
+  TaskListResponseSchema,
+  TaskDetailResponseSchema,
+  TaskCompletionResponseSchema,
+  TaskTreeResponseSchema,
   type TaskReadyResponse,
   type TaskListResponse,
   type TaskDetailResponse,
   type TaskCompletionResponse,
   type TaskTreeResponse,
-  // Learning response types
+  // Learning response schemas & types
+  LearningSearchResponseSchema,
+  ContextResponseSchema,
+  FileLearningListResponseSchema,
   type LearningSearchResponse,
   type ContextResponse,
   type FileLearningListResponse,
-  // Run response types
+  // Run response schemas & types
+  RunListResponseSchema,
+  RunDetailResponseSchema,
   type RunListResponse,
   type RunDetailResponse,
-  // Sync response types
+  // Sync response schemas & types
+  SyncExportResponseSchema,
+  SyncImportResponseSchema,
   type SyncExportResponse,
   type SyncImportResponse,
 } from "./response.js";

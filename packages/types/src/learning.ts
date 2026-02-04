@@ -3,10 +3,16 @@
  *
  * Type definitions for the contextual learnings system.
  * See PRD-010 and DD-010 for specification.
- * Zero runtime dependencies - pure TypeScript types only.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
+ * Schema definitions provide both compile-time types and runtime validation.
  */
 
-import type { EdgeType } from "./edge.js"
+import { Schema } from "effect"
+import { EdgeTypeSchema } from "./edge.js"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 /**
  * Valid learning source types.
@@ -18,159 +24,184 @@ export const LEARNING_SOURCE_TYPES = [
   "claude_md",
 ] as const;
 
-/**
- * Learning source type - where the learning came from.
- */
-export type LearningSourceType = (typeof LEARNING_SOURCE_TYPES)[number];
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
 
-/**
- * Branded type for learning IDs.
- */
-export type LearningId = number & { readonly _brand: unique symbol };
+/** Learning source type - where the learning came from. */
+export const LearningSourceTypeSchema = Schema.Literal(...LEARNING_SOURCE_TYPES)
+export type LearningSourceType = typeof LearningSourceTypeSchema.Type
 
-/**
- * Core learning entity.
- */
-export interface Learning {
-  readonly id: LearningId;
-  readonly content: string;
-  readonly sourceType: LearningSourceType;
-  readonly sourceRef: string | null;
-  readonly createdAt: Date;
-  readonly keywords: string[];
-  readonly category: string | null;
-  readonly usageCount: number;
-  readonly lastUsedAt: Date | null;
-  readonly outcomeScore: number | null;
-  readonly embedding: Float32Array | null;
-}
+/** Learning ID - branded integer. */
+export const LearningIdSchema = Schema.Number.pipe(
+  Schema.int(),
+  Schema.brand("LearningId")
+)
+export type LearningId = typeof LearningIdSchema.Type
 
-/**
- * Learning with relevance scoring from search results.
- */
-export interface LearningWithScore extends Learning {
-  readonly relevanceScore: number;
-  readonly bm25Score: number;
-  readonly vectorScore: number;
-  readonly recencyScore: number;
+/** Core learning entity. */
+export const LearningSchema = Schema.Struct({
+  id: LearningIdSchema,
+  content: Schema.String,
+  sourceType: LearningSourceTypeSchema,
+  sourceRef: Schema.NullOr(Schema.String),
+  createdAt: Schema.DateFromSelf,
+  keywords: Schema.Array(Schema.String),
+  category: Schema.NullOr(Schema.String),
+  usageCount: Schema.Number.pipe(Schema.int()),
+  lastUsedAt: Schema.NullOr(Schema.DateFromSelf),
+  outcomeScore: Schema.NullOr(Schema.Number),
+  embedding: Schema.NullOr(Schema.instanceOf(Float32Array)),
+})
+export type Learning = typeof LearningSchema.Type
+
+/** Learning with relevance scoring from search results. */
+export const LearningWithScoreSchema = Schema.Struct({
+  ...LearningSchema.fields,
+  relevanceScore: Schema.Number,
+  bm25Score: Schema.Number,
+  vectorScore: Schema.Number,
+  recencyScore: Schema.Number,
   /** RRF (Reciprocal Rank Fusion) score from combining BM25 and vector rankings */
-  readonly rrfScore: number;
+  rrfScore: Schema.Number,
   /** Rank in BM25 results (1-indexed, 0 if not in BM25 results) */
-  readonly bm25Rank: number;
+  bm25Rank: Schema.Number.pipe(Schema.int()),
   /** Rank in vector similarity results (1-indexed, 0 if not in vector results) */
-  readonly vectorRank: number;
+  vectorRank: Schema.Number.pipe(Schema.int()),
   /** LLM reranker score (0-1, optional - only present when reranking is applied) */
-  readonly rerankerScore?: number;
+  rerankerScore: Schema.optional(Schema.Number),
   /** Number of hops from seed (0 = direct match from RRF, 1+ = expanded via graph) */
-  readonly expansionHops?: number;
+  expansionHops: Schema.optional(Schema.Number.pipe(Schema.int())),
   /** Path of learning IDs from seed to this learning (only for expanded results) */
-  readonly expansionPath?: readonly LearningId[];
+  expansionPath: Schema.optional(Schema.Array(LearningIdSchema)),
   /** Edge type that led to this learning (null for direct matches) */
-  readonly sourceEdge?: EdgeType | null;
+  sourceEdge: Schema.optional(Schema.NullOr(EdgeTypeSchema)),
   /** Feedback score from historical usage (0-1, 0.5 = neutral, optional) */
-  readonly feedbackScore?: number;
-}
+  feedbackScore: Schema.optional(Schema.Number),
+})
+export type LearningWithScore = typeof LearningWithScoreSchema.Type
 
-/**
- * Input for creating a new learning.
- */
-export interface CreateLearningInput {
-  readonly content: string;
-  readonly sourceType?: LearningSourceType;
-  readonly sourceRef?: string | null;
-  readonly keywords?: string[];
-  readonly category?: string | null;
-}
+/** Input for creating a new learning. */
+export const CreateLearningInputSchema = Schema.Struct({
+  content: Schema.String,
+  sourceType: Schema.optional(LearningSourceTypeSchema),
+  sourceRef: Schema.optional(Schema.NullOr(Schema.String)),
+  keywords: Schema.optional(Schema.Array(Schema.String)),
+  category: Schema.optional(Schema.NullOr(Schema.String)),
+})
+export type CreateLearningInput = typeof CreateLearningInputSchema.Type
 
-/**
- * Input for updating an existing learning.
- */
-export interface UpdateLearningInput {
-  readonly usageCount?: number;
-  readonly lastUsedAt?: Date;
-  readonly outcomeScore?: number;
-  readonly embedding?: Float32Array;
-}
+/** Input for updating an existing learning. */
+export const UpdateLearningInputSchema = Schema.Struct({
+  usageCount: Schema.optional(Schema.Number.pipe(Schema.int())),
+  lastUsedAt: Schema.optional(Schema.DateFromSelf),
+  outcomeScore: Schema.optional(Schema.Number),
+  embedding: Schema.optional(Schema.instanceOf(Float32Array)),
+})
+export type UpdateLearningInput = typeof UpdateLearningInputSchema.Type
 
-/**
- * Options for graph expansion during search.
- * See PRD-016 for specification.
- */
-export interface GraphExpansionQueryOptions {
+/** Options for graph expansion during search. See PRD-016. */
+export const GraphExpansionQueryOptionsSchema = Schema.Struct({
   /** Enable graph expansion (default: false) */
-  readonly enabled: boolean;
+  enabled: Schema.Boolean,
   /** Maximum traversal depth (default: 2) */
-  readonly depth?: number;
+  depth: Schema.optional(Schema.Number.pipe(Schema.int())),
   /** Score decay factor per hop (default: 0.7) */
-  readonly decayFactor?: number;
+  decayFactor: Schema.optional(Schema.Number),
   /** Maximum nodes to return from expansion (default: 100) */
-  readonly maxNodes?: number;
+  maxNodes: Schema.optional(Schema.Number.pipe(Schema.int())),
   /** Filter by specific edge types (default: all types) */
-  readonly edgeTypes?: readonly EdgeType[];
-}
+  edgeTypes: Schema.optional(Schema.Array(EdgeTypeSchema)),
+})
+export type GraphExpansionQueryOptions = typeof GraphExpansionQueryOptionsSchema.Type
 
-/**
- * Query options for learning searches.
- */
-export interface LearningQuery {
-  readonly query: string;
-  readonly limit?: number;
-  readonly minScore?: number;
-  readonly category?: string;
-  readonly sourceType?: LearningSourceType;
+/** Query options for learning searches. */
+export const LearningQuerySchema = Schema.Struct({
+  query: Schema.String,
+  limit: Schema.optional(Schema.Number.pipe(Schema.int())),
+  minScore: Schema.optional(Schema.Number),
+  category: Schema.optional(Schema.String),
+  sourceType: Schema.optional(LearningSourceTypeSchema),
   /** Graph expansion options for traversing related learnings */
-  readonly graphExpansion?: GraphExpansionQueryOptions;
-}
+  graphExpansion: Schema.optional(GraphExpansionQueryOptionsSchema),
+})
+export type LearningQuery = typeof LearningQuerySchema.Type
 
-/**
- * Options for context retrieval.
- */
-export interface ContextOptions {
+/** Options for context retrieval. */
+export const ContextOptionsSchema = Schema.Struct({
   /** Enable graph expansion (default: false) */
-  readonly useGraph?: boolean;
+  useGraph: Schema.optional(Schema.Boolean),
   /** Graph expansion depth (default: 2 per PRD-016) */
-  readonly expansionDepth?: number;
+  expansionDepth: Schema.optional(Schema.Number.pipe(Schema.int())),
   /** Edge types to include in expansion */
-  readonly edgeTypes?: readonly EdgeType[];
+  edgeTypes: Schema.optional(Schema.Array(EdgeTypeSchema)),
   /** Maximum number of learnings to return (default: 10) */
-  readonly maxTokens?: number;
-}
+  maxTokens: Schema.optional(Schema.Number.pipe(Schema.int())),
+})
+export type ContextOptions = typeof ContextOptionsSchema.Type
 
-/**
- * Statistics about graph expansion during context retrieval.
- */
-export interface GraphExpansionStats {
-  readonly enabled: boolean;
-  readonly seedCount: number;
-  readonly expandedCount: number;
-  readonly maxDepthReached: number;
-}
+/** Statistics about graph expansion during context retrieval. */
+export const GraphExpansionStatsSchema = Schema.Struct({
+  enabled: Schema.Boolean,
+  seedCount: Schema.Number.pipe(Schema.int()),
+  expandedCount: Schema.Number.pipe(Schema.int()),
+  maxDepthReached: Schema.Number.pipe(Schema.int()),
+})
+export type GraphExpansionStats = typeof GraphExpansionStatsSchema.Type
 
-/**
- * Result of context retrieval for a task.
- */
-export interface ContextResult {
-  readonly taskId: string;
-  readonly taskTitle: string;
-  readonly learnings: readonly LearningWithScore[];
-  readonly searchQuery: string;
-  readonly searchDuration: number;
+/** Result of context retrieval for a task. */
+export const ContextResultSchema = Schema.Struct({
+  taskId: Schema.String,
+  taskTitle: Schema.String,
+  learnings: Schema.Array(LearningWithScoreSchema),
+  searchQuery: Schema.String,
+  searchDuration: Schema.Number,
   /** Graph expansion statistics (only present when useGraph=true) */
-  readonly graphExpansion?: GraphExpansionStats;
-}
+  graphExpansion: Schema.optional(GraphExpansionStatsSchema),
+})
+export type ContextResult = typeof ContextResultSchema.Type
 
-/**
- * Result of a learning search operation.
- */
-export interface LearningSearchResult {
-  readonly learnings: readonly Learning[];
-  readonly query: string;
-  readonly searchDuration: number;
-}
+/** Result of a learning search operation. */
+export const LearningSearchResultSchema = Schema.Struct({
+  learnings: Schema.Array(LearningSchema),
+  query: Schema.String,
+  searchDuration: Schema.Number,
+})
+export type LearningSearchResult = typeof LearningSearchResultSchema.Type
 
-/**
- * Database row type for learnings (snake_case from SQLite).
- */
+/** Options for MMR (Maximal Marginal Relevance) diversification. See PRD-017. */
+export const DiversificationOptionsSchema = Schema.Struct({
+  /** Enable MMR diversification (default: false) */
+  enabled: Schema.optional(Schema.Boolean),
+  /** Trade-off between relevance (1.0) and diversity (0.0) (default: 0.7) */
+  lambda: Schema.optional(Schema.Number),
+  /** Maximum results per category for top 5 results (default: 2) */
+  maxPerCategory: Schema.optional(Schema.Number.pipe(Schema.int())),
+})
+export type DiversificationOptions = typeof DiversificationOptionsSchema.Type
+
+/** Options for retrieval operations. Used by RetrieverService.search(). */
+export const RetrievalOptionsSchema = Schema.Struct({
+  /** Maximum number of results to return (default: 10) */
+  limit: Schema.optional(Schema.Number.pipe(Schema.int())),
+  /** Minimum relevance score threshold (default: 0.1) */
+  minScore: Schema.optional(Schema.Number),
+  /** Optional category filter */
+  category: Schema.optional(Schema.String),
+  /** Optional source type filter */
+  sourceType: Schema.optional(LearningSourceTypeSchema),
+  /** Graph expansion options for traversing related learnings */
+  graphExpansion: Schema.optional(GraphExpansionQueryOptionsSchema),
+  /** MMR diversification options for result variety */
+  diversification: Schema.optional(DiversificationOptionsSchema),
+})
+export type RetrievalOptions = typeof RetrievalOptionsSchema.Type
+
+// =============================================================================
+// DATABASE ROW TYPES (internal, not domain types)
+// =============================================================================
+
+/** Database row type for learnings (snake_case from SQLite). */
 export interface LearningRow {
   id: number;
   content: string;
@@ -185,42 +216,7 @@ export interface LearningRow {
   embedding: Buffer | null;
 }
 
-/**
- * Options for MMR (Maximal Marginal Relevance) diversification.
- * Balances relevance with diversity to avoid redundant results.
- * See PRD-017 for specification.
- */
-export interface DiversificationOptions {
-  /** Enable MMR diversification (default: false) */
-  readonly enabled?: boolean;
-  /** Trade-off between relevance (1.0) and diversity (0.0) (default: 0.7) */
-  readonly lambda?: number;
-  /** Maximum results per category for top 5 results (default: 2) */
-  readonly maxPerCategory?: number;
-}
-
-/**
- * Options for retrieval operations.
- * Used by RetrieverService.search() and custom retrievers.
- */
-export interface RetrievalOptions {
-  /** Maximum number of results to return (default: 10) */
-  readonly limit?: number;
-  /** Minimum relevance score threshold (default: 0.1) */
-  readonly minScore?: number;
-  /** Optional category filter */
-  readonly category?: string;
-  /** Optional source type filter */
-  readonly sourceType?: LearningSourceType;
-  /** Graph expansion options for traversing related learnings */
-  readonly graphExpansion?: GraphExpansionQueryOptions;
-  /** MMR diversification options for result variety */
-  readonly diversification?: DiversificationOptions;
-}
-
-/**
- * Learning row with BM25 score from FTS5 query.
- */
+/** Learning row with BM25 score from FTS5 query. */
 export interface LearningRowWithBM25 extends LearningRow {
   bm25_score: number;
 }

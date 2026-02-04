@@ -7,15 +7,29 @@
  * For CLI usage (auto-start), use: node dist/server.js
  */
 
-// Re-export app creation
-export { createApp, startServer } from "./server-lib.js"
-
-// Re-export runtime management
+// API definition and error types
 export {
-  initRuntime,
-  disposeRuntime,
-  runEffect,
-  getRuntime,
-  getDbPath,
-} from "./runtime.js"
-export type { ApiServices } from "./runtime.js"
+  TxApi,
+  NotFound,
+  BadRequest,
+  InternalError,
+  Unauthorized,
+  Forbidden,
+  ServiceUnavailable,
+  mapCoreError,
+  HealthGroup,
+  TasksGroup,
+  LearningsGroup,
+  RunsGroup,
+  SyncGroup,
+} from "./api.js"
+
+// Server layer factory
+export { makeServerLive } from "./server-lib.js"
+
+// Route handler layers
+export { TasksLive } from "./routes/tasks.js"
+export { HealthLive } from "./routes/health.js"
+export { LearningsLive } from "./routes/learnings.js"
+export { RunsLive } from "./routes/runs.js"
+export { SyncLive } from "./routes/sync.js"

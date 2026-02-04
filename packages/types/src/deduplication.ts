@@ -3,38 +3,103 @@
  *
  * Type definitions for JSONL line deduplication and file progress tracking.
  * Used by the telemetry daemon to avoid re-processing already-seen content.
- * Zero runtime dependencies - pure TypeScript types only.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
+ * Schema definitions provide both compile-time types and runtime validation.
  */
 
-/**
- * Processed hash ID (auto-incremented integer).
- */
+import { Schema } from "effect"
+
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
+
+/** Processed hash ID (auto-incremented integer). */
 export type ProcessedHashId = number;
 
-/**
- * A processed JSONL line hash record.
- * Tracks unique content by SHA256 hash for deduplication.
- */
-export interface ProcessedHash {
-  readonly id: ProcessedHashId;
-  readonly contentHash: string;       // SHA256 of the line content
-  readonly sourceFile: string;        // First file where this line was seen
-  readonly sourceLine: number;        // Line number in source file (1-indexed)
-  readonly processedAt: Date;
-}
+/** A processed JSONL line hash record. */
+export const ProcessedHashSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
+  sourceFile: Schema.String,
+  sourceLine: Schema.Number.pipe(Schema.int()),
+  processedAt: Schema.DateFromSelf,
+})
+export type ProcessedHash = typeof ProcessedHashSchema.Type
 
-/**
- * Input for recording a processed hash.
- */
-export interface CreateProcessedHashInput {
-  readonly contentHash: string;
-  readonly sourceFile: string;
-  readonly sourceLine: number;
-}
+/** Input for recording a processed hash. */
+export const CreateProcessedHashInputSchema = Schema.Struct({
+  contentHash: Schema.String,
+  sourceFile: Schema.String,
+  sourceLine: Schema.Number.pipe(Schema.int()),
+})
+export type CreateProcessedHashInput = typeof CreateProcessedHashInputSchema.Type
 
-/**
- * Database row type for processed_hashes (snake_case from SQLite).
- */
+/** File progress ID (auto-incremented integer). */
+export type FileProgressId = number;
+
+/** File processing progress record. */
+export const FileProgressSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  filePath: Schema.String,
+  lastLineProcessed: Schema.Number.pipe(Schema.int()),
+  lastByteOffset: Schema.Number.pipe(Schema.int()),
+  fileSize: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  fileChecksum: Schema.NullOr(Schema.String),
+  lastProcessedAt: Schema.DateFromSelf,
+})
+export type FileProgress = typeof FileProgressSchema.Type
+
+/** Input for creating/updating file progress. */
+export const UpsertFileProgressInputSchema = Schema.Struct({
+  filePath: Schema.String,
+  lastLineProcessed: Schema.Number.pipe(Schema.int()),
+  lastByteOffset: Schema.Number.pipe(Schema.int()),
+  fileSize: Schema.optional(Schema.Number.pipe(Schema.int())),
+  fileChecksum: Schema.optional(Schema.String),
+})
+export type UpsertFileProgressInput = typeof UpsertFileProgressInputSchema.Type
+
+/** Result of checking if a hash exists. */
+export const HashCheckResultSchema = Schema.Struct({
+  exists: Schema.Boolean,
+  hash: Schema.String,
+})
+export type HashCheckResult = typeof HashCheckResultSchema.Type
+
+/** Result of processing a JSONL line. */
+export const LineProcessResultSchema = Schema.Struct({
+  hash: Schema.String,
+  isNew: Schema.Boolean,
+  lineNumber: Schema.Number.pipe(Schema.int()),
+  content: Schema.String,
+})
+export type LineProcessResult = typeof LineProcessResultSchema.Type
+
+/** Result of processing a file. */
+export const FileProcessResultSchema = Schema.Struct({
+  filePath: Schema.String,
+  totalLines: Schema.Number.pipe(Schema.int()),
+  newLines: Schema.Number.pipe(Schema.int()),
+  skippedLines: Schema.Number.pipe(Schema.int()),
+  startLine: Schema.Number.pipe(Schema.int()),
+  endLine: Schema.Number.pipe(Schema.int()),
+  duration: Schema.Number,
+})
+export type FileProcessResult = typeof FileProcessResultSchema.Type
+
+/** Options for deduplication processing. */
+export const DeduplicationOptionsSchema = Schema.Struct({
+  batchSize: Schema.optional(Schema.Number.pipe(Schema.int())),
+  startLine: Schema.optional(Schema.Number.pipe(Schema.int())),
+  maxLines: Schema.optional(Schema.Number.pipe(Schema.int())),
+})
+export type DeduplicationOptions = typeof DeduplicationOptionsSchema.Type
+
+// =============================================================================
+// DATABASE ROW TYPES (internal, not domain types)
+// =============================================================================
+
+/** Database row type for processed_hashes (snake_case from SQLite). */
 export interface ProcessedHashRow {
   id: number;
   content_hash: string;
@@ -43,39 +108,7 @@ export interface ProcessedHashRow {
   processed_at: string;
 }
 
-/**
- * File progress ID (auto-incremented integer).
- */
-export type FileProgressId = number;
-
-/**
- * File processing progress record.
- * Tracks how far we've processed a JSONL file for incremental processing.
- */
-export interface FileProgress {
-  readonly id: FileProgressId;
-  readonly filePath: string;           // Absolute path to the JSONL file
-  readonly lastLineProcessed: number;  // Last line number processed (1-indexed)
-  readonly lastByteOffset: number;     // Byte offset for streaming resume
-  readonly fileSize: number | null;    // Size at last processing time
-  readonly fileChecksum: string | null; // SHA256 of file content at last processing
-  readonly lastProcessedAt: Date;
-}
-
-/**
- * Input for creating/updating file progress.
- */
-export interface UpsertFileProgressInput {
-  readonly filePath: string;
-  readonly lastLineProcessed: number;
-  readonly lastByteOffset: number;
-  readonly fileSize?: number;
-  readonly fileChecksum?: string;
-}
-
-/**
- * Database row type for file_progress (snake_case from SQLite).
- */
+/** Database row type for file_progress (snake_case from SQLite). */
 export interface FileProgressRow {
   id: number;
   file_path: string;
@@ -84,44 +117,4 @@ export interface FileProgressRow {
   file_size: number | null;
   file_checksum: string | null;
   last_processed_at: string;
-}
-
-/**
- * Result of checking if a hash exists.
- */
-export interface HashCheckResult {
-  readonly exists: boolean;
-  readonly hash: string;
-}
-
-/**
- * Result of processing a JSONL line.
- */
-export interface LineProcessResult {
-  readonly hash: string;
-  readonly isNew: boolean;              // True if this is a newly seen line
-  readonly lineNumber: number;
-  readonly content: string;
-}
-
-/**
- * Result of processing a file.
- */
-export interface FileProcessResult {
-  readonly filePath: string;
-  readonly totalLines: number;
-  readonly newLines: number;            // Lines not seen before
-  readonly skippedLines: number;        // Lines already processed (hash exists)
-  readonly startLine: number;           // First line processed (for incremental)
-  readonly endLine: number;             // Last line processed
-  readonly duration: number;            // Processing time in ms
-}
-
-/**
- * Options for deduplication processing.
- */
-export interface DeduplicationOptions {
-  readonly batchSize?: number;          // Number of hashes to check per batch (default: 100)
-  readonly startLine?: number;          // Start from specific line (for incremental)
-  readonly maxLines?: number;           // Maximum lines to process (for rate limiting)
 }

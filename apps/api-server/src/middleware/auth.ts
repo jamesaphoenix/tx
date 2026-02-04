@@ -6,105 +6,39 @@
  */
 
 import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto"
-import type { Context, Next } from "hono"
-import { HTTPException } from "hono/http-exception"
+import { HttpMiddleware, HttpServerRequest, HttpServerResponse } from "@effect/platform"
+import { Effect } from "effect"
 
 /**
  * Check if authentication is enabled.
  */
-export const isAuthEnabled = (): boolean => {
-  return !!process.env.TX_API_KEY
-}
+export const isAuthEnabled = (): boolean => !!process.env.TX_API_KEY
 
 /**
- * Get the configured API key.
- */
-const getApiKey = (): string | undefined => {
-  return process.env.TX_API_KEY
-}
-
-/**
- * Extract API key from request.
+ * Extract API key from request headers.
  * Supports both Authorization header (Bearer token) and X-Api-Key header.
+ * @internal Exported for testing.
  */
-const extractApiKey = (c: Context): string | null => {
-  // Check X-Api-Key header first
-  const xApiKey = c.req.header("X-Api-Key")
-  if (xApiKey) {
-    return xApiKey
-  }
+export const extractApiKey = (headers: Record<string, string | undefined>): string | null => {
+  const xApiKey = headers["x-api-key"]
+  if (xApiKey) return xApiKey
 
-  // Check Authorization header (Bearer token)
-  const authHeader = c.req.header("Authorization")
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7)
-  }
+  const authHeader = headers["authorization"]
+  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7)
 
   return null
 }
 
 /**
- * API key authentication middleware.
- * Only validates if TX_API_KEY environment variable is set.
- * If not set, all requests are allowed through.
- */
-export const authMiddleware = async (c: Context, next: Next): Promise<void | Response> => {
-  const requiredKey = getApiKey()
-
-  // Skip auth if no API key is configured
-  if (!requiredKey) {
-    return next()
-  }
-
-  const providedKey = extractApiKey(c)
-
-  if (!providedKey) {
-    throw new HTTPException(401, {
-      message: "Missing API key. Provide via X-Api-Key header or Authorization: Bearer <key>"
-    })
-  }
-
-  // Constant-time comparison to prevent timing attacks
-  if (!timingSafeEqual(providedKey, requiredKey)) {
-    throw new HTTPException(403, {
-      message: "Invalid API key"
-    })
-  }
-
-  return next()
-}
-
-/**
- * Check if a request has valid authentication.
- * Returns true if auth is disabled OR if request has valid API key.
- * Use this for endpoints that should work without auth but expose more info when authenticated.
- */
-export const isRequestAuthenticated = (c: Context): boolean => {
-  const requiredKey = getApiKey()
-
-  // If no API key configured, consider all requests "authenticated" (auth disabled)
-  if (!requiredKey) {
-    return true
-  }
-
-  const providedKey = extractApiKey(c)
-  if (!providedKey) {
-    return false
-  }
-
-  return timingSafeEqual(providedKey, requiredKey)
-}
-
-/**
  * Constant-time string comparison to prevent timing attacks.
  * Uses Node.js crypto.timingSafeEqual for proper constant-time comparison.
+ * @internal Exported for testing.
  */
-const timingSafeEqual = (provided: string, expected: string): boolean => {
+export const timingSafeEqual = (provided: string, expected: string): boolean => {
   const providedBuf = Buffer.from(provided)
   const expectedBuf = Buffer.from(expected)
 
   // To avoid leaking length information, always perform a comparison.
-  // If lengths differ, compare expected against itself (still constant-time) then return false.
   if (providedBuf.length !== expectedBuf.length) {
     cryptoTimingSafeEqual(expectedBuf, expectedBuf)
     return false
@@ -112,3 +46,41 @@ const timingSafeEqual = (provided: string, expected: string): boolean => {
 
   return cryptoTimingSafeEqual(providedBuf, expectedBuf)
 }
+
+/**
+ * Effect HTTP authentication middleware.
+ * Only validates if TX_API_KEY environment variable is set.
+ * If not set, all requests pass through.
+ */
+export const authMiddleware = HttpMiddleware.make((httpApp) =>
+  Effect.gen(function* () {
+    const requiredKey = process.env.TX_API_KEY
+
+    // Skip auth if no API key is configured
+    if (!requiredKey) return yield* httpApp
+
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const url = request.url
+
+    // Only require auth for /api routes
+    if (!url.startsWith("/api")) return yield* httpApp
+
+    const providedKey = extractApiKey(request.headers as unknown as Record<string, string | undefined>)
+
+    if (!providedKey) {
+      return yield* HttpServerResponse.json(
+        { error: { code: "UNAUTHORIZED", message: "Missing API key. Provide via X-Api-Key header or Authorization: Bearer <key>" } },
+        { status: 401 }
+      )
+    }
+
+    if (!timingSafeEqual(providedKey, requiredKey)) {
+      return yield* HttpServerResponse.json(
+        { error: { code: "FORBIDDEN", message: "Invalid API key" } },
+        { status: 403 }
+      )
+    }
+
+    return yield* httpApp
+  })
+)

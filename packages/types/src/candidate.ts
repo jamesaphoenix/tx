@@ -3,37 +3,21 @@
  *
  * Learning candidates are potential learnings extracted from Claude Code
  * transcripts that await promotion to the learnings table.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
  *
  * @see PRD-015 for the JSONL daemon and knowledge promotion pipeline
  */
 
-/**
- * Confidence level for extracted learning candidates.
- *
- * - high: Tested in session with clear outcome - auto-promotable
- * - medium: Reasonable but unverified - needs review
- * - low: Speculative or edge case - needs review
- */
-export type CandidateConfidence = "high" | "medium" | "low"
+import { Schema } from "effect"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 /**
  * All valid confidence levels.
  */
 export const CANDIDATE_CONFIDENCES = ["high", "medium", "low"] as const
-
-/**
- * Category of the extracted learning.
- * Helps organize and filter learnings by domain.
- */
-export type CandidateCategory =
-  | "architecture"
-  | "testing"
-  | "performance"
-  | "security"
-  | "debugging"
-  | "tooling"
-  | "patterns"
-  | "other"
 
 /**
  * All valid candidate categories.
@@ -50,170 +34,143 @@ export const CANDIDATE_CATEGORIES = [
 ] as const
 
 /**
- * Status of a learning candidate in the promotion pipeline.
- *
- * - pending: Awaiting review or auto-promotion
- * - promoted: Successfully promoted to learnings table
- * - rejected: Manually rejected by reviewer
- * - merged: Merged with existing similar learning
- */
-export type CandidateStatus = "pending" | "promoted" | "rejected" | "merged"
-
-/**
  * All valid candidate statuses.
  */
 export const CANDIDATE_STATUSES = ["pending", "promoted", "rejected", "merged"] as const
 
-/**
- * A chunk of transcript content to be analyzed for learning extraction.
- * Used as input to the CandidateExtractor.
- */
-export interface TranscriptChunk {
-  /** The transcript text content to analyze */
-  readonly content: string
-  /** Source file path (e.g., ~/.claude/projects/foo/session.jsonl) */
-  readonly sourceFile: string
-  /** Optional run ID for provenance tracking */
-  readonly sourceRunId?: string | null
-  /** Optional task ID for provenance tracking */
-  readonly sourceTaskId?: string | null
-  /** Byte offset in source file (for incremental processing) */
-  readonly byteOffset?: number
-  /** Line number range in source file */
-  readonly lineRange?: { start: number; end: number }
-}
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
 
-/**
- * A learning candidate extracted from a transcript by the LLM.
- * This is the raw extraction output before database storage.
- */
-export interface ExtractedCandidate {
-  /** The learning text (1-3 sentences, actionable) */
-  readonly content: string
-  /** Confidence level assigned by the LLM */
-  readonly confidence: CandidateConfidence
-  /** Category of the learning */
-  readonly category: CandidateCategory
-}
+/** Confidence level for extracted learning candidates. */
+export const CandidateConfidenceSchema = Schema.Literal(...CANDIDATE_CONFIDENCES)
+export type CandidateConfidence = typeof CandidateConfidenceSchema.Type
 
-/**
- * Unique identifier for a stored learning candidate.
- */
+/** Category of the extracted learning. */
+export const CandidateCategorySchema = Schema.Literal(...CANDIDATE_CATEGORIES)
+export type CandidateCategory = typeof CandidateCategorySchema.Type
+
+/** Status of a learning candidate in the promotion pipeline. */
+export const CandidateStatusSchema = Schema.Literal(...CANDIDATE_STATUSES)
+export type CandidateStatus = typeof CandidateStatusSchema.Type
+
+/** Unique identifier for a stored learning candidate. */
 export type CandidateId = number
 
-/**
- * A learning candidate stored in the database.
- * Extends ExtractedCandidate with storage metadata.
- */
-export interface LearningCandidate {
-  /** Unique database ID */
-  readonly id: CandidateId
+/** A chunk of transcript content to be analyzed for learning extraction. */
+export const TranscriptChunkSchema = Schema.Struct({
+  /** The transcript text content to analyze */
+  content: Schema.String,
+  /** Source file path (e.g., ~/.claude/projects/foo/session.jsonl) */
+  sourceFile: Schema.String,
+  /** Optional run ID for provenance tracking */
+  sourceRunId: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Optional task ID for provenance tracking */
+  sourceTaskId: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Byte offset in source file (for incremental processing) */
+  byteOffset: Schema.optional(Schema.Number.pipe(Schema.int())),
+  /** Line number range in source file */
+  lineRange: Schema.optional(Schema.Struct({
+    start: Schema.Number.pipe(Schema.int()),
+    end: Schema.Number.pipe(Schema.int()),
+  })),
+})
+export type TranscriptChunk = typeof TranscriptChunkSchema.Type
+
+/** A learning candidate extracted from a transcript by the LLM. */
+export const ExtractedCandidateSchema = Schema.Struct({
   /** The learning text (1-3 sentences, actionable) */
-  readonly content: string
+  content: Schema.String,
   /** Confidence level assigned by the LLM */
-  readonly confidence: CandidateConfidence
+  confidence: CandidateConfidenceSchema,
   /** Category of the learning */
-  readonly category: CandidateCategory | null
+  category: CandidateCategorySchema,
+})
+export type ExtractedCandidate = typeof ExtractedCandidateSchema.Type
+
+/** A learning candidate stored in the database. */
+export const LearningCandidateSchema = Schema.Struct({
+  /** Unique database ID */
+  id: Schema.Number.pipe(Schema.int()),
+  /** The learning text (1-3 sentences, actionable) */
+  content: Schema.String,
+  /** Confidence level assigned by the LLM */
+  confidence: CandidateConfidenceSchema,
+  /** Category of the learning */
+  category: Schema.NullOr(CandidateCategorySchema),
   /** Source JSONL file path */
-  readonly sourceFile: string
+  sourceFile: Schema.String,
   /** Source run ID for provenance */
-  readonly sourceRunId: string | null
+  sourceRunId: Schema.NullOr(Schema.String),
   /** Source task ID for provenance */
-  readonly sourceTaskId: string | null
+  sourceTaskId: Schema.NullOr(Schema.String),
   /** When the candidate was extracted */
-  readonly extractedAt: Date
+  extractedAt: Schema.DateFromSelf,
   /** Current status in promotion pipeline */
-  readonly status: CandidateStatus
+  status: CandidateStatusSchema,
   /** When the candidate was reviewed */
-  readonly reviewedAt: Date | null
+  reviewedAt: Schema.NullOr(Schema.DateFromSelf),
   /** Who reviewed ('auto' or user identifier) */
-  readonly reviewedBy: string | null
+  reviewedBy: Schema.NullOr(Schema.String),
   /** ID of promoted learning (if promoted or merged) */
-  readonly promotedLearningId: number | null
+  promotedLearningId: Schema.NullOr(Schema.Number.pipe(Schema.int())),
   /** Reason for rejection (if rejected) */
-  readonly rejectionReason: string | null
-}
+  rejectionReason: Schema.NullOr(Schema.String),
+})
+export type LearningCandidate = typeof LearningCandidateSchema.Type
 
-/**
- * Input for creating a new learning candidate.
- */
-export interface CreateCandidateInput {
-  /** The learning text */
-  readonly content: string
-  /** Confidence level */
-  readonly confidence: CandidateConfidence
-  /** Category of the learning */
-  readonly category?: CandidateCategory | null
-  /** Source file path */
-  readonly sourceFile: string
-  /** Source run ID */
-  readonly sourceRunId?: string | null
-  /** Source task ID */
-  readonly sourceTaskId?: string | null
-}
+/** Input for creating a new learning candidate. */
+export const CreateCandidateInputSchema = Schema.Struct({
+  content: Schema.String,
+  confidence: CandidateConfidenceSchema,
+  category: Schema.optional(Schema.NullOr(CandidateCategorySchema)),
+  sourceFile: Schema.String,
+  sourceRunId: Schema.optional(Schema.NullOr(Schema.String)),
+  sourceTaskId: Schema.optional(Schema.NullOr(Schema.String)),
+})
+export type CreateCandidateInput = typeof CreateCandidateInputSchema.Type
 
-/**
- * Input for updating a learning candidate.
- */
-export interface UpdateCandidateInput {
-  /** New status */
-  readonly status?: CandidateStatus
-  /** Review timestamp */
-  readonly reviewedAt?: Date
-  /** Reviewer identifier */
-  readonly reviewedBy?: string
-  /** Promoted learning ID */
-  readonly promotedLearningId?: number
-  /** Rejection reason */
-  readonly rejectionReason?: string
-}
+/** Input for updating a learning candidate. */
+export const UpdateCandidateInputSchema = Schema.Struct({
+  status: Schema.optional(CandidateStatusSchema),
+  reviewedAt: Schema.optional(Schema.DateFromSelf),
+  reviewedBy: Schema.optional(Schema.String),
+  promotedLearningId: Schema.optional(Schema.Number.pipe(Schema.int())),
+  rejectionReason: Schema.optional(Schema.String),
+})
+export type UpdateCandidateInput = typeof UpdateCandidateInputSchema.Type
 
-/**
- * Filter options for querying learning candidates.
- */
-export interface CandidateFilter {
-  /** Filter by status */
-  readonly status?: CandidateStatus | CandidateStatus[]
-  /** Filter by confidence */
-  readonly confidence?: CandidateConfidence | CandidateConfidence[]
-  /** Filter by category */
-  readonly category?: CandidateCategory | CandidateCategory[]
-  /** Filter by source file */
-  readonly sourceFile?: string
-  /** Filter by source run ID */
-  readonly sourceRunId?: string
-  /** Filter by source task ID */
-  readonly sourceTaskId?: string
-  /** Maximum results */
-  readonly limit?: number
-  /** Offset for pagination */
-  readonly offset?: number
-}
+/** Filter options for querying learning candidates. */
+export const CandidateFilterSchema = Schema.Struct({
+  status: Schema.optional(Schema.Union(CandidateStatusSchema, Schema.Array(CandidateStatusSchema))),
+  confidence: Schema.optional(Schema.Union(CandidateConfidenceSchema, Schema.Array(CandidateConfidenceSchema))),
+  category: Schema.optional(Schema.Union(CandidateCategorySchema, Schema.Array(CandidateCategorySchema))),
+  sourceFile: Schema.optional(Schema.String),
+  sourceRunId: Schema.optional(Schema.String),
+  sourceTaskId: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.Number.pipe(Schema.int())),
+  offset: Schema.optional(Schema.Number.pipe(Schema.int())),
+})
+export type CandidateFilter = typeof CandidateFilterSchema.Type
 
-/**
- * Result of candidate extraction from a transcript chunk.
- */
-export interface ExtractionResult {
-  /** Extracted candidates */
-  readonly candidates: readonly ExtractedCandidate[]
-  /** Source chunk that was processed */
-  readonly sourceChunk: TranscriptChunk
-  /** Whether extraction was performed (false if using noop) */
-  readonly wasExtracted: boolean
-  /** Processing metadata */
-  readonly metadata?: {
-    /** Model used for extraction */
-    readonly model?: string
-    /** Tokens used (input + output) */
-    readonly tokensUsed?: number
-    /** Processing duration in milliseconds */
-    readonly durationMs?: number
-  }
-}
+/** Result of candidate extraction from a transcript chunk. */
+export const ExtractionResultSchema = Schema.Struct({
+  candidates: Schema.Array(ExtractedCandidateSchema),
+  sourceChunk: TranscriptChunkSchema,
+  wasExtracted: Schema.Boolean,
+  metadata: Schema.optional(Schema.Struct({
+    model: Schema.optional(Schema.String),
+    tokensUsed: Schema.optional(Schema.Number.pipe(Schema.int())),
+    durationMs: Schema.optional(Schema.Number),
+  })),
+})
+export type ExtractionResult = typeof ExtractionResultSchema.Type
 
-/**
- * Database row representation for learning_candidates table.
- */
+// =============================================================================
+// DATABASE ROW TYPES (internal, not domain types)
+// =============================================================================
+
+/** Database row representation for learning_candidates table. */
 export interface CandidateRow {
   readonly id: number
   readonly content: string

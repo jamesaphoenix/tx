@@ -1,0 +1,179 @@
+/**
+ * API Definition Tests
+ *
+ * Tests error types, mapCoreError mapping, and API structure.
+ */
+
+import { describe, it, expect } from "vitest"
+import {
+  NotFound,
+  BadRequest,
+  InternalError,
+  Unauthorized,
+  Forbidden,
+  ServiceUnavailable,
+  mapCoreError,
+  TxApi,
+  HealthGroup,
+  TasksGroup,
+  LearningsGroup,
+  RunsGroup,
+  SyncGroup,
+} from "../api.js"
+
+// =============================================================================
+// Error Type Tests
+// =============================================================================
+
+describe("Error types", () => {
+  it("should create NotFound with message", () => {
+    const error = new NotFound({ message: "Task not found" })
+    expect(error._tag).toBe("NotFound")
+    expect(error.message).toBe("Task not found")
+  })
+
+  it("should create BadRequest with message", () => {
+    const error = new BadRequest({ message: "Invalid input" })
+    expect(error._tag).toBe("BadRequest")
+    expect(error.message).toBe("Invalid input")
+  })
+
+  it("should create InternalError with message", () => {
+    const error = new InternalError({ message: "Something went wrong" })
+    expect(error._tag).toBe("InternalError")
+    expect(error.message).toBe("Something went wrong")
+  })
+
+  it("should create Unauthorized with message", () => {
+    const error = new Unauthorized({ message: "Missing credentials" })
+    expect(error._tag).toBe("Unauthorized")
+    expect(error.message).toBe("Missing credentials")
+  })
+
+  it("should create Forbidden with message", () => {
+    const error = new Forbidden({ message: "Access denied" })
+    expect(error._tag).toBe("Forbidden")
+    expect(error.message).toBe("Access denied")
+  })
+
+  it("should create ServiceUnavailable with message", () => {
+    const error = new ServiceUnavailable({ message: "Service down" })
+    expect(error._tag).toBe("ServiceUnavailable")
+    expect(error.message).toBe("Service down")
+  })
+})
+
+// =============================================================================
+// mapCoreError Tests
+// =============================================================================
+
+describe("mapCoreError", () => {
+  describe("maps not-found errors to NotFound", () => {
+    it("should map TaskNotFoundError", () => {
+      const result = mapCoreError({ _tag: "TaskNotFoundError", message: "Task tx-abc123 not found" })
+      expect(result._tag).toBe("NotFound")
+      expect(result.message).toBe("Task tx-abc123 not found")
+    })
+
+    it("should map LearningNotFoundError", () => {
+      const result = mapCoreError({ _tag: "LearningNotFoundError", message: "Learning 42 not found" })
+      expect(result._tag).toBe("NotFound")
+      expect(result.message).toBe("Learning 42 not found")
+    })
+
+    it("should map FileLearningNotFoundError", () => {
+      const result = mapCoreError({ _tag: "FileLearningNotFoundError", message: "Not found" })
+      expect(result._tag).toBe("NotFound")
+    })
+
+    it("should map AttemptNotFoundError", () => {
+      const result = mapCoreError({ _tag: "AttemptNotFoundError", message: "Not found" })
+      expect(result._tag).toBe("NotFound")
+    })
+  })
+
+  describe("maps validation errors to BadRequest", () => {
+    it("should map ValidationError", () => {
+      const result = mapCoreError({ _tag: "ValidationError", message: "Title is required" })
+      expect(result._tag).toBe("BadRequest")
+      expect(result.message).toBe("Title is required")
+    })
+
+    it("should map CircularDependencyError", () => {
+      const result = mapCoreError({ _tag: "CircularDependencyError", message: "Cycle detected" })
+      expect(result._tag).toBe("BadRequest")
+      expect(result.message).toBe("Cycle detected")
+    })
+  })
+
+  describe("maps service errors to ServiceUnavailable", () => {
+    it("should map EmbeddingUnavailableError", () => {
+      const result = mapCoreError({ _tag: "EmbeddingUnavailableError", message: "No embedding model" })
+      expect(result._tag).toBe("ServiceUnavailable")
+      expect(result.message).toBe("No embedding model")
+    })
+  })
+
+  describe("maps database and unknown tagged errors to InternalError", () => {
+    it("should map DatabaseError", () => {
+      const result = mapCoreError({ _tag: "DatabaseError", message: "Connection failed" })
+      expect(result._tag).toBe("InternalError")
+      expect(result.message).toBe("Connection failed")
+    })
+
+    it("should map unknown tagged errors to InternalError", () => {
+      const result = mapCoreError({ _tag: "SomeNewError", message: "Unknown issue" })
+      expect(result._tag).toBe("InternalError")
+      expect(result.message).toBe("Unknown issue")
+    })
+  })
+
+  describe("handles non-tagged errors", () => {
+    it("should map string errors to InternalError", () => {
+      const result = mapCoreError("Something broke")
+      expect(result._tag).toBe("InternalError")
+      expect(result.message).toBe("Something broke")
+    })
+
+    it("should map Error objects to InternalError", () => {
+      const result = mapCoreError(new Error("Unexpected"))
+      expect(result._tag).toBe("InternalError")
+    })
+
+    it("should map null to InternalError", () => {
+      const result = mapCoreError(null)
+      expect(result._tag).toBe("InternalError")
+      expect(result.message).toBe("null")
+    })
+
+    it("should map undefined to InternalError", () => {
+      const result = mapCoreError(undefined)
+      expect(result._tag).toBe("InternalError")
+      expect(result.message).toBe("undefined")
+    })
+
+    it("should use _tag as message when no message field present", () => {
+      const result = mapCoreError({ _tag: "TaskNotFoundError" })
+      expect(result._tag).toBe("NotFound")
+      expect(result.message).toBe("TaskNotFoundError")
+    })
+  })
+})
+
+// =============================================================================
+// API Structure Tests
+// =============================================================================
+
+describe("API structure", () => {
+  it("should export TxApi class", () => {
+    expect(TxApi).toBeDefined()
+  })
+
+  it("should export all groups", () => {
+    expect(HealthGroup).toBeDefined()
+    expect(TasksGroup).toBeDefined()
+    expect(LearningsGroup).toBeDefined()
+    expect(RunsGroup).toBeDefined()
+    expect(SyncGroup).toBeDefined()
+  })
+})

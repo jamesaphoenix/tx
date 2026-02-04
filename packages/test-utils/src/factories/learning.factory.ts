@@ -118,7 +118,7 @@ export class LearningFactory {
       usageCount,
       lastUsedAt,
       outcomeScore,
-      embedding,
+      embedding: embedding as Float32Array<ArrayBuffer> | null,
       createdAt
     }
   }

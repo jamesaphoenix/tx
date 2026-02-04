@@ -2,13 +2,15 @@
  * Run types for tx
  *
  * Type definitions for tracking Claude agent runs/sessions.
- * Zero runtime dependencies - pure TypeScript types only.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
+ * Schema definitions provide both compile-time types and runtime validation.
  */
 
-/**
- * Run ID format: run-<8 hex chars>
- */
-export type RunId = `run-${string}`;
+import { Schema } from "effect"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 /**
  * Valid run statuses.
@@ -21,63 +23,72 @@ export const RUN_STATUSES = [
   "cancelled",
 ] as const;
 
-/**
- * Run status - current state of an agent run.
- */
-export type RunStatus = (typeof RUN_STATUSES)[number];
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
 
-/**
- * A single Claude agent run/session.
- */
-export interface Run {
-  readonly id: RunId;
-  readonly taskId: string | null;
-  readonly agent: string;
-  readonly startedAt: Date;
-  readonly endedAt: Date | null;
-  readonly status: RunStatus;
-  readonly exitCode: number | null;
-  readonly pid: number | null;
-  readonly transcriptPath: string | null;
-  readonly stderrPath: string | null;
-  readonly stdoutPath: string | null;
-  readonly contextInjected: string | null;
-  readonly summary: string | null;
-  readonly errorMessage: string | null;
-  readonly metadata: Record<string, unknown>;
-}
+/** Run status - current state of an agent run. */
+export const RunStatusSchema = Schema.Literal(...RUN_STATUSES)
+export type RunStatus = typeof RunStatusSchema.Type
 
-/**
- * Input for creating a new run.
- */
-export interface CreateRunInput {
-  readonly taskId?: string;
-  readonly agent: string;
-  readonly pid?: number;
-  readonly transcriptPath?: string;
-  readonly stderrPath?: string;
-  readonly stdoutPath?: string;
-  readonly contextInjected?: string;
-  readonly metadata?: Record<string, unknown>;
-}
+/** Run ID - branded string matching run-<hex chars>. */
+export const RunIdSchema = Schema.String.pipe(
+  Schema.pattern(/^run-.+$/),
+  Schema.brand("RunId")
+)
+export type RunId = typeof RunIdSchema.Type
 
-/**
- * Input for updating an existing run.
- */
-export interface UpdateRunInput {
-  readonly status?: RunStatus;
-  readonly endedAt?: Date;
-  readonly exitCode?: number;
-  readonly summary?: string;
-  readonly errorMessage?: string;
-  readonly transcriptPath?: string;
-  readonly stderrPath?: string;
-  readonly stdoutPath?: string;
-}
+/** A single Claude agent run/session. */
+export const RunSchema = Schema.Struct({
+  id: RunIdSchema,
+  taskId: Schema.NullOr(Schema.String),
+  agent: Schema.String,
+  startedAt: Schema.DateFromSelf,
+  endedAt: Schema.NullOr(Schema.DateFromSelf),
+  status: RunStatusSchema,
+  exitCode: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  pid: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  transcriptPath: Schema.NullOr(Schema.String),
+  stderrPath: Schema.NullOr(Schema.String),
+  stdoutPath: Schema.NullOr(Schema.String),
+  contextInjected: Schema.NullOr(Schema.String),
+  summary: Schema.NullOr(Schema.String),
+  errorMessage: Schema.NullOr(Schema.String),
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+})
+export type Run = typeof RunSchema.Type
 
-/**
- * Database row type for runs (snake_case from SQLite).
- */
+/** Input for creating a new run. */
+export const CreateRunInputSchema = Schema.Struct({
+  taskId: Schema.optional(Schema.String),
+  agent: Schema.String,
+  pid: Schema.optional(Schema.Number.pipe(Schema.int())),
+  transcriptPath: Schema.optional(Schema.String),
+  stderrPath: Schema.optional(Schema.String),
+  stdoutPath: Schema.optional(Schema.String),
+  contextInjected: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type CreateRunInput = typeof CreateRunInputSchema.Type
+
+/** Input for updating an existing run. */
+export const UpdateRunInputSchema = Schema.Struct({
+  status: Schema.optional(RunStatusSchema),
+  endedAt: Schema.optional(Schema.DateFromSelf),
+  exitCode: Schema.optional(Schema.Number.pipe(Schema.int())),
+  summary: Schema.optional(Schema.String),
+  errorMessage: Schema.optional(Schema.String),
+  transcriptPath: Schema.optional(Schema.String),
+  stderrPath: Schema.optional(Schema.String),
+  stdoutPath: Schema.optional(Schema.String),
+})
+export type UpdateRunInput = typeof UpdateRunInputSchema.Type
+
+// =============================================================================
+// DATABASE ROW TYPES (internal, not domain types)
+// =============================================================================
+
+/** Database row type for runs (snake_case from SQLite). */
 export interface RunRow {
   id: string;
   task_id: string | null;

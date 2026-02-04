@@ -2,19 +2,20 @@
  * Edge types for tx
  *
  * Type definitions for graph edges that connect nodes in the knowledge graph.
- * Zero runtime dependencies - pure TypeScript types only.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
+ * Schema definitions provide both compile-time types and runtime validation.
  */
 
-/**
- * Branded type for edge IDs.
- */
-export type EdgeId = number & { readonly _brand: unique symbol };
+import { Schema } from "effect"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 /**
  * Node types in the graph - entities that can be connected by edges.
  */
 export const NODE_TYPES = ["learning", "file", "task", "run"] as const;
-export type NodeType = (typeof NODE_TYPES)[number];
 
 /**
  * Edge types - strong ENUMs (fixed ontology, not pluggable).
@@ -37,48 +38,75 @@ export const EDGE_TYPES = [
   "USED_IN_RUN",
   "INVALIDATED_BY",
 ] as const;
-export type EdgeType = (typeof EDGE_TYPES)[number];
 
-/**
- * Edge entity - connects two nodes in the graph.
- */
-export interface Edge {
-  readonly id: EdgeId;
-  readonly edgeType: EdgeType;
-  readonly sourceType: NodeType;
-  readonly sourceId: string;
-  readonly targetType: NodeType;
-  readonly targetId: string;
-  readonly weight: number; // 0-1
-  readonly metadata: Record<string, unknown>;
-  readonly createdAt: Date;
-  readonly invalidatedAt: Date | null;
-}
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
 
-/**
- * Input for creating a new edge.
- */
-export interface CreateEdgeInput {
-  readonly edgeType: EdgeType;
-  readonly sourceType: NodeType;
-  readonly sourceId: string;
-  readonly targetType: NodeType;
-  readonly targetId: string;
-  readonly weight?: number;
-  readonly metadata?: Record<string, unknown>;
-}
+/** Node type - one of the valid graph node types. */
+export const NodeTypeSchema = Schema.Literal(...NODE_TYPES)
+export type NodeType = typeof NodeTypeSchema.Type
 
-/**
- * Input for updating an edge.
- */
-export interface UpdateEdgeInput {
-  readonly weight?: number;
-  readonly metadata?: Record<string, unknown>;
-}
+/** Edge type - one of the valid graph edge types. */
+export const EdgeTypeSchema = Schema.Literal(...EDGE_TYPES)
+export type EdgeType = typeof EdgeTypeSchema.Type
 
-/**
- * Database row type for edges (snake_case from SQLite).
- */
+/** Edge ID - branded integer. */
+export const EdgeIdSchema = Schema.Number.pipe(
+  Schema.int(),
+  Schema.brand("EdgeId")
+)
+export type EdgeId = typeof EdgeIdSchema.Type
+
+/** Edge entity - connects two nodes in the graph. */
+export const EdgeSchema = Schema.Struct({
+  id: EdgeIdSchema,
+  edgeType: EdgeTypeSchema,
+  sourceType: NodeTypeSchema,
+  sourceId: Schema.String,
+  targetType: NodeTypeSchema,
+  targetId: Schema.String,
+  weight: Schema.Number, // 0-1
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  createdAt: Schema.DateFromSelf,
+  invalidatedAt: Schema.NullOr(Schema.DateFromSelf),
+})
+export type Edge = typeof EdgeSchema.Type
+
+/** Input for creating a new edge. */
+export const CreateEdgeInputSchema = Schema.Struct({
+  edgeType: EdgeTypeSchema,
+  sourceType: NodeTypeSchema,
+  sourceId: Schema.String,
+  targetType: NodeTypeSchema,
+  targetId: Schema.String,
+  weight: Schema.optional(Schema.Number),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type CreateEdgeInput = typeof CreateEdgeInputSchema.Type
+
+/** Input for updating an edge. */
+export const UpdateEdgeInputSchema = Schema.Struct({
+  weight: Schema.optional(Schema.Number),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type UpdateEdgeInput = typeof UpdateEdgeInputSchema.Type
+
+/** Neighbor node returned from graph traversal. */
+export const NeighborNodeSchema = Schema.Struct({
+  nodeType: NodeTypeSchema,
+  nodeId: Schema.String,
+  edgeType: EdgeTypeSchema,
+  weight: Schema.Number,
+  direction: Schema.Literal("outgoing", "incoming"),
+})
+export type NeighborNode = typeof NeighborNodeSchema.Type
+
+// =============================================================================
+// DATABASE ROW TYPES (internal, not domain types)
+// =============================================================================
+
+/** Database row type for edges (snake_case from SQLite). */
 export interface EdgeRow {
   id: number;
   edge_type: string;
@@ -90,15 +118,4 @@ export interface EdgeRow {
   metadata: string;
   created_at: string;
   invalidated_at: string | null;
-}
-
-/**
- * Neighbor node returned from graph traversal.
- */
-export interface NeighborNode {
-  readonly nodeType: NodeType;
-  readonly nodeId: string;
-  readonly edgeType: EdgeType;
-  readonly weight: number;
-  readonly direction: "outgoing" | "incoming";
 }

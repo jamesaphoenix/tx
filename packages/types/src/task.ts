@@ -1,9 +1,15 @@
 /**
  * Task types for tx
  *
- * Core type definitions for the task management system.
- * Zero runtime dependencies - pure TypeScript types only.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
+ * Schema definitions provide both compile-time types and runtime validation.
  */
+
+import { Schema } from "effect"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 /**
  * All valid task statuses in lifecycle order.
@@ -21,14 +27,140 @@ export const TASK_STATUSES = [
 ] as const;
 
 /**
- * Task status - one of the valid lifecycle states.
+ * Regex pattern for valid task IDs.
  */
-export type TaskStatus = (typeof TASK_STATUSES)[number];
+export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,8}$/;
+
+/**
+ * Valid status transitions map.
+ * Used to validate status changes follow the lifecycle.
+ */
+export const VALID_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
+  backlog: ["ready", "planning", "active", "blocked", "done"],
+  ready: ["planning", "active", "blocked", "done"],
+  planning: ["ready", "active", "blocked", "done"],
+  active: ["blocked", "review", "done"],
+  blocked: ["backlog", "ready", "planning", "active"],
+  review: ["active", "human_needs_to_review", "done"],
+  human_needs_to_review: ["active", "review", "done"],
+  done: ["backlog"],
+} as const;
+
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
+
+/** Task status - one of the valid lifecycle states. */
+export const TaskStatusSchema = Schema.Literal(...TASK_STATUSES)
+export type TaskStatus = typeof TaskStatusSchema.Type
+
+/** Task ID - branded string matching tx-[a-z0-9]{6,8}. */
+export const TaskIdSchema = Schema.String.pipe(
+  Schema.pattern(TASK_ID_PATTERN),
+  Schema.brand("TaskId")
+)
+export type TaskId = typeof TaskIdSchema.Type
+
+/**
+ * Core task entity without dependency information.
+ * IMPORTANT: Per doctrine Rule 1, never return bare Task to external consumers.
+ * Always use TaskWithDeps for API responses.
+ */
+export const TaskSchema = Schema.Struct({
+  id: TaskIdSchema,
+  title: Schema.String,
+  description: Schema.String,
+  status: TaskStatusSchema,
+  parentId: Schema.NullOr(TaskIdSchema),
+  score: Schema.Number.pipe(Schema.int()),
+  createdAt: Schema.DateFromSelf,
+  updatedAt: Schema.DateFromSelf,
+  completedAt: Schema.NullOr(Schema.DateFromSelf),
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+})
+export type Task = typeof TaskSchema.Type
+
+/**
+ * Task with full dependency information.
+ * This is the REQUIRED return type for all external APIs (Rule 1).
+ */
+export const TaskWithDepsSchema = Schema.Struct({
+  ...TaskSchema.fields,
+  /** Task IDs that block this task */
+  blockedBy: Schema.Array(TaskIdSchema),
+  /** Task IDs this task blocks */
+  blocks: Schema.Array(TaskIdSchema),
+  /** Direct child task IDs */
+  children: Schema.Array(TaskIdSchema),
+  /** Whether this task can be worked on (status is workable AND all blockers are done) */
+  isReady: Schema.Boolean,
+})
+export type TaskWithDeps = typeof TaskWithDepsSchema.Type
+
+/** Recursive tree structure for task hierarchy. */
+export const TaskTreeSchema: Schema.Schema<TaskTree, any> = Schema.Struct({
+  task: TaskSchema,
+  children: Schema.Array(Schema.suspend((): Schema.Schema<TaskTree, any> => TaskTreeSchema)),
+})
+export type TaskTree = {
+  readonly task: Task
+  readonly children: readonly TaskTree[]
+}
+
+/** Task dependency relationship. */
+export const TaskDependencySchema = Schema.Struct({
+  blockerId: TaskIdSchema,
+  blockedId: TaskIdSchema,
+  createdAt: Schema.DateFromSelf,
+})
+export type TaskDependency = typeof TaskDependencySchema.Type
+
+/** Input for creating a new task. */
+export const CreateTaskInputSchema = Schema.Struct({
+  title: Schema.String,
+  description: Schema.optional(Schema.String),
+  parentId: Schema.optional(Schema.NullOr(Schema.String)),
+  score: Schema.optional(Schema.Number.pipe(Schema.int())),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type CreateTaskInput = typeof CreateTaskInputSchema.Type
+
+/** Input for updating an existing task. */
+export const UpdateTaskInputSchema = Schema.Struct({
+  title: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  status: Schema.optional(TaskStatusSchema),
+  parentId: Schema.optional(Schema.NullOr(Schema.String)),
+  score: Schema.optional(Schema.Number.pipe(Schema.int())),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+export type UpdateTaskInput = typeof UpdateTaskInputSchema.Type
+
+/** Cursor for pagination (score + id based). */
+export const TaskCursorSchema = Schema.Struct({
+  score: Schema.Number,
+  id: Schema.String,
+})
+export type TaskCursor = typeof TaskCursorSchema.Type
+
+/** Filter options for task queries. */
+export const TaskFilterSchema = Schema.Struct({
+  status: Schema.optional(Schema.Union(TaskStatusSchema, Schema.Array(TaskStatusSchema))),
+  parentId: Schema.optional(Schema.NullOr(Schema.String)),
+  limit: Schema.optional(Schema.Number.pipe(Schema.int())),
+  /** Search in title and description (case-insensitive) */
+  search: Schema.optional(Schema.String),
+  /** Cursor for keyset pagination (returns tasks after this cursor) */
+  cursor: Schema.optional(TaskCursorSchema),
+})
+export type TaskFilter = typeof TaskFilterSchema.Type
+
+// =============================================================================
+// VALIDATION FUNCTIONS
+// =============================================================================
 
 /**
  * Check if a string is a valid task status.
- * @param status - String to validate
- * @returns true if the string is a valid TaskStatus
  */
 export const isValidTaskStatus = (status: string): status is TaskStatus => {
   return TASK_STATUSES.includes(status as TaskStatus);
@@ -46,9 +178,6 @@ export class InvalidTaskStatusError extends Error {
 
 /**
  * Validate and return a TaskStatus, or throw if invalid.
- * @param status - String to validate
- * @returns The validated TaskStatus
- * @throws InvalidTaskStatusError if the status is invalid
  */
 export const assertTaskStatus = (status: string): TaskStatus => {
   if (!isValidTaskStatus(status)) {
@@ -58,20 +187,7 @@ export const assertTaskStatus = (status: string): TaskStatus => {
 };
 
 /**
- * Branded type for task IDs.
- * Format: tx-[a-z0-9]{6,8} (e.g., "tx-abc123")
- */
-export type TaskId = string & { readonly _brand: unique symbol };
-
-/**
- * Regex pattern for valid task IDs.
- */
-export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,8}$/;
-
-/**
  * Check if a string is a valid task ID format.
- * @param id - String to validate
- * @returns true if the string matches the TaskId format
  */
 export const isValidTaskId = (id: string): id is TaskId => {
   return TASK_ID_PATTERN.test(id);
@@ -89,10 +205,6 @@ export class InvalidTaskIdError extends Error {
 
 /**
  * Validate and return a branded TaskId, or throw if invalid.
- * Use this instead of bare `as TaskId` casts.
- * @param id - String to validate and cast
- * @returns The validated TaskId
- * @throws InvalidTaskIdError if the ID format is invalid
  */
 export const assertTaskId = (id: string): TaskId => {
   if (!isValidTaskId(id)) {
@@ -101,119 +213,11 @@ export const assertTaskId = (id: string): TaskId => {
   return id;
 };
 
-/**
- * Core task entity without dependency information.
- * IMPORTANT: Per doctrine Rule 1, never return bare Task to external consumers.
- * Always use TaskWithDeps for API responses.
- */
-export interface Task {
-  readonly id: TaskId;
-  readonly title: string;
-  readonly description: string;
-  readonly status: TaskStatus;
-  readonly parentId: TaskId | null;
-  readonly score: number;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
-  readonly completedAt: Date | null;
-  readonly metadata: Record<string, unknown>;
-}
+// =============================================================================
+// DATABASE ROW TYPES (internal, not domain types)
+// =============================================================================
 
-/**
- * Task with full dependency information.
- * This is the REQUIRED return type for all external APIs (Rule 1).
- */
-export interface TaskWithDeps extends Task {
-  /** Task IDs that block this task */
-  readonly blockedBy: TaskId[];
-  /** Task IDs this task blocks */
-  readonly blocks: TaskId[];
-  /** Direct child task IDs */
-  readonly children: TaskId[];
-  /** Whether this task can be worked on (status is workable AND all blockers are done) */
-  readonly isReady: boolean;
-}
-
-/**
- * Recursive tree structure for task hierarchy.
- */
-export interface TaskTree {
-  readonly task: Task;
-  readonly children: readonly TaskTree[];
-}
-
-/**
- * Task dependency relationship.
- */
-export interface TaskDependency {
-  readonly blockerId: TaskId;
-  readonly blockedId: TaskId;
-  readonly createdAt: Date;
-}
-
-/**
- * Input for creating a new task.
- */
-export interface CreateTaskInput {
-  readonly title: string;
-  readonly description?: string;
-  readonly parentId?: string | null;
-  readonly score?: number;
-  readonly metadata?: Record<string, unknown>;
-}
-
-/**
- * Input for updating an existing task.
- */
-export interface UpdateTaskInput {
-  readonly title?: string;
-  readonly description?: string;
-  readonly status?: TaskStatus;
-  readonly parentId?: string | null;
-  readonly score?: number;
-  readonly metadata?: Record<string, unknown>;
-}
-
-/**
- * Cursor for pagination (score + id based).
- */
-export interface TaskCursor {
-  readonly score: number;
-  readonly id: string;
-}
-
-/**
- * Filter options for task queries.
- */
-export interface TaskFilter {
-  readonly status?: TaskStatus | TaskStatus[];
-  readonly parentId?: string | null;
-  readonly limit?: number;
-  /** Search in title and description (case-insensitive) */
-  readonly search?: string;
-  /** Cursor for keyset pagination (returns tasks after this cursor) */
-  readonly cursor?: TaskCursor;
-}
-
-/**
- * Valid status transitions map.
- * Used to validate status changes follow the lifecycle.
- */
-export const VALID_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
-  backlog: ["ready", "planning", "active", "blocked", "done"],
-  ready: ["planning", "active", "blocked", "done"],
-  planning: ["ready", "active", "blocked", "done"],
-  active: ["blocked", "review", "done"],
-  blocked: ["backlog", "ready", "planning", "active"],
-  review: ["active", "human_needs_to_review", "done"],
-  human_needs_to_review: ["active", "review", "done"],
-  done: ["backlog"],
-} as const;
-
-/**
- * Database row type for tasks (snake_case from SQLite).
- * Used by repositories for mapping DB rows to Task objects.
- */
+/** Database row type for tasks (snake_case from SQLite). */
 export interface TaskRow {
   id: string;
   title: string;
@@ -227,9 +231,7 @@ export interface TaskRow {
   metadata: string;
 }
 
-/**
- * Database row type for dependencies (snake_case from SQLite).
- */
+/** Database row type for dependencies (snake_case from SQLite). */
 export interface DependencyRow {
   blocker_id: string;
   blocked_id: string;

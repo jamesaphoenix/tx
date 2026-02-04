@@ -3,63 +3,66 @@
  *
  * Tracked projects are directories that the daemon monitors for JSONL
  * transcripts to process for learning extraction.
+ * Core type definitions using Effect Schema (Doctrine Rule 10).
  *
  * @see PRD-015 for the JSONL daemon and knowledge promotion pipeline
  */
 
-/**
- * Source type of the AI tool generating transcripts.
- *
- * - claude: Claude Code
- * - cursor: Cursor IDE
- * - windsurf: Windsurf IDE
- * - other: Other AI coding tools
- */
-export type SourceType = "claude" | "cursor" | "windsurf" | "other"
+import { Schema } from "effect"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 /**
  * All valid source types.
  */
 export const SOURCE_TYPES = ["claude", "cursor", "windsurf", "other"] as const
 
-/**
- * Unique identifier for a tracked project.
- */
+// =============================================================================
+// SCHEMAS & TYPES
+// =============================================================================
+
+/** Source type of the AI tool generating transcripts. */
+export const SourceTypeSchema = Schema.Literal(...SOURCE_TYPES)
+export type SourceType = typeof SourceTypeSchema.Type
+
+/** Unique identifier for a tracked project. */
 export type TrackedProjectId = number
 
-/**
- * A project directory tracked by the daemon for transcript processing.
- */
-export interface TrackedProject {
+/** A project directory tracked by the daemon for transcript processing. */
+export const TrackedProjectSchema = Schema.Struct({
   /** Unique database ID */
-  readonly id: TrackedProjectId
+  id: Schema.Number.pipe(Schema.int()),
   /** Absolute path to the project directory */
-  readonly projectPath: string
+  projectPath: Schema.String,
   /** Optional project identifier (for linking to tx database) */
-  readonly projectId: string | null
+  projectId: Schema.NullOr(Schema.String),
   /** Type of AI tool generating transcripts */
-  readonly sourceType: SourceType
+  sourceType: SourceTypeSchema,
   /** When the project was added for tracking */
-  readonly addedAt: Date
+  addedAt: Schema.DateFromSelf,
   /** Whether tracking is currently enabled */
-  readonly enabled: boolean
-}
+  enabled: Schema.Boolean,
+})
+export type TrackedProject = typeof TrackedProjectSchema.Type
 
-/**
- * Input for tracking a new project.
- */
-export interface CreateTrackedProjectInput {
+/** Input for tracking a new project. */
+export const CreateTrackedProjectInputSchema = Schema.Struct({
   /** Absolute path to the project directory */
-  readonly projectPath: string
+  projectPath: Schema.String,
   /** Optional project identifier */
-  readonly projectId?: string | null
+  projectId: Schema.optional(Schema.NullOr(Schema.String)),
   /** Type of AI tool (defaults to 'claude') */
-  readonly sourceType?: SourceType
-}
+  sourceType: Schema.optional(SourceTypeSchema),
+})
+export type CreateTrackedProjectInput = typeof CreateTrackedProjectInputSchema.Type
 
-/**
- * Database row representation for daemon_tracked_projects table.
- */
+// =============================================================================
+// DATABASE ROW TYPES (internal, not domain types)
+// =============================================================================
+
+/** Database row representation for daemon_tracked_projects table. */
 export interface TrackedProjectRow {
   readonly id: number
   readonly project_path: string
