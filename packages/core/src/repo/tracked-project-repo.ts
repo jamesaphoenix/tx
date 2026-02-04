@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToTrackedProject } from "../mappers/tracked-project.js"
 import type {
   TrackedProject,
@@ -39,7 +39,14 @@ export const TrackedProjectRepositoryLive = Layer.effect(
             )
             const row = db.prepare(
               "SELECT * FROM daemon_tracked_projects WHERE id = ?"
-            ).get(result.lastInsertRowid) as TrackedProjectRow
+            ).get(result.lastInsertRowid) as TrackedProjectRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "tracked_project",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToTrackedProject(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -91,7 +98,14 @@ export const TrackedProjectRepositoryLive = Layer.effect(
 
             const row = db.prepare(
               "SELECT * FROM daemon_tracked_projects WHERE id = ?"
-            ).get(id) as TrackedProjectRow
+            ).get(id) as TrackedProjectRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "tracked_project",
+                id,
+                operation: "update"
+              })
+            }
             return rowToTrackedProject(row)
           },
           catch: (cause) => new DatabaseError({ cause })

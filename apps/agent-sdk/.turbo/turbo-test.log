@@ -6,6 +6,6 @@ $ bun vitest run --passWithNoTests
 
  Test Files  1 passed (1)
       Tests  14 passed (14)
-   Start at  19:19:50
-   Duration  194ms (transform 37ms, setup 0ms, collect 46ms, tests 2ms, environment 0ms, prepare 30ms)
+   Start at  19:27:07
+   Duration  432ms (transform 137ms, setup 0ms, collect 227ms, tests 2ms, environment 0ms, prepare 40ms)
 

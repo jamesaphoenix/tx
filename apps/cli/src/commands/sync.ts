@@ -61,7 +61,15 @@ export const sync = (pos: string[], flags: Flags) =>
       if (flag(flags, "json")) {
         console.log(toJson(result))
       } else {
-        console.log(`Imported: ${result.imported}, Skipped: ${result.skipped}, Conflicts: ${result.conflicts}`)
+        console.log(`Tasks: imported=${result.imported}, skipped=${result.skipped}, conflicts=${result.conflicts}`)
+        const deps = result.dependencies
+        console.log(`Dependencies: added=${deps.added}, removed=${deps.removed}, skipped=${deps.skipped}, failures=${deps.failures.length}`)
+        if (deps.failures.length > 0) {
+          console.log(`\nDependency failures:`)
+          for (const f of deps.failures) {
+            console.log(`  ${f.blockerId} -> ${f.blockedId}: ${f.error}`)
+          }
+        }
       }
     } else if (subcommand === "status") {
       const status = yield* syncSvc.status()

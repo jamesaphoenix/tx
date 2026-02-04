@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, EntityFetchError } from "../errors.js"
 
 /**
  * Compaction log entry from database.
@@ -88,7 +88,14 @@ export const CompactionRepositoryLive = Layer.effect(
               input.learningsExportedTo ?? null,
               input.learnings
             )
-            const row = db.prepare("SELECT * FROM compaction_log WHERE id = ?").get(result.lastInsertRowid) as CompactionLogRow
+            const row = db.prepare("SELECT * FROM compaction_log WHERE id = ?").get(result.lastInsertRowid) as CompactionLogRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "compaction_log",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToCompactionLogEntry(row)
           },
           catch: (cause) => new DatabaseError({ cause })

@@ -1395,6 +1395,242 @@ describe("SyncService Delete Operations", () => {
 })
 
 // -----------------------------------------------------------------------------
+// Dependency Import Statistics Tests
+// -----------------------------------------------------------------------------
+
+describe("SyncService Dependency Import Statistics", () => {
+  let db: TestDatabase
+  let layer: ReturnType<typeof makeTestLayer>
+  let tempPath: string
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    layer = makeTestLayer(db)
+    tempPath = createTempJsonlPath()
+  })
+
+  afterEach(() => {
+    cleanupTempFile(tempPath)
+  })
+
+  it("returns dependency statistics in ImportResult", async () => {
+    const now = new Date().toISOString()
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: now,
+        id: SYNC_FIXTURES.SYNC_TASK_A,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts: now,
+        id: SYNC_FIXTURES.SYNC_TASK_B,
+        data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_add",
+        ts: now,
+        blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+        blockedId: SYNC_FIXTURES.SYNC_TASK_B
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.imported).toBe(2)
+    expect(result.dependencies).toBeDefined()
+    expect(result.dependencies.added).toBe(1)
+    expect(result.dependencies.removed).toBe(0)
+    expect(result.dependencies.skipped).toBe(0)
+    expect(result.dependencies.failures).toHaveLength(0)
+  })
+
+  it("tracks skipped dependencies when already exists", async () => {
+    // Create tasks and existing dependency
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
+    db.db.prepare(
+      `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, SYNC_FIXTURES.SYNC_TASK_B, now)
+
+    // Import the same dependency again
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "dep_add",
+      ts: now,
+      blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+      blockedId: SYNC_FIXTURES.SYNC_TASK_B
+    })
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.dependencies.added).toBe(0)
+    expect(result.dependencies.skipped).toBe(1)
+    expect(result.dependencies.failures).toHaveLength(0)
+  })
+
+  it("tracks removed dependencies", async () => {
+    // Create tasks and existing dependency
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
+    db.db.prepare(
+      `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, SYNC_FIXTURES.SYNC_TASK_B, now)
+
+    // Import dep_remove operation
+    const removeTs = new Date(Date.now() + 1000).toISOString()
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "dep_remove",
+      ts: removeTs,
+      blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+      blockedId: SYNC_FIXTURES.SYNC_TASK_B
+    })
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.dependencies.added).toBe(0)
+    expect(result.dependencies.removed).toBe(1)
+    expect(result.dependencies.skipped).toBe(0)
+    expect(result.dependencies.failures).toHaveLength(0)
+  })
+
+  it("tracks skipped dep_remove when dependency does not exist", async () => {
+    // Create tasks but no dependency
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
+
+    // Import dep_remove for non-existent dependency
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "dep_remove",
+      ts: now,
+      blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+      blockedId: SYNC_FIXTURES.SYNC_TASK_B
+    })
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.dependencies.removed).toBe(0)
+    expect(result.dependencies.skipped).toBe(1)
+    expect(result.dependencies.failures).toHaveLength(0)
+  })
+
+  it("tracks dependency failures for non-existent tasks", async () => {
+    // Create only Task A, not Task B
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
+
+    // Try to import dependency to non-existent task
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "dep_add",
+      ts: now,
+      blockerId: SYNC_FIXTURES.SYNC_TASK_A,
+      blockedId: SYNC_FIXTURES.SYNC_TASK_B // This task doesn't exist
+    })
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.dependencies.added).toBe(0)
+    expect(result.dependencies.failures).toHaveLength(1)
+    expect(result.dependencies.failures[0].blockerId).toBe(SYNC_FIXTURES.SYNC_TASK_A)
+    expect(result.dependencies.failures[0].blockedId).toBe(SYNC_FIXTURES.SYNC_TASK_B)
+    expect(result.dependencies.failures[0].error).toBeTruthy() // Should contain FK error message
+  })
+
+  it("returns zero dependencies for missing file", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import("/nonexistent/path/file.jsonl")
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.dependencies).toBeDefined()
+    expect(result.dependencies.added).toBe(0)
+    expect(result.dependencies.removed).toBe(0)
+    expect(result.dependencies.skipped).toBe(0)
+    expect(result.dependencies.failures).toHaveLength(0)
+  })
+
+  it("returns zero dependencies for empty file", async () => {
+    writeFileSync(tempPath, "", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.dependencies).toBeDefined()
+    expect(result.dependencies.added).toBe(0)
+    expect(result.dependencies.removed).toBe(0)
+    expect(result.dependencies.skipped).toBe(0)
+    expect(result.dependencies.failures).toHaveLength(0)
+  })
+})
+
+// -----------------------------------------------------------------------------
 // Auto-Sync Tests
 // -----------------------------------------------------------------------------
 

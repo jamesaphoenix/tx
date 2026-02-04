@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToCandidate } from "../mappers/candidate.js"
 import type {
   LearningCandidate,
@@ -47,7 +47,14 @@ export const CandidateRepositoryLive = Layer.effect(
             )
             const row = db.prepare(
               "SELECT * FROM learning_candidates WHERE id = ?"
-            ).get(result.lastInsertRowid) as CandidateRow
+            ).get(result.lastInsertRowid) as CandidateRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "learning_candidate",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToCandidate(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -185,7 +192,14 @@ export const CandidateRepositoryLive = Layer.effect(
 
             const row = db.prepare(
               "SELECT * FROM learning_candidates WHERE id = ?"
-            ).get(id) as CandidateRow
+            ).get(id) as CandidateRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "learning_candidate",
+                id,
+                operation: "update"
+              })
+            }
             return rowToCandidate(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -204,7 +218,14 @@ export const CandidateRepositoryLive = Layer.effect(
 
             const row = db.prepare(
               "SELECT * FROM learning_candidates WHERE id = ?"
-            ).get(id) as CandidateRow
+            ).get(id) as CandidateRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "learning_candidate",
+                id,
+                operation: "update"
+              })
+            }
             return rowToCandidate(row)
           },
           catch: (cause) => new DatabaseError({ cause })

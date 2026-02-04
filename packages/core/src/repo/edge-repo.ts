@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError, EdgeNotFoundError } from "../errors.js"
+import { DatabaseError, EdgeNotFoundError, EntityFetchError } from "../errors.js"
 import { rowToEdge } from "../mappers/edge.js"
 import type {
   Edge,
@@ -65,7 +65,14 @@ export const EdgeRepositoryLive = Layer.effect(
               input.weight ?? 1.0,
               JSON.stringify(input.metadata ?? {})
             )
-            const row = db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(result.lastInsertRowid) as EdgeRow
+            const row = db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(result.lastInsertRowid) as EdgeRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "edge",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToEdge(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -317,7 +324,14 @@ export const EdgeRepositoryLive = Layer.effect(
               return null
             }
 
-            const row = db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(id) as EdgeRow
+            const row = db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(id) as EdgeRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "edge",
+                id,
+                operation: "update"
+              })
+            }
             return rowToEdge(row)
           },
           catch: (cause) => new DatabaseError({ cause })

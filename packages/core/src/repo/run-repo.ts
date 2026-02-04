@@ -65,7 +65,14 @@ export const RunRepositoryLive = Layer.effect(
               JSON.stringify(input.metadata ?? {})
             )
 
-            const row = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow
+            const row = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "run",
+                id,
+                operation: "insert"
+              })
+            }
             return rowToRun(row)
           },
           catch: (cause) => new DatabaseError({ cause })

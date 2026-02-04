@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError, FileLearningNotFoundError } from "../errors.js"
+import { DatabaseError, EntityFetchError, FileLearningNotFoundError } from "../errors.js"
 import { rowToFileLearning, matchesPattern } from "../mappers/file-learning.js"
 import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
 
@@ -36,7 +36,14 @@ export const FileLearningRepositoryLive = Layer.effect(
               now
             )
             // Fetch the inserted row
-            const row = db.prepare("SELECT * FROM file_learnings WHERE id = ?").get(result.lastInsertRowid) as FileLearningRow
+            const row = db.prepare("SELECT * FROM file_learnings WHERE id = ?").get(result.lastInsertRowid) as FileLearningRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "file_learning",
+                id: result.lastInsertRowid as number,
+                operation: "insert"
+              })
+            }
             return rowToFileLearning(row)
           },
           catch: (cause) => new DatabaseError({ cause })

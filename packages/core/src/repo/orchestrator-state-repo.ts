@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
-import { DatabaseError } from "../errors.js"
+import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToOrchestratorState, type OrchestratorStateRow } from "../mappers/orchestrator-state.js"
 import type { OrchestratorState } from "../schemas/worker.js"
 
@@ -79,7 +79,14 @@ export const OrchestratorStateRepositoryLive = Layer.effect(
 
             const row = db.prepare(
               "SELECT * FROM orchestrator_state WHERE id = 1"
-            ).get() as OrchestratorStateRow
+            ).get() as OrchestratorStateRow | undefined
+            if (!row) {
+              throw new EntityFetchError({
+                entity: "orchestrator_state",
+                id: 1,
+                operation: "insert"
+              })
+            }
 
             return rowToOrchestratorState(row)
           },

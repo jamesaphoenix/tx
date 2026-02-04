@@ -24,12 +24,23 @@ export interface ExportResult {
 }
 
 /**
+ * Result of a dependency import operation.
+ */
+export interface DependencyImportResult {
+  readonly added: number
+  readonly removed: number
+  readonly skipped: number
+  readonly failures: ReadonlyArray<{ blockerId: string; blockedId: string; error: string }>
+}
+
+/**
  * Result of an import operation.
  */
 export interface ImportResult {
   readonly imported: number
   readonly skipped: number
   readonly conflicts: number
+  readonly dependencies: DependencyImportResult
 }
 
 /**
@@ -139,6 +150,16 @@ export class SyncService extends Context.Tag("SyncService")<
 >() {}
 
 const DEFAULT_JSONL_PATH = ".tx/tasks.jsonl"
+
+/**
+ * Empty import result for early returns.
+ */
+const EMPTY_IMPORT_RESULT: ImportResult = {
+  imported: 0,
+  skipped: 0,
+  conflicts: 0,
+  dependencies: { added: 0, removed: 0, skipped: 0, failures: [] }
+}
 
 /**
  * Topologically sort task operations so parents are processed before children.
@@ -341,7 +362,7 @@ export const SyncServiceLive = Layer.effect(
 
           // Check if file exists (outside transaction - no DB access)
           if (!existsSync(filePath)) {
-            return { imported: 0, skipped: 0, conflicts: 0 }
+            return EMPTY_IMPORT_RESULT
           }
 
           // Read and parse JSONL file (outside transaction - no DB access)
@@ -352,7 +373,7 @@ export const SyncServiceLive = Layer.effect(
 
           const lines = content.trim().split("\n").filter(Boolean)
           if (lines.length === 0) {
-            return { imported: 0, skipped: 0, conflicts: 0 }
+            return EMPTY_IMPORT_RESULT
           }
 
           // Parse all operations with Schema validation (outside transaction - no DB access)
@@ -404,6 +425,12 @@ export const SyncServiceLive = Layer.effect(
                 let skipped = 0
                 let conflicts = 0
 
+                // Dependency tracking
+                let depsAdded = 0
+                let depsRemoved = 0
+                let depsSkipped = 0
+                const depFailures: Array<{ blockerId: string; blockedId: string; error: string }> = []
+
                 // Prepare statements for efficiency
                 const findTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?")
                 const insertTaskStmt = db.prepare(
@@ -416,7 +443,10 @@ export const SyncServiceLive = Layer.effect(
                 )
                 const deleteTaskStmt = db.prepare("DELETE FROM tasks WHERE id = ?")
                 const insertDepStmt = db.prepare(
-                  "INSERT OR IGNORE INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
+                  "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
+                )
+                const checkDepExistsStmt = db.prepare(
+                  "SELECT 1 FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
                 )
                 const deleteDepStmt = db.prepare(
                   "DELETE FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
@@ -490,14 +520,36 @@ export const SyncServiceLive = Layer.effect(
                   }
                 }
 
-                // Apply dependency operations
+                // Apply dependency operations with individual error tracking
                 for (const { op } of depStates.values()) {
                   if (op.op === "dep_add") {
-                    // Add dependency, ignore if already exists (INSERT OR IGNORE)
-                    insertDepStmt.run(op.blockerId, op.blockedId, op.ts)
+                    // Check if dependency already exists
+                    const exists = checkDepExistsStmt.get(op.blockerId, op.blockedId)
+                    if (exists) {
+                      depsSkipped++
+                      continue
+                    }
+
+                    // Try to add dependency, track failures individually
+                    try {
+                      insertDepStmt.run(op.blockerId, op.blockedId, op.ts)
+                      depsAdded++
+                    } catch (e) {
+                      // Dependency insert failed (e.g., foreign key constraint, circular dependency)
+                      depFailures.push({
+                        blockerId: op.blockerId,
+                        blockedId: op.blockedId,
+                        error: e instanceof Error ? e.message : String(e)
+                      })
+                    }
                   } else if (op.op === "dep_remove") {
-                    // Remove dependency, ignore if doesn't exist
-                    deleteDepStmt.run(op.blockerId, op.blockedId)
+                    // Remove dependency - track if it actually existed
+                    const result = deleteDepStmt.run(op.blockerId, op.blockedId)
+                    if (result.changes > 0) {
+                      depsRemoved++
+                    } else {
+                      depsSkipped++
+                    }
                   }
                 }
 
@@ -505,7 +557,17 @@ export const SyncServiceLive = Layer.effect(
                 setConfigStmt.run("last_import", new Date().toISOString())
 
                 db.exec("COMMIT")
-                return { imported, skipped, conflicts }
+                return {
+                  imported,
+                  skipped,
+                  conflicts,
+                  dependencies: {
+                    added: depsAdded,
+                    removed: depsRemoved,
+                    skipped: depsSkipped,
+                    failures: depFailures
+                  }
+                }
               } catch (e) {
                 db.exec("ROLLBACK")
                 throw e

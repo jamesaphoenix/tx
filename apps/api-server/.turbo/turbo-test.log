@@ -2,51 +2,51 @@ $ bun test
 bun test v1.2.20 (6ad208bc)
 
 src/__tests__/rate-limit.test.ts:
-(pass) Rate limiting security > isTrustProxyEnabled > should return false by default [0.01ms]
-(pass) Rate limiting security > isTrustProxyEnabled > should return false for empty string
-(pass) Rate limiting security > isTrustProxyEnabled > should return false for 'false'
+(pass) Rate limiting security > isTrustProxyEnabled > should return false by default [0.06ms]
+(pass) Rate limiting security > isTrustProxyEnabled > should return false for empty string [0.01ms]
+(pass) Rate limiting security > isTrustProxyEnabled > should return false for 'false' [0.02ms]
 (pass) Rate limiting security > isTrustProxyEnabled > should return true only for 'true'
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should ignore X-Forwarded-For header (not treated as client identity) [6.61ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should ignore X-Forwarded-For header (not treated as client identity) [6.15ms]
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should ignore X-Real-IP header (not treated as client identity) [0.69ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should ignore X-Real-IP header (not treated as client identity) [0.78ms]
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 (pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should NOT allow shared bucket DoS (security fix) [0.93ms]
-(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should use X-Forwarded-For header for rate limiting [0.68ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should use X-Forwarded-For header for rate limiting [0.63ms]
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should reject malformed X-Forwarded-For values [0.46ms]
-(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should take first IP from X-Forwarded-For chain [0.37ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should reject malformed X-Forwarded-For values [0.61ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should take first IP from X-Forwarded-For chain [0.44ms]
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > rate limit headers > should include rate limit headers in response [0.29ms]
-(pass) Rate limiting security > rate limit headers > should include Retry-After header when rate limited [0.28ms]
+(pass) Rate limiting security > rate limit headers > should include rate limit headers in response [0.28ms]
+(pass) Rate limiting security > rate limit headers > should include Retry-After header when rate limited [0.27ms]
 
 src/__tests__/health.test.ts:
-(pass) Health endpoint security > when auth is disabled > should return database path in /health response [0.50ms]
+(pass) Health endpoint security > when auth is disabled > should return database path in /health response [0.52ms]
 (pass) Health endpoint security > when auth is enabled > should NOT return database path for unauthenticated requests [0.27ms]
-(pass) Health endpoint security > when auth is enabled > should NOT return database path with invalid API key [0.31ms]
-(pass) Health endpoint security > when auth is enabled > should return database path with valid X-Api-Key header [0.24ms]
-(pass) Health endpoint security > when auth is enabled > should return database path with valid Bearer token [0.19ms]
-(pass) isRequestAuthenticated > should treat all requests as authenticated when auth is disabled [0.20ms]
+(pass) Health endpoint security > when auth is enabled > should NOT return database path with invalid API key [0.33ms]
+(pass) Health endpoint security > when auth is enabled > should return database path with valid X-Api-Key header [0.20ms]
+(pass) Health endpoint security > when auth is enabled > should return database path with valid Bearer token [0.21ms]
+(pass) isRequestAuthenticated > should treat all requests as authenticated when auth is disabled [0.19ms]
 
 dist/__tests__/rate-limit.test.js:
-(pass) Rate limiting security > isTrustProxyEnabled > should return false by default
+(pass) Rate limiting security > isTrustProxyEnabled > should return false by default [0.02ms]
 (pass) Rate limiting security > isTrustProxyEnabled > should return false for empty string
 (pass) Rate limiting security > isTrustProxyEnabled > should return false for 'false'
 (pass) Rate limiting security > isTrustProxyEnabled > should return true only for 'true'
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should ignore X-Forwarded-For header (not treated as client identity) [0.71ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should ignore X-Forwarded-For header (not treated as client identity) [0.68ms]
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
@@ -56,26 +56,26 @@ dist/__tests__/rate-limit.test.js:
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should NOT allow shared bucket DoS (security fix) [0.33ms]
-(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should use X-Forwarded-For header for rate limiting [0.28ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY is NOT set (secure default) > should NOT allow shared bucket DoS (security fix) [0.37ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should use X-Forwarded-For header for rate limiting [0.39ms]
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should reject malformed X-Forwarded-For values [1.10ms]
-(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should take first IP from X-Forwarded-For chain [0.45ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should reject malformed X-Forwarded-For values [0.26ms]
+(pass) Rate limiting security > when TX_API_TRUST_PROXY=true > should take first IP from X-Forwarded-For chain [0.21ms]
 [rate-limit] Unable to identify client IP - rate limiting degraded for this request. Ensure your server runtime exposes socket info or configure a trusted reverse proxy.
-(pass) Rate limiting security > rate limit headers > should include rate limit headers in response [0.24ms]
-(pass) Rate limiting security > rate limit headers > should include Retry-After header when rate limited [0.19ms]
+(pass) Rate limiting security > rate limit headers > should include rate limit headers in response [0.17ms]
+(pass) Rate limiting security > rate limit headers > should include Retry-After header when rate limited [0.18ms]
 
 dist/__tests__/health.test.js:
 (pass) Health endpoint security > when auth is disabled > should return database path in /health response [0.40ms]
-(pass) Health endpoint security > when auth is enabled > should NOT return database path for unauthenticated requests [0.22ms]
-(pass) Health endpoint security > when auth is enabled > should NOT return database path with invalid API key [0.20ms]
-(pass) Health endpoint security > when auth is enabled > should return database path with valid X-Api-Key header [0.15ms]
-(pass) Health endpoint security > when auth is enabled > should return database path with valid Bearer token [0.17ms]
-(pass) isRequestAuthenticated > should treat all requests as authenticated when auth is disabled [0.19ms]
+(pass) Health endpoint security > when auth is enabled > should NOT return database path for unauthenticated requests [0.21ms]
+(pass) Health endpoint security > when auth is enabled > should NOT return database path with invalid API key [0.18ms]
+(pass) Health endpoint security > when auth is enabled > should return database path with valid X-Api-Key header [0.14ms]
+(pass) Health endpoint security > when auth is enabled > should return database path with valid Bearer token [0.15ms]
+(pass) isRequestAuthenticated > should treat all requests as authenticated when auth is disabled [0.13ms]
 
  36 pass
  0 fail
  86 expect() calls
-Ran 36 tests across 4 files. [133.00ms]
+Ran 36 tests across 4 files. [135.00ms]
