@@ -41,21 +41,28 @@ interface ClaudeResult {
 }
 
 /**
- * Mutable shutdown state for signal handler communication.
+ * Mutable shared state for signal handler communication and heartbeat status.
  *
  * Uses simple mutable variables instead of Effect Refs because:
  * 1. Signal handlers must be synchronous and minimal
  * 2. Using Effect.runSync in signal handlers violates best practices
  * 3. These variables are only accessed/mutated from the main thread
  *
+ * `currentStatus` and `currentTaskId` are set explicitly by the main work loop
+ * so the heartbeat fiber reports accurate status. Previously, status was inferred
+ * from `claudeProcess !== null`, which was unreliable during the windows between
+ * claiming a task and spawning Claude, and between Claude exiting and claim release.
+ *
  * Note: tasksCompleted is NOT included here because it's only accessed
  * from Effect contexts (fibers), not signal handlers. It uses Effect.Ref
  * to properly handle concurrent access between the main work loop and
  * heartbeat fiber.
  */
-interface MutableShutdownState {
+interface MutableWorkerState {
   shutdownRequested: boolean
   claudeProcess: ChildProcess | null
+  currentStatus: "idle" | "busy"
+  currentTaskId: string | undefined
 }
 
 /**
@@ -77,16 +84,18 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
     const readyService = yield* ReadyService
     const taskService = yield* TaskService
 
-    // Mutable shutdown state (shared with signal handlers via closure)
+    // Mutable worker state (shared with signal handlers and heartbeat fiber via closure)
     // Using plain object instead of Effect Ref to avoid Effect.runSync in signal handlers
-    const state: MutableShutdownState = {
+    const state: MutableWorkerState = {
       shutdownRequested: false,
-      claudeProcess: null
+      claudeProcess: null,
+      currentStatus: "idle",
+      currentTaskId: undefined
     }
 
-    // Effect Ref for tasksCompleted counter - safe for concurrent fiber access
-    // This is separate from MutableShutdownState because it's only accessed
-    // from Effect contexts, never from signal handlers
+    // Effect Ref for tasksCompleted counter — safe for concurrent fiber access.
+    // Separate from MutableWorkerState because it's only accessed from Effect
+    // contexts, never from signal handlers
     const tasksCompletedRef = yield* Ref.make(0)
 
     // Register with orchestrator
@@ -132,7 +141,9 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
           break
         }
 
-        // Update status to idle
+        // Update status to idle (both orchestrator and shared state for heartbeat)
+        state.currentStatus = "idle"
+        state.currentTaskId = undefined
         yield* workerService.updateStatus(workerId, "idle")
 
         // Check for available work
@@ -161,6 +172,12 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
 
         const _claim = claimResult.right
         yield* Effect.log(`Worker ${workerId} claimed task ${task.id}`)
+
+        // Mark busy in shared state immediately so heartbeat reports correctly
+        // This must happen before the heartbeat call and Claude spawn to avoid
+        // the race window where heartbeat would report "idle" for a claimed task
+        state.currentStatus = "busy"
+        state.currentTaskId = task.id
 
         // Update worker status to busy with current task
         const currentTasksCompleted = yield* Ref.get(tasksCompletedRef)
@@ -262,7 +279,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
 const runHeartbeatLoop = (
   workerId: string,
   intervalSeconds: number,
-  state: MutableShutdownState,
+  state: MutableWorkerState,
   tasksCompletedRef: Ref.Ref<number>
 ) =>
   Effect.gen(function* () {
@@ -272,8 +289,8 @@ const runHeartbeatLoop = (
       // Check shutdown before heartbeat
       if (state.shutdownRequested) break
 
-      // Determine current status based on whether Claude is running
-      const status = state.claudeProcess ? "busy" : "idle"
+      // Read status from shared state (set explicitly by the main work loop)
+      const { currentStatus, currentTaskId } = state
 
       // Read tasksCompleted from Ref (safe concurrent access)
       const tasksCompleted = yield* Ref.get(tasksCompletedRef)
@@ -282,8 +299,8 @@ const runHeartbeatLoop = (
         .heartbeat({
           workerId,
           timestamp: new Date(),
-          status,
-          currentTaskId: undefined, // The main loop sets this
+          status: currentStatus,
+          currentTaskId,
           metrics: {
             cpuPercent: process.cpuUsage().user / 1000000,
             memoryMb: process.memoryUsage().heapUsed / 1024 / 1024,
@@ -308,7 +325,7 @@ const runLeaseRenewalLoop = (
   taskId: string,
   workerId: string,
   intervalSeconds: number,
-  state: MutableShutdownState,
+  state: MutableWorkerState,
 ) =>
   Effect.gen(function* () {
     const claimService = yield* ClaimService
@@ -358,7 +375,7 @@ const runClaude = (
   task: TaskWithDeps,
   workerId: string,
   workingDirectory: string,
-  state: MutableShutdownState,
+  state: MutableWorkerState,
 ): Effect.Effect<ClaudeResult, never> =>
   Effect.async((resume) => {
     const prompt = buildPrompt(agent, task)
