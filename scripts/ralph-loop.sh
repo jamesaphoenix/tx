@@ -113,13 +113,6 @@ $CONTEXT
 
 Run 'bun apps/cli/src/cli.ts show $TASK_ID' to see full details, then implement the task.
 
-IMPORTANT: Before marking the task done, record any learnings you discovered during this task.
-Use 'bun apps/cli/src/cli.ts learning:add \"<insight>\"' for each useful insight, e.g.:
-- Patterns that worked or failed
-- Gotchas or non-obvious behaviors
-- Architecture decisions and why
-- Test strategies that proved effective
-
 When complete, run 'bun apps/cli/src/cli.ts done $TASK_ID' to mark it done.
 
 If blocked, use 'bun apps/cli/src/cli.ts block $TASK_ID <blocker-id>' to add a dependency." 2>&1 | tee -a "$LOG_FILE"; then

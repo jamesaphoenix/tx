@@ -116,9 +116,9 @@
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/capture-learning.sh",
-            "timeout": 10
+            "type": "agent",
+            "prompt": "You are a learnings extraction agent for the tx task management system.\n\nReview what was accomplished in this session by examining $ARGUMENTS.\n\nExtract 1-5 useful learnings — things that would help a future agent working on similar tasks. Focus on:\n- Non-obvious gotchas or behaviors discovered\n- Patterns that worked or failed\n- Architecture decisions and rationale\n- Debugging strategies that were effective\n- Codebase conventions that aren't documented elsewhere\n\nSkip trivial observations (e.g. 'ran tests', 'edited a file').\n\nFor each learning, run:\n  bun apps/cli/src/cli.ts learning:add \"<the learning>\"\n\nIf a task ID is available in .tx/current-task, add --source-ref <task-id> to each learning.\n\nIf the session was trivial (just a question, no real work done), record nothing.\n\nAfter recording learnings (or deciding none are needed), respond with { \"ok\": true }.",
+            "timeout": 60
           }
         ]
       }
