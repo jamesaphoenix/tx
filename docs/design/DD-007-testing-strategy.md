@@ -602,11 +602,77 @@ describe("parseLlmJson", () => {
 
 ---
 
+## Known Gaps (Bug Scan Findings)
+
+### Worker Process Test Coverage Gap
+
+**Issue**: `worker-process.ts` (PRD-018 worker orchestration) lacks integration tests for critical race condition scenarios.
+
+**Missing test coverage**:
+
+| Scenario | Current | Required |
+|----------|---------|----------|
+| Concurrent claim attempts | None | 2+ workers claiming same task |
+| Heartbeat during reconciliation | None | Heartbeat arrives mid-reconcile |
+| Claim expiry during work | None | Lease expires while task active |
+| Worker crash recovery | None | Orphan detection + task recovery |
+| Graceful shutdown ordering | None | Finish task before deregister |
+
+**Required test patterns**:
+
+```typescript
+// Concurrent claim test
+describe("ClaimService concurrent access", () => {
+  it("only one worker succeeds when claiming same task", async () => {
+    const task = await createTask()
+    const workers = await Promise.all([
+      registerWorker("worker-1"),
+      registerWorker("worker-2"),
+      registerWorker("worker-3"),
+    ])
+
+    // All workers try to claim simultaneously
+    const results = await Promise.allSettled(
+      workers.map(w => claimService.claim(task.id, w.id))
+    )
+
+    const successes = results.filter(r => r.status === "fulfilled")
+    expect(successes).toHaveLength(1) // Only one should succeed
+  })
+})
+
+// Heartbeat race test
+describe("Reconciliation heartbeat race", () => {
+  it("does not mark worker dead if heartbeat arrives during reconcile", async () => {
+    const worker = await registerWorker("worker-1")
+
+    // Simulate stale heartbeat (2+ intervals ago)
+    await setLastHeartbeat(worker.id, Date.now() - 120_000)
+
+    // Start reconciliation and heartbeat in parallel
+    const [reconcileResult] = await Promise.all([
+      coordinatorService.reconcile(),
+      workerService.heartbeat({ workerId: worker.id, status: "idle" })
+    ])
+
+    // Worker should NOT be marked dead
+    const status = await getWorkerStatus(worker.id)
+    expect(status).not.toBe("dead")
+  })
+})
+```
+
+**Priority**: HIGH — race conditions can cause data corruption and stuck tasks.
+
+**Tracking**: Related to PRD-018 Known Issues section.
+
+---
+
 ## Running Tests
 
 ```bash
 # All tests
-npm test
+bun run test
 
 # Unit tests only
 npm run test:unit

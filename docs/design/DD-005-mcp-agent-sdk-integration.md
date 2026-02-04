@@ -659,6 +659,55 @@ export const agentTasksTools = [
 
 ---
 
+## Known Issues (Bug Scan Findings)
+
+### DirectTransport Status Filter Bug Pattern
+
+**Issue**: When using `DirectTransport` (in-process transport for Agent SDK), the `tx_list` tool's status filter may silently return unfiltered results if the filter parameter is passed incorrectly.
+
+**Root cause**: The `status` parameter type casting `as any` in the tool execution bypasses schema validation:
+
+```typescript
+// Problematic pattern
+execute: async (args) => {
+  return await run(
+    Effect.gen(function* () {
+      const svc = yield* TaskService
+      return yield* svc.listWithDeps({ status: args.status as any })  // ← as any
+    })
+  )
+}
+```
+
+**Symptoms**:
+- Calling `tx_list({ status: "ready" })` returns tasks with all statuses
+- No error is thrown; the filter is silently ignored
+- Only manifests with DirectTransport (MCP server via stdio works correctly)
+
+**Fix**:
+1. Remove `as any` cast — let TypeScript enforce the union type
+2. Validate status against `TaskStatusValues` before passing to service
+3. Add integration test that verifies filtering works in DirectTransport mode
+
+**Workaround** (until fixed):
+```typescript
+// Explicit validation
+const validStatuses = ["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]
+if (args.status && !validStatuses.includes(args.status)) {
+  throw new Error(`Invalid status: ${args.status}`)
+}
+```
+
+### Database Singleton in Agent SDK
+
+**Issue**: Each Agent SDK client instance was creating a new database connection, violating RULE 8 (singleton database pattern).
+
+**Status**: Fixed in commit `d62f554` — `DirectTransport` now uses singleton runtime pattern.
+
+**Verification**: Tests in `packages/agent-sdk/` should verify single database instance across multiple tool calls.
+
+---
+
 ## Testing Strategy
 
 ### Tool Definition Tests (Unit)
