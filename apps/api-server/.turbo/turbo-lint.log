@@ -1,10 +1,1 @@
 $ eslint src/
-
-/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/api-server/src/routes/sync.ts
-  34:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
-
-/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/api-server/src/runtime.ts
-  70:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
-
-✖ 2 problems (0 errors, 2 warnings)
-
