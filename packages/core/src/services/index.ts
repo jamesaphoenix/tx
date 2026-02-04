@@ -17,6 +17,10 @@ export {
   EmbeddingServiceOpenAI,
   EmbeddingServiceAuto,
   createEmbedderLayer,
+  isValidLlama,
+  isValidLlamaModel,
+  isValidLlamaEmbeddingContext,
+  isValidOpenAIClient,
   type EmbedderConfig
 } from "./embedding-service.js"
 export {

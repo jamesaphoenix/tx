@@ -51,6 +51,67 @@ const OPENAI_MODEL_DIMENSIONS: Record<string, number> = {
   "text-embedding-ada-002": 1536 // Legacy model
 }
 
+// =============================================================================
+// Runtime Interface Validators
+// =============================================================================
+
+/**
+ * Validates that an object conforms to the Llama interface we depend on.
+ * This guards against API changes in node-llama-cpp breaking at runtime.
+ * @internal Exported for testing purposes
+ */
+export function isValidLlama(obj: unknown): obj is Llama {
+  return (
+    obj !== null &&
+    typeof obj === "object" &&
+    "loadModel" in obj &&
+    typeof (obj as Llama).loadModel === "function"
+  )
+}
+
+/**
+ * Validates that an object conforms to the LlamaModel interface we depend on.
+ * @internal Exported for testing purposes
+ */
+export function isValidLlamaModel(obj: unknown): obj is LlamaModel {
+  return (
+    obj !== null &&
+    typeof obj === "object" &&
+    "createEmbeddingContext" in obj &&
+    typeof (obj as LlamaModel).createEmbeddingContext === "function"
+  )
+}
+
+/**
+ * Validates that an object conforms to the LlamaEmbeddingContext interface we depend on.
+ * @internal Exported for testing purposes
+ */
+export function isValidLlamaEmbeddingContext(obj: unknown): obj is LlamaEmbeddingContext {
+  return (
+    obj !== null &&
+    typeof obj === "object" &&
+    "getEmbeddingFor" in obj &&
+    typeof (obj as LlamaEmbeddingContext).getEmbeddingFor === "function"
+  )
+}
+
+/**
+ * Validates that an object conforms to the OpenAIClient interface we depend on.
+ * This guards against API changes in the openai package breaking at runtime.
+ * @internal Exported for testing purposes
+ */
+export function isValidOpenAIClient(obj: unknown): obj is OpenAIClient {
+  return (
+    obj !== null &&
+    typeof obj === "object" &&
+    "embeddings" in obj &&
+    typeof (obj as OpenAIClient).embeddings === "object" &&
+    (obj as OpenAIClient).embeddings !== null &&
+    "create" in (obj as OpenAIClient).embeddings &&
+    typeof (obj as OpenAIClient).embeddings.create === "function"
+  )
+}
+
 /**
  * EmbeddingService provides vector embeddings for text using local models.
  *
@@ -121,25 +182,46 @@ export const EmbeddingServiceLive = Layer.scoped(
         catch: () => new EmbeddingUnavailableError({ reason: "node-llama-cpp not installed" })
       })
 
-      // Get llama instance
-      const llama = yield* Effect.tryPromise({
-        try: () => nodeLlamaCpp.getLlama() as unknown as Promise<Llama>,
+      // Get llama instance with runtime validation
+      const llamaRaw = yield* Effect.tryPromise({
+        try: () => nodeLlamaCpp.getLlama(),
         catch: (e) => new EmbeddingUnavailableError({ reason: `Failed to initialize llama: ${String(e)}` })
       })
 
+      if (!isValidLlama(llamaRaw)) {
+        return yield* Effect.fail(new EmbeddingUnavailableError({
+          reason: "node-llama-cpp getLlama() returned incompatible interface - missing loadModel method"
+        }))
+      }
+      const llama = llamaRaw
+
       // Load model - uses HuggingFace model spec format
-      const model = yield* Effect.tryPromise({
+      const modelRaw = yield* Effect.tryPromise({
         try: () => llama.loadModel({
           modelPath: "hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf"
         }),
         catch: (e) => new EmbeddingUnavailableError({ reason: `Failed to load model: ${String(e)}` })
       })
 
+      if (!isValidLlamaModel(modelRaw)) {
+        return yield* Effect.fail(new EmbeddingUnavailableError({
+          reason: "node-llama-cpp loadModel() returned incompatible interface - missing createEmbeddingContext method"
+        }))
+      }
+      const model = modelRaw
+
       // Create embedding context
-      const context = yield* Effect.tryPromise({
+      const contextRaw = yield* Effect.tryPromise({
         try: () => model.createEmbeddingContext({ threads: 4 }),
         catch: (e) => new EmbeddingUnavailableError({ reason: `Failed to create embedding context: ${String(e)}` })
       })
+
+      if (!isValidLlamaEmbeddingContext(contextRaw)) {
+        return yield* Effect.fail(new EmbeddingUnavailableError({
+          reason: "node-llama-cpp createEmbeddingContext() returned incompatible interface - missing getEmbeddingFor method"
+        }))
+      }
+      const context = contextRaw
 
       yield* Ref.set(stateRef, { context, lastActivity: Date.now() })
       return context
@@ -237,7 +319,13 @@ export const EmbeddingServiceOpenAI = Layer.effect(
         })
       })
 
-      client = new OpenAI({ apiKey }) as unknown as OpenAIClient
+      const clientRaw = new OpenAI({ apiKey })
+      if (!isValidOpenAIClient(clientRaw)) {
+        return yield* Effect.fail(new EmbeddingUnavailableError({
+          reason: "OpenAI SDK returned incompatible interface - missing embeddings.create method"
+        }))
+      }
+      client = clientRaw
       return client
     })
 

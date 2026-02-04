@@ -1513,3 +1513,186 @@ describe("Graceful Degradation", () => {
     expect(customAvailable).toBe(true)
   })
 })
+
+// ============================================================================
+// Runtime Interface Validator Tests
+// ============================================================================
+
+import {
+  isValidLlama,
+  isValidLlamaModel,
+  isValidLlamaEmbeddingContext,
+  isValidOpenAIClient
+} from "@jamesaphoenix/tx-core"
+
+describe("Runtime Interface Validators", () => {
+  describe("isValidLlama", () => {
+    it("returns true for valid Llama interface", () => {
+      const validLlama = {
+        loadModel: () => Promise.resolve({})
+      }
+      expect(isValidLlama(validLlama)).toBe(true)
+    })
+
+    it("returns false for null", () => {
+      expect(isValidLlama(null)).toBe(false)
+    })
+
+    it("returns false for undefined", () => {
+      expect(isValidLlama(undefined)).toBe(false)
+    })
+
+    it("returns false for non-object", () => {
+      expect(isValidLlama("string")).toBe(false)
+      expect(isValidLlama(123)).toBe(false)
+      expect(isValidLlama(true)).toBe(false)
+    })
+
+    it("returns false when loadModel is missing", () => {
+      const invalidLlama = {
+        otherMethod: () => {}
+      }
+      expect(isValidLlama(invalidLlama)).toBe(false)
+    })
+
+    it("returns false when loadModel is not a function", () => {
+      const invalidLlama = {
+        loadModel: "not a function"
+      }
+      expect(isValidLlama(invalidLlama)).toBe(false)
+    })
+  })
+
+  describe("isValidLlamaModel", () => {
+    it("returns true for valid LlamaModel interface", () => {
+      const validModel = {
+        createEmbeddingContext: () => Promise.resolve({})
+      }
+      expect(isValidLlamaModel(validModel)).toBe(true)
+    })
+
+    it("returns false for null", () => {
+      expect(isValidLlamaModel(null)).toBe(false)
+    })
+
+    it("returns false for undefined", () => {
+      expect(isValidLlamaModel(undefined)).toBe(false)
+    })
+
+    it("returns false when createEmbeddingContext is missing", () => {
+      const invalidModel = {
+        loadSomething: () => {}
+      }
+      expect(isValidLlamaModel(invalidModel)).toBe(false)
+    })
+
+    it("returns false when createEmbeddingContext is not a function", () => {
+      const invalidModel = {
+        createEmbeddingContext: { nested: "object" }
+      }
+      expect(isValidLlamaModel(invalidModel)).toBe(false)
+    })
+  })
+
+  describe("isValidLlamaEmbeddingContext", () => {
+    it("returns true for valid LlamaEmbeddingContext interface", () => {
+      const validContext = {
+        getEmbeddingFor: () => Promise.resolve({ vector: [] })
+      }
+      expect(isValidLlamaEmbeddingContext(validContext)).toBe(true)
+    })
+
+    it("returns false for null", () => {
+      expect(isValidLlamaEmbeddingContext(null)).toBe(false)
+    })
+
+    it("returns false for undefined", () => {
+      expect(isValidLlamaEmbeddingContext(undefined)).toBe(false)
+    })
+
+    it("returns false when getEmbeddingFor is missing", () => {
+      const invalidContext = {
+        embed: () => {}
+      }
+      expect(isValidLlamaEmbeddingContext(invalidContext)).toBe(false)
+    })
+
+    it("returns false when getEmbeddingFor is not a function", () => {
+      const invalidContext = {
+        getEmbeddingFor: 42
+      }
+      expect(isValidLlamaEmbeddingContext(invalidContext)).toBe(false)
+    })
+  })
+
+  describe("isValidOpenAIClient", () => {
+    it("returns true for valid OpenAIClient interface", () => {
+      const validClient = {
+        embeddings: {
+          create: () => Promise.resolve({})
+        }
+      }
+      expect(isValidOpenAIClient(validClient)).toBe(true)
+    })
+
+    it("returns false for null", () => {
+      expect(isValidOpenAIClient(null)).toBe(false)
+    })
+
+    it("returns false for undefined", () => {
+      expect(isValidOpenAIClient(undefined)).toBe(false)
+    })
+
+    it("returns false when embeddings is missing", () => {
+      const invalidClient = {
+        chat: { create: () => {} }
+      }
+      expect(isValidOpenAIClient(invalidClient)).toBe(false)
+    })
+
+    it("returns false when embeddings is null", () => {
+      const invalidClient = {
+        embeddings: null
+      }
+      expect(isValidOpenAIClient(invalidClient)).toBe(false)
+    })
+
+    it("returns false when embeddings is not an object", () => {
+      const invalidClient = {
+        embeddings: "not an object"
+      }
+      expect(isValidOpenAIClient(invalidClient)).toBe(false)
+    })
+
+    it("returns false when embeddings.create is missing", () => {
+      const invalidClient = {
+        embeddings: {
+          list: () => {}
+        }
+      }
+      expect(isValidOpenAIClient(invalidClient)).toBe(false)
+    })
+
+    it("returns false when embeddings.create is not a function", () => {
+      const invalidClient = {
+        embeddings: {
+          create: "not a function"
+        }
+      }
+      expect(isValidOpenAIClient(invalidClient)).toBe(false)
+    })
+
+    it("returns true for client with additional methods", () => {
+      const validClient = {
+        embeddings: {
+          create: () => Promise.resolve({}),
+          list: () => Promise.resolve([])
+        },
+        chat: {
+          completions: {}
+        }
+      }
+      expect(isValidOpenAIClient(validClient)).toBe(true)
+    })
+  })
+})

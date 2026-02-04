@@ -225,7 +225,12 @@ export {
   OrchestratorServiceLive,
   type OrchestratorConfig,
   runWorkerProcess,
-  type WorkerProcessConfig
+  type WorkerProcessConfig,
+  // Runtime interface validators for optional peer dependencies
+  isValidLlama,
+  isValidLlamaModel,
+  isValidLlamaEmbeddingContext,
+  isValidOpenAIClient
 } from "./services/index.js"
 
 // =============================================================================
