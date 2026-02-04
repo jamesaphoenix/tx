@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent } from "react"
+import { useState, useEffect, useRef, type ChangeEvent } from "react"
 import { useDebounce } from "../../hooks/useDebounce"
 
 interface SearchInputProps {
@@ -16,13 +16,16 @@ export function SearchInput({
 }: SearchInputProps) {
   const [localValue, setLocalValue] = useState(value)
   const debouncedValue = useDebounce(localValue, debounceMs)
+  const hasMounted = useRef(false)
 
-  // Update parent when debounced value changes
+  // Update parent when debounced value changes (skip initial mount)
   useEffect(() => {
-    if (debouncedValue !== value) {
-      onChange(debouncedValue)
+    if (!hasMounted.current) {
+      hasMounted.current = true
+      return
     }
-  }, [debouncedValue, onChange, value])
+    onChange(debouncedValue)
+  }, [debouncedValue, onChange])
 
   // Sync with external value changes
   useEffect(() => {

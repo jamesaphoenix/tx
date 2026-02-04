@@ -51,6 +51,7 @@ import { DaemonServiceLive, DaemonServiceNoop } from "./services/daemon-service.
 import { TracingServiceLive, TracingServiceNoop } from "./services/tracing-service.js"
 import { CompactionRepositoryLive } from "./repo/compaction-repo.js"
 import { CompactionServiceLive, CompactionServiceNoop } from "./services/compaction-service.js"
+import { ValidationServiceLive } from "./services/validation-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync-service.js"
@@ -165,6 +166,15 @@ export {
   type CompactionOptions,
   type CompactionPreview
 } from "./services/compaction-service.js"
+export {
+  ValidationService,
+  ValidationServiceLive,
+  type ValidationSeverity,
+  type ValidationIssue,
+  type CheckResult,
+  type ValidationResult,
+  type ValidateOptions
+} from "./services/validation-service.js"
 
 /**
  * Create the full application layer with all services.
@@ -277,8 +287,11 @@ export const makeAppLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, infra))
   )
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, diversifierService, orchestration services, daemon service, tracing service, and compaction service
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService)
+  // ValidationServiceLive needs SqliteClient
+  const validationService = ValidationServiceLive.pipe(Layer.provide(infra))
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, diversifierService, orchestration services, daemon service, tracing service, compaction service, and validation service
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -368,8 +381,11 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, infra))
   )
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, diversifierService, daemon service (noop), tracing service (noop), and compaction service (noop for minimal layer)
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, DaemonServiceNoop, TracingServiceNoop, compactionService)
+  // ValidationServiceLive needs SqliteClient
+  const validationService = ValidationServiceLive.pipe(Layer.provide(infra))
+
+  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, diversifierService, daemon service (noop), tracing service (noop), compaction service (noop for minimal layer), and validation service
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(

@@ -223,3 +223,12 @@ export {
   type CompactionOptions,
   type CompactionPreview
 } from "./compaction-service.js"
+export {
+  ValidationService,
+  ValidationServiceLive,
+  type ValidationSeverity,
+  type ValidationIssue,
+  type CheckResult,
+  type ValidationResult,
+  type ValidateOptions
+} from "./validation-service.js"

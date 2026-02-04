@@ -67,6 +67,7 @@ Commands:
   claim:renew             Renew the lease on a claim
   compact                 Compact completed tasks and export learnings
   history                 View compaction history
+  validate                Run pre-flight database health checks
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1543,5 +1544,33 @@ Options:
 
 Examples:
   tx history
-  tx history --json`
+  tx history --json`,
+
+  validate: `tx validate - Database health checks
+
+Usage: tx validate [options]
+
+Performs comprehensive pre-flight checks on the database:
+- Database integrity (SQLite PRAGMA integrity_check)
+- Schema version verification
+- Foreign key constraint validation
+- Orphaned dependency detection
+- Invalid status values scan
+- Missing parent references
+
+Use before running agents or after sync import to catch corruption early.
+
+Options:
+  --fix    Auto-fix what's fixable (orphaned deps, invalid statuses, missing parent refs)
+  --json   Output as JSON
+  --help   Show this help
+
+Exit Codes:
+  0        Database is valid (no errors)
+  1        Validation failed (errors found)
+
+Examples:
+  tx validate              # Run all checks
+  tx validate --fix        # Auto-fix fixable issues
+  tx validate --json       # Machine-readable output`
 }

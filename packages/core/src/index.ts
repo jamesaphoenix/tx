@@ -360,3 +360,16 @@ export {
   TracingServiceNoop,
   type SpanOptions
 } from "./services/tracing-service.js"
+
+// =============================================================================
+// Validation Service
+// =============================================================================
+export {
+  ValidationService,
+  ValidationServiceLive,
+  type ValidationSeverity,
+  type ValidationIssue,
+  type CheckResult,
+  type ValidationResult,
+  type ValidateOptions
+} from "./services/validation-service.js"

@@ -2,9 +2,9 @@ $ bun vitest run --passWithNoTests
 
  RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils
 
- ✓ src/llm-cache/cache.test.ts (26 tests) 176ms
- ✓ src/helpers/effect.test.ts (28 tests) 75ms
- ✓ src/mocks/mocks.test.ts (63 tests) 228ms
+ ✓ src/llm-cache/cache.test.ts (26 tests) 30ms
+ ✓ src/helpers/effect.test.ts (28 tests) 72ms
+ ✓ src/mocks/mocks.test.ts (63 tests) 220ms
 
 ⎯⎯⎯⎯⎯⎯ Failed Suites 3 ⎯⎯⎯⎯⎯⎯⎯
 
@@ -28,8 +28,8 @@ Caused by: Error: Failed to load url bun:sqlite (resolved id: bun:sqlite). Does 
 
  Test Files  3 failed | 3 passed (6)
       Tests  117 passed (117)
-   Start at  19:48:08
-   Duration  725ms (transform 303ms, setup 0ms, collect 720ms, tests 480ms, environment 0ms, prepare 352ms)
+   Start at  20:02:05
+   Duration  683ms (transform 157ms, setup 0ms, collect 468ms, tests 322ms, environment 1ms, prepare 258ms)
 
 error: "vitest" exited with code 1
 error: script "test" exited with code 1

@@ -28,6 +28,7 @@ import { testCacheStats, testClearCache } from "./commands/test.js"
 import { trace } from "./commands/trace.js"
 import { claim, claimRelease, claimRenew } from "./commands/claim.js"
 import { compact, history } from "./commands/compact.js"
+import { validate } from "./commands/validate.js"
 
 // --- Argv parsing helpers ---
 
@@ -163,6 +164,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Compaction commands (PRD-006)
   compact,
   history,
+
+  // Validation command
+  validate,
 
   // Help command
   help: (pos) =>
