@@ -201,6 +201,10 @@ const countLines = (filePath: string): Effect.Effect<number, never> =>
     return content.split("\n").length
   })
 
+/** Escape regex special characters in a string */
+const escapeRegex = (str: string): string =>
+  str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 /** Check if a symbol exists in file (grep-based) */
 const symbolExistsInFile = (
   filePath: string,
@@ -215,14 +219,23 @@ const symbolExistsInFile = (
       ? symbolName.split("::").pop() ?? symbolName
       : symbolName
 
+    // If symbol name is empty or whitespace-only, symbol is not found
+    // This prevents false positives where regex would match any declaration
+    if (!simpleName || simpleName.trim().length === 0) {
+      return false
+    }
+
+    // Escape regex special characters to prevent injection and false matches
+    const escapedName = escapeRegex(simpleName.trim())
+
     // Check for common patterns: function, class, const, export, interface, type
     const patterns = [
-      new RegExp(`\\b(function|const|let|var)\\s+${simpleName}\\b`),
-      new RegExp(`\\bclass\\s+${simpleName}\\b`),
-      new RegExp(`\\binterface\\s+${simpleName}\\b`),
-      new RegExp(`\\btype\\s+${simpleName}\\b`),
-      new RegExp(`\\bexport\\s+(default\\s+)?(function|class|const|let|var|interface|type)\\s+${simpleName}\\b`),
-      new RegExp(`\\bexport\\s+\\{[^}]*\\b${simpleName}\\b[^}]*\\}`) // export { Symbol }
+      new RegExp(`\\b(function|const|let|var)\\s+${escapedName}\\b`),
+      new RegExp(`\\bclass\\s+${escapedName}\\b`),
+      new RegExp(`\\binterface\\s+${escapedName}\\b`),
+      new RegExp(`\\btype\\s+${escapedName}\\b`),
+      new RegExp(`\\bexport\\s+(default\\s+)?(function|class|const|let|var|interface|type)\\s+${escapedName}\\b`),
+      new RegExp(`\\bexport\\s+\\{[^}]*\\b${escapedName}\\b[^}]*\\}`) // export { Symbol }
     ]
 
     return patterns.some(p => p.test(content))
@@ -460,7 +473,8 @@ export const AnchorVerificationServiceLive = Layer.effect(
               const healResult = yield* trySelfHeal(anchor, content, newHash, anchorRepo)
 
               if (healResult.healed) {
-                // Successfully self-healed
+                // Successfully self-healed - update status to valid
+                yield* anchorRepo.updateStatus(anchor.id, "valid")
                 yield* anchorRepo.logInvalidation({
                   anchorId: anchor.id,
                   oldStatus,
@@ -561,7 +575,8 @@ export const AnchorVerificationServiceLive = Layer.effect(
             const healResult = yield* trySelfHeal(anchor, content, newHash, anchorRepo)
 
             if (healResult.healed) {
-              // Successfully self-healed
+              // Successfully self-healed - update status to valid
+              yield* anchorRepo.updateStatus(anchor.id, "valid")
               yield* anchorRepo.logInvalidation({
                 anchorId: anchor.id,
                 oldStatus,
@@ -613,6 +628,28 @@ export const AnchorVerificationServiceLive = Layer.effect(
           case "symbol": {
             // Check if symbol exists in file
             const symbolName = anchor.symbolFqname ?? anchor.anchorValue
+
+            // If symbol name is empty or invalid, mark as invalid immediately
+            // This prevents false positives from regex matching any declaration
+            if (!symbolName || symbolName.trim().length === 0) {
+              yield* anchorRepo.updateStatus(anchor.id, "invalid")
+              yield* anchorRepo.logInvalidation({
+                anchorId: anchor.id,
+                oldStatus,
+                newStatus: "invalid",
+                reason: "symbol_name_invalid",
+                detectedBy
+              })
+
+              return {
+                anchorId: anchor.id,
+                previousStatus: oldStatus,
+                newStatus: "invalid" as const,
+                action: "invalidated" as const,
+                reason: "symbol_name_invalid"
+              }
+            }
+
             const symbolExists = yield* symbolExistsInFile(fullPath, symbolName)
 
             if (symbolExists) {
