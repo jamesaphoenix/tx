@@ -1,9 +1,71 @@
 #!/bin/sh
 
-# Pre-commit hook: Fast checks only (types + lint)
-# Full build + tests run on pre-push
+# Pre-commit hook: Fast checks (types + lint) + targeted tests for changed files
 
 echo "🔍 Running pre-commit checks..."
 
-# Run type checking and linting only (fast feedback)
+# Run type checking and linting (fast feedback)
 ./scripts/check.sh --types && ./scripts/check.sh --lint
+
+# Run targeted tests for changed files only
+changed_files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# Collect test files to run based on what changed
+test_files=""
+
+# Check if core package was changed
+if echo "$changed_files" | grep -q "^packages/core/"; then
+    # Find test files adjacent to changed source files
+    for f in $(echo "$changed_files" | grep "^packages/core/src/.*\.ts$" | grep -v "\.test\.ts$"); do
+        test_file="${f%.ts}.test.ts"
+        if [ -f "$test_file" ]; then
+            test_files="$test_files $test_file"
+        fi
+    done
+    # Always run integration tests if core changed
+    if [ -f "test/integration/core.test.ts" ]; then
+        test_files="$test_files test/integration/core.test.ts"
+    fi
+fi
+
+# Check if types package was changed
+if echo "$changed_files" | grep -q "^packages/types/"; then
+    # Types changes can affect everything — run integration tests
+    if [ -f "test/integration/core.test.ts" ]; then
+        test_files="$test_files test/integration/core.test.ts"
+    fi
+fi
+
+# Check if api-server was changed
+if echo "$changed_files" | grep -q "^apps/api-server/"; then
+    for f in $(echo "$changed_files" | grep "^apps/api-server/src/.*\.ts$" | grep -v "\.test\.ts$"); do
+        test_file="${f%.ts}.test.ts"
+        if [ -f "$test_file" ]; then
+            test_files="$test_files $test_file"
+        fi
+    done
+fi
+
+# Check if CLI was changed
+if echo "$changed_files" | grep -q "^apps/cli/"; then
+    for f in $(echo "$changed_files" | grep "^apps/cli/src/.*\.ts$" | grep -v "\.test\.ts$"); do
+        test_file="${f%.ts}.test.ts"
+        if [ -f "$test_file" ]; then
+            test_files="$test_files $test_file"
+        fi
+    done
+fi
+
+# Check if root test files were changed directly
+for f in $(echo "$changed_files" | grep "\.test\.ts$"); do
+    if [ -f "$f" ]; then
+        test_files="$test_files $f"
+    fi
+done
+
+# Deduplicate and run
+if [ -n "$test_files" ]; then
+    unique_tests=$(echo "$test_files" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+    echo "🧪 Running targeted tests for changed files..."
+    timeout 120 bun test $unique_tests
+fi

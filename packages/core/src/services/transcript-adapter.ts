@@ -68,13 +68,21 @@ export interface TranscriptAdapter {
 }
 
 /**
- * Helper to safely parse a JSON line, returning null on error.
+ * Helper to safely parse a JSON line, returning null for empty or non-JSON lines.
+ * Only catches SyntaxError from JSON.parse; unexpected errors are re-thrown.
  */
 const safeParseJson = (line: string): Record<string, unknown> | null => {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+
   try {
-    return JSON.parse(line) as Record<string, unknown>
-  } catch {
-    return null
+    return JSON.parse(trimmed) as Record<string, unknown>
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return null
+    }
+    // eslint-disable-next-line tx/no-throw-in-services -- Re-throw unexpected non-SyntaxError; this is a non-Effect utility helper
+    throw error
   }
 }
 
