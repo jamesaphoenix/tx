@@ -179,6 +179,8 @@ interface FileWatcherState {
   startedAt: Date | null
   /** Number of events processed */
   eventsProcessed: number
+  /** Per-path debounce timers for coalescing rapid events */
+  debounceTimers: Map<string, ReturnType<typeof setTimeout>>
 }
 
 /**
@@ -266,7 +268,8 @@ export const FileWatcherServiceLive = Layer.scoped(
         watcher: null,
         watchedPaths: [],
         startedAt: null,
-        eventsProcessed: 0
+        eventsProcessed: 0,
+        debounceTimers: new Map()
       } as FileWatcherState
     }))
 
@@ -279,6 +282,10 @@ export const FileWatcherServiceLive = Layer.scoped(
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         const state = getState()
+        // Clear all pending debounce timers
+        for (const timer of state.debounceTimers.values()) {
+          clearTimeout(timer)
+        }
         if (state.watcher) {
           yield* Effect.tryPromise({
             try: () => state.watcher!.close(),
@@ -335,15 +342,16 @@ export const FileWatcherServiceLive = Layer.scoped(
             })
         })
 
-        // Set up event handlers
-        const handleEvent = (type: FileEventType, path: string) => {
-          // Check if the path matches any of our patterns
-          const matches = originalPatterns.some((pattern) => matchesPattern(path, pattern))
-          if (!matches) return
+        // Per-path debounce timers to coalesce rapid events for the same file.
+        // When multiple events fire for the same path within debounceMs, only
+        // the last event is emitted. This prevents duplicate processing when
+        // files are written incrementally (e.g., JSONL appends).
+        const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+        const emitEvent = (type: FileEventType, filePath: string): void => {
           const event: FileEvent = {
             type,
-            path,
+            path: filePath,
             timestamp: new Date()
           }
 
@@ -357,6 +365,28 @@ export const FileWatcherServiceLive = Layer.scoped(
               )
             )
           )
+        }
+
+        // Set up event handlers with per-path debouncing
+        const handleEvent = (type: FileEventType, filePath: string) => {
+          // Check if the path matches any of our patterns
+          const matches = originalPatterns.some((pattern) => matchesPattern(filePath, pattern))
+          if (!matches) return
+
+          // Clear existing debounce timer for this path
+          const existingTimer = debounceTimers.get(filePath)
+          if (existingTimer) {
+            clearTimeout(existingTimer)
+          }
+
+          // Set a new debounce timer — only the last event within the
+          // window will be emitted
+          const timer = setTimeout(() => {
+            debounceTimers.delete(filePath)
+            emitEvent(type, filePath)
+          }, debounceMs)
+
+          debounceTimers.set(filePath, timer)
         }
 
         watcher.on("add", (path) => handleEvent("add", path))
@@ -406,7 +436,8 @@ export const FileWatcherServiceLive = Layer.scoped(
           watcher,
           watchedPaths: expandedPaths,
           startedAt: new Date(),
-          eventsProcessed: 0
+          eventsProcessed: 0,
+          debounceTimers
         }))
       })
 
@@ -420,6 +451,11 @@ export const FileWatcherServiceLive = Layer.scoped(
               path: "no active watcher"
             })
           )
+        }
+
+        // Clear all pending debounce timers to prevent events firing after stop
+        for (const timer of state.debounceTimers.values()) {
+          clearTimeout(timer)
         }
 
         // Close the watcher
@@ -438,7 +474,8 @@ export const FileWatcherServiceLive = Layer.scoped(
           watcher: null,
           watchedPaths: [],
           startedAt: null,
-          eventsProcessed: 0
+          eventsProcessed: 0,
+          debounceTimers: new Map()
         }))
       })
 

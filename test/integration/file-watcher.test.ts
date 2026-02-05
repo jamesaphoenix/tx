@@ -787,6 +787,56 @@ describe("FileWatcherServiceLive Debounce Behavior", () => {
     expect(result.length).toBeLessThan(5)
   })
 
+  it("debounces per-path independently (different files not coalesced)", async () => {
+    const file1 = path.join(tempDir, FIXTURES.FILE_SESSION_1)
+    const file2 = path.join(tempDir, FIXTURES.FILE_SESSION_2)
+    fs.writeFileSync(file1, "initial1")
+    fs.writeFileSync(file2, "initial2")
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const watcher = yield* FileWatcherService
+
+          yield* watcher.start({
+            patterns: [path.join(tempDir, "*.jsonl")],
+            debounceMs: 300,
+            ignoreInitial: true
+          })
+
+          yield* waitForReady()
+
+          const queue = yield* watcher.getEventQueue()
+
+          // Make rapid changes to BOTH files interleaved
+          for (let i = 0; i < 3; i++) {
+            fs.appendFileSync(file1, `\nline${i}`)
+            fs.appendFileSync(file2, `\nline${i}`)
+            yield* Effect.sleep(50)
+          }
+
+          // Collect events — debounce should coalesce per-path, but
+          // both files should still produce events
+          const events = yield* collectEvents(queue, 3000)
+
+          yield* watcher.stop()
+
+          const file1Events = events.filter((e) => e.path === file1 && e.type === "change")
+          const file2Events = events.filter((e) => e.path === file2 && e.type === "change")
+
+          return { file1Events: file1Events.length, file2Events: file2Events.length }
+        }).pipe(Effect.provide(FileWatcherServiceLive))
+      )
+    )
+
+    // Both files should have at least one event each (not coalesced across paths)
+    expect(result.file1Events).toBeGreaterThanOrEqual(1)
+    expect(result.file2Events).toBeGreaterThanOrEqual(1)
+    // But each should have fewer events than the number of writes (debounced)
+    expect(result.file1Events).toBeLessThan(3)
+    expect(result.file2Events).toBeLessThan(3)
+  })
+
   it("respects awaitWriteFinish stabilityThreshold", async () => {
     const result = await Effect.runPromise(
       Effect.scoped(
