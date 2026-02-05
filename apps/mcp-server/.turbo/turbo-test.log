@@ -4,7 +4,7 @@ $ bun vitest run --passWithNoTests
 [1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server[39m
 
 No test files found, exiting with code 0
-
 [2minclude: [22m[33m[39m
 [2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/.git/**[39m
+
 

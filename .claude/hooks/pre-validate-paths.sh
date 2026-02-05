@@ -5,6 +5,9 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Get project directory from environment or use current directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 
@@ -49,12 +52,15 @@ fi
 # Check if path is within project directory
 if [[ "$RESOLVED_PATH" != "$PROJECT_DIR_ABS"* ]]; then
   # Path is outside project
-  cat << EOF
+  OUTPUT=$(cat << EOF
 {
   "decision": "block",
   "reason": "File operation blocked: Path is outside the project directory.\n\nRequested path: $FILE_PATH\nResolved to: $RESOLVED_PATH\nProject directory: $PROJECT_DIR_ABS\n\nFile operations must stay within the project."
 }
 EOF
+)
+  save_hook_artifact "pre-validate-paths" "{\"_meta\":{\"hook\":\"pre-validate-paths\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"tool\":\"$TOOL_NAME\",\"decision\":\"block\"},\"path\":$(echo "$FILE_PATH" | jq -Rs '.')}"
+  echo "$OUTPUT"
   exit 0
 fi
 

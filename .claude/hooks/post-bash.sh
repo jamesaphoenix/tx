@@ -6,6 +6,9 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Get project directory from environment or use current directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 HOOKS_DIR="$PROJECT_DIR/.claude/hooks"
@@ -68,6 +71,7 @@ EOF
 )
     HANDLER_OUTPUT=$(echo "$HANDLER_INPUT" | "$HOOKS_DIR/post-bash-recovery.sh" 2>/dev/null || echo "")
     if [ -n "$HANDLER_OUTPUT" ]; then
+      save_hook_artifact "post-bash" "{\"_meta\":{\"hook\":\"post-bash\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"exit_code\":$EXIT_CODE,\"source\":\"recovery\"},\"command\":$(echo "$COMMAND" | head -c 200 | jq -Rs '.')}"
       echo "$HANDLER_OUTPUT"
       exit 0
     fi

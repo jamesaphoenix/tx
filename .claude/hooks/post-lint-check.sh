@@ -5,6 +5,9 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Get project directory from environment or use current directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 
@@ -294,7 +297,7 @@ fi
 ESCAPED_CONTEXT=$(echo "$CONTEXT" | jq -Rs '.')
 
 # Output hook response
-cat << EOF
+OUTPUT=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
@@ -302,3 +305,7 @@ cat << EOF
   }
 }
 EOF
+)
+
+save_hook_artifact "post-lint-check" "{\"_meta\":{\"hook\":\"post-lint-check\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"file\":$(echo "$REL_PATH" | jq -Rs '.'),\"errors\":$ERROR_COUNT,\"warnings\":$WARNING_COUNT},\"context\":${ESCAPED_CONTEXT}}"
+echo "$OUTPUT"

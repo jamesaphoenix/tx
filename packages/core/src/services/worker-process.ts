@@ -32,7 +32,9 @@ export interface WorkerProcessConfig {
   readonly capabilities: readonly string[]
   /** Heartbeat interval in seconds. Should match orchestrator config. */
   readonly heartbeatIntervalSeconds: number
-  /** How often to renew the lease (in seconds). Should be < lease duration. */
+  /** Lease duration in minutes. Should match orchestrator config. Defaults to 30. */
+  readonly leaseDurationMinutes?: number
+  /** How often to renew the lease (in seconds). Should be < lease duration. Defaults to 1/3 of leaseDurationMinutes. */
   readonly leaseRenewalIntervalSeconds?: number
   /** Working directory for Claude subprocess. Defaults to process.cwd() */
   readonly workingDirectory?: string
@@ -205,9 +207,10 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
         const agent = selectAgent(task)
 
         // Start lease renewal fiber
+        const leaseDuration = config.leaseDurationMinutes ?? 30
         const renewalInterval =
           config.leaseRenewalIntervalSeconds ??
-          config.heartbeatIntervalSeconds * 10 // Default: 10x heartbeat interval
+          Math.floor((leaseDuration * 60) / 3) // Default: renew at 1/3 of lease duration
 
         const renewFiber = yield* Effect.fork(
           runLeaseRenewalLoop(task.id, workerId, renewalInterval, state)

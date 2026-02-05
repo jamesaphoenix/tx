@@ -12,6 +12,9 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Get project directory from environment or use current directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 
@@ -37,7 +40,7 @@ FAILURES=""
 # ============================================
 check_task_completion() {
   # Check if tx is available
-  if ! command -v tx &> /dev/null; then
+  if ! tx_available; then
     return 0
   fi
 
@@ -55,7 +58,7 @@ check_task_completion() {
   fi
 
   # Check task status
-  TASK_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // empty' || true)
+  TASK_STATUS=$(tx_cmd show "$TASK_ID" --json 2>/dev/null | jq -r '.status // empty' || true)
 
   if [ -z "$TASK_STATUS" ]; then
     # Task not found, might have been deleted - clean up
@@ -133,11 +136,69 @@ check_build_success() {
   fi
 }
 
+# ============================================
+# Check 5: Coverage Threshold (optional check)
+# ============================================
+check_coverage() {
+  # Coverage threshold (can be overridden via env var)
+  local COVERAGE_THRESHOLD="${RALPH_COVERAGE_THRESHOLD:-70}"
+
+  # Check if coverage report exists
+  local COVERAGE_FILE="$PROJECT_DIR/coverage/coverage-summary.json"
+
+  if [ ! -f "$COVERAGE_FILE" ]; then
+    # No coverage report — that's fine, coverage is optional
+    return 0
+  fi
+
+  # Parse coverage from vitest coverage summary
+  local LINES_PCT STATEMENTS_PCT FUNCTIONS_PCT BRANCHES_PCT
+  LINES_PCT=$(jq -r '.total.lines.pct // 0' "$COVERAGE_FILE" 2>/dev/null || echo "0")
+  STATEMENTS_PCT=$(jq -r '.total.statements.pct // 0' "$COVERAGE_FILE" 2>/dev/null || echo "0")
+  FUNCTIONS_PCT=$(jq -r '.total.functions.pct // 0' "$COVERAGE_FILE" 2>/dev/null || echo "0")
+  BRANCHES_PCT=$(jq -r '.total.branches.pct // 0' "$COVERAGE_FILE" 2>/dev/null || echo "0")
+
+  # Check if any metric is below threshold
+  local BELOW=""
+  if (( $(echo "$LINES_PCT < $COVERAGE_THRESHOLD" | bc -l 2>/dev/null || echo "0") )); then
+    BELOW="${BELOW}Lines: ${LINES_PCT}%, "
+  fi
+  if (( $(echo "$STATEMENTS_PCT < $COVERAGE_THRESHOLD" | bc -l 2>/dev/null || echo "0") )); then
+    BELOW="${BELOW}Statements: ${STATEMENTS_PCT}%, "
+  fi
+  if (( $(echo "$FUNCTIONS_PCT < $COVERAGE_THRESHOLD" | bc -l 2>/dev/null || echo "0") )); then
+    BELOW="${BELOW}Functions: ${FUNCTIONS_PCT}%, "
+  fi
+  if (( $(echo "$BRANCHES_PCT < $COVERAGE_THRESHOLD" | bc -l 2>/dev/null || echo "0") )); then
+    BELOW="${BELOW}Branches: ${BRANCHES_PCT}%, "
+  fi
+
+  if [ -n "$BELOW" ]; then
+    FAILURES="${FAILURES}COVERAGE_LOW:${COVERAGE_THRESHOLD}:${BELOW} "
+  fi
+}
+
 # Run all checks
 check_task_completion
 check_tests_passed
 check_uncommitted_changes
 check_build_success
+check_coverage
+
+# Save artifact with check results (both pass and fail)
+ARTIFACT=$(cat << ARTEOF
+{
+  "_meta": {
+    "hook": "stop-ensure-completion",
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "ralph_mode": "${RALPH_MODE:-false}"
+  },
+  "failures": "$(echo "$FAILURES" | tr -s ' ')",
+  "passed": $([ -z "$FAILURES" ] && echo "true" || echo "false")
+}
+ARTEOF
+)
+save_hook_artifact "stop-ensure-completion" "$ARTIFACT"
 
 # If no failures, allow exit
 if [ -z "$FAILURES" ]; then
@@ -176,6 +237,11 @@ build_error_message() {
         ;;
       BUILD_FAILED)
         REASON="${REASON}## Build Failed\n\nThe build failed during this session.\n\nFix build errors before finishing:\n\`\`\`bash\nnpm run build\n\`\`\`"
+        ;;
+      COVERAGE_LOW:*)
+        local THRESHOLD=$(echo "$FAILURE" | cut -d: -f2)
+        local DETAILS=$(echo "$FAILURE" | cut -d: -f3-)
+        REASON="${REASON}## Coverage Below Threshold\n\nCoverage is below the ${THRESHOLD}% threshold:\n${DETAILS}\n\nAdd tests to improve coverage before finishing."
         ;;
     esac
   done

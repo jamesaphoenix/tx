@@ -6,6 +6,9 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Get project directory from environment or use current directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 
@@ -226,7 +229,7 @@ if [ -n "$ADDITIONAL_CONTEXT" ]; then
   # Escape for JSON
   ESCAPED_CONTEXT=$(echo -e "$ADDITIONAL_CONTEXT" | jq -Rs '.')
 
-  cat << EOF
+  OUTPUT=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
@@ -234,6 +237,10 @@ if [ -n "$ADDITIONAL_CONTEXT" ]; then
   }
 }
 EOF
+)
+
+  save_hook_artifact "post-bash-recovery" "{\"_meta\":{\"hook\":\"post-bash-recovery\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"failure_type\":\"${FAILURE_TYPE:-unknown}\",\"exit_code\":$EXIT_CODE},\"command\":$(echo "$COMMAND" | head -c 200 | jq -Rs '.'),\"context\":${ESCAPED_CONTEXT}}"
+  echo "$OUTPUT"
 fi
 
 exit 0

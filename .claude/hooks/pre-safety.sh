@@ -5,6 +5,9 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Get project directory from environment or use current directory
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 PROJECT_DIR_ABS=$(cd "$PROJECT_DIR" 2>/dev/null && pwd || echo "$PROJECT_DIR")
@@ -19,7 +22,8 @@ CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // empty')
 # Output functions for consistent JSON responses
 deny() {
   local reason="$1"
-  cat << EOF
+  local output
+  output=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -28,12 +32,16 @@ deny() {
   }
 }
 EOF
+)
+  save_hook_artifact "pre-safety" "{\"_meta\":{\"hook\":\"pre-safety\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"tool\":\"$TOOL_NAME\",\"decision\":\"deny\"},\"reason\":$(echo "$reason" | jq -Rs '.')}"
+  echo "$output"
   exit 0
 }
 
 allow() {
   local reason="$1"
-  cat << EOF
+  local output
+  output=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -42,12 +50,16 @@ allow() {
   }
 }
 EOF
+)
+  save_hook_artifact "pre-safety" "{\"_meta\":{\"hook\":\"pre-safety\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"tool\":\"$TOOL_NAME\",\"decision\":\"allow\"},\"reason\":$(echo "$reason" | jq -Rs '.')}"
+  echo "$output"
   exit 0
 }
 
 warn() {
   local reason="$1"
-  cat << EOF
+  local output
+  output=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -55,6 +67,9 @@ warn() {
   }
 }
 EOF
+)
+  save_hook_artifact "pre-safety" "{\"_meta\":{\"hook\":\"pre-safety\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"tool\":\"$TOOL_NAME\",\"decision\":\"warn\"},\"reason\":$(echo "$reason" | jq -Rs '.')}"
+  echo "$output"
   exit 0
 }
 
@@ -152,6 +167,21 @@ check_bash_safety() {
   # Block: Writing to /etc or other system locations
   if echo "$cmd" | grep -qE '>\s*/etc/|>>\s*/etc/'; then
     deny "Blocked: Writing to /etc or system directories is not allowed."
+  fi
+
+  # Block: dd to device files (disk destroyer)
+  if echo "$cmd" | grep -qE '^dd\s+.*of=/dev/'; then
+    deny "Blocked: dd to device files can destroy disk data."
+  fi
+
+  # Block: mkfs/format commands on devices
+  if echo "$cmd" | grep -qE '(mkfs|format)\s+/dev/'; then
+    deny "Blocked: Formatting disk devices is not allowed."
+  fi
+
+  # Block: Recursive chmod/chown on system root
+  if echo "$cmd" | grep -qE '(chmod|chown)\s+.*-[rR].*\s+/[^.]'; then
+    deny "Blocked: Recursive chmod/chown on system directories is not allowed."
   fi
 
   # Warn about potentially risky operations

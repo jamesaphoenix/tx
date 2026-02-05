@@ -531,6 +531,10 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
   escaped_cwd=$(echo "$PROJECT_DIR" | sed 's/[^a-zA-Z0-9]/-/g')
   local transcript_path="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
 
+  # Export env vars so hooks can detect ralph mode and correlate artifacts
+  export RALPH_MODE=true
+  export RALPH_RUN_ID="$CURRENT_RUN_ID"
+
   # Run Claude in background with session ID, capture stdout + stderr to per-run files
   claude --dangerously-skip-permissions --session-id "$session_uuid" \
     --print "$prompt" \

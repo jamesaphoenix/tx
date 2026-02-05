@@ -278,9 +278,14 @@ export const FileWatcherServiceLive = Layer.scoped(
       stateRef.current = updater(stateRef.current)
     }
 
+    // Flag to prevent creating new debounce timers after stop/finalize.
+    // Prevents race condition where chokidar fires events during shutdown.
+    let stopped = false
+
     // Cleanup on scope finalization
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
+        stopped = true
         const state = getState()
         // Clear all pending debounce timers
         for (const timer of state.debounceTimers.values()) {
@@ -308,6 +313,9 @@ export const FileWatcherServiceLive = Layer.scoped(
             })
           )
         }
+
+        // Reset shutdown flag for new watcher instance
+        stopped = false
 
         // Extract base directories from glob patterns
         const expandedPaths = config.patterns.map((p) => expandTilde(p))
@@ -369,6 +377,9 @@ export const FileWatcherServiceLive = Layer.scoped(
 
         // Set up event handlers with per-path debouncing
         const handleEvent = (type: FileEventType, filePath: string) => {
+          // Don't create new timers if watcher is being shut down
+          if (stopped) return
+
           // Check if the path matches any of our patterns
           const matches = originalPatterns.some((pattern) => matchesPattern(filePath, pattern))
           if (!matches) return
@@ -380,11 +391,15 @@ export const FileWatcherServiceLive = Layer.scoped(
           }
 
           // Set a new debounce timer — only the last event within the
-          // window will be emitted
+          // window will be emitted. unref() prevents the timer from
+          // keeping the Node.js event loop alive after watcher.close()
           const timer = setTimeout(() => {
             debounceTimers.delete(filePath)
             emitEvent(type, filePath)
           }, debounceMs)
+          if (typeof timer === "object" && "unref" in timer) {
+            timer.unref()
+          }
 
           debounceTimers.set(filePath, timer)
         }
@@ -452,6 +467,9 @@ export const FileWatcherServiceLive = Layer.scoped(
             })
           )
         }
+
+        // Prevent new debounce timers from being created during shutdown
+        stopped = true
 
         // Clear all pending debounce timers to prevent events firing after stop
         for (const timer of state.debounceTimers.values()) {

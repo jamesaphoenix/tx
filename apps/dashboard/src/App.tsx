@@ -35,6 +35,138 @@ function StatusBadge({ status }: { status: string }) {
 // Chat/Conversation View
 // =============================================================================
 
+/**
+ * Extract a human-readable summary from tool_use input for common tools.
+ */
+function summarizeToolInput(toolName: string, input: unknown): string | null {
+  if (!input || typeof input !== "object") return null
+  const obj = input as Record<string, unknown>
+
+  switch (toolName) {
+    case "Bash":
+      return typeof obj.command === "string" ? obj.command : null
+    case "Read":
+      return typeof obj.file_path === "string" ? obj.file_path : null
+    case "Write":
+      return typeof obj.file_path === "string" ? `Write to ${obj.file_path}` : null
+    case "Edit":
+      return typeof obj.file_path === "string" ? `Edit ${obj.file_path}` : null
+    case "Glob":
+      return typeof obj.pattern === "string" ? obj.pattern : null
+    case "Grep":
+      return typeof obj.pattern === "string" ? `/${obj.pattern}/` : null
+    case "TodoWrite":
+    case "TaskCreate":
+    case "TaskUpdate":
+      return typeof obj.subject === "string" ? obj.subject
+        : typeof obj.content === "string" ? obj.content.slice(0, 80)
+        : null
+    default:
+      return null
+  }
+}
+
+/**
+ * Tool icon color based on tool name category.
+ */
+function toolColor(toolName: string): string {
+  const colors: Record<string, string> = {
+    Bash: "text-green-400",
+    Read: "text-blue-400",
+    Write: "text-yellow-400",
+    Edit: "text-yellow-400",
+    Glob: "text-cyan-400",
+    Grep: "text-cyan-400",
+    TodoWrite: "text-purple-400",
+    TaskCreate: "text-purple-400",
+    TaskUpdate: "text-purple-400",
+    TaskList: "text-purple-400",
+  }
+  return colors[toolName] ?? "text-gray-400"
+}
+
+function ToolMessage({ message }: { message: ChatMessage }) {
+  const [expanded, setExpanded] = useState(false)
+  const isUse = message.type === "tool_use"
+  const toolName = message.tool_name || "unknown"
+  const summary = isUse ? summarizeToolInput(toolName, message.content) : null
+
+  // Format content for display
+  const rawContent = typeof message.content === "string"
+    ? message.content
+    : JSON.stringify(message.content, null, 2)
+  const isLong = rawContent.length > 200
+
+  return (
+    <div className="mx-2 my-1">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left group"
+      >
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-gray-800/40 hover:bg-gray-800/70 transition border border-gray-700/50">
+          {/* Arrow indicator */}
+          <span className="text-gray-600 text-xs flex-shrink-0">
+            {expanded ? "\u25BC" : "\u25B6"}
+          </span>
+
+          {/* Tool badge */}
+          <span className={`text-xs font-semibold flex-shrink-0 ${toolColor(toolName)}`}>
+            {toolName}
+          </span>
+
+          {/* Type indicator */}
+          <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
+            isUse
+              ? "bg-blue-900/40 text-blue-300"
+              : "bg-green-900/40 text-green-300"
+          }`}>
+            {isUse ? "call" : "result"}
+          </span>
+
+          {/* Summary line */}
+          {summary && (
+            <span className="text-xs text-gray-400 truncate font-mono">
+              {summary}
+            </span>
+          )}
+          {!summary && !isUse && rawContent.trim() && (
+            <span className="text-xs text-gray-500 truncate">
+              {rawContent.trim().split("\n")[0].slice(0, 100)}
+            </span>
+          )}
+          {!summary && !isUse && !rawContent.trim() && (
+            <span className="text-xs text-gray-600 italic">(no output)</span>
+          )}
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      {expanded && rawContent && (
+        <div className="mt-1 mx-3 border-l-2 border-gray-700/50 pl-3">
+          <pre className={`text-xs text-gray-400 whitespace-pre-wrap font-mono overflow-x-auto ${
+            isLong && !expanded ? "max-h-24" : "max-h-96"
+          } overflow-y-auto`}>
+            {rawContent}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Format a timestamp string to a short time display.
+ */
+function formatTime(timestamp?: string): string | null {
+  if (!timestamp) return null
+  try {
+    const d = new Date(timestamp)
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  } catch {
+    return null
+  }
+}
+
 function ChatMessageComponent({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user"
   const isAssistant = message.role === "assistant"
@@ -42,38 +174,64 @@ function ChatMessageComponent({ message }: { message: ChatMessage }) {
   const isTool = message.type === "tool_use" || message.type === "tool_result"
 
   if (isTool) {
+    return <ToolMessage message={message} />
+  }
+
+  const time = formatTime(message.timestamp)
+  const contentStr = typeof message.content === "string"
+    ? message.content
+    : JSON.stringify(message.content, null, 2)
+
+  if (isUser) {
     return (
-      <div className="mx-4 my-2 p-2 bg-gray-800/50 rounded text-xs font-mono">
-        <span className="text-purple-400">{message.type}:</span>{" "}
-        <span className="text-gray-400">{message.tool_name || "unknown"}</span>
-        {message.content != null && (
-          <pre className="mt-1 text-gray-500 whitespace-pre-wrap overflow-x-auto max-h-32 overflow-y-auto">
-            {typeof message.content === "string"
-              ? message.content.slice(0, 500)
-              : JSON.stringify(message.content, null, 2).slice(0, 500)}
-            {(typeof message.content === "string"
-              ? message.content.length
-              : JSON.stringify(message.content).length) > 500 && "..."}
-          </pre>
-        )}
+      <div className="flex justify-end my-3 px-4">
+        <div className="flex items-end gap-2 max-w-[75%]">
+          <div>
+            {time && <div className="text-[10px] text-gray-500 text-right mb-1">{time}</div>}
+            <div className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-br-md shadow-md shadow-blue-900/20">
+              <div className="whitespace-pre-wrap text-sm leading-relaxed">{contentStr}</div>
+            </div>
+          </div>
+          <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-white shadow-sm">
+            U
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isAssistant) {
+    return (
+      <div className="flex justify-start my-3 px-4">
+        <div className="flex items-end gap-2 max-w-[80%]">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-white shadow-sm">
+            C
+          </div>
+          <div>
+            {time && <div className="text-[10px] text-gray-500 mb-1">{time}</div>}
+            <div className="bg-gray-750 text-gray-100 px-4 py-2.5 rounded-2xl rounded-bl-md border border-gray-700/50 shadow-sm">
+              <div className="whitespace-pre-wrap text-sm leading-relaxed">{contentStr}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isSystem) {
+    return (
+      <div className="flex justify-center my-2 px-4">
+        <div className="max-w-[90%] px-3 py-1.5 rounded-full bg-yellow-900/20 border border-yellow-800/30 text-yellow-300/80 text-xs">
+          {contentStr}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"} my-2`}>
-      <div className={`max-w-[80%] p-3 rounded-lg ${
-        isUser ? "bg-blue-600 text-white" :
-        isAssistant ? "bg-gray-700 text-gray-100" :
-        isSystem ? "bg-yellow-900/30 text-yellow-200 text-xs" :
-        "bg-gray-800 text-gray-300"
-      }`}>
-        <div className="text-xs text-gray-400 mb-1">{message.role}</div>
-        <div className="whitespace-pre-wrap text-sm">
-          {typeof message.content === "string"
-            ? message.content
-            : JSON.stringify(message.content, null, 2)}
-        </div>
+    <div className="flex justify-start my-2 px-4">
+      <div className="max-w-[80%] p-3 rounded-lg bg-gray-800 text-gray-300">
+        <div className="whitespace-pre-wrap text-sm">{contentStr}</div>
       </div>
     </div>
   )

@@ -144,9 +144,22 @@ export const parseTranscript = (path: string): Effect.Effect<ChatMessage[], Erro
                   const toolName = item.tool_use_id
                     ? toolNameById.get(item.tool_use_id)
                     : undefined
+                  // tool_result content can be a string, an array of content blocks, or undefined
+                  // Claude API sends arrays like [{type: "text", text: "..."}] for multi-block results
+                  let resultContent: string = ""
+                  const rawContent = item.content as unknown
+                  if (typeof rawContent === "string") {
+                    resultContent = rawContent
+                  } else if (Array.isArray(rawContent)) {
+                    // Extract text from content blocks: [{type: "text", text: "..."}]
+                    resultContent = (rawContent as Array<{ type: string; text?: string }>)
+                      .filter((block) => block.type === "text")
+                      .map((block) => block.text ?? "")
+                      .join("\n")
+                  }
                   messages.push({
                     role: "user",
-                    content: item.content || "",
+                    content: resultContent,
                     type: "tool_result",
                     tool_name: toolName,
                     timestamp: userEntry.timestamp,

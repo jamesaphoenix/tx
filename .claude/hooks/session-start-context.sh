@@ -5,8 +5,11 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Check if tx is available
-if ! command -v tx &> /dev/null; then
+if ! tx_available; then
   exit 0
 fi
 
@@ -14,7 +17,7 @@ fi
 CONTEXT=""
 
 # 1. Get current assigned task (highest priority ready task)
-READY_TASK=$(tx ready --json --limit 1 2>/dev/null || echo "[]")
+READY_TASK=$(tx_cmd ready --json --limit 1 2>/dev/null || echo "[]")
 TASK_ID=""
 TASK_TITLE=""
 TASK_DESC=""
@@ -47,7 +50,7 @@ fi
 
 # 2. Get relevant learnings for the task
 if [ -n "$TASK_ID" ]; then
-  TASK_CONTEXT=$(tx context "$TASK_ID" --json 2>/dev/null || echo "")
+  TASK_CONTEXT=$(tx_cmd context "$TASK_ID" --json 2>/dev/null || echo "")
 
   if [ -n "$TASK_CONTEXT" ]; then
     LEARNING_COUNT=$(echo "$TASK_CONTEXT" | jq '.learnings | length' 2>/dev/null || echo "0")
@@ -66,7 +69,7 @@ if [ -n "$TASK_ID" ]; then
 fi
 
 # 3. Check for blocked tasks that might need attention
-BLOCKED_TASKS=$(tx list --status blocked --json 2>/dev/null || echo "[]")
+BLOCKED_TASKS=$(tx_cmd list --status blocked --json 2>/dev/null || echo "[]")
 
 if [ "$BLOCKED_TASKS" != "[]" ] && [ -n "$BLOCKED_TASKS" ]; then
   BLOCKED_COUNT=$(echo "$BLOCKED_TASKS" | jq 'length' 2>/dev/null || echo "0")
@@ -110,7 +113,7 @@ fi
 ESCAPED=$(printf '%s' "$CONTEXT" | jq -Rs '.')
 
 # Output JSON with additionalContext
-cat << EOF
+OUTPUT=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
@@ -118,5 +121,9 @@ cat << EOF
   }
 }
 EOF
+)
+
+save_hook_artifact "session-start-context" "{\"_meta\":{\"hook\":\"session-start-context\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"},\"context\":${ESCAPED}}"
+echo "$OUTPUT"
 
 exit 0

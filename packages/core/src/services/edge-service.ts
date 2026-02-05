@@ -156,9 +156,9 @@ const validateNodeType = (nodeType: NodeType, field: string): Effect.Effect<Node
 const validateWeight = (weight: number | undefined): Effect.Effect<number, ValidationError> =>
   Effect.gen(function* () {
     const w = weight ?? 1.0
-    if (w < 0 || w > 1) {
+    if (!Number.isFinite(w) || w < 0 || w > 1) {
       return yield* Effect.fail(new ValidationError({
-        reason: `Weight must be between 0 and 1, got: ${w}`
+        reason: `Weight must be a finite number between 0 and 1, got: ${w}`
       }))
     }
     return w

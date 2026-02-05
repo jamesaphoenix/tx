@@ -5,8 +5,11 @@
 
 set -e
 
+# Load shared artifact utilities
+source "$(dirname "$0")/hooks-common.sh"
+
 # Check if tx is available
-if ! command -v tx &> /dev/null; then
+if ! tx_available; then
   exit 0
 fi
 
@@ -23,7 +26,7 @@ TASK_ID=$(echo "$PROMPT" | grep -oE 'tx-[a-z0-9]{6,8}' | head -1 || true)
 
 if [ -n "$TASK_ID" ]; then
   # Get contextual learnings for the specific task
-  CONTEXT=$(tx context "$TASK_ID" --json 2>/dev/null || echo "")
+  CONTEXT=$(tx_cmd context "$TASK_ID" --json 2>/dev/null || echo "")
 
   if [ -n "$CONTEXT" ]; then
     LEARNING_COUNT=$(echo "$CONTEXT" | jq '.learnings | length' 2>/dev/null || echo "0")
@@ -36,7 +39,7 @@ if [ -n "$TASK_ID" ]; then
       # Escape for JSON
       ESCAPED=$(echo "$FORMATTED" | jq -Rs '.')
 
-      cat << EOF
+      OUTPUT=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
@@ -44,6 +47,9 @@ if [ -n "$TASK_ID" ]; then
   }
 }
 EOF
+)
+      save_hook_artifact "prompt-context" "{\"_meta\":{\"hook\":\"prompt-context\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"task_id\":\"$TASK_ID\"},\"learnings\":$ESCAPED}"
+      echo "$OUTPUT"
       exit 0
     fi
   fi
@@ -52,7 +58,7 @@ fi
 # Fallback: search learnings based on prompt keywords
 # Extract first 100 chars of prompt for search
 SEARCH_QUERY=$(echo "$PROMPT" | head -c 100 | tr -d '"' | tr '\n' ' ')
-SEARCH_RESULTS=$(tx learning:search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
+SEARCH_RESULTS=$(tx_cmd learning:search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
 
 if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
   FORMATTED=$(echo "$SEARCH_RESULTS" | jq -r '.[] | "- \(.content)"' 2>/dev/null || true)
@@ -61,7 +67,7 @@ if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
     # Escape for JSON
     ESCAPED=$(echo "$FORMATTED" | jq -Rs '.')
 
-    cat << EOF
+    OUTPUT=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
@@ -69,6 +75,9 @@ if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
   }
 }
 EOF
+)
+    save_hook_artifact "prompt-context" "{\"_meta\":{\"hook\":\"prompt-context\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"source\":\"search\"},\"learnings\":$ESCAPED}"
+    echo "$OUTPUT"
   fi
 fi
 

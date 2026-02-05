@@ -358,6 +358,149 @@ describe("EdgeService validation", () => {
       expect((result.left as any)._tag).toBe("ValidationError")
     }
   })
+
+  it("createEdge fails with ValidationError for NaN weight", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const edgeSvc = yield* EdgeService
+        return yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: "1",
+          targetType: "file",
+          targetId: "src/db.ts",
+          weight: NaN,
+        })
+      }).pipe(Effect.provide(shared.layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+    }
+  })
+
+  it("createEdge fails with ValidationError for Infinity weight", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const edgeSvc = yield* EdgeService
+        return yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: "1",
+          targetType: "file",
+          targetId: "src/db.ts",
+          weight: Infinity,
+        })
+      }).pipe(Effect.provide(shared.layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+    }
+  })
+
+  it("createEdge fails with ValidationError for -Infinity weight", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const edgeSvc = yield* EdgeService
+        return yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: "1",
+          targetType: "file",
+          targetId: "src/db.ts",
+          weight: -Infinity,
+        })
+      }).pipe(Effect.provide(shared.layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+    }
+  })
+
+  it("createEdge accepts boundary weight 0", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        const learning = yield* learningSvc.create({
+          content: "Learning",
+          sourceType: "manual",
+        })
+
+        return yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/db.ts",
+          weight: 0,
+        })
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.weight).toBe(0)
+  })
+
+  it("createEdge accepts boundary weight 1", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        const learning = yield* learningSvc.create({
+          content: "Learning",
+          sourceType: "manual",
+        })
+
+        return yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/db.ts",
+          weight: 1,
+        })
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.weight).toBe(1)
+  })
+
+  it("update fails with ValidationError for NaN weight", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const learningSvc = yield* LearningService
+        const edgeSvc = yield* EdgeService
+
+        const learning = yield* learningSvc.create({
+          content: "Learning",
+          sourceType: "manual",
+        })
+
+        yield* edgeSvc.createEdge({
+          edgeType: "ANCHORED_TO",
+          sourceType: "learning",
+          sourceId: String(learning.id),
+          targetType: "file",
+          targetId: "src/db.ts",
+          weight: 0.5,
+        })
+
+        return yield* edgeSvc.update(1, { weight: NaN })
+      }).pipe(Effect.provide(shared.layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+    }
+  })
 })
 
 // =============================================================================
