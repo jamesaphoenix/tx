@@ -50,7 +50,7 @@ jobs:
         run: bun build ./src/cli.ts --compile --outfile ${{ matrix.artifact }} --target ${{ matrix.target }} --minify --external @anthropic-ai/sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
           path: apps/cli/${{ matrix.artifact }}
