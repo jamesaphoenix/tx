@@ -5,10 +5,11 @@
 import { Schema } from "effect"
 import type {
   Learning,
-  LearningId,
   LearningSourceType,
   LearningRow
 } from "@jamesaphoenix/tx-types"
+import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+import { InvalidStatusError } from "../errors.js"
 
 /**
  * Schema for keywords - an array of strings.
@@ -36,7 +37,7 @@ const parseKeywords = (keywordsJson: string | null): string[] => {
 
 // Re-export types and constants from @tx/types for convenience
 export type { LearningRow } from "@jamesaphoenix/tx-types"
-export { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+export { LEARNING_SOURCE_TYPES }
 
 /**
  * Check if a string is a valid LearningSourceType.
@@ -81,17 +82,27 @@ export const float32ArrayToBuffer = (arr: Float32Array): Buffer => {
 
 /**
  * Convert a database row to a Learning domain object.
+ * Validates source_type at runtime.
  */
-export const rowToLearning = (row: LearningRow): Learning => ({
-  id: row.id as LearningId,
-  content: row.content,
-  sourceType: row.source_type as LearningSourceType,
-  sourceRef: row.source_ref,
-  createdAt: new Date(row.created_at),
-  keywords: parseKeywords(row.keywords),
-  category: row.category,
-  usageCount: row.usage_count,
-  lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
-  outcomeScore: row.outcome_score,
-  embedding: row.embedding ? bufferToFloat32Array(row.embedding) as Float32Array<ArrayBuffer> : null
-})
+export const rowToLearning = (row: LearningRow): Learning => {
+  if (!isValidSourceType(row.source_type)) {
+    throw new InvalidStatusError({
+      entity: "learning",
+      status: row.source_type,
+      validStatuses: LEARNING_SOURCE_TYPES
+    })
+  }
+  return {
+    id: row.id as Learning["id"],
+    content: row.content,
+    sourceType: row.source_type,
+    sourceRef: row.source_ref,
+    createdAt: new Date(row.created_at),
+    keywords: parseKeywords(row.keywords),
+    category: row.category,
+    usageCount: row.usage_count,
+    lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
+    outcomeScore: row.outcome_score,
+    embedding: row.embedding ? bufferToFloat32Array(row.embedding) as Float32Array<ArrayBuffer> : null
+  }
+}

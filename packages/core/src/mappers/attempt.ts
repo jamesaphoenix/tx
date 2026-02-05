@@ -4,15 +4,15 @@
 
 import type {
   Attempt,
-  AttemptId,
   AttemptOutcome,
   AttemptRow,
-  TaskId
 } from "@jamesaphoenix/tx-types"
+import { assertTaskId, ATTEMPT_OUTCOMES } from "@jamesaphoenix/tx-types"
+import { InvalidStatusError } from "../errors.js"
 
 // Re-export types and constants from @tx/types for convenience
 export type { AttemptRow } from "@jamesaphoenix/tx-types"
-export { ATTEMPT_OUTCOMES } from "@jamesaphoenix/tx-types"
+export { ATTEMPT_OUTCOMES }
 
 /**
  * Check if a string is a valid AttemptOutcome.
@@ -24,12 +24,22 @@ export const isValidOutcome = (s: string): s is AttemptOutcome => {
 
 /**
  * Convert a database row to an Attempt domain object.
+ * Validates outcome and TaskId fields at runtime.
  */
-export const rowToAttempt = (row: AttemptRow): Attempt => ({
-  id: row.id as AttemptId,
-  taskId: row.task_id as TaskId,
-  approach: row.approach,
-  outcome: row.outcome as AttemptOutcome,
-  reason: row.reason,
-  createdAt: new Date(row.created_at)
-})
+export const rowToAttempt = (row: AttemptRow): Attempt => {
+  if (!isValidOutcome(row.outcome)) {
+    throw new InvalidStatusError({
+      entity: "attempt",
+      status: row.outcome,
+      validStatuses: ATTEMPT_OUTCOMES
+    })
+  }
+  return {
+    id: row.id as Attempt["id"],
+    taskId: assertTaskId(row.task_id),
+    approach: row.approach,
+    outcome: row.outcome,
+    reason: row.reason,
+    createdAt: new Date(row.created_at)
+  }
+}

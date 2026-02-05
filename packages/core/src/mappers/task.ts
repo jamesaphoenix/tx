@@ -5,12 +5,13 @@
 import { Schema } from "effect"
 import type {
   Task,
-  TaskId,
   TaskStatus,
   TaskRow,
   TaskDependency,
   DependencyRow
 } from "@jamesaphoenix/tx-types"
+import { assertTaskId, TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import { InvalidStatusError } from "../errors.js"
 
 /**
  * Schema for task metadata - a record of string keys to unknown values.
@@ -37,30 +38,42 @@ const parseMetadata = (metadataJson: string | null): Record<string, unknown> => 
 
 // Re-export types and constants from @tx/types for convenience
 export type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
-export { TASK_STATUSES, VALID_TRANSITIONS } from "@jamesaphoenix/tx-types"
+export { TASK_STATUSES }
+export { VALID_TRANSITIONS } from "@jamesaphoenix/tx-types"
 
 /**
  * Convert a database row to a Task domain object.
+ * Validates status and ID fields at runtime before constructing domain object.
  */
-export const rowToTask = (row: TaskRow): Task => ({
-  id: row.id as TaskId,
-  title: row.title,
-  description: row.description,
-  status: row.status as TaskStatus,
-  parentId: row.parent_id as TaskId | null,
-  score: row.score,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
-  completedAt: row.completed_at ? new Date(row.completed_at) : null,
-  metadata: parseMetadata(row.metadata)
-})
+export const rowToTask = (row: TaskRow): Task => {
+  if (!isValidStatus(row.status)) {
+    throw new InvalidStatusError({
+      entity: "task",
+      status: row.status,
+      validStatuses: TASK_STATUSES
+    })
+  }
+  return {
+    id: assertTaskId(row.id),
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    parentId: row.parent_id ? assertTaskId(row.parent_id) : null,
+    score: row.score,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+    completedAt: row.completed_at ? new Date(row.completed_at) : null,
+    metadata: parseMetadata(row.metadata)
+  }
+}
 
 /**
  * Convert a dependency database row to a TaskDependency domain object.
+ * Validates TaskId fields at runtime.
  */
 export const rowToDependency = (row: DependencyRow): TaskDependency => ({
-  blockerId: row.blocker_id as TaskId,
-  blockedId: row.blocked_id as TaskId,
+  blockerId: assertTaskId(row.blocker_id),
+  blockedId: assertTaskId(row.blocked_id),
   createdAt: new Date(row.created_at)
 })
 

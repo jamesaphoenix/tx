@@ -43,18 +43,25 @@ export {
   rowToRun,
   generateRunId,
   serializeRun,
+  isValidRunStatus,
   RUN_STATUSES
 } from "./run.js"
 
 // Anchor mappers
 export {
   rowToAnchor,
+  rowToInvalidationLog,
+  isValidAnchorType,
+  isValidAnchorStatus,
+  isValidInvalidationSource,
   type AnchorRow
 } from "./anchor.js"
 
 // Edge mappers
 export {
   rowToEdge,
+  isValidEdgeType,
+  isValidNodeType,
   type EdgeRow
 } from "./edge.js"
 

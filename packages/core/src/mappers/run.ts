@@ -3,15 +3,23 @@
  */
 
 import { createHash } from "crypto"
+import { Schema } from "effect"
 import type {
   Run,
   RunId,
   RunStatus,
   RunRow
 } from "@jamesaphoenix/tx-types"
+import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
+import { InvalidStatusError } from "../errors.js"
 
 // Re-export constants from @tx/types for convenience
-export { RUN_STATUSES } from "@jamesaphoenix/tx-types"
+export { RUN_STATUSES }
+
+/**
+ * Schema for metadata - a record of string keys to unknown values.
+ */
+const MetadataSchema = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 
 /**
  * Generate a run ID from timestamp + random.
@@ -25,11 +33,20 @@ export const generateRunId = (): RunId => {
 }
 
 /**
- * Safely parse JSON with fallback to empty object.
+ * Check if a string is a valid RunStatus.
+ */
+export const isValidRunStatus = (s: string): s is RunStatus => {
+  return (RUN_STATUSES as readonly string[]).includes(s)
+}
+
+/**
+ * Safely parse and validate metadata JSON string.
+ * Returns empty object if parsing fails or validation fails.
  */
 const safeParseMetadata = (json: string | null | undefined): Record<string, unknown> => {
   try {
-    return JSON.parse(json || "{}") as Record<string, unknown>
+    const parsed: unknown = JSON.parse(json || "{}")
+    return Schema.decodeUnknownSync(MetadataSchema)(parsed)
   } catch {
     return {}
   }
@@ -37,24 +54,34 @@ const safeParseMetadata = (json: string | null | undefined): Record<string, unkn
 
 /**
  * Convert a database row to a Run domain object.
+ * Validates status at runtime.
  */
-export const rowToRun = (row: RunRow): Run => ({
-  id: row.id as RunId,
-  taskId: row.task_id,
-  agent: row.agent,
-  startedAt: new Date(row.started_at),
-  endedAt: row.ended_at ? new Date(row.ended_at) : null,
-  status: row.status as RunStatus,
-  exitCode: row.exit_code,
-  pid: row.pid,
-  transcriptPath: row.transcript_path,
-  stderrPath: row.stderr_path,
-  stdoutPath: row.stdout_path,
-  contextInjected: row.context_injected,
-  summary: row.summary,
-  errorMessage: row.error_message,
-  metadata: safeParseMetadata(row.metadata)
-})
+export const rowToRun = (row: RunRow): Run => {
+  if (!isValidRunStatus(row.status)) {
+    throw new InvalidStatusError({
+      entity: "run",
+      status: row.status,
+      validStatuses: RUN_STATUSES
+    })
+  }
+  return {
+    id: row.id as RunId,
+    taskId: row.task_id,
+    agent: row.agent,
+    startedAt: new Date(row.started_at),
+    endedAt: row.ended_at ? new Date(row.ended_at) : null,
+    status: row.status,
+    exitCode: row.exit_code,
+    pid: row.pid,
+    transcriptPath: row.transcript_path,
+    stderrPath: row.stderr_path,
+    stdoutPath: row.stdout_path,
+    contextInjected: row.context_injected,
+    summary: row.summary,
+    errorMessage: row.error_message,
+    metadata: safeParseMetadata(row.metadata)
+  }
+}
 
 /**
  * Serialize Run for JSON output.
