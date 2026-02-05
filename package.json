@@ -79,7 +79,7 @@
     "unified": "^11.0.5",
     "unified-lint-rule": "^3.0.1",
     "unist-util-visit": "^5.1.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=20"
