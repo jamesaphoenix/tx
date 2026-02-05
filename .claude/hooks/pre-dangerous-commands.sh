@@ -22,9 +22,47 @@ fi
 # Dangerous patterns to block
 BLOCKED_REASON=""
 
-# rm -rf with dangerous targets
-if echo "$COMMAND" | grep -qE 'rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(/|~|\$HOME|\.\.|/etc|/usr|/var|/bin|/sbin)'; then
-  BLOCKED_REASON="Blocked: rm -rf targeting system directories or parent paths"
+# Get project directory for allowlisting
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
+PROJECT_DIR_ABS=$(cd "$PROJECT_DIR" 2>/dev/null && pwd || echo "$PROJECT_DIR")
+
+# rm -rf with dangerous targets (system dirs, home root, parent traversal)
+# Allow rm -rf within the project directory
+if echo "$COMMAND" | grep -qE 'rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)'; then
+  # Extract all path arguments after the flags
+  PATHS=$(echo "$COMMAND" | sed -E 's/rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+//' )
+  IS_DANGEROUS=false
+
+  for path in $PATHS; do
+    # Resolve path
+    resolved=$(realpath -m "$path" 2>/dev/null || echo "$path")
+
+    # Allow paths within the project directory
+    if [[ "$resolved" == "$PROJECT_DIR_ABS"* ]]; then
+      continue
+    fi
+
+    # Allow common safe cleanup targets anywhere
+    if echo "$path" | grep -qE '(node_modules|dist|build|coverage|\.cache|\.turbo)$'; then
+      continue
+    fi
+
+    # Block system directories
+    if echo "$resolved" | grep -qE '^(/etc|/usr|/var|/bin|/sbin|/lib|/boot|/root|/dev|/sys|/proc)'; then
+      IS_DANGEROUS=true
+      break
+    fi
+
+    # Block home directory root or parent traversal
+    if [[ "$path" == "/" ]] || [[ "$path" == "~" ]] || [[ "$path" == '$HOME' ]] || [[ "$path" == ".." ]]; then
+      IS_DANGEROUS=true
+      break
+    fi
+  done
+
+  if [ "$IS_DANGEROUS" = true ]; then
+    BLOCKED_REASON="Blocked: rm -rf targeting system directories or parent paths"
+  fi
 fi
 
 # rm -rf /* or rm -rf ./*

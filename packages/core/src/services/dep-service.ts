@@ -42,6 +42,10 @@ export const DependencyServiceLive = Layer.effect(
           if (result._tag === "wouldCycle") {
             return yield* Effect.fail(new CircularDependencyError({ taskId, blockerId }))
           }
+          // Idempotent: dependency already exists, nothing to do
+          if (result._tag === "alreadyExists") {
+            return
+          }
         }),
 
       removeBlocker: (taskId, blockerId) =>

@@ -321,6 +321,8 @@ load_state() {
 
 CONSECUTIVE_FAILURES=0
 MAX_FAILURES=3
+SCORE_PENALTY=100         # Reduce score by this much per failure
+MAX_TASK_FAILURES=3       # Block task after this many failures
 
 record_failure() {
   CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
@@ -337,6 +339,52 @@ check_circuit_breaker() {
     return 1
   fi
   return 0
+}
+
+# Demote a task after failure: increment fail count, lower score, block after MAX_TASK_FAILURES
+demote_task() {
+  local task_id="$1"
+  local reason="$2"
+
+  # Get current fail count from runs table (count failed/cancelled runs for this task)
+  local fail_count=0
+  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    fail_count=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "SELECT COUNT(*) FROM runs WHERE task_id='$(sql_escape "$task_id")' AND status IN ('failed', 'cancelled');" 2>/dev/null || echo "0")
+  fi
+
+  log "Task $task_id has $fail_count failed attempts"
+
+  if [ "$fail_count" -ge "$MAX_TASK_FAILURES" ]; then
+    # Block the task — it needs human review
+    log "BLOCKING task $task_id after $fail_count failures — needs human review"
+    tx update "$task_id" --status blocked 2>/dev/null || true
+
+    # Store the reason in metadata via sqlite
+    if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+      local escaped_reason=$(sql_escape "$reason")
+      local escaped_id=$(sql_escape "$task_id")
+      sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+        "UPDATE tasks SET metadata = json_set(COALESCE(metadata, '{}'), '$.blockedReason', 'Auto-blocked after $fail_count failures: $escaped_reason', '$.failedAttemptCount', $fail_count) WHERE id='$escaped_id';"
+    fi
+  else
+    # Demote: reset to ready with lower score
+    local current_score=$(tx show "$task_id" --json 2>/dev/null | jq -r '.score // 50')
+    local new_score=$((current_score - SCORE_PENALTY))
+    # Floor at 1 (never go to 0 or negative)
+    [ "$new_score" -lt 1 ] && new_score=1
+
+    log "Demoting task $task_id: score $current_score -> $new_score (attempt $fail_count/$MAX_TASK_FAILURES)"
+    tx reset "$task_id" 2>/dev/null || true
+    tx update "$task_id" --score "$new_score" 2>/dev/null || true
+
+    # Update metadata with fail count
+    if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+      local escaped_id=$(sql_escape "$task_id")
+      sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+        "UPDATE tasks SET metadata = json_set(COALESCE(metadata, '{}'), '$.failedAttemptCount', $fail_count, '$.lastFailReason', '$(sql_escape "$reason")') WHERE id='$escaped_id';"
+    fi
+  fi
 }
 
 # ==============================================================================
@@ -663,8 +711,8 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     log "Task is blocked (likely decomposed into subtasks)"
     on_success
   elif [ "$AGENT_EXIT_CODE" -ne 0 ]; then
-    log "✗ Agent failed and task not done - resetting to ready"
-    tx reset "$TASK_ID" 2>/dev/null || true
+    log "✗ Agent failed and task not done - demoting"
+    demote_task "$TASK_ID" "Agent failed (exit code: $AGENT_EXIT_CODE)"
     record_failure
   else
     # Agent exited 0 but task not done - ask a verification agent to check
@@ -695,13 +743,13 @@ Be honest - only mark done if the acceptance criteria are met."
         log "Task marked as blocked by verification agent"
         on_success
       else
-        log "✗ Task still not done after verification - resetting for retry"
-        tx reset "$TASK_ID" 2>/dev/null || true
+        log "✗ Task still not done after verification - demoting"
+        demote_task "$TASK_ID" "Not done after verification (status: $FINAL_STATUS)"
         record_failure
       fi
     else
-      log "Verification agent failed - resetting task"
-      tx reset "$TASK_ID" 2>/dev/null || true
+      log "Verification agent failed - demoting task"
+      demote_task "$TASK_ID" "Verification agent failed"
       record_failure
     fi
   fi

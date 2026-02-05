@@ -359,32 +359,42 @@ describe("DependencyService boundary conditions", () => {
   })
 
   describe("removeBlocker edge cases", () => {
-    it("removing nonexistent dependency succeeds silently", async () => {
-      // This tests idempotency - removing what doesn't exist should be safe
+    it("removing nonexistent dependency fails with DependencyNotFoundError", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* DependencyService
           // Remove dependency that doesn't exist
-          yield* svc.removeBlocker(FIXTURES.TASK_ROOT, FIXTURES.TASK_DONE)
-          return "success"
+          return yield* svc.removeBlocker(FIXTURES.TASK_ROOT, FIXTURES.TASK_DONE)
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("DependencyNotFoundError")
+      }
+    })
+
+    it("removing same dependency twice fails on second attempt", async () => {
+      // First removal succeeds
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* DependencyService
+          yield* svc.removeBlocker(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT)
         }).pipe(Effect.provide(layer))
       )
 
-      expect(result).toBe("success")
-    })
-
-    it("removing same dependency twice succeeds", async () => {
+      // Second removal fails with DependencyNotFoundError
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* DependencyService
-          // Remove the JWT->BLOCKED dependency twice
-          yield* svc.removeBlocker(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT)
-          yield* svc.removeBlocker(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT)
-          return "success"
-        }).pipe(Effect.provide(layer))
+          return yield* svc.removeBlocker(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT)
+        }).pipe(Effect.provide(layer), Effect.either)
       )
 
-      expect(result).toBe("success")
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("DependencyNotFoundError")
+      }
     })
   })
 })

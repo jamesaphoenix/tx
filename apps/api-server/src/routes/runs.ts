@@ -119,9 +119,14 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
 
         // If no explicit transcript path, try to find one by timestamp correlation
         if (!transcriptPath) {
-          const cwd = process.cwd()
+          // Derive project root from DB path (e.g. /path/to/project/.tx/tasks.db -> /path/to/project)
+          // Falls back to process.cwd() if TX_DB_PATH is not absolute
+          const dbPath = process.env.TX_DB_PATH ?? ""
+          const projectRoot = dbPath.includes("/.tx/")
+            ? dbPath.slice(0, dbPath.indexOf("/.tx/"))
+            : process.cwd()
           const discovered = yield* Effect.tryPromise({
-            try: () => findMatchingTranscript(cwd, found.startedAt, found.endedAt),
+            try: () => findMatchingTranscript(projectRoot, found.startedAt, found.endedAt),
             catch: () => null,
           })
           transcriptPath = discovered

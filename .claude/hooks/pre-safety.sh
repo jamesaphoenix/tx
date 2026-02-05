@@ -83,6 +83,8 @@ check_bash_safety() {
       allow "Auto-approved: rm -rf on coverage directory is safe cleanup"
     elif echo "$cmd" | grep -qE 'rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+.*\.cache'; then
       allow "Auto-approved: rm -rf on cache directory is safe cleanup"
+    elif echo "$cmd" | grep -qE 'rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+.*\.turbo'; then
+      allow "Auto-approved: rm -rf on .turbo directory is safe cleanup"
     else
       deny "Blocked: rm -rf is not allowed. Use targeted deletion instead, or limit to node_modules/dist/build directories."
     fi

@@ -79,12 +79,48 @@ export const parseTranscript = (path: string): Effect.Effect<ChatMessage[], Erro
 
       const messages: ChatMessage[] = []
       const seenUuids = new Set<string>()
+      // Map tool_use_id -> tool_name so we can label tool results
+      const toolNameById = new Map<string, string>()
 
       for (const line of lines) {
         try {
           const entry = JSON.parse(line) as TranscriptEntry
 
-          // Handle user messages
+          // Handle assistant messages first to build tool name map
+          if (entry.type === "assistant") {
+            const assistantEntry = entry as TranscriptAssistantMessage
+            // Avoid duplicates from the same uuid
+            if (seenUuids.has(assistantEntry.uuid)) continue
+            seenUuids.add(assistantEntry.uuid)
+
+            const contentItems = assistantEntry.message.content
+            if (Array.isArray(contentItems)) {
+              for (const item of contentItems) {
+                if (item.type === "thinking") {
+                  // Skip thinking blocks for cleaner display
+                } else if (item.type === "text") {
+                  messages.push({
+                    role: "assistant",
+                    content: item.text,
+                    type: "text",
+                    timestamp: assistantEntry.timestamp,
+                  })
+                } else if (item.type === "tool_use") {
+                  // Track tool name by ID for correlating with results
+                  toolNameById.set(item.id, item.name)
+                  messages.push({
+                    role: "assistant",
+                    content: item.input,
+                    type: "tool_use",
+                    tool_name: item.name,
+                    timestamp: assistantEntry.timestamp,
+                  })
+                }
+              }
+            }
+          }
+
+          // Handle user messages (tool results come as user messages)
           if (entry.type === "user") {
             const userEntry = entry as TranscriptUserMessage
             // Avoid duplicates from the same uuid
@@ -102,49 +138,16 @@ export const parseTranscript = (path: string): Effect.Effect<ChatMessage[], Erro
               // Handle tool results in user messages
               for (const item of content) {
                 if (item.type === "tool_result") {
+                  // Look up the tool name from the corresponding tool_use
+                  const toolName = item.tool_use_id
+                    ? toolNameById.get(item.tool_use_id)
+                    : undefined
                   messages.push({
                     role: "user",
                     content: item.content || "",
                     type: "tool_result",
+                    tool_name: toolName,
                     timestamp: userEntry.timestamp,
-                  })
-                }
-              }
-            }
-          }
-
-          // Handle assistant messages
-          if (entry.type === "assistant") {
-            const assistantEntry = entry as TranscriptAssistantMessage
-            // Avoid duplicates from the same uuid
-            if (seenUuids.has(assistantEntry.uuid)) continue
-            seenUuids.add(assistantEntry.uuid)
-
-            const contentItems = assistantEntry.message.content
-            if (Array.isArray(contentItems)) {
-              for (const item of contentItems) {
-                if (item.type === "thinking") {
-                  // Skip thinking blocks for cleaner display, but can be included if needed
-                  // messages.push({
-                  //   role: "assistant",
-                  //   content: item.thinking,
-                  //   type: "thinking",
-                  //   timestamp: assistantEntry.timestamp,
-                  // })
-                } else if (item.type === "text") {
-                  messages.push({
-                    role: "assistant",
-                    content: item.text,
-                    type: "text",
-                    timestamp: assistantEntry.timestamp,
-                  })
-                } else if (item.type === "tool_use") {
-                  messages.push({
-                    role: "assistant",
-                    content: item.input,
-                    type: "tool_use",
-                    tool_name: item.name,
-                    timestamp: assistantEntry.timestamp,
                   })
                 }
               }
@@ -186,8 +189,9 @@ export const findMatchingTranscript = async (
   if (!homeDir) return null
 
   // Convert cwd to Claude's escaped directory format
-  // e.g., /Users/foo/project -> -Users-foo-project
-  const escapedCwd = cwd.replace(/\//g, "-").replace(/^-/, "")
+  // Claude CLI replaces ALL non-alphanumeric chars with dashes:
+  // /Users/foo/my_project -> -Users-foo-my-project
+  const escapedCwd = cwd.replace(/[^a-zA-Z0-9]/g, "-")
   const claudeProjectDir = join(homeDir, ".claude", "projects", escapedCwd)
 
   if (!existsSync(claudeProjectDir)) {

@@ -13,6 +13,7 @@ const EMPTY_TASK_IDS: readonly TaskId[] = Object.freeze([])
 export type InsertWithCycleCheckResult =
   | { readonly _tag: "inserted" }
   | { readonly _tag: "wouldCycle" }
+  | { readonly _tag: "alreadyExists" }
 
 export class DependencyRepository extends Context.Tag("DependencyRepository")<
   DependencyRepository,
@@ -209,6 +210,16 @@ export const DependencyRepositoryLive = Layer.effect(
               if (blockerId === blockedId) {
                 db.exec("ROLLBACK")
                 return { _tag: "wouldCycle" } as const
+              }
+
+              // Check if dependency already exists (idempotent)
+              const existing = db.prepare(
+                "SELECT 1 FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ? LIMIT 1"
+              ).get(blockerId, blockedId)
+
+              if (existing != null) {
+                db.exec("ROLLBACK")
+                return { _tag: "alreadyExists" } as const
               }
 
               // Check if adding this dependency would create a cycle

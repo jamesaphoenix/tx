@@ -473,6 +473,37 @@ describe("Dependency operations", () => {
     ).all(FIXTURES.TASK_AUTH, FIXTURES.TASK_ROOT) as any[]
     expect(rows.length).toBe(1)
   })
+
+  it("addBlocker is idempotent for existing dependency", async () => {
+    // JWT -> BLOCKED already exists from seed; calling again should succeed without error
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DependencyService
+        yield* svc.addBlocker(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Verify only one row exists (no duplicates)
+    const rows = db.db.prepare(
+      "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
+    ).all(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT) as any[]
+    expect(rows.length).toBe(1)
+  })
+
+  it("removeBlocker fails with DependencyNotFoundError for non-existent dependency", async () => {
+    // AUTH -> LOGIN dependency does not exist in seed data
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DependencyService
+        return yield* svc.removeBlocker(FIXTURES.TASK_LOGIN, FIXTURES.TASK_AUTH)
+      }).pipe(Effect.provide(layer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("DependencyNotFoundError")
+    }
+  })
 })
 
 describe("Hierarchy operations", () => {
