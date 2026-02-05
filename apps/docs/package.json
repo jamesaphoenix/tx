@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "fumadocs-core": "^15.0.0",
+    "fumadocs-core": "^16.5.0",
     "fumadocs-mdx": "^14.2.6",
     "fumadocs-ui": "^16.5.0",
     "next": "^16.1.6",
