@@ -399,6 +399,15 @@ const UpdateRunBody = Schema.Struct({
   transcriptPath: Schema.optional(Schema.String),
 })
 
+const LogTailParams = Schema.Struct({
+  tail: Schema.optional(Schema.NumberFromString.pipe(Schema.int())),
+})
+
+const LogContentResponse = Schema.Struct({
+  content: Schema.String,
+  truncated: Schema.Boolean,
+})
+
 export const RunsGroup = HttpApiGroup.make("runs")
   .add(
     HttpApiEndpoint.get("listRuns", "/api/runs")
@@ -418,6 +427,20 @@ export const RunsGroup = HttpApiGroup.make("runs")
     HttpApiEndpoint.patch("updateRun")`/api/runs/${RunIdParam}`
       .setPayload(UpdateRunBody)
       .addSuccess(RunSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.get("getRunStdout")`/api/runs/${RunIdParam}/stdout`
+      .setUrlParams(LogTailParams)
+      .addSuccess(LogContentResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getRunStderr")`/api/runs/${RunIdParam}/stderr`
+      .setUrlParams(LogTailParams)
+      .addSuccess(LogContentResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getRunContext")`/api/runs/${RunIdParam}/context`
+      .addSuccess(LogContentResponse)
   )
 
 // =============================================================================

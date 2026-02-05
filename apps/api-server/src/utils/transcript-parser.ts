@@ -99,6 +99,8 @@ export const parseTranscript = (path: string): Effect.Effect<ChatMessage[], Erro
                 if (item.type === "thinking") {
                   // Skip thinking blocks for cleaner display
                 } else if (item.type === "text") {
+                  // Skip empty text blocks (e.g., assistant messages with only thinking content)
+                  if (!item.text || item.text.trim() === "") continue
                   messages.push({
                     role: "assistant",
                     content: item.text,

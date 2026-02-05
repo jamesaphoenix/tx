@@ -11,6 +11,7 @@ import { serializeRun } from "@jamesaphoenix/tx-types"
 import { RunRepository } from "@jamesaphoenix/tx-core"
 import { TxApi, NotFound, mapCoreError } from "../api.js"
 import { parseTranscript, findMatchingTranscript, type ChatMessage } from "../utils/transcript-parser.js"
+import { readLogFile } from "../utils/log-reader.js"
 
 // -----------------------------------------------------------------------------
 // Cursor Pagination Helpers
@@ -183,6 +184,54 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
           return yield* Effect.fail(new NotFound({ message: `Run not found: ${path.id}` }))
         }
         return serializeRun(updated)
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("getRunStdout", ({ path, urlParams }) =>
+      Effect.gen(function* () {
+        const runRepo = yield* RunRepository
+        const found = yield* runRepo.findById(path.id as RunId)
+        if (!found) {
+          return yield* Effect.fail(new NotFound({ message: `Run not found: ${path.id}` }))
+        }
+        if (!found.stdoutPath) {
+          return { content: "", truncated: false }
+        }
+        return yield* readLogFile(found.stdoutPath, urlParams.tail ?? 0).pipe(
+          Effect.catchAll(() => Effect.succeed({ content: "", truncated: false }))
+        )
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("getRunStderr", ({ path, urlParams }) =>
+      Effect.gen(function* () {
+        const runRepo = yield* RunRepository
+        const found = yield* runRepo.findById(path.id as RunId)
+        if (!found) {
+          return yield* Effect.fail(new NotFound({ message: `Run not found: ${path.id}` }))
+        }
+        if (!found.stderrPath) {
+          return { content: "", truncated: false }
+        }
+        return yield* readLogFile(found.stderrPath, urlParams.tail ?? 0).pipe(
+          Effect.catchAll(() => Effect.succeed({ content: "", truncated: false }))
+        )
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("getRunContext", ({ path }) =>
+      Effect.gen(function* () {
+        const runRepo = yield* RunRepository
+        const found = yield* runRepo.findById(path.id as RunId)
+        if (!found) {
+          return yield* Effect.fail(new NotFound({ message: `Run not found: ${path.id}` }))
+        }
+        if (!found.contextInjected) {
+          return { content: "", truncated: false }
+        }
+        return yield* readLogFile(found.contextInjected).pipe(
+          Effect.catchAll(() => Effect.succeed({ content: "", truncated: false }))
+        )
       }).pipe(Effect.mapError(mapCoreError))
     )
 )

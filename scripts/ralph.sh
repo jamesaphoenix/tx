@@ -514,17 +514,47 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
   CURRENT_RUN_ID=$(create_run "$task_id" "$agent" "$metadata")
   log "Run: $CURRENT_RUN_ID"
 
-  # Run Claude in background to capture its PID for signal handling
-  claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE" &
+  # Create per-run log directory
+  local run_dir="$PROJECT_DIR/.tx/runs/$CURRENT_RUN_ID"
+  mkdir -p "$run_dir"
+
+  # Save injected context
+  echo "$prompt" > "$run_dir/context.md"
+
+  # Generate a UUID for Claude's session so we can find the transcript
+  local session_uuid
+  session_uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+  # Compute the transcript path: Claude stores sessions in
+  # ~/.claude/projects/<escaped-cwd>/<session-uuid>.jsonl
+  local escaped_cwd
+  escaped_cwd=$(echo "$PROJECT_DIR" | sed 's/[^a-zA-Z0-9]/-/g')
+  local transcript_path="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
+
+  # Run Claude in background with session ID, capture stdout + stderr to per-run files
+  claude --dangerously-skip-permissions --session-id "$session_uuid" \
+    --print "$prompt" \
+    > "$run_dir/stdout.log" \
+    2> >(tee -a "$LOG_FILE" > "$run_dir/stderr.log") &
   CLAUDE_PID=$!
 
-  # Update run record with Claude's PID for accurate orphan detection
+  # Update run record with PID and log/transcript paths
   if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
     local escaped_run_id=$(sql_escape "$CURRENT_RUN_ID")
+    local escaped_stdout_path=$(sql_escape "$run_dir/stdout.log")
+    local escaped_stderr_path=$(sql_escape "$run_dir/stderr.log")
+    local escaped_context_path=$(sql_escape "$run_dir/context.md")
+    local escaped_transcript_path=$(sql_escape "$transcript_path")
     sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
-      "UPDATE runs SET pid=$CLAUDE_PID WHERE id='$escaped_run_id';"
+      "UPDATE runs SET
+        pid=$CLAUDE_PID,
+        stdout_path='$escaped_stdout_path',
+        stderr_path='$escaped_stderr_path',
+        context_injected='$escaped_context_path',
+        transcript_path='$escaped_transcript_path'
+      WHERE id='$escaped_run_id';"
   fi
-  log "Claude PID: $CLAUDE_PID (timeout: ${TASK_TIMEOUT}s)"
+  log "Claude PID: $CLAUDE_PID, session: $session_uuid (timeout: ${TASK_TIMEOUT}s)"
 
   # Wait for Claude with timeout
   local exit_code=0
