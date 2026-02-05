@@ -1,5 +1,1 @@
 $ bun vitest run --passWithNoTests
-
- RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/agent-sdk
-
- ✓ src/client.test.ts (14 tests) 3ms

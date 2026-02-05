@@ -105,7 +105,7 @@ check_build() {
 
 check_test() {
     run_tests "Unit & Integration tests (packages)" "npx turbo test"
-    run_tests "Unit & Integration tests (root)" "npx vitest --run"
+    run_tests "Unit & Integration tests (root)" "bun test test/ eslint-plugin-tx/tests/"
 }
 
 check_test_quick() {
