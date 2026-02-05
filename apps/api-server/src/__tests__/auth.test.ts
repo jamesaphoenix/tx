@@ -143,3 +143,68 @@ describe("authMiddleware", () => {
     expect(typeof authMiddleware).toBe("function")
   })
 })
+
+// =============================================================================
+// Sensitive Info Disclosure Tests (health endpoint auth logic)
+// =============================================================================
+
+describe("sensitive info disclosure prevention", () => {
+  let originalApiKey: string | undefined
+
+  beforeEach(() => {
+    originalApiKey = process.env.TX_API_KEY
+  })
+
+  afterEach(() => {
+    if (originalApiKey === undefined) {
+      delete process.env.TX_API_KEY
+    } else {
+      process.env.TX_API_KEY = originalApiKey
+    }
+  })
+
+  /**
+   * Tests the logic used by the /health endpoint to decide whether
+   * to expose the database path. The pattern is:
+   *   showSensitive = TX_API_KEY is set AND request has valid key
+   */
+  function shouldShowSensitive(headers: Record<string, string | undefined>): boolean {
+    const apiKey = process.env.TX_API_KEY
+    if (!apiKey) return false
+
+    const providedKey = extractApiKey(headers)
+    if (!providedKey) return false
+
+    return timingSafeEqual(providedKey, apiKey)
+  }
+
+  it("should NOT expose sensitive info when auth is disabled (no TX_API_KEY)", () => {
+    delete process.env.TX_API_KEY
+    expect(shouldShowSensitive({})).toBe(false)
+  })
+
+  it("should NOT expose sensitive info when auth is disabled even with a key header", () => {
+    delete process.env.TX_API_KEY
+    expect(shouldShowSensitive({ "x-api-key": "some-key" })).toBe(false)
+  })
+
+  it("should NOT expose sensitive info when auth is enabled but no key provided", () => {
+    process.env.TX_API_KEY = "server-secret"
+    expect(shouldShowSensitive({})).toBe(false)
+  })
+
+  it("should NOT expose sensitive info when auth is enabled but wrong key provided", () => {
+    process.env.TX_API_KEY = "server-secret"
+    expect(shouldShowSensitive({ "x-api-key": "wrong-key" })).toBe(false)
+  })
+
+  it("should expose sensitive info when auth is enabled and correct key provided", () => {
+    process.env.TX_API_KEY = "server-secret"
+    expect(shouldShowSensitive({ "x-api-key": "server-secret" })).toBe(true)
+  })
+
+  it("should expose sensitive info when auth is enabled and correct Bearer token provided", () => {
+    process.env.TX_API_KEY = "server-secret"
+    expect(shouldShowSensitive({ "authorization": "Bearer server-secret" })).toBe(true)
+  })
+})

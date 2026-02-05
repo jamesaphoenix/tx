@@ -4,10 +4,11 @@
  * Implements health check and stats endpoint handlers.
  */
 
-import { HttpApiBuilder } from "@effect/platform"
+import { HttpApiBuilder, HttpServerRequest } from "@effect/platform"
 import { Effect } from "effect"
 import { TaskService, LearningService, RunRepository } from "@jamesaphoenix/tx-core"
 import { TxApi, mapCoreError } from "../api.js"
+import { extractApiKey, timingSafeEqual } from "../middleware/auth.js"
 
 // -----------------------------------------------------------------------------
 // Handler Layer
@@ -28,8 +29,18 @@ export const HealthLive = HttpApiBuilder.group(TxApi, "health", (handlers) =>
           dbConnected = false
         }
 
-        // Only expose database path when auth is not configured (dev mode)
-        const dbPath = !process.env.TX_API_KEY
+        // Only expose database path when auth is enabled AND request is authenticated
+        const showSensitive = yield* Effect.gen(function* () {
+          const apiKey = process.env.TX_API_KEY
+          if (!apiKey) return false
+
+          const request = yield* HttpServerRequest.HttpServerRequest
+          const providedKey = extractApiKey(request.headers as unknown as Record<string, string | undefined>)
+          if (!providedKey) return false
+
+          return timingSafeEqual(providedKey, apiKey)
+        })
+        const dbPath = showSensitive
           ? (process.env.TX_DB_PATH ?? ".tx/tasks.db")
           : null
 
