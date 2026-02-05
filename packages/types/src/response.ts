@@ -189,7 +189,10 @@ export const serializeTask = (task: TaskWithDeps): TaskWithDepsSerialized => ({
 
 /**
  * Serialize a Learning for JSON output.
- * Converts Date objects to ISO strings and Float32Array to number array.
+ * Converts Date objects to ISO strings.
+ * Embeddings are omitted (null) to avoid serialization overhead —
+ * Float32Array → Array.from() → JSON.stringify is expensive and
+ * external consumers never need raw embedding vectors.
  */
 export const serializeLearning = (learning: Learning): LearningSerialized => ({
   id: learning.id,
@@ -202,7 +205,7 @@ export const serializeLearning = (learning: Learning): LearningSerialized => ({
   usageCount: learning.usageCount,
   lastUsedAt: learning.lastUsedAt?.toISOString() ?? null,
   outcomeScore: learning.outcomeScore,
-  embedding: learning.embedding ? Array.from(learning.embedding) : null,
+  embedding: null,
 })
 
 /**

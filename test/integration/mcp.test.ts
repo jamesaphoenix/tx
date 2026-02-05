@@ -226,7 +226,7 @@ const serializeLearning = (learning: Learning): Record<string, unknown> => ({
   usageCount: learning.usageCount,
   lastUsedAt: learning.lastUsedAt?.toISOString() ?? null,
   outcomeScore: learning.outcomeScore,
-  embedding: learning.embedding ? Array.from(learning.embedding) : null
+  embedding: null
 })
 
 /**

@@ -26,7 +26,10 @@ type McpToolResult = { content: { type: "text"; text: string }[] }
 
 /**
  * Serialize a Learning for JSON output.
- * Converts Date objects to ISO strings and Float32Array to number array.
+ * Converts Date objects to ISO strings.
+ * Embeddings are omitted (null) to avoid serialization overhead —
+ * Float32Array → Array.from() → JSON.stringify is expensive and
+ * MCP consumers never need raw embedding vectors.
  */
 export const serializeLearning = (learning: Learning): Record<string, unknown> => ({
   id: learning.id,
@@ -39,7 +42,7 @@ export const serializeLearning = (learning: Learning): Record<string, unknown> =
   usageCount: learning.usageCount,
   lastUsedAt: learning.lastUsedAt?.toISOString() ?? null,
   outcomeScore: learning.outcomeScore,
-  embedding: learning.embedding ? Array.from(learning.embedding) : null
+  embedding: null
 })
 
 /**
