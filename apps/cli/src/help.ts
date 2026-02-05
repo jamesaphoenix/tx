@@ -68,6 +68,7 @@ Commands:
   compact                 Compact completed tasks and export learnings
   history                 View compaction history
   validate                Run pre-flight database health checks
+  doctor                  Run system diagnostics for troubleshooting
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1576,5 +1577,32 @@ Exit Codes:
 Examples:
   tx validate              # Run all checks
   tx validate --fix        # Auto-fix fixable issues
-  tx validate --json       # Machine-readable output`
+  tx validate --json       # Machine-readable output`,
+
+  doctor: `tx doctor - System diagnostics for troubleshooting
+
+Usage: tx doctor [options]
+
+Runs diagnostic checks to help troubleshoot issues:
+- Database file exists and is readable
+- WAL mode enabled
+- Schema version matches expected
+- Effect services are properly wired
+- Stale claims and workers
+- Task and learning counts
+- ANTHROPIC_API_KEY availability for LLM features
+
+Options:
+  --verbose, -v  Include detailed output for each check
+  --json         Output as JSON
+  --help         Show this help
+
+Exit Codes:
+  0        All checks pass (healthy)
+  1        One or more checks failed
+
+Examples:
+  tx doctor              # Run diagnostics
+  tx doctor --verbose    # Include detailed output
+  tx doctor --json       # Machine-readable output`
 }

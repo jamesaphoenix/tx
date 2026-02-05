@@ -29,6 +29,7 @@ import { trace } from "./commands/trace.js"
 import { claim, claimRelease, claimRenew } from "./commands/claim.js"
 import { compact, history } from "./commands/compact.js"
 import { validate } from "./commands/validate.js"
+import { doctor } from "./commands/doctor.js"
 
 // --- Argv parsing helpers ---
 
@@ -167,6 +168,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   // Validation command
   validate,
+
+  // Diagnostics command
+  doctor,
 
   // Help command
   help: (pos) =>
