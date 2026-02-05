@@ -1,1 +1,11 @@
 $ bun vitest run --passWithNoTests
+
+ RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/agent-sdk
+
+ ✓ src/client.test.ts (14 tests) 2ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  23:32:21
+   Duration  894ms (transform 185ms, setup 0ms, collect 562ms, tests 2ms, environment 0ms, prepare 99ms)
+
