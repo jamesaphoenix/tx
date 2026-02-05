@@ -4,7 +4,7 @@
  * Tests safeStringify and response formatters, including circular reference handling.
  */
 import { describe, it, expect, vi } from "vitest"
-import { safeStringify, mcpResponse, mcpError, classifyError, extractErrorMessage, buildStructuredError, handleToolError } from "../../apps/mcp-server/src/response.js"
+import { safeStringify, mcpResponse, mcpError, classifyError, extractErrorMessage, buildStructuredError, handleToolError, formatErrorWithStack } from "../../apps/mcp-server/src/response.js"
 import { Data } from "effect"
 
 // -----------------------------------------------------------------------------
@@ -350,6 +350,92 @@ describe("buildStructuredError", () => {
 
     expect(result.errorType).toBe("TaskNotFoundError")
     expect(result.message).toBe("Task not found: tx-abc123")
+  })
+})
+
+// -----------------------------------------------------------------------------
+// formatErrorWithStack Tests
+// -----------------------------------------------------------------------------
+
+describe("formatErrorWithStack", () => {
+  it("preserves stack trace from Error instances", () => {
+    const error = new Error("something broke")
+    const result = formatErrorWithStack(error)
+
+    expect(result).toContain("something broke")
+    expect(result).toContain("Error: something broke")
+    // Stack trace should include file location
+    expect(result).toContain("at ")
+  })
+
+  it("falls back to name + message when Error has no stack", () => {
+    const error = new Error("no stack")
+    error.stack = undefined
+    const result = formatErrorWithStack(error)
+
+    expect(result).toBe("Error: no stack")
+  })
+
+  it("preserves stack from Error subclasses", () => {
+    class DatabaseError extends Error {
+      constructor(message: string) {
+        super(message)
+        this.name = "DatabaseError"
+      }
+    }
+
+    const error = new DatabaseError("connection refused")
+    const result = formatErrorWithStack(error)
+
+    expect(result).toContain("connection refused")
+    expect(result).toContain("at ")
+  })
+
+  it("formats Effect-TS tagged errors with _tag", () => {
+    class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
+      readonly id: string
+    }> {
+      get message() { return `Task not found: ${this.id}` }
+    }
+
+    const error = new TaskNotFoundError({ id: "tx-abc123" })
+    const result = formatErrorWithStack(error)
+
+    // TaggedError extends Error so has a stack
+    expect(result).toContain("Task not found: tx-abc123")
+    expect(result).toContain("at ")
+  })
+
+  it("formats plain objects with _tag", () => {
+    const error = { _tag: "CustomError", message: "custom problem" }
+    const result = formatErrorWithStack(error)
+
+    expect(result).toContain("CustomError")
+    expect(result).toContain("custom problem")
+  })
+
+  it("formats plain objects without _tag", () => {
+    const error = { code: "ECONNREFUSED", port: 5432 }
+    const result = formatErrorWithStack(error)
+
+    expect(result).toContain("UnknownError")
+    expect(result).toContain("ECONNREFUSED")
+  })
+
+  it("converts string errors to string", () => {
+    expect(formatErrorWithStack("raw string error")).toBe("raw string error")
+  })
+
+  it("converts number errors to string", () => {
+    expect(formatErrorWithStack(42)).toBe("42")
+  })
+
+  it("converts null to string", () => {
+    expect(formatErrorWithStack(null)).toBe("null")
+  })
+
+  it("converts undefined to string", () => {
+    expect(formatErrorWithStack(undefined)).toBe("undefined")
   })
 })
 

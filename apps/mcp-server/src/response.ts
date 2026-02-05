@@ -75,6 +75,45 @@ export const classifyError = (error: unknown): string => {
  */
 export const extractErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message
+  if (error !== null && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message
+  }
+  return String(error)
+}
+
+// -----------------------------------------------------------------------------
+// Stack Trace Preservation
+// -----------------------------------------------------------------------------
+
+/**
+ * Format an error with its full stack trace preserved.
+ * Handles Error instances, Effect-TS tagged errors, and arbitrary thrown values.
+ *
+ * - Effect-TS tagged errors: replaces generic "Error" header with _tag + message, preserves stack
+ * - Error instances: uses `.stack` (which includes name + message + trace)
+ * - Objects without stack: uses classifyError + extractErrorMessage + safeStringify
+ * - Primitives: converts to string
+ */
+export const formatErrorWithStack = (error: unknown): string => {
+  // Effect-TS tagged errors: _tag check before instanceof Error
+  // because TaggedError extends Error but .stack header is generic "Error"
+  if (error !== null && typeof error === "object" && "_tag" in error && typeof error._tag === "string") {
+    const tag = error._tag
+    const message = extractErrorMessage(error)
+    if (error instanceof Error && error.stack) {
+      // Replace the generic "Error" first line with tag: message
+      const lines = error.stack.split("\n")
+      lines[0] = `${tag}: ${message}`
+      return lines.join("\n")
+    }
+    return `${tag}: ${message}`
+  }
+  if (error instanceof Error) {
+    return error.stack ?? `${error.name}: ${error.message}`
+  }
+  if (error !== null && typeof error === "object") {
+    return `${classifyError(error)}: ${extractErrorMessage(error)}\n${safeStringify(error)}`
+  }
   return String(error)
 }
 

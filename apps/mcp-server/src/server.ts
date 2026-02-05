@@ -16,11 +16,12 @@ import { initRuntime, disposeRuntime } from "./runtime.js"
 import { registerTaskTools } from "./tools/task.js"
 import { registerLearningTools } from "./tools/learning.js"
 import { registerSyncTools } from "./tools/sync.js"
+import { formatErrorWithStack } from "./response.js"
 
 // Re-export for library consumers
 export { initRuntime, disposeRuntime, runEffect, getRuntime } from "./runtime.js"
 export type { McpServices } from "./runtime.js"
-export { mcpResponse, mcpError, handleToolError, classifyError, buildStructuredError, logToolError, extractErrorMessage } from "./response.js"
+export { mcpResponse, mcpError, handleToolError, classifyError, buildStructuredError, logToolError, extractErrorMessage, formatErrorWithStack } from "./response.js"
 export type { McpContent, McpResponse, StructuredError } from "./response.js"
 export { registerTaskTools, serializeTask } from "./tools/task.js"
 export { registerLearningTools, serializeLearning, serializeLearningWithScore, serializeFileLearning } from "./tools/learning.js"
@@ -99,16 +100,14 @@ export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => 
       // Close the MCP server connection
       await server.close()
     } catch (error) {
-      // Log error but continue shutdown
-      console.error(`MCP server close error during ${signal}:`, error)
+      console.error(`MCP server close error during ${signal}:\n${formatErrorWithStack(error)}`)
     }
 
     try {
       // Dispose of the Effect runtime (releases database connections)
       await disposeRuntime()
     } catch (error) {
-      // Log error but continue shutdown
-      console.error(`Runtime dispose error during ${signal}:`, error)
+      console.error(`Runtime dispose error during ${signal}:\n${formatErrorWithStack(error)}`)
     }
 
     process.exit(0)
@@ -166,6 +165,6 @@ Environment:
 
 // Run if executed directly
 main().catch((error) => {
-  console.error("Fatal error:", error)
+  console.error(`Fatal error:\n${formatErrorWithStack(error)}`)
   process.exit(1)
 })
