@@ -7,31 +7,7 @@ import { TaskService, ReadyService, AttemptService } from "@jamesaphoenix/tx-cor
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx-types"
 import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
-
-function parseIntOpt(flags: Flags, flagName: string, ...names: string[]): number | undefined {
-  const val = opt(flags, ...names)
-  if (val === undefined) return undefined
-  const parsed = parseInt(val, 10)
-  if (Number.isNaN(parsed)) {
-    console.error(`Invalid value for --${flagName}: "${val}" is not a valid number`)
-    process.exit(1)
-  }
-  return parsed
-}
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 
 export const add = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {

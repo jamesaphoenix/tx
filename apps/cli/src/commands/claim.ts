@@ -10,20 +10,7 @@ import { Effect } from "effect"
 import { ClaimService } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, parseIntOpt } from "../utils/parse.js"
 
 /**
  * Claim a task for a worker with a lease.
@@ -48,12 +35,7 @@ export const claim = (pos: string[], flags: Flags) =>
       process.exit(1)
     }
 
-    const leaseOpt = opt(flags, "lease")
-    const leaseMinutes = leaseOpt ? parseInt(leaseOpt, 10) : undefined
-    if (leaseMinutes !== undefined && Number.isNaN(leaseMinutes)) {
-      console.error(`Invalid value for --lease: "${leaseOpt}" is not a valid number`)
-      process.exit(1)
-    }
+    const leaseMinutes = parseIntOpt(flags, "lease", "lease")
 
     const svc = yield* ClaimService
     const claim = yield* svc.claim(taskId as TaskId, workerId, leaseMinutes)

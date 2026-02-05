@@ -8,20 +8,7 @@ import { Effect } from "effect"
 import { getCacheStats, clearCache, formatCacheStats, ClearCacheOptions } from "@jamesaphoenix/tx-test-utils"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 
 /**
  * Parse duration string like "30d" to milliseconds
@@ -109,14 +96,9 @@ export const testClearCache = (_pos: string[], flags: Flags) =>
     }
 
     // --version <n>
-    const version = opt(flags, "version")
-    if (version) {
-      const v = parseInt(version, 10)
-      if (isNaN(v)) {
-        console.error(`Invalid version: ${version} (must be a number)`)
-        process.exit(1)
-      }
-      options.version = v
+    const versionVal = parseIntOpt(flags, "version", "version")
+    if (versionVal !== undefined) {
+      options.version = versionVal
     }
 
     // Require at least one option

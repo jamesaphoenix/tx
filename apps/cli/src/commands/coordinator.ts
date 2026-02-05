@@ -10,20 +10,7 @@ import { Effect } from "effect"
 import { OrchestratorService, type OrchestratorConfig } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, parseIntOpt } from "../utils/parse.js"
 
 export const coordinator = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -47,15 +34,10 @@ export const coordinator = (pos: string[], flags: Flags) =>
 
     if (subcommand === "start") {
       // Parse options
-      const workersOpt = opt(flags, "workers", "w")
-      let workers: number | undefined = undefined
-      if (workersOpt) {
-        const parsed = parseInt(workersOpt, 10)
-        if (Number.isNaN(parsed) || parsed < 1) {
-          console.error(`Invalid workers value: '${workersOpt}'. Must be a positive integer.`)
-          process.exit(1)
-        }
-        workers = parsed
+      const workers = parseIntOpt(flags, "workers", "workers", "w")
+      if (workers !== undefined && workers < 1) {
+        console.error(`Invalid workers value: '${workers}'. Must be a positive integer.`)
+        process.exit(1)
       }
       const isDaemon = flag(flags, "daemon", "d")
 

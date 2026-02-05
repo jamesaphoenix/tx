@@ -10,31 +10,7 @@ import { LearningService, FileLearningService, RetrieverService, TaskService, Re
 import type { LearningSourceType, TaskId, EdgeType } from "@jamesaphoenix/tx-types"
 import { toJson, formatContextMarkdown } from "../output.js"
 import { commandHelp } from "../help.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
-
-function parseFloatOpt(flags: Flags, flagName: string, defaultValue: number, ...names: string[]): number {
-  const val = opt(flags, ...names)
-  if (val === undefined) return defaultValue
-  const parsed = parseFloat(val)
-  if (Number.isNaN(parsed)) {
-    console.error(`Invalid value for --${flagName}: "${val}" is not a valid number`)
-    process.exit(1)
-  }
-  return parsed
-}
+import { type Flags, flag, opt, parseIntOpt, parseFloatOpt } from "../utils/parse.js"
 
 export const learningAdd = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -79,12 +55,12 @@ export const learningSearch = (pos: string[], flags: Flags) =>
     }
 
     const svc = yield* LearningService
-    const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
-    const minScore = parseFloatOpt(flags, "min-score", 0.3, "min-score")
+    const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
+    const minScore = parseFloatOpt(flags, "min-score", "min-score") ?? 0.3
 
     // Graph expansion options
     const expand = flag(flags, "expand")
-    const depth = opt(flags, "depth") ? parseInt(opt(flags, "depth")!, 10) : 2
+    const depth = parseIntOpt(flags, "depth", "depth") ?? 2
     const edgeTypes = parseEdgeTypes(opt(flags, "edge-types"))
 
     const graphExpansion = expand
@@ -114,7 +90,7 @@ export const learningSearch = (pos: string[], flags: Flags) =>
 export const learningRecent = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const svc = yield* LearningService
-    const limit = opt(flags, "limit", "n") ? parseInt(opt(flags, "limit", "n")!, 10) : 10
+    const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
 
     const learnings = yield* svc.getRecent(limit)
 
@@ -149,7 +125,7 @@ export const learningHelpful = (pos: string[], flags: Flags) =>
     }
 
     const svc = yield* LearningService
-    const score = parseFloatOpt(flags, "score", 1.0, "score")
+    const score = parseFloatOpt(flags, "score", "score") ?? 1.0
 
     yield* svc.updateOutcome(id, score)
     const learning = yield* svc.get(id)
@@ -201,7 +177,7 @@ export const context = (pos: string[], flags: Flags) =>
 
     // Graph expansion options
     const expand = flag(flags, "expand")
-    const depth = opt(flags, "depth") ? parseInt(opt(flags, "depth")!, 10) : 2
+    const depth = parseIntOpt(flags, "depth", "depth") ?? 2
     const edgeTypes = parseEdgeTypes(opt(flags, "edge-types"))
 
     // If custom retriever is specified, load it and use it for direct search

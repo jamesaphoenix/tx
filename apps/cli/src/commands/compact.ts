@@ -7,20 +7,7 @@
 import { Effect } from "effect"
 import { CompactionService } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, opt } from "../utils/parse.js"
 
 /**
  * Parse a date string into a Date object.

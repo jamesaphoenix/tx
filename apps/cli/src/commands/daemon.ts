@@ -18,20 +18,7 @@ import {
 import { CANDIDATE_CONFIDENCES, SOURCE_TYPES, type CandidateConfidence, type SourceType, type TranscriptChunk } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 
 /**
  * Format uptime in milliseconds to a human-readable string.
@@ -437,14 +424,10 @@ export const daemon = (pos: string[], flags: Flags) =>
       }
 
       // Parse --limit flag
-      const limitOpt = opt(flags, "limit", "l")
-      let limit: number | undefined
-      if (limitOpt) {
-        limit = parseInt(limitOpt, 10)
-        if (isNaN(limit) || limit <= 0) {
-          console.error(`Invalid limit: ${limitOpt}`)
-          process.exit(1)
-        }
+      const limit = parseIntOpt(flags, "limit", "limit", "l")
+      if (limit !== undefined && limit <= 0) {
+        console.error(`Invalid limit: ${limit}`)
+        process.exit(1)
       }
 
       // Query pending candidates

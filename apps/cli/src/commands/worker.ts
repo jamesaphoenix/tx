@@ -8,20 +8,7 @@ import { Effect } from "effect"
 import { WorkerService, runWorkerProcess, type WorkerProcessConfig, type WorkerType } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 
 /**
  * Format a worker for display.
@@ -79,15 +66,14 @@ export const worker = (pos: string[], flags: Flags) =>
         ? capabilitiesOpt.split(",").map(c => c.trim())
         : ["tx-implementer"]
 
-      const heartbeatOpt = opt(flags, "heartbeat")
+      const heartbeatParsed = parseIntOpt(flags, "heartbeat", "heartbeat")
       let heartbeatIntervalSeconds = 30
-      if (heartbeatOpt) {
-        const parsed = parseInt(heartbeatOpt, 10)
-        if (Number.isNaN(parsed) || parsed < 1) {
-          console.error(`Invalid heartbeat value: '${heartbeatOpt}'. Must be a positive integer.`)
+      if (heartbeatParsed !== undefined) {
+        if (heartbeatParsed < 1) {
+          console.error(`Invalid heartbeat value: '${heartbeatParsed}'. Must be a positive integer.`)
           process.exit(1)
         }
-        heartbeatIntervalSeconds = parsed
+        heartbeatIntervalSeconds = heartbeatParsed
       }
 
       // Build config

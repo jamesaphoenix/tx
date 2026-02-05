@@ -9,20 +9,7 @@ import { Effect } from "effect"
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { toJson } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 
 /** Default configuration for .txrc */
 export interface TxrcConfig {
@@ -231,18 +218,15 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
     let config = readTxrc(projectDir)
 
     // Apply CLI options
-    const threshold = opt(flags, "threshold", "t")
+    const thresholdVal = parseIntOpt(flags, "threshold", "threshold", "t")
     const highValue = opt(flags, "high-value", "h")
 
     if (!config.hooks) {
       config.hooks = {}
     }
 
-    if (threshold) {
-      const n = parseInt(threshold, 10)
-      if (!isNaN(n) && n > 0) {
-        config.hooks.fileThreshold = n
-      }
+    if (thresholdVal !== undefined && thresholdVal > 0) {
+      config.hooks.fileThreshold = thresholdVal
     }
 
     if (highValue) {

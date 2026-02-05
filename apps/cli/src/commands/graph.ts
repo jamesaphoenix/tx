@@ -7,20 +7,7 @@ import { Effect } from "effect"
 import { AnchorService, EdgeService } from "@jamesaphoenix/tx-core"
 import type { AnchorType, EdgeType, NodeType } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 
 /**
  * tx graph:verify [--file <path>] [--all] [--json]
@@ -442,9 +429,8 @@ export const graphNeighbors = (pos: string[], flags: Flags) =>
       process.exit(1)
     }
 
-    const depthStr = opt(flags, "depth", "d")
-    const depth = depthStr !== undefined ? parseInt(depthStr, 10) : 2
-    if (isNaN(depth) || depth < 1) {
+    const depth = parseIntOpt(flags, "depth", "depth", "d") ?? 2
+    if (depth < 1) {
       console.error("Error: Depth must be a positive integer")
       process.exit(1)
     }

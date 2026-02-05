@@ -17,20 +17,7 @@ import {
 import type { Run, RunId } from "@jamesaphoenix/tx-types"
 import { toJson, truncate } from "../output.js"
 import { commandHelp } from "../help.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
-
-function opt(flags: Flags, ...names: string[]): string | undefined {
-  for (const n of names) {
-    const v = flags[n]
-    if (typeof v === "string") return v
-  }
-  return undefined
-}
+import { type Flags, flag, parseIntOpt } from "../utils/parse.js"
 
 /**
  * Calculate relative time string (e.g., "2h ago", "3d ago").
@@ -90,18 +77,8 @@ export const traceList = (_pos: string[], flags: Flags) =>
     const db = yield* SqliteClient
 
     // Parse options
-    const limitOpt = opt(flags, "limit", "n")
-    const limit = limitOpt ? parseInt(limitOpt, 10) : 20
-    if (Number.isNaN(limit)) {
-      console.error(`Invalid value for --limit: "${limitOpt}" is not a valid number`)
-      process.exit(1)
-    }
-    const hoursOpt = opt(flags, "hours")
-    const hours = hoursOpt ? parseInt(hoursOpt, 10) : 24
-    if (Number.isNaN(hours)) {
-      console.error(`Invalid value for --hours: "${hoursOpt}" is not a valid number`)
-      process.exit(1)
-    }
+    const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 20
+    const hours = parseIntOpt(flags, "hours", "hours") ?? 24
 
     // Get recent runs - for now we'll get more than needed and filter by time
     // A more efficient approach would be to add a time-filtered query to RunRepository
@@ -631,18 +608,8 @@ export const traceErrors = (_pos: string[], flags: Flags) =>
     const db = yield* SqliteClient
 
     // Parse options
-    const limitOpt = opt(flags, "limit", "n")
-    const limit = limitOpt ? parseInt(limitOpt, 10) : 20
-    if (Number.isNaN(limit)) {
-      console.error(`Invalid value for --limit: "${limitOpt}" is not a valid number`)
-      process.exit(1)
-    }
-    const hoursOpt = opt(flags, "hours")
-    const hours = hoursOpt ? parseInt(hoursOpt, 10) : 24
-    if (Number.isNaN(hours)) {
-      console.error(`Invalid value for --hours: "${hoursOpt}" is not a valid number`)
-      process.exit(1)
-    }
+    const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 20
+    const hours = parseIntOpt(flags, "hours", "hours") ?? 24
 
     const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
     const errors: ErrorEntry[] = []
