@@ -13,7 +13,14 @@ import { WorkerService } from "./worker-service.js"
 import { ClaimService } from "./claim-service.js"
 import { ReadyService } from "./ready-service.js"
 import { TaskService } from "./task-service.js"
+import { AttemptService } from "./attempt-service.js"
 import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
+
+/**
+ * Maximum number of failed attempts before a task is marked as blocked.
+ * After this many failures, the task will not be retried automatically.
+ */
+const MAX_RETRIES = 3
 
 /**
  * Configuration for the worker process.
@@ -83,6 +90,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
     const claimService = yield* ClaimService
     const readyService = yield* ReadyService
     const taskService = yield* TaskService
+    const attemptService = yield* AttemptService
 
     // Mutable worker state (shared with signal handlers and heartbeat fiber via closure)
     // Using plain object instead of Effect Ref to avoid Effect.runSync in signal handlers
@@ -221,9 +229,56 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
             yield* Ref.update(tasksCompletedRef, (n) => n + 1)
             yield* Effect.log(`Task ${task.id} completed successfully`)
           } else {
-            yield* Effect.log(
-              `Task ${task.id} failed: ${result.error ?? "Unknown error"}`
-            )
+            // Record the failure attempt
+            yield* attemptService
+              .create(
+                task.id,
+                agent,
+                "failed",
+                result.error ?? "Unknown error"
+              )
+              .pipe(
+                Effect.catchAll((error) =>
+                  Effect.log(
+                    `Failed to record attempt for task ${task.id}: ${error.message}`
+                  )
+                )
+              )
+
+            // Check if max retries exceeded
+            const failedCount = yield* attemptService
+              .getFailedCount(task.id)
+              .pipe(Effect.catchAll(() => Effect.succeed(0)))
+
+            if (failedCount >= MAX_RETRIES) {
+              // Circuit breaker: mark task as blocked to stop infinite retries
+              yield* taskService
+                .update(task.id, { status: "blocked" })
+                .pipe(
+                  Effect.catchAll((error) =>
+                    Effect.log(
+                      `Failed to block task ${task.id}: ${error.message}`
+                    )
+                  )
+                )
+              yield* Effect.log(
+                `Task ${task.id} failed ${failedCount} times (max: ${MAX_RETRIES}), marked blocked`
+              )
+            } else {
+              // Reset to backlog so task can be retried by another worker
+              yield* taskService
+                .update(task.id, { status: "backlog" })
+                .pipe(
+                  Effect.catchAll((error) =>
+                    Effect.log(
+                      `Failed to reset task ${task.id} status: ${error.message}`
+                    )
+                  )
+                )
+              yield* Effect.log(
+                `Task ${task.id} failed (attempt ${failedCount}/${MAX_RETRIES}): ${result.error ?? "Unknown error"}`
+              )
+            }
           }
 
           // Release the claim with retry logic

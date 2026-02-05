@@ -23,6 +23,7 @@ import {
   ClaimService,
   ReadyService,
   TaskService,
+  AttemptService,
   OrchestratorStateRepository
 } from "@jamesaphoenix/tx-core"
 
@@ -757,6 +758,191 @@ describe("WorkerProcess Integration Tests", () => {
       )
 
       expect(result.worker.id).toBeDefined()
+    })
+
+    it("should record failure attempt and reset task to backlog below max retries", async () => {
+      // Simulates what runWorkerProcess does when Claude subprocess fails:
+      // 1. Records a failed attempt via AttemptService
+      // 2. Checks failed count < MAX_RETRIES (3)
+      // 3. Resets task to 'backlog' so it can be retried
+      const testFailureTracking = Effect.gen(function* () {
+        const orchestratorRepo = yield* OrchestratorStateRepository
+        const workerService = yield* WorkerService
+        const taskService = yield* TaskService
+        const claimService = yield* ClaimService
+        const attemptService = yield* AttemptService
+
+        // Set up orchestrator
+        yield* orchestratorRepo.update({
+          status: "running",
+          workerPoolSize: 5,
+          leaseDurationMinutes: 30
+        })
+
+        // Create task
+        const createdTask = yield* taskService.create({
+          title: "Task that will fail once",
+          score: 500
+        })
+        const taskId = createdTask.id
+
+        // Register worker and claim task
+        const worker = yield* workerService.register({
+          name: "failure-tracking-worker",
+          capabilities: ["tx-implementer"]
+        })
+
+        yield* claimService.claim(taskId, worker.id)
+
+        // Simulate failure: record attempt (what worker-process.ts now does)
+        yield* attemptService.create(taskId, "tx-implementer", "failed", "Exit code 1")
+
+        // Check failed count
+        const failedCount = yield* attemptService.getFailedCount(taskId)
+        expect(failedCount).toBe(1)
+
+        // Below MAX_RETRIES (3), reset to backlog
+        yield* taskService.update(taskId, { status: "backlog" })
+
+        // Release claim
+        yield* claimService.release(taskId, worker.id)
+
+        // Verify task is back in backlog for retry
+        const task = yield* taskService.get(taskId)
+        expect(task.status).toBe("backlog")
+
+        // Verify attempt was recorded
+        const attempts = yield* attemptService.listForTask(taskId)
+        expect(attempts.length).toBe(1)
+        expect(attempts[0].outcome).toBe("failed")
+        expect(attempts[0].approach).toBe("tx-implementer")
+        expect(attempts[0].reason).toBe("Exit code 1")
+
+        return { taskId, failedCount }
+      })
+
+      const result = await Effect.runPromise(
+        testFailureTracking.pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.failedCount).toBe(1)
+    })
+
+    it("should mark task as blocked after max retries exceeded", async () => {
+      // Simulates the circuit breaker: after 3 failed attempts,
+      // the task is marked 'blocked' to stop infinite retries.
+      const testMaxRetries = Effect.gen(function* () {
+        const orchestratorRepo = yield* OrchestratorStateRepository
+        const workerService = yield* WorkerService
+        const taskService = yield* TaskService
+        const claimService = yield* ClaimService
+        const attemptService = yield* AttemptService
+
+        // Set up orchestrator
+        yield* orchestratorRepo.update({
+          status: "running",
+          workerPoolSize: 5,
+          leaseDurationMinutes: 30
+        })
+
+        // Create task
+        const createdTask = yield* taskService.create({
+          title: "Task that will exhaust retries",
+          score: 500
+        })
+        const taskId = createdTask.id
+
+        // Register worker
+        const worker = yield* workerService.register({
+          name: "max-retry-worker",
+          capabilities: ["tx-implementer"]
+        })
+
+        // Simulate 3 failed attempts (MAX_RETRIES = 3)
+        for (let i = 0; i < 3; i++) {
+          yield* claimService.claim(taskId, worker.id)
+          yield* attemptService.create(
+            taskId,
+            "tx-implementer",
+            "failed",
+            `Failure ${i + 1}`
+          )
+          yield* claimService.release(taskId, worker.id)
+        }
+
+        // Check failed count matches max
+        const failedCount = yield* attemptService.getFailedCount(taskId)
+        expect(failedCount).toBe(3)
+
+        // On the 3rd failure, worker-process would mark as blocked
+        yield* taskService.update(taskId, { status: "blocked" })
+
+        // Verify task is blocked
+        const task = yield* taskService.get(taskId)
+        expect(task.status).toBe("blocked")
+
+        // Verify all 3 attempts were recorded
+        const attempts = yield* attemptService.listForTask(taskId)
+        expect(attempts.length).toBe(3)
+        expect(attempts.every((a) => a.outcome === "failed")).toBe(true)
+
+        return { taskId, failedCount }
+      })
+
+      const result = await Effect.runPromise(
+        testMaxRetries.pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.failedCount).toBe(3)
+    })
+
+    it("should track failure visibility with attempt counts per task", async () => {
+      // Tests the batch query for failed counts across multiple tasks,
+      // which enables dashboard visibility into failure patterns.
+      const testFailureVisibility = Effect.gen(function* () {
+        const orchestratorRepo = yield* OrchestratorStateRepository
+        const taskService = yield* TaskService
+        const attemptService = yield* AttemptService
+
+        yield* orchestratorRepo.update({
+          status: "running",
+          workerPoolSize: 5,
+          leaseDurationMinutes: 30
+        })
+
+        // Create two tasks with different failure counts
+        const task1 = yield* taskService.create({
+          title: "Task with 2 failures",
+          score: 500
+        })
+        const task2 = yield* taskService.create({
+          title: "Task with 1 failure",
+          score: 400
+        })
+
+        // Record failures
+        yield* attemptService.create(task1.id, "tx-implementer", "failed", "Error A")
+        yield* attemptService.create(task1.id, "tx-implementer", "failed", "Error B")
+        yield* attemptService.create(task2.id, "tx-tester", "failed", "Test error")
+
+        // Batch query for failure counts
+        const failedCounts = yield* attemptService.getFailedCountsForTasks([
+          task1.id,
+          task2.id
+        ])
+
+        expect(failedCounts.get(task1.id)).toBe(2)
+        expect(failedCounts.get(task2.id)).toBe(1)
+
+        return { task1Id: task1.id, task2Id: task2.id, failedCounts }
+      })
+
+      const result = await Effect.runPromise(
+        testFailureVisibility.pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.failedCounts.get(result.task1Id)).toBe(2)
+      expect(result.failedCounts.get(result.task2Id)).toBe(1)
     })
   })
 
