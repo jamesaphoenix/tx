@@ -190,6 +190,12 @@ check_write_safety() {
   local resolved_path
   resolved_path=$(realpath -m "$abs_path" 2>/dev/null || echo "$abs_path")
 
+  # Allow writes to ~/.claude/ (plans, settings, memory, etc.)
+  local claude_dir="$HOME/.claude"
+  if [[ "$resolved_path" == "$claude_dir"* ]]; then
+    return 0
+  fi
+
   # Block: Operations outside project directory
   if [[ "$resolved_path" != "$PROJECT_DIR_ABS"* ]]; then
     deny "Blocked: File path is outside the project directory. Path: $path. Operations must stay within $PROJECT_DIR_ABS."

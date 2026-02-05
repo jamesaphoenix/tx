@@ -24,6 +24,12 @@ export interface QueryExpansionResult {
   readonly wasExpanded: boolean
 }
 
+/** Maximum number of expanded queries (excluding original) to prevent unbounded generation */
+export const MAX_EXPANSION_QUERIES = 5
+
+/** Maximum character length for any single expanded query */
+export const MAX_QUERY_LENGTH = 200
+
 // Types for Anthropic SDK (imported dynamically)
 interface AnthropicMessage {
   content: Array<{ type: string; text?: string }>
@@ -112,6 +118,30 @@ const parseLlmJson = <T>(raw: string): T | null => {
 }
 
 /**
+ * Validate and limit expanded query alternatives.
+ * Filters out empty, overly long, duplicate, and non-string entries,
+ * then caps the total number of expansions.
+ *
+ * @returns Array with original query first, followed by up to MAX_EXPANSION_QUERIES alternatives
+ */
+export const validateExpansions = (
+  query: string,
+  alternatives: unknown[]
+): string[] => {
+  const uniqueAlternatives = [...new Set(
+    alternatives
+      .filter((alt): alt is string => typeof alt === "string" && alt.trim().length > 0)
+      .map(alt => alt.trim())
+      .filter(alt => alt.length <= MAX_QUERY_LENGTH)
+  )]
+
+  return [query, ...uniqueAlternatives
+    .filter(alt => alt.toLowerCase() !== query.toLowerCase())
+    .slice(0, MAX_EXPANSION_QUERIES)
+  ]
+}
+
+/**
  * Noop implementation - returns original query only.
  * Used when ANTHROPIC_API_KEY is not set or LLM features are disabled.
  */
@@ -194,20 +224,13 @@ export const QueryExpansionServiceLive = Layer.effect(
             return { original: query, expanded: [query], wasExpanded: false }
           }
 
-          // Filter out empty strings and duplicates
-          const uniqueAlternatives = [...new Set(
-            alternatives
-              .filter((alt): alt is string => typeof alt === "string" && alt.trim().length > 0)
-              .map(alt => alt.trim())
-          )]
-
-          // Always include original query first
-          const expanded = [query, ...uniqueAlternatives.filter(alt => alt.toLowerCase() !== query.toLowerCase())]
+          // Validate and limit expansion results
+          const expanded = validateExpansions(query, alternatives)
 
           return {
             original: query,
             expanded,
-            wasExpanded: true
+            wasExpanded: expanded.length > 1
           }
         }),
 

@@ -3,7 +3,10 @@ import { Effect } from "effect"
 import {
   QueryExpansionService,
   QueryExpansionServiceNoop,
-  QueryExpansionServiceAuto
+  QueryExpansionServiceAuto,
+  validateExpansions,
+  MAX_EXPANSION_QUERIES,
+  MAX_QUERY_LENGTH
 } from "@jamesaphoenix/tx-core"
 
 describe("QueryExpansionService", () => {
@@ -132,5 +135,76 @@ describe("Query expansion graceful degradation", () => {
     )
 
     expect(result.original).toBe("search query")
+  })
+})
+
+describe("validateExpansions", () => {
+  it("includes original query first", () => {
+    const result = validateExpansions("my query", ["alt1", "alt2"])
+    expect(result[0]).toBe("my query")
+  })
+
+  it("includes valid alternatives after original", () => {
+    const result = validateExpansions("my query", ["alt1", "alt2"])
+    expect(result).toEqual(["my query", "alt1", "alt2"])
+  })
+
+  it("caps alternatives at MAX_EXPANSION_QUERIES", () => {
+    const manyAlternatives = Array.from({ length: 50 }, (_, i) => `alternative ${i}`)
+    const result = validateExpansions("my query", manyAlternatives)
+
+    // original + MAX_EXPANSION_QUERIES
+    expect(result.length).toBe(1 + MAX_EXPANSION_QUERIES)
+    expect(result[0]).toBe("my query")
+  })
+
+  it("filters out queries exceeding MAX_QUERY_LENGTH", () => {
+    const longQuery = "a".repeat(MAX_QUERY_LENGTH + 1)
+    const result = validateExpansions("my query", [longQuery, "short"])
+    expect(result).toEqual(["my query", "short"])
+  })
+
+  it("allows queries at exactly MAX_QUERY_LENGTH", () => {
+    const exactLength = "a".repeat(MAX_QUERY_LENGTH)
+    const result = validateExpansions("my query", [exactLength])
+    expect(result).toEqual(["my query", exactLength])
+  })
+
+  it("filters out empty strings", () => {
+    const result = validateExpansions("my query", ["", "  ", "valid"])
+    expect(result).toEqual(["my query", "valid"])
+  })
+
+  it("filters out non-string values", () => {
+    const result = validateExpansions("my query", [42, null, undefined, true, "valid"] as unknown[])
+    expect(result).toEqual(["my query", "valid"])
+  })
+
+  it("deduplicates alternatives", () => {
+    const result = validateExpansions("my query", ["dup", "dup", "dup", "other"])
+    expect(result).toEqual(["my query", "dup", "other"])
+  })
+
+  it("removes alternatives that match original (case-insensitive)", () => {
+    const result = validateExpansions("My Query", ["MY QUERY", "my query", "different"])
+    expect(result).toEqual(["My Query", "different"])
+  })
+
+  it("trims whitespace from alternatives", () => {
+    const result = validateExpansions("my query", ["  padded  ", "  spaced  "])
+    expect(result).toEqual(["my query", "padded", "spaced"])
+  })
+
+  it("returns only original when alternatives is empty", () => {
+    const result = validateExpansions("my query", [])
+    expect(result).toEqual(["my query"])
+  })
+
+  it("handles hundreds of alternatives without issue", () => {
+    const hugeList = Array.from({ length: 500 }, (_, i) => `query variant ${i}`)
+    const result = validateExpansions("original", hugeList)
+
+    expect(result.length).toBe(1 + MAX_EXPANSION_QUERIES)
+    expect(result[0]).toBe("original")
   })
 })

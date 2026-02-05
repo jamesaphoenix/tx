@@ -29,6 +29,9 @@ export {
   QueryExpansionServiceLive,
   QueryExpansionServiceAuto,
   QueryExpansionUnavailableError,
+  MAX_EXPANSION_QUERIES,
+  MAX_QUERY_LENGTH,
+  validateExpansions,
   type QueryExpansionResult
 } from "./query-expansion-service.js"
 export {

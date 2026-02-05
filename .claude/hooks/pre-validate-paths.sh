@@ -39,6 +39,13 @@ fi
 # Resolve symlinks and normalize path
 RESOLVED_PATH=$(realpath -m "$ABS_PATH" 2>/dev/null || echo "$ABS_PATH")
 
+# Allowlisted paths outside project (Claude Code internal directories)
+CLAUDE_DIR="$HOME/.claude"
+if [[ "$RESOLVED_PATH" == "$CLAUDE_DIR"* ]]; then
+  # Allow writes to ~/.claude/ (plans, settings, memory, etc.)
+  exit 0
+fi
+
 # Check if path is within project directory
 if [[ "$RESOLVED_PATH" != "$PROJECT_DIR_ABS"* ]]; then
   # Path is outside project
