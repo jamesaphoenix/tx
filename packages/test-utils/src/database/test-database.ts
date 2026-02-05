@@ -71,6 +71,7 @@ export const createTestDatabase = (): Effect.Effect<TestDatabase, Error> =>
       // Enable WAL mode for better concurrent access (matches production settings)
       db.run("PRAGMA journal_mode = WAL")
       db.run("PRAGMA foreign_keys = ON")
+      db.run("PRAGMA busy_timeout = " + (process.env.TX_DB_BUSY_TIMEOUT || "5000"))
 
       // Run all migrations
       applyMigrations(db)

@@ -359,6 +359,7 @@ describe("API Contract Validator", () => {
     const now = new Date().toISOString()
     const cliDb = new Database(dbPath)
     cliDb.exec("PRAGMA journal_mode = WAL")
+    cliDb.exec("PRAGMA busy_timeout = 5000")
     cliDb.exec("BEGIN TRANSACTION")
 
     const insert = cliDb.prepare(

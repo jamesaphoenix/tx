@@ -9,7 +9,7 @@ describe('useIntersectionObserver', () => {
   let mockUnobserve: ReturnType<typeof vi.fn>
   let mockDisconnect: ReturnType<typeof vi.fn>
   let intersectionCallback: IntersectionObserverCallback | null = null
-  let constructorSpy: ReturnType<typeof vi.fn>
+  let constructorSpy: ReturnType<typeof vi.fn<(options?: IntersectionObserverInit) => void>>
 
   beforeEach(() => {
     mockObserve = vi.fn()
@@ -18,10 +18,11 @@ describe('useIntersectionObserver', () => {
     constructorSpy = vi.fn()
     intersectionCallback = null
 
-    const MockIntersectionObserver = vi.fn((
+    const MockIntersectionObserver = vi.fn(function (
+      this: IntersectionObserver,
       callback: IntersectionObserverCallback,
       options?: IntersectionObserverInit
-    ) => {
+    ) {
       intersectionCallback = callback
       constructorSpy(options)
       return {
@@ -33,7 +34,7 @@ describe('useIntersectionObserver', () => {
         thresholds: [],
         takeRecords: () => [],
       }
-    })
+    }) as unknown as typeof IntersectionObserver
 
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
   })

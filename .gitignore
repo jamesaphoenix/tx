@@ -19,6 +19,9 @@ vitest.config.d.ts.map
 packages/*/README.md
 apps/*/README.md
 
+# Playwright MCP
+.playwright-mcp/
+
 # OS files
 .DS_Store
 .DS_Store?

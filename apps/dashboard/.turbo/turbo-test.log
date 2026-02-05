@@ -1,4 +1,4 @@
 $ bun vitest --run
 
- RUN  v3.2.4 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/dashboard[39m
 

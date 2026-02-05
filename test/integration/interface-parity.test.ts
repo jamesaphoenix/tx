@@ -491,6 +491,7 @@ describe("Interface Parity", () => {
 
     // Enable WAL mode for better concurrency
     cliDb.exec("PRAGMA journal_mode = WAL")
+    cliDb.exec("PRAGMA busy_timeout = 5000")
 
     // Use a transaction to batch all inserts
     cliDb.exec("BEGIN TRANSACTION")
