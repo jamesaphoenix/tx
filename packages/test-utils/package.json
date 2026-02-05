@@ -51,7 +51,7 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "bun vitest run --passWithNoTests"
+    "test": "bun test src/ test/"
   },
   "dependencies": {
     "@jamesaphoenix/tx-core": "*",

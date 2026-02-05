@@ -120,10 +120,10 @@ echo ""
 export NODE_OPTIONS="--max-old-space-size=4096"
 
 # Run all checks (continue on failure to report all issues)
-# Build packages in explicit dependency order with reduced concurrency to prevent OOM
-# Use bun for builds (project uses bun:sqlite)
-run_and_track "Build (packages)" "bun run build -w @jamesaphoenix/tx-types && ls -la packages/types/dist/ && bun run build -w @jamesaphoenix/tx-core && bunx turbo build --concurrency=1"
-run_and_track "TypeScript (packages)" "bunx turbo typecheck --concurrency=1"
+# Turbo handles dependency ordering via dependsOn: ["^build"] in turbo.json
+# Concurrency=2 balances speed vs CI memory limits
+run_and_track "Build (packages)" "bunx turbo build --concurrency=2"
+run_and_track "TypeScript (packages)" "bunx turbo typecheck --concurrency=2"
 run_and_track "ESLint (packages)" "bunx turbo lint"
 run_and_track "ESLint (root tests)" "bunx eslint test/ --max-warnings 0"
 # Tests must run with Bun to access bun:sqlite

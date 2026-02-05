@@ -17,6 +17,7 @@ import prdFailureModes from './rules/prd-failure-modes.js';
 import noThrowInServices from './rules/no-throw-in-services.js';
 import noHono from './rules/no-hono.js';
 import noZod from './rules/no-zod.js';
+import noPlainInterfaces from './rules/no-plain-interfaces.js';
 
 const plugin = {
   meta: {
@@ -38,7 +39,8 @@ const plugin = {
     'prd-failure-modes': prdFailureModes,
     'no-throw-in-services': noThrowInServices,
     'no-hono': noHono,
-    'no-zod': noZod
+    'no-zod': noZod,
+    'no-plain-interfaces': noPlainInterfaces
   },
   // Flat config recommended configuration
   configs: {
@@ -113,7 +115,11 @@ const plugin = {
           allowTypedErrors: false
         }],
         'tx/no-hono': 'warn',
-        'tx/no-zod': 'warn'
+        'tx/no-zod': 'warn',
+        'tx/no-plain-interfaces': ['warn', {
+          excludedNames: ['ListResponse', 'PaginatedResponse', 'ActionResponse'],
+          excludedSuffixes: ['Row']
+        }]
       }
     }
   }

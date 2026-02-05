@@ -17,6 +17,8 @@ export function SearchInput({
   const [localValue, setLocalValue] = useState(value)
   const debouncedValue = useDebounce(localValue, debounceMs)
   const hasMounted = useRef(false)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   // Update parent when debounced value changes (skip initial mount)
   useEffect(() => {
@@ -24,8 +26,8 @@ export function SearchInput({
       hasMounted.current = true
       return
     }
-    onChange(debouncedValue)
-  }, [debouncedValue, onChange])
+    onChangeRef.current(debouncedValue)
+  }, [debouncedValue])
 
   // Sync with external value changes
   useEffect(() => {

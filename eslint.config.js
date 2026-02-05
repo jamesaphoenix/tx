@@ -158,7 +158,13 @@ export default [
       'tx/no-hono': 'warn',
 
       // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-zod': 'warn'
+      'tx/no-zod': 'warn',
+
+      // tx plugin rules - ban plain interfaces for domain types (CLAUDE.md DOCTRINE RULE 10)
+      'tx/no-plain-interfaces': ['warn', {
+        excludedNames: ['ListResponse', 'PaginatedResponse', 'ActionResponse'],
+        excludedSuffixes: ['Row']
+      }]
     }
   },
   // Apps (api-server, agent-sdk, cli, mcp-server)
