@@ -224,47 +224,58 @@ describe("AutoSyncService Concurrent Exports", () => {
     await Effect.runPromise(db.close())
   })
 
-  it("handles rapid mutations triggering concurrent exports", async () => {
-    let exportCallCount = 0
-    let maxConcurrent = 0
-    let currentConcurrent = 0
+  it("rapid mutations coalesce — only last export completes", async () => {
+    let exportCompletedCount = 0
 
-    const layer = makeMockSyncServiceLayer(db, {
-      exportDelay: 100,
-      onExportCalled: () => {
-        exportCallCount++
-        currentConcurrent++
-        maxConcurrent = Math.max(maxConcurrent, currentConcurrent)
-        // Decrement after delay (simulated in export)
-        setTimeout(() => { currentConcurrent-- }, 100)
-      }
-    })
+    const infra = Layer.succeed(SqliteClient, db.db as Database)
+    const mockSyncService = Layer.succeed(
+      SyncService,
+      SyncService.of({
+        export: (_path?: string) =>
+          Effect.gen(function* () {
+            // Simulate async work — this is the yield point where interruption occurs
+            yield* Effect.sleep(Duration.millis(50))
+            // Only reached if fiber was NOT interrupted
+            exportCompletedCount++
+            return { opCount: 0, path: _path ?? ".tx/tasks.jsonl" }
+          }),
+        import: () => Effect.succeed({ imported: 0, skipped: 0, conflicts: 0, dependencies: { added: 0, removed: 0, skipped: 0, failures: [] } }),
+        status: () => Effect.succeed({ dbTaskCount: 0, jsonlOpCount: 0, lastExport: null, lastImport: null, isDirty: false, autoSyncEnabled: false }),
+        enableAutoSync: () => Effect.void,
+        disableAutoSync: () => Effect.void,
+        isAutoSyncEnabled: () => Effect.succeed(false),
+        compact: () => Effect.succeed({ before: 0, after: 0 }),
+        setLastExport: () => Effect.void,
+        setLastImport: () => Effect.void
+      })
+    )
+    const autoSyncService = AutoSyncServiceLive.pipe(
+      Layer.provide(Layer.mergeAll(mockSyncService, infra))
+    )
+    const layer = Layer.mergeAll(autoSyncService, mockSyncService, infra)
     enableAutoSyncInDb(db)
 
     await Effect.runPromise(
       Effect.gen(function* () {
         const autoSync = yield* AutoSyncService
 
-        // Trigger 5 rapid mutations
+        // Trigger 5 rapid mutations — each interrupts the previous export fiber
         yield* autoSync.afterTaskMutation()
         yield* autoSync.afterTaskMutation()
         yield* autoSync.afterTaskMutation()
         yield* autoSync.afterTaskMutation()
         yield* autoSync.afterTaskMutation()
 
-        // Wait for all exports to complete
-        yield* Effect.sleep(Duration.millis(300))
+        // Wait for the last export to complete
+        yield* Effect.sleep(Duration.millis(200))
       }).pipe(Effect.provide(layer))
     )
 
-    // All 5 exports should have been triggered
-    expect(exportCallCount).toBe(5)
-
-    // Multiple exports should have run concurrently
-    expect(maxConcurrent).toBeGreaterThan(1)
+    // Only the last export should have completed; previous ones were interrupted
+    expect(exportCompletedCount).toBe(1)
   })
 
-  it("all concurrent exports complete even when some fail", async () => {
+  it("spaced mutations each complete their own export even when some fail", async () => {
     let successCount = 0
     let failCount = 0
     let callIndex = 0
@@ -285,7 +296,7 @@ describe("AutoSyncService Concurrent Exports", () => {
         export: (_path?: string) =>
           Effect.gen(function* () {
             const idx = callIndex++
-            yield* Effect.sleep(Duration.millis(50))
+            yield* Effect.sleep(Duration.millis(10))
 
             if (idx % 2 === 0) {
               failCount++
@@ -317,14 +328,18 @@ describe("AutoSyncService Concurrent Exports", () => {
       Effect.gen(function* () {
         const autoSync = yield* AutoSyncService
 
-        // Trigger 4 mutations
+        // Spaced mutations — each export completes before the next mutation
         yield* autoSync.afterTaskMutation()
-        yield* autoSync.afterTaskMutation()
-        yield* autoSync.afterTaskMutation()
-        yield* autoSync.afterTaskMutation()
+        yield* Effect.sleep(Duration.millis(50))
 
-        // Wait for all to complete
-        yield* Effect.sleep(Duration.millis(200))
+        yield* autoSync.afterTaskMutation()
+        yield* Effect.sleep(Duration.millis(50))
+
+        yield* autoSync.afterTaskMutation()
+        yield* Effect.sleep(Duration.millis(50))
+
+        yield* autoSync.afterTaskMutation()
+        yield* Effect.sleep(Duration.millis(50))
       }).pipe(Effect.provide(layer))
     )
 
@@ -668,7 +683,7 @@ describe("AutoSyncService Performance", () => {
   it("background exports do not block caller", async () => {
     // Track timing of mutation vs export completion
     const mutationCompleteTimes: number[] = []
-    const exportCompleteTimes: number[] = []
+    let exportCompletedAt = 0
     const startTime = Date.now()
 
     const infra = Layer.succeed(SqliteClient, db.db as Database)
@@ -686,7 +701,7 @@ describe("AutoSyncService Performance", () => {
         export: (_path?: string) =>
           Effect.gen(function* () {
             yield* Effect.sleep(Duration.millis(100))
-            exportCompleteTimes.push(Date.now() - startTime)
+            exportCompletedAt = Date.now() - startTime
             return { opCount: 0, path: _path ?? ".tx/tasks.jsonl" }
           }),
         import: () => Effect.succeed({ imported: 0, skipped: 0, conflicts: 0, dependencies: { added: 0, removed: 0, skipped: 0, failures: [] } }),
@@ -711,24 +726,26 @@ describe("AutoSyncService Performance", () => {
       Effect.gen(function* () {
         const autoSync = yield* AutoSyncService
 
-        // Trigger 3 mutations and record when they complete
+        // Trigger 3 rapid mutations and record when they complete
         for (let i = 0; i < 3; i++) {
           yield* autoSync.afterTaskMutation()
           mutationCompleteTimes.push(Date.now() - startTime)
         }
 
-        // Wait for exports to complete
+        // Wait for the last export to complete
         yield* Effect.sleep(Duration.millis(300))
       }).pipe(Effect.provide(layer))
     )
 
-    // All mutations should complete before any export completes
+    // All mutations should complete quickly (before the export)
     expect(mutationCompleteTimes.length).toBe(3)
-    expect(exportCompleteTimes.length).toBe(3)
-
-    // Each mutation should complete before its corresponding export
-    for (let i = 0; i < 3; i++) {
-      expect(mutationCompleteTimes[i]).toBeLessThan(exportCompleteTimes[i])
+    for (const t of mutationCompleteTimes) {
+      expect(t).toBeLessThan(100)
     }
+
+    // The export should have completed after the mutations
+    // (only the last export runs due to deduplication)
+    expect(exportCompletedAt).toBeGreaterThan(0)
+    expect(exportCompletedAt).toBeGreaterThan(mutationCompleteTimes[2])
   })
 })

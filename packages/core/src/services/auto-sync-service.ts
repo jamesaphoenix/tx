@@ -11,7 +11,7 @@
  * - Configurable: Controlled via sync_config "auto_sync" setting
  */
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Fiber, Layer, Ref } from "effect"
 import { SqliteClient } from "../db.js"
 import { SyncService } from "./sync-service.js"
 import { DatabaseError } from "../errors.js"
@@ -62,6 +62,11 @@ export const AutoSyncServiceLive = Layer.effect(
     const db = yield* SqliteClient
     const syncService = yield* SyncService
 
+    // Track the current export fiber to prevent unbounded accumulation.
+    // When a new mutation triggers an export, any in-flight export is interrupted
+    // first — only the latest export needs to succeed since it captures all state.
+    const currentFiber = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+
     // Check if auto-sync is enabled
     const isEnabled = (): Effect.Effect<boolean, DatabaseError> =>
       Effect.try({
@@ -72,7 +77,7 @@ export const AutoSyncServiceLive = Layer.effect(
         catch: (cause) => new DatabaseError({ cause })
       })
 
-    // Run export in background, catching and logging any errors
+    // Run export in background, interrupting any previous in-flight export
     const runInBackground = <E>(
       exportEffect: Effect.Effect<unknown, E>
     ): Effect.Effect<void, never> =>
@@ -85,37 +90,44 @@ export const AutoSyncServiceLive = Layer.effect(
           return
         }
 
-        // Fork the export and ignore the fiber - fire and forget
-        yield* Effect.fork(
+        // Interrupt previous export fiber if still running
+        const prevFiber = yield* Ref.get(currentFiber)
+        if (prevFiber !== null) {
+          yield* Fiber.interrupt(prevFiber)
+        }
+
+        // Fork the new export and track it
+        const clearRef = Ref.set(currentFiber, null)
+        const fiber = yield* Effect.fork(
           exportEffect.pipe(
             Effect.catchAll((error) =>
               Effect.sync(() => {
                 // Log error but don't propagate
                 console.error("[auto-sync] Export failed:", error)
               })
-            )
+            ),
+            Effect.asVoid,
+            // Clear the fiber ref when this export completes or is interrupted
+            Effect.ensuring(clearRef)
           )
         )
+
+        yield* Ref.set(currentFiber, fiber)
       })
 
     return {
-      // Tasks use the standard export
       afterTaskMutation: () =>
         runInBackground(syncService.export()),
 
-      // TODO: Implement when learning sync is added to SyncService
       afterLearningMutation: () =>
         runInBackground(syncService.export()),
 
-      // TODO: Implement when file-learning sync is added to SyncService
       afterFileLearningMutation: () =>
         runInBackground(syncService.export()),
 
-      // TODO: Implement when attempt sync is added to SyncService
       afterAttemptMutation: () =>
         runInBackground(syncService.export()),
 
-      // For now, just exports tasks - extend when other entity types are supported
       afterAnyMutation: () =>
         runInBackground(syncService.export())
     }
