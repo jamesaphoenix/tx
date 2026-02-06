@@ -17,7 +17,7 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
     readonly getAncestorChain: (id: string) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getDescendants: (id: string, maxDepth?: number) => Effect.Effect<readonly Task[], DatabaseError>
     readonly insert: (task: Task) => Effect.Effect<void, DatabaseError>
-    readonly update: (task: Task) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
+    readonly update: (task: Task, expectedUpdatedAt?: Date) => Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError>
     readonly updateMany: (tasks: readonly Task[]) => Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError>
     readonly remove: (id: string) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
     readonly count: (filter?: TaskFilter) => Effect.Effect<number, DatabaseError>
@@ -241,30 +241,74 @@ export const TaskRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause })
         }),
 
-      update: (task) =>
+      update: (task, expectedUpdatedAt) =>
         Effect.gen(function* () {
-          const result = yield* Effect.try({
-            try: () =>
-              db.prepare(
-                `UPDATE tasks SET
-                  title = ?, description = ?, status = ?, parent_id = ?,
-                  score = ?, updated_at = ?, completed_at = ?, metadata = ?
-                 WHERE id = ?`
-              ).run(
-                task.title,
-                task.description,
-                task.status,
-                task.parentId,
-                task.score,
-                task.updatedAt.toISOString(),
-                task.completedAt?.toISOString() ?? null,
-                JSON.stringify(task.metadata),
-                task.id
-              ),
-            catch: (cause) => new DatabaseError({ cause })
-          })
-          if (result.changes === 0) {
-            yield* Effect.fail(new TaskNotFoundError({ id: task.id }))
+          if (expectedUpdatedAt) {
+            // Optimistic locking: include updated_at in WHERE clause
+            const result = yield* Effect.try({
+              try: () =>
+                db.prepare(
+                  `UPDATE tasks SET
+                    title = ?, description = ?, status = ?, parent_id = ?,
+                    score = ?, updated_at = ?, completed_at = ?, metadata = ?
+                   WHERE id = ? AND updated_at = ?`
+                ).run(
+                  task.title,
+                  task.description,
+                  task.status,
+                  task.parentId,
+                  task.score,
+                  task.updatedAt.toISOString(),
+                  task.completedAt?.toISOString() ?? null,
+                  JSON.stringify(task.metadata),
+                  task.id,
+                  expectedUpdatedAt.toISOString()
+                ),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            if (result.changes === 0) {
+              // Distinguish not-found from stale: re-read the row
+              const current = yield* Effect.try({
+                try: () =>
+                  db.prepare("SELECT updated_at FROM tasks WHERE id = ?").get(task.id) as
+                    { updated_at: string } | undefined,
+                catch: (cause) => new DatabaseError({ cause })
+              })
+              if (!current) {
+                yield* Effect.fail(new TaskNotFoundError({ id: task.id }))
+              } else {
+                yield* Effect.fail(new StaleDataError({
+                  taskId: task.id,
+                  expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+                  actualUpdatedAt: current.updated_at
+                }))
+              }
+            }
+          } else {
+            // No optimistic locking (backward compatible)
+            const result = yield* Effect.try({
+              try: () =>
+                db.prepare(
+                  `UPDATE tasks SET
+                    title = ?, description = ?, status = ?, parent_id = ?,
+                    score = ?, updated_at = ?, completed_at = ?, metadata = ?
+                   WHERE id = ?`
+                ).run(
+                  task.title,
+                  task.description,
+                  task.status,
+                  task.parentId,
+                  task.score,
+                  task.updatedAt.toISOString(),
+                  task.completedAt?.toISOString() ?? null,
+                  JSON.stringify(task.metadata),
+                  task.id
+                ),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            if (result.changes === 0) {
+              yield* Effect.fail(new TaskNotFoundError({ id: task.id }))
+            }
           }
         }),
 

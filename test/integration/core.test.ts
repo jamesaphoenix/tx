@@ -1388,6 +1388,158 @@ describe("Task Repository updateMany with staleness detection", () => {
     expect(verifyTasks.find(t => t.id === FIXTURES.TASK_LOGIN)?.title).toBe("Externally modified LOGIN")
   })
 
+  it("update with expectedUpdatedAt fails with StaleDataError when task was modified externally", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
+    // Fetch the task
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    const originalUpdatedAt = task!.updatedAt
+
+    // Simulate external modification
+    const futureTime = new Date(Date.now() + 10000).toISOString()
+    db.prepare("UPDATE tasks SET title = 'Externally modified', updated_at = ? WHERE id = ?")
+      .run(futureTime, FIXTURES.TASK_JWT)
+
+    // Try to update with the stale expectedUpdatedAt
+    const updatedTask = {
+      ...task!,
+      title: "My update attempt",
+      updatedAt: new Date()
+    }
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.update(updatedTask, originalUpdatedAt)
+      }).pipe(Effect.provide(repoLayer), Effect.either)
+    )
+
+    // Should fail with StaleDataError
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as StaleDataError)._tag).toBe("StaleDataError")
+      expect((result.left as StaleDataError).taskId).toBe(FIXTURES.TASK_JWT)
+    }
+
+    // Verify the external modification is preserved
+    const verifyTask = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(verifyTask?.title).toBe("Externally modified")
+  })
+
+  it("update with expectedUpdatedAt succeeds when task is not stale", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    // Fetch the task
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    const originalUpdatedAt = task!.updatedAt
+
+    // Update with correct expectedUpdatedAt (no external modification)
+    const updatedTask = {
+      ...task!,
+      title: "Legitimate update",
+      updatedAt: new Date()
+    }
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.update(updatedTask, originalUpdatedAt)
+      }).pipe(Effect.provide(repoLayer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Right")
+
+    // Verify the update was applied
+    const verifyTask = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(verifyTask?.title).toBe("Legitimate update")
+  })
+
+  it("update with expectedUpdatedAt fails with TaskNotFoundError for missing task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.update({
+          id: "tx-nonexistent" as any,
+          title: "Ghost",
+          description: "",
+          status: "backlog",
+          parentId: null,
+          score: 0,
+          updatedAt: new Date(),
+          createdAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        }, new Date())
+      }).pipe(Effect.provide(repoLayer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("TaskNotFoundError")
+    }
+  })
+
+  it("update without expectedUpdatedAt still works (backward compatible)", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    // Fetch the task
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    // Update without optimistic locking
+    const updatedTask = {
+      ...task!,
+      title: "No-lock update",
+      updatedAt: new Date()
+    }
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.update(updatedTask)
+      }).pipe(Effect.provide(repoLayer), Effect.either)
+    )
+
+    expect(result._tag).toBe("Right")
+
+    const verifyTask = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(FIXTURES.TASK_JWT)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(verifyTask?.title).toBe("No-lock update")
+  })
+
   it("updateMany succeeds with empty array", async () => {
     // This should be a no-op
     await Effect.runPromise(

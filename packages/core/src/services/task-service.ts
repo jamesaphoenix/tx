@@ -14,7 +14,7 @@ export class TaskService extends Context.Tag("TaskService")<
     readonly getWithDeps: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly getWithDepsBatch: (ids: readonly TaskId[]) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
     readonly update: (id: TaskId, input: UpdateTaskInput) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
-    readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError>
+    readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
     readonly remove: (id: TaskId, options?: { cascade?: boolean }) => Effect.Effect<void, TaskNotFoundError | HasChildrenError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
     readonly listWithDeps: (filter?: TaskFilter) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
@@ -349,7 +349,7 @@ export const TaskServiceLive = Layer.effect(
             metadata: input.metadata ? { ...existing.metadata, ...input.metadata } : existing.metadata
           }
 
-          yield* taskRepo.update(updated)
+          yield* taskRepo.update(updated, existing.updatedAt)
 
           // Auto-complete parent if all children are done
           if (isDone && updated.parentId) {
@@ -379,7 +379,7 @@ export const TaskServiceLive = Layer.effect(
             completedAt: isDone ? now : (status !== "done" ? null : existing.completedAt)
           }
 
-          yield* taskRepo.update(updated)
+          yield* taskRepo.update(updated, existing.updatedAt)
           return updated
         }),
 
