@@ -39,6 +39,7 @@ function insertTask(
   opts: { score?: number; status?: string; description?: string } = {},
 ): void {
   const db = new Database(dbPath)
+  db.run("PRAGMA busy_timeout = 5000")
   try {
     const now = new Date().toISOString()
     db.prepare(
@@ -64,6 +65,7 @@ function insertTask(
 // Helper to insert a learning row directly into the DB
 function insertLearning(dbPath: string, content: string): void {
   const db = new Database(dbPath)
+  db.run("PRAGMA busy_timeout = 5000")
   try {
     const now = new Date().toISOString()
     db.prepare(
