@@ -610,13 +610,17 @@ export const SyncServiceLive = Layer.effect(
         Effect.gen(function* () {
           const filePath = resolve(DEFAULT_JSONL_PATH)
 
-          // Count tasks in database
-          const tasks = yield* taskService.list()
-          const dbTaskCount = tasks.length
+          // Count tasks in database (SQL COUNT instead of loading all rows)
+          const dbTaskCount = yield* taskService.count()
 
-          // Get all dependencies from database (explicit high limit for status)
-          const deps = yield* depRepo.getAll(100_000)
-          const dbDepCount = deps.length
+          // Count dependencies in database (SQL COUNT instead of loading all rows)
+          const dbDepCount = yield* Effect.try({
+            try: () => {
+              const row = db.prepare("SELECT COUNT(*) as cnt FROM task_dependencies").get() as { cnt: number }
+              return row.cnt
+            },
+            catch: (cause) => new DatabaseError({ cause })
+          })
 
           // Count operations in JSONL file and get file info
           let jsonlOpCount = 0
@@ -699,15 +703,32 @@ export const SyncServiceLive = Layer.effect(
           if (dbTaskCount > 0 && !jsonlFileExists) {
             // No JSONL file but tasks exist → dirty
             isDirty = true
-          } else if (tasks.length > 0 || deps.length > 0) {
+          } else if (dbTaskCount > 0 || dbDepCount > 0) {
             if (lastExportDate === null) {
               // Tasks/deps exist but never exported → dirty
               isDirty = true
             } else {
-              // Check if any task was updated after the last export
-              const tasksDirty = tasks.some(task => task.updatedAt > lastExportDate)
+              // Check if any task was updated after the last export (uses idx_tasks_updated index)
+              const lastExportIso = lastExportDate.toISOString()
+              const tasksDirty = yield* Effect.try({
+                try: () => {
+                  const row = db.prepare(
+                    "SELECT COUNT(*) as cnt FROM tasks WHERE updated_at > ?"
+                  ).get(lastExportIso) as { cnt: number }
+                  return row.cnt > 0
+                },
+                catch: (cause) => new DatabaseError({ cause })
+              })
               // Check if any dependency was created after the last export
-              const depsDirty = deps.some(dep => dep.createdAt > lastExportDate)
+              const depsDirty = yield* Effect.try({
+                try: () => {
+                  const row = db.prepare(
+                    "SELECT COUNT(*) as cnt FROM task_dependencies WHERE created_at > ?"
+                  ).get(lastExportIso) as { cnt: number }
+                  return row.cnt > 0
+                },
+                catch: (cause) => new DatabaseError({ cause })
+              })
               // Check if counts differ (indicates deletions occurred since export)
               // DB count < JSONL count means tasks/deps were deleted
               // DB count > JSONL count means tasks/deps were added (also caught by timestamp check)

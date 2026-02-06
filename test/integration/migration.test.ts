@@ -125,6 +125,9 @@ describe("Migration system", () => {
       expect(indexNames).toContain("idx_learning_edges_target")
       expect(indexNames).toContain("idx_learning_edges_type")
       expect(indexNames).toContain("idx_learning_edges_active")
+
+      // Index from migration 19 (tasks updated_at for sync dirty detection)
+      expect(indexNames).toContain("idx_tasks_updated")
     })
 
     it("is idempotent (running twice is safe)", () => {
