@@ -96,7 +96,10 @@ export const makeSqliteClient = (dbPath: string): Effect.Effect<Database, Databa
   })
 
 export const SqliteClientLive = (dbPath: string) =>
-  Layer.effect(
+  Layer.scoped(
     SqliteClient,
-    makeSqliteClient(dbPath)
+    Effect.acquireRelease(
+      makeSqliteClient(dbPath),
+      (db) => Effect.sync(() => { try { db.close() } catch { /* already closed */ } })
+    )
   )

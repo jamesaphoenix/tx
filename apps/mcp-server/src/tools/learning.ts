@@ -251,9 +251,9 @@ export const registerLearningTools = (server: McpServer): void => {
     "tx_learn",
     "Attach a learning/note to a file path or glob pattern. Agents can query this when working on files.",
     {
-      filePattern: z.string().describe("File path or glob pattern (e.g., src/services/*.ts)"),
-      note: z.string().describe("The learning/note to attach"),
-      taskId: z.string().optional().describe("Optional task ID to associate with")
+      filePattern: z.string().max(500).describe("File path or glob pattern (e.g., src/services/*.ts, max 500 chars)"),
+      note: z.string().max(10000).describe("The learning/note to attach (max 10000 chars)"),
+      taskId: z.string().max(500).optional().describe("Optional task ID to associate with (max 500 chars)")
     },
     handleLearn as Parameters<typeof server.tool>[3]
   )
@@ -264,7 +264,7 @@ export const registerLearningTools = (server: McpServer): void => {
     "tx_recall",
     "Query file-specific learnings. If path is provided, returns learnings matching that path. Otherwise returns all file learnings.",
     {
-      path: z.string().optional().describe("Optional file path to match against stored patterns"),
+      path: z.string().max(500).optional().describe("Optional file path to match against stored patterns (max 500 chars)"),
       limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of learnings to return (default: 100, max: ${MCP_MAX_LIMIT})`)
     },
     handleRecall as Parameters<typeof server.tool>[3]
@@ -276,8 +276,8 @@ export const registerLearningTools = (server: McpServer): void => {
     "tx_context",
     "Get contextual learnings relevant to a task. Searches learnings using the task's title and description, returns scored results with BM25, recency, and relevance scores.",
     {
-      taskId: z.string().describe("Task ID to get context for"),
-      maxTokens: z.number().int().positive().optional().describe("Maximum number of learnings to return (default: 10)")
+      taskId: z.string().max(500).describe("Task ID to get context for (max 500 chars)"),
+      maxTokens: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of learnings to return (default: 10, max: ${MCP_MAX_LIMIT})`)
     },
     handleContext as Parameters<typeof server.tool>[3]
   )
@@ -288,11 +288,11 @@ export const registerLearningTools = (server: McpServer): void => {
     "tx_learning_add",
     "Add a new learning to the contextual learnings knowledge base. Learnings can be retrieved later based on relevance to tasks.",
     {
-      content: z.string().describe("The learning content (required)"),
+      content: z.string().max(10000).describe("The learning content (required, max 10000 chars)"),
       sourceType: z.enum(LEARNING_SOURCE_TYPES).optional().describe(`Source type: ${LEARNING_SOURCE_TYPES.join(", ")}. Defaults to "manual"`),
-      sourceRef: z.string().optional().describe("Optional reference (e.g., task ID, file path, URL)"),
-      category: z.string().optional().describe("Optional category for organizing learnings"),
-      keywords: z.array(z.string()).optional().describe("Optional keywords for improved search")
+      sourceRef: z.string().max(500).optional().describe("Optional reference (e.g., task ID, file path, URL, max 500 chars)"),
+      category: z.string().max(200).optional().describe("Optional category for organizing learnings (max 200 chars)"),
+      keywords: z.array(z.string().max(200)).max(50).optional().describe("Optional keywords for improved search (max 50 keywords, each max 200 chars)")
     },
     handleLearningAdd as Parameters<typeof server.tool>[3]
   )
@@ -303,10 +303,10 @@ export const registerLearningTools = (server: McpServer): void => {
     "tx_learning_search",
     "Search learnings using BM25 text search. Returns scored results with relevance, BM25, and recency scores.",
     {
-      query: z.string().describe("Search query text"),
+      query: z.string().max(1000).describe("Search query text (max 1000 chars)"),
       limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of results to return (default: 10, max: ${MCP_MAX_LIMIT})`),
       minScore: z.number().min(0).max(1).optional().describe("Minimum relevance score filter (0-1)"),
-      category: z.string().optional().describe("Filter by category")
+      category: z.string().max(200).optional().describe("Filter by category (max 200 chars)")
     },
     handleLearningSearch as Parameters<typeof server.tool>[3]
   )

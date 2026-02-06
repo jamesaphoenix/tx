@@ -5,11 +5,12 @@
  * Main entry point for the tx command line tool.
  */
 
-import { Effect } from "effect"
+import { Effect, Cause, Option } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { makeAppLayer } from "@jamesaphoenix/tx-core"
 import { HELP_TEXT, commandHelp } from "./help.js"
+import { CliExitError } from "./cli-exit.js"
 
 // Command imports
 import { add, list, ready, show, update, done, deleteTask, reset } from "./commands/task.js"
@@ -355,64 +356,69 @@ const program = handler(positional, parsedFlags)
 
 const runnable = Effect.provide(program, layer) as Effect.Effect<void, unknown>
 
-Effect.runPromise(
-  Effect.catchAll(runnable, (error: unknown) => {
+// Exit code set by error handlers; applied after Effect runtime cleanup completes
+let _exitCode = 0
+
+// Map error tags to exit codes (2 = not found, 1 = general error)
+const errorExitCodes: Record<string, number> = {
+  TaskNotFoundError: 2,
+  LearningNotFoundError: 2,
+  AnchorNotFoundError: 2,
+  ClaimNotFoundError: 2,
+  ValidationError: 1,
+  CircularDependencyError: 1,
+  DatabaseError: 1,
+  AlreadyClaimedError: 1,
+  LeaseExpiredError: 1,
+  MaxRenewalsExceededError: 1,
+  ExtractionUnavailableError: 1,
+}
+
+const handled = runnable.pipe(
+  // Handle expected Effect errors (from Effect.fail in services)
+  Effect.catchAll((error: unknown) => {
     const err = error as { _tag?: string; message?: string }
-    if (err._tag === "TaskNotFoundError") {
-      console.error(err.message ?? `Task not found`)
-      process.exit(2)
+    const tag = err._tag ?? ""
+
+    if (tag in errorExitCodes) {
+      console.error(err.message ?? tag.replace(/Error$/, " error"))
+      if (tag === "HasChildrenError") {
+        console.error("Hint: use --cascade to delete with all children, or delete/move children first.")
+      }
+      _exitCode = errorExitCodes[tag] ?? 1
+      return Effect.void
     }
-    if (err._tag === "LearningNotFoundError") {
-      console.error(err.message ?? `Learning not found`)
-      process.exit(2)
-    }
-    if (err._tag === "AnchorNotFoundError") {
-      console.error(err.message ?? `Anchor not found`)
-      process.exit(2)
-    }
-    if (err._tag === "ValidationError") {
-      console.error(err.message ?? `Validation error`)
-      process.exit(1)
-    }
-    if (err._tag === "CircularDependencyError") {
-      console.error(err.message ?? `Circular dependency detected`)
-      process.exit(1)
-    }
-    if (err._tag === "HasChildrenError") {
+
+    if (tag === "HasChildrenError") {
       console.error(err.message ?? `Cannot delete task with children`)
       console.error("Hint: use --cascade to delete with all children, or delete/move children first.")
-      process.exit(1)
+      _exitCode = 1
+      return Effect.void
     }
-    if (err._tag === "DatabaseError") {
-      console.error(err.message ?? `Database error`)
-      process.exit(1)
-    }
-    // Claim-related errors (PRD-018)
-    if (err._tag === "AlreadyClaimedError") {
-      console.error(err.message ?? `Task already claimed`)
-      process.exit(1)
-    }
-    if (err._tag === "ClaimNotFoundError") {
-      console.error(err.message ?? `Claim not found`)
-      process.exit(2)
-    }
-    if (err._tag === "LeaseExpiredError") {
-      console.error(err.message ?? `Lease has expired`)
-      process.exit(1)
-    }
-    if (err._tag === "MaxRenewalsExceededError") {
-      console.error(err.message ?? `Maximum renewals exceeded`)
-      process.exit(1)
-    }
-    // Compaction-related errors (PRD-006)
-    if (err._tag === "ExtractionUnavailableError") {
-      console.error(err.message ?? `Feature unavailable`)
-      process.exit(1)
-    }
+
     console.error(`Error: ${err.message ?? String(error)}`)
-    return Effect.sync(() => process.exit(1))
+    _exitCode = 1
+    return Effect.void
+  }),
+  // Handle defects (from throw CliExitError in commands/parse utils)
+  Effect.catchAllCause((cause) => {
+    const dieOption = Cause.dieOption(cause)
+    if (Option.isSome(dieOption) && dieOption.value instanceof CliExitError) {
+      _exitCode = dieOption.value.code
+      return Effect.void
+    }
+    // Unexpected defect — print and exit
+    console.error(`Fatal: ${Cause.pretty(cause)}`)
+    _exitCode = 1
+    return Effect.void
   })
-).catch((err: unknown) => {
+)
+
+// Effect.runPromise resolves AFTER scope finalizers (db.close()) run
+Effect.runPromise(handled).then(() => {
+  if (_exitCode !== 0) process.exit(_exitCode)
+}).catch((err: unknown) => {
+  // Should not reach here — catchAllCause handles everything
   console.error(`Fatal: ${err}`)
   process.exit(1)
 })
