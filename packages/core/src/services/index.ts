@@ -150,6 +150,8 @@ export {
   readPid,
   removePid,
   isProcessRunning,
+  tryAtomicPidCreate,
+  acquirePidLock,
   defaultDaemonConfig,
   generateLaunchdPlist,
   generateSystemdService,

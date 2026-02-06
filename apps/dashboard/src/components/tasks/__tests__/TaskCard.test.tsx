@@ -211,6 +211,52 @@ describe('TaskCard', () => {
     })
   })
 
+  describe('accessibility', () => {
+    it('has role="button"', () => {
+      const task = createTask()
+      render(<TaskCard task={task} onClick={() => {}} />)
+
+      expect(screen.getByRole('button')).toBeInTheDocument()
+    })
+
+    it('has aria-label with task title', () => {
+      const task = createTask({ title: 'Fix the widget' })
+      render(<TaskCard task={task} onClick={() => {}} />)
+
+      expect(screen.getByRole('button')).toHaveAttribute(
+        'aria-label',
+        'View task: Fix the widget'
+      )
+    })
+
+    it('triggers onClick on Enter key', () => {
+      const onClick = vi.fn()
+      const task = createTask()
+      render(<TaskCard task={task} onClick={onClick} isFocused={true} />)
+
+      fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
+      expect(onClick).toHaveBeenCalledTimes(1)
+    })
+
+    it('triggers onClick on Space key', () => {
+      const onClick = vi.fn()
+      const task = createTask()
+      render(<TaskCard task={task} onClick={onClick} isFocused={true} />)
+
+      fireEvent.keyDown(screen.getByRole('button'), { key: ' ' })
+      expect(onClick).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not trigger onClick on other keys', () => {
+      const onClick = vi.fn()
+      const task = createTask()
+      render(<TaskCard task={task} onClick={onClick} isFocused={true} />)
+
+      fireEvent.keyDown(screen.getByRole('button'), { key: 'Tab' })
+      expect(onClick).not.toHaveBeenCalled()
+    })
+  })
+
   describe('isReady styling', () => {
     it('shows blue border when task isReady', () => {
       const task = createTask({ isReady: true })

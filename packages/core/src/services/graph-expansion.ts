@@ -58,6 +58,8 @@ export interface GraphExpansionOptions {
   /** Filter by specific edge types (default: all types).
    * Accepts either a simple array for backwards compatibility or EdgeTypeFilter for advanced filtering. */
   readonly edgeTypes?: EdgeTypeFilter | readonly EdgeType[]
+  /** Direction of edge traversal (default: "both") */
+  readonly direction?: "outbound" | "inbound" | "both"
 }
 
 /**
@@ -76,6 +78,7 @@ export interface GraphExpansionResult {
     readonly expandedCount: number
     readonly maxDepthReached: number
     readonly nodesVisited: number
+    readonly maxNodesReached: boolean
   }
 }
 
@@ -194,7 +197,8 @@ export const GraphExpansionServiceNoop = Layer.succeed(
           seedCount: seeds.length,
           expandedCount: 0,
           maxDepthReached: 0,
-          nodesVisited: seeds.length
+          nodesVisited: seeds.length,
+          maxNodesReached: false
         }
       }),
 
@@ -221,6 +225,7 @@ const DEFAULT_OPTIONS: Required<Omit<GraphExpansionOptions, "edgeTypes">> = {
   depth: 2,
   decayFactor: 0.7,
   maxNodes: 100,
+  direction: "both",
 }
 
 /**
@@ -355,6 +360,12 @@ export const GraphExpansionServiceLive = Layer.effect(
           const decayFactor = options.decayFactor ?? DEFAULT_OPTIONS.decayFactor
           const maxNodes = options.maxNodes ?? DEFAULT_OPTIONS.maxNodes
           const edgeTypeFilter = options.edgeTypes
+          // Map direction option to findNeighbors terminology
+          const directionOpt = options.direction ?? DEFAULT_OPTIONS.direction
+          const findDirection: "outgoing" | "incoming" | "both" =
+            directionOpt === "outbound" ? "outgoing"
+              : directionOpt === "inbound" ? "incoming"
+              : "both"
 
           // Handle empty seeds
           if (seeds.length === 0) {
@@ -367,6 +378,7 @@ export const GraphExpansionServiceLive = Layer.effect(
                 expandedCount: 0,
                 maxDepthReached: 0,
                 nodesVisited: 0,
+                maxNodesReached: false,
               },
             }
           }
@@ -398,6 +410,7 @@ export const GraphExpansionServiceLive = Layer.effect(
                 expandedCount: 0,
                 maxDepthReached: 0,
                 nodesVisited: seedLearnings.length,
+                maxNodesReached: seedLearnings.length >= maxNodes,
               },
             }
           }
@@ -417,16 +430,18 @@ export const GraphExpansionServiceLive = Layer.effect(
 
           const expanded: ExpandedLearning[] = []
           let maxDepthReached = 0
+          let maxNodesReached = false
+          const totalNodes = () => seedLearnings.length + expanded.length
 
           // BFS traversal
           for (let currentHop = 1; currentHop <= depth; currentHop++) {
             if (frontier.length === 0) break
-            if (expanded.length >= maxNodes) break
+            if (totalNodes() >= maxNodes) { maxNodesReached = true; break }
 
             const nextFrontier: FrontierNode[] = []
 
             for (const node of frontier) {
-              if (expanded.length >= maxNodes) break
+              if (totalNodes() >= maxNodes) { maxNodesReached = true; break }
 
               // Find neighbors bidirectionally (per PRD-016 resolved question #1)
               // Resolve edge types for this specific hop (supports per-hop overrides)
@@ -436,7 +451,7 @@ export const GraphExpansionServiceLive = Layer.effect(
                 String(node.learningId),
                 {
                   depth: 1,
-                  direction: "both",
+                  direction: findDirection,
                   edgeTypes: edgeTypesForHop,
                 }
               )
@@ -448,7 +463,7 @@ export const GraphExpansionServiceLive = Layer.effect(
               )
 
               for (const neighbor of learningNeighbors) {
-                if (expanded.length >= maxNodes) break
+                if (totalNodes() >= maxNodes) { maxNodesReached = true; break }
 
                 const neighborId = parseInt(neighbor.nodeId, 10)
                 if (isNaN(neighborId)) continue
@@ -490,8 +505,10 @@ export const GraphExpansionServiceLive = Layer.effect(
           // Sort expanded by decayed score (highest first)
           expanded.sort((a, b) => b.decayedScore - a.decayedScore)
 
-          // Enforce maxNodes limit on expanded
-          const limitedExpanded = expanded.slice(0, maxNodes)
+          // Enforce maxNodes limit on total (seeds + expanded)
+          const expandedLimit = Math.max(0, maxNodes - seedLearnings.length)
+          const limitedExpanded = expanded.slice(0, expandedLimit)
+          if (expanded.length > expandedLimit) maxNodesReached = true
 
           const all = [...seedLearnings, ...limitedExpanded]
 
@@ -504,6 +521,7 @@ export const GraphExpansionServiceLive = Layer.effect(
               expandedCount: limitedExpanded.length,
               maxDepthReached,
               nodesVisited: visited.size,
+              maxNodesReached,
             },
           }
         }),

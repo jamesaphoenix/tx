@@ -302,10 +302,26 @@ export const graphLink = (pos: string[], flags: Flags) =>
     if (anchorType === "line_range") {
       // Parse value as "start-end" or just "start"
       const rangeParts = value!.split("-")
+      if (rangeParts.length < 1 || rangeParts.length > 2 || !rangeParts[0]) {
+        console.error(`Error: Invalid line range "${value}". Expected format: start-end (e.g., 10-20) or start (e.g., 10)`)
+        process.exit(1)
+      }
+      if (rangeParts.length === 2 && !rangeParts[1]) {
+        console.error(`Error: Invalid line range "${value}". Expected format: start-end (e.g., 10-20) or start (e.g., 10)`)
+        process.exit(1)
+      }
       input.lineStart = parseInt(rangeParts[0], 10)
-      input.lineEnd = rangeParts[1] ? parseInt(rangeParts[1], 10) : input.lineStart
+      input.lineEnd = rangeParts.length === 2 ? parseInt(rangeParts[1], 10) : input.lineStart
       if (isNaN(input.lineStart) || isNaN(input.lineEnd)) {
-        console.error("Error: Line range must be in format 'start' or 'start-end'")
+        console.error(`Error: Invalid line range "${value}". Start and end must be numbers`)
+        process.exit(1)
+      }
+      if (input.lineStart < 1 || input.lineEnd < 1) {
+        console.error(`Error: Invalid line range "${value}". Line numbers must be positive`)
+        process.exit(1)
+      }
+      if (input.lineEnd < input.lineStart) {
+        console.error(`Error: Invalid line range "${value}". End line must be >= start line`)
         process.exit(1)
       }
     }

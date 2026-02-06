@@ -427,8 +427,8 @@ export const corruptState = (options: CorruptStateOptions): { rowId: string; cor
 
     case "invalid_status":
       if (table === "tasks") {
-        // Must use exec() with inline values to bypass constraint checking
-        // SQLite CHECK constraints can't be disabled, so we recreate the row
+        // Use PRAGMA ignore_check_constraints to bypass CHECK constraint on status
+        // The pragma is connection-level so it applies to parameterized queries too
         db.exec(`PRAGMA foreign_keys = OFF`)
         db.exec(`PRAGMA ignore_check_constraints = ON`)
         if (rowId) {
@@ -444,19 +444,19 @@ export const corruptState = (options: CorruptStateOptions): { rowId: string; cor
             metadata: string
           }>("SELECT * FROM tasks WHERE id = ?", [rowId])[0]
           if (existing) {
-            db.exec(`DELETE FROM tasks WHERE id = '${rowId}'`)
-            const parentVal = existing.parent_id ? `'${existing.parent_id}'` : "NULL"
-            const completedVal = existing.completed_at ? `'${existing.completed_at}'` : "NULL"
-            db.exec(`
-              INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
-              VALUES ('${rowId}', '${existing.title.replace(/'/g, "''")}', '${existing.description.replace(/'/g, "''")}', 'INVALID_STATUS', ${existing.score}, ${parentVal}, '${existing.created_at}', datetime('now'), ${completedVal}, '${existing.metadata.replace(/'/g, "''")}')
-            `)
+            db.run(`DELETE FROM tasks WHERE id = ?`, [rowId])
+            db.run(
+              `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
+               VALUES (?, ?, ?, 'INVALID_STATUS', ?, ?, ?, datetime('now'), ?, ?)`,
+              [rowId, existing.title, existing.description, existing.score, existing.parent_id, existing.created_at, existing.completed_at, existing.metadata]
+            )
           }
         } else {
-          db.exec(`
-            INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-            VALUES ('${targetId}', 'Corrupted Task', '', 'INVALID_STATUS', 0, datetime('now'), datetime('now'), '{}')
-          `)
+          db.run(
+            `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+             VALUES (?, 'Corrupted Task', '', 'INVALID_STATUS', 0, datetime('now'), datetime('now'), '{}')`,
+            [targetId]
+          )
         }
         db.exec(`PRAGMA ignore_check_constraints = OFF`)
         db.exec(`PRAGMA foreign_keys = ON`)

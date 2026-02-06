@@ -101,7 +101,7 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/
 
 const TaskWithDepsOutputSchema = z.object({
-  id: z.string().regex(/^tx-[a-z0-9]{6,8}$/),
+  id: z.string().regex(/^tx-[a-z0-9]{6,12}$/),
   title: z.string(),
   description: z.string(),
   status: z.enum(TASK_STATUSES),
@@ -186,7 +186,7 @@ describe("TaskWithDeps Schema Validation", () => {
     expect(Array.isArray(serialized.blockedBy)).toBe(true)
     expect(serialized.blockedBy).toHaveLength(2)
     for (const id of serialized.blockedBy as string[]) {
-      expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+      expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     }
   })
 
@@ -251,7 +251,7 @@ describe("TaskWithDeps Schema Validation", () => {
     const task = makeTestTask()
     const serialized = serializeTask(task)
 
-    expect(serialized.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(serialized.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("preserves metadata as object", () => {

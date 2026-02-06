@@ -40,6 +40,18 @@ interface CompactionLogRow {
 }
 
 /**
+ * Safely parse a JSON array of task ID strings, returning empty array on failure.
+ */
+const safeParseTaskIds = (json: string | null | undefined): readonly string[] => {
+  try {
+    const parsed: unknown = JSON.parse(json || "[]")
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []
+  } catch {
+    return []
+  }
+}
+
+/**
  * Map database row to domain entity.
  */
 const rowToCompactionLogEntry = (row: CompactionLogRow): CompactionLogEntry => ({
@@ -47,7 +59,7 @@ const rowToCompactionLogEntry = (row: CompactionLogRow): CompactionLogEntry => (
   compactedAt: new Date(row.compacted_at),
   taskCount: row.task_count,
   summary: row.summary,
-  taskIds: JSON.parse(row.task_ids) as string[],
+  taskIds: safeParseTaskIds(row.task_ids),
   learningsExportedTo: row.learnings_exported_to,
   learnings: row.learnings
 })

@@ -8,7 +8,7 @@ export class HierarchyService extends Context.Tag("HierarchyService")<
   {
     readonly getChildren: (id: TaskId) => Effect.Effect<readonly Task[], TaskNotFoundError | DatabaseError>
     readonly getAncestors: (id: TaskId) => Effect.Effect<readonly Task[], TaskNotFoundError | DatabaseError>
-    readonly getTree: (id: TaskId) => Effect.Effect<TaskTree, TaskNotFoundError | DatabaseError>
+    readonly getTree: (id: TaskId, maxDepth?: number) => Effect.Effect<TaskTree, TaskNotFoundError | DatabaseError>
     readonly getDepth: (id: TaskId) => Effect.Effect<number, TaskNotFoundError | DatabaseError>
     readonly getRoots: () => Effect.Effect<readonly Task[], DatabaseError>
   }
@@ -21,7 +21,8 @@ export const HierarchyServiceLive = Layer.effect(
 
     // Build tree from a flat list of tasks (root task first, then descendants)
     // This is O(n) in-memory after a single O(1) query
-    const buildTreeFromTasks = (tasks: readonly Task[]): TaskTree | null => {
+    // maxDepth limits in-memory recursion as defense-in-depth
+    const buildTreeFromTasks = (tasks: readonly Task[], maxDepth: number): TaskTree | null => {
       if (tasks.length === 0) return null
 
       const rootTask = tasks[0]
@@ -37,22 +38,27 @@ export const HierarchyServiceLive = Layer.effect(
       }
 
       // Recursively build tree nodes (in-memory, no DB queries)
-      const buildNode = (task: Task): TaskTree => {
+      // Uses visited set to prevent infinite recursion from self-referencing tasks
+      // currentDepth tracks recursion depth to enforce maxDepth limit
+      const visited = new Set<string>()
+      const buildNode = (task: Task, currentDepth: number): TaskTree => {
+        if (visited.has(task.id) || currentDepth >= maxDepth) return { task, children: [] }
+        visited.add(task.id)
         const childTasks = childrenByParent.get(task.id) ?? []
         return {
           task,
-          children: childTasks.map(buildNode)
+          children: childTasks.map((child) => buildNode(child, currentDepth + 1))
         }
       }
 
-      return buildNode(rootTask)
+      return buildNode(rootTask, 0)
     }
 
-    const buildTree = (task: Task): Effect.Effect<TaskTree, DatabaseError> =>
+    const buildTree = (task: Task, maxDepth: number): Effect.Effect<TaskTree, DatabaseError> =>
       Effect.gen(function* () {
-        // Single query to get task and all descendants
-        const allTasks = yield* taskRepo.getDescendants(task.id)
-        const tree = buildTreeFromTasks(allTasks)
+        // Single query to get task and all descendants, limited by maxDepth
+        const allTasks = yield* taskRepo.getDescendants(task.id, maxDepth)
+        const tree = buildTreeFromTasks(allTasks, maxDepth)
         // This should always succeed since we start with a valid task
         return tree ?? { task, children: [] }
       })
@@ -79,13 +85,13 @@ export const HierarchyServiceLive = Layer.effect(
           return chain.slice(1)
         }),
 
-      getTree: (id) =>
+      getTree: (id, maxDepth = 10) =>
         Effect.gen(function* () {
           const task = yield* taskRepo.findById(id)
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-          return yield* buildTree(task)
+          return yield* buildTree(task, maxDepth)
         }),
 
       getDepth: (id) =>

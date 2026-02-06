@@ -67,6 +67,7 @@ export const mapCoreError = (e: unknown): NotFound | BadRequest | InternalError 
         return new NotFound({ message })
       case "ValidationError":
       case "CircularDependencyError":
+      case "HasChildrenError":
         return new BadRequest({ message })
       case "EmbeddingUnavailableError":
         return new ServiceUnavailable({ message })
@@ -83,11 +84,11 @@ export const mapCoreError = (e: unknown): NotFound | BadRequest | InternalError 
 // =============================================================================
 
 const TaskIdParam = HttpApiSchema.param("id", Schema.String.pipe(
-  Schema.pattern(/^tx-[a-z0-9]{6,8}$/)
+  Schema.pattern(/^tx-[a-z0-9]{6,12}$/)
 ))
 
 const BlockerIdParam = HttpApiSchema.param("blockerId", Schema.String.pipe(
-  Schema.pattern(/^tx-[a-z0-9]{6,8}$/)
+  Schema.pattern(/^tx-[a-z0-9]{6,12}$/)
 ))
 
 const LearningIdParam = HttpApiSchema.param("id", Schema.NumberFromString.pipe(Schema.int()))
@@ -204,7 +205,7 @@ const UpdateTaskBody = Schema.Struct({
 })
 
 const BlockBody = Schema.Struct({
-  blockerId: Schema.String.pipe(Schema.pattern(/^tx-[a-z0-9]{6,8}$/)),
+  blockerId: Schema.String.pipe(Schema.pattern(/^tx-[a-z0-9]{6,12}$/)),
 })
 
 export const TasksGroup = HttpApiGroup.make("tasks")
@@ -245,6 +246,9 @@ export const TasksGroup = HttpApiGroup.make("tasks")
   )
   .add(
     HttpApiEndpoint.del("deleteTask")`/api/tasks/${TaskIdParam}`
+      .setUrlParams(Schema.Struct({
+        cascade: Schema.optional(Schema.String)
+      }))
       .addSuccess(TaskDeleteResponse)
   )
   .add(

@@ -6,12 +6,12 @@
  * 2. Work correctly with the Effect runtime
  * 3. Handle errors appropriately
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"
 import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 import { z } from "zod"
 
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
@@ -68,12 +68,12 @@ export interface ParsedMcpResponse<T = unknown> {
  * Creates a ManagedRuntime configured with an in-memory test database.
  * Each call creates a fresh runtime with isolated state.
  *
- * @param db - Pre-configured TestDatabase instance (from createTestDatabase)
+ * @param db - Raw bun:sqlite Database instance
  * @returns ManagedRuntime ready to execute MCP tool Effects
  */
 
-export function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
+export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
+  const infra = Layer.succeed(SqliteClient, db as Database)
 
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -424,8 +424,8 @@ function createToolEffect(
         const nowReady: TaskWithDeps[] = []
         for (const blockedTask of blocking) {
           if (blockedTask.status === "done") continue
-          const isNowReady = yield* readyService.isReady(blockedTask.id)
-          if (isNowReady) {
+          const readyCheck = yield* readyService.isReady(blockedTask.id)
+          if (readyCheck._tag === "Ready") {
             nowReady.push(yield* taskService.getWithDeps(blockedTask.id))
           }
         }
@@ -742,17 +742,25 @@ export async function callMcpToolParsed<T extends ToolName, R = unknown>(
 // -----------------------------------------------------------------------------
 
 describe("MCP Test Infrastructure", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   describe("makeTestRuntime", () => {
@@ -770,10 +778,10 @@ describe("MCP Test Infrastructure", () => {
     })
 
     it("provides isolated state per runtime instance", async () => {
-      // Create a second runtime with fresh db
-      const db2 = await Effect.runPromise(createTestDatabase())
+      // Create a second runtime with fresh db to verify isolation
+      const shared2 = await createSharedTestLayer()
       // Don't seed - should be empty
-      const runtime2 = makeTestRuntime(db2)
+      const runtime2 = makeTestRuntime(shared2.getDb())
 
       try {
         const tasks = await runtime2.runPromise(
@@ -786,6 +794,7 @@ describe("MCP Test Infrastructure", () => {
         expect(tasks).toHaveLength(0)
       } finally {
         await runtime2.dispose()
+        await shared2.close()
       }
     })
   })
@@ -835,17 +844,25 @@ describe("MCP Test Infrastructure", () => {
 })
 
 describe("MCP tx_ready Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("returns TaskWithDeps[] with full dependency information (Rule 1)", async () => {
@@ -966,17 +983,25 @@ describe("MCP tx_ready Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_show Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("returns TaskWithDeps with full dependency information (Rule 1)", async () => {
@@ -1100,17 +1125,25 @@ describe("MCP tx_show Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_list Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("returns TaskWithDeps[] with full dependency information (Rule 1)", async () => {
@@ -1208,17 +1241,25 @@ describe("MCP tx_list Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_children Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("returns TaskWithDeps[] for children (Rule 1)", async () => {
@@ -1289,17 +1330,25 @@ describe("MCP tx_children Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_add Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("creates task and returns TaskWithDeps (Rule 1)", async () => {
@@ -1313,7 +1362,7 @@ describe("MCP tx_add Tool", () => {
     const task = response.data
 
     expect(task).toHaveProperty("id")
-    expect(task.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(task.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     expect(task.title).toBe("New test task")
     expect(task.status).toBe("backlog")
 
@@ -1402,7 +1451,7 @@ describe("MCP tx_add Tool", () => {
 
     expect(response.content).toHaveLength(2)
     expect(response.content[0].type).toBe("text")
-    expect(response.content[0].text).toMatch(/Created task: tx-[a-z0-9]{8}/)
+    expect(response.content[0].text).toMatch(/Created task: tx-[a-z0-9]{6,12}/)
     expect(response.content[1].type).toBe("text")
     expect(() => JSON.parse(response.content[1].text)).not.toThrow()
   })
@@ -1413,17 +1462,25 @@ describe("MCP tx_add Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_update Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("updates task and returns TaskWithDeps (Rule 1)", async () => {
@@ -1530,17 +1587,25 @@ describe("MCP tx_update Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_done Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("marks task as done and returns TaskWithDeps (Rule 1)", async () => {
@@ -1651,17 +1716,25 @@ describe("MCP tx_done Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_delete Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("deletes task and returns success", async () => {
@@ -1719,17 +1792,25 @@ describe("MCP tx_delete Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_block Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("adds blocker and returns TaskWithDeps with updated blockedBy (Rule 1)", async () => {
@@ -1845,17 +1926,25 @@ describe("MCP tx_block Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_unblock Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("removes blocker and returns TaskWithDeps with updated blockedBy (Rule 1)", async () => {
@@ -1943,17 +2032,25 @@ describe("MCP tx_unblock Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_add Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("creates learning and returns Learning with valid ID", async () => {
@@ -2067,17 +2164,25 @@ describe("MCP tx_learning_add Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_search Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("returns LearningWithScore[] with relevance scores", async () => {
@@ -2213,17 +2318,25 @@ describe("MCP tx_learning_search Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learning_helpful Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("updates learning with helpfulness score", async () => {
@@ -2357,17 +2470,25 @@ describe("MCP tx_learning_helpful Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_context Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("returns ContextResult with learnings for valid task", async () => {
@@ -2551,17 +2672,25 @@ describe("MCP tx_context Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_learn Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("creates file learning with exact path", async () => {
@@ -2745,17 +2874,25 @@ describe("MCP tx_learn Tool", () => {
 // -----------------------------------------------------------------------------
 
 describe("MCP tx_recall Tool", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    runtime = makeTestRuntime(db)
+    seedFixtures({ db: shared.getDb() } as any)
   })
 
   afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
     await runtime.dispose()
+    await shared.close()
   })
 
   it("returns all file learnings when no path provided", async () => {

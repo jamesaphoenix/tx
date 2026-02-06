@@ -54,7 +54,7 @@ $ eslint src/
   269:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                     tx/no-throw-in-services
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/helpers/shared-test-layer.ts
-  16:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SharedTestLayer". See DOCTRINE RULE 10  tx/no-plain-interfaces
+  17:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SharedTestLayer". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/test-utils/src/llm-cache/cache.test.ts
   243:7  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ComplexInput". See DOCTRINE RULE 10  tx/no-plain-interfaces

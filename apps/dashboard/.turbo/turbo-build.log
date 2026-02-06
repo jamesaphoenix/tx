@@ -5,6 +5,6 @@ transforming...
 rendering chunks...
 computing gzip size...
 dist/index.html                   0.46 kB │ gzip:   0.30 kB
-dist/assets/index-C3Wghb45.css   26.15 kB │ gzip:   5.49 kB
-dist/assets/index-CYpFgwBl.js   385.69 kB │ gzip: 118.95 kB
-✓ built in 2.42s
+dist/assets/index-DpvBvySq.css   30.17 kB │ gzip:   6.05 kB
+dist/assets/index-BkBj7Rfp.js   389.41 kB │ gzip: 119.86 kB
+✓ built in 870ms

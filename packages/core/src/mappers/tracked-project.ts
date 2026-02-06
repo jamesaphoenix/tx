@@ -9,6 +9,7 @@ import type {
 } from "@jamesaphoenix/tx-types"
 import { SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 
 // Re-export types and constants from @tx/types for convenience
 export type { TrackedProjectRow } from "@jamesaphoenix/tx-types"
@@ -31,7 +32,8 @@ export const rowToTrackedProject = (row: TrackedProjectRow): TrackedProject => {
     throw new InvalidStatusError({
       entity: "tracked_project",
       status: row.source_type,
-      validStatuses: SOURCE_TYPES
+      validStatuses: SOURCE_TYPES,
+      rowId: row.id
     })
   }
   return {
@@ -39,7 +41,7 @@ export const rowToTrackedProject = (row: TrackedProjectRow): TrackedProject => {
     projectPath: row.project_path,
     projectId: row.project_id,
     sourceType: row.source_type,
-    addedAt: new Date(row.added_at),
+    addedAt: parseDate(row.added_at, "added_at", row.id),
     enabled: row.enabled === 1
   }
 }

@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, UnexpectedRowCountError } from "../errors.js"
 import { rowToAnchor, rowToInvalidationLog } from "../mappers/anchor.js"
+import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "@jamesaphoenix/tx-types"
 
 /** Input for logging an invalidation event */
@@ -30,9 +31,9 @@ export class AnchorRepository extends Context.Tag("AnchorRepository")<
     readonly updateStatus: (id: number, status: AnchorStatus) => Effect.Effect<boolean, DatabaseError>
     readonly updateVerifiedAt: (id: number) => Effect.Effect<boolean, DatabaseError>
     /** Find all anchors */
-    readonly findAll: () => Effect.Effect<readonly Anchor[], DatabaseError>
+    readonly findAll: (limit?: number) => Effect.Effect<readonly Anchor[], DatabaseError>
     /** Find all valid anchors (for verification) */
-    readonly findAllValid: () => Effect.Effect<readonly Anchor[], DatabaseError>
+    readonly findAllValid: (limit?: number) => Effect.Effect<readonly Anchor[], DatabaseError>
     /** Set pinned status */
     readonly setPinned: (id: number, pinned: boolean) => Effect.Effect<boolean, DatabaseError>
     /** Delete old invalid anchors */
@@ -247,23 +248,23 @@ export const AnchorRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause })
         }),
 
-      findAll: () =>
+      findAll: (limit) =>
         Effect.try({
           try: () => {
             const rows = db.prepare(
-              "SELECT * FROM learning_anchors ORDER BY created_at DESC"
-            ).all() as AnchorRow[]
+              "SELECT * FROM learning_anchors ORDER BY created_at DESC LIMIT ?"
+            ).all(limit ?? DEFAULT_QUERY_LIMIT) as AnchorRow[]
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
 
-      findAllValid: () =>
+      findAllValid: (limit) =>
         Effect.try({
           try: () => {
             const rows = db.prepare(
-              "SELECT * FROM learning_anchors WHERE status = 'valid' ORDER BY created_at DESC"
-            ).all() as AnchorRow[]
+              "SELECT * FROM learning_anchors WHERE status = 'valid' ORDER BY created_at DESC LIMIT ?"
+            ).all(limit ?? DEFAULT_QUERY_LIMIT) as AnchorRow[]
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })

@@ -4,25 +4,21 @@
 
 import { Effect } from "effect"
 import { TaskService } from "@jamesaphoenix/tx-core"
-import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
 import { toJson, formatTaskLine } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
+import { type Flags, flag, parseTaskId } from "../utils/parse.js"
 
 export const children = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    if (!id) {
+    const raw = pos[0]
+    if (!raw) {
       console.error("Usage: tx children <id> [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(raw)
 
     const svc = yield* TaskService
-    const parent = yield* svc.getWithDeps(id as TaskId)
+    const parent = yield* svc.getWithDeps(id)
     const childTasks = yield* svc.listWithDeps({ parentId: id })
 
     if (flag(flags, "json")) {
@@ -41,18 +37,19 @@ export const children = (pos: string[], flags: Flags) =>
 
 export const tree = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    if (!id) {
+    const raw = pos[0]
+    if (!raw) {
       console.error("Usage: tx tree <id> [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(raw)
 
     const svc = yield* TaskService
 
     // Recursive tree builder
     const buildTree = (taskId: string, depth: number): Effect.Effect<void, unknown, TaskService> =>
       Effect.gen(function* () {
-        const task = yield* svc.getWithDeps(taskId as TaskId)
+        const task = yield* svc.getWithDeps(parseTaskId(taskId))
         const indent = "  ".repeat(depth)
         const readyMark = task.isReady ? "+" : " "
 

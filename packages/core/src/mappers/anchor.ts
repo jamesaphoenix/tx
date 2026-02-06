@@ -17,6 +17,7 @@ import {
   INVALIDATION_SOURCES
 } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 
 // Re-export types from @tx/types for convenience
 export type { AnchorRow, InvalidationLogRow } from "@jamesaphoenix/tx-types"
@@ -51,14 +52,16 @@ export const rowToAnchor = (row: AnchorRow): Anchor => {
     throw new InvalidStatusError({
       entity: "anchor",
       status: row.anchor_type,
-      validStatuses: ANCHOR_TYPES
+      validStatuses: ANCHOR_TYPES,
+      rowId: row.id
     })
   }
   if (!isValidAnchorStatus(row.status)) {
     throw new InvalidStatusError({
       entity: "anchor",
       status: row.status,
-      validStatuses: ANCHOR_STATUSES
+      validStatuses: ANCHOR_STATUSES,
+      rowId: row.id
     })
   }
   return {
@@ -74,8 +77,8 @@ export const rowToAnchor = (row: AnchorRow): Anchor => {
     contentPreview: row.content_preview,
     status: row.status,
     pinned: row.pinned === 1,
-    verifiedAt: row.verified_at ? new Date(row.verified_at) : null,
-    createdAt: new Date(row.created_at)
+    verifiedAt: row.verified_at ? parseDate(row.verified_at, "verified_at", row.id) : null,
+    createdAt: parseDate(row.created_at, "created_at", row.id)
   }
 }
 
@@ -88,21 +91,24 @@ export const rowToInvalidationLog = (row: InvalidationLogRow): InvalidationLog =
     throw new InvalidStatusError({
       entity: "invalidation_log.old_status",
       status: row.old_status,
-      validStatuses: ANCHOR_STATUSES
+      validStatuses: ANCHOR_STATUSES,
+      rowId: row.id
     })
   }
   if (!isValidAnchorStatus(row.new_status)) {
     throw new InvalidStatusError({
       entity: "invalidation_log.new_status",
       status: row.new_status,
-      validStatuses: ANCHOR_STATUSES
+      validStatuses: ANCHOR_STATUSES,
+      rowId: row.id
     })
   }
   if (!isValidInvalidationSource(row.detected_by)) {
     throw new InvalidStatusError({
       entity: "invalidation_log.detected_by",
       status: row.detected_by,
-      validStatuses: INVALIDATION_SOURCES
+      validStatuses: INVALIDATION_SOURCES,
+      rowId: row.id
     })
   }
   return {
@@ -115,6 +121,6 @@ export const rowToInvalidationLog = (row: InvalidationLogRow): InvalidationLog =
     oldContentHash: row.old_content_hash,
     newContentHash: row.new_content_hash,
     similarityScore: row.similarity_score,
-    invalidatedAt: new Date(row.invalidated_at)
+    invalidatedAt: parseDate(row.invalidated_at, "invalidated_at", row.id)
   }
 }

@@ -57,7 +57,7 @@ if [ -n "$TASK_ID" ]; then
 
     if [ "$LEARNING_COUNT" -gt 0 ]; then
       LEARNINGS=$(echo "$TASK_CONTEXT" | jq -r '
-        .learnings[:5] | .[] | "- [\(.sourceType // "manual")] \(.content | .[0:200])"
+        .learnings[:15] | .[] | "- [\(.sourceType // "manual")] \(.content)"
       ' 2>/dev/null || true)
 
       if [ -n "$LEARNINGS" ]; then

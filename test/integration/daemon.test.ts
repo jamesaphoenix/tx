@@ -159,7 +159,9 @@ describe("Daemon Hash Deduplication", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("computes consistent SHA256 hash for content", async () => {
     const result = await Effect.runPromise(
@@ -804,7 +806,9 @@ describe("Daemon Confidence Scoring", () => {
     candidateFactory = new CandidateFactory(testDb)
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("creates high-confidence candidates", () => {
     const candidate = candidateFactory.highConfidence({
@@ -913,7 +917,9 @@ describe("Daemon Promotion Flow", () => {
     learningFactory = new LearningFactory(testDb)
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("promotes high-confidence candidate to learning", async () => {
     // Create a high-confidence candidate
@@ -1077,7 +1083,9 @@ describe("Daemon Review Queue", () => {
     candidateFactory = new CandidateFactory(testDb)
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("lists pending candidates for review", () => {
     // Create candidates with different statuses
@@ -1259,7 +1267,9 @@ describe("Daemon End-to-End Pipeline", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tx-daemon-e2e-"))
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("simulates full pipeline: watch -> dedupe -> extract -> promote", async () => {
     // 1. Simulate file watching (create a JSONL file)
@@ -1827,7 +1837,9 @@ describe("PromotionService Auto-Promote Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("auto-promotes high-confidence candidates", async () => {
     const result = await Effect.runPromise(
@@ -2045,7 +2057,9 @@ describe("PromotionService Manual Promote/Reject Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("manual promote creates learning and updates candidate status", async () => {
     const result = await Effect.runPromise(
@@ -2114,7 +2128,9 @@ describe("PromotionService Semantic Deduplication Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("marks similar candidates as merged when existing learning found", async () => {
     const result = await Effect.runPromise(
@@ -2217,7 +2233,9 @@ describe("PromotionService Provenance Tracking Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("promoted learning content matches candidate content exactly", async () => {
     const testContent = "Use Effect-TS Data.TaggedError for typed error handling"
@@ -2337,7 +2355,9 @@ describe("Review Queue Status Filtering Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("filters candidates by pending status", async () => {
     const result = await Effect.runPromise(
@@ -2499,7 +2519,9 @@ describe("Review Queue Confidence Filtering Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("filters candidates by single confidence level", async () => {
     const result = await Effect.runPromise(
@@ -2633,7 +2655,9 @@ describe("Review Queue Manual Promote/Reject Edge Cases", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("promote fails for non-existent candidate", async () => {
     const result = await Effect.runPromise(
@@ -2762,7 +2786,9 @@ describe("Review Queue Pagination Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("limits results using limit parameter", async () => {
     const result = await Effect.runPromise(
@@ -2832,7 +2858,9 @@ describe("Review Queue Category Filtering Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("filters candidates by single category", async () => {
     const result = await Effect.runPromise(
@@ -2911,7 +2939,9 @@ describe("Review Queue Source Filtering Integration", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("filters candidates by source file", async () => {
     const result = await Effect.runPromise(
@@ -3015,7 +3045,9 @@ describe("Review Queue Expiration/Stale Candidates", () => {
     candidateFactory = new CandidateFactory(testDb)
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("identifies old pending candidates by extraction date", () => {
     // Create candidates with different extraction dates
@@ -3195,7 +3227,9 @@ describe("Review Queue getPending Convenience Method", () => {
     shared = await getSharedTestLayer()
   })
 
-  // Note: Database reset/close handled by global vitest.setup.ts
+  afterEach(async () => {
+    await shared.reset()
+  })
 
   it("returns only pending candidates", async () => {
     const result = await Effect.runPromise(

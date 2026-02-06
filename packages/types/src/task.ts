@@ -29,7 +29,7 @@ export const TASK_STATUSES = [
 /**
  * Regex pattern for valid task IDs.
  */
-export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,8}$/;
+export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,12}$/;
 
 /**
  * Valid status transitions map.
@@ -54,7 +54,7 @@ export const VALID_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
 export const TaskStatusSchema = Schema.Literal(...TASK_STATUSES)
 export type TaskStatus = typeof TaskStatusSchema.Type
 
-/** Task ID - branded string matching tx-[a-z0-9]{6,8}. */
+/** Task ID - branded string matching tx-[a-z0-9]{6,12}. */
 export const TaskIdSchema = Schema.String.pipe(
   Schema.pattern(TASK_ID_PATTERN),
   Schema.brand("TaskId")
@@ -198,7 +198,7 @@ export const isValidTaskId = (id: string): id is TaskId => {
  */
 export class InvalidTaskIdError extends Error {
   constructor(public readonly id: string) {
-    super(`Invalid task ID: "${id}". Expected format: tx-[a-z0-9]{6,8}`);
+    super(`Invalid task ID: "${id}". Expected format: tx-[a-z0-9]{6,12}`);
     this.name = "InvalidTaskIdError";
   }
 }

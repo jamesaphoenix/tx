@@ -8,6 +8,7 @@ export class WorkerRepository extends Context.Tag("WorkerRepository")<
   WorkerRepository,
   {
     readonly insert: (worker: Worker) => Effect.Effect<void, DatabaseError>
+    readonly insertIfUnderCapacity: (worker: Worker, maxCapacity: number) => Effect.Effect<boolean, DatabaseError>
     readonly update: (worker: Worker) => Effect.Effect<void, DatabaseError | WorkerNotFoundError>
     readonly delete: (id: string) => Effect.Effect<boolean, DatabaseError>
     readonly findById: (id: string) => Effect.Effect<Worker | null, DatabaseError>
@@ -49,6 +50,59 @@ export const WorkerRepositoryLive = Layer.effect(
                 expected: 1,
                 actual: result.changes
               })
+            }
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      insertIfUnderCapacity: (worker, maxCapacity) =>
+        Effect.try({
+          try: () => {
+            // BEGIN IMMEDIATE acquires write lock immediately, preventing other writers
+            // from registering workers until we commit/rollback
+            db.exec("BEGIN IMMEDIATE")
+            try {
+              // Count active workers atomically within the transaction
+              const countResult = db.prepare(
+                "SELECT COUNT(*) as cnt FROM workers WHERE status IN ('starting', 'idle', 'busy')"
+              ).get() as { cnt: number }
+
+              if (countResult.cnt >= maxCapacity) {
+                db.exec("ROLLBACK")
+                return false
+              }
+
+              const result = db.prepare(
+                `INSERT INTO workers
+                 (id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              ).run(
+                worker.id,
+                worker.name,
+                worker.hostname,
+                worker.pid,
+                worker.status,
+                worker.registeredAt.toISOString(),
+                worker.lastHeartbeatAt.toISOString(),
+                worker.currentTaskId,
+                JSON.stringify(worker.capabilities),
+                JSON.stringify(worker.metadata)
+              )
+
+              if (result.changes !== 1) {
+                db.exec("ROLLBACK")
+                throw new UnexpectedRowCountError({
+                  operation: "worker insertIfUnderCapacity",
+                  expected: 1,
+                  actual: result.changes
+                })
+              }
+
+              db.exec("COMMIT")
+              return true
+            } catch (e) {
+              try { db.exec("ROLLBACK") } catch { /* already rolled back */ }
+              throw e
             }
           },
           catch: (cause) => new DatabaseError({ cause })

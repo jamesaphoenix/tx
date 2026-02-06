@@ -462,7 +462,7 @@ describe("CLI daemon review command", () => {
   it("rejects invalid limit value", () => {
     const result = runTxArgs(["daemon", "review", "--limit", "abc"], dbPath)
     expect(result.status).toBe(1)
-    expect(result.stderr).toContain("Invalid limit")
+    expect(result.stderr).toContain("is not a valid finite number")
   })
 })
 

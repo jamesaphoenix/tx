@@ -1101,7 +1101,7 @@ describe("FileWatcherServiceLive Initial Files", () => {
       fs.writeFileSync(file1, FIXTURES.JSONL_LINE_1)
 
       // Wait for file to settle before starting watcher
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await Effect.runPromise(Effect.sleep(300))
 
       const result = await Effect.runPromise(
         Effect.scoped(

@@ -9,6 +9,7 @@ import type {
 } from "@jamesaphoenix/tx-types"
 import { assertTaskId, ATTEMPT_OUTCOMES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 
 // Re-export types and constants from @tx/types for convenience
 export type { AttemptRow } from "@jamesaphoenix/tx-types"
@@ -31,7 +32,8 @@ export const rowToAttempt = (row: AttemptRow): Attempt => {
     throw new InvalidStatusError({
       entity: "attempt",
       status: row.outcome,
-      validStatuses: ATTEMPT_OUTCOMES
+      validStatuses: ATTEMPT_OUTCOMES,
+      rowId: row.id
     })
   }
   return {
@@ -40,6 +42,6 @@ export const rowToAttempt = (row: AttemptRow): Attempt => {
     approach: row.approach,
     outcome: row.outcome,
     reason: row.reason,
-    createdAt: new Date(row.created_at)
+    createdAt: parseDate(row.created_at, "created_at", row.id)
   }
 }

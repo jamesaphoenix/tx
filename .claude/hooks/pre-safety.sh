@@ -121,9 +121,16 @@ check_bash_safety() {
   # Block: Operations outside CLAUDE_PROJECT_DIR (cd to outside directories)
   if echo "$cmd" | grep -qE '^cd\s+(/|~|\$HOME)' && ! echo "$cmd" | grep -qE "cd\s+['\"]?$PROJECT_DIR_ABS"; then
     # Allow cd to project dir or subdirectories
-    local target=$(echo "$cmd" | sed -n 's/^cd\s\+\([^ ]*\).*/\1/p' | head -1)
+    local target=$(echo "$cmd" | sed -n 's/^cd[[:space:]]\{1,\}\([^ ]*\).*/\1/p' | head -1)
     if [ -n "$target" ]; then
-      target=$(eval echo "$target" 2>/dev/null || echo "$target")
+      # Safe tilde/variable expansion without eval (eval allows command injection)
+      if [[ "$target" == '~/'* ]]; then
+        target="${HOME}/${target:2}"
+      elif [[ "$target" == '~' ]]; then
+        target="${HOME}"
+      elif [[ "$target" == '$HOME'* ]]; then
+        target="${HOME}${target:5}"
+      fi
       if [[ "$target" != "$PROJECT_DIR_ABS"* ]]; then
         deny "Blocked: cd to directories outside project. Operations should stay within CLAUDE_PROJECT_DIR ($PROJECT_DIR_ABS)."
       fi

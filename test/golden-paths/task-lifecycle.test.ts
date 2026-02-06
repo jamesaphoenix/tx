@@ -19,6 +19,7 @@ import {
   TaskService,
   ReadyServiceLive,
   ReadyService,
+  isReadyResult,
   HierarchyServiceLive,
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
@@ -81,7 +82,7 @@ describe("Golden Path: Task Lifecycle", () => {
           score: 800
         })
 
-        expect(task.id).toMatch(/^tx-[a-z0-9]{8}$/)
+        expect(task.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
         expect(task.status).toBe("backlog")
         expect(task.score).toBe(800)
 
@@ -301,8 +302,8 @@ describe("Golden Path: Ready Detection", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    expect(result.jwtReady).toBe(true)
-    expect(result.blockedReady).toBe(false)
+    expect(isReadyResult(result.jwtReady)).toBe(true)
+    expect(isReadyResult(result.blockedReady)).toBe(false)
   })
 })
 

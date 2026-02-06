@@ -822,6 +822,140 @@ describe('RunsList', () => {
     })
   })
 
+  describe('accessibility', () => {
+    it('run cards have role="button"', async () => {
+      const runs = [createRun({ id: 'run-1', taskTitle: 'Accessible run' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /View run: Accessible run/ })).toBeInTheDocument()
+      })
+    })
+
+    it('run card aria-label uses task title', async () => {
+      const runs = [createRun({ id: 'run-1', taskTitle: 'My task title' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toHaveAttribute('aria-label', 'View run: My task title')
+      })
+    })
+
+    it('run card aria-label falls back to task ID when no title', async () => {
+      const runs = [createRun({ id: 'run-1', taskId: 'tx-fallback', taskTitle: null })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toHaveAttribute('aria-label', 'View run: tx-fallback')
+      })
+    })
+
+    it('run card aria-label falls back to run ID when no task', async () => {
+      const runs = [createRun({ id: 'run-notask', taskId: null, taskTitle: null })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toHaveAttribute('aria-label', 'View run: run-notask')
+      })
+    })
+
+    it('triggers onSelectRun on Enter key on run card', async () => {
+      const runs = [createRun({ id: 'run-enter', taskTitle: 'Enter run' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeInTheDocument()
+      })
+
+      fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
+      expect(onSelectRun).toHaveBeenCalledWith('run-enter')
+    })
+
+    it('triggers onSelectRun on Space key on run card', async () => {
+      const runs = [createRun({ id: 'run-space', taskTitle: 'Space run' })]
+
+      server.use(
+        http.get('/api/runs', () => {
+          return HttpResponse.json({
+            runs,
+            nextCursor: null,
+            hasMore: false,
+          } satisfies PaginatedRunsResponse)
+        })
+      )
+
+      const onSelectRun = vi.fn()
+      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeInTheDocument()
+      })
+
+      fireEvent.keyDown(screen.getByRole('button'), { key: ' ' })
+      expect(onSelectRun).toHaveBeenCalledWith('run-space')
+    })
+  })
+
   describe('run card content', () => {
     it('shows error message for failed runs', async () => {
       const runs = [

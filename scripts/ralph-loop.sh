@@ -23,6 +23,11 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
+# Escape single quotes for SQL strings to prevent SQL injection
+sql_escape() {
+    echo "${1//\'/\'\'}"
+}
+
 # Generate a run ID
 generate_run_id() {
     echo "run-$(echo "$1-$(date +%s)" | shasum -a 256 | cut -c1-8)"
@@ -35,7 +40,11 @@ start_run() {
     local agent="ralph"
     local started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    sqlite3 "$DB" "INSERT INTO runs (id, task_id, agent, started_at, status, pid) VALUES ('$run_id', '$task_id', '$agent', '$started_at', 'running', $$);"
+    local escaped_run_id=$(sql_escape "$run_id")
+    local escaped_task_id=$(sql_escape "$task_id")
+    local escaped_agent=$(sql_escape "$agent")
+
+    sqlite3 "$DB" "INSERT INTO runs (id, task_id, agent, started_at, status, pid) VALUES ('$escaped_run_id', '$escaped_task_id', '$escaped_agent', '$started_at', 'running', $$);"
     log "Created run: $run_id for task: $task_id"
 }
 
@@ -46,7 +55,13 @@ end_run() {
     local exit_code="${3:-0}"
     local ended_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    sqlite3 "$DB" "UPDATE runs SET status='$status', ended_at='$ended_at', exit_code=$exit_code WHERE id='$run_id';"
+    # Validate exit_code is an integer
+    [[ $exit_code =~ ^[0-9]+$ ]] || exit_code=1
+
+    local escaped_run_id=$(sql_escape "$run_id")
+    local escaped_status=$(sql_escape "$status")
+
+    sqlite3 "$DB" "UPDATE runs SET status='$escaped_status', ended_at='$ended_at', exit_code=$exit_code WHERE id='$escaped_run_id';"
     log "Ended run: $run_id with status: $status"
 }
 

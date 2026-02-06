@@ -354,7 +354,9 @@ function ChatView({ runId }: { runId: string }) {
           </div>
         ) : (
           <>
-            {messages.map((msg, i) => <ChatMessageComponent key={i} message={msg} />)}
+            {messages.map((msg, i) => (
+              <ChatMessageComponent key={`${msg.role}-${msg.type ?? "text"}-${i}`} message={msg} />
+            ))}
             <div ref={messagesEndRef} />
           </>
         )}

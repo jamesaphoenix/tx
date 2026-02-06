@@ -2,6 +2,9 @@
  * @tx/core/mappers - Row to domain object conversion utilities
  */
 
+// Shared utilities
+export { parseDate } from "./parse-date.js"
+
 // Task mappers
 export {
   rowToTask,
@@ -67,6 +70,7 @@ export {
 
 // Deduplication mappers
 export {
+  normalizeContent,
   hashContent,
   rowToProcessedHash,
   serializeProcessedHash,

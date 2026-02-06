@@ -4,10 +4,9 @@
 
 import { Effect } from "effect"
 import { TaskService, ReadyService, AttemptService } from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
 import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx-types"
 import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from "../output.js"
-import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
+import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"
 
 export const add = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -107,15 +106,16 @@ export const ready = (_pos: string[], flags: Flags) =>
 
 export const show = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    if (!id) {
+    const raw = pos[0]
+    if (!raw) {
       console.error("Usage: tx show <id> [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(raw)
 
     const svc = yield* TaskService
     const attemptSvc = yield* AttemptService
-    const task = yield* svc.getWithDeps(id as TaskId)
+    const task = yield* svc.getWithDeps(id)
 
     // Get up to 10 most recent attempts
     const allAttempts = yield* attemptSvc.listForTask(id)
@@ -143,11 +143,12 @@ export const show = (pos: string[], flags: Flags) =>
 
 export const update = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    if (!id) {
+    const raw = pos[0]
+    if (!raw) {
       console.error("Usage: tx update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(raw)
 
     const svc = yield* TaskService
     const input: Record<string, unknown> = {}
@@ -158,8 +159,8 @@ export const update = (pos: string[], flags: Flags) =>
     if (opt(flags, "description", "d")) input.description = opt(flags, "description", "d")
     if (opt(flags, "parent", "p")) input.parentId = opt(flags, "parent", "p")
 
-    yield* svc.update(id as TaskId, input)
-    const task = yield* svc.getWithDeps(id as TaskId)
+    yield* svc.update(id, input)
+    const task = yield* svc.getWithDeps(id)
 
     if (flag(flags, "json")) {
       console.log(toJson(task))
@@ -172,20 +173,21 @@ export const update = (pos: string[], flags: Flags) =>
 
 export const done = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    if (!id) {
+    const raw = pos[0]
+    if (!raw) {
       console.error("Usage: tx done <id> [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(raw)
 
     const taskSvc = yield* TaskService
     const readySvc = yield* ReadyService
 
     // Get tasks blocked by this one BEFORE marking complete
-    const blocking = yield* readySvc.getBlocking(id as TaskId)
+    const blocking = yield* readySvc.getBlocking(id)
 
-    yield* taskSvc.update(id as TaskId, { status: "done" })
-    const task = yield* taskSvc.getWithDeps(id as TaskId)
+    yield* taskSvc.update(id, { status: "done" })
+    const task = yield* taskSvc.getWithDeps(id)
 
     // Find newly unblocked tasks using batch query
     // Filter to workable statuses and get their full deps info in one batch
@@ -207,40 +209,43 @@ export const done = (pos: string[], flags: Flags) =>
 
 export const deleteTask = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    if (!id) {
-      console.error("Usage: tx delete <id> [--json]")
+    const raw = pos[0]
+    if (!raw) {
+      console.error("Usage: tx delete <id> [--cascade] [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(raw)
+    const cascade = flag(flags, "cascade")
 
     const svc = yield* TaskService
-    const task = yield* svc.get(id as TaskId)
-    yield* svc.remove(id as TaskId)
+    const task = yield* svc.getWithDeps(id)
+    yield* svc.remove(id, { cascade })
 
     if (flag(flags, "json")) {
-      console.log(toJson({ success: true, message: `Deleted task ${task.id}`, data: { id: task.id, title: task.title } }))
+      console.log(toJson({ success: true, message: `Deleted task ${task.id}`, data: { id: task.id, title: task.title, cascade } }))
     } else {
-      console.log(`Deleted: ${task.id} - ${task.title}`)
+      console.log(`Deleted: ${task.id} - ${task.title}${cascade ? " (with children)" : ""}`)
     }
   })
 
 export const reset = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    if (!id) {
+    const raw = pos[0]
+    if (!raw) {
       console.error("Usage: tx reset <id> [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(raw)
 
     const taskSvc = yield* TaskService
 
     // Get current task to show what we're resetting from
-    const before = yield* taskSvc.getWithDeps(id as TaskId)
+    const before = yield* taskSvc.getWithDeps(id)
     const oldStatus = before.status
 
     // Force update to ready status (bypass normal validation)
-    yield* taskSvc.forceStatus(id as TaskId, "ready")
-    const task = yield* taskSvc.getWithDeps(id as TaskId)
+    yield* taskSvc.forceStatus(id, "ready")
+    const task = yield* taskSvc.getWithDeps(id)
 
     if (flag(flags, "json")) {
       console.log(toJson({ task, oldStatus }))

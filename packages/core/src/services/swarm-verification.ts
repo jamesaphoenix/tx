@@ -9,7 +9,7 @@
  * @see docs/prd/PRD-017-invalidation-maintenance.md - IM-004: Bulk invalidation via agent swarm
  */
 
-import { Context, Effect, Layer, Queue, Fiber, Ref } from "effect"
+import { Context, Effect, Layer, Option, Queue, Fiber, Ref } from "effect"
 import { AnchorVerificationService, type VerificationResult, type VerifyOptions } from "./anchor-verification.js"
 import { AnchorRepository } from "../repo/anchor-repo.js"
 import { DatabaseError, ValidationError } from "../errors.js"
@@ -369,7 +369,7 @@ export const SwarmVerificationServiceLive = Layer.effect(
               // Try to take a batch (non-blocking)
               const maybeBatch = yield* Queue.poll(queue)
 
-              if (maybeBatch._tag === "None") {
+              if (Option.isNone(maybeBatch)) {
                 // No more batches, worker done
                 break
               }
@@ -518,7 +518,7 @@ export const SwarmVerificationServiceLive = Layer.effect(
 
       verifyAll: (options = {}) =>
         Effect.gen(function* () {
-          const anchors = yield* anchorRepo.findAllValid()
+          const anchors = yield* anchorRepo.findAllValid(100_000)
           const anchorIds = anchors
             .filter((a) => !options.skipPinned || !a.pinned)
             .map((a) => a.id)
@@ -541,7 +541,7 @@ export const SwarmVerificationServiceLive = Layer.effect(
 
       verifyGlob: (globPattern, options = {}) =>
         Effect.gen(function* () {
-          const allAnchors = yield* anchorRepo.findAll()
+          const allAnchors = yield* anchorRepo.findAll(100_000)
           const matchingIds = allAnchors
             .filter((a) => matchesGlob(a.filePath, globPattern))
             .filter((a) => !options.skipPinned || !a.pinned)

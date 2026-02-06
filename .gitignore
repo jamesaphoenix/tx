@@ -22,6 +22,13 @@ apps/*/README.md
 # Playwright MCP
 .playwright-mcp/
 
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
 # OS files
 .DS_Store
 .DS_Store?

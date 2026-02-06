@@ -23,17 +23,18 @@ export const FileLearningServiceLive = Layer.effect(
     return {
       create: (input) =>
         Effect.gen(function* () {
-          if (!input.filePattern || input.filePattern.trim().length === 0) {
+          const filePattern = input.filePattern.trim()
+          const note = input.note.trim()
+
+          if (filePattern.length === 0) {
             return yield* Effect.fail(new ValidationError({ reason: "File pattern is required" }))
           }
-          if (!input.note || input.note.trim().length === 0) {
+          if (note.length === 0) {
             return yield* Effect.fail(new ValidationError({ reason: "Note is required" }))
           }
-          return yield* repo.insert({
-            ...input,
-            filePattern: input.filePattern.trim(),
-            note: input.note.trim()
-          })
+
+          const taskId = input.taskId != null ? input.taskId.trim() || null : null
+          return yield* repo.insert({ filePattern, note, taskId })
         }),
 
       get: (id) =>

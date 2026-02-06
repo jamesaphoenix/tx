@@ -4,6 +4,9 @@
  * Centralizes numeric flag validation to prevent parseInt/parseFloat NaN bugs.
  */
 
+import type { TaskId } from "@jamesaphoenix/tx-types"
+import { isValidTaskId } from "@jamesaphoenix/tx-types"
+
 export type Flags = Record<string, string | boolean>
 
 /**
@@ -43,8 +46,8 @@ export function parseIntOpt(
   const val = opt(flags, ...names)
   if (val === undefined) return undefined
   const parsed = parseInt(val, 10)
-  if (Number.isNaN(parsed)) {
-    console.error(`Invalid value for --${flagName}: "${val}" is not a valid number`)
+  if (!Number.isFinite(parsed)) {
+    console.error(`Invalid value for --${flagName}: "${val}" is not a valid finite number`)
     process.exit(1)
   }
   return parsed
@@ -67,9 +70,23 @@ export function parseFloatOpt(
   const val = opt(flags, ...names)
   if (val === undefined) return undefined
   const parsed = parseFloat(val)
-  if (Number.isNaN(parsed)) {
-    console.error(`Invalid value for --${flagName}: "${val}" is not a valid number`)
+  if (!Number.isFinite(parsed)) {
+    console.error(`Invalid value for --${flagName}: "${val}" is not a valid finite number`)
     process.exit(1)
   }
   return parsed
+}
+
+/**
+ * Validate a task ID string matches the tx-[a-z0-9]{6,12} format.
+ *
+ * Exits with a clear error if the format is invalid, preventing confusing
+ * "Task not found" errors from reaching the database layer.
+ */
+export function parseTaskId(id: string): TaskId {
+  if (!isValidTaskId(id)) {
+    console.error(`Invalid task ID: "${id}". Expected format: tx-[a-z0-9]{6,12}`)
+    process.exit(1)
+  }
+  return id
 }

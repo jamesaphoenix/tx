@@ -162,9 +162,9 @@ describe("mcpResponse", () => {
     expect(result.content[1].text).toBe('{"id":"tx-12345678"}')
   })
 
-  it("does not include isError for success responses", () => {
+  it("includes isError: false for success responses", () => {
     const result = mcpResponse("Success", {})
-    expect(result.isError).toBeUndefined()
+    expect(result.isError).toBe(false)
   })
 
   it("handles circular references in data", () => {
@@ -327,18 +327,20 @@ describe("extractErrorMessage", () => {
 // -----------------------------------------------------------------------------
 
 describe("buildStructuredError", () => {
-  it("builds structured error with full context", () => {
+  it("builds structured error with full context including stack trace", () => {
     const error = new Error("not found")
     const result = buildStructuredError("tx_show", { id: "tx-abc123" }, error)
 
     expect(result.errorType).toBe("Error")
     expect(result.message).toBe("not found")
+    expect(result.stack).toContain("not found")
+    expect(result.stack).toContain("at ")
     expect(result.tool).toBe("tx_show")
     expect(result.args).toEqual({ id: "tx-abc123" })
     expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 
-  it("classifies Effect-TS tagged errors", () => {
+  it("classifies Effect-TS tagged errors and preserves stack", () => {
     class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
       readonly id: string
     }> {
@@ -350,6 +352,9 @@ describe("buildStructuredError", () => {
 
     expect(result.errorType).toBe("TaskNotFoundError")
     expect(result.message).toBe("Task not found: tx-abc123")
+    expect(result.stack).toContain("TaskNotFoundError")
+    expect(result.stack).toContain("Task not found: tx-abc123")
+    expect(result.stack).toContain("at ")
   })
 })
 
@@ -444,25 +449,31 @@ describe("formatErrorWithStack", () => {
 // -----------------------------------------------------------------------------
 
 describe("handleToolError", () => {
-  it("returns structured MCP error response", () => {
+  it("returns structured MCP error response with stack trace", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const error = new Error("something broke")
     const result = handleToolError("tx_done", { id: "tx-abc123" }, error)
 
     expect(result.isError).toBe(true)
-    expect(result.content).toHaveLength(2)
+    expect(result.content).toHaveLength(3)
+    // First block: summary
     expect(result.content[0].text).toBe("Error [Error]: something broke")
-
-    const data = JSON.parse(result.content[1].text)
+    // Second block: full stack trace
+    expect(result.content[1].text).toContain("something broke")
+    expect(result.content[1].text).toContain("at ")
+    // Third block: structured JSON with stack field
+    const data = JSON.parse(result.content[2].text)
     expect(data.errorType).toBe("Error")
     expect(data.message).toBe("something broke")
+    expect(data.stack).toContain("something broke")
+    expect(data.stack).toContain("at ")
     expect(data.tool).toBe("tx_done")
     expect(data.args).toEqual({ id: "tx-abc123" })
 
     consoleSpy.mockRestore()
   })
 
-  it("logs structured JSON to stderr", () => {
+  it("logs structured JSON with stack trace to stderr", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const error = new Error("db failure")
     handleToolError("tx_add", { title: "My task" }, error)
@@ -472,11 +483,13 @@ describe("handleToolError", () => {
     expect(logged.errorType).toBe("Error")
     expect(logged.tool).toBe("tx_add")
     expect(logged.message).toBe("db failure")
+    expect(logged.stack).toContain("db failure")
+    expect(logged.stack).toContain("at ")
 
     consoleSpy.mockRestore()
   })
 
-  it("classifies Effect-TS tagged errors in response", () => {
+  it("classifies Effect-TS tagged errors with stack in response", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
     class CircularDependencyError extends Data.TaggedError("CircularDependencyError")<{
@@ -489,10 +502,15 @@ describe("handleToolError", () => {
     const error = new CircularDependencyError({ taskId: "tx-aaa", blockerId: "tx-bbb" })
     const result = handleToolError("tx_block", { taskId: "tx-aaa", blockerId: "tx-bbb" }, error)
 
+    // Summary block
     expect(result.content[0].text).toBe("Error [CircularDependencyError]: Circular dependency: tx-aaa and tx-bbb")
-
-    const data = JSON.parse(result.content[1].text)
+    // Stack trace block
+    expect(result.content[1].text).toContain("CircularDependencyError")
+    expect(result.content[1].text).toContain("at ")
+    // Structured JSON block
+    const data = JSON.parse(result.content[2].text)
     expect(data.errorType).toBe("CircularDependencyError")
+    expect(data.stack).toContain("CircularDependencyError")
 
     consoleSpy.mockRestore()
   })

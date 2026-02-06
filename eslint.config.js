@@ -164,6 +164,12 @@ export default [
       'tx/no-plain-interfaces': ['warn', {
         excludedNames: ['ListResponse', 'PaginatedResponse', 'ActionResponse'],
         excludedSuffixes: ['Row']
+      }],
+
+      // tx plugin rules - ban unsafe 'as' casts in repo/mapper code (DB boundary)
+      'tx/no-as-cast-in-repos': ['warn', {
+        enforcePaths: ['repo/', 'mappers/'],
+        allowedTypes: ['unknown']
       }]
     }
   },

@@ -8,9 +8,8 @@
 
 import { Effect } from "effect"
 import { ClaimService } from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
-import { type Flags, flag, parseIntOpt } from "../utils/parse.js"
+import { type Flags, flag, parseIntOpt, parseTaskId } from "../utils/parse.js"
 
 /**
  * Claim a task for a worker with a lease.
@@ -23,10 +22,10 @@ import { type Flags, flag, parseIntOpt } from "../utils/parse.js"
  */
 export const claim = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const taskId = pos[0]
+    const rawTaskId = pos[0]
     const workerId = pos[1]
 
-    if (!taskId || !workerId) {
+    if (!rawTaskId || !workerId) {
       console.error("Usage: tx claim <task-id> <worker-id> [--lease <minutes>] [--json]")
       console.error("")
       console.error("Options:")
@@ -34,11 +33,12 @@ export const claim = (pos: string[], flags: Flags) =>
       console.error("  --json       Output in JSON format")
       process.exit(1)
     }
+    const taskId = parseTaskId(rawTaskId)
 
     const leaseMinutes = parseIntOpt(flags, "lease", "lease")
 
     const svc = yield* ClaimService
-    const claim = yield* svc.claim(taskId as TaskId, workerId, leaseMinutes)
+    const claim = yield* svc.claim(taskId, workerId, leaseMinutes)
 
     if (flag(flags, "json")) {
       console.log(toJson(claim))
@@ -58,16 +58,17 @@ export const claim = (pos: string[], flags: Flags) =>
  */
 export const claimRelease = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const taskId = pos[0]
+    const rawTaskId = pos[0]
     const workerId = pos[1]
 
-    if (!taskId || !workerId) {
+    if (!rawTaskId || !workerId) {
       console.error("Usage: tx claim:release <task-id> <worker-id> [--json]")
       process.exit(1)
     }
+    const taskId = parseTaskId(rawTaskId)
 
     const svc = yield* ClaimService
-    yield* svc.release(taskId as TaskId, workerId)
+    yield* svc.release(taskId, workerId)
 
     if (flag(flags, "json")) {
       console.log(toJson({ released: true, taskId, workerId }))
@@ -86,16 +87,17 @@ export const claimRelease = (pos: string[], flags: Flags) =>
  */
 export const claimRenew = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const taskId = pos[0]
+    const rawTaskId = pos[0]
     const workerId = pos[1]
 
-    if (!taskId || !workerId) {
+    if (!rawTaskId || !workerId) {
       console.error("Usage: tx claim:renew <task-id> <worker-id> [--json]")
       process.exit(1)
     }
+    const taskId = parseTaskId(rawTaskId)
 
     const svc = yield* ClaimService
-    const renewed = yield* svc.renew(taskId as TaskId, workerId)
+    const renewed = yield* svc.renew(taskId, workerId)
 
     if (flag(flags, "json")) {
       console.log(toJson(renewed))

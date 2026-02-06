@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, FileLearningNotFoundError } from "../errors.js"
 import { rowToFileLearning, matchesPattern } from "../mappers/file-learning.js"
+import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
 
 export class FileLearningRepository extends Context.Tag("FileLearningRepository")<
@@ -9,7 +10,7 @@ export class FileLearningRepository extends Context.Tag("FileLearningRepository"
   {
     readonly insert: (input: CreateFileLearningInput) => Effect.Effect<FileLearning, DatabaseError>
     readonly findById: (id: number) => Effect.Effect<FileLearning | null, DatabaseError>
-    readonly findAll: () => Effect.Effect<readonly FileLearning[], DatabaseError>
+    readonly findAll: (limit?: number) => Effect.Effect<readonly FileLearning[], DatabaseError>
     readonly findByPath: (path: string) => Effect.Effect<readonly FileLearning[], DatabaseError>
     readonly remove: (id: number) => Effect.Effect<void, DatabaseError | FileLearningNotFoundError>
     readonly count: () => Effect.Effect<number, DatabaseError>
@@ -58,12 +59,12 @@ export const FileLearningRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause })
         }),
 
-      findAll: () =>
+      findAll: (limit) =>
         Effect.try({
           try: () => {
             const rows = db.prepare(
-              `SELECT * FROM file_learnings ORDER BY created_at DESC`
-            ).all() as FileLearningRow[]
+              `SELECT * FROM file_learnings ORDER BY created_at DESC LIMIT ?`
+            ).all(limit ?? DEFAULT_QUERY_LIMIT) as FileLearningRow[]
             return rows.map(rowToFileLearning)
           },
           catch: (cause) => new DatabaseError({ cause })

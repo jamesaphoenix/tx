@@ -20,7 +20,9 @@ import {
   DaemonServiceLive,
   DaemonServiceNoop,
   writePid,
-  removePid
+  removePid,
+  tryAtomicPidCreate,
+  acquirePidLock
 } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
@@ -603,6 +605,126 @@ describe("DaemonService Error Codes", () => {
 
     // Cleanup
     await Effect.runPromise(removePid())
+  })
+})
+
+// =============================================================================
+// Atomic PID Lock Tests (TOCTOU Race Prevention)
+// =============================================================================
+
+describe("Atomic PID Lock (TOCTOU Prevention)", () => {
+  let tempDir: string
+  let originalCwd: string
+
+  beforeEach(() => {
+    originalCwd = process.cwd()
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tx-daemon-lock-test-"))
+    process.chdir(tempDir)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  it("tryAtomicPidCreate succeeds when no PID file exists", async () => {
+    fs.mkdirSync(path.join(tempDir, ".tx"), { recursive: true })
+
+    const result = await Effect.runPromise(tryAtomicPidCreate())
+    expect(result).toBe(true)
+
+    // File should exist
+    expect(fs.existsSync(path.join(tempDir, ".tx", "daemon.pid"))).toBe(true)
+  })
+
+  it("tryAtomicPidCreate returns false when PID file already exists", async () => {
+    const txDir = path.join(tempDir, ".tx")
+    fs.mkdirSync(txDir, { recursive: true })
+    fs.writeFileSync(path.join(txDir, "daemon.pid"), "12345")
+
+    const result = await Effect.runPromise(tryAtomicPidCreate())
+    expect(result).toBe(false)
+
+    // Original content should be unchanged
+    const content = fs.readFileSync(path.join(txDir, "daemon.pid"), "utf-8")
+    expect(content).toBe("12345")
+  })
+
+  it("acquirePidLock succeeds when no PID file exists", async () => {
+    await Effect.runPromise(acquirePidLock())
+
+    // Lock file should exist
+    expect(fs.existsSync(path.join(tempDir, ".tx", "daemon.pid"))).toBe(true)
+  })
+
+  it("acquirePidLock fails with ALREADY_RUNNING for live process", async () => {
+    // Write current process PID (which is alive)
+    const txDir = path.join(tempDir, ".tx")
+    fs.mkdirSync(txDir, { recursive: true })
+    fs.writeFileSync(path.join(txDir, "daemon.pid"), String(process.pid))
+
+    const result = await Effect.runPromiseExit(acquirePidLock())
+
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) {
+      const errorStr = String(result.cause).toLowerCase()
+      expect(errorStr).toContain("already running")
+    }
+  })
+
+  it("acquirePidLock cleans up stale PID and acquires lock", async () => {
+    // Write a stale PID (non-existent process)
+    const txDir = path.join(tempDir, ".tx")
+    fs.mkdirSync(txDir, { recursive: true })
+    fs.writeFileSync(path.join(txDir, "daemon.pid"), "999999999")
+
+    await Effect.runPromise(acquirePidLock())
+
+    // Lock file should exist (recreated after stale cleanup)
+    expect(fs.existsSync(path.join(txDir, "daemon.pid"))).toBe(true)
+  })
+
+  it("acquirePidLock creates .tx directory if missing", async () => {
+    // Ensure no .tx directory exists
+    expect(fs.existsSync(path.join(tempDir, ".tx"))).toBe(false)
+
+    await Effect.runPromise(acquirePidLock())
+
+    // Directory and lock file should both exist
+    expect(fs.existsSync(path.join(tempDir, ".tx"))).toBe(true)
+    expect(fs.existsSync(path.join(tempDir, ".tx", "daemon.pid"))).toBe(true)
+  })
+
+  it("concurrent acquirePidLock calls: only one succeeds", async () => {
+    // Race two lock acquisitions — exactly one should win
+    const results = await Promise.allSettled([
+      Effect.runPromise(acquirePidLock()),
+      Effect.runPromise(acquirePidLock())
+    ])
+
+    const successes = results.filter((r) => r.status === "fulfilled")
+    const failures = results.filter((r) => r.status === "rejected")
+
+    // Exactly one should succeed, one should fail
+    expect(successes.length).toBe(1)
+    expect(failures.length).toBe(1)
+
+    // The failure should be about already running / in progress
+    const failReason = String((failures[0] as PromiseRejectedResult).reason).toLowerCase()
+    expect(
+      failReason.includes("already running") || failReason.includes("in progress")
+    ).toBe(true)
+  })
+
+  it("second start after first acquires lock gets ALREADY_RUNNING", async () => {
+    // First call acquires the lock
+    await Effect.runPromise(acquirePidLock())
+
+    // Second call should fail because lock file exists with empty content
+    // (no valid PID, but file exists — treated as lock held by another start)
+    const result = await Effect.runPromiseExit(acquirePidLock())
+
+    expect(Exit.isFailure(result)).toBe(true)
   })
 })
 

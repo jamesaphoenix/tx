@@ -4,13 +4,13 @@
  * Verifies that the monorepo apps work correctly at runtime:
  * - CLI can create and list tasks using @tx/core
  * - MCP server can initialize runtime and run effects
- * - API server can initialize runtime and handle requests
+ * - API server exports Effect HTTP platform layers and definitions
  *
  * Uses real SQLite databases (in-memory) for true integration testing.
  * Uses SHA256-based fixture IDs per Rule 3.
  *
  * OPTIMIZED: Uses global singleton test layer per RULE 8 for memory efficiency.
- * Database reset is handled globally by vitest.setup.ts.
+ * Database reset is handled via afterEach hooks in each describe block (bun test doesn't load vitest.setup.ts).
  * MCP/API runtime tests use their own :memory: databases to test initialization APIs.
  */
 
@@ -57,7 +57,11 @@ void FIXTURES
 // =============================================================================
 
 describe("Runtime Integration: @tx/core", () => {
-  // Uses global singleton from vitest.setup.ts - no local lifecycle hooks needed
+  // Reset shared DB between tests for isolation (bun test doesn't load vitest.setup.ts)
+  afterEach(async () => {
+    const shared = await getSharedTestLayer()
+    await shared.reset()
+  })
 
   it("can create layer with in-memory database", async () => {
     const { layer } = await getSharedTestLayer()
@@ -76,7 +80,7 @@ describe("Runtime Integration: @tx/core", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    expect(task.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(task.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     expect(task.title).toBe("Test task from core")
     expect(task.status).toBe("backlog")
     expect(task.score).toBe(500)
@@ -224,7 +228,7 @@ describe("Runtime Integration: @tx/mcp-server", () => {
     )
 
     expect(task.title).toBe("MCP test task")
-    expect(task.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(task.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("can create MCP server instance", async () => {
@@ -260,93 +264,86 @@ describe("Runtime Integration: @tx/mcp-server", () => {
 // =============================================================================
 
 describe("Runtime Integration: @tx/api-server", () => {
-  let initRuntime: typeof import("@tx/api-server").initRuntime
-  let disposeRuntime: typeof import("@tx/api-server").disposeRuntime
-  let runEffect: typeof import("@tx/api-server").runEffect
-  let getRuntime: typeof import("@tx/api-server").getRuntime
-  let getDbPath: typeof import("@tx/api-server").getDbPath
-  let createApp: typeof import("@tx/api-server").createApp
-
-  beforeEach(async () => {
-    const api = await import("@tx/api-server")
-    initRuntime = api.initRuntime
-    disposeRuntime = api.disposeRuntime
-    runEffect = api.runEffect
-    getRuntime = api.getRuntime
-    getDbPath = api.getDbPath
-    createApp = api.createApp
+  it("exports makeServerLive factory function", async () => {
+    const { makeServerLive } = await import("@tx/api-server")
+    expect(makeServerLive).toBeDefined()
+    expect(typeof makeServerLive).toBe("function")
   })
 
-  afterEach(async () => {
-    try {
-      await disposeRuntime()
-    } catch {
-      // Ignore errors during cleanup
-    }
+  it("exports TxApi definition", async () => {
+    const { TxApi } = await import("@tx/api-server")
+    expect(TxApi).toBeDefined()
   })
 
-  it("can initialize runtime with in-memory database", async () => {
-    await initRuntime(":memory:")
-
-    const runtime = getRuntime()
-    expect(runtime).not.toBeNull()
-    // getDbPath returns the configured path (may differ from :memory: if module caches state)
-    expect(getDbPath()).toBeDefined()
+  it("exports all route handler layers", async () => {
+    const { TasksLive, HealthLive, LearningsLive, RunsLive, SyncLive } =
+      await import("@tx/api-server")
+    expect(TasksLive).toBeDefined()
+    expect(HealthLive).toBeDefined()
+    expect(LearningsLive).toBeDefined()
+    expect(RunsLive).toBeDefined()
+    expect(SyncLive).toBeDefined()
   })
 
-  it("can run effects after initialization", async () => {
-    await initRuntime(":memory:")
-
-    const task = await runEffect(
-      Effect.gen(function* () {
-        const svc = yield* TaskService
-        return yield* svc.create({ title: "API test task" })
-      })
-    )
-
-    expect(task.title).toBe("API test task")
+  it("exports all API group definitions", async () => {
+    const { HealthGroup, TasksGroup, LearningsGroup, RunsGroup, SyncGroup } =
+      await import("@tx/api-server")
+    expect(HealthGroup).toBeDefined()
+    expect(TasksGroup).toBeDefined()
+    expect(LearningsGroup).toBeDefined()
+    expect(RunsGroup).toBeDefined()
+    expect(SyncGroup).toBeDefined()
   })
 
-  it("can create Hono app instance", async () => {
-    const app = createApp()
-    expect(app).toBeDefined()
-    expect(typeof app.fetch).toBe("function")
+  it("exports all error types", async () => {
+    const { NotFound, BadRequest, InternalError, Unauthorized, Forbidden, ServiceUnavailable } =
+      await import("@tx/api-server")
+    expect(NotFound).toBeDefined()
+    expect(BadRequest).toBeDefined()
+    expect(InternalError).toBeDefined()
+    expect(Unauthorized).toBeDefined()
+    expect(Forbidden).toBeDefined()
+    expect(ServiceUnavailable).toBeDefined()
   })
 
-  it("app has health endpoint", async () => {
-    await initRuntime(":memory:")
-    const app = createApp()
+  it("error types produce correct tagged errors", async () => {
+    const { NotFound, BadRequest, InternalError } = await import("@tx/api-server")
 
-    const response = await app.fetch(
-      new Request("http://localhost/health")
-    )
+    const notFound = new NotFound({ message: "Task not found" })
+    expect(notFound._tag).toBe("NotFound")
+    expect(notFound.message).toBe("Task not found")
 
-    expect(response.status).toBe(200)
-    const body = await response.json()
-    expect(body.status).toBe("healthy")
+    const badReq = new BadRequest({ message: "Invalid input" })
+    expect(badReq._tag).toBe("BadRequest")
+    expect(badReq.message).toBe("Invalid input")
+
+    const internal = new InternalError({ message: "Server error" })
+    expect(internal._tag).toBe("InternalError")
+    expect(internal.message).toBe("Server error")
   })
 
-  it("app has OpenAPI documentation", async () => {
-    await initRuntime(":memory:")
-    const app = createApp()
+  it("mapCoreError maps tagged errors correctly", async () => {
+    const { mapCoreError } = await import("@tx/api-server")
 
-    const response = await app.fetch(
-      new Request("http://localhost/api/openapi.json")
-    )
+    const notFound = mapCoreError({ _tag: "TaskNotFoundError", message: "Not found" })
+    expect(notFound._tag).toBe("NotFound")
 
-    expect(response.status).toBe(200)
-    const spec = await response.json()
-    expect(spec.openapi).toBe("3.1.0")
-    expect(spec.info.title).toBe("TX API")
+    const badReq = mapCoreError({ _tag: "ValidationError", message: "Bad" })
+    expect(badReq._tag).toBe("BadRequest")
+
+    const internal = mapCoreError({ _tag: "DatabaseError", message: "DB error" })
+    expect(internal._tag).toBe("InternalError")
+
+    const unavailable = mapCoreError({ _tag: "EmbeddingUnavailableError", message: "No model" })
+    expect(unavailable._tag).toBe("ServiceUnavailable")
   })
 
-  it("disposeRuntime cleans up correctly", async () => {
-    await initRuntime(":memory:")
-    expect(getRuntime()).not.toBeNull()
+  it("makeServerLive creates a Layer with options", async () => {
+    const { makeServerLive } = await import("@tx/api-server")
 
-    await disposeRuntime()
-    expect(getRuntime()).toBeNull()
-    expect(getDbPath()).toBeNull()
+    // Verify it accepts options and returns without throwing
+    const layer = makeServerLive({ port: 0, dbPath: ":memory:" })
+    expect(layer).toBeDefined()
   })
 })
 
@@ -375,7 +372,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
       score: 750,
     })
 
-    expect(task.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(task.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     expect(task.title).toBe("SDK test task")
     expect(task.score).toBe(750)
   })
@@ -497,6 +494,11 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
 // =============================================================================
 
 describe("Cross-Package Integration", () => {
+  afterEach(async () => {
+    const shared = await getSharedTestLayer()
+    await shared.reset()
+  })
+
   it("@tx/types exports match @tx/agent-sdk exports", async () => {
     const types = await import("@jamesaphoenix/tx-types")
     const sdk = await import("@tx/agent-sdk")
@@ -513,7 +515,7 @@ describe("Cross-Package Integration", () => {
     const testId = coreFixtureId("test-id")
     const testId2 = coreFixtureId("test-id")
     expect(testId).toBe(testId2)
-    expect(testId).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(testId).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("services work consistently across initialization methods", async () => {
@@ -539,26 +541,15 @@ describe("Cross-Package Integration", () => {
     expect(task2.title).toBe("MCP runtime test task")
     await disposeRuntime()
 
-    // Test 3: API runtime (testing API server's initialization API)
-    const {
-      initRuntime: initApiRuntime,
-      runEffect: runApiEffect,
-      disposeRuntime: disposeApiRuntime,
-    } = await import("@tx/api-server")
-    await initApiRuntime(":memory:")
-    const task3 = await runApiEffect(
-      Effect.gen(function* () {
-        const svc = yield* TaskService
-        return yield* svc.create({ title: "API runtime test task" })
-      })
-    )
-    expect(task3.title).toBe("API runtime test task")
-    await disposeApiRuntime()
+    // Test 3: API server exports (api-server uses Effect HTTP platform,
+    // no standalone runtime — verify makeServerLive is composable)
+    const { makeServerLive } = await import("@tx/api-server")
+    const serverLayer = makeServerLive({ port: 0, dbPath: ":memory:" })
+    expect(serverLayer).toBeDefined()
 
     // All tasks should have valid IDs
-    expect(task1.id).toMatch(/^tx-[a-z0-9]{8}$/)
-    expect(task2.id).toMatch(/^tx-[a-z0-9]{8}$/)
-    expect(task3.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(task1.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
+    expect(task2.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 })
 
@@ -567,7 +558,10 @@ describe("Cross-Package Integration", () => {
 // =============================================================================
 
 describe("Error Handling Across Packages", () => {
-  // Uses global singleton from vitest.setup.ts - no local lifecycle hooks needed
+  afterEach(async () => {
+    const shared = await getSharedTestLayer()
+    await shared.reset()
+  })
 
   it("@tx/core errors are properly typed", async () => {
     const { layer } = await getSharedTestLayer()

@@ -135,7 +135,7 @@ describe("Package Resolution: @tx/core", () => {
     const id1 = fixtureId("test-task")
     const id2 = fixtureId("test-task")
     expect(id1).toBe(id2)
-    expect(id1).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(id1).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("exports repository implementations", () => {
@@ -248,21 +248,44 @@ describe("Package Resolution: @tx/mcp-server", () => {
 })
 
 describe("Package Resolution: @tx/api-server", () => {
-  it("exports app creation function", async () => {
+  it("exports makeServerLive layer factory", async () => {
     const api = await import("@tx/api-server")
 
-    expect(api.createApp).toBeDefined()
-    expect(typeof api.createApp).toBe("function")
+    expect(api.makeServerLive).toBeDefined()
+    expect(typeof api.makeServerLive).toBe("function")
   })
 
-  it("exports runtime management functions", async () => {
+  it("exports TxApi definition and error types", async () => {
     const api = await import("@tx/api-server")
 
-    expect(api.initRuntime).toBeDefined()
-    expect(api.disposeRuntime).toBeDefined()
-    expect(api.runEffect).toBeDefined()
-    expect(api.getRuntime).toBeDefined()
-    expect(api.getDbPath).toBeDefined()
+    expect(api.TxApi).toBeDefined()
+    expect(api.NotFound).toBeDefined()
+    expect(api.BadRequest).toBeDefined()
+    expect(api.InternalError).toBeDefined()
+    expect(api.Unauthorized).toBeDefined()
+    expect(api.Forbidden).toBeDefined()
+    expect(api.ServiceUnavailable).toBeDefined()
+    expect(api.mapCoreError).toBeDefined()
+  })
+
+  it("exports API group definitions", async () => {
+    const api = await import("@tx/api-server")
+
+    expect(api.HealthGroup).toBeDefined()
+    expect(api.TasksGroup).toBeDefined()
+    expect(api.LearningsGroup).toBeDefined()
+    expect(api.RunsGroup).toBeDefined()
+    expect(api.SyncGroup).toBeDefined()
+  })
+
+  it("exports route handler layers", async () => {
+    const api = await import("@tx/api-server")
+
+    expect(api.TasksLive).toBeDefined()
+    expect(api.HealthLive).toBeDefined()
+    expect(api.LearningsLive).toBeDefined()
+    expect(api.RunsLive).toBeDefined()
+    expect(api.SyncLive).toBeDefined()
   })
 
   it("imports @tx/core correctly", async () => {

@@ -11,6 +11,7 @@ import type {
 } from "@jamesaphoenix/tx-types"
 import { EDGE_TYPES, NODE_TYPES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 
 // Re-export type from @tx/types for convenience
 export type { EdgeRow } from "@jamesaphoenix/tx-types"
@@ -58,21 +59,24 @@ export const rowToEdge = (row: EdgeRow): Edge => {
     throw new InvalidStatusError({
       entity: "edge",
       status: row.edge_type,
-      validStatuses: EDGE_TYPES
+      validStatuses: EDGE_TYPES,
+      rowId: row.id
     })
   }
   if (!isValidNodeType(row.source_type)) {
     throw new InvalidStatusError({
       entity: "edge.source_type",
       status: row.source_type,
-      validStatuses: NODE_TYPES
+      validStatuses: NODE_TYPES,
+      rowId: row.id
     })
   }
   if (!isValidNodeType(row.target_type)) {
     throw new InvalidStatusError({
       entity: "edge.target_type",
       status: row.target_type,
-      validStatuses: NODE_TYPES
+      validStatuses: NODE_TYPES,
+      rowId: row.id
     })
   }
   return {
@@ -84,7 +88,7 @@ export const rowToEdge = (row: EdgeRow): Edge => {
     targetId: row.target_id,
     weight: row.weight,
     metadata: parseMetadata(row.metadata),
-    createdAt: new Date(row.created_at),
-    invalidatedAt: row.invalidated_at ? new Date(row.invalidated_at) : null
+    createdAt: parseDate(row.created_at, "created_at", row.id),
+    invalidatedAt: row.invalidated_at ? parseDate(row.invalidated_at, "invalidated_at", row.id) : null
   }
 }

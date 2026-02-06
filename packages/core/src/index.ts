@@ -42,7 +42,12 @@ export {
   // Batch processing errors
   BatchProcessingError,
   // Optimistic locking errors
-  StaleDataError
+  StaleDataError,
+  // Hierarchy protection errors
+  HasChildrenError,
+  // Data validation errors
+  InvalidStatusError,
+  InvalidDateError
 } from "./errors.js"
 
 // =============================================================================
@@ -69,6 +74,7 @@ export { generateTaskId, fixtureId } from "./id.js"
 // =============================================================================
 export {
   makeAppLayer,
+  makeAppLayerFromInfra,
   makeMinimalLayer,
   // Re-exports for convenience
   SyncService,
@@ -89,6 +95,8 @@ export {
   TaskService,
   DependencyService,
   ReadyService,
+  type ReadyCheckResult,
+  isReadyResult,
   HierarchyService,
   ScoreService,
   DeduplicationService,
@@ -165,6 +173,8 @@ export {
   readPid,
   removePid,
   isProcessRunning,
+  tryAtomicPidCreate,
+  acquirePidLock,
   defaultDaemonConfig,
   generateLaunchdPlist,
   generateSystemdService,
@@ -324,6 +334,15 @@ export {
 } from "./mappers/edge.js"
 
 export {
+  normalizeContent,
+  hashContent,
+  rowToProcessedHash,
+  serializeProcessedHash,
+  rowToFileProgress,
+  serializeFileProgress
+} from "./mappers/deduplication.js"
+
+export {
   rowToWorker,
   isValidWorkerStatus,
   WORKER_STATUSES,
@@ -335,6 +354,7 @@ export {
 // =============================================================================
 export { cosineSimilarity } from "./utils/math.js"
 export { matchesGlob } from "./utils/glob.js"
+export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"
 
 // =============================================================================
 // Worker (PRD-018 headless worker system)
@@ -383,3 +403,14 @@ export {
   type ValidationResult,
   type ValidateOptions
 } from "./services/validation-service.js"
+
+// =============================================================================
+// Sync: Claude Code task writer
+// =============================================================================
+export {
+  buildClaudeTaskFiles,
+  ClaudeTaskFileSchema,
+  ClaudeSyncResultSchema,
+  type ClaudeTaskFile,
+  type ClaudeSyncResult
+} from "./sync/claude-task-writer.js"

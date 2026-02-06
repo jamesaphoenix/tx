@@ -30,6 +30,8 @@ import { claim, claimRelease, claimRenew } from "./commands/claim.js"
 import { compact, history } from "./commands/compact.js"
 import { validate } from "./commands/validate.js"
 import { doctor } from "./commands/doctor.js"
+import { stats } from "./commands/stats.js"
+import { bulk } from "./commands/bulk.js"
 
 // --- Argv parsing helpers ---
 
@@ -172,6 +174,12 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Diagnostics command
   doctor,
 
+  // Stats command
+  stats,
+
+  // Bulk operations
+  bulk,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -240,6 +248,13 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
+  if (command === "bulk" && positional[0]) {
+    const subcommandKey = `bulk ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   // Check if we have a command with specific help
   if (command !== "help" && commandHelp[command]) {
     console.log(commandHelp[command])
@@ -284,6 +299,13 @@ if (command === "help") {
   }
   if (subcommand === "trace" && positional[1]) {
     const subcommandKey = `trace ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "bulk" && positional[1]) {
+    const subcommandKey = `bulk ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -354,6 +376,11 @@ Effect.runPromise(
     }
     if (err._tag === "CircularDependencyError") {
       console.error(err.message ?? `Circular dependency detected`)
+      process.exit(1)
+    }
+    if (err._tag === "HasChildrenError") {
+      console.error(err.message ?? `Cannot delete task with children`)
+      console.error("Hint: use --cascade to delete with all children, or delete/move children first.")
       process.exit(1)
     }
     if (err._tag === "DatabaseError") {

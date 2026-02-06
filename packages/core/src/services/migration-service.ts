@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { readdirSync, readFileSync } from "node:fs"
+import { readdir, readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { SqliteClient } from "../db.js"
@@ -63,13 +63,14 @@ const parseMigrationFilename = (filename: string): { version: number; descriptio
 /**
  * Load all migrations from the migrations/ directory.
  * Migrations are sorted by version number.
+ * Uses async fs operations to avoid blocking the event loop.
  */
-const loadMigrationsFromDir = (): Migration[] => {
+const loadMigrationsFromDir = async (): Promise<Migration[]> => {
   const migrationsDir = getMigrationsDir()
 
   let files: string[]
   try {
-    files = readdirSync(migrationsDir)
+    files = await readdir(migrationsDir)
   } catch {
     // Migrations directory doesn't exist - return empty array
     return []
@@ -83,7 +84,7 @@ const loadMigrationsFromDir = (): Migration[] => {
     const parsed = parseMigrationFilename(filename)
     if (!parsed) continue
 
-    const sql = readFileSync(join(migrationsDir, filename), "utf-8")
+    const sql = await readFile(join(migrationsDir, filename), "utf-8")
     migrations.push({
       version: parsed.version,
       description: parsed.description,
@@ -99,9 +100,9 @@ const loadMigrationsFromDir = (): Migration[] => {
 
 /**
  * All migrations loaded from the migrations/ directory.
- * Sorted by version number.
+ * Sorted by version number. Uses top-level await for non-blocking I/O.
  */
-export const MIGRATIONS: readonly Migration[] = loadMigrationsFromDir()
+export const MIGRATIONS: readonly Migration[] = await loadMigrationsFromDir()
 
 /**
  * Get the latest migration version.
@@ -207,7 +208,16 @@ export const MigrationServiceLive = Layer.effect(
 
           for (const migration of pendingMigrations) {
             yield* Effect.try({
-              try: () => db.exec(migration.sql),
+              try: () => {
+                db.exec("BEGIN IMMEDIATE")
+                try {
+                  db.exec(migration.sql)
+                  db.exec("COMMIT")
+                } catch (e) {
+                  db.exec("ROLLBACK")
+                  throw e
+                }
+              },
               catch: (cause) => new DatabaseError({ cause })
             })
           }

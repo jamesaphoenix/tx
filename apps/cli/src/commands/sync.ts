@@ -7,6 +7,7 @@ import { SyncService } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
+import { syncClaude, syncCodex } from "./sync-platform.js"
 
 export const sync = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -24,6 +25,13 @@ export const sync = (pos: string[], flags: Flags) =>
         console.log(commandHelp[helpKey])
         return
       }
+    }
+
+    // Platform sync subcommands (don't need SyncService)
+    if (subcommand === "claude") {
+      return yield* syncClaude(pos.slice(1), flags)
+    } else if (subcommand === "codex") {
+      return yield* syncCodex(pos.slice(1), flags)
     }
 
     const syncSvc = yield* SyncService

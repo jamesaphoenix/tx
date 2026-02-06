@@ -8,7 +8,7 @@
     ],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -26,8 +26,12 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"],
-      "fumadocs-mdx:collections/*": ["./.source/*"]
+      "@/*": [
+        "./*"
+      ],
+      "fumadocs-mdx:collections/*": [
+        "./.source/*"
+      ]
     },
     "allowJs": true
   },
@@ -35,7 +39,8 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

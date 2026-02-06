@@ -22,7 +22,7 @@ if [ -z "$PROMPT" ]; then
 fi
 
 # Check if prompt mentions a task ID
-TASK_ID=$(echo "$PROMPT" | grep -oE 'tx-[a-z0-9]{6,8}' | head -1 || true)
+TASK_ID=$(echo "$PROMPT" | grep -oE 'tx-[a-z0-9]{6,12}' | head -1 || true)
 
 if [ -n "$TASK_ID" ]; then
   # Get contextual learnings for the specific task
@@ -36,14 +36,15 @@ if [ -n "$TASK_ID" ]; then
         .learnings[] | "- [\(.sourceType // "manual")] (score: \((.relevanceScore * 100) | floor)%) \(.content)"
       ')
 
-      # Escape for JSON
+      # Escape for JSON (strip surrounding quotes from jq -Rs output)
       ESCAPED=$(echo "$FORMATTED" | jq -Rs '.')
+      INNER=$(echo "$ESCAPED" | sed 's/^"//;s/"$//')
 
       OUTPUT=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "## Relevant Learnings for Task $TASK_ID\n\n${ESCAPED:1:-1}"
+    "additionalContext": "## Relevant Learnings for Task $TASK_ID\n\n${INNER}"
   }
 }
 EOF
@@ -64,14 +65,15 @@ if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
   FORMATTED=$(echo "$SEARCH_RESULTS" | jq -r '.[] | "- \(.content)"' 2>/dev/null || true)
 
   if [ -n "$FORMATTED" ]; then
-    # Escape for JSON
+    # Escape for JSON (strip surrounding quotes from jq -Rs output)
     ESCAPED=$(echo "$FORMATTED" | jq -Rs '.')
+    INNER=$(echo "$ESCAPED" | sed 's/^"//;s/"$//')
 
     OUTPUT=$(cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "## Potentially Relevant Learnings\n\n${ESCAPED:1:-1}"
+    "additionalContext": "## Potentially Relevant Learnings\n\n${INNER}"
   }
 }
 EOF

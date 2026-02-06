@@ -53,7 +53,7 @@ export class CircularDependencyError extends Data.TaggedError("CircularDependenc
   readonly blockerId: string
 }> {
   get message() {
-    return `Circular dependency: ${this.taskId} and ${this.blockerId} would create a cycle`
+    return `Circular dependency: ${this.taskId} -> ${this.blockerId} would create a cycle`
   }
 }
 
@@ -150,9 +150,13 @@ export class AstGrepError extends Data.TaggedError("AstGrepError")<{
 
 export class DaemonError extends Data.TaggedError("DaemonError")<{
   readonly code: string
-  readonly message: string
+  readonly reason: string
   readonly pid: number | null
-}> {}
+}> {
+  get message() {
+    return `Daemon error [${this.code}]: ${this.reason}`
+  }
+}
 
 export class FileWatcherError extends Data.TaggedError("FileWatcherError")<{
   readonly reason: string
@@ -187,8 +191,8 @@ export class RegistrationError extends Data.TaggedError("RegistrationError")<{
 }> {
   get message() {
     return this.workerId
-      ? `Worker registration failed for ${this.workerId}: ${this.reason}`
-      : `Worker registration failed: ${this.reason}`
+      ? `Registration failed: worker ${this.workerId}, ${this.reason}`
+      : `Registration failed: ${this.reason}`
   }
 }
 
@@ -205,7 +209,7 @@ export class AlreadyClaimedError extends Data.TaggedError("AlreadyClaimedError")
   readonly claimedByWorkerId: string
 }> {
   get message() {
-    return `Task ${this.taskId} is already claimed by worker ${this.claimedByWorkerId}`
+    return `Already claimed: task ${this.taskId} by worker ${this.claimedByWorkerId}`
   }
 }
 
@@ -215,8 +219,8 @@ export class ClaimNotFoundError extends Data.TaggedError("ClaimNotFoundError")<{
 }> {
   get message() {
     return this.workerId
-      ? `No active claim found for task ${this.taskId} by worker ${this.workerId}`
-      : `No active claim found for task ${this.taskId}`
+      ? `Claim not found: task ${this.taskId} by worker ${this.workerId}`
+      : `Claim not found: task ${this.taskId}`
   }
 }
 
@@ -225,7 +229,7 @@ export class LeaseExpiredError extends Data.TaggedError("LeaseExpiredError")<{
   readonly expiredAt: string
 }> {
   get message() {
-    return `Lease for task ${this.taskId} expired at ${this.expiredAt}`
+    return `Lease expired: task ${this.taskId} at ${this.expiredAt}`
   }
 }
 
@@ -235,7 +239,7 @@ export class MaxRenewalsExceededError extends Data.TaggedError("MaxRenewalsExcee
   readonly maxRenewals: number
 }> {
   get message() {
-    return `Task ${this.taskId} has reached maximum renewals (${this.renewalCount}/${this.maxRenewals})`
+    return `Max renewals exceeded: task ${this.taskId} (${this.renewalCount}/${this.maxRenewals})`
   }
 }
 
@@ -281,9 +285,26 @@ export class InvalidStatusError extends Data.TaggedError("InvalidStatusError")<{
   readonly entity: string
   readonly status: string
   readonly validStatuses: readonly string[]
+  readonly rowId?: string | number
 }> {
   get message() {
-    return `Invalid ${this.entity} status: '${this.status}'. Valid statuses: ${this.validStatuses.join(", ")}`
+    const idPart = this.rowId !== undefined ? ` (row ${this.rowId})` : ""
+    return `Invalid ${this.entity} status: '${this.status}'${idPart}. Valid statuses: ${this.validStatuses.join(", ")}`
+  }
+}
+
+/**
+ * Error for invalid date values in database rows.
+ * Used when a date column contains a malformed ISO string that produces Invalid Date.
+ */
+export class InvalidDateError extends Data.TaggedError("InvalidDateError")<{
+  readonly field: string
+  readonly value: string
+  readonly rowId?: string | number
+}> {
+  get message() {
+    const idPart = this.rowId !== undefined ? ` (row ${this.rowId})` : ""
+    return `Invalid date in '${this.field}'${idPart}: '${this.value}'`
   }
 }
 
@@ -297,7 +318,7 @@ export class UnexpectedRowCountError extends Data.TaggedError("UnexpectedRowCoun
   readonly actual: number
 }> {
   get message() {
-    return `${this.operation}: expected ${this.expected} row(s), got ${this.actual}`
+    return `Unexpected row count: ${this.operation} expected ${this.expected} row(s), got ${this.actual}`
   }
 }
 
@@ -311,7 +332,7 @@ export class EntityFetchError extends Data.TaggedError("EntityFetchError")<{
   readonly operation: "insert" | "update"
 }> {
   get message() {
-    return `Failed to fetch ${this.entity} after ${this.operation}: id=${this.id}`
+    return `Entity fetch failed: ${this.entity} after ${this.operation}, id=${this.id}`
   }
 }
 
@@ -319,13 +340,22 @@ export class EntityFetchError extends Data.TaggedError("EntityFetchError")<{
  * Error when attempting to update a task that has been modified externally.
  * Used for optimistic locking in batch updates to prevent stale data overwrites.
  */
+export class HasChildrenError extends Data.TaggedError("HasChildrenError")<{
+  readonly id: string
+  readonly childIds: readonly string[]
+}> {
+  get message() {
+    return `Cannot delete task ${this.id}: has ${this.childIds.length} child task(s) (${this.childIds.join(", ")}). Use cascade option or delete/move children first.`
+  }
+}
+
 export class StaleDataError extends Data.TaggedError("StaleDataError")<{
   readonly taskId: string
   readonly expectedUpdatedAt: string
   readonly actualUpdatedAt: string
 }> {
   get message() {
-    return `Task ${this.taskId} was modified externally (expected updated_at: ${this.expectedUpdatedAt}, actual: ${this.actualUpdatedAt})`
+    return `Stale data: task ${this.taskId} was modified externally (expected updated_at: ${this.expectedUpdatedAt}, actual: ${this.actualUpdatedAt})`
   }
 }
 
@@ -356,6 +386,8 @@ export type TaskError =
   | OrchestratorError
   | RunNotFoundError
   | InvalidStatusError
+  | InvalidDateError
   | UnexpectedRowCountError
   | EntityFetchError
   | StaleDataError
+  | HasChildrenError

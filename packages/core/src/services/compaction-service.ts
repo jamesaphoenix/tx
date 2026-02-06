@@ -7,9 +7,9 @@
 
 import { Context, Effect, Layer, Config, Option } from "effect"
 import { writeFileSync, existsSync, readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { resolve, sep } from "node:path"
 import { SqliteClient } from "../db.js"
-import { DatabaseError, ExtractionUnavailableError } from "../errors.js"
+import { DatabaseError, ExtractionUnavailableError, ValidationError } from "../errors.js"
 import { CompactionRepository, type CompactionLogEntry } from "../repo/compaction-repo.js"
 import { rowToTask, type TaskRow } from "../mappers/task.js"
 import type { Task } from "@jamesaphoenix/tx-types"
@@ -140,6 +140,24 @@ interface CompactionLlmResponse {
 }
 
 /**
+ * Validate that a target file path does not escape the project directory
+ * via path traversal (e.g. "../../etc/passwd" or absolute paths outside
+ * the project root). Returns the resolved absolute path on success.
+ */
+const validateProjectPath = (targetFile: string): Effect.Effect<string, ValidationError> => {
+  const projectRoot = process.cwd()
+  const resolved = resolve(projectRoot, targetFile)
+
+  if (!resolved.startsWith(projectRoot + sep)) {
+    return Effect.fail(new ValidationError({
+      reason: `Path traversal rejected: resolved path '${resolved}' escapes project directory '${projectRoot}'`
+    }))
+  }
+
+  return Effect.succeed(resolved)
+}
+
+/**
  * CompactionService provides compaction operations for completed tasks.
  *
  * Design: Following DD-006 patterns for LLM integration with graceful degradation.
@@ -153,7 +171,7 @@ export class CompactionService extends Context.Tag("CompactionService")<
      * Compact tasks completed before the given date.
      * Requires ANTHROPIC_API_KEY to be set.
      */
-    readonly compact: (options: CompactionOptions) => Effect.Effect<CompactionResult, ExtractionUnavailableError | DatabaseError>
+    readonly compact: (options: CompactionOptions) => Effect.Effect<CompactionResult, ExtractionUnavailableError | DatabaseError | ValidationError>
     /**
      * Preview what would be compacted without LLM processing.
      * Works without ANTHROPIC_API_KEY.
@@ -166,7 +184,7 @@ export class CompactionService extends Context.Tag("CompactionService")<
     /**
      * Export learnings to a markdown file.
      */
-    readonly exportLearnings: (learnings: string, targetFile: string) => Effect.Effect<void, DatabaseError>
+    readonly exportLearnings: (learnings: string, targetFile: string) => Effect.Effect<void, DatabaseError | ValidationError>
     /**
      * Check if compaction functionality is available (API key set).
      */
@@ -221,20 +239,22 @@ export const CompactionServiceNoop = Layer.effect(
       getSummaries: () => compactionRepo.findAll(),
 
       exportLearnings: (learnings, targetFile) =>
-        Effect.try({
-          try: () => {
-            const filePath = resolve(process.cwd(), targetFile)
-            const date = new Date().toISOString().split("T")[0]
-            const content = `\n\n## Agent Learnings (${date})\n\n${learnings}\n`
+        Effect.gen(function* () {
+          const filePath = yield* validateProjectPath(targetFile)
+          yield* Effect.try({
+            try: () => {
+              const date = new Date().toISOString().split("T")[0]
+              const content = `\n\n## Agent Learnings (${date})\n\n${learnings}\n`
 
-            if (existsSync(filePath)) {
-              const existing = readFileSync(filePath, "utf-8")
-              writeFileSync(filePath, existing + content)
-            } else {
-              writeFileSync(filePath, `# Project Context\n${content}`)
-            }
-          },
-          catch: (cause) => new DatabaseError({ cause })
+              if (existsSync(filePath)) {
+                const existing = readFileSync(filePath, "utf-8")
+                writeFileSync(filePath, existing + content)
+              } else {
+                writeFileSync(filePath, `# Project Context\n${content}`)
+              }
+            },
+            catch: (cause) => new DatabaseError({ cause })
+          })
         }),
 
       isAvailable: () => Effect.succeed(false)
@@ -357,21 +377,23 @@ export const CompactionServiceLive = Layer.effect(
         return parsed
       })
 
-    const exportLearningsToFile = (learnings: string, targetFile: string): Effect.Effect<void, DatabaseError> =>
-      Effect.try({
-        try: () => {
-          const filePath = resolve(process.cwd(), targetFile)
-          const date = new Date().toISOString().split("T")[0]
-          const content = `\n\n## Agent Learnings (${date})\n\n${learnings}\n`
+    const exportLearningsToFile = (learnings: string, targetFile: string): Effect.Effect<void, DatabaseError | ValidationError> =>
+      Effect.gen(function* () {
+        const filePath = yield* validateProjectPath(targetFile)
+        yield* Effect.try({
+          try: () => {
+            const date = new Date().toISOString().split("T")[0]
+            const content = `\n\n## Agent Learnings (${date})\n\n${learnings}\n`
 
-          if (existsSync(filePath)) {
-            const existing = readFileSync(filePath, "utf-8")
-            writeFileSync(filePath, existing + content)
-          } else {
-            writeFileSync(filePath, `# Project Context\n${content}`)
-          }
-        },
-        catch: (cause) => new DatabaseError({ cause })
+            if (existsSync(filePath)) {
+              const existing = readFileSync(filePath, "utf-8")
+              writeFileSync(filePath, existing + content)
+            } else {
+              writeFileSync(filePath, `# Project Context\n${content}`)
+            }
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        })
       })
 
     return {

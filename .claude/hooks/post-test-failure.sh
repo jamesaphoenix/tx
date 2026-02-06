@@ -21,7 +21,7 @@ if [ "$EXIT_CODE" -eq 0 ]; then
 fi
 
 # Check if tx is available
-if ! command -v tx &> /dev/null; then
+if ! command -v tx >/dev/null 2>&1; then
   exit 0
 fi
 
@@ -36,12 +36,12 @@ if [ "${RALPH_MODE:-}" != "true" ]; then
   fi
 
   if [ -n "$FAILED_TESTS" ]; then
-    ESCAPED=$(echo "$FAILED_TESTS" | jq -Rs '.')
+    ESCAPED=$(echo "$FAILED_TESTS" | jq -Rs '.' | sed 's/^"//;s/"$//')
     cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
-    "additionalContext": "## Test Failures Detected\n\nFailed tests:\n\`\`\`\n${ESCAPED:1:-1}\n\`\`\`\n\nFix these before proceeding."
+    "additionalContext": "## Test Failures Detected\n\nFailed tests:\n\`\`\`\n${ESCAPED}\n\`\`\`\n\nFix these before proceeding."
   }
 }
 EOF

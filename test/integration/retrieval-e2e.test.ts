@@ -328,7 +328,7 @@ describe("End-to-End Retrieval Pipeline", () => {
       const emb1 = createMockEmbedding(text)
       const emb2 = createMockEmbedding(text)
 
-      const similarity = cosineSimilarity(emb1, emb2)
+      const similarity = Effect.runSync(cosineSimilarity(emb1, emb2))
       expect(similarity).toBeGreaterThan(0.999)
     })
 
@@ -343,8 +343,8 @@ describe("End-to-End Retrieval Pipeline", () => {
       const dbSimilarEmb = createMockEmbedding(dbSimilar)
 
       // Text with shared words should have higher similarity than unrelated text
-      const simDbToSimilar = cosineSimilarity(dbEmb, dbSimilarEmb)
-      const simDbToAuth = cosineSimilarity(dbEmb, authEmb)
+      const simDbToSimilar = Effect.runSync(cosineSimilarity(dbEmb, dbSimilarEmb))
+      const simDbToAuth = Effect.runSync(cosineSimilarity(dbEmb, authEmb))
 
       // dbSimilar shares words with dbText, authText shares none
       expect(simDbToSimilar).toBeGreaterThan(simDbToAuth)
@@ -916,9 +916,9 @@ describe("Mock Embedding Sanity Checks", () => {
     const authVector = createMockEmbedding("jwt authentication tokens password")
     const testVector = createMockEmbedding("unit tests integration fixtures")
 
-    const dbToAuth = cosineSimilarity(dbVector, authVector)
-    const dbToTest = cosineSimilarity(dbVector, testVector)
-    const authToTest = cosineSimilarity(authVector, testVector)
+    const dbToAuth = Effect.runSync(cosineSimilarity(dbVector, authVector))
+    const dbToTest = Effect.runSync(cosineSimilarity(dbVector, testVector))
+    const authToTest = Effect.runSync(cosineSimilarity(authVector, testVector))
 
     // All cross-topic similarities should be less than 0.9
     expect(dbToAuth).toBeLessThan(0.9)
@@ -930,7 +930,7 @@ describe("Mock Embedding Sanity Checks", () => {
     const db1 = createMockEmbedding("database queries sql")
     const db2 = createMockEmbedding("sql database transactions")
 
-    const similarity = cosineSimilarity(db1, db2)
+    const similarity = Effect.runSync(cosineSimilarity(db1, db2))
 
     // Same-topic content should have high similarity
     expect(similarity).toBeGreaterThan(0.5)

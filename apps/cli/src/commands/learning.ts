@@ -7,10 +7,10 @@ import { writeFileSync, existsSync, mkdirSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { pathToFileURL } from "node:url"
 import { LearningService, FileLearningService, RetrieverService, TaskService, RetrievalError } from "@jamesaphoenix/tx-core"
-import type { LearningSourceType, TaskId, EdgeType } from "@jamesaphoenix/tx-types"
+import type { LearningSourceType, EdgeType } from "@jamesaphoenix/tx-types"
 import { toJson, formatContextMarkdown } from "../output.js"
 import { commandHelp } from "../help.js"
-import { type Flags, flag, opt, parseIntOpt, parseFloatOpt } from "../utils/parse.js"
+import { type Flags, flag, opt, parseIntOpt, parseFloatOpt, parseTaskId } from "../utils/parse.js"
 
 export const learningAdd = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -167,11 +167,12 @@ const loadCustomRetriever = (retrieverPath: string) =>
 
 export const context = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const taskId = pos[0]
-    if (!taskId) {
+    const rawTaskId = pos[0]
+    if (!rawTaskId) {
       console.error("Usage: tx context <task-id> [--json] [--inject] [--expand] [--depth N] [--edge-types TYPES] [--retriever <path>]")
       process.exit(1)
     }
+    const taskId = parseTaskId(rawTaskId)
 
     const retrieverPath = opt(flags, "retriever")
 
@@ -187,7 +188,7 @@ export const context = (pos: string[], flags: Flags) =>
       const startTime = Date.now()
 
       // Get task to build search query
-      const task = yield* taskSvc.get(taskId as TaskId)
+      const task = yield* taskSvc.get(taskId)
 
       // Build search query from task content
       const searchQuery = `${task.title} ${task.description}`.trim()
@@ -234,7 +235,7 @@ export const context = (pos: string[], flags: Flags) =>
         for (const l of result.learnings) {
           const score = (l.relevanceScore * 100).toFixed(0)
           const hops = l.expansionHops !== undefined && l.expansionHops > 0 ? ` [+${l.expansionHops} hops]` : ""
-          console.log(`    #${l.id} (${score}%)${hops} ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
+          console.log(`    #${l.id} (${score}%)${hops} ${l.content}`)
         }
       }
       return
@@ -272,7 +273,7 @@ export const context = (pos: string[], flags: Flags) =>
       for (const l of result.learnings) {
         const score = (l.relevanceScore * 100).toFixed(0)
         const hops = l.expansionHops !== undefined && l.expansionHops > 0 ? ` [+${l.expansionHops} hops]` : ""
-        console.log(`    #${l.id} (${score}%)${hops} ${l.content.slice(0, 50)}${l.content.length > 50 ? "..." : ""}`)
+        console.log(`    #${l.id} (${score}%)${hops} ${l.content}`)
       }
     }
   })

@@ -14,6 +14,20 @@ afterEach(() => server.resetHandlers())
 // Clean up after all tests are done
 afterAll(() => server.close())
 
+// Helper: set global — use vi.stubGlobal when available (vitest), fall back to
+// direct globalThis assignment (bun test runner).
+const setGlobal = (key: string, value: unknown) => {
+  if (typeof vi.stubGlobal === 'function') {
+    vi.stubGlobal(key, value)
+  } else {
+    ;(globalThis as Record<string, unknown>)[key] = value
+  }
+}
+
+// Helper: create a mock function — vi.fn() in vitest, plain function in bun
+const createMock = () =>
+  typeof vi.fn === 'function' ? vi.fn() : (() => {})
+
 // Mock IntersectionObserver
 class MockIntersectionObserver implements IntersectionObserver {
   readonly root: Element | null = null
@@ -33,7 +47,7 @@ class MockIntersectionObserver implements IntersectionObserver {
   }
 }
 
-vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
+setGlobal('IntersectionObserver', MockIntersectionObserver)
 
 // Mock ResizeObserver (commonly needed for React components)
 class MockResizeObserver implements ResizeObserver {
@@ -43,7 +57,7 @@ class MockResizeObserver implements ResizeObserver {
   disconnect(): void {}
 }
 
-vi.stubGlobal('ResizeObserver', MockResizeObserver)
+setGlobal('ResizeObserver', MockResizeObserver)
 
 // Mock matchMedia (commonly needed for responsive components)
 Object.defineProperty(window, 'matchMedia', {
@@ -52,11 +66,11 @@ Object.defineProperty(window, 'matchMedia', {
     matches: false,
     media: query,
     onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
+    addListener: createMock(),
+    removeListener: createMock(),
+    addEventListener: createMock(),
+    removeEventListener: createMock(),
+    dispatchEvent: createMock(),
   })),
 })
 

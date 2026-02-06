@@ -306,7 +306,8 @@ describe("DOCTRINE Rule 5: Effect-TS patterns", () => {
     expect(results.task.id).toMatch(/^tx-/)
     expect(results.withDeps.id).toBe(results.task.id)
     expect(Array.isArray(results.ready)).toBe(true)
-    expect(typeof results.isReady).toBe("boolean")
+    expect(results.isReady).toHaveProperty("_tag")
+    expect(results.isReady._tag).toBe("Ready")
     expect(Array.isArray(results.children)).toBe(true)
   })
 
@@ -333,7 +334,7 @@ describe("DOCTRINE Rule 5: Effect-TS patterns", () => {
 // =============================================================================
 
 describe("Data Integrity Invariants", () => {
-  it("task IDs follow tx-[a-z0-9]{8} format", async () => {
+  it("task IDs follow tx-[a-z0-9]{6,12} format", async () => {
     const { TaskService } = await import("@jamesaphoenix/tx-core")
     const layer = await makeTestLayer()
 
@@ -347,7 +348,7 @@ describe("Data Integrity Invariants", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    expect(task.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(task.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("fixture IDs are deterministic", () => {
@@ -357,7 +358,7 @@ describe("Data Integrity Invariants", () => {
 
     expect(id1).toBe(id2)
     expect(id1).not.toBe(id3)
-    expect(id1).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(id1).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("completed tasks have completedAt timestamp", async () => {

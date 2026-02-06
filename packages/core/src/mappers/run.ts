@@ -12,6 +12,7 @@ import type {
 } from "@jamesaphoenix/tx-types"
 import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 
 // Re-export constants from @tx/types for convenience
 export { RUN_STATUSES }
@@ -61,15 +62,16 @@ export const rowToRun = (row: RunRow): Run => {
     throw new InvalidStatusError({
       entity: "run",
       status: row.status,
-      validStatuses: RUN_STATUSES
+      validStatuses: RUN_STATUSES,
+      rowId: row.id
     })
   }
   return {
     id: row.id as RunId,
     taskId: row.task_id,
     agent: row.agent,
-    startedAt: new Date(row.started_at),
-    endedAt: row.ended_at ? new Date(row.ended_at) : null,
+    startedAt: parseDate(row.started_at, "started_at", row.id),
+    endedAt: row.ended_at ? parseDate(row.ended_at, "ended_at", row.id) : null,
     status: row.status,
     exitCode: row.exit_code,
     pid: row.pid,

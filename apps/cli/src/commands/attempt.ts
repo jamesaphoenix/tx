@@ -4,24 +4,19 @@
 
 import { Effect } from "effect"
 import { AttemptService, TaskService } from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
+import { type Flags, flag, parseTaskId } from "../utils/parse.js"
 
 export const tryAttempt = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const taskId = pos[0]
+    const rawTaskId = pos[0]
     const approach = pos[1]
 
-    if (!taskId || !approach) {
+    if (!rawTaskId || !approach) {
       console.error("Usage: tx try <task-id> <approach> --failed|--succeeded [reason]")
       process.exit(1)
     }
+    const taskId = parseTaskId(rawTaskId)
 
     // Check for --failed and --succeeded flags
     // The parser treats `--failed "reason"` as flags["failed"] = "reason"
@@ -74,18 +69,19 @@ export const tryAttempt = (pos: string[], flags: Flags) =>
 
 export const attempts = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const taskId = pos[0]
+    const rawTaskId = pos[0]
 
-    if (!taskId) {
+    if (!rawTaskId) {
       console.error("Usage: tx attempts <task-id> [--json]")
       process.exit(1)
     }
+    const taskId = parseTaskId(rawTaskId)
 
     const attemptSvc = yield* AttemptService
     const taskSvc = yield* TaskService
 
     // Verify task exists (will throw TaskNotFoundError if not)
-    yield* taskSvc.get(taskId as TaskId)
+    yield* taskSvc.get(taskId)
 
     const attemptList = yield* attemptSvc.listForTask(taskId)
 

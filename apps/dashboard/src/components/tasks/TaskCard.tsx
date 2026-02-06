@@ -53,7 +53,15 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
       <div
         ref={innerRef}
         className={`${baseClasses} ${readyClasses} ${hoverClasses} ${focusClasses}`}
+        role="button"
+        aria-label={`View task: ${task.title}`}
         onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            onClick?.()
+          }
+        }}
         tabIndex={isFocused ? 0 : -1}
       >
         <div className="flex items-start justify-between gap-2">

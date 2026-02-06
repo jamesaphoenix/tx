@@ -292,6 +292,17 @@ describe("FileLearning Validation", () => {
     ).rejects.toThrow("File pattern is required")
   })
 
+  it("rejects tab/newline-only file pattern", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* FileLearningService
+          return yield* svc.create({ filePattern: "\t\n\r", note: "Valid note" })
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toThrow("File pattern is required")
+  })
+
   it("rejects empty note", async () => {
     await expect(
       Effect.runPromise(
@@ -314,6 +325,17 @@ describe("FileLearning Validation", () => {
     ).rejects.toThrow("Note is required")
   })
 
+  it("rejects tab/newline-only note", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* FileLearningService
+          return yield* svc.create({ filePattern: "src/db.ts", note: "\t\n" })
+        }).pipe(Effect.provide(layer))
+      )
+    ).rejects.toThrow("Note is required")
+  })
+
   it("trims file pattern and note", async () => {
     const learning = await Effect.runPromise(
       Effect.gen(function* () {
@@ -327,5 +349,35 @@ describe("FileLearning Validation", () => {
 
     expect(learning.filePattern).toBe("src/db.ts")
     expect(learning.note).toBe("Trimmed note")
+  })
+
+  it("normalizes whitespace-only taskId to null", async () => {
+    const learning = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* FileLearningService
+        return yield* svc.create({
+          filePattern: "src/db.ts",
+          note: "Valid note",
+          taskId: "   "
+        })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(learning.taskId).toBeNull()
+  })
+
+  it("trims taskId whitespace", async () => {
+    const learning = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* FileLearningService
+        return yield* svc.create({
+          filePattern: "src/db.ts",
+          note: "Valid note",
+          taskId: `  ${FIXTURES.TASK_AUTH}  `
+        })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(learning.taskId).toBe(FIXTURES.TASK_AUTH)
   })
 })

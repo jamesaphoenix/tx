@@ -194,8 +194,8 @@ export const DiversifierServiceLive = Layer.succeed(
           return []
         }
 
-        // Edge case: only one candidate or limit is 1
-        if (candidates.length === 1 || limit === 1) {
+        // Edge case: only one candidate
+        if (candidates.length === 1) {
           return candidates.slice(0, 1)
         }
 

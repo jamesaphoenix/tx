@@ -73,7 +73,11 @@ export const getNextTask = (
  * Parse ISO date string to Date object.
  */
 export const parseDate = (dateStr: string): Date => {
-  return new Date(dateStr)
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) {
+    throw new TxError(`Invalid date string: '${dateStr}'`, "VALIDATION_ERROR")
+  }
+  return date
 }
 
 /**
@@ -135,9 +139,10 @@ export class TxError extends Error {
     message: string,
     public readonly code: string,
     public readonly statusCode?: number,
-    public readonly details?: unknown
+    public readonly details?: unknown,
+    options?: { cause?: unknown }
   ) {
-    super(message)
+    super(message, options)
     this.name = "TxError"
   }
 

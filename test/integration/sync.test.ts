@@ -7,14 +7,14 @@
  *
  * Per DD-007: Uses real in-memory SQLite and SHA256-based fixture IDs.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
 import { existsSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Database } from "bun:sqlite"
 
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
@@ -49,8 +49,8 @@ const SYNC_FIXTURES = {
 // Test Layer Factory
 // -----------------------------------------------------------------------------
 
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
+function makeTestLayer(db: Database) {
+  const infra = Layer.succeed(SqliteClient, db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -106,19 +106,29 @@ function cleanupTempFile(path: string): void {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Export", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
+    db = shared.getDb()
+    seedFixtures({ db } as any)
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("exports tasks to JSONL file", async () => {
@@ -181,7 +191,7 @@ describe("SyncService Export", () => {
       expect(op.v).toBe(1)
       expect(op.op).toBe("upsert")
       expect(op.ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
-      expect(op.id).toMatch(/^tx-[a-z0-9]{8}$/)
+      expect(op.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
       expect(op.data).toHaveProperty("title")
       expect(op.data).toHaveProperty("description")
       expect(op.data).toHaveProperty("status")
@@ -210,8 +220,8 @@ describe("SyncService Export", () => {
       expect(op.v).toBe(1)
       expect(op.op).toBe("dep_add")
       expect(op.ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
-      expect(op.blockerId).toMatch(/^tx-[a-z0-9]{8}$/)
-      expect(op.blockedId).toMatch(/^tx-[a-z0-9]{8}$/)
+      expect(op.blockerId).toMatch(/^tx-[a-z0-9]{6,12}$/)
+      expect(op.blockedId).toMatch(/^tx-[a-z0-9]{6,12}$/)
     }
   })
 
@@ -265,8 +275,8 @@ describe("SyncService Export", () => {
   })
 
   it("handles empty database gracefully", async () => {
-    const emptyDb = await Effect.runPromise(createTestDatabase())
-    const emptyLayer = makeTestLayer(emptyDb)
+    const emptyShared = await createSharedTestLayer()
+    const emptyLayer = makeTestLayer(emptyShared.getDb())
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -279,6 +289,8 @@ describe("SyncService Export", () => {
     expect(existsSync(tempPath)).toBe(true)
     const content = readFileSync(tempPath, "utf-8")
     expect(content).toBe("")
+
+    await emptyShared.close()
   })
 })
 
@@ -287,18 +299,28 @@ describe("SyncService Export", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Import", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = shared.getDb()
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns zero counts for missing file", async () => {
@@ -630,6 +652,106 @@ describe("SyncService Import", () => {
 
     expect(parent.parentId).toBe(grandparentId)
   })
+
+  it("nullifies orphaned parentId references instead of failing with FK violation", async () => {
+    // Task references a parent that doesn't exist in DB and isn't in the import set
+    const ts = "2024-01-01T00:00:00.000Z"
+    const orphanedParentRef = fixtureId("nonexistent-parent")
+    const childId = fixtureId("orphan-child")
+
+    const jsonl = JSON.stringify({
+      v: 1,
+      op: "upsert",
+      ts,
+      id: childId,
+      data: {
+        title: "Orphaned Child",
+        description: "My parent doesn't exist",
+        status: "backlog",
+        score: 50,
+        parentId: orphanedParentRef,
+        metadata: {}
+      }
+    })
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Should succeed (not throw FK violation)
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.imported).toBe(1)
+
+    // Verify the task was imported with parentId set to null
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        return yield* taskSvc.get(childId)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(task.id).toBe(childId)
+    expect(task.title).toBe("Orphaned Child")
+    expect(task.parentId).toBeNull()
+  })
+
+  it("nullifies orphaned parentId on update when parent no longer exists", async () => {
+    // First, create a task in the DB with no parent
+    const createTs = "2024-01-01T00:00:00.000Z"
+    const updateTs = "2024-01-02T00:00:00.000Z"
+    const taskId = fixtureId("orphan-update")
+    const missingParent = fixtureId("missing-parent")
+
+    // Create the task first
+    const createJsonl = JSON.stringify({
+      v: 1,
+      op: "upsert",
+      ts: createTs,
+      id: taskId,
+      data: { title: "Task", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+    })
+    writeFileSync(tempPath, createJsonl + "\n", "utf-8")
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Now update referencing a non-existent parent
+    const updateJsonl = JSON.stringify({
+      v: 1,
+      op: "upsert",
+      ts: updateTs,
+      id: taskId,
+      data: { title: "Task Updated", description: "", status: "ready", score: 100, parentId: missingParent, metadata: {} }
+    })
+    writeFileSync(tempPath, updateJsonl + "\n", "utf-8")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.imported).toBe(1)
+
+    // Verify updated with null parent
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        return yield* taskSvc.get(taskId)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(task.title).toBe("Task Updated")
+    expect(task.parentId).toBeNull()
+  })
 })
 
 // -----------------------------------------------------------------------------
@@ -640,14 +762,14 @@ describe("SyncService Import", () => {
  * Seed fixtures with sequential timestamps to ensure proper import order.
  * Parents must have earlier timestamps than children to satisfy FK constraints.
  */
-function seedFixturesWithSequentialTimestamps(db: TestDatabase): void {
+function seedFixturesWithSequentialTimestamps(db: Database): void {
   const baseTime = new Date("2024-01-01T00:00:00.000Z")
-  const insert = db.db.prepare(
+  const insert = db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
 
-  const insertDep = db.db.prepare(
+  const insertDep = db.prepare(
     `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
   )
 
@@ -680,26 +802,40 @@ function seedFixturesWithSequentialTimestamps(db: TestDatabase): void {
 }
 
 describe("SyncService Round-Trip", () => {
-  let sourceDb: TestDatabase
-  let targetDb: TestDatabase
+  let sourceShared: SharedTestLayerResult
+  let targetShared: SharedTestLayerResult
+  let sourceDb: Database
+  let targetDb: Database
   let sourceLayer: ReturnType<typeof makeTestLayer>
   let targetLayer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    sourceShared = await createSharedTestLayer()
+    targetShared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    sourceDb = await Effect.runPromise(createTestDatabase())
+    sourceDb = sourceShared.getDb()
     // Use sequential timestamps to ensure proper import order
     seedFixturesWithSequentialTimestamps(sourceDb)
     sourceLayer = makeTestLayer(sourceDb)
 
-    targetDb = await Effect.runPromise(createTestDatabase())
+    targetDb = targetShared.getDb()
     targetLayer = makeTestLayer(targetDb)
 
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await sourceShared.reset()
+    await targetShared.reset()
+  })
+
+  afterAll(async () => {
+    await sourceShared.close()
+    await targetShared.close()
   })
 
   it("preserves all tasks through export → import cycle", async () => {
@@ -890,24 +1026,34 @@ describe("SyncService Round-Trip", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Conflict Resolution", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = shared.getDb()
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("updates existing task when JSONL timestamp is newer", async () => {
     // Create a task with old timestamp
     const oldTs = "2024-01-01T00:00:00.000Z"
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Old Title", "", "backlog", 100, null, oldTs, oldTs, null, "{}")
@@ -950,7 +1096,7 @@ describe("SyncService Conflict Resolution", () => {
   it("reports conflict when local timestamp is newer than JSONL", async () => {
     // Create a task with new timestamp
     const newTs = "2024-01-02T00:00:00.000Z"
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Local Title", "", "ready", 200, null, newTs, newTs, null, "{}")
@@ -992,7 +1138,7 @@ describe("SyncService Conflict Resolution", () => {
   it("skips when timestamps are identical", async () => {
     // Create a task with exact timestamp
     const ts = "2024-01-01T00:00:00.000Z"
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Same Title", "", "backlog", 100, null, ts, ts, null, "{}")
@@ -1025,19 +1171,29 @@ describe("SyncService Conflict Resolution", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Status", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
+    db = shared.getDb()
+    seedFixtures({ db } as any)
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("reports correct task count from database", async () => {
@@ -1186,7 +1342,7 @@ describe("SyncService Status", () => {
 
     // Delete a task directly in the database
     // Use TASK_DONE since it has no children or dependencies blocking other tasks
-    db.db.prepare("DELETE FROM tasks WHERE id = ?").run(FIXTURES.TASK_DONE)
+    db.prepare("DELETE FROM tasks WHERE id = ?").run(FIXTURES.TASK_DONE)
 
     // Check that status now reports dirty (5 tasks in DB, 6 in JSONL)
     const statusAfter = await Effect.runPromise(
@@ -1224,7 +1380,7 @@ describe("SyncService Status", () => {
 
     // Remove a dependency directly in the database
     // JWT -> BLOCKED is one of the fixture dependencies
-    db.db.prepare("DELETE FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?")
+    db.prepare("DELETE FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?")
       .run(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED)
 
     // Check that status now reports dirty (1 dep in DB, 2 in JSONL)
@@ -1246,17 +1402,27 @@ describe("SyncService Status", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Status Dirty Detection Edge Cases", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    // Create fresh DB WITHOUT fixtures - these tests need precise control over data
-    db = await Effect.runPromise(createTestDatabase())
+    // Fresh DB WITHOUT fixtures - these tests need precise control over data
+    db = shared.getDb()
     layer = makeTestLayer(db)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(".tx/tasks.jsonl")
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("reports isDirty: false when JSONL has duplicate upserts for same task (git merge scenario)", async () => {
@@ -1268,7 +1434,7 @@ describe("SyncService Status Dirty Detection Edge Cases", () => {
     const exportTs = "2024-01-03T00:00:00.000Z"
 
     // Create a single task in DB with timestamp BEFORE lastExport
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, later, later, null, "{}")
@@ -1374,11 +1540,11 @@ describe("SyncService Status Dirty Detection Edge Cases", () => {
     const exportTs = "2024-01-03T00:00:00.000Z"
 
     // Create two tasks in DB with no dependency between them (timestamp before lastExport)
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, baseTs, baseTs, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, baseTs, baseTs, null, "{}")
@@ -1448,11 +1614,11 @@ describe("SyncService Status Dirty Detection Edge Cases", () => {
     const exportTs = "2024-01-03T00:00:00.000Z"
 
     // Create two tasks in DB (timestamp before lastExport)
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, baseTs, baseTs, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, baseTs, baseTs, null, "{}")
@@ -1496,24 +1662,34 @@ describe("SyncService Status Dirty Detection Edge Cases", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Delete Operations", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = shared.getDb()
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("handles delete operation to remove existing task", async () => {
     // First create a task
     const createTs = "2024-01-01T00:00:00.000Z"
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "To Delete", "", "backlog", 100, null, createTs, createTs, null, "{}")
@@ -1551,15 +1727,15 @@ describe("SyncService Delete Operations", () => {
   it("handles dep_remove operation", async () => {
     // Create tasks and dependency
     const now = new Date().toISOString()
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, SYNC_FIXTURES.SYNC_TASK_B, now)
 
@@ -1595,11 +1771,11 @@ describe("SyncService Delete Operations", () => {
   it("last operation wins for same dependency (add then remove)", async () => {
     // Create tasks
     const now = new Date().toISOString()
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
@@ -1649,18 +1825,28 @@ describe("SyncService Delete Operations", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Dependency Import Statistics", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = shared.getDb()
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns dependency statistics in ImportResult", async () => {
@@ -1708,15 +1894,15 @@ describe("SyncService Dependency Import Statistics", () => {
   it("tracks skipped dependencies when already exists", async () => {
     // Create tasks and existing dependency
     const now = new Date().toISOString()
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, SYNC_FIXTURES.SYNC_TASK_B, now)
 
@@ -1745,15 +1931,15 @@ describe("SyncService Dependency Import Statistics", () => {
   it("tracks removed dependencies", async () => {
     // Create tasks and existing dependency
     const now = new Date().toISOString()
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, SYNC_FIXTURES.SYNC_TASK_B, now)
 
@@ -1784,11 +1970,11 @@ describe("SyncService Dependency Import Statistics", () => {
   it("tracks skipped dep_remove when dependency does not exist", async () => {
     // Create tasks but no dependency
     const now = new Date().toISOString()
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_B, "Task B", "", "backlog", 50, null, now, now, null, "{}")
@@ -1818,7 +2004,7 @@ describe("SyncService Dependency Import Statistics", () => {
   it("tracks dependency failures for non-existent tasks", async () => {
     // Create only Task A, not Task B
     const now = new Date().toISOString()
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(SYNC_FIXTURES.SYNC_TASK_A, "Task A", "", "ready", 100, null, now, now, null, "{}")
@@ -1885,12 +2071,25 @@ describe("SyncService Dependency Import Statistics", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Auto-Sync", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = shared.getDb()
     layer = makeTestLayer(db)
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("auto-sync is disabled by default", async () => {
@@ -1965,18 +2164,28 @@ describe("SyncService Auto-Sync", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Compact", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = shared.getDb()
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns zero counts for missing file", async () => {
@@ -2175,28 +2384,33 @@ describe("SyncService Compact", () => {
 // -----------------------------------------------------------------------------
 
 describe("SyncService Import Transaction Atomicity", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
+  let db: Database
   let layer: ReturnType<typeof makeTestLayer>
   let tempPath: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = shared.getDb()
     layer = makeTestLayer(db)
     tempPath = createTempJsonlPath()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupTempFile(tempPath)
+    await shared.reset()
   })
 
-  it("rolls back all changes when import fails mid-operation (foreign key violation)", async () => {
-    // This test verifies that if an error occurs during import, all changes are rolled back.
-    // We create a scenario where:
-    // 1. First task would be imported successfully
-    // 2. Second task has a parentId pointing to a non-existent task (not in import)
-    // 3. Due to topological sorting, the second task will be processed (no parent in import set)
-    // 4. The insert should fail due to foreign key constraint
-    // 5. The first task should be rolled back
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("nullifies orphaned parentId instead of causing FK violation rollback", async () => {
+    // When a task references a parentId that doesn't exist in DB or import set,
+    // the import should still succeed with parentId set to null.
 
     const ts = "2024-01-01T00:00:00.000Z"
     const validTaskId = fixtureId("tx-valid-task")
@@ -2232,28 +2446,32 @@ describe("SyncService Import Transaction Atomicity", () => {
     writeFileSync(tempPath, jsonl + "\n", "utf-8")
 
     // Count tasks before import
-    const countBefore = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    const countBefore = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
     expect(countBefore.count).toBe(0)
 
-    // Attempt import - should fail due to foreign key constraint
+    // Import should succeed - orphaned parentId is nullified instead of causing FK violation
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.import(tempPath)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(layer))
     )
 
-    // Import should fail
-    expect(result._tag).toBe("Left")
+    expect(result.imported).toBe(2)
 
-    // CRITICAL: Both tasks should be rolled back - database should still be empty
-    const countAfter = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
-    expect(countAfter.count).toBe(0)
+    // Both tasks should be imported
+    const countAfter = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(countAfter.count).toBe(2)
+
+    // The task with the invalid parent should have parentId set to null
+    const badParentTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(invalidParentTaskId) as { parent_id: string | null } | undefined
+    expect(badParentTask).toBeDefined()
+    expect(badParentTask?.parent_id).toBeNull()
   })
 
-  it("rolls back dependencies when import fails", async () => {
-    // Create a scenario where tasks import successfully but then a subsequent operation fails
-    // We'll use a task with invalid parent to trigger the rollback
+  it("imports tasks and dependencies even when one task has orphaned parent", async () => {
+    // All tasks and dependencies should import successfully, with the
+    // orphaned parentId nullified instead of causing a rollback
 
     const ts = "2024-01-01T00:00:00.000Z"
     const taskA = fixtureId("tx-rollback-a")
@@ -2306,26 +2524,31 @@ describe("SyncService Import Transaction Atomicity", () => {
     writeFileSync(tempPath, jsonl + "\n", "utf-8")
 
     // Count before
-    const taskCountBefore = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
-    const depCountBefore = db.db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
+    const taskCountBefore = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    const depCountBefore = db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
     expect(taskCountBefore.count).toBe(0)
     expect(depCountBefore.count).toBe(0)
 
-    // Attempt import - should fail
+    // Import should succeed - orphaned parentId is nullified
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.import(tempPath)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(layer))
     )
 
-    expect(result._tag).toBe("Left")
+    // All 3 tasks imported, 1 dependency added
+    expect(result.imported).toBe(3)
+    expect(result.dependencies.added).toBe(1)
 
-    // All changes should be rolled back
-    const taskCountAfter = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
-    const depCountAfter = db.db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
-    expect(taskCountAfter.count).toBe(0)
-    expect(depCountAfter.count).toBe(0)
+    const taskCountAfter = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    const depCountAfter = db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
+    expect(taskCountAfter.count).toBe(3)
+    expect(depCountAfter.count).toBe(1)
+
+    // The task with bad parent should have null parentId
+    const badTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskWithBadParent) as { parent_id: string | null } | undefined
+    expect(badTask?.parent_id).toBeNull()
   })
 
   it("does not roll back on successful import", async () => {
@@ -2369,17 +2592,17 @@ describe("SyncService Import Transaction Atomicity", () => {
     expect(result.imported).toBe(2)
 
     // Verify data persisted
-    const taskCount = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
-    const depCount = db.db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
+    const taskCount = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    const depCount = db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
     expect(taskCount.count).toBe(2)
     expect(depCount.count).toBe(1)
   })
 
-  it("preserves existing data when import fails", async () => {
+  it("preserves existing data and imports new tasks with orphaned parents nullified", async () => {
     // First, add some existing data
     const existingTs = "2024-01-01T00:00:00.000Z"
     const existingTask = fixtureId("tx-existing")
-    db.db.prepare(
+    db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(existingTask, "Existing Task", "", "ready", 100, null, existingTs, existingTs, null, "{}")
@@ -2408,27 +2631,33 @@ describe("SyncService Import Transaction Atomicity", () => {
     ].join("\n")
     writeFileSync(tempPath, jsonl + "\n", "utf-8")
 
-    // Attempt import - should fail
+    // Import should succeed - orphaned parentId is nullified
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.import(tempPath)
-      }).pipe(Effect.provide(layer), Effect.either)
+      }).pipe(Effect.provide(layer))
     )
 
-    expect(result._tag).toBe("Left")
+    expect(result.imported).toBe(2)
 
     // Existing data should still be there
-    const existingData = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(existingTask) as { title: string } | undefined
+    const existingData = db.prepare("SELECT * FROM tasks WHERE id = ?").get(existingTask) as { title: string } | undefined
     expect(existingData).toBeDefined()
     expect(existingData?.title).toBe("Existing Task")
 
-    // New task should NOT be there (rolled back)
-    const newData = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(newTask)
-    expect(newData).toBeNull()
+    // New task should be imported
+    const newData = db.prepare("SELECT * FROM tasks WHERE id = ?").get(newTask) as { title: string } | undefined
+    expect(newData).toBeDefined()
+    expect(newData?.title).toBe("New Task")
 
-    // Total count should be 1 (only the existing task)
-    const taskCount = db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
-    expect(taskCount.count).toBe(1)
+    // Bad task should be imported with null parent
+    const badData = db.prepare("SELECT * FROM tasks WHERE id = ?").get(badTask) as { parent_id: string | null } | undefined
+    expect(badData).toBeDefined()
+    expect(badData?.parent_id).toBeNull()
+
+    // Total count should be 3 (existing + 2 new)
+    const taskCount = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(taskCount.count).toBe(3)
   })
 })

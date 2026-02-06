@@ -42,7 +42,7 @@
     "test": "bun vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@jamesaphoenix/tx-types": "^0.4.1",
+    "@jamesaphoenix/tx-types": "*",
     "chokidar": "^5.0.0",
     "effect": "^3.19.15"
   },

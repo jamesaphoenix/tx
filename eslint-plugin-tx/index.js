@@ -18,6 +18,7 @@ import noThrowInServices from './rules/no-throw-in-services.js';
 import noHono from './rules/no-hono.js';
 import noZod from './rules/no-zod.js';
 import noPlainInterfaces from './rules/no-plain-interfaces.js';
+import noAsCastInRepos from './rules/no-as-cast-in-repos.js';
 
 const plugin = {
   meta: {
@@ -40,7 +41,8 @@ const plugin = {
     'no-throw-in-services': noThrowInServices,
     'no-hono': noHono,
     'no-zod': noZod,
-    'no-plain-interfaces': noPlainInterfaces
+    'no-plain-interfaces': noPlainInterfaces,
+    'no-as-cast-in-repos': noAsCastInRepos
   },
   // Flat config recommended configuration
   configs: {
@@ -119,6 +121,10 @@ const plugin = {
         'tx/no-plain-interfaces': ['warn', {
           excludedNames: ['ListResponse', 'PaginatedResponse', 'ActionResponse'],
           excludedSuffixes: ['Row']
+        }],
+        'tx/no-as-cast-in-repos': ['warn', {
+          enforcePaths: ['repo/', 'mappers/'],
+          allowedTypes: ['unknown']
         }]
       }
     }

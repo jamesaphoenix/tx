@@ -1442,6 +1442,161 @@ describe("AnchorVerificationService Integration", () => {
     })
   })
 
+  describe("path traversal protection", () => {
+    it("rejects relative path with ../ that escapes baseDir", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for path traversal",
+            sourceType: "manual"
+          })
+
+          // Anchor with path traversal attempt
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "glob",
+            filePath: "../../etc/passwd",
+            value: "*.ts"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("path_traversal_rejected")
+    })
+
+    it("rejects absolute path outside baseDir", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for absolute path traversal",
+            sourceType: "manual"
+          })
+
+          // Absolute path completely outside baseDir
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "glob",
+            filePath: "/etc/passwd",
+            value: "*.ts"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("path_traversal_rejected")
+    })
+
+    it("rejects path with encoded traversal (nested ../)", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for nested traversal",
+            sourceType: "manual"
+          })
+
+          // Deeply nested traversal
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "symbol",
+            filePath: "subdir/../../../../../../etc/shadow",
+            value: "SomeSymbol",
+            symbolFqname: "shadow::SomeSymbol"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("invalidated")
+      expect(result.newStatus).toBe("invalid")
+      expect(result.reason).toBe("path_traversal_rejected")
+    })
+
+    it("allows valid relative path within baseDir", async () => {
+      // Create a subdirectory with a file
+      const subDir = path.join(tempDir, "src")
+      await fs.mkdir(subDir, { recursive: true })
+      await createTestFile(subDir, "valid.ts", "export const ok = true")
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for valid relative path",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "glob",
+            filePath: "src/valid.ts",
+            value: "*.ts"
+          })
+
+          return yield* verificationSvc.verify(1, { baseDir: tempDir })
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.action).toBe("unchanged")
+      expect(result.newStatus).toBe("valid")
+    })
+
+    it("logs path traversal rejection to invalidation log", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const learningSvc = yield* LearningService
+          const anchorSvc = yield* AnchorService
+          const verificationSvc = yield* AnchorVerificationService
+          const anchorRepo = yield* AnchorRepository
+
+          const learning = yield* learningSvc.create({
+            content: "Test learning for traversal logging",
+            sourceType: "manual"
+          })
+
+          yield* anchorSvc.createAnchor({
+            learningId: learning.id,
+            anchorType: "glob",
+            filePath: "../../../etc/passwd",
+            value: "*.ts"
+          })
+
+          yield* verificationSvc.verify(1, { baseDir: tempDir, detectedBy: "periodic" })
+
+          return yield* anchorRepo.getInvalidationLogs(1)
+        }).pipe(Effect.provide(shared.layer))
+      )
+
+      expect(result.length).toBeGreaterThan(0)
+      expect(result[0].oldStatus).toBe("valid")
+      expect(result[0].newStatus).toBe("invalid")
+      expect(result[0].reason).toBe("path_traversal_rejected")
+      expect(result[0].detectedBy).toBe("periodic")
+    })
+  })
+
   describe("detection source tracking", () => {
     it("tracks periodic detection source", async () => {
       const filePath = path.join(tempDir, "nonexistent.ts")

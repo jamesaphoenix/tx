@@ -36,6 +36,7 @@ FORCED_AGENT=""
 DRY_RUN=false
 CURRENT_RUN_ID=""
 CLAUDE_PID=""
+LAST_TRANSCRIPT_PATH=""
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -503,7 +504,9 @@ Your assigned task: $task_id
 Task title: $task_title
 
 Run \`tx show $task_id\` to get full details, then follow your agent instructions.
+Run \`tx context $task_id\` to get relevant learnings and knowledge before starting work.
 When done, run \`tx done $task_id\` to mark the task complete.
+Before finishing, run \`tx learning:add \"<what you learned>\" --source-ref $task_id\` to record useful insights for future agents.
 If you discover new work, create subtasks with \`tx add\`.
 If you hit a blocker, update the task status: \`tx update $task_id --status blocked\`."
 
@@ -529,7 +532,7 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
   # ~/.claude/projects/<escaped-cwd>/<session-uuid>.jsonl
   local escaped_cwd
   escaped_cwd=$(echo "$PROJECT_DIR" | sed 's/[^a-zA-Z0-9]/-/g')
-  local transcript_path="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
+  LAST_TRANSCRIPT_PATH="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
 
   # Export env vars so hooks can detect ralph mode and correlate artifacts
   export RALPH_MODE=true
@@ -548,7 +551,7 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
     local escaped_stdout_path=$(sql_escape "$run_dir/stdout.log")
     local escaped_stderr_path=$(sql_escape "$run_dir/stderr.log")
     local escaped_context_path=$(sql_escape "$run_dir/context.md")
-    local escaped_transcript_path=$(sql_escape "$transcript_path")
+    local escaped_transcript_path=$(sql_escape "$LAST_TRANSCRIPT_PATH")
     sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
       "UPDATE runs SET
         pid=$CLAUDE_PID,
@@ -790,6 +793,25 @@ Be honest - only mark done if the acceptance criteria are met."
 
   # Clear current task tracking
   CURRENT_TASK_ID=""
+
+  # Extract learnings from the session transcript
+  if [ -n "$LAST_TRANSCRIPT_PATH" ] && [ -f "$LAST_TRANSCRIPT_PATH" ]; then
+    log "Extracting learnings from session transcript..."
+    claude --dangerously-skip-permissions --print \
+      "You are a learnings extractor. Read the transcript at $LAST_TRANSCRIPT_PATH.
+
+Extract all key learnings — things that would help a future agent working on this codebase. Focus on:
+- Bugs discovered and their root causes
+- Patterns that worked or failed
+- Codebase-specific knowledge (file locations, gotchas, conventions)
+- Tool/API quirks encountered
+
+For each learning, record it with:
+  tx learning:add \"<learning>\" --source-ref $TASK_ID
+
+Skip obvious or generic observations. Only record insights specific to this project." \
+      2>>"$LOG_FILE" || log "Learnings extraction had issues"
+  fi
 
   # Checkpoint: commit if there are changes
   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then

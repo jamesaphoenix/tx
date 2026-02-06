@@ -15,6 +15,7 @@ import {
   CANDIDATE_STATUSES
 } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 
 // Re-export types and constants from @tx/types for convenience
 export type { CandidateRow } from "@jamesaphoenix/tx-types"
@@ -66,21 +67,24 @@ export const rowToCandidate = (row: CandidateRow): LearningCandidate => {
     throw new InvalidStatusError({
       entity: "candidate",
       status: row.confidence,
-      validStatuses: CANDIDATE_CONFIDENCES
+      validStatuses: CANDIDATE_CONFIDENCES,
+      rowId: row.id
     })
   }
   if (row.category !== null && !isValidCategory(row.category)) {
     throw new InvalidStatusError({
       entity: "candidate.category",
       status: row.category,
-      validStatuses: CANDIDATE_CATEGORIES
+      validStatuses: CANDIDATE_CATEGORIES,
+      rowId: row.id
     })
   }
   if (!isValidStatus(row.status)) {
     throw new InvalidStatusError({
       entity: "candidate",
       status: row.status,
-      validStatuses: CANDIDATE_STATUSES
+      validStatuses: CANDIDATE_STATUSES,
+      rowId: row.id
     })
   }
   return {
@@ -91,9 +95,9 @@ export const rowToCandidate = (row: CandidateRow): LearningCandidate => {
     sourceFile: row.source_file,
     sourceRunId: row.source_run_id,
     sourceTaskId: row.source_task_id,
-    extractedAt: new Date(row.extracted_at),
+    extractedAt: parseDate(row.extracted_at, "extracted_at", row.id),
     status: row.status,
-    reviewedAt: row.reviewed_at ? new Date(row.reviewed_at) : null,
+    reviewedAt: row.reviewed_at ? parseDate(row.reviewed_at, "reviewed_at", row.id) : null,
     reviewedBy: row.reviewed_by,
     promotedLearningId: row.promoted_learning_id,
     rejectionReason: row.rejection_reason

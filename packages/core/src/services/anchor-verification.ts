@@ -394,10 +394,28 @@ export const AnchorVerificationServiceLive = Layer.effect(
           }
         }
 
-        // Resolve full file path
-        const fullPath = path.isAbsolute(anchor.filePath)
-          ? anchor.filePath
-          : path.join(baseDir, anchor.filePath)
+        // Resolve full file path and validate it stays within baseDir
+        const resolvedBase = path.resolve(baseDir)
+        const fullPath = path.resolve(resolvedBase, anchor.filePath)
+
+        if (!fullPath.startsWith(resolvedBase + path.sep) && fullPath !== resolvedBase) {
+          yield* anchorRepo.updateStatus(anchor.id, "invalid")
+          yield* anchorRepo.logInvalidation({
+            anchorId: anchor.id,
+            oldStatus,
+            newStatus: "invalid",
+            reason: "path_traversal_rejected",
+            detectedBy
+          })
+
+          return {
+            anchorId: anchor.id,
+            previousStatus: oldStatus,
+            newStatus: "invalid" as const,
+            action: "invalidated" as const,
+            reason: "path_traversal_rejected"
+          }
+        }
 
         // Step 1: Check if file exists
         const exists = yield* fileExists(fullPath)
@@ -904,7 +922,7 @@ export const AnchorVerificationServiceLive = Layer.effect(
           const baseDir = options.baseDir ?? process.cwd()
           const skipPinned = options.skipPinned ?? true
 
-          const anchors = yield* anchorRepo.findAll()
+          const anchors = yield* anchorRepo.findAll(100_000)
           const results: VerificationResult[] = []
           const failedAnchors: FailedAnchor[] = []
 
@@ -990,8 +1008,8 @@ export const AnchorVerificationServiceLive = Layer.effect(
           const baseDir = options.baseDir ?? process.cwd()
           const skipPinned = options.skipPinned ?? true
 
-          // Get all anchors and filter by glob pattern
-          const allAnchors = yield* anchorRepo.findAll()
+          // Get all anchors and filter by glob pattern (explicit high limit for batch verification)
+          const allAnchors = yield* anchorRepo.findAll(100_000)
           const matchingAnchors = allAnchors.filter(a =>
             matchesGlob(a.filePath, globPattern)
           )

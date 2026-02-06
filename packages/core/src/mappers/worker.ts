@@ -3,6 +3,7 @@
  */
 
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 import type { Worker, WorkerStatus } from "../schemas/worker.js"
 
 /**
@@ -34,6 +35,37 @@ export const isValidWorkerStatus = (s: string): s is WorkerStatus => {
 }
 
 /**
+ * Safely parse a JSON array of strings, returning empty array on failure.
+ */
+const safeParseCapabilities = (json: string | null | undefined): string[] => {
+  try {
+    const parsed: unknown = JSON.parse(json || "[]")
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Safely parse a JSON object string, returning empty object on failure.
+ */
+const safeParseMetadata = (json: string | null | undefined): Record<string, unknown> => {
+  try {
+    const parsed: unknown = JSON.parse(json || "{}")
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const result: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(parsed)) {
+        result[key] = value
+      }
+      return result
+    }
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+/**
  * Convert a database row to a Worker domain object.
  * Throws InvalidStatusError if status is invalid.
  */
@@ -42,7 +74,8 @@ export const rowToWorker = (row: WorkerRow): Worker => {
     throw new InvalidStatusError({
       entity: "worker",
       status: row.status,
-      validStatuses: WORKER_STATUSES
+      validStatuses: WORKER_STATUSES,
+      rowId: row.id
     })
   }
   return {
@@ -51,10 +84,10 @@ export const rowToWorker = (row: WorkerRow): Worker => {
     hostname: row.hostname,
     pid: row.pid,
     status: row.status,
-    registeredAt: new Date(row.registered_at),
-    lastHeartbeatAt: new Date(row.last_heartbeat_at),
+    registeredAt: parseDate(row.registered_at, "registered_at", row.id),
+    lastHeartbeatAt: parseDate(row.last_heartbeat_at, "last_heartbeat_at", row.id),
     currentTaskId: row.current_task_id,
-    capabilities: JSON.parse(row.capabilities || "[]"),
-    metadata: JSON.parse(row.metadata || "{}")
+    capabilities: safeParseCapabilities(row.capabilities),
+    metadata: safeParseMetadata(row.metadata)
   }
 }

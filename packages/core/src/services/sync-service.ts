@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Schema } from "effect"
-import { writeFileSync, renameSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
+import { Context, Effect, Exit, Layer, Schema } from "effect"
+import { writeFile, rename, readFile, stat, mkdir, access } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { DatabaseError, TaskNotFoundError, ValidationError } from "../errors.js"
 import { SqliteClient } from "../db.js"
@@ -280,17 +280,26 @@ const depToAddOp = (dep: TaskDependency): DepAddOp => ({
 })
 
 /**
- * Write content to file atomically using temp file + rename.
+ * Check if a file exists without blocking the event loop.
  */
-const atomicWrite = (filePath: string, content: string): void => {
-  const dir = dirname(filePath)
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-  const tempPath = `${filePath}.tmp.${Date.now()}`
-  writeFileSync(tempPath, content, "utf-8")
-  renameSync(tempPath, filePath)
-}
+const fileExists = (filePath: string): Effect.Effect<boolean> =>
+  Effect.promise(() => access(filePath).then(() => true).catch(() => false))
+
+/**
+ * Write content to file atomically using temp file + rename.
+ * Uses async fs operations to avoid blocking the event loop.
+ */
+const atomicWrite = (filePath: string, content: string): Effect.Effect<void, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const dir = dirname(filePath)
+      await mkdir(dir, { recursive: true })
+      const tempPath = `${filePath}.tmp.${Date.now()}.${process.pid}.${Math.random().toString(36).slice(2)}`
+      await writeFile(tempPath, content, "utf-8")
+      await rename(tempPath, filePath)
+    },
+    catch: (cause) => new DatabaseError({ cause })
+  })
 
 export const SyncServiceLive = Layer.effect(
   SyncService,
@@ -325,9 +334,9 @@ export const SyncServiceLive = Layer.effect(
         Effect.gen(function* () {
           const filePath = resolve(path ?? DEFAULT_JSONL_PATH)
 
-          // Get all tasks and dependencies
+          // Get all tasks and dependencies (explicit high limit for full export)
           const tasks = yield* taskService.list()
-          const deps = yield* depRepo.getAll()
+          const deps = yield* depRepo.getAll(100_000)
 
           // Convert to sync operations
           const taskOps: SyncOperation[] = tasks.map(taskToUpsertOp)
@@ -342,10 +351,7 @@ export const SyncServiceLive = Layer.effect(
           const jsonl = allOps.map(op => JSON.stringify(op)).join("\n")
 
           // Write atomically
-          yield* Effect.try({
-            try: () => atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : "")),
-            catch: (cause) => new DatabaseError({ cause })
-          })
+          yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""))
 
           // Record export time
           yield* setConfig("last_export", new Date().toISOString())
@@ -361,13 +367,14 @@ export const SyncServiceLive = Layer.effect(
           const filePath = resolve(path ?? DEFAULT_JSONL_PATH)
 
           // Check if file exists (outside transaction - no DB access)
-          if (!existsSync(filePath)) {
+          const importFileExists = yield* fileExists(filePath)
+          if (!importFileExists) {
             return EMPTY_IMPORT_RESULT
           }
 
           // Read and parse JSONL file (outside transaction - no DB access)
-          const content = yield* Effect.try({
-            try: () => readFileSync(filePath, "utf-8"),
+          const content = yield* Effect.tryPromise({
+            try: () => readFile(filePath, "utf-8"),
             catch: (cause) => new DatabaseError({ cause })
           })
 
@@ -417,10 +424,15 @@ export const SyncServiceLive = Layer.effect(
 
           // ALL database operations inside a single transaction for atomicity
           // If any operation fails, the entire import is rolled back
-          return yield* Effect.try({
-            try: () => {
-              db.exec("BEGIN IMMEDIATE")
-              try {
+          return yield* Effect.acquireUseRelease(
+            // Acquire: Begin transaction
+            Effect.try({
+              try: () => db.exec("BEGIN IMMEDIATE"),
+              catch: (cause) => new DatabaseError({ cause })
+            }),
+            // Use: Run all database operations
+            () => Effect.try({
+              try: () => {
                 let imported = 0
                 let skipped = 0
                 let conflicts = 0
@@ -455,10 +467,22 @@ export const SyncServiceLive = Layer.effect(
                   "INSERT OR REPLACE INTO sync_config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
                 )
 
+                // Prepare statement to check if a parent task exists in DB
+                const checkParentExistsStmt = db.prepare("SELECT 1 FROM tasks WHERE id = ?")
+
                 // Apply task operations
                 for (const [id, { op }] of sortedTaskEntries) {
                   if (op.op === "upsert") {
                     const existingRow = findTaskStmt.get(id) as { updated_at: string; completed_at: string | null } | undefined
+
+                    // Validate parentId: if it references a task that doesn't exist
+                    // in the DB, set to null to avoid FK constraint violation.
+                    // Topological sort ensures parents in the import set are already
+                    // inserted by this point, so a missing parent is truly orphaned.
+                    const parentId = op.data.parentId
+                    const effectiveParentId = parentId && checkParentExistsStmt.get(parentId)
+                      ? parentId
+                      : null
 
                     if (!existingRow) {
                       // Create new task with the specified ID
@@ -468,7 +492,7 @@ export const SyncServiceLive = Layer.effect(
                         op.data.title,
                         op.data.description,
                         op.data.status,
-                        op.data.parentId,
+                        effectiveParentId,
                         op.data.score,
                         op.ts,
                         op.ts,
@@ -484,7 +508,7 @@ export const SyncServiceLive = Layer.effect(
                           op.data.title,
                           op.data.description,
                           op.data.status,
-                          op.data.parentId,
+                          effectiveParentId,
                           op.data.score,
                           op.ts,
                           op.data.status === "done" ? (existingRow.completed_at ?? new Date().toISOString()) : null,
@@ -556,7 +580,6 @@ export const SyncServiceLive = Layer.effect(
                 // Record import time
                 setConfigStmt.run("last_import", new Date().toISOString())
 
-                db.exec("COMMIT")
                 return {
                   imported,
                   skipped,
@@ -568,13 +591,19 @@ export const SyncServiceLive = Layer.effect(
                     failures: depFailures
                   }
                 }
-              } catch (e) {
-                db.exec("ROLLBACK")
-                throw e
-              }
-            },
-            catch: (cause) => new DatabaseError({ cause })
-          })
+              },
+              catch: (cause) => new DatabaseError({ cause })
+            }),
+            // Release: Commit on success, rollback on failure
+            (_, exit) =>
+              Effect.sync(() => {
+                if (Exit.isSuccess(exit)) {
+                  db.exec("COMMIT")
+                } else {
+                  db.exec("ROLLBACK")
+                }
+              })
+          )
         }),
 
       status: () =>
@@ -585,8 +614,8 @@ export const SyncServiceLive = Layer.effect(
           const tasks = yield* taskService.list()
           const dbTaskCount = tasks.length
 
-          // Get all dependencies from database
-          const deps = yield* depRepo.getAll()
+          // Get all dependencies from database (explicit high limit for status)
+          const deps = yield* depRepo.getAll(100_000)
           const dbDepCount = deps.length
 
           // Count operations in JSONL file and get file info
@@ -595,17 +624,18 @@ export const SyncServiceLive = Layer.effect(
           let jsonlDepCount = 0
           let lastExport: Date | null = null
 
-          if (existsSync(filePath)) {
+          const jsonlFileExists = yield* fileExists(filePath)
+          if (jsonlFileExists) {
             // Get file modification time as lastExport
-            const stats = yield* Effect.try({
-              try: () => statSync(filePath),
+            const stats = yield* Effect.tryPromise({
+              try: () => stat(filePath),
               catch: (cause) => new DatabaseError({ cause })
             })
             lastExport = stats.mtime
 
             // Count non-empty lines (each line is one operation)
-            const content = yield* Effect.try({
-              try: () => readFileSync(filePath, "utf-8"),
+            const content = yield* Effect.tryPromise({
+              try: () => readFile(filePath, "utf-8"),
               catch: (cause) => new DatabaseError({ cause })
             })
             const lines = content.trim().split("\n").filter(Boolean)
@@ -666,7 +696,7 @@ export const SyncServiceLive = Layer.effect(
           // Per DD-009: dirty if tasks exist AND (no lastExport OR any task/dep updated after lastExport)
           // Additionally: dirty if counts differ (indicates deletions/removals)
           let isDirty = false
-          if (dbTaskCount > 0 && !existsSync(filePath)) {
+          if (dbTaskCount > 0 && !jsonlFileExists) {
             // No JSONL file but tasks exist → dirty
             isDirty = true
           } else if (tasks.length > 0 || deps.length > 0) {
@@ -712,13 +742,14 @@ export const SyncServiceLive = Layer.effect(
           const filePath = resolve(path ?? DEFAULT_JSONL_PATH)
 
           // Check if file exists
-          if (!existsSync(filePath)) {
+          const compactFileExists = yield* fileExists(filePath)
+          if (!compactFileExists) {
             return { before: 0, after: 0 }
           }
 
           // Read and parse JSONL file
-          const content = yield* Effect.try({
-            try: () => readFileSync(filePath, "utf-8"),
+          const content = yield* Effect.tryPromise({
+            try: () => readFile(filePath, "utf-8"),
             catch: (cause) => new DatabaseError({ cause })
           })
 
@@ -782,10 +813,7 @@ export const SyncServiceLive = Layer.effect(
 
           // Write compacted JSONL atomically
           const newContent = compacted.map(op => JSON.stringify(op)).join("\n")
-          yield* Effect.try({
-            try: () => atomicWrite(filePath, newContent + (newContent.length > 0 ? "\n" : "")),
-            catch: (cause) => new DatabaseError({ cause })
-          })
+          yield* atomicWrite(filePath, newContent + (newContent.length > 0 ? "\n" : ""))
 
           return { before, after: compacted.length }
         }),

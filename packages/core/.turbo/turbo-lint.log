@@ -1,36 +1,238 @@
 $ eslint src/
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/db.ts
-  11:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SqliteRunResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  20:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SqliteStatement". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  31:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SqliteDatabase". See DOCTRINE RULE 10   tx/no-plain-interfaces
+  12:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SqliteRunResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
+  21:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SqliteStatement". See DOCTRINE RULE 10  tx/no-plain-interfaces
+  32:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SqliteDatabase". See DOCTRINE RULE 10   tx/no-plain-interfaces
+  75:9  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                    tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/anchor.ts
+  29:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  36:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  43:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  68:9   warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/attempt.ts
+  40:9  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/candidate.ts
+  94:15  warning  Unsafe "as CandidateCategory | null" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/claim.ts
+  31:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/edge.ts
+  43:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  50:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  83:9   warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/file-learning.ts
+  19:7  warning  Unsafe "as FileLearningId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/learning.ts
+   98:9   warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
+  108:32  warning  Unsafe "as Float32Array<ArrayBuffer>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/orchestrator-state.ts
+  34:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/run.ts
+  33:10  warning  Unsafe "as RunId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  40:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead   tx/no-as-cast-in-repos
+  70:9   warning  Unsafe "as RunId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/task.ts
+  36:42  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/worker.ts
+  34:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/anchor-repo.ts
-  8:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "LogInvalidationInput". See DOCTRINE RULE 10  tx/no-plain-interfaces
+    9:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "LogInvalidationInput". See DOCTRINE RULE 10                        tx/no-plain-interfaces
+   82:25  warning  Unsafe "as AnchorRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+   87:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                          tx/no-as-cast-in-repos
+   99:25  warning  Unsafe "as AnchorRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  108:26  warning  Unsafe "as AnchorRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  119:26  warning  Unsafe "as AnchorRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  171:27  warning  Unsafe "as AnchorRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  185:25  warning  Unsafe "as AnchorRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  210:26  warning  Unsafe "as AnchorRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  221:26  warning  Unsafe "as AnchorRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  254:26  warning  Unsafe "as AnchorRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  265:26  warning  Unsafe "as AnchorRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  322:25  warning  Unsafe "as InvalidationLogRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  327:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                          tx/no-as-cast-in-repos
+  340:28  warning  Unsafe "as InvalidationLogRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  345:26  warning  Unsafe "as InvalidationLogRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  356:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                            tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/attempt-repo.ts
+   54:25  warning  Unsafe "as AttemptRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   58:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                  tx/no-as-cast-in-repos
+   70:25  warning  Unsafe "as AttemptRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   79:26  warning  Unsafe "as AttemptRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+   90:26  warning  Unsafe "as AttemptRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  102:30  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                    tx/no-as-cast-in-repos
+  107:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                    tx/no-as-cast-in-repos
+  131:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead             tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/candidate-repo.ts
+   48:25  warning  Unsafe "as CandidateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   54:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                    tx/no-as-cast-in-repos
+   66:25  warning  Unsafe "as CandidateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  143:26  warning  Unsafe "as CandidateRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  178:27  warning  Unsafe "as CandidateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  193:25  warning  Unsafe "as CandidateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  219:25  warning  Unsafe "as CandidateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/claim-repo.ts
-  10:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AtomicInsertResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  22:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AtomicRenewResult". See DOCTRINE RULE 10   tx/no-plain-interfaces
+   10:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AtomicInsertResult". See DOCTRINE RULE 10                tx/no-plain-interfaces
+   22:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AtomicRenewResult". See DOCTRINE RULE 10                 tx/no-plain-interfaces
+   90:25  warning  Unsafe "as ClaimRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   96:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                tx/no-as-cast-in-repos
+  130:27  warning  Unsafe "as ClaimRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  136:23  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                tx/no-as-cast-in-repos
+  147:35  warning  Unsafe "as ClaimRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  203:27  warning  Unsafe "as ClaimRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  221:35  warning  Unsafe "as ClaimRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  247:25  warning  Unsafe "as ClaimRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  258:25  warning  Unsafe "as ClaimRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  269:26  warning  Unsafe "as ClaimRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  296:26  warning  Unsafe "as ClaimRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/compaction-repo.ts
-   8:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactionLogEntry". See DOCTRINE RULE 10        tx/no-plain-interfaces
-  21:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CreateCompactionLogInput". See DOCTRINE RULE 10  tx/no-plain-interfaces
+    8:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactionLogEntry". See DOCTRINE RULE 10                        tx/no-plain-interfaces
+   21:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CreateCompactionLogInput". See DOCTRINE RULE 10                  tx/no-plain-interfaces
+  103:25  warning  Unsafe "as CompactionLogRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  107:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                        tx/no-as-cast-in-repos
+  119:25  warning  Unsafe "as CompactionLogRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  128:26  warning  Unsafe "as CompactionLogRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  139:26  warning  Unsafe "as CompactionLogRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  150:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                          tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/deduplication-repo.ts
-  166:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+   95:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
+  112:25  warning  Unsafe "as ProcessedHashRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  166:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                             tx/no-throw-in-services
+  175:25  warning  Unsafe "as ProcessedHashRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  187:25  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                          tx/no-as-cast-in-repos
+  198:26  warning  Unsafe "as ProcessedHashRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  222:25  warning  Unsafe "as FileProgressRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead   tx/no-as-cast-in-repos
+  251:25  warning  Unsafe "as FileProgressRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead   tx/no-as-cast-in-repos
+  279:26  warning  Unsafe "as FileProgressRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead             tx/no-as-cast-in-repos
+  290:25  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                          tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/dep-repo.ts
-  266:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+   87:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
+   90:34  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+   98:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
+  101:34  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  113:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
+  122:31  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  124:46  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  145:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
+  154:31  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  156:46  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
+  201:26  warning  Unsafe "as DependencyRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  285:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                tx/no-throw-in-services
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/edge-repo.ts
-  250:13  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "PathNode". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  352:53  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md             tx/no-throw-in-services
+   69:25  warning  Unsafe "as EdgeRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+   73:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                         tx/no-as-cast-in-repos
+   85:25  warning  Unsafe "as EdgeRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+   96:26  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  109:26  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  129:26  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  152:20  warning  Unsafe "as ReadonlyMap<string, type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
+  160:26  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  173:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                    tx/no-as-cast-in-repos
+  181:26  warning  Unsafe "as EdgeType" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
+  183:20  warning  Unsafe "as ReadonlyMap<EdgeType, number>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  203:36  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  212:29  warning  Unsafe "as NodeType" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
+  214:29  warning  Unsafe "as EdgeType" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
+  223:36  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  232:29  warning  Unsafe "as NodeType" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
+  234:29  warning  Unsafe "as EdgeType" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
+  252:28  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead               tx/no-as-cast-in-repos
+  294:30  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  321:27  warning  Unsafe "as EdgeRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  336:25  warning  Unsafe "as EdgeRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  361:53  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                              tx/no-throw-in-services
+  369:26  warning  Unsafe "as EdgeRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/file-learning-repo.ts
+   40:25  warning  Unsafe "as FileLearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   44:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
+   56:25  warning  Unsafe "as FileLearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   65:26  warning  Unsafe "as FileLearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+   77:26  warning  Unsafe "as FileLearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  102:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                         tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/learning-repo.ts
-  8:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "BM25Result". See DOCTRINE RULE 10  tx/no-plain-interfaces
+    9:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "BM25Result". See DOCTRINE RULE 10                           tx/no-plain-interfaces
+  102:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  106:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
+  118:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  127:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  139:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  142:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  154:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  157:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  168:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  183:26  warning  Unsafe "as LearningRowWithBM25[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead    tx/no-as-cast-in-repos
+  208:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  273:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  282:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  291:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
+  300:25  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead         tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/orchestrator-state-repo.ts
+  80:25  warning  Unsafe "as OrchestratorStateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/run-repo.ts
+   68:25  warning  Unsafe "as RunRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   84:25  warning  Unsafe "as RunRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   93:26  warning  Unsafe "as RunRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  104:26  warning  Unsafe "as RunRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  115:26  warning  Unsafe "as RunRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  205:26  warning  Unsafe "as RunRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  216:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead         tx/no-as-cast-in-repos
+  229:22  warning  Unsafe "as RunStatus" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/task-repo.ts
-  311:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+   36:25  warning  Unsafe "as TaskRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+   47:26  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  102:26  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  112:17  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  113:17  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  122:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead          tx/no-as-cast-in-repos
+  123:34  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead               tx/no-as-cast-in-repos
+  132:42  warning  Unsafe "as Map<string, type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead    tx/no-as-cast-in-repos
+  135:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead          tx/no-as-cast-in-repos
+  148:31  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead               tx/no-as-cast-in-repos
+  152:20  warning  Unsafe "as Map<string, type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead    tx/no-as-cast-in-repos
+  162:26  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  183:26  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  277:35  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead     tx/no-as-cast-in-repos
+  315:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                    tx/no-throw-in-services
+  381:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                 tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/tracked-project-repo.ts
+  40:25  warning  Unsafe "as TrackedProjectRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  46:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                         tx/no-as-cast-in-repos
+  58:26  warning  Unsafe "as TrackedProjectRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  69:25  warning  Unsafe "as TrackedProjectRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  99:25  warning  Unsafe "as TrackedProjectRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/worker-repo.ts
+   66:35  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
+  105:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                      tx/no-throw-in-services
+  152:25  warning  Unsafe "as WorkerRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  161:26  warning  Unsafe "as WorkerRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  172:26  warning  Unsafe "as WorkerRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  183:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
+  194:26  warning  Unsafe "as WorkerRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/anchor-service.ts
    9:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AnchorVerificationResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
@@ -59,7 +261,7 @@ $ eslint src/
    56:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactionOptions". See DOCTRINE RULE 10      tx/no-plain-interfaces
    73:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactionPreview". See DOCTRINE RULE 10      tx/no-plain-interfaces
   137:1   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactionLlmResponse". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  458:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                          tx/no-throw-in-services
+  480:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                          tx/no-throw-in-services
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/daemon-service.ts
    28:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "LaunchdPlistOptions". See DOCTRINE RULE 10    tx/no-plain-interfaces
@@ -95,19 +297,20 @@ $ eslint src/
    21:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExpandedLearning". See DOCTRINE RULE 10       tx/no-plain-interfaces
    39:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EdgeTypeFilter". See DOCTRINE RULE 10         tx/no-plain-interfaces
    51:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "GraphExpansionOptions". See DOCTRINE RULE 10  tx/no-plain-interfaces
-   66:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "GraphExpansionResult". See DOCTRINE RULE 10   tx/no-plain-interfaces
-   87:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "FileExpansionOptions". See DOCTRINE RULE 10   tx/no-plain-interfaces
-  100:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "FileExpandedLearning". See DOCTRINE RULE 10   tx/no-plain-interfaces
-  117:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "FileExpansionResult". See DOCTRINE RULE 10    tx/no-plain-interfaces
+   68:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "GraphExpansionResult". See DOCTRINE RULE 10   tx/no-plain-interfaces
+   90:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "FileExpansionOptions". See DOCTRINE RULE 10   tx/no-plain-interfaces
+  103:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "FileExpandedLearning". See DOCTRINE RULE 10   tx/no-plain-interfaces
+  120:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "FileExpansionResult". See DOCTRINE RULE 10    tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/learning-service.ts
   10:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
   18:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedStatus". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/migration-service.ts
-  11:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "Migration". See DOCTRINE RULE 10         tx/no-plain-interfaces
-  20:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AppliedMigration". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  28:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "MigrationStatus". See DOCTRINE RULE 10   tx/no-plain-interfaces
+   11:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "Migration". See DOCTRINE RULE 10         tx/no-plain-interfaces
+   20:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AppliedMigration". See DOCTRINE RULE 10  tx/no-plain-interfaces
+   28:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "MigrationStatus". See DOCTRINE RULE 10   tx/no-plain-interfaces
+  218:19  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                     tx/no-throw-in-services
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/orchestrator-service.ts
   22:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "OrchestratorConfig". See DOCTRINE RULE 10  tx/no-plain-interfaces
@@ -143,15 +346,14 @@ $ eslint src/
   87:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "VoteResult". See DOCTRINE RULE 10               tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/sync-service.ts
-   21:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
-   29:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "DependencyImportResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
-   39:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
-   49:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SyncStatus". See DOCTRINE RULE 10              tx/no-plain-interfaces
-   61:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactResult". See DOCTRINE RULE 10           tx/no-plain-interfaces
-   69:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportOptions". See DOCTRINE RULE 10           tx/no-plain-interfaces
-   78:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
-   88:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
-  573:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                           tx/no-throw-in-services
+  21:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
+  29:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "DependencyImportResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
+  39:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
+  49:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SyncStatus". See DOCTRINE RULE 10              tx/no-plain-interfaces
+  61:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactResult". See DOCTRINE RULE 10           tx/no-plain-interfaces
+  69:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportOptions". See DOCTRINE RULE 10           tx/no-plain-interfaces
+  78:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
+  88:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/tracing-service.ts
   8:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SpanOptions". See DOCTRINE RULE 10  tx/no-plain-interfaces
@@ -187,5 +389,5 @@ $ eslint src/
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/worker/run-worker.ts
   34:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ShutdownState". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
-✖ 115 problems (0 errors, 115 warnings)
+✖ 281 problems (0 errors, 281 warnings)
 

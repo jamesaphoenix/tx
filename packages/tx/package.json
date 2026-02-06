@@ -25,8 +25,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@jamesaphoenix/tx-core": "^0.4.2",
-    "@jamesaphoenix/tx-types": "^0.4.2"
+    "@jamesaphoenix/tx-core": "*",
+    "@jamesaphoenix/tx-types": "*"
   },
   "peerDependencies": {
     "effect": "^3.0.0"

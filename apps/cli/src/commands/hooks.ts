@@ -35,6 +35,34 @@ const DEFAULT_HIGH_VALUE_FILES = [
 const DEFAULT_FILE_THRESHOLD = 10
 
 /**
+ * Allowlist regex for file patterns safe to embed in bash scripts.
+ * Permits: alphanumeric, dots, underscores, hyphens, slashes, stars,
+ * question marks, and square brackets (for glob character classes).
+ * Rejects: quotes, backticks, $, ;, |, &, (), newlines, spaces, backslashes.
+ */
+const SAFE_PATTERN_RE = /^[a-zA-Z0-9._/*?\-[\]]+$/
+
+/**
+ * Validate a file pattern for safe embedding in generated bash scripts.
+ * Rejects patterns containing shell metacharacters that could enable
+ * command injection when interpolated into grep -qE '...' expressions.
+ */
+export function isValidHookPattern(pattern: string): boolean {
+  return pattern.length > 0 && SAFE_PATTERN_RE.test(pattern)
+}
+
+/**
+ * Validate that a file threshold is a safe positive integer.
+ * Returns the validated value or the default if invalid.
+ */
+function safeFileThreshold(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.floor(value)
+  }
+  return DEFAULT_FILE_THRESHOLD
+}
+
+/**
  * Read .txrc configuration file.
  * Returns default config if file doesn't exist.
  */
@@ -91,11 +119,20 @@ export function findGitRoot(startDir: string): string | null {
  * Generate the post-commit hook script content.
  */
 export function generatePostCommitHook(config: TxrcConfig): string {
-  const fileThreshold = config.hooks?.fileThreshold ?? DEFAULT_FILE_THRESHOLD
+  const fileThreshold = safeFileThreshold(config.hooks?.fileThreshold)
   const highValueFiles = config.hooks?.highValueFiles ?? DEFAULT_HIGH_VALUE_FILES
 
+  // Filter out unsafe patterns to prevent command injection via grep -qE '...'
+  const safePatterns = highValueFiles.filter(pattern => {
+    if (!isValidHookPattern(pattern)) {
+      console.error(`[tx] Warning: Skipping unsafe hook pattern: "${pattern}"`)
+      return false
+    }
+    return true
+  })
+
   // Generate the high-value file pattern matching
-  const highValuePatterns = highValueFiles
+  const highValuePatterns = safePatterns
     .map(pattern => {
       // Convert glob pattern to grep pattern
       const grepPattern = pattern
@@ -230,7 +267,18 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
     }
 
     if (highValue) {
-      config.hooks.highValueFiles = highValue.split(",").map(s => s.trim())
+      const patterns = highValue.split(",").map(s => s.trim())
+      const invalid = patterns.filter(p => !isValidHookPattern(p))
+      if (invalid.length > 0) {
+        if (jsonOutput) {
+          console.log(toJson({ success: false, error: "invalid_patterns", message: `Unsafe patterns rejected: ${invalid.join(", ")}. Only alphanumeric, dots, slashes, stars, hyphens, underscores, question marks, and brackets are allowed.` }))
+          return
+        }
+        console.error(`Error: Unsafe patterns rejected: ${invalid.join(", ")}`)
+        console.error("Patterns may only contain: a-z A-Z 0-9 . _ / * ? - [ ]")
+        process.exit(1)
+      }
+      config.hooks.highValueFiles = patterns
     }
 
     config.hooks.enabled = true

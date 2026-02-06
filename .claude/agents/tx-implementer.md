@@ -14,10 +14,12 @@ You are an implementation agent for the tx project.
 
 1. Read CLAUDE.md — especially the 7 doctrine rules
 2. Run `tx show <id>` for the assigned task
-3. Read existing code to match patterns exactly
-4. Implement the task
-5. Run `npx vitest --run` to verify nothing breaks
-6. Mark complete: `tx done <id>`
+3. Run `tx context <id>` to get relevant learnings before starting
+4. Read existing code to match patterns exactly
+5. Implement the task
+6. Run **targeted tests only** — test the specific files you changed. NEVER run the full test suite (`bun test` with no args, or `bun test test/integration/ test/golden-paths/ test/chaos/ test/unit/`). Instead run specific test files, e.g. `bun test test/integration/core.test.ts`
+7. Mark complete: `tx done <id>`
+8. Record learnings: `tx learning:add "<what you learned>" --source-ref <id>`
 
 ### Non-negotiable rules
 

@@ -2,7 +2,7 @@
  * WorkerProcess - PRD-018
  *
  * Implements the worker process with heartbeat fiber, lease renewal,
- * Claude subprocess management, and graceful shutdown handling.
+ * agent subprocess management, and graceful shutdown handling.
  * Uses Effect-TS patterns per DD-002.
  */
 
@@ -36,7 +36,7 @@ export interface WorkerProcessConfig {
   readonly leaseDurationMinutes?: number
   /** How often to renew the lease (in seconds). Should be < lease duration. Defaults to 1/3 of leaseDurationMinutes. */
   readonly leaseRenewalIntervalSeconds?: number
-  /** Working directory for Claude subprocess. Defaults to process.cwd() */
+  /** Working directory for agent subprocess. Defaults to process.cwd() */
   readonly workingDirectory?: string
 }
 
@@ -59,8 +59,8 @@ interface AgentResult {
  *
  * `currentStatus` and `currentTaskId` are set explicitly by the main work loop
  * so the heartbeat fiber reports accurate status. Previously, status was inferred
- * from `claudeProcess !== null`, which was unreliable during the windows between
- * claiming a task and spawning Claude, and between Claude exiting and claim release.
+ * from `agentProcess !== null`, which was unreliable during the windows between
+ * claiming a task and spawning the agent, and between agent exiting and claim release.
  *
  * Note: tasksCompleted is NOT included here because it's only accessed
  * from Effect contexts (fibers), not signal handlers. It uses Effect.Ref
@@ -69,7 +69,7 @@ interface AgentResult {
  */
 interface MutableWorkerState {
   shutdownRequested: boolean
-  claudeProcess: ChildProcess | null
+  agentProcess: ChildProcess | null
   currentStatus: "idle" | "busy"
   currentTaskId: string | undefined
 }
@@ -98,7 +98,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
     // Using plain object instead of Effect Ref to avoid Effect.runSync in signal handlers
     const state: MutableWorkerState = {
       shutdownRequested: false,
-      claudeProcess: null,
+      agentProcess: null,
       currentStatus: "idle",
       currentTaskId: undefined
     }
@@ -127,9 +127,9 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
       // Mark shutdown as requested
       state.shutdownRequested = true
 
-      // Try to terminate Claude subprocess if running
-      if (state.claudeProcess && !state.claudeProcess.killed) {
-        state.claudeProcess.kill("SIGTERM")
+      // Try to terminate agent subprocess if running
+      if (state.agentProcess && !state.agentProcess.killed) {
+        state.agentProcess.kill("SIGTERM")
       }
     }
 
@@ -184,7 +184,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
         yield* Effect.log(`Worker ${workerId} claimed task ${task.id}`)
 
         // Mark busy in shared state immediately so heartbeat reports correctly
-        // This must happen before the heartbeat call and Claude spawn to avoid
+        // This must happen before the heartbeat call and agent spawn to avoid
         // the race window where heartbeat would report "idle" for a claimed task
         state.currentStatus = "busy"
         state.currentTaskId = task.id
@@ -217,8 +217,8 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
         )
 
         try {
-          // Run Claude subprocess
-          const result = yield* runClaude(
+          // Run agent subprocess
+          const result = yield* runAgent(
             agent,
             task,
             workerId,
@@ -408,9 +408,9 @@ const runLeaseRenewalLoop = (
               // Stop the worker to prevent duplicate task execution
               // Another worker may have claimed this task after lease expiry
               state.shutdownRequested = true
-              // Kill Claude subprocess if running
-              if (state.claudeProcess && !state.claudeProcess.killed) {
-                state.claudeProcess.kill("SIGTERM")
+              // Kill agent subprocess if running
+              if (state.agentProcess && !state.agentProcess.killed) {
+                state.agentProcess.kill("SIGTERM")
               }
               return false
             })
@@ -423,12 +423,12 @@ const runLeaseRenewalLoop = (
   })
 
 /**
- * Run a Claude subprocess to work on a task.
+ * Run an agent subprocess to work on a task.
  *
  * Uses direct mutation on state object instead of Effect.runSync
  * because this function uses Effect.async with process event callbacks.
  */
-const runClaude = (
+const runAgent = (
   agent: string,
   task: TaskWithDeps,
   workerId: string,
@@ -449,7 +449,7 @@ const runClaude = (
     )
 
     // Store the process reference for signal handling (direct mutation)
-    state.claudeProcess = proc
+    state.agentProcess = proc
 
     let stderr = ""
 
@@ -459,7 +459,7 @@ const runClaude = (
 
     proc.on("close", (code) => {
       // Clear the process reference (direct mutation)
-      state.claudeProcess = null
+      state.agentProcess = null
 
       if (code === 0) {
         resume(Effect.succeed({ success: true, exitCode: code ?? 0 }))
@@ -476,7 +476,7 @@ const runClaude = (
 
     proc.on("error", (err) => {
       // Clear the process reference (direct mutation)
-      state.claudeProcess = null
+      state.agentProcess = null
 
       resume(
         Effect.succeed({
@@ -489,7 +489,7 @@ const runClaude = (
   })
 
 /**
- * Build the prompt for the Claude subprocess.
+ * Build the prompt for the agent subprocess.
  */
 const buildPrompt = (agent: string, task: TaskWithDeps): string =>
   `Read .claude/agents/${agent}.md for your instructions.

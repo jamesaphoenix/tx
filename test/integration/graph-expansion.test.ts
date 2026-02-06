@@ -354,7 +354,7 @@ describe("Graph Expansion - Cycle Prevention", () => {
     // Should only find L2, not revisit L1
     expect(result.expanded).toHaveLength(1)
     expect(result.expanded[0].learning.content).toBe("L2")
-    expect(result.stats.nodesProcessed).toBe(2) // L1 (seed) + L2
+    expect(result.stats.nodesVisited).toBe(2) // L1 (seed) + L2
   })
 
   it("handles triangular cycle (A -> B -> C -> A)", async () => {
@@ -400,7 +400,7 @@ describe("Graph Expansion - Cycle Prevention", () => {
 
     // Should find L2 and L3, but not revisit L1
     expect(result.expanded).toHaveLength(2)
-    expect(result.stats.nodesProcessed).toBe(3) // L1 + L2 + L3
+    expect(result.stats.nodesVisited).toBe(3) // L1 + L2 + L3
   })
 
   it("handles self-loop (A -> A)", async () => {
@@ -431,7 +431,7 @@ describe("Graph Expansion - Cycle Prevention", () => {
     // Should only have seed, no expansion
     expect(result.expanded).toHaveLength(0)
     expect(result.seeds).toHaveLength(1)
-    expect(result.stats.nodesProcessed).toBe(1)
+    expect(result.stats.nodesVisited).toBe(1)
   })
 })
 
@@ -604,7 +604,7 @@ describe("Graph Expansion - Branching Graph", () => {
 
     // Should find L2, L3 at depth 1, L4 at depth 2 (only once!)
     expect(result.expanded).toHaveLength(3)
-    expect(result.stats.nodesProcessed).toBe(4)
+    expect(result.stats.nodesVisited).toBe(4)
 
     // L4 should appear only once with best score path
     const l4Entries = result.expanded.filter((e) => e.learning.content === "L4")
@@ -685,7 +685,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
 
         yield* edgeSvc.createEdge({ edgeType: "SIMILAR_TO", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l2.id) })
         yield* edgeSvc.createEdge({ edgeType: "DERIVED_FROM", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l3.id) })
-        yield* edgeSvc.createEdge({ edgeType: "CONTRADICTS", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l4.id) })
+        yield* edgeSvc.createEdge({ edgeType: "LINKS_TO", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l4.id) })
 
         return yield* expansionSvc.expand(
           [{ learning: l1, score: 1.0 }],
@@ -887,7 +887,7 @@ describe("Graph Expansion - Edge Type Filtering", () => {
     expect(contents).not.toContain("L3")
   })
 
-  it("skips inactive learnings during expansion", async () => {
+  it("skips removed learnings during expansion", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -896,13 +896,13 @@ describe("Graph Expansion - Edge Type Filtering", () => {
 
         const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
         const l2 = yield* learningSvc.create({ content: "L2", sourceType: "manual" })
-        const l3 = yield* learningSvc.create({ content: "L3-inactive", sourceType: "manual" })
-
-        // Mark L3 as inactive
-        yield* learningSvc.update(l3.id, { active: false })
+        const l3 = yield* learningSvc.create({ content: "L3-removed", sourceType: "manual" })
 
         yield* edgeSvc.createEdge({ edgeType: "SIMILAR_TO", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l2.id) })
         yield* edgeSvc.createEdge({ edgeType: "SIMILAR_TO", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l3.id) })
+
+        // Remove L3 after edges are created
+        yield* learningSvc.remove(l3.id)
 
         return yield* expansionSvc.expand(
           [{ learning: l1, score: 1.0 }],
@@ -911,41 +911,12 @@ describe("Graph Expansion - Edge Type Filtering", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    // Should only find L2, not L3 (inactive)
+    // Should only find L2, not L3 (removed)
     expect(result.expanded).toHaveLength(1)
     expect(result.expanded[0].learning.content).toBe("L2")
   })
 
-  it("skips soft-deleted learnings during expansion", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const learningSvc = yield* LearningService
-        const edgeSvc = yield* EdgeService
-        const expansionSvc = yield* GraphExpansionService
-
-        const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
-        const l2 = yield* learningSvc.create({ content: "L2", sourceType: "manual" })
-        const l3 = yield* learningSvc.create({ content: "L3-deleted", sourceType: "manual" })
-
-        // Soft-delete L3
-        yield* learningSvc.softDelete(l3.id)
-
-        yield* edgeSvc.createEdge({ edgeType: "SIMILAR_TO", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l2.id) })
-        yield* edgeSvc.createEdge({ edgeType: "SIMILAR_TO", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l3.id) })
-
-        return yield* expansionSvc.expand(
-          [{ learning: l1, score: 1.0 }],
-          { depth: 1 }
-        )
-      }).pipe(Effect.provide(shared.layer))
-    )
-
-    // Should only find L2, not L3 (soft-deleted)
-    expect(result.expanded).toHaveLength(1)
-    expect(result.expanded[0].learning.content).toBe("L2")
-  })
-
-  it("continues expansion through inactive edges gracefully", async () => {
+  it("handles expansion through removed intermediate node", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
@@ -956,12 +927,12 @@ describe("Graph Expansion - Edge Type Filtering", () => {
         const l2 = yield* learningSvc.create({ content: "L2", sourceType: "manual" })
         const l3 = yield* learningSvc.create({ content: "L3", sourceType: "manual" })
 
-        // L1 -> L2 -> L3, but L2 is inactive
+        // L1 -> L2 -> L3, but L2 is removed
         yield* edgeSvc.createEdge({ edgeType: "SIMILAR_TO", sourceType: "learning", sourceId: String(l1.id), targetType: "learning", targetId: String(l2.id) })
         yield* edgeSvc.createEdge({ edgeType: "SIMILAR_TO", sourceType: "learning", sourceId: String(l2.id), targetType: "learning", targetId: String(l3.id) })
 
-        // Mark L2 as inactive
-        yield* learningSvc.update(l2.id, { active: false })
+        // Remove L2 after edges are created
+        yield* learningSvc.remove(l2.id)
 
         return yield* expansionSvc.expand(
           [{ learning: l1, score: 1.0 }],
@@ -970,7 +941,9 @@ describe("Graph Expansion - Edge Type Filtering", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    // Should not find anything (L2 blocks the path)
+    // L2 is removed so findById returns null — it's skipped but its edges still exist
+    // The BFS visits L2's edge but can't fetch the learning, so it skips L2
+    // L3 is not reachable because L2 (the intermediate) was never added to frontier
     expect(result.expanded).toHaveLength(0)
   })
 })
@@ -1055,15 +1028,14 @@ describe("Graph Expansion - Validation", () => {
     await shared.close()
   })
 
-  it("handles negative depth gracefully", async () => {
-    const result = await Effect.runPromise(
+  it("rejects negative depth with ValidationError", async () => {
+    const exit = await Effect.runPromiseExit(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
         const expansionSvc = yield* GraphExpansionService
 
         const l1 = yield* learningSvc.create({ content: "L1", sourceType: "manual" })
 
-        // Negative depth should be treated as 0
         return yield* expansionSvc.expand(
           [{ learning: l1, score: 1.0 }],
           { depth: -5 }
@@ -1071,11 +1043,11 @@ describe("Graph Expansion - Validation", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    expect(result.expanded).toHaveLength(0)
+    expect(exit._tag).toBe("Failure")
   })
 
-  it("handles zero decay factor", async () => {
-    const result = await Effect.runPromise(
+  it("rejects zero decay factor with ValidationError", async () => {
+    const exit = await Effect.runPromiseExit(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
         const expansionSvc = yield* GraphExpansionService
@@ -1089,12 +1061,11 @@ describe("Graph Expansion - Validation", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    // Zero decay should still work (all expanded nodes have 0 score)
-    expect(result.seeds).toHaveLength(1)
+    expect(exit._tag).toBe("Failure")
   })
 
-  it("handles decay factor greater than 1", async () => {
-    const result = await Effect.runPromise(
+  it("rejects decay factor greater than 1 with ValidationError", async () => {
+    const exit = await Effect.runPromiseExit(
       Effect.gen(function* () {
         const learningSvc = yield* LearningService
         const expansionSvc = yield* GraphExpansionService
@@ -1108,8 +1079,7 @@ describe("Graph Expansion - Validation", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    // Should work, just with amplification instead of decay
-    expect(result.seeds).toHaveLength(1)
+    expect(exit._tag).toBe("Failure")
   })
 
   it("handles maxNodes of 1 (seeds only)", async () => {

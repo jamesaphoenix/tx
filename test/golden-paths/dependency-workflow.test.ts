@@ -23,6 +23,7 @@ import {
   DependencyService,
   ReadyServiceLive,
   ReadyService,
+  isReadyResult,
   HierarchyServiceLive,
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"
@@ -94,9 +95,9 @@ describe("Golden Path: Dependency Chain", () => {
         const bReady = yield* readySvc.isReady(taskB.id)
         const cReady = yield* readySvc.isReady(taskC.id)
 
-        expect(aReady).toBe(true)  // A has no blockers
-        expect(bReady).toBe(false) // A blocks B
-        expect(cReady).toBe(false) // B blocks C
+        expect(aReady._tag).toBe("Ready")    // A has no blockers
+        expect(bReady._tag).toBe("Blocked")  // A blocks B
+        expect(cReady._tag).toBe("Blocked")  // B blocks C
 
         // Step 4: Complete A
         yield* taskSvc.update(taskA.id, { status: "done" })
@@ -105,15 +106,15 @@ describe("Golden Path: Dependency Chain", () => {
         const bReadyAfterA = yield* readySvc.isReady(taskB.id)
         const cReadyAfterA = yield* readySvc.isReady(taskC.id)
 
-        expect(bReadyAfterA).toBe(true)  // A is done, B unblocked
-        expect(cReadyAfterA).toBe(false) // B still blocks C
+        expect(bReadyAfterA._tag).toBe("Ready")    // A is done, B unblocked
+        expect(cReadyAfterA._tag).toBe("Blocked")  // B still blocks C
 
         // Step 6: Complete B
         yield* taskSvc.update(taskB.id, { status: "done" })
 
         // Step 7: Now C should be ready
         const cReadyAfterB = yield* readySvc.isReady(taskC.id)
-        expect(cReadyAfterB).toBe(true) // B is done, C unblocked
+        expect(cReadyAfterB._tag).toBe("Ready") // B is done, C unblocked
 
         return { taskA, taskB, taskC }
       }).pipe(Effect.provide(layer))
@@ -150,12 +151,12 @@ describe("Golden Path: Dependency Chain", () => {
         // Complete only A - C should still be blocked
         yield* taskSvc.update(taskA.id, { status: "done" })
         const cAfterA = yield* readySvc.isReady(taskC.id)
-        expect(cAfterA).toBe(false) // Still blocked by B
+        expect(cAfterA._tag).toBe("Blocked") // Still blocked by B
 
         // Complete B - now C should be ready
         yield* taskSvc.update(taskB.id, { status: "done" })
         const cAfterBoth = yield* readySvc.isReady(taskC.id)
-        expect(cAfterBoth).toBe(true) // Both blockers done
+        expect(cAfterBoth._tag).toBe("Ready") // Both blockers done
 
         return { taskA, taskB, taskC }
       }).pipe(Effect.provide(layer))
@@ -177,13 +178,13 @@ describe("Golden Path: Dependency Chain", () => {
 
         // A blocks B
         yield* depSvc.addBlocker(taskB.id, taskA.id)
-        expect(yield* readySvc.isReady(taskB.id)).toBe(false)
+        expect((yield* readySvc.isReady(taskB.id))._tag).toBe("Blocked")
 
         // Remove the blocker
         yield* depSvc.removeBlocker(taskB.id, taskA.id)
 
         // B should now be ready
-        expect(yield* readySvc.isReady(taskB.id)).toBe(true)
+        expect((yield* readySvc.isReady(taskB.id))._tag).toBe("Ready")
 
         // Verify blockedBy is empty
         const bWithDeps = yield* taskSvc.getWithDeps(taskB.id)
@@ -398,13 +399,13 @@ describe("Golden Path: Complex Dependency Scenarios", () => {
         yield* taskSvc.update(b.id, { status: "done" })
 
         // D should still be blocked (needs C)
-        expect(yield* readySvc.isReady(d.id)).toBe(false)
+        expect((yield* readySvc.isReady(d.id))._tag).toBe("Blocked")
 
         // Complete C
         yield* taskSvc.update(c.id, { status: "done" })
 
         // Now D should be ready
-        expect(yield* readySvc.isReady(d.id)).toBe(true)
+        expect((yield* readySvc.isReady(d.id))._tag).toBe("Ready")
 
         return { a, b, c, d }
       }).pipe(Effect.provide(layer))
@@ -440,13 +441,13 @@ describe("Golden Path: Complex Dependency Scenarios", () => {
         }
 
         // Main should still be blocked
-        expect(yield* readySvc.isReady(main.id)).toBe(false)
+        expect((yield* readySvc.isReady(main.id))._tag).toBe("Blocked")
 
         // Complete the last blocker
         yield* taskSvc.update(blockers[4].id, { status: "done" })
 
         // Now main should be ready
-        expect(yield* readySvc.isReady(main.id)).toBe(true)
+        expect((yield* readySvc.isReady(main.id))._tag).toBe("Ready")
 
         return { main, blockers }
       }).pipe(Effect.provide(layer))

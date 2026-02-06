@@ -1,8 +1,8 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import { TaskNotFoundError, ValidationError, DatabaseError, StaleDataError } from "../errors.js"
-import { generateTaskId } from "../id.js"
+import { TaskNotFoundError, ValidationError, DatabaseError, StaleDataError, HasChildrenError } from "../errors.js"
+import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
 import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput } from "@jamesaphoenix/tx-types"
 
@@ -15,12 +15,32 @@ export class TaskService extends Context.Tag("TaskService")<
     readonly getWithDepsBatch: (ids: readonly TaskId[]) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
     readonly update: (id: TaskId, input: UpdateTaskInput) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
     readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError>
-    readonly remove: (id: TaskId) => Effect.Effect<void, TaskNotFoundError | DatabaseError>
+    readonly remove: (id: TaskId, options?: { cascade?: boolean }) => Effect.Effect<void, TaskNotFoundError | HasChildrenError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
     readonly listWithDeps: (filter?: TaskFilter) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
     readonly count: (filter?: TaskFilter) => Effect.Effect<number, DatabaseError>
   }
 >() {}
+
+/**
+ * Regex matching all Unicode whitespace (\s) and invisible format characters
+ * (\p{Cf} — zero-width spaces, directional marks, joiners, soft hyphens, etc.).
+ * Used to detect titles that appear empty despite containing invisible chars.
+ */
+const INVISIBLE_RE = /[\s\p{Cf}]/gu
+
+/** Returns true if the string contains at least one visible character. */
+const hasVisibleContent = (s: string): boolean =>
+  s.replace(INVISIBLE_RE, "").length > 0
+
+/** Strips leading/trailing whitespace AND invisible format characters. */
+const trimVisible = (s: string): string =>
+  s.replace(/^[\s\p{Cf}]+|[\s\p{Cf}]+$/gu, "")
+
+/** Max recursion depth for destructive operations that must find ALL descendants.
+ *  Bounded to avoid unbounded CTE recursion in SQLite while being deep enough
+ *  for any realistic task hierarchy (display default is 10). */
+const CASCADE_MAX_DEPTH = 1000
 
 export const TaskServiceLive = Layer.effect(
   TaskService,
@@ -180,8 +200,14 @@ export const TaskServiceLive = Layer.effect(
     return {
       create: (input) =>
         Effect.gen(function* () {
-          if (!input.title || input.title.trim().length === 0) {
+          if (!input.title || !hasVisibleContent(input.title)) {
             return yield* Effect.fail(new ValidationError({ reason: "Title is required" }))
+          }
+
+          if (input.score !== undefined && !Number.isFinite(input.score)) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Score must be a finite number, got: ${input.score}`
+            }))
           }
 
           if (input.parentId) {
@@ -191,11 +217,10 @@ export const TaskServiceLive = Layer.effect(
             }
           }
 
-          const id = yield* generateTaskId()
           const now = new Date()
-          const task: Task = {
+          const makeTask = (id: string): Task => ({
             id: id as TaskId,
-            title: input.title.trim(),
+            title: trimVisible(input.title),
             description: input.description ?? "",
             status: "backlog",
             parentId: (input.parentId as TaskId) ?? null,
@@ -204,10 +229,26 @@ export const TaskServiceLive = Layer.effect(
             updatedAt: now,
             completedAt: null,
             metadata: input.metadata ?? {}
-          }
+          })
 
-          yield* taskRepo.insert(task)
-          return task
+          // Retry up to 3 times on ID collision (UNIQUE constraint)
+          const MAX_ID_RETRIES = 3
+          for (let attempt = 0; attempt <= MAX_ID_RETRIES; attempt++) {
+            const id = yield* generateTaskId()
+            const task = makeTask(id)
+            const result = yield* taskRepo.insert(task).pipe(
+              Effect.map(() => task as Task | null),
+              Effect.catchTag("DatabaseError", (e) => {
+                if (attempt < MAX_ID_RETRIES && isUniqueConstraintError(e.cause)) {
+                  return Effect.succeed(null as Task | null)
+                }
+                return Effect.fail(e)
+              })
+            )
+            if (result !== null) return result
+          }
+          // Should not reach here — last attempt throws on failure
+          return yield* Effect.fail(new DatabaseError({ cause: new Error("Task ID collision after max retries") }))
         }),
 
       get: (id) =>
@@ -254,10 +295,34 @@ export const TaskServiceLive = Layer.effect(
             }
           }
 
+          if (input.title !== undefined && !hasVisibleContent(input.title)) {
+            return yield* Effect.fail(new ValidationError({ reason: "Title is required" }))
+          }
+
+          if (input.score !== undefined && !Number.isFinite(input.score)) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Score must be a finite number, got: ${input.score}`
+            }))
+          }
+
           if (input.parentId) {
+            if (input.parentId === id) {
+              return yield* Effect.fail(new ValidationError({ reason: "Task cannot be its own parent" }))
+            }
+
             const parent = yield* taskRepo.findById(input.parentId)
             if (!parent) {
               return yield* Effect.fail(new ValidationError({ reason: `Parent ${input.parentId} not found` }))
+            }
+
+            // Cycle detection: walk up from the proposed parent's ancestors.
+            // If the task being updated appears in that chain, setting parentId
+            // would create a cycle (e.g. A->B->C->A).
+            const ancestors = yield* taskRepo.getAncestorChain(input.parentId)
+            if (ancestors.some(a => a.id === id)) {
+              return yield* Effect.fail(new ValidationError({
+                reason: `Setting parent to ${input.parentId} would create a parent-child cycle`
+              }))
             }
           }
 
@@ -265,7 +330,7 @@ export const TaskServiceLive = Layer.effect(
           const isDone = input.status === "done" && existing.status !== "done"
           const updated: Task = {
             ...existing,
-            title: input.title ?? existing.title,
+            title: input.title !== undefined ? trimVisible(input.title) : existing.title,
             description: input.description ?? existing.description,
             status: input.status ?? existing.status,
             parentId: input.parentId !== undefined ? (input.parentId as TaskId | null) : existing.parentId,
@@ -309,12 +374,41 @@ export const TaskServiceLive = Layer.effect(
           return updated
         }),
 
-      remove: (id) =>
+      remove: (id, options) =>
         Effect.gen(function* () {
           const task = yield* taskRepo.findById(id)
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
+
+          const childIds = yield* taskRepo.getChildIds(id)
+
+          if (childIds.length > 0 && !options?.cascade) {
+            return yield* Effect.fail(new HasChildrenError({ id, childIds }))
+          }
+
+          if (childIds.length > 0 && options?.cascade) {
+            // Delete all descendants depth-first, excluding the root (deleted below)
+            const descendants = yield* taskRepo.getDescendants(id, CASCADE_MAX_DEPTH)
+            const descendantIds = [...descendants]
+              .filter(t => t.id !== id)
+              .reverse()
+              .map(t => t.id)
+
+            // Explicitly clean up dependency edges for all tasks being deleted
+            // (root + descendants). While FK ON DELETE CASCADE would handle this,
+            // explicit cleanup is defense-in-depth and makes the intent clear.
+            const allIdsToDelete = [...descendantIds, id]
+            yield* depRepo.removeByTaskIds(allIdsToDelete)
+
+            for (const descId of descendantIds) {
+              yield* taskRepo.remove(descId)
+            }
+          } else {
+            // Non-cascade: clean up edges for just the root task
+            yield* depRepo.removeByTaskIds([id])
+          }
+
           yield* taskRepo.remove(id)
         }),
 

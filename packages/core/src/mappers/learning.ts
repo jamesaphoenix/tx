@@ -10,6 +10,7 @@ import type {
 } from "@jamesaphoenix/tx-types"
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 
 /**
  * Schema for keywords - an array of strings.
@@ -89,7 +90,8 @@ export const rowToLearning = (row: LearningRow): Learning => {
     throw new InvalidStatusError({
       entity: "learning",
       status: row.source_type,
-      validStatuses: LEARNING_SOURCE_TYPES
+      validStatuses: LEARNING_SOURCE_TYPES,
+      rowId: row.id
     })
   }
   return {
@@ -97,11 +99,11 @@ export const rowToLearning = (row: LearningRow): Learning => {
     content: row.content,
     sourceType: row.source_type,
     sourceRef: row.source_ref,
-    createdAt: new Date(row.created_at),
+    createdAt: parseDate(row.created_at, "created_at", row.id),
     keywords: parseKeywords(row.keywords),
     category: row.category,
     usageCount: row.usage_count,
-    lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
+    lastUsedAt: row.last_used_at ? parseDate(row.last_used_at, "last_used_at", row.id) : null,
     outcomeScore: row.outcome_score,
     embedding: row.embedding ? bufferToFloat32Array(row.embedding) as Float32Array<ArrayBuffer> : null
   }

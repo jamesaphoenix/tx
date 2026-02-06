@@ -3,6 +3,7 @@
  */
 
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 import type { OrchestratorState, OrchestratorStatus } from "../schemas/worker.js"
 
 /**
@@ -34,6 +35,25 @@ export const isValidOrchestratorStatus = (s: string): s is OrchestratorStatus =>
 }
 
 /**
+ * Safely parse a JSON object string, returning empty object on failure.
+ */
+const safeParseMetadata = (json: string | null | undefined): Record<string, unknown> => {
+  try {
+    const parsed: unknown = JSON.parse(json || "{}")
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const result: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(parsed)) {
+        result[key] = value
+      }
+      return result
+    }
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+/**
  * Convert a database row to an OrchestratorState domain object.
  * Throws InvalidStatusError if status is invalid.
  */
@@ -42,18 +62,19 @@ export const rowToOrchestratorState = (row: OrchestratorStateRow): OrchestratorS
     throw new InvalidStatusError({
       entity: "orchestrator",
       status: row.status,
-      validStatuses: ORCHESTRATOR_STATUSES
+      validStatuses: ORCHESTRATOR_STATUSES,
+      rowId: row.id
     })
   }
   return {
     status: row.status,
     pid: row.pid,
-    startedAt: row.started_at ? new Date(row.started_at) : null,
-    lastReconcileAt: row.last_reconcile_at ? new Date(row.last_reconcile_at) : null,
+    startedAt: row.started_at ? parseDate(row.started_at, "started_at", row.id) : null,
+    lastReconcileAt: row.last_reconcile_at ? parseDate(row.last_reconcile_at, "last_reconcile_at", row.id) : null,
     workerPoolSize: row.worker_pool_size,
     reconcileIntervalSeconds: row.reconcile_interval_seconds,
     heartbeatIntervalSeconds: row.heartbeat_interval_seconds,
     leaseDurationMinutes: row.lease_duration_minutes,
-    metadata: JSON.parse(row.metadata || "{}")
+    metadata: safeParseMetadata(row.metadata)
   }
 }

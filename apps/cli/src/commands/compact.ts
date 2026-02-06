@@ -4,6 +4,7 @@
  * Implements PRD-006: Task Compaction & Learnings Export
  */
 
+import { resolve, sep } from "node:path"
 import { Effect } from "effect"
 import { CompactionService } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
@@ -56,6 +57,15 @@ export const compact = (pos: string[], flags: Flags) =>
     }
 
     const outputFile = opt(flags, "output", "o") ?? "CLAUDE.md"
+
+    // Validate output path stays within project directory (prevent path traversal)
+    const projectRoot = process.cwd()
+    const resolvedOutput = resolve(projectRoot, outputFile)
+    if (!resolvedOutput.startsWith(projectRoot + sep)) {
+      console.error(`Error: output path '${outputFile}' resolves outside project directory.`)
+      process.exit(1)
+    }
+
     const dryRun = flag(flags, "dry-run", "preview")
 
     // If dry-run, we can proceed without API key

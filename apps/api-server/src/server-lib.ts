@@ -18,7 +18,7 @@ import { LearningsLive } from "./routes/learnings.js"
 import { RunsLive } from "./routes/runs.js"
 import { SyncLive } from "./routes/sync.js"
 import { TxApi } from "./api.js"
-import { isAuthEnabled } from "./middleware/auth.js"
+import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
 import { getCorsConfig } from "./middleware/cors.js"
 
@@ -61,6 +61,7 @@ export const makeServerLive = (options: {
   return HttpApiBuilder.serve().pipe(
     Layer.provide(HttpApiBuilder.middleware(bodyLimitMiddleware)),
     Layer.provide(HttpApiBuilder.middlewareCors(getCorsConfig())),
+    Layer.provide(HttpApiBuilder.middleware(authMiddleware)),
     Layer.provide(ApiLive),
     Layer.provide(appLayer),
     Layer.provide(NodeHttpServer.layer(() => createServer(), { port, host })),

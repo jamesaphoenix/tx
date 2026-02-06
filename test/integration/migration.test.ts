@@ -151,6 +151,46 @@ describe("Migration system", () => {
 
       expect(getSchemaVersion(db)).toBe(getLatestVersion())
     })
+
+    it("rolls back on migration failure (no partial state)", () => {
+      // Create a fresh DB with only migration 1 to test rollback
+      const freshDb = new Database(":memory:")
+      freshDb.run("PRAGMA foreign_keys = ON")
+      freshDb.exec(MIGRATIONS[0].sql)
+      expect(getSchemaVersion(freshDb)).toBe(1)
+
+      // Intercept exec to fail during the second migration's SQL
+      const origExec = freshDb.exec.bind(freshDb)
+      let migrationExecCount = 0
+      freshDb.exec = ((sql: string) => {
+        // Let BEGIN IMMEDIATE and COMMIT/ROLLBACK through
+        if (sql === "BEGIN IMMEDIATE" || sql === "COMMIT" || sql === "ROLLBACK") {
+          return origExec(sql)
+        }
+        migrationExecCount++
+        if (migrationExecCount === 1) {
+          // First migration SQL (version 2) — make it fail partway
+          // by injecting invalid SQL after the real SQL
+          throw new Error("Simulated migration failure")
+        }
+        return origExec(sql)
+      }) as typeof freshDb.exec
+
+      // applyMigrations should throw
+      expect(() => applyMigrations(freshDb)).toThrow("Simulated migration failure")
+
+      // Restore exec for verification
+      freshDb.exec = origExec
+
+      // Schema version should still be 1 (migration 2 was rolled back)
+      expect(getSchemaVersion(freshDb)).toBe(1)
+
+      // The learnings table (from migration 2) should NOT exist
+      const tables = freshDb.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='learnings'"
+      ).all()
+      expect(tables).toHaveLength(0)
+    })
   })
 
   describe("MigrationService", () => {
@@ -294,6 +334,51 @@ describe("Migration system", () => {
         )
 
         expect(count).toBe(0)
+      })
+
+      it("rolls back on failure and leaves schema version unchanged", async () => {
+        const partialDb = new Database(":memory:")
+        partialDb.run("PRAGMA foreign_keys = ON")
+        partialDb.exec(MIGRATIONS[0].sql)
+        expect(getSchemaVersion(partialDb)).toBe(1)
+
+        // Intercept exec to fail during the second migration
+        const origExec = partialDb.exec.bind(partialDb)
+        let migrationExecCount = 0
+        partialDb.exec = ((sql: string) => {
+          if (sql === "BEGIN IMMEDIATE" || sql === "COMMIT" || sql === "ROLLBACK") {
+            return origExec(sql)
+          }
+          migrationExecCount++
+          if (migrationExecCount === 1) {
+            throw new Error("Simulated service migration failure")
+          }
+          return origExec(sql)
+        }) as typeof partialDb.exec
+
+        const partialLayer = makeTestLayer(partialDb)
+
+        const result = await Effect.runPromiseExit(
+          Effect.gen(function* () {
+            const svc = yield* MigrationService
+            return yield* svc.run()
+          }).pipe(Effect.provide(partialLayer))
+        )
+
+        // Should have failed
+        expect(result._tag).toBe("Failure")
+
+        // Restore exec for verification
+        partialDb.exec = origExec
+
+        // Schema version should still be 1
+        expect(getSchemaVersion(partialDb)).toBe(1)
+
+        // learnings table should not exist
+        const tables = partialDb.prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='learnings'"
+        ).all()
+        expect(tables).toHaveLength(0)
       })
     })
   })

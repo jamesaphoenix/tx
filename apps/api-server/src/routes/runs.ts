@@ -9,8 +9,8 @@ import { Effect } from "effect"
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { serializeRun } from "@jamesaphoenix/tx-types"
 import { RunRepository } from "@jamesaphoenix/tx-core"
-import { TxApi, NotFound, mapCoreError } from "../api.js"
-import { parseTranscript, findMatchingTranscript, type ChatMessage } from "../utils/transcript-parser.js"
+import { TxApi, NotFound, BadRequest, mapCoreError } from "../api.js"
+import { parseTranscript, findMatchingTranscript, isAllowedTranscriptPath, type ChatMessage } from "../utils/transcript-parser.js"
 import { readLogFile } from "../utils/log-reader.js"
 
 // -----------------------------------------------------------------------------
@@ -155,6 +155,12 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
 
     .handle("createRun", ({ payload }) =>
       Effect.gen(function* () {
+        // Security: validate transcriptPath before storing
+        if (payload.transcriptPath && !isAllowedTranscriptPath(payload.transcriptPath)) {
+          return yield* Effect.fail(
+            new BadRequest({ message: "Invalid transcriptPath: must be under ~/.claude/ or .tx/" })
+          )
+        }
         const runRepo = yield* RunRepository
         const run = yield* runRepo.create({
           taskId: payload.taskId,

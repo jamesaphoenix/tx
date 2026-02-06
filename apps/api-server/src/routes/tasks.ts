@@ -173,10 +173,11 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
       }).pipe(Effect.mapError(mapCoreError))
     )
 
-    .handle("deleteTask", ({ path }) =>
+    .handle("deleteTask", ({ path, urlParams }) =>
       Effect.gen(function* () {
         const taskService = yield* TaskService
-        yield* taskService.remove(path.id as TaskId)
+        const cascade = urlParams.cascade === "true"
+        yield* taskService.remove(path.id as TaskId, { cascade })
         return { success: true as const, id: path.id }
       }).pipe(Effect.mapError(mapCoreError))
     )

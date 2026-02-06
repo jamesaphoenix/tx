@@ -71,14 +71,14 @@ export const authMiddleware = HttpMiddleware.make((httpApp) =>
       return yield* HttpServerResponse.json(
         { error: { code: "UNAUTHORIZED", message: "Missing API key. Provide via X-Api-Key header or Authorization: Bearer <key>" } },
         { status: 401 }
-      )
+      ).pipe(Effect.orDie)
     }
 
     if (!timingSafeEqual(providedKey, requiredKey)) {
       return yield* HttpServerResponse.json(
         { error: { code: "FORBIDDEN", message: "Invalid API key" } },
         { status: 403 }
-      )
+      ).pipe(Effect.orDie)
     }
 
     return yield* httpApp

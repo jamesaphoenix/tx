@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { fetchers, type TaskWithDeps } from "../../api/client"
+import { useDebounce } from "../../hooks/useDebounce"
 
 // Local StatusBadge - matches TaskCard implementation
 function StatusBadge({ status }: { status: string }) {
@@ -89,10 +90,13 @@ export interface TaskDetailProps {
 }
 
 export function TaskDetail({ taskId, onNavigateToTask }: TaskDetailProps) {
+  const debouncedTaskId = useDebounce(taskId, 150)
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["task", taskId],
-    queryFn: () => fetchers.taskDetail(taskId),
-    enabled: !!taskId,
+    queryKey: ["task", debouncedTaskId],
+    queryFn: ({ signal }) => fetchers.taskDetail(debouncedTaskId, { signal }),
+    enabled: !!debouncedTaskId,
+    placeholderData: keepPreviousData,
   })
 
   if (isLoading) {

@@ -4,11 +4,24 @@ import { DependencyRepository } from "../repo/dep-repo.js"
 import { DatabaseError } from "../errors.js"
 import type { Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
+/**
+ * Result of checking whether a task is ready to be worked on.
+ * Replaces silent `false` with an explicit reason for not-ready states.
+ */
+export type ReadyCheckResult =
+  | { readonly _tag: "Ready" }
+  | { readonly _tag: "TaskNotFound"; readonly id: TaskId }
+  | { readonly _tag: "WrongStatus"; readonly id: TaskId; readonly status: string }
+  | { readonly _tag: "Blocked"; readonly id: TaskId; readonly pendingBlockerIds: readonly string[] }
+
+/** Helper to check if a ReadyCheckResult indicates the task is ready. */
+export const isReadyResult = (result: ReadyCheckResult): boolean => result._tag === "Ready"
+
 export class ReadyService extends Context.Tag("ReadyService")<
   ReadyService,
   {
     readonly getReady: (limit?: number) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
-    readonly isReady: (id: TaskId) => Effect.Effect<boolean, DatabaseError>
+    readonly isReady: (id: TaskId) => Effect.Effect<ReadyCheckResult, DatabaseError>
     readonly getBlockers: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getBlocking: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
   }
@@ -80,14 +93,21 @@ export const ReadyServiceLive = Layer.effect(
       isReady: (id) =>
         Effect.gen(function* () {
           const task = yield* taskRepo.findById(id)
-          if (!task) return false
-          if (!["backlog", "ready", "planning"].includes(task.status)) return false
+          if (!task) return { _tag: "TaskNotFound" as const, id }
+          if (!["backlog", "ready", "planning"].includes(task.status)) {
+            return { _tag: "WrongStatus" as const, id, status: task.status }
+          }
 
           const blockerIds = yield* depRepo.getBlockerIds(id)
-          if (blockerIds.length === 0) return true
+          if (blockerIds.length === 0) return { _tag: "Ready" as const }
 
           const blockers = yield* taskRepo.findByIds(blockerIds)
-          return blockers.every(b => b.status === "done")
+          const pendingBlockerIds = blockers
+            .filter(b => b.status !== "done")
+            .map(b => b.id)
+
+          if (pendingBlockerIds.length === 0) return { _tag: "Ready" as const }
+          return { _tag: "Blocked" as const, id, pendingBlockerIds }
         }),
 
       getBlockers: (id) =>

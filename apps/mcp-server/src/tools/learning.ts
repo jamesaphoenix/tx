@@ -8,17 +8,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { z } from "zod"
 import type { Learning, LearningWithScore, FileLearning, LearningSourceType } from "@jamesaphoenix/tx-types"
-import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+import { LEARNING_SOURCE_TYPES, assertTaskId } from "@jamesaphoenix/tx-types"
 import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
-import { handleToolError } from "../response.js"
+import { handleToolError, type McpToolResult } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
-
-// -----------------------------------------------------------------------------
-// Types
-// -----------------------------------------------------------------------------
-
-type McpToolResult = { content: { type: "text"; text: string }[] }
 
 // -----------------------------------------------------------------------------
 // Serialization
@@ -74,13 +68,14 @@ export const serializeFileLearning = (learning: FileLearning): Record<string, un
 
 const handleLearn = async (args: { filePattern: string; note: string; taskId?: string }): Promise<McpToolResult> => {
   try {
+    const taskId = args.taskId != null ? assertTaskId(args.taskId) : undefined
     const learning = await runEffect(
       Effect.gen(function* () {
         const fileLearningService = yield* FileLearningService
         return yield* fileLearningService.create({
           filePattern: args.filePattern,
           note: args.note,
-          taskId: args.taskId ?? undefined
+          taskId
         })
       })
     )
@@ -89,7 +84,8 @@ const handleLearn = async (args: { filePattern: string; note: string; taskId?: s
       content: [
         { type: "text", text: `Created file learning: #${learning.id} for pattern "${learning.filePattern}"` },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_learn", args, error)
@@ -117,7 +113,8 @@ const handleRecall = async (args: { path?: string; limit?: number }): Promise<Mc
       content: [
         { type: "text", text: `Found ${limited.length} file learning(s)${pathInfo}${truncatedInfo}` },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_recall", args, error)
@@ -126,10 +123,11 @@ const handleRecall = async (args: { path?: string; limit?: number }): Promise<Mc
 
 const handleContext = async (args: { taskId: string; maxTokens?: number }): Promise<McpToolResult> => {
   try {
+    const taskId = assertTaskId(args.taskId)
     const result = await runEffect(
       Effect.gen(function* () {
         const learningService = yield* LearningService
-        return yield* learningService.getContextForTask(args.taskId, {
+        return yield* learningService.getContextForTask(taskId, {
           maxTokens: args.maxTokens
         })
       })
@@ -145,7 +143,8 @@ const handleContext = async (args: { taskId: string; maxTokens?: number }): Prom
           searchDuration: result.searchDuration,
           learnings: serializedLearnings
         }) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_context", args, error)
@@ -177,7 +176,8 @@ const handleLearningAdd = async (args: {
       content: [
         { type: "text", text: `Created learning: #${learning.id}` },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_learning_add", args, error)
@@ -208,7 +208,8 @@ const handleLearningSearch = async (args: {
       content: [
         { type: "text", text: `Found ${learnings.length} learning(s) matching "${args.query}"` },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_learning_search", args, error)
@@ -228,7 +229,8 @@ const handleLearningHelpful = async (args: { id: number; score?: number }): Prom
       content: [
         { type: "text", text: `Updated learning #${args.id} with helpfulness score: ${effectiveScore}` },
         { type: "text", text: JSON.stringify({ success: true, id: args.id, score: effectiveScore }) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_learning_helpful", args, error)

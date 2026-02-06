@@ -13,7 +13,7 @@ import { Effect } from "effect"
 import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 
 // Import services once at module level
-import { DeduplicationService, BatchProcessingError } from "@jamesaphoenix/tx-core"
+import { DeduplicationService, BatchProcessingError, hashContent, normalizeContent } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures
@@ -546,6 +546,165 @@ describe("DeduplicationService edge cases", () => {
 
     expect(result.isNew).toBe(true)
     expect(result.content).toBe(unicodeContent)
+  })
+})
+
+// =============================================================================
+// Content Normalization Tests
+// =============================================================================
+
+describe("hashContent normalization (opt-in)", () => {
+  it("defaults to raw hashing (no normalization) for backward compatibility", () => {
+    const raw = hashContent("hello")
+    const withTrailing = hashContent("hello  ")
+    const withLeading = hashContent("  hello")
+
+    // Without normalization, whitespace variants produce different hashes
+    expect(raw).not.toBe(withTrailing)
+    expect(raw).not.toBe(withLeading)
+  })
+
+  it("normalizes whitespace when normalize=true", () => {
+    const base = hashContent("hello", true)
+    const trailing = hashContent("hello  ", true)
+    const leading = hashContent("  hello", true)
+    const both = hashContent("  hello  ", true)
+
+    expect(base).toBe(trailing)
+    expect(base).toBe(leading)
+    expect(base).toBe(both)
+  })
+
+  it("normalizes CRLF to LF when normalize=true", () => {
+    const lf = hashContent("line1\nline2", true)
+    const crlf = hashContent("line1\r\nline2", true)
+
+    expect(lf).toBe(crlf)
+  })
+
+  it("does not normalize CRLF by default", () => {
+    const lf = hashContent("line1\nline2")
+    const crlf = hashContent("line1\r\nline2")
+
+    expect(lf).not.toBe(crlf)
+  })
+
+  it("normalizes NFC/NFD unicode when normalize=true", () => {
+    // 'é' can be represented as U+00E9 (NFC) or U+0065 U+0301 (NFD)
+    const nfc = hashContent("caf\u00E9", true)
+    const nfd = hashContent("cafe\u0301", true)
+
+    expect(nfc).toBe(nfd)
+  })
+
+  it("does not normalize unicode by default", () => {
+    const nfc = hashContent("caf\u00E9")
+    const nfd = hashContent("cafe\u0301")
+
+    expect(nfc).not.toBe(nfd)
+  })
+})
+
+describe("normalizeContent function", () => {
+  it("trims whitespace", () => {
+    expect(normalizeContent("  hello  ")).toBe("hello")
+  })
+
+  it("converts CRLF to LF", () => {
+    expect(normalizeContent("a\r\nb")).toBe("a\nb")
+  })
+
+  it("applies NFC normalization", () => {
+    // NFD: base char + combining accent → NFC: single codepoint
+    expect(normalizeContent("cafe\u0301")).toBe("caf\u00E9")
+  })
+})
+
+describe("DeduplicationService backward compatibility (no normalization)", () => {
+  let shared: SharedTestLayerResult
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("treats content with trailing whitespace as distinct", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        const first = yield* dedupSvc.processLine("hello", FIXTURES.FILE_1, 1)
+        const second = yield* dedupSvc.processLine("hello  ", FIXTURES.FILE_1, 2)
+
+        return { first, second }
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    // Without normalization, these are different content → different hashes
+    expect(result.first.isNew).toBe(true)
+    expect(result.second.isNew).toBe(true)
+    expect(result.first.hash).not.toBe(result.second.hash)
+  })
+
+  it("treats CRLF and LF line endings as distinct", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        const first = yield* dedupSvc.processLine("line1\nline2", FIXTURES.FILE_1, 1)
+        const second = yield* dedupSvc.processLine("line1\r\nline2", FIXTURES.FILE_1, 2)
+
+        return { first, second }
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.first.isNew).toBe(true)
+    expect(result.second.isNew).toBe(true)
+    expect(result.first.hash).not.toBe(result.second.hash)
+  })
+
+  it("isProcessed only matches exact content", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        yield* dedupSvc.processLine("hello world", FIXTURES.FILE_1, 1)
+
+        const exact = yield* dedupSvc.isProcessed("hello world")
+        const trimmed = yield* dedupSvc.isProcessed("  hello world  ")
+        const crlf = yield* dedupSvc.isProcessed("hello world\r\n")
+
+        return { exact, trimmed, crlf }
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.exact).toBe(true)
+    expect(result.trimmed).toBe(false) // Different hash without normalization
+    expect(result.crlf).toBe(false) // Different hash without normalization
+  })
+
+  it("computeHash produces different hashes for whitespace variants", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const dedupSvc = yield* DeduplicationService
+
+        const base = dedupSvc.computeHash("hello")
+        const trimmed = dedupSvc.computeHash("  hello  ")
+        const crlf = dedupSvc.computeHash("hello\r\n")
+
+        return { base, trimmed, crlf }
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(result.base).not.toBe(result.trimmed)
+    expect(result.base).not.toBe(result.crlf)
   })
 })
 

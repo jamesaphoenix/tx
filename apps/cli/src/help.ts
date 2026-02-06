@@ -25,6 +25,8 @@ Commands:
   sync export             Export tasks to JSONL file
   sync import             Import tasks from JSONL file
   sync status             Show sync status
+  sync claude             Sync tasks to Claude Code team directory
+  sync codex              Sync tasks to Codex (coming soon)
   migrate status          Show database migration status
   learning:add            Add a learning
   learning:search         Search learnings
@@ -68,6 +70,11 @@ Commands:
   compact                 Compact completed tasks and export learnings
   history                 View compaction history
   validate                Run pre-flight database health checks
+  bulk done <id...>       Complete multiple tasks
+  bulk score <n> <id...>  Set score for multiple tasks
+  bulk reset <id...>      Reset multiple tasks to ready
+  bulk delete <id...>     Delete multiple tasks
+  stats                   Show queue metrics and health overview
   doctor                  Run system diagnostics for troubleshooting
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
@@ -392,7 +399,7 @@ Examples:
   tx mcp-server
   tx mcp-server --db ~/project/.tx/tasks.db`,
 
-  sync: `tx sync - Manage JSONL sync for git-based task sharing
+  sync: `tx sync - Manage JSONL sync and platform integrations
 
 Usage: tx sync <subcommand> [options]
 
@@ -402,6 +409,8 @@ Subcommands:
   status    Show sync status and whether database has unexported changes
   auto      Enable or disable automatic sync on mutations
   compact   Compact JSONL file by deduplicating operations
+  claude    Write tasks to Claude Code team task directory
+  codex     Write tasks to Codex (coming soon)
 
 Run 'tx sync <subcommand> --help' for subcommand-specific help.
 
@@ -410,7 +419,8 @@ Examples:
   tx sync import               # Import from .tx/tasks.jsonl
   tx sync status               # Show sync status
   tx sync auto --enable        # Enable auto-sync
-  tx sync compact              # Compact JSONL file`,
+  tx sync compact              # Compact JSONL file
+  tx sync claude --team my-team  # Push tasks to Claude Code team`,
 
   "sync export": `tx sync export - Export tasks to JSONL
 
@@ -482,6 +492,44 @@ Examples:
   tx sync auto              # Show current status
   tx sync auto --enable     # Enable auto-sync
   tx sync auto --disable    # Disable auto-sync`,
+
+  "sync claude": `tx sync claude - Write tasks to Claude Code team directory
+
+Usage: tx sync claude --team <name> [options]
+       tx sync claude --dir <path> [options]
+
+Writes all non-done tx tasks as individual JSON files to a Claude Code
+team's task directory. Tasks appear immediately in the team's TaskList.
+This is a one-way sync: tx is the source of truth.
+
+Teammates should run 'tx done <txId>' when they complete a task to
+write back to the tx database.
+
+Options:
+  --team <name>   Claude Code team name (resolves to ~/.claude/tasks/<name>/)
+  --dir <path>    Direct path to task directory (alternative to --team)
+  --json          Output result as JSON
+  --help          Show this help
+
+Workflow:
+  1. Create team:  Teammate.spawnTeam("my-team")
+  2. Sync tasks:   tx sync claude --team my-team
+  3. Spawn agents: Task tool with team_name="my-team"
+  4. Writeback:    Teammates run 'tx done <txId>' on completion
+
+Examples:
+  tx sync claude --team my-team          # Write to ~/.claude/tasks/my-team/
+  tx sync claude --dir /tmp/tasks        # Write to custom directory
+  tx sync claude --team my-team --json   # JSON output with stats`,
+
+  "sync codex": `tx sync codex - Write tasks to Codex (coming soon)
+
+Usage: tx sync codex [options]
+
+Writes tasks to OpenAI Codex's task format. Not yet implemented.
+
+Options:
+  --help  Show this help`,
 
   "sync compact": `tx sync compact - Compact JSONL file
 
@@ -1578,6 +1626,48 @@ Examples:
   tx validate              # Run all checks
   tx validate --fix        # Auto-fix fixable issues
   tx validate --json       # Machine-readable output`,
+
+  stats: `tx stats - Show queue metrics and health overview
+
+Usage: tx stats [options]
+
+Displays aggregate statistics about the task queue including:
+- Task counts by status with percentages
+- Ready tasks grouped by priority (score range)
+- Completion activity (last 24h, 7d, avg per day)
+- Active and expired claim counts
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx stats              # Show queue metrics
+  tx stats --json       # Machine-readable output`,
+
+  bulk: `tx bulk - Batch operations on multiple tasks
+
+Usage: tx bulk <subcommand> <args...> [options]
+
+Subcommands:
+  done <id...>           Complete multiple tasks at once
+  score <n> <id...>      Set priority score for multiple tasks
+  reset <id...>          Reset multiple tasks to ready status
+  delete <id...>         Delete multiple tasks
+
+Operations are executed sequentially. Each task is processed independently;
+failures on one task do not prevent processing of the remaining tasks.
+A summary of successes and failures is printed at the end.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx bulk done tx-abc123 tx-def456 tx-ghi789
+  tx bulk score 900 tx-abc123 tx-def456
+  tx bulk reset tx-abc123 tx-def456
+  tx bulk delete tx-abc123 tx-def456 --json`,
 
   doctor: `tx doctor - System diagnostics for troubleshooting
 

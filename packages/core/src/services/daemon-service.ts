@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync, writeSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
 import { DaemonError } from "../errors.js"
@@ -248,7 +248,7 @@ export const isProcessRunning = (pid: number): Effect.Effect<boolean, DaemonErro
       return Effect.fail(
         new DaemonError({
           code: "PROCESS_CHECK_FAILED",
-          message: `Failed to check if process ${pid} is running: ${error}`,
+          reason: `Failed to check if process ${pid} is running: ${error}`,
           pid
         })
       )
@@ -274,7 +274,7 @@ export const writePid = (pid: number): Effect.Effect<void, DaemonError> =>
     catch: (error) =>
       new DaemonError({
         code: "PID_WRITE_FAILED",
-        message: `Failed to write PID file: ${error}`,
+        reason: `Failed to write PID file: ${error}`,
         pid
       })
   })
@@ -300,7 +300,7 @@ export const readPid = (): Effect.Effect<number | null, DaemonError> =>
       catch: (error) =>
         new DaemonError({
           code: "PID_READ_FAILED",
-          message: `Failed to read PID file: ${error}`,
+          reason: `Failed to read PID file: ${error}`,
           pid: null
         })
     })
@@ -340,7 +340,7 @@ export const removePid = (): Effect.Effect<void, DaemonError> =>
     catch: (error) =>
       new DaemonError({
         code: "PID_REMOVE_FAILED",
-        message: `Failed to remove PID file: ${error}`,
+        reason: `Failed to remove PID file: ${error}`,
         pid: null
       })
   })
@@ -365,7 +365,7 @@ const writeStartedAt = (date: Date): Effect.Effect<void, DaemonError> =>
     catch: (error) =>
       new DaemonError({
         code: "STARTED_AT_WRITE_FAILED",
-        message: `Failed to write started_at file: ${error}`,
+        reason: `Failed to write started_at file: ${error}`,
         pid: null
       })
   })
@@ -386,7 +386,7 @@ const readStartedAt = (): Effect.Effect<Date | null, DaemonError> =>
     catch: (error) =>
       new DaemonError({
         code: "STARTED_AT_READ_FAILED",
-        message: `Failed to read started_at file: ${error}`,
+        reason: `Failed to read started_at file: ${error}`,
         pid: null
       })
   })
@@ -404,7 +404,7 @@ const removeStartedAt = (): Effect.Effect<void, DaemonError> =>
     catch: (error) =>
       new DaemonError({
         code: "STARTED_AT_REMOVE_FAILED",
-        message: `Failed to remove started_at file: ${error}`,
+        reason: `Failed to remove started_at file: ${error}`,
         pid: null
       })
   })
@@ -430,7 +430,7 @@ const sendSignal = (pid: number, signal: NodeJS.Signals): Effect.Effect<boolean,
       return Effect.fail(
         new DaemonError({
           code: "SIGNAL_FAILED",
-          message: `Failed to send signal ${signal} to process ${pid}: ${error}`,
+          reason: `Failed to send signal ${signal} to process ${pid}: ${error}`,
           pid
         })
       )
@@ -528,13 +528,13 @@ const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess
       if (error.code === "ENOENT") {
         reject(new DaemonError({
           code: "COMMAND_NOT_FOUND",
-          message: `Command '${config.command}' not found. Make sure it is installed and in PATH.`,
+          reason: `Command '${config.command}' not found. Make sure it is installed and in PATH.`,
           pid: null
         }))
       } else {
         reject(new DaemonError({
           code: "SPAWN_FAILED",
-          message: `Failed to spawn daemon process: ${error.message}`,
+          reason: `Failed to spawn daemon process: ${error.message}`,
           pid: null
         }))
       }
@@ -560,7 +560,7 @@ const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess
         // No PID and no error - reject to prevent the promise from hanging forever
         reject(new DaemonError({
           code: "SPAWN_FAILED",
-          message: `Failed to spawn daemon process: no PID was assigned`,
+          reason: `Failed to spawn daemon process: no PID was assigned`,
           pid: null
         }))
       }
@@ -568,22 +568,115 @@ const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess
   })
 
 /**
- * Internal start implementation for the daemon.
- * Extracted to allow reuse in restart without circular dependency.
+ * Try to atomically create the PID file using O_EXCL.
+ * Returns true if created successfully, false if the file already exists.
+ * This is the atomic primitive that prevents the TOCTOU race condition.
  */
-const startDaemonImpl = (config: DaemonConfig): Effect.Effect<void, DaemonError> =>
+export const tryAtomicPidCreate = (): Effect.Effect<boolean, DaemonError> =>
+  Effect.try({
+    try: () => {
+      // O_CREAT | O_EXCL | O_WRONLY — fails with EEXIST if file already exists
+      const fd = openSync(PID_FILE_PATH, "wx")
+      // Write the lock holder's PID so stale detection works.
+      // This is the `tx daemon start` process PID, not the daemon PID.
+      // After spawning, writePid() overwrites with the actual daemon PID.
+      writeSync(fd, String(process.pid))
+      closeSync(fd)
+      return true
+    },
+    catch: (error) => error as NodeJS.ErrnoException
+  }).pipe(
+    Effect.catchAll((error) => {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+        return Effect.succeed(false)
+      }
+      return Effect.fail(
+        new DaemonError({
+          code: "PID_WRITE_FAILED",
+          reason: `Failed to create PID lock file: ${error}`,
+          pid: null
+        })
+      )
+    })
+  )
+
+/**
+ * Atomically acquire the daemon PID file lock.
+ *
+ * Uses O_EXCL flag to prevent the TOCTOU race condition where two concurrent
+ * `tx daemon start` commands both pass the existence check before either writes
+ * the PID file. With O_EXCL, the filesystem guarantees only one process can
+ * create the file — the loser gets EEXIST immediately.
+ *
+ * If the file already exists, checks whether the PID is stale (process dead).
+ * Stale files are removed and creation is retried once.
+ */
+export const acquirePidLock = (): Effect.Effect<void, DaemonError> =>
   Effect.gen(function* () {
-    // Check if daemon is already running
-    const existingPid = yield* readPid()
-    if (existingPid !== null) {
+    const dir = dirname(PID_FILE_PATH)
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true })
+    }
+
+    // First attempt: atomic file creation
+    const created = yield* tryAtomicPidCreate()
+    if (created) return
+
+    // File already exists — check if the PID inside is stale
+    const existingContent = yield* Effect.try({
+      try: () =>
+        existsSync(PID_FILE_PATH) ? readFileSync(PID_FILE_PATH, "utf-8").trim() : null,
+      catch: (error) =>
+        new DaemonError({
+          code: "PID_READ_FAILED",
+          reason: `Failed to read existing PID file: ${error}`,
+          pid: null
+        })
+    })
+
+    if (existingContent !== null && existingContent !== "") {
+      const pid = parseInt(existingContent, 10)
+      if (!isNaN(pid) && pid > 0) {
+        const running = yield* isProcessRunning(pid)
+        if (running) {
+          return yield* Effect.fail(
+            new DaemonError({
+              code: "ALREADY_RUNNING",
+              reason: `Daemon is already running with PID ${pid}`,
+              pid
+            })
+          )
+        }
+      }
+    }
+
+    // PID file is stale — remove and retry once
+    yield* removePid()
+
+    const retryCreated = yield* tryAtomicPidCreate()
+    if (!retryCreated) {
+      // Another process won the race after our stale cleanup
       return yield* Effect.fail(
         new DaemonError({
           code: "ALREADY_RUNNING",
-          message: `Daemon is already running with PID ${existingPid}`,
-          pid: existingPid
+          reason: "Another daemon start is in progress",
+          pid: null
         })
       )
     }
+  })
+
+/**
+ * Internal start implementation for the daemon.
+ * Extracted to allow reuse in restart without circular dependency.
+ *
+ * Uses atomic PID file locking (O_EXCL) to prevent the TOCTOU race condition
+ * where two concurrent starts could both pass the existence check.
+ */
+const startDaemonImpl = (config: DaemonConfig): Effect.Effect<void, DaemonError> =>
+  Effect.gen(function* () {
+    // Atomically acquire PID file lock (prevents TOCTOU race)
+    yield* acquirePidLock()
 
     // Spawn the daemon process with proper error handling
     const { pid } = yield* Effect.tryPromise({
@@ -594,13 +687,16 @@ const startDaemonImpl = (config: DaemonConfig): Effect.Effect<void, DaemonError>
         }
         return new DaemonError({
           code: "SPAWN_FAILED",
-          message: `Failed to spawn daemon process: ${error}`,
+          reason: `Failed to spawn daemon process: ${error}`,
           pid: null
         })
       }
-    })
+    }).pipe(
+      // If spawn fails, clean up the lock file we acquired
+      Effect.tapError(() => removePid())
+    )
 
-    // Write PID file
+    // Update the lock file with the actual PID
     yield* writePid(pid)
 
     // Write started timestamp
@@ -617,7 +713,7 @@ const startDaemonImpl = (config: DaemonConfig): Effect.Effect<void, DaemonError>
       return yield* Effect.fail(
         new DaemonError({
           code: "PROCESS_DIED",
-          message: "Daemon process exited immediately after starting",
+          reason: "Daemon process exited immediately after starting",
           pid
         })
       )

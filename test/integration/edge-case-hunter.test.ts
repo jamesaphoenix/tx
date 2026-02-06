@@ -145,7 +145,7 @@ describe("ReadyService boundary conditions", () => {
   })
 
   describe("isReady edge cases", () => {
-    it("returns false for nonexistent task", async () => {
+    it("returns TaskNotFound for nonexistent task", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* ReadyService
@@ -153,10 +153,10 @@ describe("ReadyService boundary conditions", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      expect(result).toBe(false)
+      expect(result._tag).toBe("TaskNotFound")
     })
 
-    it("returns false for 'done' status task even with no blockers", async () => {
+    it("returns WrongStatus for 'done' status task even with no blockers", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* ReadyService
@@ -164,7 +164,10 @@ describe("ReadyService boundary conditions", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      expect(result).toBe(false)
+      expect(result._tag).toBe("WrongStatus")
+      if (result._tag === "WrongStatus") {
+        expect(result.status).toBe("done")
+      }
     })
 
     it("handles task with deleted blocker", async () => {
@@ -200,12 +203,12 @@ describe("ReadyService boundary conditions", () => {
         }).pipe(Effect.provide(layer), Effect.either)
       )
 
-      // Should handle gracefully - either return false (not ready) or true (blocker doesn't exist)
-      // Current implementation: blocker doesn't exist in tasks table -> findByIds returns empty
-      // -> blockers.every(b => b.status === 'done') is true for empty array -> isReady
+      // Should handle gracefully - blocker doesn't exist in tasks table -> findByIds returns empty
+      // -> pendingBlockerIds is empty -> Ready (deleted blocker treated as resolved)
       if (result._tag === "Right") {
-        // Empty array.every() returns true, so task might be considered ready
-        expect(typeof result.right).toBe("boolean")
+        expect(result.right).toHaveProperty("_tag")
+        // Deleted blocker means pendingBlockerIds is empty, so result is Ready
+        expect(result.right._tag).toBe("Ready")
       }
     })
   })
@@ -599,6 +602,84 @@ describe("TaskService boundary conditions", () => {
 
       expect(task.title).toBe(specialTitle)
     })
+
+    it("rejects title with only Unicode whitespace (non-breaking space)", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "\u00A0\u2000\u3000" })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+      }
+    })
+
+    it("rejects title with only zero-width/invisible characters", async () => {
+      // U+200B zero-width space, U+200D zero-width joiner, U+FEFF BOM
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "\u200B\u200D\uFEFF" })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+      }
+    })
+
+    it("rejects title with only directional marks and format chars", async () => {
+      // U+200E LTR mark, U+200F RTL mark, U+202A LRE, U+2060 word joiner
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "\u200E\u200F\u202A\u2060" })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+      }
+    })
+
+    it("strips leading/trailing invisible chars from valid title", async () => {
+      const task = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "\u200BValid Title\u200B" })
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(task.title).toBe("Valid Title")
+    })
+
+    it("rejects Unicode-whitespace-only title via update", async () => {
+      // First create a valid task
+      const task = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "Original Title" })
+        }).pipe(Effect.provide(layer))
+      )
+
+      // Try to update with invisible-only title
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.update(task.id, { title: "\u200B\u200C\u200D" })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+      }
+    })
   })
 
   describe("score boundary conditions", () => {
@@ -633,6 +714,96 @@ describe("TaskService boundary conditions", () => {
       )
 
       expect(task.score).toBe(Number.MAX_SAFE_INTEGER)
+    })
+
+    it("rejects NaN score on create", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "NaN Score", score: NaN })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("finite")
+      }
+    })
+
+    it("rejects Infinity score on create", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "Infinity Score", score: Infinity })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("finite")
+      }
+    })
+
+    it("rejects -Infinity score on create", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.create({ title: "-Infinity Score", score: -Infinity })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("finite")
+      }
+    })
+
+    it("rejects NaN score on update", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.update(FIXTURES.TASK_JWT, { score: NaN })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("finite")
+      }
+    })
+
+    it("rejects Infinity score on update", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.update(FIXTURES.TASK_JWT, { score: Infinity })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("finite")
+      }
+    })
+
+    it("rejects -Infinity score on update", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* TaskService
+          return yield* svc.update(FIXTURES.TASK_JWT, { score: -Infinity })
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect((result.left as any)._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("finite")
+      }
     })
   })
 
@@ -1036,25 +1207,25 @@ describe("ID generation", () => {
   it("fixtureId matches expected format", () => {
     const id = fixtureId("format-test")
 
-    expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("fixtureId handles empty string", () => {
     const id = fixtureId("")
 
-    expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("fixtureId handles special characters", () => {
     const id = fixtureId("special-!@#$%^&*()")
 
-    expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("fixtureId handles unicode", () => {
     const id = fixtureId("日本語テスト")
 
-    expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 })
 

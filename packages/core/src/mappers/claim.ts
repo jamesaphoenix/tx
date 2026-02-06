@@ -3,6 +3,7 @@
  */
 
 import { InvalidStatusError } from "../errors.js"
+import { parseDate } from "./parse-date.js"
 import type { TaskClaim, ClaimStatus } from "../schemas/worker.js"
 
 /**
@@ -39,15 +40,16 @@ export const rowToClaim = (row: ClaimRow): TaskClaim => {
     throw new InvalidStatusError({
       entity: "claim",
       status: row.status,
-      validStatuses: CLAIM_STATUSES
+      validStatuses: CLAIM_STATUSES,
+      rowId: row.id
     })
   }
   return {
     id: row.id,
     taskId: row.task_id,
     workerId: row.worker_id,
-    claimedAt: new Date(row.claimed_at),
-    leaseExpiresAt: new Date(row.lease_expires_at),
+    claimedAt: parseDate(row.claimed_at, "claimed_at", row.id),
+    leaseExpiresAt: parseDate(row.lease_expires_at, "lease_expires_at", row.id),
     renewedCount: row.renewed_count,
     status: row.status
   }

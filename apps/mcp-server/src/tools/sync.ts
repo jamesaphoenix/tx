@@ -12,13 +12,7 @@ import { z } from "zod"
 import type { ExportResult, ImportResult, SyncStatus, CompactResult } from "@jamesaphoenix/tx-core"
 import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
-import { handleToolError } from "../response.js"
-
-// -----------------------------------------------------------------------------
-// Types
-// -----------------------------------------------------------------------------
-
-type McpToolResult = { content: { type: "text"; text: string }[] }
+import { handleToolError, type McpToolResult } from "../response.js"
 
 // -----------------------------------------------------------------------------
 // Path validation
@@ -108,7 +102,8 @@ const handleExport = async (args: { path?: string }): Promise<McpToolResult> => 
       content: [
         { type: "text", text: `Exported ${result.opCount} operation(s) to ${result.path}` },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_sync_export", args, error)
@@ -132,7 +127,8 @@ const handleImport = async (args: { path?: string }): Promise<McpToolResult> => 
       content: [
         { type: "text", text: summary },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_sync_import", args, error)
@@ -154,7 +150,8 @@ const handleStatus = async (): Promise<McpToolResult> => {
       content: [
         { type: "text", text: `Sync status: ${status.dbTaskCount} tasks in DB, ${status.jsonlOpCount} ops in JSONL${dirtyStatus}${autoSync}` },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_sync_status", {}, error)
@@ -178,7 +175,8 @@ const handleCompact = async (args: { path?: string }): Promise<McpToolResult> =>
       content: [
         { type: "text", text: `Compacted ${result.before} → ${result.after} operations${reduction}` },
         { type: "text", text: JSON.stringify(serialized) }
-      ]
+      ],
+      isError: false
     }
   } catch (error) {
     return handleToolError("tx_sync_compact", args, error)

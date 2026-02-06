@@ -16,12 +16,20 @@ export interface McpContent {
 
 export interface McpResponse {
   content: McpContent[]
-  isError?: boolean
+  isError: boolean
 }
+
+/**
+ * Return type for MCP tool handler functions.
+ * Structurally identical to McpResponse — extracted here to avoid duplication
+ * across tool modules (task.ts, sync.ts, learning.ts).
+ */
+export type McpToolResult = McpResponse
 
 export interface StructuredError {
   errorType: string
   message: string
+  stack: string
   tool: string
   args: Record<string, unknown>
   timestamp: string
@@ -128,7 +136,8 @@ export const mcpResponse = (text: string, data: unknown): McpResponse => ({
   content: [
     { type: "text" as const, text },
     { type: "text" as const, text: safeStringify(data) }
-  ]
+  ],
+  isError: false
 })
 
 /**
@@ -156,6 +165,7 @@ export const buildStructuredError = (
 ): StructuredError => ({
   errorType: classifyError(error),
   message: extractErrorMessage(error),
+  stack: formatErrorWithStack(error),
   tool,
   args,
   timestamp: new Date().toISOString()
@@ -185,6 +195,7 @@ export const handleToolError = (
   return {
     content: [
       { type: "text" as const, text: `Error [${structured.errorType}]: ${structured.message}` },
+      { type: "text" as const, text: structured.stack },
       { type: "text" as const, text: safeStringify(structured) }
     ],
     isError: true

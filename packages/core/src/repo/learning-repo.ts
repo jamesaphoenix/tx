@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, LearningNotFoundError } from "../errors.js"
 import { rowToLearning, float32ArrayToBuffer } from "../mappers/learning.js"
+import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@jamesaphoenix/tx-types"
 
 /** Scored learning result from BM25 search */
@@ -15,7 +16,7 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
   {
     readonly insert: (input: CreateLearningInput) => Effect.Effect<Learning, DatabaseError>
     readonly findById: (id: number) => Effect.Effect<Learning | null, DatabaseError>
-    readonly findAll: () => Effect.Effect<readonly Learning[], DatabaseError>
+    readonly findAll: (limit?: number) => Effect.Effect<readonly Learning[], DatabaseError>
     /** Find learnings with pagination (cursor-based using id for stability) */
     readonly findPaginated: (limit: number, afterId?: number) => Effect.Effect<readonly Learning[], DatabaseError>
     /** Find learnings without embeddings with pagination (for batch embedding) */
@@ -120,12 +121,12 @@ export const LearningRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause })
         }),
 
-      findAll: () =>
+      findAll: (limit) =>
         Effect.try({
           try: () => {
             const rows = db.prepare(
-              `SELECT * FROM learnings ORDER BY created_at ASC`
-            ).all() as LearningRow[]
+              `SELECT * FROM learnings ORDER BY created_at ASC LIMIT ?`
+            ).all(limit ?? DEFAULT_QUERY_LIMIT) as LearningRow[]
             return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })

@@ -77,7 +77,7 @@ export function formatContextMarkdown(result: ContextResult): string {
 export function formatLearningSearchResult(r: LearningWithScore): string {
   const score = (r.relevanceScore * 100).toFixed(0)
   const category = r.category ? ` [${r.category}]` : ""
-  return `  #${r.id} (${score}%)${category} ${r.content.slice(0, 60)}${r.content.length > 60 ? "..." : ""}`
+  return `  #${r.id} (${score}%)${category} ${r.content}`
 }
 
 // --- Helpers ---

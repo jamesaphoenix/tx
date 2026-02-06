@@ -8,7 +8,7 @@
 import { Effect } from "effect"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { existsSync } from "node:fs"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
 // Types for Claude transcript entries
 interface TranscriptUserMessage {
@@ -62,19 +62,51 @@ export interface ChatMessage {
 }
 
 /**
+ * Validate that a transcript path is under an allowed directory.
+ * Prevents arbitrary file reads via path traversal.
+ *
+ * Allowed directories: ~/.claude/ and any .tx/ directory.
+ */
+export const isAllowedTranscriptPath = (filePath: string): boolean => {
+  const homeDir = process.env.HOME || ""
+  if (!homeDir) return false
+
+  const expandedPath = filePath.replace(/^~/, homeDir)
+  const resolved = resolve(expandedPath)
+
+  const claudeDir = resolve(join(homeDir, ".claude"))
+
+  // Allow paths under ~/.claude/
+  if (resolved.startsWith(claudeDir + "/")) return true
+
+  // Allow paths under any .tx/ directory
+  if (resolved.includes("/.tx/")) return true
+
+  return false
+}
+
+/**
  * Parse a Claude transcript JSONL file and extract conversation messages
  */
 export const parseTranscript = (path: string): Effect.Effect<ChatMessage[], Error> =>
-  Effect.tryPromise({
-    try: async () => {
-      // Expand ~ to home directory
-      const expandedPath = path.replace(/^~/, process.env.HOME || "")
+  Effect.gen(function* () {
+    // Security: validate path is under allowed directories before any file I/O
+    if (!isAllowedTranscriptPath(path)) {
+      return yield* Effect.fail(
+        new Error("Path traversal attempt: transcript path must be under ~/.claude/ or .tx/")
+      )
+    }
 
-      if (!existsSync(expandedPath)) {
-        return []
-      }
+    return yield* Effect.tryPromise({
+      try: async () => {
+        // Expand ~ to home directory
+        const expandedPath = path.replace(/^~/, process.env.HOME || "")
 
-      const content = await readFile(expandedPath, "utf-8")
+        if (!existsSync(expandedPath)) {
+          return []
+        }
+
+        const content = await readFile(expandedPath, "utf-8")
       const lines = content.split("\n").filter((line) => line.trim())
 
       const messages: ChatMessage[] = []
@@ -176,6 +208,7 @@ export const parseTranscript = (path: string): Effect.Effect<ChatMessage[], Erro
       return messages
     },
     catch: (error) => new Error(`Failed to parse transcript: ${String(error)}`),
+  })
   })
 
 /**

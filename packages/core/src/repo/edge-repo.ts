@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EdgeNotFoundError, EntityFetchError } from "../errors.js"
 import { rowToEdge } from "../mappers/edge.js"
+import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type {
   Edge,
   EdgeRow,
@@ -39,7 +40,7 @@ export class EdgeRepository extends Context.Tag("EdgeRepository")<
     ) => Effect.Effect<readonly Edge[] | null, DatabaseError>
     readonly update: (id: number, input: UpdateEdgeInput) => Effect.Effect<Edge | null, DatabaseError>
     readonly invalidate: (id: number) => Effect.Effect<boolean, EdgeNotFoundError | DatabaseError>
-    readonly findAll: () => Effect.Effect<readonly Edge[], DatabaseError>
+    readonly findAll: (limit?: number) => Effect.Effect<readonly Edge[], DatabaseError>
   }
 >() {}
 
@@ -245,50 +246,58 @@ export const EdgeRepositoryLive = Layer.effect(
       findPath: (fromType, fromId, toType, toId, maxDepth = 5) =>
         Effect.try({
           try: () => {
-            // BFS for shortest path
-            const visited = new Set<string>([`${fromType}:${fromId}`])
-            interface PathNode {
-              type: NodeType
-              id: string
-              path: Edge[]
-            }
-            let frontier: PathNode[] = [{ type: fromType, id: fromId, path: [] }]
+            // Recursive CTE performs BFS in a single query (eliminates N+1 pattern)
+            // Uses UNION ALL with delimiter-based visited tracking to prevent cycles
+            // Similar pattern to hasPath CTE in dep-repo.ts
+            const result = db.prepare(`
+              WITH RECURSIVE bfs(node_type, node_id, depth, edge_path, visited) AS (
+                -- Base case: starting node at depth 0
+                SELECT ?, ?, 0, '',
+                       '|' || ? || ':' || ? || '|'
 
-            for (let depth = 0; depth < maxDepth; depth++) {
-              const nextFrontier: PathNode[] = []
+                UNION ALL
 
-              for (const { type, id, path } of frontier) {
-                // Get outgoing edges
-                const rows = db.prepare(
-                  `SELECT * FROM learning_edges
-                   WHERE source_type = ? AND source_id = ? AND invalidated_at IS NULL`
-                ).all(type, id) as EdgeRow[]
+                -- Recursive case: follow outgoing edges from current frontier
+                SELECT
+                  e.target_type,
+                  e.target_id,
+                  b.depth + 1,
+                  CASE WHEN b.edge_path = ''
+                    THEN CAST(e.id AS TEXT)
+                    ELSE b.edge_path || ',' || CAST(e.id AS TEXT)
+                  END,
+                  b.visited || e.target_type || ':' || e.target_id || '|'
+                FROM learning_edges e
+                JOIN bfs b ON e.source_type = b.node_type
+                          AND e.source_id = b.node_id
+                WHERE e.invalidated_at IS NULL
+                  AND b.depth < ?
+                  AND instr(b.visited, '|' || e.target_type || ':' || e.target_id || '|') = 0
+              )
+              SELECT edge_path FROM bfs
+              WHERE node_type = ? AND node_id = ?
+                AND edge_path != ''
+              ORDER BY depth ASC
+              LIMIT 1
+            `).get(
+              fromType, fromId,   // CTE base: starting node
+              fromType, fromId,   // CTE base: initial visited set
+              maxDepth,           // depth limit
+              toType, toId        // final filter: target node
+            ) as { edge_path: string } | undefined
 
-                for (const row of rows) {
-                  const edge = rowToEdge(row)
+            if (!result) return null
 
-                  // Found target
-                  if (row.target_type === toType && row.target_id === toId) {
-                    return [...path, edge]
-                  }
+            // Fetch full edge objects in a single query
+            const edgeIds = result.edge_path.split(',').map(Number)
+            const placeholders = edgeIds.map(() => '?').join(', ')
+            const edgeRows = db.prepare(
+              `SELECT * FROM learning_edges WHERE id IN (${placeholders})`
+            ).all(...edgeIds) as EdgeRow[]
 
-                  const key = `${row.target_type}:${row.target_id}`
-                  if (!visited.has(key)) {
-                    visited.add(key)
-                    nextFrontier.push({
-                      type: row.target_type as NodeType,
-                      id: row.target_id,
-                      path: [...path, edge]
-                    })
-                  }
-                }
-              }
-
-              frontier = nextFrontier
-              if (frontier.length === 0) break
-            }
-
-            return null // No path found
+            // Maintain path order from CTE traversal
+            const edgeMap = new Map(edgeRows.map(row => [row.id, rowToEdge(row)]))
+            return edgeIds.map(id => edgeMap.get(id)).filter((e): e is Edge => e != null)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -354,12 +363,12 @@ export const EdgeRepositoryLive = Layer.effect(
           }
         }),
 
-      findAll: () =>
+      findAll: (limit) =>
         Effect.try({
           try: () => {
             const rows = db.prepare(
-              "SELECT * FROM learning_edges WHERE invalidated_at IS NULL ORDER BY created_at ASC"
-            ).all() as EdgeRow[]
+              "SELECT * FROM learning_edges WHERE invalidated_at IS NULL ORDER BY created_at ASC LIMIT ?"
+            ).all(limit ?? DEFAULT_QUERY_LIMIT) as EdgeRow[]
             return rows.map(rowToEdge)
           },
           catch: (cause) => new DatabaseError({ cause })

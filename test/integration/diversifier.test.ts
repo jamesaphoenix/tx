@@ -437,13 +437,12 @@ describe("DiversifierService Integration", () => {
       expect(result).toEqual([])
     })
 
-    it("limit of 1 returns first candidate (expects pre-sorted input)", async () => {
-      // Per implementation: limit=1 returns candidates.slice(0, 1)
-      // The service expects candidates to be pre-sorted by relevance (highest first)
+    it("limit of 1 selects highest relevance via MMR", async () => {
+      // Candidates intentionally NOT sorted by relevance to verify MMR picks the best
       const candidates = [
-        createMockLearning(FIXTURES.LEARNING_2, 0.95, createDeterministicEmbedding(2)), // Highest, first
-        createMockLearning(FIXTURES.LEARNING_3, 0.8, createDeterministicEmbedding(3)),
         createMockLearning(FIXTURES.LEARNING_1, 0.7, createDeterministicEmbedding(1)),
+        createMockLearning(FIXTURES.LEARNING_2, 0.95, createDeterministicEmbedding(2)), // Highest
+        createMockLearning(FIXTURES.LEARNING_3, 0.8, createDeterministicEmbedding(3)),
       ]
 
       const result = await Effect.runPromise(
@@ -454,7 +453,7 @@ describe("DiversifierService Integration", () => {
       )
 
       expect(result).toHaveLength(1)
-      // Returns first candidate (expects pre-sorted input)
+      // MMR correctly picks highest relevance regardless of input order
       expect(result[0]!.id).toBe(FIXTURES.LEARNING_2)
       expect(result[0]!.relevanceScore).toBe(0.95)
     })

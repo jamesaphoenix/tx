@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite"
 import { mkdirSync, existsSync } from "fs"
 import { dirname } from "path"
 import { MIGRATIONS } from "./services/migration-service.js"
+import { DatabaseError } from "./errors.js"
 
 /**
  * Result type for SQL statement run operations.
@@ -57,29 +58,41 @@ export const getSchemaVersion = (db: Database): number => {
 /**
  * Apply all pending migrations to the database.
  * Uses the centralized MIGRATIONS from migration-service.ts.
+ * Each migration is wrapped in BEGIN IMMEDIATE/COMMIT/ROLLBACK
+ * to ensure atomicity and prevent concurrent application.
  */
 export const applyMigrations = (db: Database): void => {
   const currentVersion = getSchemaVersion(db)
 
   for (const migration of MIGRATIONS) {
     if (migration.version > currentVersion) {
-      db.exec(migration.sql)
+      db.exec("BEGIN IMMEDIATE")
+      try {
+        db.exec(migration.sql)
+        db.exec("COMMIT")
+      } catch (e) {
+        db.exec("ROLLBACK")
+        throw e
+      }
     }
   }
 }
 
-export const makeSqliteClient = (dbPath: string): Effect.Effect<Database> =>
-  Effect.sync(() => {
-    const dir = dirname(dbPath)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-    const db = new Database(dbPath)
-    db.run("PRAGMA journal_mode = WAL")
-    db.run("PRAGMA foreign_keys = ON")
-    db.run("PRAGMA busy_timeout = " + (process.env.TX_DB_BUSY_TIMEOUT || "5000"))
-    applyMigrations(db)
-    return db
+export const makeSqliteClient = (dbPath: string): Effect.Effect<Database, DatabaseError> =>
+  Effect.try({
+    try: () => {
+      const dir = dirname(dbPath)
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+      }
+      const db = new Database(dbPath)
+      db.run("PRAGMA journal_mode = WAL")
+      db.run("PRAGMA foreign_keys = ON")
+      db.run("PRAGMA busy_timeout = " + (process.env.TX_DB_BUSY_TIMEOUT || "5000"))
+      applyMigrations(db)
+      return db
+    },
+    catch: (cause) => new DatabaseError({ cause })
   })
 
 export const SqliteClientLive = (dbPath: string) =>

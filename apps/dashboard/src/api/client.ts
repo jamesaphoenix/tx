@@ -124,10 +124,10 @@ export interface TaskDetailResponse {
 }
 
 // Effect-based API functions
-const fetchJson = <T>(url: string): Effect.Effect<T, ApiError> =>
+const fetchJson = <T>(url: string, options?: { signal?: AbortSignal }): Effect.Effect<T, ApiError> =>
   Effect.tryPromise({
     try: async () => {
-      const res = await fetch(url)
+      const res = await fetch(url, { signal: options?.signal })
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`)
       }
@@ -139,7 +139,7 @@ const fetchJson = <T>(url: string): Effect.Effect<T, ApiError> =>
 export const api = {
   getTasks: () => fetchJson<TasksResponse>("/api/tasks"),
   getReady: () => fetchJson<ReadyResponse>("/api/tasks/ready"),
-  getTaskDetail: (id: string) => fetchJson<TaskDetailResponse>(`/api/tasks/${id}`),
+  getTaskDetail: (id: string, options?: { signal?: AbortSignal }) => fetchJson<TaskDetailResponse>(`/api/tasks/${id}`, options),
   getRalph: () => fetchJson<RalphResponse>("/api/ralph"),
   getStats: () => fetchJson<StatsResponse>("/api/stats"),
   getRuns: () => fetchJson<RunsResponse>("/api/runs"),
@@ -150,7 +150,7 @@ export const api = {
 export const fetchers = {
   tasks: () => Effect.runPromise(api.getTasks()),
   ready: () => Effect.runPromise(api.getReady()),
-  taskDetail: (id: string) => Effect.runPromise(api.getTaskDetail(id)),
+  taskDetail: (id: string, options?: { signal?: AbortSignal }) => Effect.runPromise(api.getTaskDetail(id, options)),
   ralph: () => Effect.runPromise(api.getRalph()),
   stats: () => Effect.runPromise(api.getStats()),
   runs: () => Effect.runPromise(api.getRuns()),

@@ -281,8 +281,7 @@ describe("CLI test:clear-cache command", () => {
         TX_LLM_CACHE_DIR: cacheDir
       })
       expect(result.status).toBe(1)
-      expect(result.stderr).toContain("Invalid version")
-      expect(result.stderr).toContain("must be a number")
+      expect(result.stderr).toContain("is not a valid finite number")
     })
 
     it("handles empty cache gracefully (no error)", () => {

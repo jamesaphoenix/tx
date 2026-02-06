@@ -135,21 +135,6 @@ export const WorkerServiceLive = Layer.effect(
             )
           }
 
-          // Count active workers (starting, idle, busy)
-          const startingCount = yield* workerRepo.countByStatus("starting")
-          const idleCount = yield* workerRepo.countByStatus("idle")
-          const busyCount = yield* workerRepo.countByStatus("busy")
-          const activeWorkers = startingCount + idleCount + busyCount
-
-          // Check pool capacity
-          if (activeWorkers >= state.workerPoolSize) {
-            return yield* Effect.fail(
-              new RegistrationError({
-                reason: `Worker pool at capacity (${state.workerPoolSize})`
-              })
-            )
-          }
-
           const now = new Date()
           const worker: Worker = {
             id: registration.workerId ?? generateWorkerId(),
@@ -164,7 +149,20 @@ export const WorkerServiceLive = Layer.effect(
             metadata: {}
           }
 
-          yield* workerRepo.insert(worker)
+          // Atomic capacity check + insert in a single transaction
+          const inserted = yield* workerRepo.insertIfUnderCapacity(
+            worker,
+            state.workerPoolSize
+          )
+
+          if (!inserted) {
+            return yield* Effect.fail(
+              new RegistrationError({
+                reason: `Worker pool at capacity (${state.workerPoolSize})`
+              })
+            )
+          }
+
           yield* Effect.log(`Worker ${worker.id} registered`)
 
           return worker

@@ -26,6 +26,7 @@ import {
   writeTxrc,
   findGitRoot,
   generatePostCommitHook,
+  isValidHookPattern,
   hooksInstall,
   hooksUninstall,
   hooksStatus,
@@ -580,6 +581,202 @@ describe("Edge Cases", () => {
     // Dots are escaped for regex, brackets are kept as-is (valid in grep -E)
     expect(hook).toContain("file[1]\\.json")
     expect(hook).toContain("test-file\\.ts")
+  })
+})
+
+// =============================================================================
+// Command Injection Prevention Tests
+// =============================================================================
+
+describe("isValidHookPattern", () => {
+  it("accepts safe file patterns", () => {
+    expect(isValidHookPattern("package.json")).toBe(true)
+    expect(isValidHookPattern("tsconfig.json")).toBe(true)
+    expect(isValidHookPattern("*.config.ts")).toBe(true)
+    expect(isValidHookPattern("src/index.ts")).toBe(true)
+    expect(isValidHookPattern("src/**/*.tsx")).toBe(true)
+    expect(isValidHookPattern("file[1].json")).toBe(true)
+    expect(isValidHookPattern("test-file.ts")).toBe(true)
+    expect(isValidHookPattern("my_module/index.js")).toBe(true)
+  })
+
+  it("rejects single quote injection", () => {
+    expect(isValidHookPattern("'; rm -rf / ;'")).toBe(false)
+    expect(isValidHookPattern("file'.json")).toBe(false)
+  })
+
+  it("rejects double quote injection", () => {
+    expect(isValidHookPattern('"; rm -rf /"')).toBe(false)
+  })
+
+  it("rejects backtick injection", () => {
+    expect(isValidHookPattern("`whoami`")).toBe(false)
+  })
+
+  it("rejects dollar sign / subshell injection", () => {
+    expect(isValidHookPattern("$(rm -rf /)")).toBe(false)
+    expect(isValidHookPattern("${PATH}")).toBe(false)
+  })
+
+  it("rejects semicolon command chaining", () => {
+    expect(isValidHookPattern("file.ts; rm -rf /")).toBe(false)
+  })
+
+  it("rejects pipe injection", () => {
+    expect(isValidHookPattern("file.ts | cat /etc/passwd")).toBe(false)
+  })
+
+  it("rejects ampersand injection", () => {
+    expect(isValidHookPattern("file.ts && rm -rf /")).toBe(false)
+  })
+
+  it("rejects newline injection", () => {
+    expect(isValidHookPattern("file.ts\nrm -rf /")).toBe(false)
+  })
+
+  it("rejects empty strings", () => {
+    expect(isValidHookPattern("")).toBe(false)
+  })
+
+  it("rejects backslash injection", () => {
+    expect(isValidHookPattern("file\\ntest")).toBe(false)
+  })
+
+  it("rejects spaces (could separate commands)", () => {
+    expect(isValidHookPattern("file name.ts")).toBe(false)
+  })
+})
+
+describe("generatePostCommitHook command injection prevention", () => {
+  it("filters out unsafe patterns from config", () => {
+    const config: TxrcConfig = {
+      hooks: {
+        highValueFiles: ["safe.json", "'; rm -rf / ;'", "also-safe.ts"]
+      }
+    }
+    const hook = generatePostCommitHook(config)
+
+    expect(hook).toContain("safe\\.json")
+    expect(hook).toContain("also-safe\\.ts")
+    expect(hook).not.toContain("rm -rf")
+  })
+
+  it("handles all-unsafe patterns gracefully", () => {
+    const config: TxrcConfig = {
+      hooks: {
+        highValueFiles: ["$(evil)", "'; drop tables;'"]
+      }
+    }
+    const hook = generatePostCommitHook(config)
+
+    expect(hook).toContain("tx post-commit hook")
+    expect(hook).not.toContain("evil")
+    expect(hook).not.toContain("drop tables")
+  })
+
+  it("sanitizes non-numeric fileThreshold from config", () => {
+    const config: TxrcConfig = {
+      hooks: {
+        fileThreshold: "10; rm -rf /" as unknown as number,
+      }
+    }
+    const hook = generatePostCommitHook(config)
+
+    // Should fall back to default (10), not inject the string
+    expect(hook).toContain("-gt 10")
+    expect(hook).not.toContain("rm -rf")
+  })
+
+  it("sanitizes NaN fileThreshold", () => {
+    const config: TxrcConfig = {
+      hooks: {
+        fileThreshold: NaN,
+      }
+    }
+    const hook = generatePostCommitHook(config)
+
+    expect(hook).toContain("-gt 10")
+  })
+
+  it("sanitizes negative fileThreshold", () => {
+    const config: TxrcConfig = {
+      hooks: {
+        fileThreshold: -5,
+      }
+    }
+    const hook = generatePostCommitHook(config)
+
+    expect(hook).toContain("-gt 10")
+  })
+
+  it("sanitizes Infinity fileThreshold", () => {
+    const config: TxrcConfig = {
+      hooks: {
+        fileThreshold: Infinity,
+      }
+    }
+    const hook = generatePostCommitHook(config)
+
+    expect(hook).toContain("-gt 10")
+  })
+
+  it("floors fractional fileThreshold", () => {
+    const config: TxrcConfig = {
+      hooks: {
+        fileThreshold: 7.9,
+      }
+    }
+    const hook = generatePostCommitHook(config)
+
+    expect(hook).toContain("-gt 7")
+  })
+})
+
+describe("hooksInstall rejects unsafe patterns via CLI", () => {
+  let testDir: string
+
+  beforeEach(() => {
+    testDir = createTestDir("cmd-inject", true)
+  })
+
+  afterEach(() => {
+    cleanupTestDir(testDir)
+  })
+
+  it("returns JSON error for single-quote injection attempt", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true, "high-value": "'; rm -rf / ;'" }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("invalid_patterns")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("returns JSON error for subshell injection attempt", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true, "high-value": "$(whoami)" }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("invalid_patterns")
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("accepts safe patterns via CLI", () => {
+    const { logs, cleanup } = setupCommandTest(testDir)
+    try {
+      Effect.runSync(hooksInstall([], { json: true, "high-value": "src/*.ts,package.json" }))
+      const result = JSON.parse(logs[0])
+      expect(result.success).toBe(true)
+      expect(result.config.highValueFiles).toEqual(["src/*.ts", "package.json"])
+    } finally {
+      cleanup()
+    }
   })
 })
 

@@ -140,9 +140,13 @@ export const LearningServiceLive = Layer.effect(
           // Delegate to RetrieverService for the actual search
           const learnings = yield* retrieverService.search(searchQuery, retrievalOptions)
 
-          // Record usage for returned learnings (batch update to avoid N+1)
+          // Record usage for returned learnings (best-effort, don't fail context retrieval)
           if (learnings.length > 0) {
-            yield* learningRepo.incrementUsageMany(learnings.map(l => l.id))
+            yield* learningRepo.incrementUsageMany(learnings.map(l => l.id)).pipe(
+              Effect.catchTag("DatabaseError", (e) =>
+                Effect.logWarning(`Failed to increment usage for ${learnings.length} learnings: ${String(e.cause)}`)
+              )
+            )
           }
 
           // Calculate graph expansion stats if enabled
@@ -221,7 +225,7 @@ export const LearningServiceLive = Layer.effect(
               // If we didn't successfully process any in this batch, abort to prevent infinite loop
               // This handles cases like API rate limits or network errors affecting the entire batch
               if (batchProcessed === 0 && batch.length > 0) {
-                console.error(`Batch embedding completely failed (0/${batch.length} succeeded), aborting to prevent infinite loop`)
+                yield* Effect.logError(`Batch embedding completely failed (0/${batch.length} succeeded), aborting to prevent infinite loop`)
                 break
               }
             }

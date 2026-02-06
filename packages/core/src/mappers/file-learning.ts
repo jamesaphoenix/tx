@@ -7,6 +7,7 @@ import type {
   FileLearningId,
   FileLearningRow
 } from "@jamesaphoenix/tx-types"
+import { parseDate } from "./parse-date.js"
 
 // Re-export type from @tx/types for convenience
 export type { FileLearningRow } from "@jamesaphoenix/tx-types"
@@ -19,7 +20,7 @@ export const rowToFileLearning = (row: FileLearningRow): FileLearning => ({
   filePattern: row.file_pattern,
   note: row.note,
   taskId: row.task_id,
-  createdAt: new Date(row.created_at)
+  createdAt: parseDate(row.created_at, "created_at", row.id)
 })
 
 /**

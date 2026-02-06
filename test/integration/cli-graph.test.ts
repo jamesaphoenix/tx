@@ -141,6 +141,42 @@ describe("CLI graph:link", () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Invalid anchor type")
   })
+
+  it("shows error for malformed line range with trailing dash", () => {
+    const result = runTx(["graph:link", String(learningId), "src/db.ts", "--type", "line_range", "--value", "10-"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Invalid line range")
+  })
+
+  it("shows error for malformed line range with leading dash", () => {
+    const result = runTx(["graph:link", String(learningId), "src/db.ts", "--type", "line_range", "--value", "-20"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Invalid line range")
+  })
+
+  it("shows error for malformed line range with just dash", () => {
+    const result = runTx(["graph:link", String(learningId), "src/db.ts", "--type", "line_range", "--value", "-"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Invalid line range")
+  })
+
+  it("shows error for line range with non-numeric values", () => {
+    const result = runTx(["graph:link", String(learningId), "src/db.ts", "--type", "line_range", "--value", "abc-def"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Invalid line range")
+  })
+
+  it("shows error for line range with end less than start", () => {
+    const result = runTx(["graph:link", String(learningId), "src/db.ts", "--type", "line_range", "--value", "20-10"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("End line must be >= start line")
+  })
+
+  it("shows error for line range with zero", () => {
+    const result = runTx(["graph:link", String(learningId), "src/db.ts", "--type", "line_range", "--value", "0-10"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Line numbers must be positive")
+  })
 })
 
 describe("CLI graph:show", () => {
@@ -346,7 +382,7 @@ describe("CLI graph:neighbors", () => {
   it("shows error for invalid depth (non-numeric)", () => {
     const result = runTx(["graph:neighbors", String(learningId), "--node-type", "learning", "--depth", "abc"], dbPath)
     expect(result.status).toBe(1)
-    expect(result.stderr).toContain("Depth must be a positive integer")
+    expect(result.stderr).toContain("is not a valid finite number")
   })
 
   it("shows error for invalid depth (zero)", () => {

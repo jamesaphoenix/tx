@@ -3,6 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, TaskNotFoundError, UnexpectedRowCountError, StaleDataError } from "../errors.js"
 import { rowToTask } from "../mappers/task.js"
 import type { Task, TaskId, TaskFilter, TaskRow } from "@jamesaphoenix/tx-types"
+import { escapeLikePattern } from "../utils/sql.js"
 
 export class TaskRepository extends Context.Tag("TaskRepository")<
   TaskRepository,
@@ -14,7 +15,7 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
     readonly getChildIds: (id: string) => Effect.Effect<readonly TaskId[], DatabaseError>
     readonly getChildIdsForMany: (ids: readonly string[]) => Effect.Effect<Map<string, readonly TaskId[]>, DatabaseError>
     readonly getAncestorChain: (id: string) => Effect.Effect<readonly Task[], DatabaseError>
-    readonly getDescendants: (id: string) => Effect.Effect<readonly Task[], DatabaseError>
+    readonly getDescendants: (id: string, maxDepth?: number) => Effect.Effect<readonly Task[], DatabaseError>
     readonly insert: (task: Task) => Effect.Effect<void, DatabaseError>
     readonly update: (task: Task) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
     readonly updateMany: (tasks: readonly Task[]) => Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError>
@@ -77,8 +78,8 @@ export const TaskRepositoryLive = Layer.effect(
 
             // Search filter: case-insensitive search in title and description
             if (filter?.search) {
-              const searchPattern = `%${filter.search}%`
-              conditions.push("(title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)")
+              const searchPattern = `%${escapeLikePattern(filter.search)}%`
+              conditions.push("(title LIKE ? ESCAPE '\\' COLLATE NOCASE OR description LIKE ? ESCAPE '\\' COLLATE NOCASE)")
               params.push(searchPattern, searchPattern)
             }
 
@@ -164,28 +165,31 @@ export const TaskRepositoryLive = Layer.effect(
                 UNION ALL
                 SELECT t.*, a.depth + 1 FROM tasks t
                 JOIN ancestors a ON t.id = a.parent_id
+                WHERE a.depth < 100 AND t.id != ?
               )
               SELECT * FROM ancestors ORDER BY depth ASC
-            `).all(id) as TaskRow[]
+            `).all(id, id) as TaskRow[]
             return rows.map(rowToTask)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
 
-      getDescendants: (id) =>
+      getDescendants: (id, maxDepth = 10) =>
         Effect.try({
           try: () => {
             // Use recursive CTE to get the task and all its descendants in one query
             // Returns the root task first, then all descendants ordered by depth
+            // maxDepth limits recursion to prevent unbounded traversal
             const rows = db.prepare(`
               WITH RECURSIVE descendants AS (
                 SELECT t.*, 1 as depth FROM tasks t WHERE t.id = ?
                 UNION ALL
                 SELECT t.*, d.depth + 1 FROM tasks t
                 JOIN descendants d ON t.parent_id = d.id
+                WHERE d.depth < ?
               )
               SELECT * FROM descendants ORDER BY depth ASC
-            `).all(id) as TaskRow[]
+            `).all(id, maxDepth) as TaskRow[]
             return rows.map(rowToTask)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -366,8 +370,8 @@ export const TaskRepositoryLive = Layer.effect(
 
             // Search filter for count (same as findAll)
             if (filter?.search) {
-              const searchPattern = `%${filter.search}%`
-              conditions.push("(title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)")
+              const searchPattern = `%${escapeLikePattern(filter.search)}%`
+              conditions.push("(title LIKE ? ESCAPE '\\' COLLATE NOCASE OR description LIKE ? ESCAPE '\\' COLLATE NOCASE)")
               params.push(searchPattern, searchPattern)
             }
 

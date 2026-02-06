@@ -12,26 +12,34 @@ _HOOKS_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 
 # Resolve the tx CLI command. Hooks can't rely on `tx` being in PATH.
 # Falls back to running via bun from the project directory.
-_TX_CMD=""
+# Uses separate variables (not a single string) to avoid word-splitting
+# when paths contain spaces. Bash 3.2 compatible (no arrays needed).
+_TX_CMD_BIN=""
+_TX_CMD_ARG=""
 tx_cmd() {
-  if [ -n "$_TX_CMD" ]; then
-    $_TX_CMD "$@"
+  if [ -n "$_TX_CMD_BIN" ]; then
+    if [ -n "$_TX_CMD_ARG" ]; then
+      "$_TX_CMD_BIN" "$_TX_CMD_ARG" "$@"
+    else
+      "$_TX_CMD_BIN" "$@"
+    fi
     return $?
   fi
 
   # Try bare `tx` first
-  if command -v tx &>/dev/null; then
-    _TX_CMD="tx"
-    tx "$@"
+  if command -v tx >/dev/null 2>&1; then
+    _TX_CMD_BIN="tx"
+    "$_TX_CMD_BIN" "$@"
     return $?
   fi
 
   # Try bun with the CLI source
   local cli_path="$_HOOKS_PROJECT_DIR/apps/cli/src/cli.ts"
   if [ -f "$cli_path" ]; then
-    if command -v bun &>/dev/null; then
-      _TX_CMD="bun $cli_path"
-      bun "$cli_path" "$@"
+    if command -v bun >/dev/null 2>&1; then
+      _TX_CMD_BIN="bun"
+      _TX_CMD_ARG="$cli_path"
+      "$_TX_CMD_BIN" "$_TX_CMD_ARG" "$@"
       return $?
     fi
   fi
@@ -42,8 +50,8 @@ tx_cmd() {
 
 # Check if tx CLI is available (without running a command)
 tx_available() {
-  command -v tx &>/dev/null && return 0
-  [ -f "$_HOOKS_PROJECT_DIR/apps/cli/src/cli.ts" ] && command -v bun &>/dev/null && return 0
+  command -v tx >/dev/null 2>&1 && return 0
+  [ -f "$_HOOKS_PROJECT_DIR/apps/cli/src/cli.ts" ] && command -v bun >/dev/null 2>&1 && return 0
   return 1
 }
 

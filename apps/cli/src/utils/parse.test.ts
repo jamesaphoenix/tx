@@ -77,7 +77,7 @@ describe("parseIntOpt", () => {
   it("exits with error for non-numeric value", () => {
     const flags: Flags = { limit: "abc" }
     parseIntOpt(flags, "limit", "limit")
-    expect(mockError).toHaveBeenCalledWith('Invalid value for --limit: "abc" is not a valid number')
+    expect(mockError).toHaveBeenCalledWith('Invalid value for --limit: "abc" is not a valid finite number')
     expect(mockExit).toHaveBeenCalledWith(1)
   })
 
@@ -135,7 +135,7 @@ describe("parseFloatOpt", () => {
   it("exits with error for non-numeric value", () => {
     const flags: Flags = { score: "high" }
     parseFloatOpt(flags, "score", "score")
-    expect(mockError).toHaveBeenCalledWith('Invalid value for --score: "high" is not a valid number')
+    expect(mockError).toHaveBeenCalledWith('Invalid value for --score: "high" is not a valid finite number')
     expect(mockExit).toHaveBeenCalledWith(1)
   })
 
@@ -147,6 +147,20 @@ describe("parseFloatOpt", () => {
   it("parses zero", () => {
     const flags: Flags = { score: "0" }
     expect(parseFloatOpt(flags, "score", "score")).toBe(0)
+  })
+
+  it("exits with error for Infinity", () => {
+    const flags: Flags = { score: "Infinity" }
+    parseFloatOpt(flags, "score", "score")
+    expect(mockError).toHaveBeenCalledWith('Invalid value for --score: "Infinity" is not a valid finite number')
+    expect(mockExit).toHaveBeenCalledWith(1)
+  })
+
+  it("exits with error for -Infinity", () => {
+    const flags: Flags = { score: "-Infinity" }
+    parseFloatOpt(flags, "score", "score")
+    expect(mockError).toHaveBeenCalledWith('Invalid value for --score: "-Infinity" is not a valid finite number')
+    expect(mockExit).toHaveBeenCalledWith(1)
   })
 
   it("ignores boolean flags", () => {

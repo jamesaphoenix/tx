@@ -61,6 +61,8 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
 | `tx learning:add` | Record knowledge for future agents |
 | `tx sync export` | Persist to git-friendly JSONL |
+| `tx sync claude` | One-way push tasks to Claude Code team directory |
+| `tx sync codex` | One-way push tasks to Codex (planned) |
 
 ### Example Loops (not THE loop)
 
@@ -306,6 +308,24 @@ export interface Task {
 ---
 
 ## Common Pitfalls (Bug Scan Findings)
+
+### Hook Scripts Must Be Bash 3.2 Compatible (macOS)
+
+**Issue**: macOS ships with Bash 3.2. Negative substring offsets like `${var:1:-1}` are a Bash 4+ feature and will error on macOS.
+
+**Bad**:
+```bash
+ESCAPED=$(echo "$TEXT" | jq -Rs '.')
+echo "${ESCAPED:1:-1}"  # FAILS on Bash 3.2
+```
+
+**Good**:
+```bash
+ESCAPED=$(echo "$TEXT" | jq -Rs '.' | sed 's/^"//;s/"$//')
+echo "${ESCAPED}"
+```
+
+**Rule**: All `.claude/hooks/*.sh` scripts must work with Bash 3.2. Avoid: `${var:offset:-N}`, `&>>`, associative arrays (`declare -A`), `|&`, `coproc`.
 
 ### API Server Body Size Limits
 

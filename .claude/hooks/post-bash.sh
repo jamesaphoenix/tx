@@ -32,7 +32,7 @@ fi
 
 # Detect tx show or tx done commands that indicate task context
 if echo "$COMMAND" | grep -qE '^tx (show|done) tx-[a-z0-9]+'; then
-  TASK_ID=$(echo "$COMMAND" | grep -oE 'tx-[a-z0-9]{6,8}' || true)
+  TASK_ID=$(echo "$COMMAND" | grep -oE 'tx-[a-z0-9]{6,12}' || true)
   if [ -n "$TASK_ID" ]; then
     echo "$TASK_ID" > "$PROJECT_DIR/.tx/current-task"
   fi

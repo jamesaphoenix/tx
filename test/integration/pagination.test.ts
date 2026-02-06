@@ -7,10 +7,9 @@
  * Reference: DD-007 Integration Test Architecture
  */
 
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest"
 import { Hono } from "hono"
-import { Database } from "bun:sqlite"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { type SharedTestLayerResult, getSharedTestLayer, wrapDbAsTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------
@@ -65,7 +64,7 @@ const runFixtureId = (name: string): string => `run-${fixtureId(name).slice(3)}`
  * Seeds 50+ tasks with varying scores for pagination testing.
  * Creates tasks with different statuses, some with same scores (for boundary testing).
  */
-export function seedPaginationFixtures(db: Database): {
+export function seedPaginationFixtures(db: TestDatabase): {
   taskIds: string[]
   runIds: string[]
 } {
@@ -168,7 +167,7 @@ export function seedPaginationFixtures(db: Database): {
 // Test App Factory
 // -----------------------------------------------------------------------------
 
-function createPaginationTestApp(db: Database) {
+function createPaginationTestApp(db: TestDatabase) {
   const app = new Hono()
 
   // Cursor helpers
@@ -385,9 +384,18 @@ async function request(app: Hono, path: string) {
 describe("Database Pagination - Tasks", () => {
   let db: TestDatabase
   let app: Hono
+  let shared: SharedTestLayerResult
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+  beforeAll(async () => {
+    shared = await getSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  beforeEach(() => {
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedPaginationFixtures(db)
     app = createPaginationTestApp(db)
   })
@@ -761,9 +769,18 @@ describe("Database Pagination - Tasks", () => {
 describe("Database Pagination - Runs", () => {
   let db: TestDatabase
   let app: Hono
+  let shared: SharedTestLayerResult
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+  beforeAll(async () => {
+    shared = await getSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  beforeEach(() => {
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedPaginationFixtures(db)
     app = createPaginationTestApp(db)
   })
@@ -1064,9 +1081,9 @@ describe("Pagination Fixture IDs", () => {
     expect(id1).toBe(id2)
   })
 
-  it("fixture IDs match tx-[a-z0-9]{8} format", () => {
+  it("fixture IDs match tx-[a-z0-9]{6,12} format", () => {
     const id = paginationFixtureId("test")
-    expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("run fixture IDs match run-[a-z0-9]{8} format", () => {

@@ -2,44 +2,44 @@ $ bun test src/
 bun test v1.2.20 (6ad208bc)
 
 src/__tests__/auth.test.ts:
-(pass) isAuthEnabled > should return false when TX_API_KEY is not set [0.04ms]
-(pass) isAuthEnabled > should return false when TX_API_KEY is empty string [0.05ms]
-(pass) isAuthEnabled > should return true when TX_API_KEY is set [0.07ms]
-(pass) isAuthEnabled > should return true for any non-empty TX_API_KEY value [0.03ms]
-(pass) extractApiKey > should extract X-Api-Key header [25.47ms]
-(pass) extractApiKey > should extract Bearer token from Authorization header [0.05ms]
-(pass) extractApiKey > should prefer X-Api-Key over Authorization header [0.02ms]
-(pass) extractApiKey > should return null when no auth headers present [0.02ms]
+(pass) isAuthEnabled > should return false when TX_API_KEY is not set [2.45ms]
+(pass) isAuthEnabled > should return false when TX_API_KEY is empty string [0.36ms]
+(pass) isAuthEnabled > should return true when TX_API_KEY is set [0.03ms]
+(pass) isAuthEnabled > should return true for any non-empty TX_API_KEY value [0.01ms]
+(pass) extractApiKey > should extract X-Api-Key header [0.04ms]
+(pass) extractApiKey > should extract Bearer token from Authorization header [0.02ms]
+(pass) extractApiKey > should prefer X-Api-Key over Authorization header
+(pass) extractApiKey > should return null when no auth headers present
 (pass) extractApiKey > should return null for non-Bearer Authorization header
 (pass) extractApiKey > should return null for empty Authorization header
-(pass) extractApiKey > should handle undefined header values
-(pass) extractApiKey > should extract Bearer token with spaces in the token [0.02ms]
+(pass) extractApiKey > should handle undefined header values [0.01ms]
+(pass) extractApiKey > should extract Bearer token with spaces in the token
 (pass) timingSafeEqual > should return true for equal strings [0.10ms]
-(pass) timingSafeEqual > should return false for different strings of same length [0.02ms]
+(pass) timingSafeEqual > should return false for different strings of same length [0.01ms]
 (pass) timingSafeEqual > should return false for different strings of different length
 (pass) timingSafeEqual > should return true for empty strings
-(pass) timingSafeEqual > should return false when one string is empty [0.04ms]
+(pass) timingSafeEqual > should return false when one string is empty [0.02ms]
 (pass) timingSafeEqual > should handle unicode characters
-(pass) timingSafeEqual > should handle long strings [0.08ms]
-(pass) authMiddleware > should export authMiddleware as a function [0.02ms]
+(pass) timingSafeEqual > should handle long strings [0.06ms]
+(pass) authMiddleware > should export authMiddleware as a function [0.01ms]
 (pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is disabled (no TX_API_KEY) [0.02ms]
-(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is disabled even with a key header
-(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is enabled but no key provided
-(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is enabled but wrong key provided [0.02ms]
+(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is disabled even with a key header [0.01ms]
+(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is enabled but no key provided [0.01ms]
+(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is enabled but wrong key provided
 (pass) sensitive info disclosure prevention > should expose sensitive info when auth is enabled and correct key provided
-(pass) sensitive info disclosure prevention > should expose sensitive info when auth is enabled and correct Bearer token provided
+(pass) sensitive info disclosure prevention > should expose sensitive info when auth is enabled and correct Bearer token provided [0.01ms]
 
 src/__tests__/body-limit.test.ts:
-(pass) body limit constants > should define DEFAULT_MAX_BYTES as 1MB [0.03ms]
-(pass) body limit constants > should define SYNC_MAX_BYTES as 10MB
-(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/export [0.02ms]
-(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/import [0.01ms]
-(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/status
+(pass) body limit constants > should define DEFAULT_MAX_BYTES as 1MB [0.02ms]
+(pass) body limit constants > should define SYNC_MAX_BYTES as 10MB [0.01ms]
+(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/export [0.01ms]
+(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/import [0.02ms]
+(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/status [0.01ms]
 (pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/compact
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/tasks [0.01ms]
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/learnings [0.01ms]
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/runs [0.01ms]
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /health [0.01ms]
+(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/tasks
+(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/learnings
+(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/runs
+(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /health
 (pass) getMaxBytes > should return DEFAULT_MAX_BYTES for root path
 (pass) bodyLimitMiddleware > should export bodyLimitMiddleware as a function [0.02ms]
 
@@ -47,35 +47,35 @@ src/__tests__/server-lib.test.ts:
 (pass) Server auth configuration > should detect auth enabled via TX_API_KEY
 (pass) Server auth configuration > should detect auth disabled when TX_API_KEY not set
 (pass) Server auth configuration > should detect auth disabled for empty TX_API_KEY
-(pass) CORS configuration > should default to localhost origins when TX_API_CORS_ORIGIN is not set [0.05ms]
+(pass) CORS configuration > should default to localhost origins when TX_API_CORS_ORIGIN is not set [0.03ms]
 (pass) CORS configuration > should allow wildcard only when explicitly set to *
-(pass) CORS configuration > should parse comma-separated origins
-(pass) CORS configuration > should handle single custom origin
-(pass) CORS configuration > should enable credentials when TX_API_CORS_CREDENTIALS is true
-(pass) CORS configuration > should disable credentials by default
-(pass) API definition exports > should export TxApi class from api.ts [10.61ms]
-(pass) API definition exports > should export all error types from api.ts [0.04ms]
-(pass) API definition exports > should export mapCoreError from api.ts [0.09ms]
-(pass) API definition exports > should export all API groups from api.ts [0.02ms]
+(pass) CORS configuration > should parse comma-separated origins [0.04ms]
+(pass) CORS configuration > should handle single custom origin [0.02ms]
+(pass) CORS configuration > should enable credentials when TX_API_CORS_CREDENTIALS is true [0.01ms]
+(pass) CORS configuration > should disable credentials by default [0.01ms]
+(pass) API definition exports > should export TxApi class from api.ts [6.38ms]
+(pass) API definition exports > should export all error types from api.ts [0.05ms]
+(pass) API definition exports > should export mapCoreError from api.ts [0.02ms]
+(pass) API definition exports > should export all API groups from api.ts
 
 src/__tests__/api.test.ts:
-(pass) Error types > should create NotFound with message [0.21ms]
-(pass) Error types > should create BadRequest with message
-(pass) Error types > should create InternalError with message
-(pass) Error types > should create Unauthorized with message
+(pass) Error types > should create NotFound with message [0.37ms]
+(pass) Error types > should create BadRequest with message [0.05ms]
+(pass) Error types > should create InternalError with message [0.03ms]
+(pass) Error types > should create Unauthorized with message [0.02ms]
 (pass) Error types > should create Forbidden with message
-(pass) Error types > should create ServiceUnavailable with message
-(pass) mapCoreError > maps not-found errors to NotFound > should map TaskNotFoundError
+(pass) Error types > should create ServiceUnavailable with message [0.04ms]
+(pass) mapCoreError > maps not-found errors to NotFound > should map TaskNotFoundError [0.03ms]
 (pass) mapCoreError > maps not-found errors to NotFound > should map LearningNotFoundError
 (pass) mapCoreError > maps not-found errors to NotFound > should map FileLearningNotFoundError
-(pass) mapCoreError > maps not-found errors to NotFound > should map AttemptNotFoundError
-(pass) mapCoreError > maps validation errors to BadRequest > should map ValidationError [0.27ms]
-(pass) mapCoreError > maps validation errors to BadRequest > should map CircularDependencyError [0.02ms]
+(pass) mapCoreError > maps not-found errors to NotFound > should map AttemptNotFoundError [0.02ms]
+(pass) mapCoreError > maps validation errors to BadRequest > should map ValidationError
+(pass) mapCoreError > maps validation errors to BadRequest > should map CircularDependencyError
 (pass) mapCoreError > maps service errors to ServiceUnavailable > should map EmbeddingUnavailableError
-(pass) mapCoreError > maps database and unknown tagged errors to InternalError > should map DatabaseError
-(pass) mapCoreError > maps database and unknown tagged errors to InternalError > should map unknown tagged errors to InternalError [0.04ms]
-(pass) mapCoreError > handles non-tagged errors > should map string errors to InternalError
-(pass) mapCoreError > handles non-tagged errors > should map Error objects to InternalError
+(pass) mapCoreError > maps database and unknown tagged errors to InternalError > should map DatabaseError [0.02ms]
+(pass) mapCoreError > maps database and unknown tagged errors to InternalError > should map unknown tagged errors to InternalError [0.01ms]
+(pass) mapCoreError > handles non-tagged errors > should map string errors to InternalError [0.02ms]
+(pass) mapCoreError > handles non-tagged errors > should map Error objects to InternalError [0.03ms]
 (pass) mapCoreError > handles non-tagged errors > should map null to InternalError
 (pass) mapCoreError > handles non-tagged errors > should map undefined to InternalError
 (pass) mapCoreError > handles non-tagged errors > should use _tag as message when no message field present
@@ -85,4 +85,4 @@ src/__tests__/api.test.ts:
  73 pass
  0 fail
  109 expect() calls
-Ran 73 tests across 4 files. [225.00ms]
+Ran 73 tests across 4 files. [138.00ms]

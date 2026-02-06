@@ -945,7 +945,7 @@ describe("Run-Task relationship", () => {
     )
 
     expect(run.taskId).toBe(FIXTURES.TASK_BLOCKED)
-    expect(run.taskId).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(run.taskId).toMatch(/^tx-[a-z0-9]{6,12}$/)
   })
 
   it("multiple runs can reference the same task", async () => {
@@ -1005,7 +1005,7 @@ describe("Run-Task relationship", () => {
     expect(FIXTURES.TASK_LOGIN).toBe(fixtureId("login"))
 
     for (const id of Object.values(FIXTURES)) {
-      expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+      expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     }
   })
 })

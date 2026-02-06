@@ -7,9 +7,9 @@ import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
 // Schema version - v=1 for all sync operations
 export const SyncVersion = Schema.Literal(1)
 
-// TaskId schema - matches tx-[a-z0-9]{6,8} pattern
+// TaskId schema - matches tx-[a-z0-9]{6,12} pattern
 export const TaskIdSchema = Schema.String.pipe(
-  Schema.pattern(/^tx-[a-z0-9]{6,8}$/)
+  Schema.pattern(/^tx-[a-z0-9]{6,12}$/)
 )
 
 // TaskStatus schema - matches the status lifecycle

@@ -290,7 +290,7 @@ describe("CLI sync export command", () => {
         expect(op.v).toBe(1)
         expect(op.op).toBe("upsert")
         expect(op.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-        expect(op.id).toMatch(/^tx-[a-z0-9]{8}$/)
+        expect(op.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
         expect(op.data).toHaveProperty("title")
         expect(op.data).toHaveProperty("status")
       }
@@ -399,7 +399,7 @@ describe("CLI sync import command", () => {
 
       const result = runTxArgs(["sync", "import", "--path", jsonlPath], dbPath)
       expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Imported: 1")
+      expect(result.stdout).toContain("imported=1")
 
       // Verify task was created
       const showResult = runTxArgs(["show", "tx-aabbcc01", "--json"], dbPath)
@@ -973,5 +973,190 @@ describe("CLI migrate status command", () => {
       expect(result.status).toBe(1)
       expect(result.stderr).toContain("Unknown migrate subcommand")
     })
+  })
+})
+
+// =============================================================================
+// tx sync claude CLI E2E Tests
+// =============================================================================
+
+describe("CLI sync claude command", () => {
+  let tmpDir: string
+  let dbPath: string
+  let targetDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-sync-claude-"))
+    dbPath = join(tmpDir, "test.db")
+    targetDir = join(tmpDir, "claude-tasks")
+    mkdirSync(targetDir)
+    runTx("init", dbPath)
+  })
+
+  afterEach(() => {
+    if (existsSync(tmpDir)) {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it("writes task files to --dir", () => {
+    runTxArgs(["add", "Build widget", "--score", "900", "--json"], dbPath)
+    runTxArgs(["add", "Write tests", "--score", "800", "--json"], dbPath)
+
+    const result = runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("Wrote 2 task(s)")
+
+    // Verify task files exist
+    expect(existsSync(join(targetDir, "1.json"))).toBe(true)
+    expect(existsSync(join(targetDir, "2.json"))).toBe(true)
+
+    // Verify file contents
+    const task1 = JSON.parse(readFileSync(join(targetDir, "1.json"), "utf-8"))
+    expect(task1.id).toBe("1")
+    expect(task1.subject).toBe("Build widget")
+    expect(task1.status).toBe("pending")
+    expect(task1.blocks).toEqual([])
+    expect(task1.blockedBy).toEqual([])
+
+    // Verify .highwatermark
+    expect(readFileSync(join(targetDir, ".highwatermark"), "utf-8")).toBe("3")
+
+    // Verify .lock exists
+    expect(existsSync(join(targetDir, ".lock"))).toBe(true)
+  })
+
+  it("excludes done tasks from output", () => {
+    runTxArgs(["add", "Active task", "--json"], dbPath)
+    const t2 = JSON.parse(runTxArgs(["add", "Done task", "--json"], dbPath).stdout)
+    runTxArgs(["done", t2.id], dbPath)
+
+    const result = runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("Wrote 1 task(s)")
+
+    // Only 1.json should exist
+    const files = require("fs").readdirSync(targetDir).filter((f: string) => /^\d+\.json$/.test(f))
+    expect(files).toHaveLength(1)
+
+    const task = JSON.parse(readFileSync(join(targetDir, "1.json"), "utf-8"))
+    expect(task.subject).toBe("Active task")
+  })
+
+  it("maps dependencies to numeric IDs", () => {
+    const blocker = JSON.parse(runTxArgs(["add", "Blocker task", "--score", "900", "--json"], dbPath).stdout)
+    const blocked = JSON.parse(runTxArgs(["add", "Blocked task", "--score", "800", "--json"], dbPath).stdout)
+    runTxArgs(["block", blocked.id, blocker.id], dbPath)
+
+    runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+
+    const file1 = JSON.parse(readFileSync(join(targetDir, "1.json"), "utf-8"))
+    const file2 = JSON.parse(readFileSync(join(targetDir, "2.json"), "utf-8"))
+
+    // Blocker (ready, higher score) gets ID 1, blocked gets ID 2
+    expect(file1.subject).toBe("Blocker task")
+    expect(file2.subject).toBe("Blocked task")
+    expect(file1.blocks).toContain("2")
+    expect(file2.blockedBy).toContain("1")
+  })
+
+  it("includes tx context and done hints in description", () => {
+    const task = JSON.parse(runTxArgs(["add", "Implement feature", "--description", "Build the thing", "--json"], dbPath).stdout)
+
+    runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+
+    const file = JSON.parse(readFileSync(join(targetDir, "1.json"), "utf-8"))
+    expect(file.description).toContain("Build the thing")
+    expect(file.description).toContain(`tx context ${task.id}`)
+    expect(file.description).toContain(`tx done ${task.id}`)
+    expect(file.activeForm).toContain(task.id)
+  })
+
+  it("outputs JSON with --json flag", () => {
+    runTxArgs(["add", "Task A", "--json"], dbPath)
+
+    const result = runTxArgs(["sync", "claude", "--dir", targetDir, "--json"], dbPath)
+    expect(result.status).toBe(0)
+
+    const output = JSON.parse(result.stdout)
+    expect(output.tasksWritten).toBe(1)
+    expect(output.dir).toBe(targetDir)
+    expect(output.highwatermark).toBe(2)
+  })
+
+  it("cleans up stale files on re-sync", () => {
+    // First sync: 3 tasks
+    const t1 = JSON.parse(runTxArgs(["add", "Task A", "--score", "900", "--json"], dbPath).stdout)
+    const t2 = JSON.parse(runTxArgs(["add", "Task B", "--score", "800", "--json"], dbPath).stdout)
+    runTxArgs(["add", "Task C", "--score", "700", "--json"], dbPath)
+
+    runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+    expect(existsSync(join(targetDir, "3.json"))).toBe(true)
+
+    // Mark two as done
+    runTxArgs(["done", t1.id], dbPath)
+    runTxArgs(["done", t2.id], dbPath)
+
+    // Re-sync: only 1 task remains
+    const result = runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("Wrote 1 task(s)")
+
+    // Old files 2.json and 3.json should be cleaned up
+    expect(existsSync(join(targetDir, "1.json"))).toBe(true)
+    expect(existsSync(join(targetDir, "2.json"))).toBe(false)
+    expect(existsSync(join(targetDir, "3.json"))).toBe(false)
+
+    // Highwatermark updated
+    expect(readFileSync(join(targetDir, ".highwatermark"), "utf-8")).toBe("2")
+  })
+
+  it("creates target directory if --dir does not exist", () => {
+    const newDir = join(tmpDir, "new-team-dir")
+    expect(existsSync(newDir)).toBe(false)
+
+    runTxArgs(["add", "Task A", "--json"], dbPath)
+    const result = runTxArgs(["sync", "claude", "--dir", newDir], dbPath)
+    expect(result.status).toBe(0)
+
+    expect(existsSync(join(newDir, "1.json"))).toBe(true)
+  })
+
+  it("handles empty task list gracefully", () => {
+    const result = runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("Wrote 0 task(s)")
+
+    // Highwatermark should be 1 (next ID)
+    expect(readFileSync(join(targetDir, ".highwatermark"), "utf-8")).toBe("1")
+
+    // No task files
+    const files = require("fs").readdirSync(targetDir).filter((f: string) => /^\d+\.json$/.test(f))
+    expect(files).toHaveLength(0)
+  })
+
+  it("errors without --team or --dir", () => {
+    const result = runTxArgs(["sync", "claude"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("--team")
+  })
+
+  it("maps status correctly for active and review tasks", () => {
+    runTxArgs(["add", "Backlog task", "--json"], dbPath)
+    const t2 = JSON.parse(runTxArgs(["add", "Active task", "--json"], dbPath).stdout)
+    runTxArgs(["update", t2.id, "--status", "active"], dbPath)
+
+    runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
+
+    // Read all task files and find by subject
+    const files = require("fs").readdirSync(targetDir)
+      .filter((f: string) => /^\d+\.json$/.test(f))
+      .map((f: string) => JSON.parse(readFileSync(join(targetDir, f), "utf-8")))
+
+    const backlog = files.find((f: { subject: string }) => f.subject === "Backlog task")
+    const active = files.find((f: { subject: string }) => f.subject === "Active task")
+
+    expect(backlog.status).toBe("pending")
+    expect(active.status).toBe("in_progress")
   })
 })

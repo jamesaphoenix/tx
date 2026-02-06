@@ -6,7 +6,7 @@
  */
 
 import { Layer } from "effect"
-import { SqliteClientLive } from "./db.js"
+import { type SqliteClient, SqliteClientLive } from "./db.js"
 import { TaskRepositoryLive } from "./repo/task-repo.js"
 import { DependencyRepositoryLive } from "./repo/dep-repo.js"
 import { LearningRepositoryLive } from "./repo/learning-repo.js"
@@ -79,7 +79,7 @@ export {
 export { AttemptService } from "./services/attempt-service.js"
 export { TaskService } from "./services/task-service.js"
 export { DependencyService } from "./services/dep-service.js"
-export { ReadyService } from "./services/ready-service.js"
+export { ReadyService, type ReadyCheckResult, isReadyResult } from "./services/ready-service.js"
 export { HierarchyService } from "./services/hierarchy-service.js"
 export { ScoreService } from "./services/score-service.js"
 export { RunRepository } from "./repo/run-repo.js"
@@ -177,17 +177,16 @@ export {
 } from "./services/validation-service.js"
 
 /**
- * Create the full application layer with all services.
+ * Create the full application layer from an existing SqliteClient infra layer.
  *
- * This is the standard entry point for CLI, MCP, and SDK consumers.
- * Provides: TaskService, DependencyService, ReadyService, HierarchyService,
- * LearningService, FileLearningService, AttemptService, SyncService, MigrationService
+ * Use this when you already have a SqliteClient layer (e.g., from Layer.succeed
+ * with a pre-created database instance). This is useful for test utilities that
+ * need to share a single database across test runs while getting fresh service
+ * instances via Layer.fresh.
  *
- * @param dbPath Path to SQLite database file
+ * @param infra A layer providing SqliteClient
  */
-export const makeAppLayer = (dbPath: string) => {
-  const infra = SqliteClientLive(dbPath)
-
+export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) => {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -302,6 +301,19 @@ export const makeAppLayer = (dbPath: string) => {
   // (Note: Consider creating RunService in future refactor)
   // Also expose SqliteClient directly for direct database access (e.g., trace commands)
   return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, repos, infra)
+}
+
+/**
+ * Create the full application layer with all services.
+ *
+ * This is the standard entry point for CLI, MCP, and SDK consumers.
+ * Provides: TaskService, DependencyService, ReadyService, HierarchyService,
+ * LearningService, FileLearningService, AttemptService, SyncService, MigrationService
+ *
+ * @param dbPath Path to SQLite database file
+ */
+export const makeAppLayer = (dbPath: string) => {
+  return makeAppLayerFromInfra(SqliteClientLive(dbPath))
 }
 
 /**

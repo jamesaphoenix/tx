@@ -88,7 +88,15 @@ const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
       <div
         ref={innerRef}
         className={`${baseClasses} ${statusClasses} ${hoverClasses} ${focusClasses}`}
+        role="button"
+        aria-label={`View run: ${run.taskTitle ?? run.taskId ?? run.id}`}
         onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            onClick?.()
+          }
+        }}
         tabIndex={isFocused ? 0 : -1}
       >
         <div className="flex items-start justify-between gap-2">

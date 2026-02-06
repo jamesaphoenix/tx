@@ -316,7 +316,7 @@ describe("WorkerProcess Integration Tests", () => {
 
         yield* claimService.claim(taskId, worker.id)
 
-        // Simulate task completion (what runWorkerProcess does after Claude succeeds)
+        // Simulate task completion (what runWorkerProcess does after agent succeeds)
         yield* taskService.update(taskId, { status: "done" })
         yield* claimService.release(taskId, worker.id)
 
@@ -626,7 +626,7 @@ describe("WorkerProcess Integration Tests", () => {
         yield* claimService.claim(taskId, worker.id)
 
         // Simulate task failure - task stays in backlog, claim released
-        // (This is what runWorkerProcess does when Claude fails)
+        // (This is what runWorkerProcess does when agent fails)
         yield* claimService.release(taskId, worker.id)
 
         // Task should still be available for retry
@@ -761,7 +761,7 @@ describe("WorkerProcess Integration Tests", () => {
     })
 
     it("should record failure attempt and reset task to backlog below max retries", async () => {
-      // Simulates what runWorkerProcess does when Claude subprocess fails:
+      // Simulates what runWorkerProcess does when agent subprocess fails:
       // 1. Records a failed attempt via AttemptService
       // 2. Checks failed count < MAX_RETRIES (3)
       // 3. Resets task to 'backlog' so it can be retried

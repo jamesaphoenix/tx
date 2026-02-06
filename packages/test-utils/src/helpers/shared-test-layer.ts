@@ -7,8 +7,9 @@
  * @module @tx/test-utils/helpers/shared-test-layer
  */
 
-import { Effect, Layer } from "effect"
+import { Layer } from "effect"
 import type { Database } from "bun:sqlite"
+import type { SqliteDatabase } from "@jamesaphoenix/tx-core"
 
 /**
  * Result of creating a shared test layer.
@@ -60,19 +61,27 @@ export interface SharedTestLayer<L> {
  */
 export const createSharedTestLayer = async () => {
   // Dynamically import to avoid circular dependencies
-  const { makeAppLayer, SqliteClient } = await import("@jamesaphoenix/tx-core")
+  const { makeAppLayerFromInfra, SqliteClient, applyMigrations } = await import("@jamesaphoenix/tx-core")
+  const { Database } = await import("bun:sqlite")
 
-  // Create the layer once
-  const layer = makeAppLayer(":memory:")
+  // Create ONE database instance directly — this ensures all tests share the
+  // exact same DB connection rather than each Layer build creating a new one
+  // (Layer.effect-based layers like SqliteClientLive create new connections per build).
+  const db = new Database(":memory:")
+  db.run("PRAGMA journal_mode = WAL")
+  db.run("PRAGMA foreign_keys = ON")
+  db.run("PRAGMA busy_timeout = " + (process.env.TX_DB_BUSY_TIMEOUT || "5000"))
+  applyMigrations(db)
 
-  // Capture the database instance by running an effect
-  // Use explicit type to satisfy TypeScript
-  const db = await Effect.runPromise(
-    Effect.gen(function* () {
-      const client = yield* SqliteClient
-      return client as unknown as Database
-    }).pipe(Effect.provide(layer))
-  )
+  // Use Layer.succeed to provide the concrete DB instance — this is a constant
+  // layer that always provides the same DB reference, unlike Layer.effect which
+  // would create a new connection on each build.
+  const infra = Layer.succeed(SqliteClient, db as unknown as SqliteDatabase)
+
+  // Wrap with Layer.fresh so that service layers (repos, services) are NOT
+  // memoized across separate Effect.provide calls. This ensures each test gets
+  // fresh service instances while sharing the same underlying database.
+  const layer = Layer.fresh(makeAppLayerFromInfra(infra))
 
   /**
    * Reset all tables in the database.
@@ -99,6 +108,8 @@ export const createSharedTestLayer = async () => {
     for (const { name } of tables) {
       db.exec(`DELETE FROM "${name}"`)
     }
+    // Reset auto-increment counters so IDs start from 1 in each test
+    db.exec("DELETE FROM sqlite_sequence")
     db.run("PRAGMA foreign_keys = ON")
   }
 

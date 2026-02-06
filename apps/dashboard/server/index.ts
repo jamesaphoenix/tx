@@ -7,6 +7,7 @@ import { resolve, dirname } from "path"
 import { homedir } from "os"
 import { fileURLToPath } from "url"
 import type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
+import { escapeLikePattern } from "@jamesaphoenix/tx-core"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(__dirname, "../../..")
@@ -89,9 +90,10 @@ function buildTaskCursor(task: TaskRow): string {
   return `${task.score}:${task.id}`
 }
 
-function buildRunCursor(run: { started_at: string; id: string }): string {
-  return `${run.started_at}:${run.id}`
+function buildRunCursor(run: { startedAt: string; id: string }): string {
+  return `${run.startedAt}:${run.id}`
 }
+
 
 // Helper to enrich tasks with dependency info
 function enrichTasksWithDeps(
@@ -160,8 +162,9 @@ app.get("/api/tasks", (c) => {
     }
 
     if (search) {
-      conditions.push("(title LIKE ? OR description LIKE ?)")
-      params.push(`%${search}%`, `%${search}%`)
+      const searchPattern = `%${escapeLikePattern(search)}%`
+      conditions.push("(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')")
+      params.push(searchPattern, searchPattern)
     }
 
     if (cursor) {
@@ -427,20 +430,24 @@ app.get("/api/runs", (c) => {
 
     let runs: Array<{
       id: string
-      task_id: string | null
+      taskId: string | null
       agent: string
-      started_at: string
-      ended_at: string | null
+      startedAt: string
+      endedAt: string | null
       status: string
-      exit_code: number | null
-      transcript_path: string | null
+      exitCode: number | null
+      transcriptPath: string | null
       summary: string | null
-      error_message: string | null
+      errorMessage: string | null
     }> = []
 
     try {
       const sql = `
-        SELECT id, task_id, agent, started_at, ended_at, status, exit_code, transcript_path, summary, error_message
+        SELECT id, task_id AS taskId, agent,
+               started_at AS startedAt, ended_at AS endedAt,
+               status, exit_code AS exitCode,
+               transcript_path AS transcriptPath,
+               summary, error_message AS errorMessage
         FROM runs
         ${whereClause}
         ORDER BY started_at DESC, id ASC
@@ -456,15 +463,21 @@ app.get("/api/runs", (c) => {
     const hasMore = runs.length > limit
     const pagedRuns = hasMore ? runs.slice(0, limit) : runs
 
-    // Enrich with task titles
-    const enriched = pagedRuns.map(run => {
-      let taskTitle: string | null = null
-      if (run.task_id) {
-        const task = db.prepare("SELECT title FROM tasks WHERE id = ?").get(run.task_id) as { title: string } | undefined
-        taskTitle = task?.title ?? null
+    // Batch fetch task titles to avoid N+1 queries
+    const taskIds = [...new Set(pagedRuns.map(r => r.taskId).filter((id): id is string => id !== null))]
+    const taskTitleMap = new Map<string, string>()
+    if (taskIds.length > 0) {
+      const placeholders = taskIds.map(() => "?").join(",")
+      const rows = db.prepare(`SELECT id, title FROM tasks WHERE id IN (${placeholders})`).all(...taskIds) as Array<{ id: string; title: string }>
+      for (const row of rows) {
+        taskTitleMap.set(row.id, row.title)
       }
-      return { ...run, taskTitle }
-    })
+    }
+
+    const enriched = pagedRuns.map(run => ({
+      ...run,
+      taskTitle: run.taskId ? (taskTitleMap.get(run.taskId) ?? null) : null,
+    }))
 
     return c.json({
       runs: enriched,
@@ -532,19 +545,28 @@ app.get("/api/runs/:id", (c) => {
     const db = getDb()
     const id = c.req.param("id")
 
-    const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as {
+    const run = db.prepare(`
+      SELECT id, task_id AS taskId, agent,
+             started_at AS startedAt, ended_at AS endedAt,
+             status, exit_code AS exitCode, pid,
+             transcript_path AS transcriptPath,
+             context_injected AS contextInjected,
+             summary, error_message AS errorMessage,
+             metadata
+      FROM runs WHERE id = ?
+    `).get(id) as {
       id: string
-      task_id: string | null
+      taskId: string | null
       agent: string
-      started_at: string
-      ended_at: string | null
+      startedAt: string
+      endedAt: string | null
       status: string
-      exit_code: number | null
+      exitCode: number | null
       pid: number | null
-      transcript_path: string | null
-      context_injected: string | null
+      transcriptPath: string | null
+      contextInjected: string | null
       summary: string | null
-      error_message: string | null
+      errorMessage: string | null
       metadata: string
     } | undefined
 
@@ -552,16 +574,50 @@ app.get("/api/runs/:id", (c) => {
       return c.json({ error: "Run not found" }, 404)
     }
 
-    // Try to read transcript if it exists and path is valid
-    let transcript: string | null = null
-    if (run.transcript_path) {
-      const validatedPath = validateTranscriptPath(run.transcript_path)
+    // Try to read and parse transcript if it exists and path is valid
+    let messages: Array<{ role: string; content: unknown; type?: string; tool_name?: string; timestamp?: string }> = []
+    if (run.transcriptPath) {
+      const validatedPath = validateTranscriptPath(run.transcriptPath)
       if (validatedPath && existsSync(validatedPath)) {
-        transcript = readFileSync(validatedPath, "utf-8")
+        try {
+          const raw = readFileSync(validatedPath, "utf-8")
+          const lines = raw.split("\n").filter(Boolean)
+          for (const line of lines) {
+            try {
+              const entry = JSON.parse(line)
+              if (entry.type === "user" || entry.type === "assistant") {
+                const msg = entry.message
+                if (!msg) continue
+                const content = msg.content
+                // Flatten content blocks into individual messages
+                if (Array.isArray(content)) {
+                  for (const block of content) {
+                    if (block.type === "text") {
+                      messages.push({ role: msg.role, content: block.text, type: "text", timestamp: entry.timestamp })
+                    } else if (block.type === "tool_use") {
+                      messages.push({ role: msg.role, content: JSON.stringify(block.input), type: "tool_use", tool_name: block.name, timestamp: entry.timestamp })
+                    } else if (block.type === "tool_result") {
+                      const text = typeof block.content === "string" ? block.content
+                        : Array.isArray(block.content) ? block.content.map((c: { text?: string }) => c.text ?? "").join("\n")
+                        : JSON.stringify(block.content)
+                      messages.push({ role: msg.role, content: text, type: "tool_result", tool_name: block.tool_use_id, timestamp: entry.timestamp })
+                    }
+                  }
+                } else if (typeof content === "string") {
+                  messages.push({ role: msg.role, content, type: "text", timestamp: entry.timestamp })
+                }
+              }
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        } catch {
+          // Failed to read file
+        }
       }
     }
 
-    return c.json({ run, transcript })
+    return c.json({ run, messages })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
@@ -18,12 +18,14 @@ import {
   ScoreServiceLive,
   ScoreService,
   AutoSyncServiceNoop,
-  StaleDataError
+  StaleDataError,
+  HasChildrenError
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as any)
+function makeTestLayer(db: Database) {
+  const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
   )
@@ -39,35 +41,54 @@ function makeTestLayer(db: TestDatabase) {
   return Layer.mergeAll(baseServices, scoreService)
 }
 
+function makeRepoLayer(db: Database) {
+  const infra = Layer.succeed(SqliteClient, db as any)
+  return TaskRepositoryLive.pipe(Layer.provide(infra))
+}
+
 describe("Schema constraints", () => {
+  let shared: SharedTestLayerResult
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
   it("fixture IDs are deterministic", () => {
     expect(FIXTURES.TASK_AUTH).toBe(fixtureId("auth"))
     expect(FIXTURES.TASK_JWT).toBe(fixtureId("jwt"))
     expect(FIXTURES.TASK_LOGIN).toBe(fixtureId("login"))
   })
 
-  it("fixture IDs match tx-[a-z0-9]{8} format", () => {
+  it("fixture IDs match tx-[a-z0-9]{6,12} format", () => {
     for (const id of Object.values(FIXTURES)) {
-      expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+      expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     }
   })
 
-  it("self-blocking is prevented by CHECK constraint", async () => {
-    const db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
+  it("self-blocking is prevented by CHECK constraint", () => {
+    const db = shared.getDb()
+    seedFixtures({ db } as any)
     expect(() => {
-      db.db.prepare(
+      db.prepare(
         "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
       ).run(FIXTURES.TASK_JWT, FIXTURES.TASK_JWT, new Date().toISOString())
     }).toThrow()
   })
 
-  it("duplicate dependencies are prevented by UNIQUE constraint", async () => {
-    const db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
+  it("duplicate dependencies are prevented by UNIQUE constraint", () => {
+    const db = shared.getDb()
+    seedFixtures({ db } as any)
     // JWT -> BLOCKED already exists from seed
     expect(() => {
-      db.db.prepare(
+      db.prepare(
         "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
       ).run(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED, new Date().toISOString())
     }).toThrow()
@@ -75,16 +96,24 @@ describe("Schema constraints", () => {
 })
 
 describe("Task CRUD", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    layer = makeTestLayer(db)
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    layer = makeTestLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("create returns a task with valid ID and backlog status", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const task = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -92,13 +121,14 @@ describe("Task CRUD", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    expect(task.id).toMatch(/^tx-[a-z0-9]{8}$/)
+    expect(task.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     expect(task.status).toBe("backlog")
     expect(task.score).toBe(500)
     expect(task.title).toBe("New task")
   })
 
   it("get returns existing task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const task = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -111,6 +141,7 @@ describe("Task CRUD", () => {
   })
 
   it("get fails with TaskNotFoundError for missing ID", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -125,6 +156,7 @@ describe("Task CRUD", () => {
   })
 
   it("getWithDeps returns TaskWithDeps with dependency info", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const task = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -144,6 +176,7 @@ describe("Task CRUD", () => {
   })
 
   it("update changes task fields", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const task = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -156,6 +189,7 @@ describe("Task CRUD", () => {
   })
 
   it("update sets completedAt when status becomes done", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const task = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -171,6 +205,7 @@ describe("Task CRUD", () => {
   })
 
   it("create fails with ValidationError for empty title", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -185,6 +220,7 @@ describe("Task CRUD", () => {
   })
 
   it("create fails with ValidationError for nonexistent parent", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -198,7 +234,72 @@ describe("Task CRUD", () => {
     }
   })
 
+  it("update rejects self-referencing parentId", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.update(FIXTURES.TASK_JWT, { parentId: FIXTURES.TASK_JWT }).pipe(Effect.either)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+      expect((result.left as any).reason).toContain("own parent")
+    }
+  })
+
+  it("update rejects direct parent-child cycle", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    // TASK_AUTH is parent of TASK_JWT. Setting AUTH's parent to JWT would create a cycle.
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.update(FIXTURES.TASK_AUTH, { parentId: FIXTURES.TASK_JWT }).pipe(Effect.either)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+      expect((result.left as any).reason).toContain("cycle")
+    }
+  })
+
+  it("update rejects deep parent-child cycle", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    // Hierarchy: ROOT -> AUTH -> JWT
+    // Setting ROOT's parent to JWT would create ROOT->JWT->...->AUTH->...->ROOT cycle
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.update(FIXTURES.TASK_ROOT, { parentId: FIXTURES.TASK_JWT }).pipe(Effect.either)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+      expect((result.left as any).reason).toContain("cycle")
+    }
+  })
+
+  it("update allows valid parentId change (no cycle)", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    // Moving JWT from under AUTH to directly under ROOT is valid
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.update(FIXTURES.TASK_JWT, { parentId: FIXTURES.TASK_ROOT })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(task.parentId).toBe(FIXTURES.TASK_ROOT)
+  })
+
   it("delete removes task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -210,7 +311,77 @@ describe("Task CRUD", () => {
     expect(result._tag).toBe("Left")
   })
 
+  it("delete fails with HasChildrenError when task has children", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.remove(FIXTURES.TASK_AUTH).pipe(Effect.either)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left).toBeInstanceOf(HasChildrenError)
+      const err = result.left as HasChildrenError
+      expect(err.id).toBe(FIXTURES.TASK_AUTH)
+      expect(err.childIds.length).toBeGreaterThan(0)
+    }
+  })
+
+  it("delete with cascade removes task and all descendants", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        // TASK_AUTH has children: LOGIN, JWT, BLOCKED, DONE
+        yield* svc.remove(FIXTURES.TASK_AUTH, { cascade: true })
+        // All descendants should be gone
+        const authResult = yield* svc.get(FIXTURES.TASK_AUTH).pipe(Effect.either)
+        const loginResult = yield* svc.get(FIXTURES.TASK_LOGIN).pipe(Effect.either)
+        const jwtResult = yield* svc.get(FIXTURES.TASK_JWT).pipe(Effect.either)
+        return { authResult, loginResult, jwtResult }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.authResult._tag).toBe("Left")
+    expect(result.loginResult._tag).toBe("Left")
+    expect(result.jwtResult._tag).toBe("Left")
+  })
+
+  it("cascade delete removes descendants beyond depth 10", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        // Build a chain of 15 nested tasks: depth0 -> depth1 -> ... -> depth14
+        const ids: TaskId[] = []
+        let parentId: string | undefined = undefined
+        for (let i = 0; i < 15; i++) {
+          const task = yield* svc.create({ title: `depth-${i}`, parentId, score: 100 })
+          ids.push(task.id)
+          parentId = task.id
+        }
+        // Cascade delete from root — should remove ALL 15 tasks, not just first 10
+        yield* svc.remove(ids[0], { cascade: true })
+        // Verify every task is gone, including those beyond depth 10
+        const results: string[] = []
+        for (const id of ids) {
+          const r = yield* svc.get(id).pipe(Effect.either)
+          results.push(r._tag)
+        }
+        return results
+      }).pipe(Effect.provide(layer))
+    )
+
+    // All 15 tasks should be deleted (Left = not found)
+    expect(result).toHaveLength(15)
+    for (const tag of result) {
+      expect(tag).toBe("Left")
+    }
+  })
+
   it("list returns all tasks", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const tasks = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -222,6 +393,7 @@ describe("Task CRUD", () => {
   })
 
   it("list filters by status", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const tasks = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* TaskService
@@ -235,16 +407,24 @@ describe("Task CRUD", () => {
 })
 
 describe("Ready detection", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    layer = makeTestLayer(db)
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    layer = makeTestLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns tasks with workable status and no open blockers", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ready = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -259,6 +439,7 @@ describe("Ready detection", () => {
   })
 
   it("excludes tasks with open blockers", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ready = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -271,6 +452,7 @@ describe("Ready detection", () => {
   })
 
   it("excludes done tasks", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ready = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -282,8 +464,10 @@ describe("Ready detection", () => {
   })
 
   it("includes tasks when ALL blockers are done", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     // Mark both blockers as done
-    db.db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id IN (?, ?)").run(
+    db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id IN (?, ?)").run(
       new Date().toISOString(), FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN
     )
 
@@ -300,8 +484,10 @@ describe("Ready detection", () => {
   })
 
   it("excludes if only SOME blockers are done", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     // Only mark JWT as done, LOGIN still not done
-    db.db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?").run(
+    db.prepare("UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?").run(
       new Date().toISOString(), FIXTURES.TASK_JWT
     )
 
@@ -316,6 +502,7 @@ describe("Ready detection", () => {
   })
 
   it("populates blockedBy, blocks, children", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ready = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -331,6 +518,7 @@ describe("Ready detection", () => {
   })
 
   it("sorts by score descending", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ready = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -344,6 +532,7 @@ describe("Ready detection", () => {
   })
 
   it("respects limit parameter", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ready = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -354,7 +543,8 @@ describe("Ready detection", () => {
     expect(ready).toHaveLength(1)
   })
 
-  it("isReady returns true for unblocked workable tasks", async () => {
+  it("isReady returns Ready for unblocked workable tasks", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -362,10 +552,11 @@ describe("Ready detection", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    expect(result).toBe(true)
+    expect(result._tag).toBe("Ready")
   })
 
-  it("isReady returns false for blocked tasks", async () => {
+  it("isReady returns Blocked for blocked tasks", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* ReadyService
@@ -373,21 +564,30 @@ describe("Ready detection", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    expect(result).toBe(false)
+    expect(result._tag).toBe("Blocked")
   })
 })
 
 describe("Dependency operations", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    layer = makeTestLayer(db)
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    layer = makeTestLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("addBlocker creates a dependency", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* DependencyService
@@ -396,13 +596,15 @@ describe("Dependency operations", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    const rows = db.db.prepare(
+    const rows = db.prepare(
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_LOGIN, FIXTURES.TASK_AUTH) as any[]
     expect(rows.length).toBe(1)
   })
 
   it("removeBlocker removes a dependency", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* DependencyService
@@ -410,13 +612,14 @@ describe("Dependency operations", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    const rows = db.db.prepare(
+    const rows = db.prepare(
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT) as any[]
     expect(rows.length).toBe(0)
   })
 
   it("addBlocker fails with ValidationError for self-blocking", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* DependencyService
@@ -431,6 +634,7 @@ describe("Dependency operations", () => {
   })
 
   it("addBlocker fails with CircularDependencyError for direct cycle", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     // JWT blocks BLOCKED (already exists). Now try BLOCKED blocks JWT.
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -446,6 +650,7 @@ describe("Dependency operations", () => {
   })
 
   it("addBlocker fails for nonexistent task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* DependencyService
@@ -460,6 +665,8 @@ describe("Dependency operations", () => {
   })
 
   it("addBlocker allows valid non-cyclic dependency", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     // ROOT blocks AUTH (no cycle since AUTH doesn't block ROOT)
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -468,13 +675,15 @@ describe("Dependency operations", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    const rows = db.db.prepare(
+    const rows = db.prepare(
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_AUTH, FIXTURES.TASK_ROOT) as any[]
     expect(rows.length).toBe(1)
   })
 
   it("addBlocker is idempotent for existing dependency", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     // JWT -> BLOCKED already exists from seed; calling again should succeed without error
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -484,13 +693,14 @@ describe("Dependency operations", () => {
     )
 
     // Verify only one row exists (no duplicates)
-    const rows = db.db.prepare(
+    const rows = db.prepare(
       "SELECT * FROM task_dependencies WHERE blocked_id = ? AND blocker_id = ?"
     ).all(FIXTURES.TASK_BLOCKED, FIXTURES.TASK_JWT) as any[]
     expect(rows.length).toBe(1)
   })
 
   it("removeBlocker fails with DependencyNotFoundError for non-existent dependency", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     // AUTH -> LOGIN dependency does not exist in seed data
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -507,16 +717,24 @@ describe("Dependency operations", () => {
 })
 
 describe("Hierarchy operations", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    layer = makeTestLayer(db)
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    layer = makeTestLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("getChildren returns direct children", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const children = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -534,6 +752,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getChildren returns empty array for leaf nodes", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const children = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -545,6 +764,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getChildren fails for nonexistent task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -559,6 +779,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getAncestors returns path from task to root", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ancestors = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -573,6 +794,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getAncestors returns empty array for root task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const ancestors = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -584,6 +806,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getAncestors fails for nonexistent task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -598,6 +821,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getTree returns full subtree structure", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const tree = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -614,6 +838,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getTree returns single node for leaf task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const tree = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -625,7 +850,42 @@ describe("Hierarchy operations", () => {
     expect(tree.children).toHaveLength(0)
   })
 
+  it("getTree respects maxDepth and truncates deep children", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    // Fixture hierarchy: Root → Auth → {Login, JWT, Blocked, Done} (3 levels)
+    // With maxDepth=2, SQL CTE fetches root (depth 1) and auth (depth 2)
+    // Auth's children (depth 3) should NOT be fetched
+    const tree = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getTree(FIXTURES.TASK_ROOT, 2)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(tree.task.id).toBe(FIXTURES.TASK_ROOT)
+    // Auth is at depth 2, should be included
+    expect(tree.children).toHaveLength(1)
+    expect(tree.children[0].task.id).toBe(FIXTURES.TASK_AUTH)
+    // Auth's children (Login, JWT, etc.) are at depth 3, should be truncated
+    expect(tree.children[0].children).toHaveLength(0)
+  })
+
+  it("getTree with maxDepth=1 returns only the root node", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const tree = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* HierarchyService
+        return yield* svc.getTree(FIXTURES.TASK_ROOT, 1)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(tree.task.id).toBe(FIXTURES.TASK_ROOT)
+    // maxDepth=1 means only root is fetched, no children
+    expect(tree.children).toHaveLength(0)
+  })
+
   it("getTree fails for nonexistent task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -640,6 +900,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getDepth returns 0 for root task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const depth = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -651,6 +912,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getDepth returns correct depth for nested task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const depth = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -663,6 +925,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getDepth fails for nonexistent task", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -677,6 +940,7 @@ describe("Hierarchy operations", () => {
   })
 
   it("getRoots returns tasks with no parent", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const roots = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* HierarchyService
@@ -690,16 +954,24 @@ describe("Hierarchy operations", () => {
 })
 
 describe("Score calculations", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let layer: ReturnType<typeof makeTestLayer>
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    layer = makeTestLayer(db)
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    layer = makeTestLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("calculate returns base score for root task with no blockers", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const score = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -715,6 +987,7 @@ describe("Score calculations", () => {
   })
 
   it("calculate adds blocking bonus for tasks that block others", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const score = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -730,6 +1003,7 @@ describe("Score calculations", () => {
   })
 
   it("calculate applies depth penalty for nested tasks", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const score = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -745,8 +1019,9 @@ describe("Score calculations", () => {
   })
 
   it("calculate applies blocked penalty for blocked status", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     // Update a task to blocked status
-    db.db.prepare("UPDATE tasks SET status = 'blocked' WHERE id = ?").run(FIXTURES.TASK_JWT)
+    shared.getDb().prepare("UPDATE tasks SET status = 'blocked' WHERE id = ?").run(FIXTURES.TASK_JWT)
 
     const score = await Effect.runPromise(
       Effect.gen(function* () {
@@ -763,6 +1038,7 @@ describe("Score calculations", () => {
   })
 
   it("calculateById returns score by task ID", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const score = await Effect.runPromise(
       Effect.gen(function* () {
         const scoreSvc = yield* ScoreService
@@ -774,6 +1050,7 @@ describe("Score calculations", () => {
   })
 
   it("calculateById fails with TaskNotFoundError for nonexistent ID", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const scoreSvc = yield* ScoreService
@@ -788,6 +1065,7 @@ describe("Score calculations", () => {
   })
 
   it("getBreakdown returns detailed score breakdown", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const breakdown = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -807,6 +1085,7 @@ describe("Score calculations", () => {
   })
 
   it("getBreakdownById returns breakdown by task ID", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const breakdown = await Effect.runPromise(
       Effect.gen(function* () {
         const scoreSvc = yield* ScoreService
@@ -820,6 +1099,7 @@ describe("Score calculations", () => {
   })
 
   it("getBreakdownById fails with TaskNotFoundError for nonexistent ID", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const scoreSvc = yield* ScoreService
@@ -834,6 +1114,7 @@ describe("Score calculations", () => {
   })
 
   it("calculate handles task with multiple blocking relationships", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     // LOGIN blocks BLOCKED (in addition to JWT)
     const score = await Effect.runPromise(
       Effect.gen(function* () {
@@ -850,6 +1131,7 @@ describe("Score calculations", () => {
   })
 
   it("calculate gives higher score to tasks blocking more work", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     // TASK_AUTH has children but doesn't block anything
     // TASK_JWT blocks TASK_BLOCKED
     const authScore = await Effect.runPromise(
@@ -879,17 +1161,24 @@ describe("Score calculations", () => {
 })
 
 describe("Task Repository updateMany with staleness detection", () => {
-  let db: TestDatabase
+  let shared: SharedTestLayerResult
   let repoLayer: Layer.Layer<TaskRepository, never, never>
 
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    const infra = Layer.succeed(SqliteClient, db.db as any)
-    repoLayer = TaskRepositoryLive.pipe(Layer.provide(infra))
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    repoLayer = makeRepoLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("updateMany succeeds when tasks are not stale", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
     // First fetch the tasks
     const tasks = await Effect.runPromise(
       Effect.gen(function* () {
@@ -927,6 +1216,8 @@ describe("Task Repository updateMany with staleness detection", () => {
   })
 
   it("updateMany fails with StaleDataError when task was modified externally", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     // First fetch the task
     const tasks = await Effect.runPromise(
       Effect.gen(function* () {
@@ -940,7 +1231,7 @@ describe("Task Repository updateMany with staleness detection", () => {
     // Simulate external modification by directly updating the database
     // This sets updated_at to a future time
     const futureTime = new Date(Date.now() + 10000).toISOString()
-    db.db.prepare("UPDATE tasks SET title = 'Externally modified', updated_at = ? WHERE id = ?")
+    db.prepare("UPDATE tasks SET title = 'Externally modified', updated_at = ? WHERE id = ?")
       .run(futureTime, FIXTURES.TASK_JWT)
 
     // Now try to updateMany with the stale data
@@ -976,6 +1267,8 @@ describe("Task Repository updateMany with staleness detection", () => {
   })
 
   it("updateMany detects staleness on second task in batch", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
     // Fetch multiple tasks
     const tasks = await Effect.runPromise(
       Effect.gen(function* () {
@@ -986,7 +1279,7 @@ describe("Task Repository updateMany with staleness detection", () => {
 
     // Externally modify only the second task
     const futureTime = new Date(Date.now() + 10000).toISOString()
-    db.db.prepare("UPDATE tasks SET title = 'Externally modified LOGIN', updated_at = ? WHERE id = ?")
+    db.prepare("UPDATE tasks SET title = 'Externally modified LOGIN', updated_at = ? WHERE id = ?")
       .run(futureTime, FIXTURES.TASK_LOGIN)
 
     // Try to update both tasks

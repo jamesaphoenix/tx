@@ -9,7 +9,9 @@ import {
   CompactionServiceNoop,
   CompactionServiceAuto
 } from "@jamesaphoenix/tx-core"
-import { existsSync, unlinkSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, unlinkSync, readFileSync, writeFileSync, mkdtempSync } from "node:fs"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 
 /**
  * Create a minimal test layer for CompactionService tests
@@ -199,7 +201,12 @@ describe("CompactionServiceNoop", () => {
   })
 
   describe("exportLearnings", () => {
-    const testFile = "/tmp/test-learnings-export.md"
+    let testFile: string
+
+    beforeEach(() => {
+      // Use a temp file within the project directory so path validation passes
+      testFile = join(process.cwd(), `.test-learnings-export-${Date.now()}.md`)
+    })
 
     afterEach(() => {
       if (existsSync(testFile)) {
@@ -222,7 +229,6 @@ describe("CompactionServiceNoop", () => {
 
     it("appends to existing file", async () => {
       // Create initial file
-      const { writeFileSync } = await import("node:fs")
       writeFileSync(testFile, "# Existing Content\n\nSome stuff here.\n")
 
       await runWithNoop(db, Effect.gen(function* () {
@@ -236,12 +242,42 @@ describe("CompactionServiceNoop", () => {
       expect(content).toContain("## Agent Learnings")
     })
 
-    it("fails with DatabaseError on invalid path (regression: file export must fail before DB records)", async () => {
+    it("rejects path traversal with ValidationError", async () => {
+      const traversalPath = "../../../etc/evil-learnings.md"
+
+      const result = await runWithNoop(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* Effect.either(svc.exportLearnings("- Test learning", traversalPath))
+      }))
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect(result.left._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("Path traversal rejected")
+      }
+    })
+
+    it("rejects absolute paths outside project directory with ValidationError", async () => {
+      const outsidePath = "/nonexistent-dir-abc123/cannot-write-here/learnings.md"
+
+      const result = await runWithNoop(db, Effect.gen(function* () {
+        const svc = yield* CompactionService
+        return yield* Effect.either(svc.exportLearnings("- Test learning", outsidePath))
+      }))
+
+      expect(result._tag).toBe("Left")
+      if (result._tag === "Left") {
+        expect(result.left._tag).toBe("ValidationError")
+        expect((result.left as any).reason).toContain("Path traversal rejected")
+      }
+    })
+
+    it("fails with DatabaseError on valid path to nonexistent directory (regression: file export must fail before DB records)", async () => {
       // CRITICAL REGRESSION TEST: This ensures that file export failures are properly
       // propagated as errors. In the compact() flow, if exportLearningsToFile fails,
       // the DB transaction should never run (preventing false positive records).
       // See task tx-b2aa12e1 for the original bug.
-      const invalidPath = "/nonexistent-dir-abc123/cannot-write-here/learnings.md"
+      const invalidPath = join(process.cwd(), "nonexistent-subdir-abc123/cannot-write-here/learnings.md")
 
       const result = await runWithNoop(db, Effect.gen(function* () {
         const svc = yield* CompactionService

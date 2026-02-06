@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, DependencyNotFoundError, UnexpectedRowCountError } from "../errors.js"
 import { rowToDependency } from "../mappers/task.js"
+import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { TaskId, TaskDependency, DependencyRow } from "@jamesaphoenix/tx-types"
 
 // Shared frozen empty array to avoid allocating new arrays for IDs with no dependencies
@@ -25,7 +26,13 @@ export class DependencyRepository extends Context.Tag("DependencyRepository")<
     readonly getBlockerIdsForMany: (blockedIds: readonly string[]) => Effect.Effect<Map<string, readonly TaskId[]>, DatabaseError>
     readonly getBlockingIdsForMany: (blockerIds: readonly string[]) => Effect.Effect<Map<string, readonly TaskId[]>, DatabaseError>
     readonly hasPath: (fromId: string, toId: string) => Effect.Effect<boolean, DatabaseError>
-    readonly getAll: () => Effect.Effect<readonly TaskDependency[], DatabaseError>
+    readonly getAll: (limit?: number) => Effect.Effect<readonly TaskDependency[], DatabaseError>
+    /**
+     * Remove all dependency edges where any of the given task IDs appear
+     * as either blocker_id or blocked_id. Used during cascade delete to
+     * explicitly clean up edges rather than relying solely on FK CASCADE.
+     */
+    readonly removeByTaskIds: (taskIds: readonly string[]) => Effect.Effect<void, DatabaseError>
     /**
      * Atomically check for cycles and insert dependency in a single transaction.
      * This prevents race conditions where two concurrent addBlocker calls could
@@ -188,13 +195,25 @@ export const DependencyRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause })
         }),
 
-      getAll: () =>
+      getAll: (limit) =>
         Effect.try({
           try: () => {
             const rows = db.prepare(
-              "SELECT blocker_id, blocked_id, created_at FROM task_dependencies"
-            ).all() as DependencyRow[]
+              "SELECT blocker_id, blocked_id, created_at FROM task_dependencies LIMIT ?"
+            ).all(limit ?? DEFAULT_QUERY_LIMIT) as DependencyRow[]
             return rows.map(rowToDependency)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      removeByTaskIds: (taskIds) =>
+        Effect.try({
+          try: () => {
+            if (taskIds.length === 0) return
+            const placeholders = taskIds.map(() => "?").join(",")
+            db.prepare(
+              `DELETE FROM task_dependencies WHERE blocker_id IN (${placeholders}) OR blocked_id IN (${placeholders})`
+            ).run(...taskIds, ...taskIds)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

@@ -651,7 +651,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Deep Hierarchy (100+ levels)", () => {
       Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* HierarchyService
-          return yield* svc.getTree(rootId)
+          return yield* svc.getTree(rootId, 100)
         }).pipe(Effect.provide(layer))
       )
     )

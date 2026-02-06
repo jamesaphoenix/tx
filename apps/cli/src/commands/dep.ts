@@ -4,29 +4,25 @@
 
 import { Effect } from "effect"
 import { TaskService, DependencyService } from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
 import { toJson } from "../output.js"
-
-type Flags = Record<string, string | boolean>
-
-function flag(flags: Flags, ...names: string[]): boolean {
-  return names.some(n => flags[n] === true)
-}
+import { type Flags, flag, parseTaskId } from "../utils/parse.js"
 
 export const block = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    const blocker = pos[1]
-    if (!id || !blocker) {
+    const rawId = pos[0]
+    const rawBlocker = pos[1]
+    if (!rawId || !rawBlocker) {
       console.error("Usage: tx block <task-id> <blocker-id> [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(rawId)
+    const blocker = parseTaskId(rawBlocker)
 
     const depSvc = yield* DependencyService
     const taskSvc = yield* TaskService
 
-    yield* depSvc.addBlocker(id as TaskId, blocker as TaskId)
-    const task = yield* taskSvc.getWithDeps(id as TaskId)
+    yield* depSvc.addBlocker(id, blocker)
+    const task = yield* taskSvc.getWithDeps(id)
 
     if (flag(flags, "json")) {
       console.log(toJson({ success: true, task }))
@@ -38,18 +34,20 @@ export const block = (pos: string[], flags: Flags) =>
 
 export const unblock = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const id = pos[0]
-    const blocker = pos[1]
-    if (!id || !blocker) {
+    const rawId = pos[0]
+    const rawBlocker = pos[1]
+    if (!rawId || !rawBlocker) {
       console.error("Usage: tx unblock <task-id> <blocker-id> [--json]")
       process.exit(1)
     }
+    const id = parseTaskId(rawId)
+    const blocker = parseTaskId(rawBlocker)
 
     const depSvc = yield* DependencyService
     const taskSvc = yield* TaskService
 
-    yield* depSvc.removeBlocker(id as TaskId, blocker as TaskId)
-    const task = yield* taskSvc.getWithDeps(id as TaskId)
+    yield* depSvc.removeBlocker(id, blocker)
+    const task = yield* taskSvc.getWithDeps(id)
 
     if (flag(flags, "json")) {
       console.log(toJson({ success: true, task }))

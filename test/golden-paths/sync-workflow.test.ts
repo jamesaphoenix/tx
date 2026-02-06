@@ -147,7 +147,7 @@ describe("Golden Path: Basic Export/Import", () => {
       const op = JSON.parse(line)
       expect(op.v).toBe(1) // Version
       expect(op.op).toBe("upsert")
-      expect(op.id).toMatch(/^tx-[a-z0-9]{8}$/)
+      expect(op.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
       expect(op.data).toHaveProperty("title")
     }
   })

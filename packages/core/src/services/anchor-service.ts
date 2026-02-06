@@ -746,7 +746,7 @@ export const AnchorServiceLive = Layer.effect(
 
       verifyAll: () =>
         Effect.gen(function* () {
-          const anchors = yield* anchorRepo.findAll()
+          const anchors = yield* anchorRepo.findAll(100_000)
 
           let verified = 0
           let drifted = 0

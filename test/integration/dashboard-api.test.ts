@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { Effect } from "effect"
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"
 import { Hono } from "hono"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, wrapDbAsTestDatabase, type SharedTestLayerResult, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs"
 import { resolve } from "path"
@@ -321,14 +320,21 @@ function createTestApp(db: TestDatabase, txDir: string) {
       const hasMore = runs.length > limit
       const pagedRuns = hasMore ? runs.slice(0, limit) : runs
 
-      const enriched = pagedRuns.map(run => {
-        let taskTitle: string | null = null
-        if (run.task_id) {
-          const task = db.db.prepare("SELECT title FROM tasks WHERE id = ?").get(run.task_id) as { title: string } | undefined
-          taskTitle = task?.title ?? null
+      // Batch fetch task titles to avoid N+1 queries
+      const taskIds = [...new Set(pagedRuns.map(r => r.task_id).filter((id): id is string => id !== null))]
+      const taskTitleMap = new Map<string, string>()
+      if (taskIds.length > 0) {
+        const placeholders = taskIds.map(() => "?").join(",")
+        const rows = db.db.prepare(`SELECT id, title FROM tasks WHERE id IN (${placeholders})`).all(...taskIds) as Array<{ id: string; title: string }>
+        for (const row of rows) {
+          taskTitleMap.set(row.id, row.title)
         }
-        return { ...run, taskTitle }
-      })
+      }
+
+      const enriched = pagedRuns.map(run => ({
+        ...run,
+        taskTitle: run.task_id ? (taskTitleMap.get(run.task_id) ?? null) : null,
+      }))
 
       return c.json({
         runs: enriched,
@@ -450,13 +456,26 @@ async function request(app: Hono, path: string, options?: RequestInit) {
 }
 
 describe("Dashboard API - GET /api/tasks", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns all tasks with TaskWithDeps fields", async () => {
@@ -604,13 +623,26 @@ describe("Dashboard API - GET /api/tasks", () => {
 })
 
 describe("Dashboard API - GET /api/tasks/ready", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns only ready tasks", async () => {
@@ -668,13 +700,26 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
 })
 
 describe("Dashboard API - GET /api/tasks/:id", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns task with TaskWithDeps fields", async () => {
@@ -754,13 +799,26 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
 })
 
 describe("Dashboard API - GET /api/runs", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns empty array when no runs exist", async () => {
@@ -884,12 +942,17 @@ describe("Dashboard API - GET /api/runs", () => {
 })
 
 describe("Dashboard API - GET /api/runs/:id", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
   let testDir: string
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     // Create a temporary test directory for transcript files
     testDir = resolve(tmpdir(), `tx-test-${Date.now()}`)
@@ -897,11 +960,16 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     app = createTestApp(db, testDir)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     // Clean up test directory
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true })
     }
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns 404 for nonexistent run", async () => {
@@ -1045,13 +1113,26 @@ describe("Dashboard API - GET /api/runs/:id", () => {
 })
 
 describe("Dashboard API - GET /api/ralph", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns ralph status", async () => {
@@ -1069,13 +1150,26 @@ describe("Dashboard API - GET /api/ralph", () => {
 })
 
 describe("Dashboard API - GET /api/stats", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("returns task counts", async () => {
@@ -1162,21 +1256,34 @@ describe("Dashboard API - Fixture ID consistency", () => {
     expect(FIXTURES.TASK_ROOT).toBe(fixtureId("root"))
   })
 
-  it("fixture IDs match tx-[a-z0-9]{8} format", () => {
+  it("fixture IDs match tx-[a-z0-9]{6,12} format", () => {
     for (const id of Object.values(FIXTURES)) {
-      expect(id).toMatch(/^tx-[a-z0-9]{8}$/)
+      expect(id).toMatch(/^tx-[a-z0-9]{6,12}$/)
     }
   })
 })
 
 describe("Dashboard API - Paginated Tasks with Filters", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("cursor pagination works with status filter", async () => {
@@ -1366,11 +1473,16 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
 })
 
 describe("Dashboard API - Paginated Runs with Filters", () => {
+  let shared: SharedTestLayerResult
   let db: TestDatabase
   let app: Hono
 
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
   beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
+    db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
     app = createTestApp(db, "/tmp/.tx")
 
@@ -1387,6 +1499,14 @@ describe("Dashboard API - Paginated Runs with Filters", () => {
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(runId, null, agent, ts, status, "{}")
     }
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
   })
 
   it("cursor pagination works with agent filter", async () => {
