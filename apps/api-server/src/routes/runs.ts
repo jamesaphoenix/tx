@@ -6,6 +6,7 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
+import { resolve } from "node:path"
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { serializeRun } from "@jamesaphoenix/tx-types"
 import { RunRepository } from "@jamesaphoenix/tx-core"
@@ -161,6 +162,15 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
             new BadRequest({ message: "Invalid transcriptPath: must be under ~/.claude/ or .tx/" })
           )
         }
+        // Security: validate contextInjected path is under .tx/runs/
+        if (payload.contextInjected) {
+          const resolved = resolve(payload.contextInjected)
+          if (!resolved.includes("/.tx/runs/")) {
+            return yield* Effect.fail(
+              new BadRequest({ message: "Invalid contextInjected: must be under .tx/runs/" })
+            )
+          }
+        }
         const runRepo = yield* RunRepository
         const run = yield* runRepo.create({
           taskId: payload.taskId,
@@ -176,6 +186,12 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
 
     .handle("updateRun", ({ path, payload }) =>
       Effect.gen(function* () {
+        // Security: validate transcriptPath before storing
+        if (payload.transcriptPath && !isAllowedTranscriptPath(payload.transcriptPath)) {
+          return yield* Effect.fail(
+            new BadRequest({ message: "Invalid transcriptPath: must be under ~/.claude/ or .tx/" })
+          )
+        }
         const runRepo = yield* RunRepository
         yield* runRepo.update(path.id as RunId, {
           status: payload.status,

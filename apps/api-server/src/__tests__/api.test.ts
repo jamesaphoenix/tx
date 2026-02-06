@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest"
+import { Schema } from "effect"
 import {
   NotFound,
   BadRequest,
@@ -13,6 +14,7 @@ import {
   Forbidden,
   ServiceUnavailable,
   mapCoreError,
+  SafePathString,
   TxApi,
   HealthGroup,
   TasksGroup,
@@ -175,5 +177,67 @@ describe("API structure", () => {
     expect(LearningsGroup).toBeDefined()
     expect(RunsGroup).toBeDefined()
     expect(SyncGroup).toBeDefined()
+  })
+})
+
+// =============================================================================
+// SafePathString Tests
+// =============================================================================
+
+describe("SafePathString", () => {
+  const decode = Schema.decodeUnknownSync(SafePathString)
+
+  describe("accepts valid paths", () => {
+    it("should accept absolute paths", () => {
+      expect(decode("/home/user/.claude/projects/session.jsonl")).toBe(
+        "/home/user/.claude/projects/session.jsonl"
+      )
+    })
+
+    it("should accept paths with .tx/runs/", () => {
+      expect(decode("/project/.tx/runs/run-abc12345/stdout.log")).toBe(
+        "/project/.tx/runs/run-abc12345/stdout.log"
+      )
+    })
+
+    it("should accept tilde paths", () => {
+      expect(decode("~/.claude/projects/abc/session.jsonl")).toBe(
+        "~/.claude/projects/abc/session.jsonl"
+      )
+    })
+
+    it("should accept single dots in paths", () => {
+      expect(decode("/home/user/./file.txt")).toBe("/home/user/./file.txt")
+    })
+
+    it("should accept files named with double dots in name (not as segment)", () => {
+      expect(decode("/home/user/file..txt")).toBe("/home/user/file..txt")
+    })
+  })
+
+  describe("rejects traversal attacks", () => {
+    it("should reject paths with .. traversal", () => {
+      expect(() => decode("/home/user/../etc/passwd")).toThrow()
+    })
+
+    it("should reject paths starting with ..", () => {
+      expect(() => decode("../etc/passwd")).toThrow()
+    })
+
+    it("should reject paths ending with ..", () => {
+      expect(() => decode("/home/user/..")).toThrow()
+    })
+
+    it("should reject bare ..", () => {
+      expect(() => decode("..")).toThrow()
+    })
+
+    it("should reject paths with null bytes", () => {
+      expect(() => decode("/home/user/\0/file.txt")).toThrow()
+    })
+
+    it("should reject paths with embedded null byte before extension", () => {
+      expect(() => decode("/home/user/file.txt\0.jpg")).toThrow()
+    })
   })
 })

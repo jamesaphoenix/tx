@@ -80,6 +80,23 @@ export const mapCoreError = (e: unknown): NotFound | BadRequest | InternalError 
 }
 
 // =============================================================================
+// SAFE PATH SCHEMA
+// =============================================================================
+
+/**
+ * A Schema.String with basic path traversal protection.
+ * Rejects null bytes and '..' traversal sequences at the schema level.
+ * Handler-level validation still checks allowed directories (defense-in-depth).
+ */
+export const SafePathString = Schema.String.pipe(
+  Schema.filter((s) =>
+    s.includes("\0") || /(^|\/)\.\.($|\/)/.test(s)
+      ? "Path must not contain null bytes or '..' traversal sequences"
+      : true
+  )
+)
+
+// =============================================================================
 // PATH PARAMETERS
 // =============================================================================
 
@@ -389,8 +406,8 @@ const CreateRunBody = Schema.Struct({
   taskId: Schema.optional(Schema.String),
   agent: Schema.String,
   pid: Schema.optional(Schema.Number.pipe(Schema.int())),
-  transcriptPath: Schema.optional(Schema.String),
-  contextInjected: Schema.optional(Schema.String),
+  transcriptPath: Schema.optional(SafePathString),
+  contextInjected: Schema.optional(SafePathString),
   metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 })
 
@@ -400,7 +417,7 @@ const UpdateRunBody = Schema.Struct({
   exitCode: Schema.optional(Schema.Number.pipe(Schema.int())),
   summary: Schema.optional(Schema.String),
   errorMessage: Schema.optional(Schema.String),
-  transcriptPath: Schema.optional(Schema.String),
+  transcriptPath: Schema.optional(SafePathString),
 })
 
 const LogTailParams = Schema.Struct({

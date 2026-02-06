@@ -303,8 +303,8 @@ $ eslint src/
   120:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "FileExpansionResult". See DOCTRINE RULE 10    tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/learning-service.ts
-  10:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  18:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedStatus". See DOCTRINE RULE 10  tx/no-plain-interfaces
+  13:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
+  21:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedStatus". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/migration-service.ts
    11:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "Migration". See DOCTRINE RULE 10         tx/no-plain-interfaces
