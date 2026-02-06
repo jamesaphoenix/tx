@@ -149,6 +149,7 @@ export {
   writePid,
   readPid,
   removePid,
+  removePidIfContentMatches,
   isProcessRunning,
   tryAtomicPidCreate,
   acquirePidLock,

@@ -308,16 +308,18 @@ export const readPid = (): Effect.Effect<number | null, DaemonError> =>
     // Parse the PID
     const pid = parseInt(content, 10)
     if (isNaN(pid) || pid <= 0) {
-      // Invalid PID content, remove the stale file
-      yield* removePid()
+      // Invalid PID content — use CAS removal so we don't delete a fresh PID
+      // written by a concurrent daemon start between our read and this removal.
+      yield* removePidIfContentMatches(content)
       return null
     }
 
     // Check if the process is still running
     const running = yield* isProcessRunning(pid)
     if (!running) {
-      // Process is not running, remove the stale PID file
-      yield* removePid()
+      // Stale PID — use CAS removal so we don't delete a fresh PID written
+      // by a concurrent daemon start between isProcessRunning() and here.
+      yield* removePidIfContentMatches(content)
       return null
     }
 
@@ -336,6 +338,39 @@ export const removePid = (): Effect.Effect<void, DaemonError> =>
       if (existsSync(PID_FILE_PATH)) {
         unlinkSync(PID_FILE_PATH)
       }
+    },
+    catch: (error) =>
+      new DaemonError({
+        code: "PID_REMOVE_FAILED",
+        reason: `Failed to remove PID file: ${error}`,
+        pid: null
+      })
+  })
+
+/**
+ * Remove the PID file only if its current content matches the expected value.
+ *
+ * This is a compare-and-swap guard that prevents the TOCTOU race where
+ * readPid()'s stale cleanup could delete a freshly-written PID file created
+ * by a concurrent daemon start. Between isProcessRunning() returning false
+ * and removePid() executing, a new daemon may have written a fresh PID.
+ *
+ * If the file no longer exists or its content has changed, this is a no-op.
+ *
+ * @param expectedContent - The PID file content we originally read
+ * @returns Effect that resolves to void on success
+ */
+export const removePidIfContentMatches = (expectedContent: string): Effect.Effect<void, DaemonError> =>
+  Effect.try({
+    try: () => {
+      if (!existsSync(PID_FILE_PATH)) {
+        return
+      }
+      const currentContent = readFileSync(PID_FILE_PATH, "utf-8").trim()
+      if (currentContent === expectedContent) {
+        unlinkSync(PID_FILE_PATH)
+      }
+      // Content changed — a concurrent start wrote a fresh PID. Do not delete.
     },
     catch: (error) =>
       new DaemonError({
@@ -650,8 +685,11 @@ export const acquirePidLock = (): Effect.Effect<void, DaemonError> =>
       }
     }
 
-    // PID file is stale — remove and retry once
-    yield* removePid()
+    // PID file is stale — CAS removal to avoid deleting a fresh PID written
+    // by a concurrent start that raced us between isProcessRunning() and here.
+    if (existingContent !== null) {
+      yield* removePidIfContentMatches(existingContent)
+    }
 
     const retryCreated = yield* tryAtomicPidCreate()
     if (!retryCreated) {
