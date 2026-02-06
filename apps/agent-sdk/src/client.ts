@@ -932,19 +932,25 @@ class DirectTransport implements Transport {
   /**
    * Dispose of the runtime and release resources.
    * Only actually disposes when all clients using this dbPath have disposed.
+   *
+   * Safe against concurrent calls: `this.runtime` is nulled synchronously
+   * before any await, so a second call immediately sees null and returns.
    */
   async dispose(): Promise<void> {
-    if (this.runtime) {
-      const cached = runtimeCache.get(this.dbPath)
-      if (cached) {
-        cached.refCount--
-        if (cached.refCount <= 0) {
-          // Last client - actually dispose the runtime
-          runtimeCache.delete(this.dbPath)
-          await this.runtime.dispose()
-        }
+    const rt = this.runtime
+    if (!rt) return
+
+    // Null immediately so concurrent calls are idempotent from this tick.
+    this.runtime = null
+
+    const cached = runtimeCache.get(this.dbPath)
+    if (cached) {
+      cached.refCount--
+      if (cached.refCount <= 0) {
+        // Last client - actually dispose the runtime
+        runtimeCache.delete(this.dbPath)
+        await rt.dispose()
       }
-      this.runtime = null
     }
   }
 }
@@ -1519,4 +1525,26 @@ export function _testGetRuntimeCacheSize(): number {
 export function _testClearRuntimeCache(): void {
   runtimeCache.clear()
   pendingInit.clear()
+}
+
+/**
+ * @internal Test-only helper to inject a mock runtime into the cache
+ * and set it on a DirectTransport (via TxClient). Returns the mock
+ * runtime so tests can assert on dispose() call count.
+ * Not part of the public API.
+ */
+export function _testInjectMockRuntime(
+  client: TxClient,
+  refCount: number
+): { dispose: () => Promise<void>; disposeCallCount: () => number } {
+  let calls = 0
+  const mockRuntime = {
+    dispose: async () => { calls++ },
+    runPromise: async () => {},
+  }
+  const transport = (client as any).transport as DirectTransport
+  const dbPath = (transport as any).dbPath as string
+  ;(transport as any).runtime = mockRuntime
+  runtimeCache.set(dbPath, { runtime: mockRuntime, refCount, core: {}, Effect: {} })
+  return { dispose: mockRuntime.dispose, disposeCallCount: () => calls }
 }

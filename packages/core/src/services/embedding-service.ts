@@ -52,6 +52,31 @@ const OPENAI_MODEL_DIMENSIONS: Record<string, number> = {
 }
 
 // =============================================================================
+// Dimension Validation
+// =============================================================================
+
+/**
+ * Validates that an embedding vector has the expected number of dimensions.
+ * This prevents silent data corruption when switching embedding providers
+ * (e.g., 256-dim local to 1536-dim OpenAI) without re-embedding existing data.
+ *
+ * @internal Exported for testing purposes
+ */
+export const validateEmbeddingDimensions = (
+  vector: Float32Array,
+  expectedDimensions: number
+): Effect.Effect<Float32Array, EmbeddingUnavailableError> => {
+  if (vector.length !== expectedDimensions) {
+    return Effect.fail(
+      new EmbeddingUnavailableError({
+        reason: `Embedding dimension mismatch: expected ${expectedDimensions}, got ${vector.length}. This may indicate a provider change without re-embedding.`
+      })
+    )
+  }
+  return Effect.succeed(vector)
+}
+
+// =============================================================================
 // Runtime Interface Validators
 // =============================================================================
 
@@ -246,7 +271,7 @@ export const EmbeddingServiceLive = Layer.scoped(
             try: () => ctx.getEmbeddingFor(formatQuery(text)),
             catch: (e) => new EmbeddingUnavailableError({ reason: `Embedding failed: ${String(e)}` })
           })
-          return new Float32Array(result.vector)
+          return yield* validateEmbeddingDimensions(new Float32Array(result.vector), 256)
         }),
 
       embedBatch: (texts) =>
@@ -259,7 +284,8 @@ export const EmbeddingServiceLive = Layer.scoped(
               catch: (e) => new EmbeddingUnavailableError({ reason: `Batch embedding failed: ${String(e)}` })
             })
             yield* Ref.update(stateRef, s => ({ ...s, lastActivity: Date.now() }))
-            results.push(new Float32Array(result.vector))
+            const validated = yield* validateEmbeddingDimensions(new Float32Array(result.vector), 256)
+            results.push(validated)
           }
           return results
         }),
@@ -350,7 +376,7 @@ export const EmbeddingServiceOpenAI = Layer.effect(
             }))
           }
 
-          return new Float32Array(response.data[0].embedding)
+          return yield* validateEmbeddingDimensions(new Float32Array(response.data[0].embedding), dimensions)
         }),
 
       embedBatch: (texts) =>
@@ -375,7 +401,12 @@ export const EmbeddingServiceOpenAI = Layer.effect(
           // Sort by index to ensure correct order
           const sorted = [...response.data].sort((a, b) => a.index - b.index)
 
-          return sorted.map(item => new Float32Array(item.embedding))
+          const results: Float32Array[] = []
+          for (const item of sorted) {
+            const validated = yield* validateEmbeddingDimensions(new Float32Array(item.embedding), dimensions)
+            results.push(validated)
+          }
+          return results
         }),
 
       isAvailable: () => Effect.succeed(true),
@@ -542,23 +573,34 @@ export const createEmbedderLayer = (config: EmbedderConfig): Layer.Layer<Embeddi
 
   return Layer.succeed(EmbeddingService, {
     embed: (text) =>
-      Effect.tryPromise({
-        try: () => config.embed(text),
-        catch: (error) =>
-          new EmbeddingUnavailableError({
-            reason: `${embedderName} embed failed: ${String(error)}`
-          })
+      Effect.gen(function* () {
+        const vector = yield* Effect.tryPromise({
+          try: () => config.embed(text),
+          catch: (error) =>
+            new EmbeddingUnavailableError({
+              reason: `${embedderName} embed failed: ${String(error)}`
+            })
+        })
+        return yield* validateEmbeddingDimensions(vector, config.dimensions)
       }),
 
     embedBatch: (texts) => {
       // Use custom batch implementation if provided
       if (config.embedBatch) {
-        return Effect.tryPromise({
-          try: () => config.embedBatch!(texts),
-          catch: (error) =>
-            new EmbeddingUnavailableError({
-              reason: `${embedderName} embedBatch failed: ${String(error)}`
-            })
+        return Effect.gen(function* () {
+          const vectors = yield* Effect.tryPromise({
+            try: () => config.embedBatch!(texts),
+            catch: (error) =>
+              new EmbeddingUnavailableError({
+                reason: `${embedderName} embedBatch failed: ${String(error)}`
+              })
+          })
+          const results: Float32Array[] = []
+          for (const vector of vectors) {
+            const validated = yield* validateEmbeddingDimensions(vector, config.dimensions)
+            results.push(validated)
+          }
+          return results
         })
       }
 
@@ -573,7 +615,8 @@ export const createEmbedderLayer = (config: EmbedderConfig): Layer.Layer<Embeddi
                 reason: `${embedderName} embed failed: ${String(error)}`
               })
           })
-          results.push(embedding)
+          const validated = yield* validateEmbeddingDimensions(embedding, config.dimensions)
+          results.push(validated)
         }
         return results
       })

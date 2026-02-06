@@ -7,6 +7,7 @@ import { writeFileSync, existsSync, mkdirSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { pathToFileURL } from "node:url"
 import { LearningService, FileLearningService, RetrieverService, TaskService, RetrievalError } from "@jamesaphoenix/tx-core"
+import { LEARNING_SOURCE_TYPES, EDGE_TYPES } from "@jamesaphoenix/tx-types"
 import type { LearningSourceType, EdgeType } from "@jamesaphoenix/tx-types"
 import { toJson, formatContextMarkdown } from "../output.js"
 import { commandHelp } from "../help.js"
@@ -20,12 +21,22 @@ export const learningAdd = (pos: string[], flags: Flags) =>
       process.exit(1)
     }
 
+    const sourceTypeArg = opt(flags, "source-type")
+    let sourceType: LearningSourceType = "manual"
+    if (sourceTypeArg) {
+      if (!(LEARNING_SOURCE_TYPES as readonly string[]).includes(sourceTypeArg)) {
+        console.error(`Error: Invalid --source-type "${sourceTypeArg}". Valid types: ${LEARNING_SOURCE_TYPES.join(", ")}`)
+        process.exit(1)
+      }
+      sourceType = sourceTypeArg as LearningSourceType
+    }
+
     const svc = yield* LearningService
     const learning = yield* svc.create({
       content,
       category: opt(flags, "category", "c") ?? undefined,
       sourceRef: opt(flags, "source-ref") ?? undefined,
-      sourceType: (opt(flags, "source-type") as LearningSourceType) ?? "manual"
+      sourceType
     })
 
     if (flag(flags, "json")) {
@@ -43,7 +54,14 @@ export const learningAdd = (pos: string[], flags: Flags) =>
  */
 const parseEdgeTypes = (edgeTypesStr: string | undefined): EdgeType[] | undefined => {
   if (!edgeTypesStr) return undefined
-  return edgeTypesStr.split(",").map(s => s.trim()).filter(s => s.length > 0) as EdgeType[]
+  const types = edgeTypesStr.split(",").map(s => s.trim()).filter(s => s.length > 0)
+  for (const t of types) {
+    if (!(EDGE_TYPES as readonly string[]).includes(t)) {
+      console.error(`Error: Invalid edge type "${t}". Valid types: ${EDGE_TYPES.join(", ")}`)
+      process.exit(1)
+    }
+  }
+  return types as EdgeType[]
 }
 
 export const learningSearch = (pos: string[], flags: Flags) =>

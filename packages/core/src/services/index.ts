@@ -21,6 +21,7 @@ export {
   isValidLlamaModel,
   isValidLlamaEmbeddingContext,
   isValidOpenAIClient,
+  validateEmbeddingDimensions,
   type EmbedderConfig
 } from "./embedding-service.js"
 export {

@@ -1,8 +1,9 @@
 /**
  * CLI help text for all commands
  */
+import { CLI_VERSION } from "./version.js"
 
-export const HELP_TEXT = `tx v0.1.0 - Task management for AI agents and humans
+export const HELP_TEXT = `tx v${CLI_VERSION} - Task management for AI agents and humans
 
 Usage: tx <command> [arguments] [options]
 
@@ -76,6 +77,7 @@ Commands:
   bulk delete <id...>     Delete multiple tasks
   stats                   Show queue metrics and health overview
   doctor                  Run system diagnostics for troubleshooting
+  dashboard               Start API server + dashboard and open in browser
   daemon track            Track a project for learning extraction
   daemon untrack          Stop tracking a project
   daemon list             List tracked projects
@@ -1694,5 +1696,23 @@ Exit Codes:
 Examples:
   tx doctor              # Run diagnostics
   tx doctor --verbose    # Include detailed output
-  tx doctor --json       # Machine-readable output`
+  tx doctor --json       # Machine-readable output`,
+
+  dashboard: `tx dashboard - Start API server + dashboard and open in browser
+
+Usage: tx dashboard [options]
+
+Starts the dashboard API server (port 3001) and Vite dev server (port 5173),
+then opens the dashboard in Brave Browser (falls back to Chrome).
+
+Options:
+  --no-open    Start servers without opening browser
+  --port <n>   Custom API server port (default: 3001)
+
+Press Ctrl+C to stop both servers.
+
+Examples:
+  tx dashboard              # Start and open in Brave/Chrome
+  tx dashboard --no-open    # Start without opening browser
+  tx dashboard --port 3002  # Custom API port`
 }

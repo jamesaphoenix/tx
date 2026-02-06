@@ -17,6 +17,11 @@ const RRF_K = 60
 const DEFAULT_RECENCY_WEIGHT = 0.1
 const MAX_AGE_DAYS = 30
 
+/** Hard cap on embeddings fetched for vector similarity scan.
+ * Prevents O(n) linear scan when limit is large or corpus grows.
+ * 500 is sufficient for high-quality RRF fusion while keeping latency <50ms. */
+const MAX_VECTOR_CANDIDATES = 500
+
 /** Boost weights for outcome and frequency */
 const OUTCOME_BOOST = 0.05
 const FREQUENCY_BOOST = 0.02
@@ -520,8 +525,9 @@ export const RetrieverServiceLive = Layer.effect(
           const queryEmbedding = yield* Effect.option(embeddingService.embed(query))
           const queryEmbeddingValue = Option.getOrNull(queryEmbedding)
 
-          // Get all learnings that have embeddings for vector ranking
-          const learningsWithEmbeddings = yield* learningRepo.findWithEmbeddings(limit * 3)
+          // Get learnings with embeddings for vector ranking, capped to prevent linear scan
+          const vectorCandidateLimit = Math.min(limit * 3, MAX_VECTOR_CANDIDATES)
+          const learningsWithEmbeddings = yield* learningRepo.findWithEmbeddings(vectorCandidateLimit)
 
           // Compute vector ranking (ranked list 2)
           // Dimension mismatches fail fast - indicates misconfigured embedding provider

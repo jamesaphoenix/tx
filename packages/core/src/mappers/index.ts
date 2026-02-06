@@ -20,6 +20,7 @@ export {
 // Learning mappers
 export {
   rowToLearning,
+  rowToLearningWithoutEmbedding,
   isValidSourceType,
   float32ArrayToBuffer,
   LEARNING_SOURCE_TYPES,

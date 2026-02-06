@@ -297,10 +297,11 @@ describe("Transaction Integrity: Crash During Writes", () => {
   it("foreign key constraints respected after crash", () => {
     // Create a task
     const parentId = chaosFixtureId("fk-parent")
+    const now = new Date().toISOString()
     db.run(
       `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-       VALUES (?, 'Parent Task', '', 'backlog', 500, datetime('now'), datetime('now'), '{}')`,
-      [parentId]
+       VALUES (?, 'Parent Task', '', 'backlog', 500, ?, ?, '{}')`,
+      [parentId, now, now]
     )
 
     // Attempt to create child with transaction that crashes
@@ -308,8 +309,8 @@ describe("Transaction Integrity: Crash During Writes", () => {
       db.transaction(() => {
         db.run(
           `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, metadata)
-           VALUES (?, 'Child Task', '', 'backlog', 400, ?, datetime('now'), datetime('now'), '{}')`,
-          [chaosFixtureId("fk-child"), parentId]
+           VALUES (?, 'Child Task', '', 'backlog', 400, ?, ?, ?, '{}')`,
+          [chaosFixtureId("fk-child"), parentId, now, now]
         )
         throw new Error("Simulated crash")
       })
@@ -485,18 +486,19 @@ describe("Claim Recovery: Orphaned Claims After Worker Crash", () => {
     layer = makeWorkerTestLayer(db)
 
     // Create task for claim testing
-    const now = new Date().toISOString()
+    // Use ISO format dates to match service layer conventions (optimistic locking compares strings)
+    const isoNow = new Date().toISOString()
     db.run(
       `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
        VALUES (?, ?, '', 'ready', 500, ?, ?, '{}')`,
-      [recoveryTaskId, "Recovery Test Task", now, now]
+      [recoveryTaskId, "Recovery Test Task", isoNow, isoNow]
     )
 
     // Register a worker
     db.run(
       `INSERT INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at, capabilities, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}')`,
-      [crashedWorkerId, "Crashed Worker", "localhost", process.pid, "idle", now, now]
+      [crashedWorkerId, "Crashed Worker", "localhost", process.pid, "idle", isoNow, isoNow]
     )
   })
 
@@ -662,10 +664,11 @@ describe("Double Completion: Idempotency After Crash", () => {
   it("doubleComplete tracks original and final status", () => {
     // Create a fresh task for testing
     const taskId = fixtureId("double-complete-task")
+    const now = new Date().toISOString()
     db.run(
       `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-       VALUES (?, 'Double Complete Task', '', 'active', 500, datetime('now'), datetime('now'), '{}')`,
-      [taskId]
+       VALUES (?, 'Double Complete Task', '', 'active', 500, ?, ?, '{}')`,
+      [taskId, now, now]
     )
 
     const result = doubleComplete({
@@ -681,10 +684,11 @@ describe("Double Completion: Idempotency After Crash", () => {
   it("doubleComplete reports second completion attempt", () => {
     // Create a fresh task
     const taskId = fixtureId("double-complete-task-2")
+    const now = new Date().toISOString()
     db.run(
       `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-       VALUES (?, 'Double Complete Task 2', '', 'ready', 500, datetime('now'), datetime('now'), '{}')`,
-      [taskId]
+       VALUES (?, 'Double Complete Task 2', '', 'ready', 500, ?, ?, '{}')`,
+      [taskId, now, now]
     )
 
     const result = doubleComplete({
@@ -714,11 +718,16 @@ describe("Double Completion: Idempotency After Crash", () => {
 
   it("service-level double completion is idempotent", async () => {
     // Create task and complete it via service
+    // IMPORTANT: Use ISO format dates (not datetime('now')) to match service layer conventions.
+    // The optimistic locking in TaskRepository.update() compares updated_at strings,
+    // and datetime('now') produces 'YYYY-MM-DD HH:MM:SS' while .toISOString() produces
+    // 'YYYY-MM-DDTHH:MM:SS.mmmZ' — the mismatch causes StaleDataError.
     const taskId = fixtureId("service-double-complete")
+    const now = new Date().toISOString()
     db.run(
       `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-       VALUES (?, 'Service Double Complete', '', 'active', 500, datetime('now'), datetime('now'), '{}')`,
-      [taskId]
+       VALUES (?, 'Service Double Complete', '', 'active', 500, ?, ?, '{}')`,
+      [taskId, now, now]
     )
 
     // First completion
@@ -878,14 +887,15 @@ describe("Random Crash Points: Various Operation States", () => {
 
   it("crash during task creation leaves no partial task", async () => {
     const newTaskId = fixtureId("crash-create-task")
+    const now = new Date().toISOString()
 
     // Simulate crash during creation by using transaction that fails
     try {
       db.transaction(() => {
         db.run(
           `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-           VALUES (?, 'Crash During Create', '', 'backlog', 500, datetime('now'), datetime('now'), '{}')`,
-          [newTaskId]
+           VALUES (?, 'Crash During Create', '', 'backlog', 500, ?, ?, '{}')`,
+          [newTaskId, now, now]
         )
         throw new Error("Simulated crash after insert")
       })
@@ -933,25 +943,26 @@ describe("Random Crash Points: Various Operation States", () => {
   it("crash during dependency addition leaves no orphan", async () => {
     const taskA = fixtureId("dep-crash-a")
     const taskB = fixtureId("dep-crash-b")
+    const now = new Date().toISOString()
 
     // Create both tasks
     db.run(
       `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-       VALUES (?, 'Dep Task A', '', 'backlog', 500, datetime('now'), datetime('now'), '{}')`,
-      [taskA]
+       VALUES (?, 'Dep Task A', '', 'backlog', 500, ?, ?, '{}')`,
+      [taskA, now, now]
     )
     db.run(
       `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-       VALUES (?, 'Dep Task B', '', 'backlog', 500, datetime('now'), datetime('now'), '{}')`,
-      [taskB]
+       VALUES (?, 'Dep Task B', '', 'backlog', 500, ?, ?, '{}')`,
+      [taskB, now, now]
     )
 
     // Simulate crash during dependency creation
     try {
       db.transaction(() => {
         db.run(
-          "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, datetime('now'))",
-          [taskA, taskB]
+          "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)",
+          [taskA, taskB, now]
         )
         throw new Error("Simulated crash during dep creation")
       })
@@ -969,6 +980,7 @@ describe("Random Crash Points: Various Operation States", () => {
 
   it("crash during multi-step operation preserves consistency", async () => {
     const taskId = fixtureId("multi-step-crash")
+    const now = new Date().toISOString()
 
     // Attempt multi-step operation (create task + add dependency) that fails at step 2
     try {
@@ -976,14 +988,14 @@ describe("Random Crash Points: Various Operation States", () => {
         // Step 1: Create task
         db.run(
           `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-           VALUES (?, 'Multi-step Task', '', 'backlog', 500, datetime('now'), datetime('now'), '{}')`,
-          [taskId]
+           VALUES (?, 'Multi-step Task', '', 'backlog', 500, ?, ?, '{}')`,
+          [taskId, now, now]
         )
 
         // Step 2: Add dependency (crash here)
         db.run(
-          "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, datetime('now'))",
-          [FIXTURES.TASK_JWT, taskId]
+          "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)",
+          [FIXTURES.TASK_JWT, taskId, now]
         )
 
         throw new Error("Simulated crash during multi-step")

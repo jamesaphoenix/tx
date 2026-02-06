@@ -108,3 +108,32 @@ export const rowToLearning = (row: LearningRow): Learning => {
     embedding: row.embedding ? bufferToFloat32Array(row.embedding) as Float32Array<ArrayBuffer> : null
   }
 }
+
+/**
+ * Convert a database row to a Learning domain object WITHOUT deserializing the embedding.
+ * Use this for code paths that discard the embedding (MCP serialization, API responses, BM25 search).
+ * Avoids allocating Float32Array buffers (~6KB per learning) that would be immediately GC'd.
+ */
+export const rowToLearningWithoutEmbedding = (row: Omit<LearningRow, "embedding">): Learning => {
+  if (!isValidSourceType(row.source_type)) {
+    throw new InvalidStatusError({
+      entity: "learning",
+      status: row.source_type,
+      validStatuses: LEARNING_SOURCE_TYPES,
+      rowId: row.id
+    })
+  }
+  return {
+    id: row.id as Learning["id"],
+    content: row.content,
+    sourceType: row.source_type,
+    sourceRef: row.source_ref,
+    createdAt: parseDate(row.created_at, "created_at", row.id),
+    keywords: parseKeywords(row.keywords),
+    category: row.category,
+    usageCount: row.usage_count,
+    lastUsedAt: row.last_used_at ? parseDate(row.last_used_at, "last_used_at", row.id) : null,
+    outcomeScore: row.outcome_score,
+    embedding: null
+  }
+}

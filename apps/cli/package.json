@@ -1,6 +1,6 @@
 {
   "name": "@tx/cli",
-  "version": "0.1.0",
+  "version": "0.4.2",
   "description": "TX command line tool - task management for AI agents and humans",
   "type": "module",
   "main": "./dist/cli.js",

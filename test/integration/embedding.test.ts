@@ -1515,6 +1515,140 @@ describe("Graceful Degradation", () => {
 })
 
 // ============================================================================
+// validateEmbeddingDimensions Tests
+// ============================================================================
+
+describe("validateEmbeddingDimensions", () => {
+  it("succeeds when vector length matches expected dimensions", async () => {
+    const vector = new Float32Array(256).fill(0.5)
+    const result = await Effect.runPromise(
+      validateEmbeddingDimensions(vector, 256)
+    )
+    expect(result).toBeInstanceOf(Float32Array)
+    expect(result.length).toBe(256)
+    expect(result[0]).toBe(0.5)
+  })
+
+  it("fails when vector is too short (provider downgrade)", async () => {
+    // Simulates switching from 1536-dim OpenAI to 256-dim local without re-embedding
+    const vector = new Float32Array(256).fill(0.1)
+    const result = await Effect.runPromise(
+      Effect.either(validateEmbeddingDimensions(vector, 1536))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("EmbeddingUnavailableError")
+      expect(result.left.reason).toContain("expected 1536, got 256")
+      expect(result.left.reason).toContain("provider change")
+    }
+  })
+
+  it("fails when vector is too long (provider upgrade)", async () => {
+    // Simulates switching from 256-dim local to 1536-dim OpenAI without re-embedding
+    const vector = new Float32Array(1536).fill(0.1)
+    const result = await Effect.runPromise(
+      Effect.either(validateEmbeddingDimensions(vector, 256))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("EmbeddingUnavailableError")
+      expect(result.left.reason).toContain("expected 256, got 1536")
+    }
+  })
+
+  it("fails on empty vector when dimensions expected", async () => {
+    const vector = new Float32Array(0)
+    const result = await Effect.runPromise(
+      Effect.either(validateEmbeddingDimensions(vector, 256))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left.reason).toContain("expected 256, got 0")
+    }
+  })
+
+  it("succeeds with various valid dimension sizes", async () => {
+    for (const dims of [128, 256, 384, 512, 768, 1024, 1536, 3072]) {
+      const vector = new Float32Array(dims)
+      const result = await Effect.runPromise(
+        validateEmbeddingDimensions(vector, dims)
+      )
+      expect(result.length).toBe(dims)
+    }
+  })
+})
+
+describe("Dimension validation in createEmbedderLayer", () => {
+  it("rejects embedding with wrong dimensions from custom embedder", async () => {
+    const config: EmbedderConfig = {
+      embed: async () => new Float32Array(512), // Returns 512 dims
+      dimensions: 256 // But claims 256
+    }
+
+    const layer = createEmbedderLayer(config)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* EmbeddingService
+        return yield* Effect.either(svc.embed("test"))
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("EmbeddingUnavailableError")
+      expect(result.left.reason).toContain("expected 256, got 512")
+    }
+  })
+
+  it("rejects batch embedding with wrong dimensions from custom embedder", async () => {
+    const config: EmbedderConfig = {
+      embed: async () => new Float32Array(512),
+      dimensions: 256
+    }
+
+    const layer = createEmbedderLayer(config)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* EmbeddingService
+        return yield* Effect.either(svc.embedBatch(["a", "b"]))
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left.reason).toContain("expected 256, got 512")
+    }
+  })
+
+  it("rejects custom embedBatch with wrong dimensions", async () => {
+    const config: EmbedderConfig = {
+      embed: async () => new Float32Array(256),
+      embedBatch: async (texts) => texts.map(() => new Float32Array(128)), // Wrong dims
+      dimensions: 256
+    }
+
+    const layer = createEmbedderLayer(config)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* EmbeddingService
+        return yield* Effect.either(svc.embedBatch(["a"]))
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left.reason).toContain("expected 256, got 128")
+    }
+  })
+})
+
+// ============================================================================
 // Runtime Interface Validator Tests
 // ============================================================================
 
@@ -1522,7 +1656,8 @@ import {
   isValidLlama,
   isValidLlamaModel,
   isValidLlamaEmbeddingContext,
-  isValidOpenAIClient
+  isValidOpenAIClient,
+  validateEmbeddingDimensions
 } from "@jamesaphoenix/tx-core"
 
 describe("Runtime Interface Validators", () => {

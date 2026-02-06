@@ -8,7 +8,7 @@
  * Per DD-007: Uses real in-memory SQLite and SHA256-based fixture IDs.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import { existsSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -2001,7 +2001,7 @@ describe("SyncService Dependency Import Statistics", () => {
     expect(result.dependencies.failures).toHaveLength(0)
   })
 
-  it("tracks dependency failures for non-existent tasks", async () => {
+  it("rolls back entire import when dependency insert fails", async () => {
     // Create only Task A, not Task B
     const now = new Date().toISOString()
     db.prepare(
@@ -2019,18 +2019,20 @@ describe("SyncService Dependency Import Statistics", () => {
     })
     writeFileSync(tempPath, jsonl + "\n", "utf-8")
 
-    const result = await Effect.runPromise(
+    // Import should fail with DatabaseError and rollback
+    const exit = await Effect.runPromiseExit(
       Effect.gen(function* () {
         const sync = yield* SyncService
         return yield* sync.import(tempPath)
       }).pipe(Effect.provide(layer))
     )
 
-    expect(result.dependencies.added).toBe(0)
-    expect(result.dependencies.failures).toHaveLength(1)
-    expect(result.dependencies.failures[0].blockerId).toBe(SYNC_FIXTURES.SYNC_TASK_A)
-    expect(result.dependencies.failures[0].blockedId).toBe(SYNC_FIXTURES.SYNC_TASK_B)
-    expect(result.dependencies.failures[0].error).toBeTruthy() // Should contain FK error message
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = exit.cause
+      // The error should be a DatabaseError wrapping the dep failure details
+      expect(String(error)).toContain("dependency failure")
+    }
   })
 
   it("returns zero dependencies for missing file", async () => {
@@ -2659,5 +2661,187 @@ describe("SyncService Import Transaction Atomicity", () => {
     // Total count should be 3 (existing + 2 new)
     const taskCount = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
     expect(taskCount.count).toBe(3)
+  })
+
+  it("rolls back all tasks when a dependency insert fails mid-import", async () => {
+    // Import tasks A and B, plus a dependency from A to a non-existent task C.
+    // The dep failure should cause ALL changes (including tasks A and B) to rollback.
+
+    const ts = "2024-01-01T00:00:00.000Z"
+    const taskA = fixtureId("tx-atomicity-a")
+    const taskB = fixtureId("tx-atomicity-b")
+    const nonExistentTask = fixtureId("tx-atomicity-ghost")
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskA,
+        data: { title: "Task A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskB,
+        data: { title: "Task B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
+      }),
+      JSON.stringify({
+        v: 1,
+        op: "dep_add",
+        ts,
+        blockerId: taskA,
+        blockedId: nonExistentTask // This task doesn't exist — FK violation
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Verify database is empty before import
+    const countBefore = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(countBefore.count).toBe(0)
+
+    // Import should fail
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+
+    // Verify ALL changes were rolled back — no tasks should be in the database
+    const countAfter = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(countAfter.count).toBe(0)
+
+    // No dependencies either
+    const depCount = db.prepare("SELECT COUNT(*) as count FROM task_dependencies").get() as { count: number }
+    expect(depCount.count).toBe(0)
+  })
+})
+
+// -----------------------------------------------------------------------------
+// Concurrent Modification Detection Tests (TOCTOU protection)
+// -----------------------------------------------------------------------------
+
+describe("SyncService Import Concurrent Modification Detection", () => {
+  let shared: SharedTestLayerResult
+  let db: Database
+  let layer: ReturnType<typeof makeTestLayer>
+  let tempPath: string
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+  })
+
+  beforeEach(async () => {
+    db = shared.getDb()
+    layer = makeTestLayer(db)
+    tempPath = createTempJsonlPath()
+  })
+
+  afterEach(async () => {
+    cleanupTempFile(tempPath)
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("rolls back import when JSONL file is modified during transaction", async () => {
+    // Write initial JSONL file with one task
+    const ts = "2024-01-01T00:00:00.000Z"
+    const taskA = fixtureId("tx-concurrent-a")
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskA,
+        data: { title: "Task A", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Monkey-patch the db.exec to simulate a concurrent export modifying the file
+    // right after BEGIN IMMEDIATE but before COMMIT.
+    // The original exec runs the SQL, then we modify the file after BEGIN IMMEDIATE.
+    const originalExec = db.exec.bind(db)
+    let beginCalled = false
+    db.exec = (sql: string) => {
+      const result = originalExec(sql)
+      if (sql === "BEGIN IMMEDIATE" && !beginCalled) {
+        beginCalled = true
+        // Simulate concurrent export: modify the JSONL file while transaction is active
+        const newTask = fixtureId("tx-concurrent-b")
+        const modifiedJsonl = [
+          jsonl,
+          JSON.stringify({
+            v: 1,
+            op: "upsert",
+            ts: "2024-01-02T00:00:00.000Z",
+            id: newTask,
+            data: { title: "Task B from concurrent export", description: "", status: "ready", score: 200, parentId: null, metadata: {} }
+          })
+        ].join("\n")
+        writeFileSync(tempPath, modifiedJsonl + "\n", "utf-8")
+      }
+      return result
+    }
+
+    // Verify database is empty before import
+    const countBefore = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(countBefore.count).toBe(0)
+
+    // Import should fail because the JSONL file was modified during the transaction
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Restore original exec
+    db.exec = originalExec
+
+    expect(Exit.isFailure(exit)).toBe(true)
+
+    // Verify all changes were rolled back — no tasks in the database
+    const countAfter = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(countAfter.count).toBe(0)
+  })
+
+  it("succeeds when JSONL file is not modified during transaction", async () => {
+    // Write JSONL file with one task
+    const ts = "2024-01-01T00:00:00.000Z"
+    const taskA = fixtureId("tx-no-concurrent-a")
+
+    const jsonl = [
+      JSON.stringify({
+        v: 1,
+        op: "upsert",
+        ts,
+        id: taskA,
+        data: { title: "Task A", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
+      })
+    ].join("\n")
+    writeFileSync(tempPath, jsonl + "\n", "utf-8")
+
+    // Import should succeed when file is unchanged
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* sync.import(tempPath)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.imported).toBe(1)
+
+    // Task should be in the database
+    const taskCount = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }
+    expect(taskCount.count).toBe(1)
   })
 })

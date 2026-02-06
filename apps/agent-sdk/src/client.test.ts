@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { TxClient, _testClearRuntimeCache, _testGetRuntimeCacheSize } from "./client.js"
+import { TxClient, _testClearRuntimeCache, _testGetRuntimeCacheSize, _testInjectMockRuntime } from "./client.js"
 import { TxError } from "./utils.js"
 
 describe("TxClient", () => {
@@ -116,6 +116,65 @@ describe("TxClient", () => {
         timeout: 5000
       })
       expect(client.configuration.timeout).toBe(5000)
+    })
+  })
+
+  describe("DirectTransport.dispose() race safety", () => {
+    beforeEach(() => {
+      _testClearRuntimeCache()
+    })
+
+    it("double dispose on same instance only calls runtime.dispose() once", async () => {
+      const client = new TxClient({ dbPath: ".tx/double-dispose.db" })
+      const mock = _testInjectMockRuntime(client, 1)
+
+      await client.dispose()
+      await client.dispose()
+
+      expect(mock.disposeCallCount()).toBe(1)
+    })
+
+    it("concurrent dispose via Promise.all only calls runtime.dispose() once", async () => {
+      const client = new TxClient({ dbPath: ".tx/concurrent-dispose.db" })
+      const mock = _testInjectMockRuntime(client, 1)
+
+      await Promise.all([client.dispose(), client.dispose()])
+
+      expect(mock.disposeCallCount()).toBe(1)
+    })
+
+    it("concurrent dispose on two instances sharing a dbPath disposes once", async () => {
+      const dbPath = ".tx/shared-dispose.db"
+      const client1 = new TxClient({ dbPath })
+      const client2 = new TxClient({ dbPath })
+      // refCount = 2 for two clients sharing the same runtime
+      const mock = _testInjectMockRuntime(client1, 2)
+      // Point client2's transport at the same mock runtime
+      ;(client2 as any).transport.runtime = (client1 as any).transport.runtime
+
+      await Promise.all([client1.dispose(), client2.dispose()])
+
+      expect(mock.disposeCallCount()).toBe(1)
+      expect(_testGetRuntimeCacheSize()).toBe(0)
+    })
+
+    it("dispose clears runtime cache entry when refCount reaches 0", async () => {
+      const client = new TxClient({ dbPath: ".tx/cache-clear.db" })
+      _testInjectMockRuntime(client, 1)
+
+      expect(_testGetRuntimeCacheSize()).toBe(1)
+      await client.dispose()
+      expect(_testGetRuntimeCacheSize()).toBe(0)
+    })
+
+    it("dispose does not remove cache entry when other clients remain", async () => {
+      const client = new TxClient({ dbPath: ".tx/partial-dispose.db" })
+      _testInjectMockRuntime(client, 3)
+
+      await client.dispose()
+
+      // refCount went from 3 to 2, cache entry should still exist
+      expect(_testGetRuntimeCacheSize()).toBe(1)
     })
   })
 

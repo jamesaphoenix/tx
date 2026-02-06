@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { makeAppLayer } from "@jamesaphoenix/tx-core"
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
+import { CLI_VERSION } from "./version.js"
 
 // Command imports
 import { add, list, ready, show, update, done, deleteTask, reset } from "./commands/task.js"
@@ -33,6 +34,7 @@ import { validate } from "./commands/validate.js"
 import { doctor } from "./commands/doctor.js"
 import { stats } from "./commands/stats.js"
 import { bulk } from "./commands/bulk.js"
+import { dashboard } from "./commands/dashboard.js"
 
 // --- Argv parsing helpers ---
 
@@ -181,6 +183,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Bulk operations
   bulk,
 
+  // Dashboard command
+  dashboard,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -207,7 +212,7 @@ const { command, positional, flags: parsedFlags } = parseArgs(process.argv)
 
 // Handle --version early, before any command processing
 if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
-  console.log("tx v0.1.0")
+  console.log(`tx v${CLI_VERSION}`)
   process.exit(0)
 }
 

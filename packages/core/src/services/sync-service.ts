@@ -1,5 +1,7 @@
 import { Context, Effect, Exit, Layer, Schema } from "effect"
 import { writeFile, rename, readFile, stat, mkdir, access } from "node:fs/promises"
+import { readFileSync } from "node:fs"
+import { createHash } from "node:crypto"
 import { dirname, resolve } from "node:path"
 import { DatabaseError, TaskNotFoundError, ValidationError } from "../errors.js"
 import { SqliteClient } from "../db.js"
@@ -383,6 +385,9 @@ export const SyncServiceLive = Layer.effect(
             return EMPTY_IMPORT_RESULT
           }
 
+          // Compute hash of file content for concurrent modification detection (TOCTOU protection)
+          const fileHash = createHash("sha256").update(content).digest("hex")
+
           // Parse all operations with Schema validation (outside transaction - no DB access)
           const ops: SyncOperation[] = []
           for (const line of lines) {
@@ -575,6 +580,31 @@ export const SyncServiceLive = Layer.effect(
                       depsSkipped++
                     }
                   }
+                }
+
+                // If any dependency inserts failed, abort the entire transaction.
+                // This ensures atomicity: tasks and their dependencies are imported
+                // together or not at all. A partial import (tasks without deps) would
+                // leave the dependency graph incomplete.
+                if (depFailures.length > 0) {
+                  const details = depFailures
+                    .map(f => `${f.blockerId} -> ${f.blockedId}: ${f.error}`)
+                    .join("; ")
+                  throw new Error(
+                    `Sync import rolled back: ${depFailures.length} dependency failure(s): ${details}`
+                  )
+                }
+
+                // Verify file hasn't been modified during import (TOCTOU protection).
+                // Re-read synchronously while holding the DB write lock (BEGIN IMMEDIATE).
+                // If another process exported between our initial read and now, the hash
+                // will differ and we roll back to avoid committing stale data.
+                const verifyContent = readFileSync(filePath, "utf-8")
+                const verifyHash = createHash("sha256").update(verifyContent).digest("hex")
+                if (verifyHash !== fileHash) {
+                  throw new Error(
+                    "Sync import rolled back: JSONL file was modified during import (concurrent export detected). Retry the import."
+                  )
                 }
 
                 // Record import time

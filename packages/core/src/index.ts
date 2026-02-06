@@ -244,7 +244,9 @@ export {
   isValidLlama,
   isValidLlamaModel,
   isValidLlamaEmbeddingContext,
-  isValidOpenAIClient
+  isValidOpenAIClient,
+  // Dimension validation
+  validateEmbeddingDimensions
 } from "./services/index.js"
 
 // =============================================================================

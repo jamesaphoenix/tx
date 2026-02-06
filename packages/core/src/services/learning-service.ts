@@ -92,7 +92,7 @@ export const LearningServiceLive = Layer.effect(
           })
         }),
 
-      getRecent: (limit = 10) => learningRepo.findRecent(limit),
+      getRecent: (limit = 10) => learningRepo.findRecentWithoutEmbedding(limit),
 
       recordUsage: (id) =>
         Effect.gen(function* () {

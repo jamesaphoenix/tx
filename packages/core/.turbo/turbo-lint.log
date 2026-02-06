@@ -32,6 +32,7 @@ $ eslint src/
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/learning.ts
    98:9   warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
   108:32  warning  Unsafe "as Float32Array<ArrayBuffer>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  127:9   warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                       tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/mappers/orchestrator-state.ts
   34:11  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
@@ -170,22 +171,23 @@ $ eslint src/
   102:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                         tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/learning-repo.ts
-    9:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "BM25Result". See DOCTRINE RULE 10                           tx/no-plain-interfaces
-  102:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
-  106:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
-  118:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
-  127:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  139:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  142:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  154:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  157:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  168:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  183:26  warning  Unsafe "as LearningRowWithBM25[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead    tx/no-as-cast-in-repos
-  208:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  273:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
-  282:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
-  291:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                     tx/no-as-cast-in-repos
-  300:25  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead         tx/no-as-cast-in-repos
+   16:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "BM25Result". See DOCTRINE RULE 10                                     tx/no-plain-interfaces
+  111:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  115:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                             tx/no-as-cast-in-repos
+  127:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  136:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  148:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  151:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  163:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  166:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  177:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  188:26  warning  Unsafe "as Omit<LearningRow, type>[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead          tx/no-as-cast-in-repos
+  205:26  warning  Unsafe "as Omit<LearningRowWithBM25, type>[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  230:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  295:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
+  304:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
+  313:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
+  322:25  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/orchestrator-state-repo.ts
   80:25  warning  Unsafe "as OrchestratorStateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
@@ -282,7 +284,7 @@ $ eslint src/
    19:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "Llama". See DOCTRINE RULE 10                    tx/no-plain-interfaces
    24:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "OpenAIEmbeddingResponse". See DOCTRINE RULE 10  tx/no-plain-interfaces
    35:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "OpenAIClient". See DOCTRINE RULE 10             tx/no-plain-interfaces
-  475:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedderConfig". See DOCTRINE RULE 10           tx/no-plain-interfaces
+  506:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "EmbedderConfig". See DOCTRINE RULE 10           tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/feedback-tracker.ts
   8:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "LearningUsageFeedback". See DOCTRINE RULE 10  tx/no-plain-interfaces
@@ -333,7 +335,7 @@ $ eslint src/
   26:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "RerankerResult". See DOCTRINE RULE 10       tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/retriever-service.ts
-  123:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "RRFCandidate". See DOCTRINE RULE 10  tx/no-plain-interfaces
+  128:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "RRFCandidate". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/score-service.ts
   11:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ScoreBreakdown". See DOCTRINE RULE 10  tx/no-plain-interfaces
@@ -347,14 +349,16 @@ $ eslint src/
   87:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "VoteResult". See DOCTRINE RULE 10               tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/sync-service.ts
-  21:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
-  29:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "DependencyImportResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  39:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
-  49:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SyncStatus". See DOCTRINE RULE 10              tx/no-plain-interfaces
-  61:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactResult". See DOCTRINE RULE 10           tx/no-plain-interfaces
-  69:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportOptions". See DOCTRINE RULE 10           tx/no-plain-interfaces
-  78:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
-  88:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
+   23:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
+   31:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "DependencyImportResult". See DOCTRINE RULE 10  tx/no-plain-interfaces
+   41:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportResult". See DOCTRINE RULE 10            tx/no-plain-interfaces
+   51:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SyncStatus". See DOCTRINE RULE 10              tx/no-plain-interfaces
+   63:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "CompactResult". See DOCTRINE RULE 10           tx/no-plain-interfaces
+   71:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportOptions". See DOCTRINE RULE 10           tx/no-plain-interfaces
+   80:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
+   90:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
+  593:19  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                           tx/no-throw-in-services
+  605:19  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                           tx/no-throw-in-services
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/tracing-service.ts
   8:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SpanOptions". See DOCTRINE RULE 10  tx/no-plain-interfaces
@@ -390,5 +394,5 @@ $ eslint src/
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/worker/run-worker.ts
   34:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ShutdownState". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
-✖ 282 problems (0 errors, 282 warnings)
+✖ 286 problems (0 errors, 286 warnings)
 

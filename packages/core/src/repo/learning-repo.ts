@@ -1,9 +1,16 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, LearningNotFoundError } from "../errors.js"
-import { rowToLearning, float32ArrayToBuffer } from "../mappers/learning.js"
+import { rowToLearning, rowToLearningWithoutEmbedding, float32ArrayToBuffer } from "../mappers/learning.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@jamesaphoenix/tx-types"
+
+/**
+ * All learning columns EXCEPT embedding.
+ * Used by queries where embedding data is discarded (BM25 search, listing, serialization).
+ * Avoids loading ~6KB Float32Array per learning that would be immediately GC'd.
+ */
+const COLS_NO_EMBEDDING = "id, content, source_type, source_ref, created_at, keywords, category, usage_count, last_used_at, outcome_score"
 
 /** Scored learning result from BM25 search */
 export interface BM25Result {
@@ -22,6 +29,8 @@ export class LearningRepository extends Context.Tag("LearningRepository")<
     /** Find learnings without embeddings with pagination (for batch embedding) */
     readonly findWithoutEmbeddingPaginated: (limit: number, afterId?: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly findRecent: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
+    /** Find recent learnings without loading embedding data (for listing/serialization) */
+    readonly findRecentWithoutEmbedding: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly bm25Search: (query: string, limit: number) => Effect.Effect<readonly BM25Result[], DatabaseError>
     /** Find learnings that have embeddings (for vector search) */
     readonly findWithEmbeddings: (limit: number) => Effect.Effect<readonly Learning[], DatabaseError>
@@ -173,6 +182,17 @@ export const LearningRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause })
         }),
 
+      findRecentWithoutEmbedding: (limit) =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(
+              `SELECT ${COLS_NO_EMBEDDING} FROM learnings ORDER BY created_at DESC LIMIT ?`
+            ).all(limit) as Omit<LearningRow, "embedding">[]
+            return rows.map(rowToLearningWithoutEmbedding)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
       bm25Search: (query, limit) =>
         Effect.try({
           try: () => {
@@ -180,14 +200,16 @@ export const LearningRepositoryLive = Layer.effect(
             if (!ftsQuery) return []
 
             // FTS5 BM25 returns negative scores; lower (more negative) = better match
+            // Exclude embedding column — BM25 results never need it, and loading
+            // ~6KB Float32Array per row just to discard it wastes memory.
             const rows = db.prepare(`
-              SELECT l.*, bm25(learnings_fts) as bm25_score
+              SELECT l.${COLS_NO_EMBEDDING}, bm25(learnings_fts) as bm25_score
               FROM learnings l
               JOIN learnings_fts ON l.id = learnings_fts.rowid
               WHERE learnings_fts MATCH ?
               ORDER BY bm25_score
               LIMIT ?
-            `).all(ftsQuery, limit * 3) as LearningRowWithBM25[]
+            `).all(ftsQuery, limit * 3) as Omit<LearningRowWithBM25, "embedding">[]
 
             if (rows.length === 0) return []
 
@@ -195,7 +217,7 @@ export const LearningRepositoryLive = Layer.effect(
             // Best match gets 1.0, decays with rank
             // Formula: score = 1.0 / (1 + rank * 0.1) gives 1.0, 0.91, 0.83, ...
             return rows.map((row, rank) => ({
-              learning: rowToLearning(row),
+              learning: rowToLearningWithoutEmbedding(row),
               score: 1.0 / (1 + rank * 0.1)
             }))
           },
