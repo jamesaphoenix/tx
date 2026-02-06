@@ -214,9 +214,10 @@ $ eslint src/
   169:20  warning  Unsafe "as Map<string, type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead    tx/no-as-cast-in-repos
   179:26  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
   200:26  warning  Unsafe "as TaskRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  294:35  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead     tx/no-as-cast-in-repos
-  332:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                    tx/no-throw-in-services
-  420:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                 tx/no-as-cast-in-repos
+  273:19  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead     tx/no-as-cast-in-repos
+  338:35  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead     tx/no-as-cast-in-repos
+  376:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                    tx/no-throw-in-services
+  464:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                 tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/tracked-project-repo.ts
   40:25  warning  Unsafe "as TrackedProjectRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
@@ -389,5 +390,5 @@ $ eslint src/
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/worker/run-worker.ts
   34:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ShutdownState". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
-✖ 281 problems (0 errors, 281 warnings)
+✖ 282 problems (0 errors, 282 warnings)
 
