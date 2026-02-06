@@ -121,7 +121,7 @@ function createTestApp(db: TestDatabase, txDir: string) {
   app.get("/api/tasks", (c) => {
     try {
       const cursor = c.req.query("cursor")
-      const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100)
+      const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
       const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
       const search = c.req.query("search")
 
@@ -265,7 +265,7 @@ function createTestApp(db: TestDatabase, txDir: string) {
   app.get("/api/runs", (c) => {
     try {
       const cursor = c.req.query("cursor")
-      const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100)
+      const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
       const agentFilter = c.req.query("agent")
       const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
 
@@ -516,6 +516,35 @@ describe("Dashboard API - GET /api/tasks", () => {
     expect(data.tasks.length).toBe(2)
     expect(data.hasMore).toBe(true)
     expect(data.nextCursor).not.toBeNull()
+  })
+
+  it("defaults to 20 when limit is non-numeric (NaN guard)", async () => {
+    const res = await request(app, "/api/tasks?limit=abc")
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    // Should not error — defaults to 20
+    expect(data.tasks).toBeInstanceOf(Array)
+    expect(data.tasks.length).toBeLessThanOrEqual(20)
+  })
+
+  it("defaults to 20 when limit is 0", async () => {
+    const res = await request(app, "/api/tasks?limit=0")
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    // parseInt("0") || 20 → 20
+    expect(data.tasks).toBeInstanceOf(Array)
+    expect(data.tasks.length).toBeLessThanOrEqual(20)
+  })
+
+  it("caps limit at 100", async () => {
+    const res = await request(app, "/api/tasks?limit=9999")
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    // Math.min(9999, 100) → 100
+    expect(data.tasks).toBeInstanceOf(Array)
   })
 
   it("filters by status", async () => {
@@ -875,6 +904,15 @@ describe("Dashboard API - GET /api/runs", () => {
     expect(data.runs.length).toBe(2)
     expect(data.hasMore).toBe(true)
     expect(data.nextCursor).not.toBeNull()
+  })
+
+  it("defaults to 20 when limit is non-numeric (NaN guard)", async () => {
+    const res = await request(app, "/api/runs?limit=abc")
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    // Should not error — defaults to 20
+    expect(data.runs).toBeInstanceOf(Array)
   })
 
   it("filters by agent", async () => {

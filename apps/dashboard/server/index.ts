@@ -148,7 +148,7 @@ app.get("/api/tasks", (c) => {
   try {
     const db = getDb()
     const cursor = c.req.query("cursor")
-    const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100)
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
     const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
     const search = c.req.query("search")
 
@@ -402,7 +402,7 @@ app.get("/api/runs", (c) => {
   try {
     const db = getDb()
     const cursor = c.req.query("cursor")
-    const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100)
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
     const agentFilter = c.req.query("agent")
     const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
 
