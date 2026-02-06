@@ -91,6 +91,12 @@ export const TaskRepositoryLive = Layer.effect(
               params.push(filter.cursor.score, filter.cursor.score, filter.cursor.id)
             }
 
+            // Exclude tasks with active claims (thundering herd prevention)
+            // Uses idx_claims_active_task partial index for efficient lookup
+            if (filter?.excludeClaimed) {
+              conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active')")
+            }
+
             const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
             // Use parameterized query for LIMIT to prevent SQL injection
             let limitClause = ""

@@ -543,6 +543,76 @@ describe("Ready detection", () => {
     expect(ready).toHaveLength(1)
   })
 
+  it("excludes tasks with active claims (thundering herd prevention)", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
+
+    // Verify JWT is in the ready list before claiming
+    const readyBefore = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getReady()
+      }).pipe(Effect.provide(layer))
+    )
+    const jwtBefore = readyBefore.find(t => t.id === FIXTURES.TASK_JWT)
+    expect(jwtBefore).toBeDefined()
+
+    // Insert a worker (required by FK constraint on task_claims)
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at, capabilities, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}')`
+    ).run("worker-other", "other-worker", "localhost", 99999, "idle", now, now)
+
+    // Simulate another worker claiming JWT by inserting an active claim directly
+    const leaseExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+    db.prepare(
+      `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+       VALUES (?, ?, ?, ?, 0, 'active')`
+    ).run(FIXTURES.TASK_JWT, "worker-other", now, leaseExpires)
+
+    // getReady should now exclude the claimed task
+    const readyAfter = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getReady()
+      }).pipe(Effect.provide(layer))
+    )
+    expect(readyAfter.find(t => t.id === FIXTURES.TASK_JWT)).toBeUndefined()
+
+    // Other unclaimed tasks should still appear
+    expect(readyAfter.length).toBeGreaterThan(0)
+  })
+
+  it("includes tasks with released/expired claims", async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+    const db = shared.getDb()
+
+    // Insert a worker (required by FK constraint on task_claims)
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at, capabilities, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}')`
+    ).run("worker-done", "done-worker", "localhost", 99998, "idle", now, now)
+
+    // Insert a released claim on JWT (not active — should not exclude)
+    const leaseExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+    db.prepare(
+      `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+       VALUES (?, ?, ?, ?, 0, 'released')`
+    ).run(FIXTURES.TASK_JWT, "worker-done", now, leaseExpires)
+
+    const ready = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* ReadyService
+        return yield* svc.getReady()
+      }).pipe(Effect.provide(layer))
+    )
+
+    // JWT should still appear because the claim is released, not active
+    expect(ready.find(t => t.id === FIXTURES.TASK_JWT)).toBeDefined()
+  })
+
   it("isReady returns Ready for unblocked workable tasks", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(

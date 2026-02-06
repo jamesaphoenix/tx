@@ -152,6 +152,8 @@ export const TaskFilterSchema = Schema.Struct({
   search: Schema.optional(Schema.String),
   /** Cursor for keyset pagination (returns tasks after this cursor) */
   cursor: Schema.optional(TaskCursorSchema),
+  /** Exclude tasks that have an active claim in task_claims (prevents thundering herd) */
+  excludeClaimed: Schema.optional(Schema.Boolean),
 })
 export type TaskFilter = typeof TaskFilterSchema.Type
 

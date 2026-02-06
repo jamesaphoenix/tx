@@ -36,9 +36,12 @@ export const ReadyServiceLive = Layer.effect(
     return {
       getReady: (limit = 100) =>
         Effect.gen(function* () {
-          // 1. Single query: get all candidate tasks
+          // 1. Single query: get all candidate tasks (excluding actively claimed)
+          // The excludeClaimed filter prevents the thundering herd problem where
+          // multiple workers all see the same tasks and race to claim them.
           const candidates = yield* taskRepo.findAll({
-            status: ["backlog", "ready", "planning"]
+            status: ["backlog", "ready", "planning"],
+            excludeClaimed: true
           })
 
           if (candidates.length === 0) {
