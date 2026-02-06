@@ -3,10 +3,14 @@
  */
 
 import { Effect } from "effect"
-import { TaskService } from "@jamesaphoenix/tx-core"
+import { TaskService, type TaskNotFoundError, type DatabaseError } from "@jamesaphoenix/tx-core"
 import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
 import { toJson, formatTaskLine } from "../output.js"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
+
+interface TaskTreeNode extends TaskWithDeps {
+  readonly childTasks: readonly TaskTreeNode[]
+}
 
 export const children = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -47,7 +51,7 @@ export const tree = (pos: string[], flags: Flags) =>
     const svc = yield* TaskService
 
     // Recursive tree builder
-    const buildTree = (taskId: string, depth: number): Effect.Effect<void, unknown, TaskService> =>
+    const buildTree = (taskId: string, depth: number): Effect.Effect<void, TaskNotFoundError | DatabaseError, TaskService> =>
       Effect.gen(function* () {
         const task = yield* svc.getWithDeps(parseTaskId(taskId))
         const indent = "  ".repeat(depth)
@@ -55,10 +59,10 @@ export const tree = (pos: string[], flags: Flags) =>
 
         if (flag(flags, "json") && depth === 0) {
           // For JSON, collect the full tree
-          const collectTree = (t: TaskWithDeps): Effect.Effect<unknown, unknown, TaskService> =>
+          const collectTree = (t: TaskWithDeps): Effect.Effect<TaskTreeNode, DatabaseError, TaskService> =>
             Effect.gen(function* () {
               const childTasks = yield* svc.listWithDeps({ parentId: t.id })
-              const childTrees = []
+              const childTrees: TaskTreeNode[] = []
               for (const c of childTasks) {
                 childTrees.push(yield* collectTree(c))
               }
