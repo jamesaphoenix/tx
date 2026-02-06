@@ -456,6 +456,91 @@ describe("Deadlock Detection: Circular Dependencies", () => {
     expect(hasPathReverse).toBe(false)
   })
 
+  it("hasPath respects depth limit on very deep chains (>100 levels)", async () => {
+    // Create a chain deeper than MAX_DEPENDENCY_DEPTH (100)
+    // This verifies the depth limit clause prevents unbounded recursion
+    const chainLength = 105
+    const deepChainTasks = Array.from({ length: chainLength }, (_, i) => fixtureId(`deep-chain-${i}`))
+
+    const now = new Date().toISOString()
+    const insertTask = db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    )
+    for (let i = 0; i < deepChainTasks.length; i++) {
+      insertTask.run(deepChainTasks[i], `Deep Chain Task ${i}`, now, now)
+    }
+
+    // Create dependencies: task[i] blocks task[i+1]
+    const insertDep = db.db.prepare(
+      "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, datetime('now'))"
+    )
+    for (let i = 0; i < deepChainTasks.length - 1; i++) {
+      insertDep.run(deepChainTasks[i], deepChainTasks[i + 1])
+    }
+
+    // Path within depth limit (90 levels) should be found
+    const hasPathWithinLimit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.hasPath(deepChainTasks[90], deepChainTasks[0])
+      }).pipe(Effect.provide(layer))
+    )
+    expect(hasPathWithinLimit).toBe(true)
+
+    // Path beyond depth limit (104 levels) may not be found due to depth cutoff
+    // The important thing is it doesn't crash or hit SQLite's internal limit
+    const hasPathBeyondLimit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.hasPath(deepChainTasks[104], deepChainTasks[0])
+      }).pipe(Effect.provide(layer))
+    )
+    // With depth limit = 100, we can only traverse 100 levels from task[104]
+    // which reaches task[4], not task[0]. So path is not found.
+    expect(hasPathBeyondLimit).toBe(false)
+  })
+
+  it("insertWithCycleCheck works correctly at depth boundary", async () => {
+    // Create a chain of exactly 99 levels (within limit)
+    const chainLength = 100
+    const boundaryTasks = Array.from({ length: chainLength }, (_, i) => fixtureId(`boundary-${i}`))
+
+    const now = new Date().toISOString()
+    const insertTask = db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
+       VALUES (?, ?, '', 'backlog', 500, ?, ?, '{}')`
+    )
+    for (let i = 0; i < boundaryTasks.length; i++) {
+      insertTask.run(boundaryTasks[i], `Boundary Task ${i}`, now, now)
+    }
+
+    // Create chain: task[0] -> task[1] -> ... -> task[99] (99 dependency edges)
+    const insertDep = db.db.prepare(
+      "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, datetime('now'))"
+    )
+    for (let i = 0; i < boundaryTasks.length - 1; i++) {
+      insertDep.run(boundaryTasks[i], boundaryTasks[i + 1])
+    }
+
+    // Attempt to add task[99] blocks task[0] — would create 100-level cycle
+    // At depth limit, cycle detection may not find the path back
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* DependencyRepository
+        return yield* repo.insertWithCycleCheck(boundaryTasks[99], boundaryTasks[0])
+      }).pipe(Effect.provide(layer))
+    )
+
+    // The cycle check traverses from task[0] following blockers:
+    // task[0] is blocked by nothing directly in the "blocked_id = ?" direction,
+    // but task[99] blocks task[0] means we check if task[0] can reach task[99].
+    // The chain goes task[0] <- task[1] <- ... <- task[99], so from task[99]'s
+    // perspective as blocked_id, we walk blocker_id chain. At 99 edges this is
+    // within the 100-level depth limit, so cycle should be detected.
+    expect(result._tag).toBe("wouldCycle")
+  })
+
   it("service block rejects self-blocking", async () => {
     // Attempting to make a task block itself should fail
     // addBlocker(taskId, blockerId) - add blockerId as a blocker of taskId

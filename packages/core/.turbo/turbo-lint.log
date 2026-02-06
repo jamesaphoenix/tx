@@ -357,8 +357,8 @@ $ eslint src/
    71:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportOptions". See DOCTRINE RULE 10           tx/no-plain-interfaces
    80:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ExportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
    90:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ImportAllResult". See DOCTRINE RULE 10         tx/no-plain-interfaces
-  593:19  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                           tx/no-throw-in-services
-  605:19  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                           tx/no-throw-in-services
+  592:19  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                           tx/no-throw-in-services
+  604:19  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                           tx/no-throw-in-services
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/tracing-service.ts
   8:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "SpanOptions". See DOCTRINE RULE 10  tx/no-plain-interfaces
