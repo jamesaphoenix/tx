@@ -445,51 +445,70 @@ class DirectTransport implements Transport {
   // Tasks
   async listTasks(options: ListOptions): Promise<PaginatedResponse<SerializedTaskWithDeps>> {
     await this.ensureRuntime()
-     
+
     const Effect = (this as any).Effect
-     
+
     const core = (this as any).core
 
-    // Normalize status to array for consistent handling
-    const statusArray = options.status
-      ? (Array.isArray(options.status) ? options.status : [options.status])
-      : []
+    const limit = options.limit ?? 20
 
-    // If single status, pass to service for efficiency
-    // If multiple statuses, fetch all and filter locally
-    const serviceStatus = statusArray.length === 1 ? statusArray[0] : undefined
+    // Parse cursor string "score:id" into TaskCursor object
+    let cursor: { score: number; id: string } | undefined
+    if (options.cursor) {
+      const colonIdx = options.cursor.indexOf(":")
+      if (colonIdx > 0) {
+        cursor = {
+          score: Number(options.cursor.slice(0, colonIdx)),
+          id: options.cursor.slice(colonIdx + 1)
+        }
+      }
+    }
 
-     
+    // Build filter - push all filtering, sorting, and pagination to the database layer
+    const filter: Record<string, unknown> = {
+      // Fetch limit + 1 to detect hasMore
+      limit: limit + 1,
+    }
+
+    // Pass status filter (single or array) directly to SQL
+    if (options.status) {
+      filter.status = options.status
+    }
+
+    if (options.search) {
+      filter.search = options.search
+    }
+
+    if (cursor) {
+      filter.cursor = cursor
+    }
+
+    // Fetch paginated tasks from database (sorted by score DESC, id ASC via SQL)
     const tasks = await this.run<any[]>(
       Effect.gen(function* () {
         const taskService = yield* core.TaskService
-        return yield* taskService.listWithDeps({ status: serviceStatus })
+        return yield* taskService.listWithDeps(filter)
       })
     )
 
-    // Apply status filter if multiple statuses provided
-     
-    let filtered = statusArray.length > 1
-      ? tasks.filter((t: any) => statusArray.includes(t.status))
-      : tasks
+    const hasMore = tasks.length > limit
+    const resultTasks = hasMore ? tasks.slice(0, limit) : tasks
+
+    // Get total count with same filters (excluding cursor/limit)
+    const countFilter: Record<string, unknown> = {}
+    if (options.status) {
+      countFilter.status = options.status
+    }
     if (options.search) {
-      const searchLower = options.search.toLowerCase()
-       
-      filtered = tasks.filter((t: any) =>
-        t.title.toLowerCase().includes(searchLower) ||
-        t.description.toLowerCase().includes(searchLower)
-      )
+      countFilter.search = options.search
     }
 
-    // Sort by score DESC
-     
-    filtered.sort((a: any, b: any) => b.score - a.score)
-
-    // Apply pagination
-    const limit = options.limit ?? 20
-    const paginated = filtered.slice(0, limit + 1)
-    const hasMore = paginated.length > limit
-    const resultTasks = hasMore ? paginated.slice(0, limit) : paginated
+    const total = await this.run<number>(
+      Effect.gen(function* () {
+        const taskService = yield* core.TaskService
+        return yield* taskService.count(countFilter)
+      })
+    )
 
     return {
       items: resultTasks.map((t: unknown) => this.serializeTask(t)),
@@ -497,7 +516,7 @@ class DirectTransport implements Transport {
         ? `${resultTasks[resultTasks.length - 1].score}:${resultTasks[resultTasks.length - 1].id}`
         : null,
       hasMore,
-      total: filtered.length
+      total
     }
   }
 
