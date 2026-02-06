@@ -375,9 +375,9 @@ $ eslint src/
   50:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ValidateOptions". See DOCTRINE RULE 10   tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/worker-process.ts
-  28:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "WorkerProcessConfig". See DOCTRINE RULE 10  tx/no-plain-interfaces
-  46:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AgentResult". See DOCTRINE RULE 10          tx/no-plain-interfaces
-  70:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "MutableWorkerState". See DOCTRINE RULE 10   tx/no-plain-interfaces
+   65:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "WorkerProcessConfig". See DOCTRINE RULE 10  tx/no-plain-interfaces
+   83:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AgentResult". See DOCTRINE RULE 10          tx/no-plain-interfaces
+  107:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "MutableWorkerState". See DOCTRINE RULE 10   tx/no-plain-interfaces
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/services/worker-service.ts
   23:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "WorkerRegistration". See DOCTRINE RULE 10  tx/no-plain-interfaces
