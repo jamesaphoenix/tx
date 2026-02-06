@@ -12,7 +12,6 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { ClaimRepository } from "../repo/claim-repo.js"
 import { WorkerService } from "./worker-service.js"
 import { ClaimService } from "./claim-service.js"
-import { ReadyService } from "./ready-service.js"
 import { DatabaseError, OrchestratorError, TaskNotFoundError } from "../errors.js"
 import type { OrchestratorState, ReconciliationResult } from "../schemas/worker.js"
 
@@ -80,7 +79,6 @@ export const OrchestratorServiceLive = Layer.effect(
     const stateRepo = yield* OrchestratorStateRepository
     const workerService = yield* WorkerService
     const claimService = yield* ClaimService
-    const readyService = yield* ReadyService
     const taskRepo = yield* TaskRepository
     const claimRepo = yield* ClaimRepository
 
@@ -264,20 +262,10 @@ export const OrchestratorServiceLive = Layer.effect(
             yield* claimService.expire(claim.id).pipe(
               Effect.catchAll(() => Effect.void)
             )
-            // Return task to appropriate state if it was active
-            const task = yield* taskRepo.findById(claim.taskId)
-            if (task && task.status === "active") {
-              // Check if all blockers are done before setting to ready
-              const blockers = yield* readyService.getBlockers(task.id)
-              const allBlockersDone = blockers.every(b => b.status === "done")
-              const newStatus = allBlockersDone ? "ready" : "blocked"
-              const now = new Date()
-              yield* taskRepo.update({
-                ...task,
-                status: newStatus,
-                updatedAt: now
-              })
-            }
+            // Atomically recover task status based on blocker states.
+            // Single UPDATE with subquery eliminates TOCTOU race between
+            // reading blocker statuses and writing the new task status.
+            yield* taskRepo.recoverTaskStatus(claim.taskId, "active")
             expiredClaimsReleased++
           }
 
@@ -287,17 +275,12 @@ export const OrchestratorServiceLive = Layer.effect(
           for (const task of activeTasks) {
             const activeClaim = yield* claimRepo.findActiveByTaskId(task.id)
             if (!activeClaim) {
-              // Task is orphaned - check blockers before setting status
-              const blockers = yield* readyService.getBlockers(task.id)
-              const allBlockersDone = blockers.every(b => b.status === "done")
-              const newStatus = allBlockersDone ? "ready" : "blocked"
-              const now = new Date()
-              yield* taskRepo.update({
-                ...task,
-                status: newStatus,
-                updatedAt: now
-              })
-              orphanedTasksRecovered++
+              // Atomically recover orphaned task status based on blocker states.
+              // Single UPDATE with subquery eliminates TOCTOU race.
+              const updated = yield* taskRepo.recoverTaskStatus(task.id, "active")
+              if (updated) {
+                orphanedTasksRecovered++
+              }
             }
           }
 

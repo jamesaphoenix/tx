@@ -1426,3 +1426,159 @@ describe("Task Repository updateMany with staleness detection", () => {
     }
   })
 })
+
+describe("Task Repository recoverTaskStatus (atomic TOCTOU fix)", () => {
+  let shared: SharedTestLayerResult
+  let repoLayer: Layer.Layer<TaskRepository, never, never>
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    repoLayer = makeRepoLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("sets active task to ready when no blockers exist", async () => {
+    const db = shared.getDb()
+    const taskId = fixtureId("recover-no-blockers")
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(taskId, "No blockers", "", "active", null, 500, now, now, null, "{}")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.recoverTaskStatus(taskId, "active")
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result).toBe(true)
+
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(taskId)
+      }).pipe(Effect.provide(repoLayer))
+    )
+    expect(task!.status).toBe("ready")
+  })
+
+  it("sets active task to ready when all blockers are done", async () => {
+    const db = shared.getDb()
+    const taskId = fixtureId("recover-done-blockers")
+    const blockerId = fixtureId("recover-blocker-done")
+    const now = new Date().toISOString()
+
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(blockerId, "Done blocker", "", "done", null, 500, now, now, now, "{}")
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(taskId, "Blocked task", "", "active", null, 500, now, now, null, "{}")
+    db.prepare(
+      `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
+    ).run(blockerId, taskId, now)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.recoverTaskStatus(taskId, "active")
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result).toBe(true)
+
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(taskId)
+      }).pipe(Effect.provide(repoLayer))
+    )
+    expect(task!.status).toBe("ready")
+  })
+
+  it("sets active task to blocked when blockers are not done", async () => {
+    const db = shared.getDb()
+    const taskId = fixtureId("recover-pending-blockers")
+    const blockerId = fixtureId("recover-blocker-pending")
+    const now = new Date().toISOString()
+
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(blockerId, "Pending blocker", "", "ready", null, 500, now, now, null, "{}")
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(taskId, "Blocked task", "", "active", null, 500, now, now, null, "{}")
+    db.prepare(
+      `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
+    ).run(blockerId, taskId, now)
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.recoverTaskStatus(taskId, "active")
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result).toBe(true)
+
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(taskId)
+      }).pipe(Effect.provide(repoLayer))
+    )
+    expect(task!.status).toBe("blocked")
+  })
+
+  it("returns false when task status does not match expectedStatus", async () => {
+    const db = shared.getDb()
+    const taskId = fixtureId("recover-wrong-status")
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(taskId, "Ready task", "", "ready", null, 500, now, now, null, "{}")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.recoverTaskStatus(taskId, "active")
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result).toBe(false)
+
+    // Status should be unchanged
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.findById(taskId)
+      }).pipe(Effect.provide(repoLayer))
+    )
+    expect(task!.status).toBe("ready")
+  })
+
+  it("returns false when task does not exist", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* TaskRepository
+        return yield* repo.recoverTaskStatus("tx-nonexist", "active")
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result).toBe(false)
+  })
+})

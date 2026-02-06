@@ -21,6 +21,17 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
     readonly updateMany: (tasks: readonly Task[]) => Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError>
     readonly remove: (id: string) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
     readonly count: (filter?: TaskFilter) => Effect.Effect<number, DatabaseError>
+    /**
+     * Atomically recover a task's status based on blocker states.
+     * Uses a single UPDATE with subquery to eliminate TOCTOU races.
+     * Sets status to 'ready' if all blockers are done, 'blocked' otherwise.
+     * Only updates if the task's current status matches expectedStatus.
+     * Returns true if a row was updated, false if no matching row found.
+     */
+    readonly recoverTaskStatus: (
+      taskId: string,
+      expectedStatus: string
+    ) => Effect.Effect<boolean, DatabaseError>
   }
 >() {}
 
@@ -346,6 +357,28 @@ export const TaskRepositoryLive = Layer.effect(
           if (result.changes === 0) {
             yield* Effect.fail(new TaskNotFoundError({ id }))
           }
+        }),
+
+      recoverTaskStatus: (taskId, expectedStatus) =>
+        Effect.try({
+          try: () => {
+            const now = new Date().toISOString()
+            const result = db.prepare(`
+              UPDATE tasks SET
+                status = CASE
+                  WHEN NOT EXISTS (
+                    SELECT 1 FROM task_dependencies d
+                    JOIN tasks blocker ON blocker.id = d.blocker_id
+                    WHERE d.blocked_id = ? AND blocker.status != 'done'
+                  ) THEN 'ready'
+                  ELSE 'blocked'
+                END,
+                updated_at = ?
+              WHERE id = ? AND status = ?
+            `).run(taskId, now, taskId, expectedStatus)
+            return result.changes > 0
+          },
+          catch: (cause) => new DatabaseError({ cause })
         }),
 
       count: (filter) =>
