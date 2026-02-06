@@ -23,7 +23,6 @@ import {
   DependencyService,
   ReadyServiceLive,
   ReadyService,
-  isReadyResult,
   HierarchyServiceLive,
   AutoSyncServiceNoop
 } from "@jamesaphoenix/tx-core"

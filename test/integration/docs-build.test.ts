@@ -11,7 +11,7 @@ describe("Docs Site Build", () => {
     // Ensure the docs site has been built
     if (!existsSync(NEXT_DIR)) {
       // Build the docs site if not already built
-      execSync("npm run build", { cwd: DOCS_DIR, stdio: "pipe" })
+      execSync("bun run build", { cwd: DOCS_DIR, stdio: "inherit" })
     }
   })
 

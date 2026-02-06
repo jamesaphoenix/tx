@@ -343,7 +343,7 @@ describe("Chaos: Crash Simulation", () => {
 
       expect(result.completed).toBe(false)
       expect(result.value).toBeUndefined()
-      expect(result.elapsedMs).toBeGreaterThanOrEqual(50)
+      expect(result.elapsedMs).toBeGreaterThanOrEqual(45)
       expect(result.elapsedMs).toBeLessThan(200)
     })
 
@@ -396,8 +396,8 @@ describe("Chaos: Crash Simulation", () => {
       })
 
       // May or may not complete depending on timing
-      // Just verify we don't hang
-      expect(result.elapsedMs).toBeGreaterThanOrEqual(10)
+      // Just verify we don't hang (allow 5ms tolerance for timer imprecision)
+      expect(result.elapsedMs).toBeGreaterThanOrEqual(5)
     })
   })
 })

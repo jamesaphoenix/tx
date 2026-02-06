@@ -203,9 +203,9 @@ describe("Build Outputs: @tx/api-server", () => {
   it("has middleware directory built", () => {
     const middlewarePath = resolve(distPath, "middleware")
     expect(existsSync(middlewarePath)).toBe(true)
-    expect(existsSync(resolve(middlewarePath, "error.js"))).toBe(true)
-    expect(existsSync(resolve(middlewarePath, "cors.js"))).toBe(true)
     expect(existsSync(resolve(middlewarePath, "auth.js"))).toBe(true)
+    expect(existsSync(resolve(middlewarePath, "cors.js"))).toBe(true)
+    expect(existsSync(resolve(middlewarePath, "body-limit.js"))).toBe(true)
   })
 })
 

@@ -9,9 +9,8 @@ import {
   CompactionServiceNoop,
   CompactionServiceAuto
 } from "@jamesaphoenix/tx-core"
-import { existsSync, unlinkSync, readFileSync, writeFileSync, mkdtempSync } from "node:fs"
+import { existsSync, unlinkSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { tmpdir } from "node:os"
 
 /**
  * Create a minimal test layer for CompactionService tests

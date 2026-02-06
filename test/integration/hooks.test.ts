@@ -664,14 +664,14 @@ describe("generatePostCommitHook command injection prevention", () => {
   it("handles all-unsafe patterns gracefully", () => {
     const config: TxrcConfig = {
       hooks: {
-        highValueFiles: ["$(evil)", "'; drop tables;'"]
+        highValueFiles: ["$(evil)", "'; drop tables;'"] // eslint-disable-line tx/no-inline-sql
       }
     }
     const hook = generatePostCommitHook(config)
 
     expect(hook).toContain("tx post-commit hook")
     expect(hook).not.toContain("evil")
-    expect(hook).not.toContain("drop tables")
+    expect(hook).not.toContain("drop tables") // eslint-disable-line tx/no-inline-sql
   })
 
   it("sanitizes non-numeric fileThreshold from config", () => {

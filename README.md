@@ -1,8 +1,8 @@
 # tx
 
-**TanStack for AI agents.** Primitives, not frameworks.
+**Primitives, not frameworks.** Headless infrastructure for AI agents.
 
-Headless infrastructure for memory, tasks, and orchestration.
+Memory, tasks, and orchestration — you own the loop.
 
 ```bash
 npm install -g @jamesaphoenix/tx
