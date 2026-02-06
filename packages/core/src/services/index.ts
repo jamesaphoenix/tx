@@ -208,6 +208,8 @@ export {
 } from "./orchestrator-service.js"
 export {
   runWorkerProcess,
+  killWithEscalation,
+  SIGKILL_ESCALATION_TIMEOUT_MS,
   type WorkerProcessConfig
 } from "./worker-process.js"
 export {

@@ -23,6 +23,43 @@ import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
 const MAX_RETRIES = 3
 
 /**
+ * Timeout in milliseconds to wait after SIGTERM before escalating to SIGKILL.
+ * If the agent subprocess doesn't exit within this window, it will be forcefully killed.
+ */
+export const SIGKILL_ESCALATION_TIMEOUT_MS = 5_000
+
+/**
+ * Kill a child process with SIGTERM, escalating to SIGKILL after a timeout.
+ *
+ * If the process ignores SIGTERM (e.g., traps the signal), it would become orphaned.
+ * This function ensures cleanup by sending SIGKILL after SIGKILL_ESCALATION_TIMEOUT_MS.
+ *
+ * Uses setTimeout with .unref() so the escalation timer doesn't keep the event loop alive
+ * during graceful shutdown.
+ */
+export const killWithEscalation = (proc: ChildProcess): void => {
+  if (proc.killed) return
+
+  proc.kill("SIGTERM")
+
+  const escalationTimer = setTimeout(() => {
+    try {
+      if (!proc.killed) {
+        console.log(
+          `Agent process ${proc.pid} did not exit after SIGTERM, escalating to SIGKILL`
+        )
+        proc.kill("SIGKILL")
+      }
+    } catch {
+      // Process may have already exited between the check and kill call
+    }
+  }, SIGKILL_ESCALATION_TIMEOUT_MS)
+
+  // Don't keep event loop alive waiting for the escalation timer
+  escalationTimer.unref()
+}
+
+/**
  * Configuration for the worker process.
  */
 export interface WorkerProcessConfig {
@@ -127,9 +164,9 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
       // Mark shutdown as requested
       state.shutdownRequested = true
 
-      // Try to terminate agent subprocess if running
-      if (state.agentProcess && !state.agentProcess.killed) {
-        state.agentProcess.kill("SIGTERM")
+      // Try to terminate agent subprocess with SIGKILL escalation
+      if (state.agentProcess) {
+        killWithEscalation(state.agentProcess)
       }
     }
 
@@ -408,9 +445,9 @@ const runLeaseRenewalLoop = (
               // Stop the worker to prevent duplicate task execution
               // Another worker may have claimed this task after lease expiry
               state.shutdownRequested = true
-              // Kill agent subprocess if running
-              if (state.agentProcess && !state.agentProcess.killed) {
-                state.agentProcess.kill("SIGTERM")
+              // Kill agent subprocess with SIGKILL escalation
+              if (state.agentProcess) {
+                killWithEscalation(state.agentProcess)
               }
               return false
             })
