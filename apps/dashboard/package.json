@@ -14,6 +14,7 @@
     "test:coverage": "vitest --run --coverage"
   },
   "dependencies": {
+    "@jamesaphoenix/tx-core": "*",
     "@jamesaphoenix/tx-types": "*",
     "effect": "^3.19.15",
     "@effect/platform": "^0.94.2",
@@ -29,6 +30,7 @@
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/bun": "^1.2.0",
+    "@types/jsdom": "^21.1.7",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^5.1.3",
