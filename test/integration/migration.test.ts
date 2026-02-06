@@ -550,5 +550,78 @@ describe("Migration system", () => {
       }
       expect(edge.invalidated_at).not.toBeNull()
     })
+
+    describe("task ID format validation (migration 020)", () => {
+      const now = new Date().toISOString()
+
+      it("rejects task ID without tx- prefix", () => {
+        expect(() => {
+          db.prepare(
+            "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          ).run("bad-id", "Test", "backlog", now, now)
+        }).toThrow("Task ID must match format")
+      })
+
+      it("rejects empty task ID", () => {
+        expect(() => {
+          db.prepare(
+            "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          ).run("", "Test", "backlog", now, now)
+        }).toThrow("Task ID must match format")
+      })
+
+      it("rejects task ID with tx- prefix but too few characters", () => {
+        expect(() => {
+          db.prepare(
+            "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          ).run("tx-abc", "Test", "backlog", now, now)
+        }).toThrow("Task ID must match format")
+      })
+
+      it("rejects task ID with uppercase characters", () => {
+        expect(() => {
+          db.prepare(
+            "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          ).run("tx-ABCDEF", "Test", "backlog", now, now)
+        }).toThrow("Task ID must match format")
+      })
+
+      it("rejects task ID with special characters after prefix", () => {
+        expect(() => {
+          db.prepare(
+            "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          ).run("tx-abc!@#", "Test", "backlog", now, now)
+        }).toThrow("Task ID must match format")
+      })
+
+      it("accepts valid 8-char hex ID (deterministicId format)", () => {
+        const result = db.prepare(
+          "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).run("tx-a1b2c3d4", "Test", "backlog", now, now)
+        expect(result.changes).toBe(1)
+      })
+
+      it("accepts valid 12-char hex ID (generateTaskId format)", () => {
+        const result = db.prepare(
+          "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).run("tx-a1b2c3d4e5f6", "Test", "backlog", now, now)
+        expect(result.changes).toBe(1)
+      })
+
+      it("accepts valid 6-char minimum ID", () => {
+        const result = db.prepare(
+          "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).run("tx-abcdef", "Test", "backlog", now, now)
+        expect(result.changes).toBe(1)
+      })
+
+      it("rejects malformed ID on direct SQL insert (JSONL import attack vector)", () => {
+        expect(() => {
+          db.prepare(
+            "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+          ).run("malicious-id-injection", "Malicious", "backlog", now, now)
+        }).toThrow("Task ID must match format")
+      })
+    })
   })
 })
