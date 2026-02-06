@@ -3,6 +3,9 @@ import { FileLearningRepository } from "../repo/file-learning-repo.js"
 import { FileLearningNotFoundError, ValidationError, DatabaseError } from "../errors.js"
 import type { FileLearning, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
 
+/** Strips null bytes (\0) which cause C API truncation, JSON issues, and terminal corruption. */
+const stripNullBytes = (s: string): string => s.replace(/\0/g, "")
+
 export class FileLearningService extends Context.Tag("FileLearningService")<
   FileLearningService,
   {
@@ -23,8 +26,8 @@ export const FileLearningServiceLive = Layer.effect(
     return {
       create: (input) =>
         Effect.gen(function* () {
-          const filePattern = input.filePattern.trim()
-          const note = input.note.trim()
+          const filePattern = stripNullBytes(input.filePattern).trim()
+          const note = stripNullBytes(input.note).trim()
 
           if (filePattern.length === 0) {
             return yield* Effect.fail(new ValidationError({ reason: "File pattern is required" }))
@@ -33,7 +36,7 @@ export const FileLearningServiceLive = Layer.effect(
             return yield* Effect.fail(new ValidationError({ reason: "Note is required" }))
           }
 
-          const taskId = input.taskId != null ? input.taskId.trim() || null : null
+          const taskId = input.taskId != null ? stripNullBytes(input.taskId).trim() || null : null
           return yield* repo.insert({ filePattern, note, taskId })
         }),
 

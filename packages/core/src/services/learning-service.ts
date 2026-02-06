@@ -6,6 +6,9 @@ import { RetrieverService } from "./retriever-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError, RetrievalError, EmbeddingDimensionMismatchError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "@jamesaphoenix/tx-types"
 
+/** Strips null bytes (\0) which cause C API truncation, JSON issues, and terminal corruption. */
+const stripNullBytes = (s: string): string => s.replace(/\0/g, "")
+
 /** Result of embedding operation */
 export interface EmbedResult {
   processed: number
@@ -50,12 +53,13 @@ export const LearningServiceLive = Layer.effect(
     return {
       create: (input) =>
         Effect.gen(function* () {
-          if (!input.content || input.content.trim().length === 0) {
+          const content = stripNullBytes(input.content)
+          if (!content || content.trim().length === 0) {
             return yield* Effect.fail(new ValidationError({ reason: "Content is required" }))
           }
           return yield* learningRepo.insert({
             ...input,
-            content: input.content.trim()
+            content: content.trim()
           })
         }),
 

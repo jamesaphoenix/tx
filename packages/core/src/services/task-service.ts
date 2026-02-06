@@ -37,6 +37,9 @@ const hasVisibleContent = (s: string): boolean =>
 const trimVisible = (s: string): string =>
   s.replace(/^[\s\p{Cf}]+|[\s\p{Cf}]+$/gu, "")
 
+/** Strips null bytes (\0) which cause C API truncation, JSON issues, and terminal corruption. */
+const stripNullBytes = (s: string): string => s.replace(/\0/g, "")
+
 /** Max recursion depth for destructive operations that must find ALL descendants.
  *  Bounded to avoid unbounded CTE recursion in SQLite while being deep enough
  *  for any realistic task hierarchy (display default is 10). */
@@ -200,7 +203,10 @@ export const TaskServiceLive = Layer.effect(
     return {
       create: (input) =>
         Effect.gen(function* () {
-          if (!input.title || !hasVisibleContent(input.title)) {
+          const title = stripNullBytes(input.title)
+          const description = input.description !== undefined ? stripNullBytes(input.description) : undefined
+
+          if (!title || !hasVisibleContent(title)) {
             return yield* Effect.fail(new ValidationError({ reason: "Title is required" }))
           }
 
@@ -220,8 +226,8 @@ export const TaskServiceLive = Layer.effect(
           const now = new Date()
           const makeTask = (id: string): Task => ({
             id: id as TaskId,
-            title: trimVisible(input.title),
-            description: input.description ?? "",
+            title: trimVisible(title),
+            description: description ?? "",
             status: "backlog",
             parentId: (input.parentId as TaskId) ?? null,
             score: input.score ?? 0,
@@ -283,6 +289,9 @@ export const TaskServiceLive = Layer.effect(
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
 
+          const title = input.title !== undefined ? stripNullBytes(input.title) : undefined
+          const description = input.description !== undefined ? stripNullBytes(input.description) : undefined
+
           if (input.status && !isValidStatus(input.status)) {
             return yield* Effect.fail(new ValidationError({ reason: `Invalid status: ${input.status}` }))
           }
@@ -295,7 +304,7 @@ export const TaskServiceLive = Layer.effect(
             }
           }
 
-          if (input.title !== undefined && !hasVisibleContent(input.title)) {
+          if (title !== undefined && !hasVisibleContent(title)) {
             return yield* Effect.fail(new ValidationError({ reason: "Title is required" }))
           }
 
@@ -330,8 +339,8 @@ export const TaskServiceLive = Layer.effect(
           const isDone = input.status === "done" && existing.status !== "done"
           const updated: Task = {
             ...existing,
-            title: input.title !== undefined ? trimVisible(input.title) : existing.title,
-            description: input.description ?? existing.description,
+            title: title !== undefined ? trimVisible(title) : existing.title,
+            description: description ?? existing.description,
             status: input.status ?? existing.status,
             parentId: input.parentId !== undefined ? (input.parentId as TaskId | null) : existing.parentId,
             score: input.score ?? existing.score,
