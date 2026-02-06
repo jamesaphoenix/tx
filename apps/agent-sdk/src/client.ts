@@ -316,6 +316,14 @@ class HttpTransport implements Transport {
 const runtimeCache = new Map<string, { runtime: any; refCount: number; core: any; Effect: any }>()
 
 /**
+ * Module-level map of in-flight initialization Promises.
+ * Prevents TOCTOU race: when multiple DirectTransport instances
+ * call ensureRuntime() concurrently for the same dbPath, the first
+ * caller creates the Promise and all others await it.
+ */
+const pendingInit = new Map<string, Promise<{ runtime: any; core: any; Effect: any }>>()
+
+/**
  * Direct SQLite transport using @tx/core.
  * Only available when @tx/core is installed and running on Bun runtime.
  */
@@ -344,6 +352,45 @@ class DirectTransport implements Transport {
       return
     }
 
+    // Check if another call is already initializing this dbPath.
+    // This prevents the TOCTOU race where concurrent ensureRuntime()
+    // calls both miss the cache, both do async imports, and both
+    // create separate runtimes — orphaning the first one.
+    const pending = pendingInit.get(this.dbPath)
+    if (pending) {
+      const result = await pending
+      // After the pending init resolves, the cache entry exists.
+      // Increment refCount for this new consumer.
+      const nowCached = runtimeCache.get(this.dbPath)
+      if (nowCached) {
+        nowCached.refCount++
+      }
+      this.runtime = result.runtime
+      ;(this as any).Effect = result.Effect
+      ;(this as any).core = result.core
+      return
+    }
+
+    // We are the first caller — create the initialization Promise
+    // and store it so concurrent callers coalesce on it.
+    const initPromise = this.initRuntime()
+    pendingInit.set(this.dbPath, initPromise)
+
+    try {
+      const result = await initPromise
+      this.runtime = result.runtime
+      ;(this as any).Effect = result.Effect
+      ;(this as any).core = result.core
+    } finally {
+      pendingInit.delete(this.dbPath)
+    }
+  }
+
+  /**
+   * Perform the actual runtime initialization. Separated from ensureRuntime()
+   * so the Promise can be stored in pendingInit for deduplication.
+   */
+  private async initRuntime(): Promise<{ runtime: any; core: any; Effect: any }> {
     try {
       // Dynamic import to make @tx/core optional
       const core = await import("@jamesaphoenix/tx-core")
@@ -355,13 +402,7 @@ class DirectTransport implements Transport {
       // Cache the runtime for reuse by other clients
       runtimeCache.set(this.dbPath, { runtime, refCount: 1, core, Effect })
 
-      this.runtime = runtime
-
-      // Store Effect for running operations
-
-      ;(this as any).Effect = Effect
-
-      ;(this as any).core = core
+      return { runtime, core, Effect }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e)
       throw new TxError(
@@ -1461,4 +1502,21 @@ export class TxClient {
       await this.transport.dispose()
     }
   }
+}
+
+/**
+ * @internal Test-only helper to inspect runtime cache state.
+ * Not part of the public API.
+ */
+export function _testGetRuntimeCacheSize(): number {
+  return runtimeCache.size
+}
+
+/**
+ * @internal Test-only helper to clear runtime cache between tests.
+ * Not part of the public API.
+ */
+export function _testClearRuntimeCache(): void {
+  runtimeCache.clear()
+  pendingInit.clear()
 }

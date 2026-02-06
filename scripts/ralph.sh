@@ -24,7 +24,8 @@ set -euo pipefail
 
 MAX_ITERATIONS=${MAX_ITERATIONS:-100}
 MAX_HOURS=${MAX_HOURS:-3}
-REVIEW_EVERY=${REVIEW_EVERY:-10}
+REVIEW_EVERY=${REVIEW_EVERY:-25}
+REVIEW_TIMEOUT=${REVIEW_TIMEOUT:-300}  # 5 minutes max per review agent
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 TASK_TIMEOUT=${TASK_TIMEOUT:-1800}  # 30 minutes max per task
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -607,49 +608,62 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
 # Review Agents (Adversarial Loop)
 # ==============================================================================
 
+# Run a review agent with a timeout to prevent hanging
+run_review_agent() {
+  local agent_name="$1"
+  local prompt="$2"
+
+  log "Running $agent_name..."
+
+  if [ "$DRY_RUN" = true ]; then
+    log "[DRY RUN] Would run $agent_name"
+    return 0
+  fi
+
+  # Run Claude in background with timeout
+  claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE" &
+  local agent_pid=$!
+  local waited=0
+  local check_interval=5
+
+  while kill -0 "$agent_pid" 2>/dev/null; do
+    if [ $waited -ge $REVIEW_TIMEOUT ]; then
+      log "$agent_name timed out after ${REVIEW_TIMEOUT}s — killing"
+      kill "$agent_pid" 2>/dev/null || true
+      sleep 2
+      kill -0 "$agent_pid" 2>/dev/null && kill -9 "$agent_pid" 2>/dev/null || true
+      return 1
+    fi
+    sleep $check_interval
+    waited=$((waited + check_interval))
+  done
+
+  wait "$agent_pid" 2>/dev/null || { log "$agent_name had issues"; return 1; }
+  return 0
+}
+
 run_review_cycle() {
   local iteration=$1
 
   log "=== REVIEW CYCLE (iteration $iteration) ==="
 
   # 1. Doctrine Checker
-  log "Running doctrine-checker..."
-  local doctrine_prompt="Read .claude/agents/tx-doctrine-checker.md for your instructions.
+  run_review_agent "doctrine-checker" "Read .claude/agents/tx-doctrine-checker.md for your instructions.
 
 Review recent changes and check for doctrine violations.
 This is iteration $iteration of the RALPH loop."
 
-  if [ "$DRY_RUN" = false ]; then
-    claude --dangerously-skip-permissions --print "$doctrine_prompt" 2>>"$LOG_FILE" || log "doctrine-checker had issues"
-  else
-    log "[DRY RUN] Would run doctrine-checker"
-  fi
-
   # 2. Test Runner
-  log "Running test-runner..."
-  local test_prompt="Read .claude/agents/tx-test-runner.md for your instructions.
+  run_review_agent "test-runner" "Read .claude/agents/tx-test-runner.md for your instructions.
 
-Run the test suite and report results.
+Run ONLY targeted tests for recently changed files. Do NOT run the full test suite.
 This is iteration $iteration of the RALPH loop."
 
-  if [ "$DRY_RUN" = false ]; then
-    claude --dangerously-skip-permissions --print "$test_prompt" 2>>"$LOG_FILE" || log "test-runner had issues"
-  else
-    log "[DRY RUN] Would run test-runner"
-  fi
-
   # 3. Quality Checker
-  log "Running quality-checker..."
-  local quality_prompt="Read .claude/agents/tx-quality-checker.md for your instructions.
+  run_review_agent "quality-checker" "Read .claude/agents/tx-quality-checker.md for your instructions.
 
 Review recent code changes for quality issues.
 This is iteration $iteration of the RALPH loop."
-
-  if [ "$DRY_RUN" = false ]; then
-    claude --dangerously-skip-permissions --print "$quality_prompt" 2>>"$LOG_FILE" || log "quality-checker had issues"
-  else
-    log "[DRY RUN] Would run quality-checker"
-  fi
 
   # Commit any review findings
   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then

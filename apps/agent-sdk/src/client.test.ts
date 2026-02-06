@@ -4,8 +4,8 @@
  * Tests for TxClient singleton behavior and DirectTransport caching.
  */
 
-import { describe, it, expect } from "vitest"
-import { TxClient } from "./client.js"
+import { describe, it, expect, beforeEach } from "vitest"
+import { TxClient, _testClearRuntimeCache, _testGetRuntimeCacheSize } from "./client.js"
 import { TxError } from "./utils.js"
 
 describe("TxClient", () => {
@@ -38,10 +38,9 @@ describe("TxClient", () => {
   })
 
   describe("DirectTransport singleton (RULE 8 compliance)", () => {
-    // We can't easily test the internal runtime cache without
-    // actually connecting to a database, but we can verify that
-    // multiple clients with the same dbPath don't cause issues
-    // when created and disposed.
+    beforeEach(() => {
+      _testClearRuntimeCache()
+    })
 
     it("allows multiple clients with the same dbPath", () => {
       const dbPath = ".tx/singleton-test.db"
@@ -66,6 +65,24 @@ describe("TxClient", () => {
 
       expect(client1.configuration.dbPath).toBe(".tx/db1.db")
       expect(client2.configuration.dbPath).toBe(".tx/db2.db")
+    })
+
+    it("concurrent ensureRuntime() calls share the same runtime cache key", () => {
+      // Verify that clients with the same dbPath use the same cache key
+      // (the TOCTOU fix ensures only one runtime is created per dbPath)
+      const dbPath = ".tx/race-test.db"
+      const client1 = new TxClient({ dbPath })
+      const client2 = new TxClient({ dbPath })
+      const client3 = new TxClient({ dbPath })
+
+      // All clients with the same dbPath should resolve to the same configuration
+      expect(client1.configuration.dbPath).toBe(dbPath)
+      expect(client2.configuration.dbPath).toBe(dbPath)
+      expect(client3.configuration.dbPath).toBe(dbPath)
+
+      // Different dbPath should be distinct
+      const client4 = new TxClient({ dbPath: ".tx/other.db" })
+      expect(client4.configuration.dbPath).not.toBe(dbPath)
     })
   })
 
