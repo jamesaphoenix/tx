@@ -427,6 +427,32 @@ export const SyncServiceLive = Layer.effect(
           // tasks where child timestamp < parent timestamp
           const sortedTaskEntries = topologicalSortTasks([...taskStates.entries()])
 
+          // Prepare statements outside transaction to minimize write lock duration.
+          // better-sqlite3 prepared statements are reusable across transactions.
+          const findTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?")
+          const insertTaskStmt = db.prepare(
+            `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          const updateTaskStmt = db.prepare(
+            `UPDATE tasks SET title = ?, description = ?, status = ?, parent_id = ?,
+             score = ?, updated_at = ?, completed_at = ?, metadata = ? WHERE id = ?`
+          )
+          const deleteTaskStmt = db.prepare("DELETE FROM tasks WHERE id = ?")
+          const insertDepStmt = db.prepare(
+            "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
+          )
+          const checkDepExistsStmt = db.prepare(
+            "SELECT 1 FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
+          )
+          const deleteDepStmt = db.prepare(
+            "DELETE FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
+          )
+          const setConfigStmt = db.prepare(
+            "INSERT OR REPLACE INTO sync_config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+          )
+          const checkParentExistsStmt = db.prepare("SELECT 1 FROM tasks WHERE id = ?")
+
           // ALL database operations inside a single transaction for atomicity
           // If any operation fails, the entire import is rolled back
           return yield* Effect.acquireUseRelease(
@@ -447,33 +473,6 @@ export const SyncServiceLive = Layer.effect(
                 let depsRemoved = 0
                 let depsSkipped = 0
                 const depFailures: Array<{ blockerId: string; blockedId: string; error: string }> = []
-
-                // Prepare statements for efficiency
-                const findTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?")
-                const insertTaskStmt = db.prepare(
-                  `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-                )
-                const updateTaskStmt = db.prepare(
-                  `UPDATE tasks SET title = ?, description = ?, status = ?, parent_id = ?,
-                   score = ?, updated_at = ?, completed_at = ?, metadata = ? WHERE id = ?`
-                )
-                const deleteTaskStmt = db.prepare("DELETE FROM tasks WHERE id = ?")
-                const insertDepStmt = db.prepare(
-                  "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
-                )
-                const checkDepExistsStmt = db.prepare(
-                  "SELECT 1 FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
-                )
-                const deleteDepStmt = db.prepare(
-                  "DELETE FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
-                )
-                const setConfigStmt = db.prepare(
-                  "INSERT OR REPLACE INTO sync_config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
-                )
-
-                // Prepare statement to check if a parent task exists in DB
-                const checkParentExistsStmt = db.prepare("SELECT 1 FROM tasks WHERE id = ?")
 
                 // Apply task operations
                 for (const [id, { op }] of sortedTaskEntries) {
