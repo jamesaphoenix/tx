@@ -8,7 +8,18 @@
 import { Effect } from "effect"
 import { readFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
-import { resolve } from "node:path"
+import { resolve, sep } from "node:path"
+
+/**
+ * Check if a resolved path is under the project's .tx/runs/ directory.
+ * Uses prefix match (startsWith) not substring match (includes) to prevent
+ * bypasses where /.tx/runs/ appears elsewhere in the path.
+ */
+export const isAllowedRunPath = (filePath: string): boolean => {
+  const resolved = resolve(filePath)
+  const runsDir = resolve(process.cwd(), ".tx", "runs")
+  return resolved.startsWith(runsDir + sep)
+}
 
 /**
  * Read a log file with optional tail support.
@@ -27,9 +38,8 @@ export const readLogFile = (
       return { content: "", truncated: false }
     }
 
-    // Security: ensure path is under .tx/runs/
-    const resolved = resolve(filePath)
-    if (!resolved.includes("/.tx/runs/")) {
+    // Security: ensure path is under .tx/runs/ (prefix match, not substring)
+    if (!isAllowedRunPath(filePath)) {
       return yield* Effect.fail(
         new Error("Path traversal attempt: log path must be under .tx/runs/")
       )

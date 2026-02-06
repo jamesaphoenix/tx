@@ -6,13 +6,13 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { resolve } from "node:path"
+
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { serializeRun } from "@jamesaphoenix/tx-types"
 import { RunRepository } from "@jamesaphoenix/tx-core"
 import { TxApi, NotFound, BadRequest, mapCoreError } from "../api.js"
 import { parseTranscript, findMatchingTranscript, isAllowedTranscriptPath, type ChatMessage } from "../utils/transcript-parser.js"
-import { readLogFile } from "../utils/log-reader.js"
+import { readLogFile, isAllowedRunPath } from "../utils/log-reader.js"
 
 // -----------------------------------------------------------------------------
 // Cursor Pagination Helpers
@@ -162,10 +162,9 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
             new BadRequest({ message: "Invalid transcriptPath: must be under ~/.claude/ or .tx/" })
           )
         }
-        // Security: validate contextInjected path is under .tx/runs/
+        // Security: validate contextInjected path is under .tx/runs/ (prefix match, not substring)
         if (payload.contextInjected) {
-          const resolved = resolve(payload.contextInjected)
-          if (!resolved.includes("/.tx/runs/")) {
+          if (!isAllowedRunPath(payload.contextInjected)) {
             return yield* Effect.fail(
               new BadRequest({ message: "Invalid contextInjected: must be under .tx/runs/" })
             )
