@@ -1,6 +1,6 @@
 ---
-title: CLI Primitives
-description: Core CLI commands for task management in tx
+title: Primitives
+description: Composable building blocks for agent infrastructure
 ---
 
 ## Overview
@@ -18,7 +18,7 @@ tx is about **primitives, not frameworks**. We don't dictate how you orchestrate
 │  tx primitives                                      │
 │                                                     │
 │   tx ready     tx done      tx context    tx learn  │
-│   tx claim     tx block     tx handoff    tx sync   │
+│   tx claim     tx block     tx sync       tx trace  │
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
@@ -30,12 +30,14 @@ tx is about **primitives, not frameworks**. We don't dictate how you orchestrate
 | [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) | Available |
 | [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others | Available |
 | [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | Available |
-| [`tx claim`](/docs/primitives/claim) | Mark task as being worked by an agent | Planned |
-| [`tx handoff`](/docs/primitives/handoff) | Transfer task with context to another agent | Planned |
-| [`tx checkpoint`](/docs/primitives/checkpoint) | Save progress without completing | Planned |
+| [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | Available |
 | [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection | Available |
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge | Available |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL | Available |
+| [`tx try` / `tx attempts`](/docs/primitives/attempts) | Record and track implementation attempts | Available |
+| [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation | Available |
+| [`tx invariant *`](/docs/primitives/invariants) | Machine-checkable system rules with enforcement tracking | Available |
+| [`tx trace *`](/docs/primitives/traces) | Execution tracing and run observability | Available |
 
 ## Example Orchestration Patterns
 

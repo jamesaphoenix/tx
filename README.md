@@ -2,10 +2,10 @@
 
 **Primitives, not frameworks.** Headless infrastructure for AI agents.
 
-Memory, tasks, and orchestration — you own the loop.
+Memory, tasks, and orchestration. You own the loop.
 
 ```bash
-npm install -g @jamesaphoenix/tx
+npm install -g @jamesaphoenix/tx-cli
 tx init
 ```
 
@@ -26,7 +26,7 @@ Composable primitives that handle the hard parts. You keep control of the orches
 │  tx primitives                                          │
 │                                                         │
 │   tx ready     tx done      tx context    tx learn      │
-│   tx claim     tx block     tx handoff    tx sync       │
+│   tx claim     tx block     tx sync       tx trace      │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -40,16 +40,20 @@ Composable primitives that handle the hard parts. You keep control of the orches
 Learnings that persist and surface when relevant.
 
 ```bash
-# Store knowledge (with optional file path)
-tx learning:add "Use bcrypt for passwords, not SHA256" --file src/auth/hash.ts
-tx learning:add "Redis cache invalidation has race conditions"
+# Store knowledge
+tx learning:add "Use bcrypt for passwords, not SHA256"
+tx learning:add "Redis cache invalidation has race conditions" -c database
+
+# Attach learnings to file paths
+tx learn "src/auth/*.ts" "Services must use Effect-TS patterns"
 
 # Retrieve via search or task context
 tx learning:search "authentication"
 tx context tx-abc123  # Get relevant learnings for a task
+tx recall "src/auth/hash.ts"  # Recall learnings for a file
 ```
 
-Learnings can be tagged with file paths for organization. Hybrid search (BM25 + vector) finds relevant knowledge.
+Hybrid search (BM25 + vector with RRF fusion) finds relevant knowledge.
 
 ### Tasks
 
@@ -70,14 +74,54 @@ Full hierarchy support. Epics contain milestones contain tasks contain subtasks.
 
 ### Coordination
 
-Primitives for multi-agent workflows without prescribing the pattern.
+Lease-based claims prevent parallel agents from colliding.
 
 ```bash
-tx claim tx-abc123           # Prevent collisions
-tx checkpoint tx-abc123 \
-  --note "API done, UI next"  # Save progress
-tx handoff tx-abc123 \
-  --to reviewer              # Transfer with context
+tx claim tx-abc123 worker-1          # Claim with 30-min lease
+tx claim tx-abc123 worker-1 --lease 60  # Custom lease duration
+tx claim:renew tx-abc123 worker-1    # Extend lease
+tx claim:release tx-abc123 worker-1  # Release early
+```
+
+### Attempts
+
+Track what approaches have been tried on a task.
+
+```bash
+tx try tx-abc123 "Used Redux" --failed "Too complex for this use case"
+tx try tx-abc123 "Used Zustand" --succeeded
+tx attempts tx-abc123  # See all attempts
+```
+
+### Docs
+
+Structured documentation as primitives. YAML-based with versioning, locking, and linking.
+
+```bash
+tx doc add prd auth-system --title "Auth System PRD"
+tx doc render           # Generate markdown from YAML
+tx doc lock auth-system # Lock doc (immutable)
+tx doc link auth-prd auth-dd  # Link PRD to DD
+tx doc drift            # Detect stale docs
+```
+
+### Invariants
+
+Track and verify project invariants across sessions.
+
+```bash
+tx invariant list                          # List all invariants
+tx invariant show INV-001                  # Show details
+tx invariant record INV-001 --passed       # Record check result
+tx invariant sync                          # Sync from CLAUDE.md
+```
+
+### Cycle Scan
+
+Sub-agent swarm scanning for codebase analysis.
+
+```bash
+tx cycle --task-prompt "Review auth" --scan-prompt "Find bugs"
 ```
 
 ---
@@ -94,10 +138,12 @@ done
 ```
 
 ```bash
-# Parallel: N agents pulling from queue
+# Parallel: N agents with claims
 for i in {1..5}; do
-  (while task=$(tx claim --next); do
-    claude "Complete $task" && tx done $task
+  (while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
+    [ -z "$task" ] && break
+    tx claim "$task" "worker-$i" || continue
+    claude "Complete $task" && tx done "$task"
   done) &
 done
 wait
@@ -105,7 +151,7 @@ wait
 
 ```bash
 # Human-in-loop: agent proposes, human approves
-task=$(tx ready --limit 1)
+task=$(tx ready --json --limit 1 | jq -r '.[0].id')
 claude "Plan implementation for $task" > plan.md
 read -p "Approve? [y/n] " && claude "Execute plan.md"
 tx done $task
@@ -120,8 +166,8 @@ tx done $task
 |  | Native Tasks | CLAUDE.md | tx |
 |---|---|---|---|
 | **Persistence** | Session-scoped | File grows forever | Git-native, branch-aware |
-| **Multi-agent** | Collisions | Manual coordination | Claim, block, handoff |
-| **Knowledge** | Lost each session | Static dump | Graph RAG, contextual retrieval |
+| **Multi-agent** | Collisions | Manual coordination | Claim with lease expiry |
+| **Knowledge** | Lost each session | Static dump | Hybrid search, contextual retrieval |
 | **Orchestration** | None | None | Primitives for any pattern |
 
 ---
@@ -145,249 +191,12 @@ tx done $task
 
 ---
 
-## Three Systems
-
-### 1. Knowledge System
-
-**Working today:**
-- Learnings stored with file path tags
-- Basic hybrid search (BM25 + vector)
-- Retrieval by task ID via `tx context`
-
-```bash
-tx learning:add "Use bcrypt for passwords" --file src/auth/hash.ts
-tx learning:search "authentication"
-tx context tx-abc123  # Get learnings relevant to a task
-```
-
-**Research in progress:**
-- Symbol anchoring (AST-based code references, not just file paths)
-- Knowledge graph expansion (automatic relationship discovery)
-- Auto-invalidation when code changes
-
-### 2. Task System
-
-**Working today:**
-- N-level hierarchy (epics → tasks → subtasks)
-- Explicit dependencies with cycle detection
-- Priority scoring
-- Claim/release with lease expiry
-
-```
-Epic: "User Authentication"
-├── Task: "Design schema" ✓ done
-├── Task: "Implement service" ● ready (unblocked)
-│   └── blocks: "Write tests", "Add endpoints"
-└── Task: "Write tests" ○ blocked
-```
-
-**Research in progress:**
-- LLM-based reprioritization
-- Automatic task decomposition
-
-### 3. Worker System
-
-**Working today:**
-- `runWorker()` with execute/captureIO hooks
-- Lease-based claims (prevents collisions)
-- Automatic lease renewal
-- Coordinator reconciliation (dead worker recovery)
-
-```typescript
-runWorker({
-  execute: async (task, ctx) => {
-    await ctx.renewLease()  // For long tasks
-    return { success: true }
-  }
-})
-```
-
-**Research in progress:**
-- Daemon watching `~/.claude/projects/**/*.jsonl`
-- Automatic learning extraction from sessions
-- Confidence scoring for auto-promotion
-
----
-
-## Worker Orchestration (TypeScript SDK)
-
-For programmatic control, the TypeScript SDK provides `runWorker()` — a headless worker that executes tasks using your hooks.
-
-### Two Hooks. That's It.
-
-```typescript
-import { runWorker } from "@jamesaphoenix/tx-core"
-
-runWorker({
-  name: "my-worker",
-  execute: async (task, ctx) => {
-    // YOUR LOGIC HERE
-    console.log(`Working on: ${task.title}`)
-
-    // Use ctx.renewLease() for long tasks
-    await ctx.renewLease()
-
-    // Return success or failure
-    return { success: true, output: "Done!" }
-  },
-  captureIO: (runId, task) => ({
-    transcriptPath: `.tx/runs/${runId}.jsonl`,
-    stderrPath: `.tx/runs/${runId}.stderr`
-  })
-})
-```
-
-| Hook | Required | Purpose |
-|------|----------|---------|
-| `execute` | Yes | Your task execution logic |
-| `captureIO` | No | Paths for transcript/stderr/stdout capture |
-
-### WorkerContext
-
-The `ctx` object provides tx primitives:
-
-```typescript
-interface WorkerContext {
-  workerId: string              // This worker's ID
-  runId: string                 // Unique ID for this execution
-  renewLease: () => Promise<void>  // Extend lease for long tasks
-  log: (message: string) => void   // Log with worker prefix
-  state: Record<string, unknown>   // Mutable state within task
-}
-```
-
-### Custom Context
-
-Pass your own primitives via generics:
-
-```typescript
-interface MyContext {
-  llm: AnthropicClient
-  db: Database
-}
-
-runWorker<MyContext>({
-  context: {
-    llm: new Anthropic(),
-    db: myDatabase
-  },
-  execute: async (task, ctx) => {
-    // ctx.llm and ctx.db available here
-    const response = await ctx.llm.messages.create(...)
-    return { success: true }
-  }
-})
-```
-
-### Claims and Leases
-
-Workers use a lease-based system to prevent collisions:
-
-```
-Worker A claims task → Lease expires in 30 min → Renew or lose it
-Worker B tries to claim same task → Rejected (already claimed)
-Worker A dies → Lease expires → Coordinator reclaims task
-```
-
-Key points:
-- **Claims are atomic** — only one worker can claim a task
-- **Leases expire** — prevents stuck tasks from dead workers
-- **Auto-renewal** — `runWorker()` renews automatically; use `ctx.renewLease()` for extra-long tasks
-- **Coordinator reconciles** — dead workers detected, orphaned tasks recovered
-
-### Example Worker Loops
-
-#### Basic: One Worker
-
-```typescript
-import { Effect, Layer } from "effect"
-import { runWorker, makeMinimalLayer, SqliteClientLive } from "@jamesaphoenix/tx-core"
-
-const layer = makeMinimalLayer.pipe(
-  Layer.provide(SqliteClientLive(".tx/tasks.db"))
-)
-
-Effect.runPromise(
-  runWorker({
-    execute: async (task, ctx) => {
-      ctx.log(`Processing: ${task.title}`)
-      // ... your logic
-      return { success: true }
-    }
-  }).pipe(Effect.provide(layer))
-)
-```
-
-#### With Claude Code
-
-```typescript
-import { spawn } from "child_process"
-
-runWorker({
-  execute: async (task, ctx) => {
-    return new Promise((resolve) => {
-      const proc = spawn("claude", [
-        "--print",
-        `Work on task ${task.id}: ${task.title}`
-      ])
-
-      proc.on("close", (code) => {
-        resolve({
-          success: code === 0,
-          error: code !== 0 ? `Exit code ${code}` : undefined
-        })
-      })
-    })
-  }
-})
-```
-
-#### Parallel Workers
-
-```typescript
-// Start N workers (each in its own process or fiber)
-for (let i = 0; i < 5; i++) {
-  Effect.fork(
-    runWorker({
-      name: `worker-${i}`,
-      execute: async (task, ctx) => {
-        // Workers automatically coordinate via claims
-        return { success: true }
-      }
-    })
-  )
-}
-```
-
-#### Long-Running Tasks
-
-```typescript
-runWorker({
-  execute: async (task, ctx) => {
-    for (let step = 0; step < 100; step++) {
-      // Periodic lease renewal for tasks > 30 min
-      if (step % 10 === 0) {
-        await ctx.renewLease()
-      }
-
-      // Track progress in mutable state
-      ctx.state.progress = step
-
-      await doExpensiveWork(step)
-    }
-    return { success: true }
-  }
-})
-```
-
----
-
 ## Interfaces
 
 | Interface | Use Case |
 |-----------|----------|
-| **CLI** | Scripts, terminal workflows, RALPH loops |
-| **MCP Server** | Claude Code integration (16 tools) |
+| **CLI** | Scripts, terminal workflows, agent loops |
+| **MCP Server** | Claude Code integration (42 tools) |
 | **REST API** | Custom dashboards, external integrations |
 | **TypeScript SDK** | Programmatic access from your agents |
 | **Dashboard** | Visual monitoring and management |
@@ -398,25 +207,88 @@ runWorker({
 
 ```bash
 # Tasks
-tx add <title>              # Create
-tx ready                    # List unblocked
-tx done <id>                # Complete
+tx add <title>              # Create task
+tx list                     # List all tasks
+tx ready                    # List unblocked tasks
+tx show <id>                # View details
+tx update <id>              # Update task fields
+tx done <id>                # Complete task
+tx reset <id>               # Reset to backlog
+tx delete <id>              # Delete task
 tx block <id> <blocker>     # Add dependency
+tx unblock <id> <blocker>   # Remove dependency
+tx children <id>            # List child tasks
 tx tree <id>                # Show hierarchy
 
-# Memory
-tx learning:add <content>   # Store
-tx learning:search <query>  # Find
+# Context & Learnings
+tx learning:add <content>   # Store knowledge
+tx learning:search <query>  # Search learnings
+tx learning:recent          # Recent learnings
+tx learning:helpful         # Mark as helpful
+tx learning:embed           # Generate embeddings
 tx context <task-id>        # Contextual retrieval
+tx learn <path> <note>      # Attach to file
+tx recall [path]            # Query by file
 
 # Coordination
-tx claim <id>               # Prevent collisions
-tx handoff <id> --to <agent>
-tx checkpoint <id> --note "..."
+tx claim <id> <worker>      # Lease-based claim
+tx claim:renew <id> <worker>  # Extend lease
+tx claim:release <id> <worker>  # Release early
+tx try <id> <approach>      # Record attempt
+tx attempts <id>            # List attempts
+
+# Docs
+tx doc add <type> <slug>    # Create doc
+tx doc edit <slug>          # Edit doc
+tx doc show <slug>          # Show doc
+tx doc list                 # List docs
+tx doc render               # Generate markdown
+tx doc lock <slug>          # Lock (immutable)
+tx doc version <slug>       # Create version
+tx doc link <from> <to>     # Link docs
+tx doc attach <slug> <task> # Attach to task
+tx doc patch <slug>         # Apply patch
+tx doc validate             # Validate all docs
+tx doc drift                # Detect stale docs
+
+# Invariants
+tx invariant list           # List invariants
+tx invariant show <id>      # Show details
+tx invariant record <id>    # Record check result
+tx invariant sync           # Sync from CLAUDE.md
 
 # Sync
 tx sync export              # SQLite → JSONL (git-friendly)
 tx sync import              # JSONL → SQLite
+tx sync status              # Show sync status
+tx sync auto                # Auto-sync on change
+tx sync compact             # Compact JSONL files
+tx sync claude --team <name>  # Push to Claude Code team
+tx sync codex               # Push to Codex
+
+# Traces
+tx trace list               # Recent runs
+tx trace show <id>          # Show trace details
+tx trace transcript <id>    # View transcript
+tx trace stderr <id>        # View stderr
+tx trace errors             # Recent errors
+
+# Bulk
+tx bulk done <ids...>       # Complete multiple tasks
+tx bulk score <ids...>      # Score multiple tasks
+tx bulk reset <ids...>      # Reset multiple tasks
+tx bulk delete <ids...>     # Delete multiple tasks
+
+# Cycle
+tx cycle                    # Sub-agent swarm scan
+
+# Utilities
+tx stats                    # Queue metrics
+tx validate                 # Database health checks
+tx migrate status           # Migration status
+tx doctor                   # System diagnostics
+tx dashboard                # Launch dashboard
+tx mcp-server               # Start MCP server
 ```
 
 ---
@@ -428,50 +300,33 @@ tx sync import              # JSONL → SQLite
 ├── tasks.db           # SQLite (gitignored)
 ├── tasks.jsonl        # Git-tracked
 ├── learnings.jsonl    # Git-tracked
-└── runs.jsonl         # Git-tracked
+├── runs.jsonl         # Git-tracked
+└── docs/              # YAML doc sources
 ```
 
 Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code.
 
 ---
 
-## Status
+## Packages
 
-**Shipping now (concrete, tested):**
-- Core task primitives: add, ready, done, block, claim, handoff
-- Dependency management with cycle detection
-- Worker orchestration via `runWorker()` with claims/leases
-- Learnings with file path tagging
-- Hybrid search (BM25 + vector)
-- CLI (20+ commands), MCP server (16 tools)
-- 389+ tests
-
-**Research in progress (not yet stable):**
-- Symbol anchoring (AST-based code references)
-- Knowledge graph expansion
-- Auto-invalidation when code changes
-- Daemon-based learning extraction
-- LLM reprioritization
+| Package | Description |
+|---------|-------------|
+| [`@jamesaphoenix/tx`](https://www.npmjs.com/package/@jamesaphoenix/tx) | Public SDK |
+| [`@jamesaphoenix/tx-cli`](https://www.npmjs.com/package/@jamesaphoenix/tx-cli) | CLI |
+| [`@jamesaphoenix/tx-core`](https://www.npmjs.com/package/@jamesaphoenix/tx-core) | Core service layer (Effect-TS) |
+| [`@jamesaphoenix/tx-types`](https://www.npmjs.com/package/@jamesaphoenix/tx-types) | Shared type definitions |
+| [`@jamesaphoenix/tx-agent-sdk`](https://www.npmjs.com/package/@jamesaphoenix/tx-agent-sdk) | TypeScript Agent SDK |
+| [`@jamesaphoenix/tx-mcp-server`](https://www.npmjs.com/package/@jamesaphoenix/tx-mcp-server) | MCP server (42 tools) |
+| [`@jamesaphoenix/tx-api-server`](https://www.npmjs.com/package/@jamesaphoenix/tx-api-server) | REST API server |
 
 ---
 
 ## Documentation
 
+- **[txdocs.dev](https://txdocs.dev)**: Documentation
 - **[CLAUDE.md](CLAUDE.md)**: Doctrine and quick reference
-- **[docs/](docs/)**: Full documentation (17 PRDs, 17 Design Docs)
-
-### Docs Site
-
-Run the documentation site locally:
-
-```bash
-cd apps/docs
-npm run dev    # Development server at http://localhost:3000
-npm run build  # Production build
-npm run start  # Serve production build
-```
-
-The docs site is built with [Fumadocs](https://fumadocs.vercel.app/) and Next.js, featuring full-text search, syntax highlighting, and automatic navigation from the markdown files in `docs/`.
+- **[docs/](docs/)**: PRDs and Design Docs
 
 ---
 

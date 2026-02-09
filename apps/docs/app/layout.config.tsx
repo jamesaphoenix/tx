@@ -10,13 +10,13 @@ export const baseOptions: BaseLayoutProps = {
   },
   links: [
     {
-      text: 'Documentation',
-      url: '/docs',
-      active: 'nested-url',
+      text: 'llms.txt',
+      url: '/llms.txt',
+      external: true,
     },
     {
       text: 'GitHub',
-      url: 'https://github.com/just-understanding-data/tx',
+      url: 'https://github.com/jamesaphoenix/tx',
       external: true,
     },
   ],

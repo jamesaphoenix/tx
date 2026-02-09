@@ -4,7 +4,7 @@ const features = [
   {
     title: 'Task Management',
     description:
-      'Track tasks with dependencies, priorities, and statuses. tx ready returns the next workable task automatically.',
+      'Dependencies, priorities, and statuses. Run tx ready and get back the next thing to work on.',
     href: '/docs',
     icon: (
       <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -20,7 +20,7 @@ const features = [
   {
     title: 'Memory & Learnings',
     description:
-      'Persist knowledge across sessions. Learnings surface automatically when contextually relevant.',
+      'Knowledge persists across sessions. Store learnings once, retrieve them when they matter.',
     href: '/docs',
     icon: (
       <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -36,7 +36,7 @@ const features = [
   {
     title: 'Agent Coordination',
     description:
-      'Claim tasks to prevent collisions. Handoff between agents with context. Checkpoint progress.',
+      'Lease-based claims so parallel agents don\'t step on each other. No custom locking code needed.',
     href: '/docs',
     icon: (
       <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -70,7 +70,7 @@ export default function HomePage() {
             <span className="text-fd-primary">tx</span>
           </h1>
           <p className="mb-6 text-2xl font-medium text-fd-muted-foreground sm:text-3xl">
-            TanStack for AI agents
+            Primitives for AI agents
           </p>
           <p className="mb-8 text-lg text-fd-muted-foreground">
             Primitives, not frameworks. Headless infrastructure for memory, tasks, and
@@ -92,7 +92,7 @@ export default function HomePage() {
               </svg>
             </Link>
             <a
-              href="https://github.com/just-understanding-data/tx"
+              href="https://github.com/jamesaphoenix/tx"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center rounded-lg border border-fd-border px-6 py-3 text-sm font-medium text-fd-foreground transition-colors hover:bg-fd-accent"
@@ -117,7 +117,7 @@ export default function HomePage() {
           <p className="text-fd-muted-foreground">
             The orchestration flow is where you create value. It encodes your domain knowledge.{' '}
             <span className="font-medium text-fd-foreground">
-              If a tool dictates the flow, it&apos;s not a tool—it&apos;s a competitor.
+              If a tool dictates the flow, it&apos;s not a tool. It&apos;s a competitor.
             </span>{' '}
             tx gives you headless infrastructure. You own your orchestration.
           </p>
@@ -133,7 +133,7 @@ export default function HomePage() {
               <Link
                 key={feature.title}
                 href={feature.href}
-                className="group rounded-lg border border-fd-border p-6 transition-colors hover:border-fd-primary hover:bg-fd-accent/50"
+                className="group rounded-lg border border-fd-border p-6 text-center transition-colors hover:border-fd-primary hover:bg-fd-accent/50"
               >
                 <div className="mb-4 inline-flex rounded-lg bg-fd-primary/10 p-3 text-fd-primary">
                   {feature.icon}
@@ -169,7 +169,7 @@ export default function HomePage() {
             Get up and running with tx in your project.
           </p>
           <div className="rounded-lg border border-fd-border bg-fd-muted/50 p-4">
-            <code className="text-sm">npm install @tx/core</code>
+            <code className="text-sm">npm install -g @jamesaphoenix/tx</code>
           </div>
           <Link
             href="/docs"

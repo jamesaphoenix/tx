@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import {
   QueryExpansionService,
   QueryExpansionServiceNoop,
+  QueryExpansionServiceLive,
   QueryExpansionServiceAuto,
+  LlmServiceNoop,
   validateExpansions,
   MAX_EXPANSION_QUERIES,
   MAX_QUERY_LENGTH
@@ -62,28 +64,64 @@ describe("QueryExpansionService", () => {
     })
   })
 
-  describe("QueryExpansionServiceAuto", () => {
-    it("uses Noop when ANTHROPIC_API_KEY is not set", async () => {
-      // Auto should fall back to Noop when no API key is set
+  describe("QueryExpansionServiceLive with LlmServiceNoop", () => {
+    const layer = QueryExpansionServiceLive.pipe(
+      Layer.provide(LlmServiceNoop)
+    )
+
+    it("returns original query when LLM is noop", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* QueryExpansionService
           return yield* svc.expand("test query")
-        }).pipe(Effect.provide(QueryExpansionServiceAuto))
+        }).pipe(Effect.provide(layer))
       )
 
-      // Without API key, should behave like Noop
+      // LlmServiceNoop returns empty string, so no expansion
       expect(result.original).toBe("test query")
       expect(result.expanded).toEqual(["test query"])
       expect(result.wasExpanded).toBe(false)
     })
 
-    it("isAvailable returns false when API key not set", async () => {
+    it("isAvailable delegates to LlmService", async () => {
       const available = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* QueryExpansionService
           return yield* svc.isAvailable()
-        }).pipe(Effect.provide(QueryExpansionServiceAuto))
+        }).pipe(Effect.provide(layer))
+      )
+
+      // LlmServiceNoop.isAvailable() returns false
+      expect(available).toBe(false)
+    })
+  })
+
+  describe("QueryExpansionServiceAuto", () => {
+    // QueryExpansionServiceAuto requires LlmService in its context
+    const layer = QueryExpansionServiceAuto.pipe(
+      Layer.provide(LlmServiceNoop)
+    )
+
+    it("uses Noop when LlmService is unavailable", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* QueryExpansionService
+          return yield* svc.expand("test query")
+        }).pipe(Effect.provide(layer))
+      )
+
+      // LlmServiceNoop.isAvailable() is false, so Auto uses Noop
+      expect(result.original).toBe("test query")
+      expect(result.expanded).toEqual(["test query"])
+      expect(result.wasExpanded).toBe(false)
+    })
+
+    it("isAvailable returns false when LLM is unavailable", async () => {
+      const available = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* QueryExpansionService
+          return yield* svc.isAvailable()
+        }).pipe(Effect.provide(layer))
       )
 
       expect(available).toBe(false)

@@ -15,8 +15,8 @@ import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, existsSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
-import { Database } from "bun:sqlite"
-import { fixtureId } from "@jamesaphoenix/tx-test-utils"
+import { fixtureId, createMigratedSqliteDatabase } from "@jamesaphoenix/tx-test-utils"
+import type { SqliteDatabase as _SqliteDatabase } from "@jamesaphoenix/tx-core"
 
 const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
 
@@ -32,14 +32,13 @@ const FX = {
 } as const
 
 // Helper to insert a task row with deterministic ID directly into the DB
-function insertTask(
+async function insertTask(
   dbPath: string,
   id: string,
   title: string,
   opts: { score?: number; status?: string; description?: string } = {},
-): void {
-  const db = new Database(dbPath)
-  db.run("PRAGMA busy_timeout = 5000")
+): Promise<void> {
+  const db = await createMigratedSqliteDatabase(dbPath)
   try {
     const now = new Date().toISOString()
     db.prepare(
@@ -63,9 +62,8 @@ function insertTask(
 }
 
 // Helper to insert a learning row directly into the DB
-function insertLearning(dbPath: string, content: string): void {
-  const db = new Database(dbPath)
-  db.run("PRAGMA busy_timeout = 5000")
+async function insertLearning(dbPath: string, content: string): Promise<void> {
+  const db = await createMigratedSqliteDatabase(dbPath)
   try {
     const now = new Date().toISOString()
     db.prepare(
@@ -197,9 +195,9 @@ describe("CLI doctor command", () => {
   })
 
   describe("with tasks and learnings", () => {
-    it("shows correct task counts after adding tasks", () => {
-      insertTask(dbPath, FX.TASK_1, "Task one")
-      insertTask(dbPath, FX.TASK_2, "Task two")
+    it("shows correct task counts after adding tasks", async () => {
+      await insertTask(dbPath, FX.TASK_1, "Task one")
+      await insertTask(dbPath, FX.TASK_2, "Task two")
 
       const result = runTx("doctor", dbPath)
       expect(result.status).toBe(0)
@@ -207,8 +205,8 @@ describe("CLI doctor command", () => {
       expect(result.stdout).toMatch(/Tasks: 2 total/)
     })
 
-    it("shows ready count for ready tasks", () => {
-      insertTask(dbPath, FX.READY, "Ready task")
+    it("shows ready count for ready tasks", async () => {
+      await insertTask(dbPath, FX.READY, "Ready task")
 
       const result = runTx("doctor --json", dbPath)
       expect(result.status).toBe(0)
@@ -219,8 +217,8 @@ describe("CLI doctor command", () => {
       expect(taskCheck.message).toContain("ready")
     })
 
-    it("shows learning count after adding learnings", () => {
-      insertLearning(dbPath, "Test learning for doctor")
+    it("shows learning count after adding learnings", async () => {
+      await insertLearning(dbPath, "Test learning for doctor")
 
       const result = runTx("doctor --json", dbPath)
       expect(result.status).toBe(0)
@@ -241,8 +239,8 @@ describe("CLI doctor command", () => {
       expect(result.stdout).toContain("Required for:")
     })
 
-    it("shows verbose task breakdown", () => {
-      insertTask(dbPath, FX.VERBOSE, "Verbose task")
+    it("shows verbose task breakdown", async () => {
+      await insertTask(dbPath, FX.VERBOSE, "Verbose task")
 
       const result = runTx("doctor --verbose", dbPath)
       expect(result.status).toBe(0)

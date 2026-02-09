@@ -120,13 +120,13 @@ describe("mapCoreError", () => {
     it("should map DatabaseError", () => {
       const result = mapCoreError({ _tag: "DatabaseError", message: "Connection failed" })
       expect(result._tag).toBe("InternalError")
-      expect(result.message).toBe("Connection failed")
+      expect(result.message).toBe("Internal server error")
     })
 
     it("should map unknown tagged errors to InternalError", () => {
       const result = mapCoreError({ _tag: "SomeNewError", message: "Unknown issue" })
       expect(result._tag).toBe("InternalError")
-      expect(result.message).toBe("Unknown issue")
+      expect(result.message).toBe("Internal server error")
     })
   })
 
@@ -134,7 +134,7 @@ describe("mapCoreError", () => {
     it("should map string errors to InternalError", () => {
       const result = mapCoreError("Something broke")
       expect(result._tag).toBe("InternalError")
-      expect(result.message).toBe("Something broke")
+      expect(result.message).toBe("Internal server error")
     })
 
     it("should map Error objects to InternalError", () => {
@@ -145,13 +145,13 @@ describe("mapCoreError", () => {
     it("should map null to InternalError", () => {
       const result = mapCoreError(null)
       expect(result._tag).toBe("InternalError")
-      expect(result.message).toBe("null")
+      expect(result.message).toBe("Internal server error")
     })
 
     it("should map undefined to InternalError", () => {
       const result = mapCoreError(undefined)
       expect(result._tag).toBe("InternalError")
-      expect(result.message).toBe("undefined")
+      expect(result.message).toBe("Internal server error")
     })
 
     it("should use _tag as message when no message field present", () => {

@@ -1,16 +1,22 @@
 {
-  "title": "CLI Primitives",
+  "title": "Primitives",
+  "defaultOpen": true,
   "pages": [
     "index",
+    "---Task Management---",
     "ready",
     "done",
     "block",
+    "claim",
+    "---Memory & Context---",
     "context",
     "learning",
+    "---Coordination---",
     "sync",
-    "---Planned---",
-    "claim",
-    "handoff",
-    "checkpoint"
+    "attempts",
+    "---Observability---",
+    "traces",
+    "docs",
+    "invariants"
   ]
 }

@@ -1,0 +1,46 @@
+# tx
+
+> Primitives, not frameworks. Headless infrastructure for memory, tasks, and orchestration.
+
+tx provides composable primitives for agent infrastructure — task management, memory, coordination, and observability. You own the orchestration; tx owns the plumbing.
+
+## Docs
+
+- [Overview](https://tx-docs.vercel.app/docs): What tx is and why primitives beat frameworks
+- [Getting Started](https://tx-docs.vercel.app/docs/getting-started): Install tx and run your first agent loop
+
+## Primitives
+
+- [tx ready](https://tx-docs.vercel.app/docs/primitives/ready): Get next workable task (unblocked, highest priority)
+- [tx done](https://tx-docs.vercel.app/docs/primitives/done): Complete task, potentially unblocking others
+- [tx block](https://tx-docs.vercel.app/docs/primitives/block): Declare dependencies between tasks
+- [tx claim](https://tx-docs.vercel.app/docs/primitives/claim): Claim task with lease to prevent parallel collisions
+- [tx context](https://tx-docs.vercel.app/docs/primitives/context): Get relevant learnings for prompt injection
+- [tx learning](https://tx-docs.vercel.app/docs/primitives/learning): Record and search knowledge
+- [tx sync](https://tx-docs.vercel.app/docs/primitives/sync): Persist to git-friendly JSONL
+- [tx try / tx attempts](https://tx-docs.vercel.app/docs/primitives/attempts): Record and track implementation attempts
+- [tx doc](https://tx-docs.vercel.app/docs/primitives/docs): Docs-as-primitives with YAML structured documentation
+- [tx invariant](https://tx-docs.vercel.app/docs/primitives/invariants): Machine-checkable system rules with enforcement tracking
+- [tx trace](https://tx-docs.vercel.app/docs/primitives/traces): Execution tracing and run observability
+
+## Interfaces
+
+- **CLI**: Scripts, terminal workflows, agent loops
+- **MCP Server**: Claude Code integration (42 tools)
+- **REST API**: Custom dashboards, external integrations
+- **TypeScript SDK**: Programmatic access from your agents
+- **Dashboard**: Visual monitoring and management
+
+## Quick Start
+
+```bash
+npm install -g @jamesaphoenix/tx
+cd your-project
+tx init
+tx add "My first task"
+tx ready
+```
+
+## Optional
+
+- [GitHub](https://github.com/jamesaphoenix/tx)
