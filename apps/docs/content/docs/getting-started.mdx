@@ -3,28 +3,97 @@ title: Getting Started
 description: Install tx and run your first agent loop
 ---
 
-Get up and running with tx in minutes.
+Get up and running with tx in minutes. tx provides four interfaces -- pick whichever fits your workflow.
+
+| Interface | Package | Best For |
+|-----------|---------|----------|
+| CLI | `@jamesaphoenix/tx-cli` | Shell scripts, human operators |
+| TypeScript SDK | `@jamesaphoenix/tx-agent-sdk` | Custom agents in Node/Bun |
+| MCP Server | `@jamesaphoenix/tx-mcp-server` | Claude, Cursor, AI IDEs |
+| REST API | `@jamesaphoenix/tx-api-server` | Language-agnostic HTTP clients |
 
 ## Installation
 
-Install tx globally via npm:
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+Install the CLI globally:
 
 ```bash
-npm install -g @jamesaphoenix/tx
+npm install -g @jamesaphoenix/tx-cli
 ```
 
 Or with your preferred package manager:
 
 ```bash
 # pnpm
-pnpm add -g @jamesaphoenix/tx
-
-# yarn
-yarn global add @jamesaphoenix/tx
+pnpm add -g @jamesaphoenix/tx-cli
 
 # bun
-bun add -g @jamesaphoenix/tx
+bun add -g @jamesaphoenix/tx-cli
 ```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+Add the Agent SDK to your project:
+
+```bash
+npm install @jamesaphoenix/tx-agent-sdk
+```
+
+The SDK supports two modes:
+- **HTTP mode** -- connects to the API server (recommended for distributed agents)
+- **Direct mode** -- reads SQLite directly (for local, single-process agents)
+
+</Tab>
+<Tab value="MCP">
+
+Add the MCP server to your Claude Desktop or IDE configuration:
+
+```json
+{
+  "mcpServers": {
+    "tx": {
+      "command": "npx",
+      "args": ["@jamesaphoenix/tx-mcp-server"]
+    }
+  }
+}
+```
+
+No separate API server is needed -- the MCP server accesses the SQLite database directly.
+
+</Tab>
+<Tab value="REST API">
+
+Launch the API server:
+
+```bash
+npx @jamesaphoenix/tx-api-server
+```
+
+Or with bun:
+
+```bash
+bunx @jamesaphoenix/tx-api-server
+```
+
+The server runs on `http://localhost:3456` by default. Configure with flags or environment variables:
+
+```bash
+# Custom port
+npx @jamesaphoenix/tx-api-server --port 8080
+
+# Custom database path
+npx @jamesaphoenix/tx-api-server --db /path/to/tasks.db
+
+# Environment variables
+TX_API_PORT=8080 TX_DB_PATH=./my.db npx @jamesaphoenix/tx-api-server
+```
+
+</Tab>
+</Tabs>
 
 ## Initialize Your Project
 
@@ -45,49 +114,102 @@ This creates a `.tx/` directory:
 └── runs.jsonl         # Git-tracked run history
 ```
 
-## Basic Usage
+## Quick Start
 
-### Create Tasks
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
 
 ```bash
-# Add a task
+# Create a task
 tx add "Implement user authentication"
 
-# Add with priority score (higher = more important)
-tx add "Fix critical security bug" --score 900
-
-# Add as a subtask
-tx add "Write login form" --parent tx-abc123
-```
-
-### View Ready Tasks
-
-```bash
-# List tasks ready to work on (unblocked, sorted by priority)
+# See what's ready to work on
 tx ready
 
-# Get top 5 as JSON for scripting
-tx ready --limit 5 --json
-```
-
-### Complete Tasks
-
-```bash
-# Mark a task done
+# Complete a task (unblocks dependents automatically)
 tx done tx-abc123
 
-# This automatically unblocks any tasks that were waiting on it
+# Add a dependency: tx-b waits for tx-a
+tx block tx-b tx-a
 ```
 
-### Manage Dependencies
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+// HTTP mode (requires API server running)
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Or direct SQLite mode (no server needed)
+// const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// Create a task
+const task = await tx.tasks.create({ title: 'Implement auth' })
+
+// Get ready tasks
+const ready = await tx.tasks.ready({ limit: 5 })
+
+// Complete a task
+await tx.tasks.done(ready[0].id)
+```
+
+</Tab>
+<Tab value="MCP">
+
+Once configured, your AI assistant has access to these tools:
+
+| Tool | Description |
+|------|-------------|
+| `tx_add` | Create a task |
+| `tx_ready` | List unblocked tasks |
+| `tx_done` | Complete a task |
+| `tx_block` | Add a dependency |
+| `tx_show` | View task details |
+| `tx_context` | Get relevant learnings |
+
+Example prompt: *"Use tx_ready to find the highest priority task, then work on it and mark it done with tx_done."*
+
+</Tab>
+<Tab value="REST API">
 
 ```bash
-# Task A blocks task B (B waits for A)
-tx block tx-b tx-a
+# Create a task
+curl -X POST http://localhost:3456/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Implement auth"}'
 
-# View the task tree
-tx tree tx-abc123
+# List ready tasks
+curl http://localhost:3456/tasks/ready?limit=5
+
+# Complete a task
+curl -X POST http://localhost:3456/tasks/tx-abc123/done
 ```
+
+</Tab>
+</Tabs>
+
+## Launching the API Server
+
+The Agent SDK (HTTP mode) and REST API interface require the API server to be running. The CLI and MCP server access SQLite directly and do not need it.
+
+```bash
+# Start the API server
+npx @jamesaphoenix/tx-api-server
+
+# Or with bun
+bunx @jamesaphoenix/tx-api-server
+```
+
+The server binds to `http://localhost:3456` by default. Available options:
+
+| Flag | Env Variable | Default | Description |
+|------|-------------|---------|-------------|
+| `--port`, `-p` | `TX_API_PORT` | `3456` | Port to listen on |
+| `--host` | `TX_API_HOST` | `127.0.0.1` | Hostname to bind to |
+| `--db` | `TX_DB_PATH` | `.tx/tasks.db` | Path to SQLite database |
+| -- | `TX_API_KEY` | -- | API key for authentication (optional) |
 
 ## Your First Agent Loop
 
@@ -190,10 +312,10 @@ your-project/
 
 ## Next Steps
 
-- **[CLI Primitives](/docs/primitives)** - Full reference for all tx commands
-- **[tx ready](/docs/primitives/ready)** - Deep dive into task readiness detection
-- **[tx context](/docs/primitives/context)** - Contextual learning retrieval
-- **[tx sync](/docs/primitives/sync)** - Git synchronization details
+- **[CLI Primitives](/docs/primitives)** -- Full reference for all tx commands
+- **[tx ready](/docs/primitives/ready)** -- Deep dive into task readiness detection
+- **[tx context](/docs/primitives/context)** -- Contextual learning retrieval
+- **[tx sync](/docs/primitives/sync)** -- Git synchronization details
 
 ## Quick Reference
 
@@ -214,4 +336,7 @@ tx context <task-id>        # Get relevant context
 # Sync
 tx sync export              # SQLite → JSONL
 tx sync import              # JSONL → SQLite
+
+# API Server
+npx @jamesaphoenix/tx-api-server   # Start REST API
 ```

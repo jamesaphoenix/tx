@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "getting-started",
+    "agent-sdk",
     "---",
     "primitives"
   ],

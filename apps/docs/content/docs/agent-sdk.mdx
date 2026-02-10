@@ -1,0 +1,721 @@
+---
+title: Agent SDK
+description: TypeScript SDK for building custom agents with tx task management
+---
+
+import { Callout } from "fumadocs-ui/components/callout"
+import { Tab, Tabs } from "fumadocs-ui/components/tabs"
+
+<Callout type="warn" title="API Server Required">
+The Agent SDK connects to tx via the REST API server. You must start the API server before using the SDK:
+
+```bash
+tx serve
+# Server running at http://localhost:3456
+```
+
+Alternatively, use **direct mode** with `dbPath` to skip the API server entirely (requires `@jamesaphoenix/tx-core` and `effect` as dependencies).
+</Callout>
+
+## Installation
+
+```bash
+npm install @jamesaphoenix/tx-agent-sdk
+```
+
+Or with your preferred package manager:
+
+```bash
+# pnpm
+pnpm add @jamesaphoenix/tx-agent-sdk
+
+# yarn
+yarn add @jamesaphoenix/tx-agent-sdk
+
+# bun
+bun add @jamesaphoenix/tx-agent-sdk
+```
+
+## Quick Start
+
+```typescript
+import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
+
+// HTTP mode (connects to tx API server)
+const tx = new TxClient({ apiUrl: "http://localhost:3456" })
+
+// Get the next ready task
+const ready = await tx.tasks.ready({ limit: 1 })
+if (ready.length === 0) {
+  console.log("No tasks ready")
+  process.exit(0)
+}
+
+const task = ready[0]
+console.log(`Working on: ${task.title}`)
+
+// Get context (relevant learnings for this task)
+const ctx = await tx.context.forTask(task.id)
+for (const l of ctx.learnings) {
+  console.log(`- ${l.content}`)
+}
+
+// ... do the work ...
+
+// Mark complete and see what was unblocked
+const { nowReady } = await tx.tasks.done(task.id)
+console.log(`Unblocked ${nowReady.length} tasks`)
+
+// Record what you learned
+await tx.learnings.add({
+  content: "Use retry logic for flaky network calls",
+  category: "best-practices",
+})
+```
+
+## Connection Modes
+
+The SDK supports two transport modes:
+
+| Mode | Config | Requires | Best For |
+|------|--------|----------|----------|
+| **HTTP** | `apiUrl` | Running `tx serve` | Remote agents, distributed systems |
+| **Direct** | `dbPath` | `@jamesaphoenix/tx-core` + `effect` | Local agents, single-machine setups |
+
+```typescript
+// HTTP mode
+const tx = new TxClient({ apiUrl: "http://localhost:3456" })
+
+// Direct SQLite mode (no server needed)
+const tx = new TxClient({ dbPath: ".tx/tasks.db" })
+
+// With authentication
+const tx = new TxClient({
+  apiUrl: "http://localhost:3456",
+  apiKey: process.env.TX_API_KEY,
+  timeout: 60000, // 60 second timeout
+})
+```
+
+<Callout type="info">
+When both `apiUrl` and `dbPath` are provided, direct mode takes precedence. Direct mode requires `@jamesaphoenix/tx-core` and `effect` as installed dependencies.
+</Callout>
+
+## API Reference
+
+### Tasks
+
+#### `tx.tasks.ready(options?)`
+
+Get tasks that are ready to be worked on (all blockers completed). Returns tasks sorted by priority score (descending).
+
+<Tabs groupId="interface" persist items={["TypeScript SDK", "CLI", "MCP", "REST API"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+const ready = await tx.tasks.ready({ limit: 5 })
+
+if (ready.length > 0) {
+  console.log(`Next task: ${ready[0].title}`)
+}
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `limit` | `number` | `100` | Maximum number of tasks to return |
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+tx ready --limit 5 --json
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_ready",
+  "arguments": {
+    "limit": 5
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl http://localhost:3456/api/tasks/ready?limit=5
+```
+
+</Tab>
+</Tabs>
+
+#### `tx.tasks.done(id)`
+
+Mark a task as done. Returns the completed task and an array of tasks that became ready as a result.
+
+<Tabs groupId="interface" persist items={["TypeScript SDK", "CLI", "MCP", "REST API"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+const { task, nowReady } = await tx.tasks.done("tx-abc123")
+console.log(`Completed: ${task.title}`)
+console.log(`Unblocked ${nowReady.length} tasks`)
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+tx done tx-abc123
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_done",
+  "arguments": {
+    "taskId": "tx-abc123"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
+```
+
+</Tab>
+</Tabs>
+
+#### `tx.tasks.create(data)`
+
+Create a new task.
+
+<Tabs groupId="interface" persist items={["TypeScript SDK", "CLI", "MCP", "REST API"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+const task = await tx.tasks.create({
+  title: "Implement auth",
+  description: "Add JWT-based authentication",
+  score: 100,
+  metadata: { component: "auth" },
+})
+```
+
+**Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | `string` | Yes | Task title |
+| `description` | `string` | No | Detailed description |
+| `parentId` | `string` | No | Parent task ID for hierarchy |
+| `score` | `number` | No | Priority score (higher = more urgent) |
+| `metadata` | `Record<string, unknown>` | No | Arbitrary key-value metadata |
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+tx add "Implement auth" --score 100
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_add",
+  "arguments": {
+    "title": "Implement auth",
+    "description": "Add JWT-based authentication",
+    "score": 100
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST http://localhost:3456/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Implement auth", "description": "Add JWT-based authentication", "score": 100}'
+```
+
+</Tab>
+</Tabs>
+
+#### `tx.tasks.get(id)`
+
+Get a task by ID, including full dependency information.
+
+```typescript
+const task = await tx.tasks.get("tx-abc123")
+console.log(task.title, task.isReady)
+console.log(`Blocked by: ${task.blockedBy.join(", ")}`)
+console.log(`Blocks: ${task.blocks.join(", ")}`)
+```
+
+#### `tx.tasks.update(id, data)`
+
+Update a task's fields. Only provided fields are changed.
+
+```typescript
+await tx.tasks.update("tx-abc123", {
+  status: "active",
+  score: 200,
+})
+```
+
+#### `tx.tasks.delete(id, options?)`
+
+Delete a task. Fails if the task has children unless `cascade: true` is set.
+
+```typescript
+// Delete a single task
+await tx.tasks.delete("tx-abc123")
+
+// Delete task and all descendants
+await tx.tasks.delete("tx-abc123", { cascade: true })
+```
+
+#### `tx.tasks.list(options?)`
+
+List tasks with pagination and filtering.
+
+```typescript
+// List all tasks
+const all = await tx.tasks.list()
+
+// Filter by status
+const active = await tx.tasks.list({ status: "active" })
+
+// Multiple statuses
+const working = await tx.tasks.list({ status: ["active", "planning"] })
+
+// Full-text search
+const results = await tx.tasks.list({ search: "auth" })
+
+// Paginate
+const page1 = await tx.tasks.list({ limit: 10 })
+if (page1.hasMore) {
+  const page2 = await tx.tasks.list({ limit: 10, cursor: page1.nextCursor! })
+}
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `cursor` | `string` | - | Pagination cursor from `nextCursor` |
+| `limit` | `number` | `20` | Maximum tasks to return |
+| `status` | `TaskStatus \| TaskStatus[]` | - | Filter by status |
+| `search` | `string` | - | Full-text search across title and description |
+
+#### `tx.tasks.block(id, blockerId)`
+
+Add a blocker dependency. Circular dependencies are rejected.
+
+```typescript
+// "deploy" can't start until "build" is done
+await tx.tasks.block("tx-deploy", "tx-build")
+```
+
+#### `tx.tasks.unblock(id, blockerId)`
+
+Remove a blocker dependency.
+
+```typescript
+await tx.tasks.unblock("tx-deploy", "tx-build")
+```
+
+#### `tx.tasks.tree(id)`
+
+Get a task and all its descendants as a flat array.
+
+```typescript
+const tree = await tx.tasks.tree("tx-root")
+console.log(`${tree.length} tasks in tree`)
+```
+
+### Learnings
+
+#### `tx.learnings.search(options?)`
+
+Search learnings using BM25 text search. Returns results with relevance scores.
+
+<Tabs groupId="interface" persist items={["TypeScript SDK", "CLI", "MCP", "REST API"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+// Search by keyword
+const results = await tx.learnings.search({ query: "authentication" })
+
+// Get recent learnings (no query)
+const recent = await tx.learnings.search({ limit: 5 })
+
+// Filter by category
+const practices = await tx.learnings.search({
+  query: "error handling",
+  category: "best-practices",
+})
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `query` | `string` | - | Search query (omit for recent) |
+| `limit` | `number` | `10` | Maximum results |
+| `minScore` | `number` | - | Minimum relevance score (0-1) |
+| `category` | `string` | - | Filter by category |
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+tx learning:search "authentication"
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_learning_search",
+  "arguments": {
+    "query": "authentication",
+    "limit": 10
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "http://localhost:3456/api/learnings?query=authentication&limit=10"
+```
+
+</Tab>
+</Tabs>
+
+#### `tx.learnings.add(data)`
+
+Create a new learning to persist knowledge for future agents.
+
+<Tabs groupId="interface" persist items={["TypeScript SDK", "CLI", "MCP", "REST API"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+await tx.learnings.add({
+  content: "Use bcrypt for password hashing, not SHA256",
+  sourceType: "manual",
+  sourceRef: "tx-abc123",
+  category: "security",
+  keywords: ["passwords", "hashing", "bcrypt"],
+})
+```
+
+**Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `content` | `string` | Yes | The learning content |
+| `sourceType` | `string` | No | `'manual'`, `'run'`, `'compaction'`, or `'claude_md'` |
+| `sourceRef` | `string` | No | Reference to the source (e.g. task ID) |
+| `category` | `string` | No | Category for filtering |
+| `keywords` | `string[]` | No | Keywords for search indexing |
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+tx learning:add "Use bcrypt for password hashing, not SHA256"
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_learning_add",
+  "arguments": {
+    "content": "Use bcrypt for password hashing, not SHA256",
+    "category": "security"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST http://localhost:3456/api/learnings \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Use bcrypt for password hashing, not SHA256", "category": "security"}'
+```
+
+</Tab>
+</Tabs>
+
+#### `tx.learnings.get(id)`
+
+Get a learning by its numeric ID.
+
+```typescript
+const learning = await tx.learnings.get(42)
+console.log(learning.content)
+```
+
+#### `tx.learnings.helpful(id, score?)`
+
+Record that a learning was helpful, boosting its outcome score. Higher outcome scores cause learnings to rank higher in future searches.
+
+```typescript
+await tx.learnings.helpful(42)
+await tx.learnings.helpful(42, 0.8) // partial helpfulness
+```
+
+### Context
+
+#### `tx.context.forTask(taskId)`
+
+Get contextual learnings for a task. Uses the task's title and description to find relevant learnings. This is the primary mechanism for injecting memory into agent prompts.
+
+<Tabs groupId="interface" persist items={["TypeScript SDK", "CLI", "MCP", "REST API"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+const ctx = await tx.context.forTask("tx-abc123")
+console.log(`Found ${ctx.learnings.length} relevant learnings`)
+
+for (const l of ctx.learnings) {
+  console.log(`- [${(l.relevanceScore * 100).toFixed(0)}%] ${l.content}`)
+}
+```
+
+**Returns `SerializedContextResult`:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `taskId` | `string` | The task ID queried |
+| `taskTitle` | `string` | The task's title |
+| `learnings` | `SerializedLearningWithScore[]` | Relevant learnings with scores |
+| `searchQuery` | `string` | The generated search query |
+| `searchDuration` | `number` | Search time in milliseconds |
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+tx context tx-abc123
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_context",
+  "arguments": {
+    "taskId": "tx-abc123"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl http://localhost:3456/api/context/tx-abc123
+```
+
+</Tab>
+</Tabs>
+
+### File Learnings
+
+#### `tx.fileLearnings.list(path?)`
+
+List all file learnings, optionally filtering by file path.
+
+```typescript
+// List all
+const all = await tx.fileLearnings.list()
+
+// Filter by path
+const forFile = await tx.fileLearnings.list("src/auth.ts")
+```
+
+#### `tx.fileLearnings.recall(path)`
+
+Recall file learnings matching a specific file path. Use this before working on a file to retrieve attached notes.
+
+```typescript
+const notes = await tx.fileLearnings.recall("src/auth.ts")
+for (const note of notes) {
+  console.log(`${note.filePattern}: ${note.note}`)
+}
+```
+
+#### `tx.fileLearnings.add(data)`
+
+Associate a note with a file pattern.
+
+```typescript
+await tx.fileLearnings.add({
+  filePattern: "src/auth.ts",
+  note: "JWT tokens expire after 1 hour, refresh logic is in middleware",
+  taskId: "tx-abc123",
+})
+```
+
+## Error Handling
+
+The SDK uses `TxError` for all errors, with typed error codes:
+
+```typescript
+import { TxError } from "@jamesaphoenix/tx-agent-sdk"
+
+try {
+  await tx.tasks.get("tx-nonexistent")
+} catch (err) {
+  if (err instanceof TxError) {
+    if (err.isNotFound()) {
+      console.log("Task not found")
+    } else if (err.isValidation()) {
+      console.log("Validation error:", err.message)
+    } else if (err.isCircularDependency()) {
+      console.log("Circular dependency detected")
+    }
+    console.log("Error code:", err.code)
+    console.log("HTTP status:", err.statusCode)
+  }
+}
+```
+
+## Retry Logic
+
+Built-in retry helper for resilient API calls:
+
+```typescript
+import { withRetry } from "@jamesaphoenix/tx-agent-sdk"
+
+const task = await withRetry(() => tx.tasks.get("tx-abc123"), {
+  maxAttempts: 3,
+  initialDelayMs: 100,
+  maxDelayMs: 5000,
+  backoffMultiplier: 2,
+})
+```
+
+By default, `withRetry` retries on network errors and 5xx server responses.
+
+## Utility Functions
+
+The SDK exports helper functions for common operations:
+
+```typescript
+import {
+  filterByStatus,
+  filterReady,
+  sortByScore,
+  getNextTask,
+  isValidTaskId,
+  isValidTaskStatus,
+  parseDate,
+  wasCompletedRecently,
+} from "@jamesaphoenix/tx-agent-sdk"
+
+// Get the highest-priority ready task from a list
+const tasks = (await tx.tasks.list({ limit: 100 })).items
+const next = getNextTask(tasks)
+
+// Validate IDs
+isValidTaskId("tx-abc123") // true
+isValidTaskStatus("active") // true
+
+// Filter tasks client-side
+const active = filterByStatus(tasks, "active")
+const ready = filterReady(tasks)
+const sorted = sortByScore(tasks)
+
+// Date helpers
+const recentlyDone = tasks.filter((t) => wasCompletedRecently(t, 24))
+```
+
+## Cleanup
+
+When using direct mode, dispose of resources when done:
+
+```typescript
+const tx = new TxClient({ dbPath: ".tx/tasks.db" })
+try {
+  await tx.tasks.ready()
+} finally {
+  await tx.dispose()
+}
+```
+
+HTTP mode has no resources to dispose. `dispose()` is safe to call on either mode.
+
+## Example: Full Agent Loop
+
+```typescript
+import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
+
+const tx = new TxClient({ apiUrl: "http://localhost:3456" })
+
+async function agentLoop() {
+  while (true) {
+    // Get next task
+    const ready = await tx.tasks.ready({ limit: 1 })
+    if (ready.length === 0) break
+
+    const task = ready[0]
+    console.log(`Starting: ${task.title}`)
+
+    // Get relevant context
+    const ctx = await tx.context.forTask(task.id)
+    const contextStr = ctx.learnings
+      .map((l) => `- ${l.content}`)
+      .join("\n")
+
+    // ... pass task + context to your LLM ...
+
+    // Record what was learned
+    await tx.learnings.add({
+      content: "Discovered pattern X works for problem Y",
+      sourceRef: task.id,
+    })
+
+    // Complete the task
+    const { nowReady } = await tx.tasks.done(task.id)
+    console.log(`Done. ${nowReady.length} tasks unblocked.`)
+  }
+
+  console.log("All tasks complete!")
+}
+
+agentLoop()
+```
+
+## Related
+
+- [Getting Started](/docs/getting-started) - Install tx and run your first agent loop
+- [tx ready](/docs/primitives/ready) - Task readiness detection
+- [tx done](/docs/primitives/done) - Task completion
+- [tx context](/docs/primitives/context) - Contextual learning retrieval
+- [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents

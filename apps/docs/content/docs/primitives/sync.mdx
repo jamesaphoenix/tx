@@ -28,7 +28,7 @@ description: Git-backed JSONL synchronization
 
 Export all tasks and dependencies to a JSONL file.
 
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 ### Usage
@@ -89,6 +89,49 @@ await tx.close()
 For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_sync_export`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `path` | `string` | No | Path to JSONL file (default: `.tx/tasks.jsonl`) |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_sync_export",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+POST /api/sync/export
+```
+
+**Body:**
+
+```json
+{
+  "path": ".tx/tasks.jsonl"
+}
+```
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3456/api/sync/export \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+</Tab>
 </Tabs>
 
 ---
@@ -97,7 +140,7 @@ For most use cases, the CLI commands are recommended for sync operations.
 
 Import tasks from a JSONL file using timestamp-based merge.
 
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 ### Usage
@@ -156,6 +199,49 @@ await tx.close()
 For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_sync_import`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `path` | `string` | No | Path to JSONL file (default: `.tx/tasks.jsonl`) |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_sync_import",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+POST /api/sync/import
+```
+
+**Body:**
+
+```json
+{
+  "path": ".tx/tasks.jsonl"
+}
+```
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3456/api/sync/import \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+</Tab>
 </Tabs>
 
 ---
@@ -164,7 +250,7 @@ For most use cases, the CLI commands are recommended for sync operations.
 
 Show sync status and whether the database has unexported changes.
 
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 ### Usage
@@ -221,6 +307,48 @@ await tx.close()
 For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_sync_status`
+
+**Arguments:** None
+
+**Example request:**
+
+```json
+{
+  "name": "tx_sync_status",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+GET /api/sync/status
+```
+
+**Example:**
+
+```bash
+curl http://localhost:3456/api/sync/status
+```
+
+**Response:**
+
+```json
+{
+  "dbTaskCount": 156,
+  "jsonlOpCount": 312,
+  "lastExport": "2025-01-28T10:30:00.000Z",
+  "lastImport": null,
+  "isDirty": true,
+  "autoSyncEnabled": false
+}
+```
+
+</Tab>
 </Tabs>
 
 ---
@@ -229,7 +357,7 @@ For most use cases, the CLI commands are recommended for sync operations.
 
 Enable or disable automatic synchronization on mutations.
 
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 ### Usage
@@ -283,6 +411,23 @@ await tx.close()
 For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
+<Tab value="MCP">
+
+Auto-sync is typically configured through the CLI. Use `tx sync auto --enable` or `tx sync auto --disable` to toggle.
+
+The current auto-sync state is included in the `tx_sync_status` tool response under the `autoSyncEnabled` field.
+
+</Tab>
+<Tab value="REST API">
+
+Auto-sync is typically configured through the CLI. The current auto-sync state is included in the sync status response:
+
+```bash
+curl http://localhost:3456/api/sync/status
+# Response includes "autoSyncEnabled": true/false
+```
+
+</Tab>
 </Tabs>
 
 ---
@@ -291,7 +436,7 @@ For most use cases, the CLI commands are recommended for sync operations.
 
 Compact the JSONL file by deduplicating operations.
 
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 ### Usage
@@ -345,6 +490,58 @@ await tx.close()
 ```
 
 For most use cases, the CLI commands are recommended for sync operations.
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_sync_compact`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `path` | `string` | No | Path to JSONL file (default: `.tx/tasks.jsonl`) |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_sync_compact",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+POST /api/sync/compact
+```
+
+**Body:**
+
+```json
+{
+  "path": ".tx/tasks.jsonl"
+}
+```
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3456/api/sync/compact \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+**Response:**
+
+```json
+{
+  "before": 1234,
+  "after": 892
+}
+```
 
 </Tab>
 </Tabs>

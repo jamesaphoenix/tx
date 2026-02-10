@@ -248,7 +248,7 @@ Search results for "database transactions":
 
 List recently added learnings.
 
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 ```bash
@@ -285,6 +285,38 @@ const recent = await tx.learnings.search({
   query: '',
   limit: 10
 })
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_learning_search`
+
+Use the search tool with an empty query to get recent learnings:
+
+```json
+{
+  "name": "tx_learning_search",
+  "arguments": {
+    "query": "",
+    "limit": 10
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+GET /api/learnings?limit=10
+```
+
+Omit the `query` parameter to get recent learnings sorted by creation time.
+
+**Example:**
+
+```bash
+curl "http://localhost:3456/api/learnings?limit=10"
 ```
 
 </Tab>
@@ -390,7 +422,7 @@ curl -X POST http://localhost:3456/api/learnings/42/helpful \
 
 Retrieve a specific learning by its ID.
 
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 ```bash
@@ -407,6 +439,47 @@ const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
 const learning = await tx.learnings.get(42)
 console.log(learning.content)
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_learning_get`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `id` | `number` | Yes | Learning ID |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_learning_get",
+  "arguments": {
+    "id": 42
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+GET /api/learnings/:id
+```
+
+**Path parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | `number` | Yes | Learning ID |
+
+**Example:**
+
+```bash
+curl http://localhost:3456/api/learnings/42
 ```
 
 </Tab>
@@ -460,7 +533,18 @@ tx learning:embed --status
 
 Attach learnings to specific file patterns for path-based retrieval.
 
-<Tabs items={["TypeScript SDK"]}>
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# Attach a learning to a file pattern
+tx learn "src/auth.ts" "JWT tokens expire after 1 hour"
+
+# Recall learnings for a specific file
+tx recall "src/auth.ts"
+```
+
+</Tab>
 <Tab value="TypeScript SDK">
 
 ```typescript
@@ -477,6 +561,78 @@ await tx.fileLearnings.add({
   note: 'JWT tokens expire after 1 hour',
   taskId: 'tx-abc123'
 })
+
+// Recall learnings matching a path
+const notes = await tx.fileLearnings.recall('src/auth.ts')
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_file_learning_list`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `path` | `string` | No | File path to filter by |
+
+**Tool name:** `tx_file_learning_add`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `filePattern` | `string` | Yes | Glob pattern or file path |
+| `note` | `string` | Yes | Note to associate with matching files |
+| `taskId` | `string` | No | Task ID that produced this learning |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_file_learning_add",
+  "arguments": {
+    "filePattern": "src/auth.ts",
+    "note": "JWT tokens expire after 1 hour",
+    "taskId": "tx-abc123"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+### List file learnings
+
+```
+GET /api/file-learnings?path=src/auth.ts
+```
+
+### Add a file learning
+
+```
+POST /api/file-learnings
+```
+
+**Body:**
+
+```json
+{
+  "filePattern": "src/auth.ts",
+  "note": "JWT tokens expire after 1 hour",
+  "taskId": "tx-abc123"
+}
+```
+
+**Example:**
+
+```bash
+# List file learnings
+curl "http://localhost:3456/api/file-learnings?path=src/auth.ts"
+
+# Add a file learning
+curl -X POST http://localhost:3456/api/file-learnings \
+  -H "Content-Type: application/json" \
+  -d '{"filePattern": "src/auth.ts", "note": "JWT tokens expire after 1 hour"}'
 ```
 
 </Tab>
