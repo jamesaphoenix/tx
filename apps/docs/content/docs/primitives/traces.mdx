@@ -1,0 +1,594 @@
+---
+title: tx trace
+description: Execution tracing for debugging agent run failures
+---
+
+import { Tab, Tabs } from "fumadocs-ui/components/tabs"
+
+## Purpose
+
+`tx trace` provides execution tracing for debugging agent run failures. It combines two primitives:
+
+1. **IO Capture** -- File paths to transcripts, stderr, and stdout stored on run records
+2. **Metrics Events** -- Operational spans and metrics written to the `events` table
+
+Traces help answer "why did this run fail?" by correlating internal service timing with agent tool calls.
+
+## List Recent Runs
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx trace list [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--hours <n>` | Time window in hours (default: 24) |
+| `--limit <n>` | Maximum number of results (default: 20) |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# List recent runs
+tx trace list
+
+# Output:
+# Recent Runs (last 24h)
+# ───────────────────────────────────────────────────────────────────────────
+# ID              Agent            Task            Status      Spans      Time
+# run-abc12345    tx-implementer   tx-6407952c     failed         23      2h ago
+# run-def67890    tx-implementer   tx-8a4be920     success        45      3h ago
+
+# Show last 48 hours
+tx trace list --hours 48
+
+# JSON output
+tx trace list --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// List runs via the REST API
+const { runs, hasMore, nextCursor } = await tx.runs.list({
+  limit: 20,
+  status: 'failed'
+})
+
+// Get a specific run with transcript messages
+const { run, messages } = await tx.runs.get('run-abc12345')
+```
+
+</Tab>
+<Tab value="MCP">
+
+Trace MCP tools are planned for a future release. Use the CLI to inspect traces:
+
+```bash
+tx trace list --json
+tx trace show run-abc12345 --json
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+GET /api/runs?limit=20&status=failed
+```
+
+### Query Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `limit` | Max results (default: 20) |
+| `cursor` | Pagination cursor |
+| `status` | Filter by status (comma-separated) |
+| `taskId` | Filter by task ID |
+| `agent` | Filter by agent name |
+
+### Example
+
+```bash
+curl http://localhost:3456/api/runs?limit=10&status=failed
+```
+
+### Response
+
+```json
+{
+  "runs": [
+    {
+      "id": "run-abc12345",
+      "taskId": "tx-6407952c",
+      "agent": "tx-implementer",
+      "status": "failed",
+      "startedAt": "2025-01-15T14:00:00.000Z",
+      "endedAt": "2025-01-15T14:27:00.000Z",
+      "exitCode": 1,
+      "errorMessage": "ValidationError: Cannot mark blocked task as done"
+    }
+  ],
+  "nextCursor": null,
+  "hasMore": false,
+  "total": 1
+}
+```
+
+</Tab>
+</Tabs>
+
+## Show Run Details
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx trace show <run-id> [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<run-id>` | Yes | Run ID (e.g., `run-abc12345`) |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--full` | Combined timeline with tool calls from transcript |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Show metrics events for a run
+tx trace show run-abc12345
+
+# Output:
+# Run: run-abc12345
+# Agent: tx-implementer
+# Task: tx-6407952c
+# Status: failed
+# Transcript: runs/run-abc12345.jsonl
+# Stderr: runs/run-abc12345.stderr
+#
+# Metrics Events:
+# ───────────────────────────────────────────────────────────────────────────
+# 14:23:45  [span]  TaskService.show                    12ms  ok
+# 14:23:46  [span]  ReadyService.getReady               45ms  ok
+# 14:24:12  [span]  TaskService.update                   8ms  ok
+# 14:27:09  [span]  TaskService.done                   156ms  error
+#           └─ ValidationError: Cannot mark blocked task as done
+
+# Combined timeline (metrics + transcript tool calls)
+tx trace show run-abc12345 --full
+
+# Output:
+# Combined Timeline:
+# ───────────────────────────────────────────────────────────────────────────
+# 14:23:45.100  [span]    TaskService.show              12ms ok
+# 14:23:45.200  [tool]    Bash: tx show tx-6407952c
+# 14:23:46.000  [span]    ReadyService.getReady         45ms ok
+# 14:23:46.100  [tool]    Read: /path/to/file.ts
+# 14:27:09.000  [span]    TaskService.done              156ms error
+#               └─ ValidationError: Cannot mark blocked task as done
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Get run details with parsed transcript messages
+const { run, messages } = await tx.runs.get('run-abc12345')
+
+// messages includes tool_use, tool_result, text, and thinking entries
+for (const msg of messages) {
+  if (msg.type === 'tool_use') {
+    console.log(`Tool: ${msg.tool_name}`)
+  }
+}
+```
+
+</Tab>
+<Tab value="MCP">
+
+Trace MCP tools are planned for a future release. Use the CLI:
+
+```bash
+tx trace show run-abc12345 --full --json
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+GET /api/runs/:id
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/runs/run-abc12345
+```
+
+### Response
+
+```json
+{
+  "run": {
+    "id": "run-abc12345",
+    "taskId": "tx-6407952c",
+    "agent": "tx-implementer",
+    "status": "failed",
+    "startedAt": "2025-01-15T14:00:00.000Z",
+    "endedAt": "2025-01-15T14:27:00.000Z",
+    "transcriptPath": "runs/run-abc12345.jsonl",
+    "stderrPath": "runs/run-abc12345.stderr",
+    "exitCode": 1,
+    "errorMessage": "ValidationError: Cannot mark blocked task as done"
+  },
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "I'll read the task details...",
+      "type": "text",
+      "timestamp": "2025-01-15T14:23:45.000Z"
+    }
+  ]
+}
+```
+
+</Tab>
+</Tabs>
+
+## View Transcript
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx trace transcript <run-id>
+```
+
+Outputs raw JSONL content from the transcript file. Designed to be piped to `jq` for filtering:
+
+```bash
+# View full transcript
+tx trace transcript run-abc12345
+
+# Filter to tool calls only
+tx trace transcript run-abc12345 | jq 'select(.type == "tool_use")'
+
+# Filter to assistant messages
+tx trace transcript run-abc12345 | jq 'select(.type == "assistant")'
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Transcript messages are included in the run detail response
+const { run, messages } = await tx.runs.get('run-abc12345')
+```
+
+</Tab>
+<Tab value="MCP">
+
+Use the CLI to access transcripts:
+
+```bash
+tx trace transcript run-abc12345
+```
+
+</Tab>
+<Tab value="REST API">
+
+Transcript messages are returned as part of the run detail endpoint:
+
+```bash
+GET /api/runs/:id
+```
+
+The `messages` array in the response contains parsed transcript entries.
+
+</Tab>
+</Tabs>
+
+## View Stderr
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx trace stderr <run-id>
+```
+
+Outputs raw stderr content. Useful for debugging crashes and runtime errors:
+
+```bash
+tx trace stderr run-abc12345
+
+# Output:
+# Error: SQLITE_BUSY: database is locked
+#     at Database.exec (/path/to/better-sqlite3.js:...)
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Access stderr via REST API (HTTP mode)
+// The SDK wraps the /api/runs/:id/stderr endpoint
+```
+
+</Tab>
+<Tab value="MCP">
+
+Use the CLI:
+
+```bash
+tx trace stderr run-abc12345
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+GET /api/runs/:id/stderr
+```
+
+### Query Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `tail` | Number of lines from the end (default: all) |
+
+### Example
+
+```bash
+curl http://localhost:3456/api/runs/run-abc12345/stderr?tail=50
+```
+
+### Response
+
+```json
+{
+  "content": "Error: SQLITE_BUSY: database is locked\n    at Database.exec ...",
+  "truncated": false
+}
+```
+
+</Tab>
+</Tabs>
+
+## Show Recent Errors
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx trace errors [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--hours <n>` | Time window in hours (default: 24) |
+| `--limit <n>` | Maximum number of results (default: 20) |
+| `--json` | Output as JSON |
+
+### Example
+
+```bash
+tx trace errors
+
+# Output:
+# Recent Errors (last 24h)
+# ────────────────────────────────────────────────────────────────────────────────
+# 14:27:09  [span]   run-abc12345    tx-implementer
+#           Name: TaskService.done
+#           Error: ValidationError: Cannot mark blocked task as done
+#           Task: tx-6407952c
+#           Duration: 156ms
+#
+# 13:15:22  [run]    run-xyz98765    tx-planner
+#           Name: Run failed
+#           Error: Process exited with code 1
+```
+
+Aggregates errors from three sources:
+- **Failed runs** -- runs with `status = 'failed'`
+- **Error spans** -- spans with `status = 'error'` in metadata
+- **Error events** -- events with `event_type = 'error'`
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// List failed runs
+const { runs } = await tx.runs.list({ status: 'failed', limit: 10 })
+```
+
+</Tab>
+<Tab value="MCP">
+
+Use the CLI:
+
+```bash
+tx trace errors --json
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+# List failed runs
+GET /api/runs?status=failed&limit=10
+```
+
+</Tab>
+</Tabs>
+
+## TracingService
+
+The `TracingService` provides programmatic tracing within Effect-TS service code.
+
+### withSpan
+
+Wraps an Effect with a named span that records duration and status to the events table:
+
+```typescript
+import { TracingService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
+
+const program = Effect.gen(function* () {
+  const tracing = yield* TracingService
+
+  // Wrap an operation with a span
+  const result = yield* tracing.withSpan(
+    'MyService.processTask',
+    { attributes: { taskId: 'tx-abc123' } },
+    Effect.gen(function* () {
+      // ... your operation here
+      return 'done'
+    })
+  )
+  // Records: event_type='span', content='MyService.processTask',
+  //          duration_ms=<elapsed>, metadata={status:'ok', attributes:{...}}
+})
+```
+
+### recordMetric
+
+Records a point-in-time metric value:
+
+```typescript
+const program = Effect.gen(function* () {
+  const tracing = yield* TracingService
+
+  yield* tracing.recordMetric('queue_depth', 42, { agent: 'tx-implementer' })
+  // Records: event_type='metric', content='queue_depth',
+  //          duration_ms=42, metadata={agent:'tx-implementer'}
+})
+```
+
+### withRunContext
+
+Scopes a run ID to all nested spans using Effect's FiberRef:
+
+```typescript
+const program = Effect.gen(function* () {
+  const tracing = yield* TracingService
+
+  yield* tracing.withRunContext('run-abc12345',
+    Effect.gen(function* () {
+      // All spans within this scope will have run_id = 'run-abc12345'
+      yield* tracing.withSpan('nested.operation', {},
+        Effect.succeed('value')
+      )
+    })
+  )
+})
+```
+
+### Noop Implementation
+
+When tracing is disabled, `TracingServiceNoop` is used. It passes effects through unchanged with zero overhead:
+
+```typescript
+import { TracingServiceNoop } from '@jamesaphoenix/tx-core'
+
+// Zero-overhead: withSpan returns the effect unchanged
+// recordMetric returns Effect.void
+// withRunContext returns the effect unchanged
+```
+
+## IO Capture Architecture
+
+tx stores **file paths**, not file contents. The orchestrator decides how and where to capture IO:
+
+```
+.tx/
+├── tasks.db
+└── runs/
+    ├── run-abc12345.jsonl    # Claude transcript (stream-json output)
+    ├── run-abc12345.stderr   # Stderr capture
+    ├── run-abc12345.stdout   # Stdout capture (optional)
+    └── run-def67890.jsonl
+```
+
+### Run Record Columns
+
+| Column | Description |
+|--------|-------------|
+| `transcript_path` | Path to JSONL transcript file |
+| `stderr_path` | Path to stderr capture file |
+| `stdout_path` | Path to stdout capture file |
+
+### Orchestrator Example
+
+```bash
+#!/bin/bash
+RUN_ID="run-$(openssl rand -hex 4)"
+RUN_DIR=".tx/runs"
+mkdir -p "$RUN_DIR"
+
+# Create run record
+curl -X POST http://localhost:3456/api/runs \
+  -H "Content-Type: application/json" \
+  -d "{\"agent\": \"tx-implementer\", \"taskId\": \"$TASK_ID\"}"
+
+# Run agent with IO capture
+claude --print --output-format stream-json "$PROMPT" \
+  > "$RUN_DIR/$RUN_ID.jsonl" \
+  2> "$RUN_DIR/$RUN_ID.stderr"
+
+# Update run record with paths and status
+curl -X PATCH "http://localhost:3456/api/runs/$RUN_ID" \
+  -H "Content-Type: application/json" \
+  -d "{\"status\": \"completed\", \"transcriptPath\": \"runs/$RUN_ID.jsonl\"}"
+```
+
+## Transcript Adapters
+
+Different LLM tools produce different transcript formats. tx includes adapters for parsing:
+
+- **ClaudeCodeAdapter** -- Parses Claude's `--output-format stream-json` JSONL
+- **GenericJSONLAdapter** -- Fallback for other JSONL-producing tools
+
+The adapter is selected automatically based on the agent type stored in the run record.
+
+## Related Commands
+
+- [`tx ready`](/docs/primitives/ready) -- List tasks available to work on
+- [`tx done`](/docs/primitives/done) -- Complete a task (ends the logical work unit)
+- [`tx attempts`](/docs/primitives/attempts) -- Record what approaches were tried
+- [`tx sync`](/docs/primitives/sync) -- Export run data to git-friendly JSONL

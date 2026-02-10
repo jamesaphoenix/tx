@@ -115,14 +115,17 @@ const synced = yield* svc.syncInvariants('auth-design')  // specific doc
 </Tab>
 <Tab value="REST API">
 
-Invariant management is accessed through the docs API endpoints and the CLI/MCP tools. The REST API provides doc-level operations that include invariant data.
+> **Note:** Dedicated invariant REST endpoints are not yet available. Invariant data is accessed through the docs API. Use the CLI or MCP interface for full invariant management (list, show, record, sync).
 
 ```bash
-# Get the doc graph (includes invariant counts)
-curl http://localhost:3001/api/docs/graph
+# Get the doc graph (includes invariant metadata)
+curl http://localhost:3456/api/docs/graph
 
-# Get a doc (invariant count included in metadata)
-curl http://localhost:3001/api/docs/auth-design
+# Get a design doc (invariants defined in its YAML source)
+curl http://localhost:3456/api/docs/auth-design
+
+# List all design docs (which contain invariants)
+curl "http://localhost:3456/api/docs?kind=design"
 ```
 
 </Tab>

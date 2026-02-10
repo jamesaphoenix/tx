@@ -48,18 +48,23 @@ tx claim tx-abc123 worker-def456 --json
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+import { ClaimService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
 
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+// Claims use the Effect-based ClaimService directly
+const program = Effect.gen(function* () {
+  const svc = yield* ClaimService
 
-// Claim a task with lease
-const claim = await tx.claims.claim({
-  taskId: 'tx-abc123',
-  workerId: 'worker-1',
-  leaseDurationMinutes: 60
+  // Claim a task with a 60-minute lease
+  const claim = yield* svc.claim('tx-abc123', 'worker-1', 60)
+  // Returns: { id, taskId, workerId, claimedAt, leaseExpiresAt, renewedCount, status }
+
+  console.log(`Claimed until ${claim.leaseExpiresAt.toISOString()}`)
 })
-// Returns: { id, taskId, workerId, claimedAt, leaseExpiresAt, renewedCount, status }
 ```
+
+> **Note:** The TxClient SDK (`@jamesaphoenix/tx-agent-sdk`) does not yet have a `claims` namespace.
+> Use the Effect-based `ClaimService` from `@jamesaphoenix/tx-core` for programmatic access.
 
 </Tab>
 <Tab value="MCP">
@@ -78,23 +83,12 @@ const claim = await tx.claims.claim({
 </Tab>
 <Tab value="REST API">
 
-```bash
-POST /api/claims
-Content-Type: application/json
-
-{
-  "taskId": "tx-abc123",
-  "workerId": "worker-1",
-  "leaseDurationMinutes": 60
-}
-```
-
-### Example
+> **Note:** Claims are not yet exposed via REST API endpoints. Use the CLI or MCP interface for claim operations.
 
 ```bash
-curl -X POST http://localhost:3456/api/claims \
-  -H "Content-Type: application/json" \
-  -d '{"taskId": "tx-abc123", "workerId": "worker-1", "leaseDurationMinutes": 60}'
+# Claims REST API is planned but not yet available.
+# Use the CLI instead:
+tx claim tx-abc123 worker-1 --lease 60
 ```
 
 </Tab>
@@ -135,8 +129,15 @@ tx claim:release tx-abc123 worker-def456
 <Tab value="TypeScript SDK">
 
 ```typescript
-// Release a claim
-await tx.claims.release('tx-abc123', 'worker-1')
+import { ClaimService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
+
+const program = Effect.gen(function* () {
+  const svc = yield* ClaimService
+
+  // Release a claim
+  yield* svc.release('tx-abc123', 'worker-1')
+})
 ```
 
 </Tab>
@@ -155,14 +156,10 @@ await tx.claims.release('tx-abc123', 'worker-1')
 </Tab>
 <Tab value="REST API">
 
-```bash
-DELETE /api/claims/:taskId/:workerId
-```
-
-### Example
+> **Note:** Claims are not yet exposed via REST API. Use the CLI instead:
 
 ```bash
-curl -X DELETE http://localhost:3456/api/claims/tx-abc123/worker-1
+tx claim:release tx-abc123 worker-1
 ```
 
 </Tab>
@@ -209,8 +206,17 @@ tx claim:renew tx-abc123 worker-def456
 <Tab value="TypeScript SDK">
 
 ```typescript
-// Renew a claim
-const renewed = await tx.claims.renew('tx-abc123', 'worker-1')
+import { ClaimService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
+
+const program = Effect.gen(function* () {
+  const svc = yield* ClaimService
+
+  // Renew a claim (extends the lease)
+  const renewed = yield* svc.renew('tx-abc123', 'worker-1')
+  console.log(`New expiry: ${renewed.leaseExpiresAt.toISOString()}`)
+  console.log(`Renewals: ${renewed.renewedCount}/10`)
+})
 ```
 
 </Tab>
@@ -229,14 +235,10 @@ const renewed = await tx.claims.renew('tx-abc123', 'worker-1')
 </Tab>
 <Tab value="REST API">
 
-```bash
-POST /api/claims/:taskId/:workerId/renew
-```
-
-### Example
+> **Note:** Claims are not yet exposed via REST API. Use the CLI instead:
 
 ```bash
-curl -X POST http://localhost:3456/api/claims/tx-abc123/worker-1/renew
+tx claim:renew tx-abc123 worker-1
 ```
 
 </Tab>

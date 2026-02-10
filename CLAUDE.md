@@ -452,7 +452,18 @@ tx invariant list           # List invariants
 tx sync export              # SQLite → JSONL (git-friendly)
 tx sync import              # JSONL → SQLite
 tx sync claude              # Push to Claude Code team dir
+
+# Cycle (sub-agent swarm)
+tx cycle --task-prompt "..." --scan-prompt "..."  # Issue discovery swarm
 ```
+
+### Cycle vs Teams — Disambiguation
+
+**When the user says "cycle", "scan", or "swarm scan"**: Use `tx cycle` (the CLI command). This dispatches sub-agent swarms internally via `AgentService` — do NOT use Claude Code's built-in TeamCreate, SendMessage, or any team tools. Run `/cycle` to guide the user through the options.
+
+**When the user says "team" or "teams"**: Use Claude Code's built-in team tools (TeamCreate, SendMessage, Task tool with `team_name`). This is for coordinating multiple Claude Code agents working on separate tasks.
+
+**Key difference**: `tx cycle` is a self-contained sub-agent swarm for automated issue discovery. Claude Code teams are for multi-agent collaboration on implementation tasks.
 
 ---
 

@@ -163,6 +163,7 @@ GET    /api/docs                  # List docs (optional ?kind=&status=)
 POST   /api/docs                  # Create a doc
 GET    /api/docs/:name            # Get doc by name
 PATCH  /api/docs/:name            # Update doc YAML content
+DELETE /api/docs/:name            # Delete a doc
 POST   /api/docs/:name/lock       # Lock a doc
 POST   /api/docs/link             # Link two docs
 POST   /api/docs/render           # Render docs to markdown
@@ -172,7 +173,7 @@ GET    /api/docs/graph            # Get the doc graph
 **Create a doc:**
 
 ```bash
-curl -X POST http://localhost:3001/api/docs \
+curl -X POST http://localhost:3456/api/docs \
   -H "Content-Type: application/json" \
   -d '{
     "kind": "prd",
@@ -185,19 +186,19 @@ curl -X POST http://localhost:3001/api/docs \
 **List PRDs:**
 
 ```bash
-curl http://localhost:3001/api/docs?kind=prd
+curl http://localhost:3456/api/docs?kind=prd
 ```
 
 **Lock a doc:**
 
 ```bash
-curl -X POST http://localhost:3001/api/docs/auth-system/lock
+curl -X POST http://localhost:3456/api/docs/auth-system/lock
 ```
 
 **Link two docs:**
 
 ```bash
-curl -X POST http://localhost:3001/api/docs/link \
+curl -X POST http://localhost:3456/api/docs/link \
   -H "Content-Type: application/json" \
   -d '{"fromName": "overview", "toName": "auth-system"}'
 ```
@@ -205,7 +206,7 @@ curl -X POST http://localhost:3001/api/docs/link \
 **Get the doc graph:**
 
 ```bash
-curl http://localhost:3001/api/docs/graph
+curl http://localhost:3456/api/docs/graph
 ```
 
 </Tab>

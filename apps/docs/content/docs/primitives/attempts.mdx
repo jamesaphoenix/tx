@@ -1,0 +1,256 @@
+---
+title: tx try / tx attempts
+description: Record and review approach outcomes for tasks
+---
+
+import { Tab, Tabs } from "fumadocs-ui/components/tabs"
+
+## Purpose
+
+`tx try` records an attempt at solving a task -- what approach was taken and whether it succeeded or failed. `tx attempts` lists all recorded attempts for a task. This history helps agents avoid repeating failed strategies and builds institutional knowledge about what works.
+
+## Record an Attempt
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx try <task-id> <approach> --failed|--succeeded [reason]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<task-id>` | Yes | Task ID (e.g., `tx-a1b2c3d4`) |
+| `<approach>` | Yes | Description of the approach taken |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--failed [reason]` | Mark the attempt as failed, with optional reason |
+| `--succeeded [reason]` | Mark the attempt as succeeded, with optional reason |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Record a failed attempt
+tx try tx-abc123 "Used regex parsing" --failed "Too many edge cases"
+
+# Record a successful attempt
+tx try tx-abc123 "Switched to AST-based parser" --succeeded
+
+# JSON output
+tx try tx-abc123 "Refactored with Effect-TS" --succeeded --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Record a failed attempt
+// Note: The SDK uses the core AttemptService directly in direct mode.
+// HTTP mode attempt endpoints are planned for a future release.
+
+// Direct mode example (requires @jamesaphoenix/tx-core):
+import { AttemptService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
+
+const program = Effect.gen(function* () {
+  const attemptSvc = yield* AttemptService
+
+  // Record a failed attempt
+  const failed = yield* attemptSvc.create(
+    'tx-abc123',
+    'Used regex parsing',
+    'failed',
+    'Too many edge cases'
+  )
+
+  // Record a successful attempt
+  const succeeded = yield* attemptSvc.create(
+    'tx-abc123',
+    'Switched to AST-based parser',
+    'succeeded'
+  )
+
+  return { failed, succeeded }
+})
+```
+
+</Tab>
+<Tab value="MCP">
+
+Attempt MCP tools are planned for a future release. Currently, use the CLI or TypeScript SDK to record attempts.
+
+```bash
+# Use the CLI from within an MCP-connected agent
+tx try tx-abc123 "Approach description" --failed "reason"
+```
+
+</Tab>
+<Tab value="REST API">
+
+REST API endpoints for attempts are planned for a future release. Currently, use the CLI or core service layer directly.
+
+```bash
+# Use the CLI
+tx try tx-abc123 "Used regex parsing" --failed "Too many edge cases"
+```
+
+</Tab>
+</Tabs>
+
+## List Attempts for a Task
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx attempts <task-id> [--json]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<task-id>` | Yes | Task ID to list attempts for |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# List attempts for a task
+tx attempts tx-abc123
+
+# Output:
+# 2 attempt(s) for tx-abc123:
+#   ✗ Used regex parsing
+#       Reason: Too many edge cases
+#       2025-01-15T14:23:00.000Z
+#   ✓ Switched to AST-based parser
+#       2025-01-15T15:45:00.000Z
+
+# JSON output
+tx attempts tx-abc123 --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { AttemptService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
+
+const program = Effect.gen(function* () {
+  const attemptSvc = yield* AttemptService
+
+  // List all attempts for a task
+  const attempts = yield* attemptSvc.listForTask('tx-abc123')
+  // Returns: readonly Attempt[] (sorted by createdAt DESC)
+
+  // Get count of failed attempts
+  const failedCount = yield* attemptSvc.getFailedCount('tx-abc123')
+
+  // Get failed counts for multiple tasks at once
+  const failedCounts = yield* attemptSvc.getFailedCountsForTasks([
+    'tx-abc123',
+    'tx-def456'
+  ])
+  // Returns: Map<string, number>
+})
+```
+
+</Tab>
+<Tab value="MCP">
+
+Attempt MCP tools are planned for a future release. Use the CLI to list attempts:
+
+```bash
+tx attempts tx-abc123 --json
+```
+
+</Tab>
+<Tab value="REST API">
+
+REST API endpoints for attempts are planned for a future release. Use the CLI:
+
+```bash
+tx attempts tx-abc123 --json
+```
+
+</Tab>
+</Tabs>
+
+## Attempt Schema
+
+Each attempt records:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `AttemptId` | Auto-incrementing integer ID |
+| `taskId` | `TaskId` | The task this attempt belongs to |
+| `approach` | `string` | Description of the approach taken |
+| `outcome` | `"failed" \| "succeeded"` | Whether the approach worked |
+| `reason` | `string \| null` | Optional explanation for the outcome |
+| `createdAt` | `Date` | When the attempt was recorded |
+
+## Use Case: Avoiding Repeated Failures
+
+Attempts integrate with `tx context` to surface what has been tried before:
+
+```bash
+# Before working on a task, check what's been tried
+tx attempts tx-abc123
+
+# Output shows previous failed approaches:
+#   ✗ Tried monkey-patching the module loader
+#       Reason: Breaks in production
+#   ✗ Used regex parsing
+#       Reason: Too many edge cases
+
+# Now the agent knows to try a different approach
+tx try tx-abc123 "AST-based parser with error recovery" --succeeded
+```
+
+### Agent Loop with Attempt Tracking
+
+```bash
+#!/bin/bash
+TASK=$(tx ready --json --limit 1 | jq -r '.[0].id // empty')
+[ -z "$TASK" ] && exit 0
+
+# Get previous attempts to inform the agent
+ATTEMPTS=$(tx attempts "$TASK" --json)
+
+# Pass attempt history to the agent
+claude "Work on task $TASK.
+Previous attempts: $ATTEMPTS
+Avoid approaches that already failed.
+Record your approach with: tx try $TASK '<approach>' --succeeded|--failed '<reason>'"
+```
+
+## Behavior
+
+1. **Task validation** -- the task must exist before recording an attempt
+2. **Approach required** -- empty approach strings are rejected
+3. **Mutually exclusive flags** -- `--failed` and `--succeeded` cannot both be specified
+4. **Immutable records** -- attempts cannot be edited after creation, only removed
+5. **Failed count tracking** -- `getFailedCount` and `getFailedCountsForTasks` enable efficient batch queries for dashboard views
+
+## Related Commands
+
+- [`tx context`](/docs/primitives/context) -- Surfaces relevant learnings and attempt history
+- [`tx done`](/docs/primitives/done) -- Complete a task after a successful attempt
+- [`tx learning`](/docs/primitives/learning) -- Record persistent knowledge from attempts
