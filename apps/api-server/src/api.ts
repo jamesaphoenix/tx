@@ -72,11 +72,13 @@ export const mapCoreError = (e: unknown): NotFound | BadRequest | InternalError 
       case "EmbeddingUnavailableError":
         return new ServiceUnavailable({ message })
       case "DatabaseError":
+        // Don't expose raw SQLite error messages (may contain SQL, schema details)
+        return new InternalError({ message: "Internal server error" })
       default:
-        return new InternalError({ message })
+        return new InternalError({ message: "Internal server error" })
     }
   }
-  return new InternalError({ message: String(e) })
+  return new InternalError({ message: "Internal server error" })
 }
 
 // =============================================================================

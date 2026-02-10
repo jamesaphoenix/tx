@@ -600,13 +600,13 @@ not valid json at all
     it("replays dependency add operations", () => {
       // Create two tasks first
       const setupJsonl = `
-{"v":1,"op":"upsert","ts":"2024-01-01T00:00:00Z","id":"tx-depA","data":{"title":"Task A","status":"backlog","score":100}}
-{"v":1,"op":"upsert","ts":"2024-01-01T00:00:01Z","id":"tx-depB","data":{"title":"Task B","status":"backlog","score":100}}
+{"v":1,"op":"upsert","ts":"2024-01-01T00:00:00Z","id":"tx-depa01","data":{"title":"Task A","status":"backlog","score":100}}
+{"v":1,"op":"upsert","ts":"2024-01-01T00:00:01Z","id":"tx-depb01","data":{"title":"Task B","status":"backlog","score":100}}
 `.trim()
       replayJSONL({ db: db, content: setupJsonl })
 
       // Add dependency
-      const depJsonl = `{"v":1,"op":"dep_add","ts":"2024-01-02T00:00:00Z","blockerId":"tx-depA","blockedId":"tx-depB"}`
+      const depJsonl = `{"v":1,"op":"dep_add","ts":"2024-01-02T00:00:00Z","blockerId":"tx-depa01","blockedId":"tx-depb01"}`
       const result = replayJSONL({ db: db, content: depJsonl })
 
       expect(result.depsAdded).toBe(1)
@@ -614,7 +614,7 @@ not valid json at all
       // Verify dependency
       const deps = db.db.prepare(
         "SELECT * FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ?"
-      ).all("tx-depA", "tx-depB") as any[]
+      ).all("tx-depa01", "tx-depb01") as any[]
       expect(deps.length).toBe(1)
     })
 

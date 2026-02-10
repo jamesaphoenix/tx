@@ -291,7 +291,7 @@ export const CompactionServiceLive = Layer.effect(
       // Dynamic import of Anthropic SDK (optional peer dependency)
       const Anthropic = yield* Effect.tryPromise({
         try: async () => {
-          // @ts-expect-error - @anthropic-ai/sdk is an optional peer dependency
+          // @ts-ignore - @anthropic-ai/sdk is an optional peer dependency
           const mod = await import("@anthropic-ai/sdk")
           return mod.default
         },

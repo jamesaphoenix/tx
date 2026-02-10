@@ -12,6 +12,13 @@ import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } 
  */
 const COLS_NO_EMBEDDING = "id, content, source_type, source_ref, created_at, keywords, category, usage_count, last_used_at, outcome_score"
 
+/**
+ * Same columns but table-qualified with `l.` prefix.
+ * Required for JOINs (e.g., with learnings_fts) where `content`, `keywords`, and
+ * `category` are ambiguous since both tables define them.
+ */
+const COLS_NO_EMBEDDING_QUALIFIED = "l.id, l.content, l.source_type, l.source_ref, l.created_at, l.keywords, l.category, l.usage_count, l.last_used_at, l.outcome_score"
+
 /** Scored learning result from BM25 search */
 export interface BM25Result {
   learning: Learning
@@ -203,7 +210,7 @@ export const LearningRepositoryLive = Layer.effect(
             // Exclude embedding column — BM25 results never need it, and loading
             // ~6KB Float32Array per row just to discard it wastes memory.
             const rows = db.prepare(`
-              SELECT l.${COLS_NO_EMBEDDING}, bm25(learnings_fts) as bm25_score
+              SELECT ${COLS_NO_EMBEDDING_QUALIFIED}, bm25(learnings_fts) as bm25_score
               FROM learnings l
               JOIN learnings_fts ON l.id = learnings_fts.rowid
               WHERE learnings_fts MATCH ?

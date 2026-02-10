@@ -231,7 +231,7 @@ export const CandidateExtractorServiceAnthropic = Layer.effect(
       // Dynamic import of Anthropic SDK (optional peer dependency)
       const Anthropic = yield* Effect.tryPromise({
         try: async () => {
-          // @ts-expect-error - @anthropic-ai/sdk is an optional peer dependency
+          // @ts-ignore - @anthropic-ai/sdk is an optional peer dependency
           const mod = await import("@anthropic-ai/sdk")
           return mod.default
         },
@@ -343,7 +343,7 @@ export const CandidateExtractorServiceOpenAI = Layer.effect(
       // Dynamic import of OpenAI SDK (optional peer dependency)
       const OpenAI = yield* Effect.tryPromise({
         try: async () => {
-          // @ts-expect-error - openai is an optional peer dependency
+          // @ts-ignore - openai is an optional peer dependency
           const mod = await import("openai")
           return mod.default
         },
