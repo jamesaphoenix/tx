@@ -5,6 +5,7 @@ import { fetchers, type DocGraphNode, type DocGraphEdge } from "../../api/client
 interface DocGraphProps {
   selectedDocName?: string | null
   onSelectDoc?: (name: string) => void
+  fullPage?: boolean
 }
 
 const KIND_COLORS: Record<string, string> = {
@@ -23,7 +24,7 @@ interface PositionedNode extends DocGraphNode {
  * Simple force-directed layout (static computation).
  * Positions nodes in a top-down hierarchy: overview -> prd -> design.
  */
-function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[]): PositionedNode[] {
+function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], canvasWidth = 300, canvasHeight = 320): PositionedNode[] {
   if (nodes.length === 0) return []
 
   // Group by kind for vertical layering
@@ -35,14 +36,21 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[]): PositionedN
 
   const positioned: PositionedNode[] = []
   const layerOrder = ["overview", "prd", "design", "task"]
-  const layerY: Record<string, number> = { overview: 40, prd: 120, design: 200, task: 280 }
+  const yStep = canvasHeight / 5
+  const layerY: Record<string, number> = {
+    overview: yStep,
+    prd: yStep * 2,
+    design: yStep * 3,
+    task: yStep * 4,
+  }
 
   for (const kind of layerOrder) {
     const layerNodes = layers[kind]
     if (layerNodes.length === 0) continue
 
-    const spacing = Math.min(120, 280 / Math.max(1, layerNodes.length))
-    const startX = (300 - spacing * (layerNodes.length - 1)) / 2
+    const maxSpacing = canvasWidth * 0.4
+    const spacing = Math.min(maxSpacing, (canvasWidth * 0.8) / Math.max(1, layerNodes.length))
+    const startX = (canvasWidth - spacing * (layerNodes.length - 1)) / 2
 
     for (let i = 0; i < layerNodes.length; i++) {
       positioned.push({
@@ -56,7 +64,7 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[]): PositionedN
   return positioned
 }
 
-export function DocGraph({ selectedDocName, onSelectDoc }: DocGraphProps) {
+export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphProps) {
   const canvasRef = useRef<SVGSVGElement>(null)
 
   const { data, isLoading } = useQuery({
@@ -67,7 +75,9 @@ export function DocGraph({ selectedDocName, onSelectDoc }: DocGraphProps) {
 
   const nodes = data?.nodes ?? []
   const edges = data?.edges ?? []
-  const positioned = useMemo(() => layoutNodes(nodes, edges), [nodes, edges])
+  const canvasW = fullPage ? 500 : 300
+  const canvasH = fullPage ? 400 : 320
+  const positioned = useMemo(() => layoutNodes(nodes, edges, canvasW, canvasH), [nodes, edges, canvasW, canvasH])
 
   // Build node position lookup
   const nodePos = useMemo(() => {
@@ -90,12 +100,19 @@ export function DocGraph({ selectedDocName, onSelectDoc }: DocGraphProps) {
     )
   }
 
+  const nodeRadius = fullPage ? 14 : 7
+  const selectedRadius = fullPage ? 18 : 10
+  const fontSize = fullPage ? 12 : 8
+  const labelMaxLen = fullPage ? 28 : 15
+  const edgeWidth = fullPage ? 2.5 : 1.5
+
   return (
     <svg
       ref={canvasRef}
-      viewBox="0 0 300 320"
-      className="w-full h-full"
-      style={{ maxHeight: 200 }}
+      viewBox={`0 0 ${canvasW} ${canvasH}`}
+      className={fullPage ? "absolute inset-0 w-full h-full" : "w-full h-full"}
+      style={fullPage ? undefined : { maxHeight: 200 }}
+      preserveAspectRatio="xMidYMid meet"
     >
       {/* Edges */}
       {edges.map((edge, i) => {
@@ -110,7 +127,7 @@ export function DocGraph({ selectedDocName, onSelectDoc }: DocGraphProps) {
             x2={to.x}
             y2={to.y}
             stroke="#4B5563"
-            strokeWidth="1.5"
+            strokeWidth={edgeWidth}
             opacity={0.6}
           />
         )
@@ -118,18 +135,19 @@ export function DocGraph({ selectedDocName, onSelectDoc }: DocGraphProps) {
 
       {/* Nodes */}
       {positioned.map((node) => {
-        const isSelected = selectedDocName === node.id
+        const isSelected = selectedDocName === node.label
         const color = KIND_COLORS[node.kind] ?? "#9CA3AF"
+        const truncated = node.label.length > labelMaxLen ? node.label.slice(0, labelMaxLen - 1) + "..." : node.label
         return (
           <g
             key={node.id}
-            onClick={() => onSelectDoc?.(node.id)}
+            onClick={() => onSelectDoc?.(node.label)}
             className="cursor-pointer"
           >
             <circle
               cx={node.x}
               cy={node.y}
-              r={isSelected ? 10 : 7}
+              r={isSelected ? selectedRadius : nodeRadius}
               fill={color}
               stroke={isSelected ? "#fff" : "transparent"}
               strokeWidth={isSelected ? 2 : 0}
@@ -138,13 +156,13 @@ export function DocGraph({ selectedDocName, onSelectDoc }: DocGraphProps) {
             <title>{node.label} ({node.kind})</title>
             <text
               x={node.x}
-              y={node.y + 18}
+              y={node.y + (fullPage ? 22 : 18)}
               textAnchor="middle"
               fill="#9CA3AF"
-              fontSize="8"
+              fontSize={fontSize}
               className="pointer-events-none"
             >
-              {node.label.length > 15 ? node.label.slice(0, 14) + "..." : node.label}
+              {truncated}
             </text>
           </g>
         )

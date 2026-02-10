@@ -88,6 +88,14 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
       }).pipe(Effect.mapError(mapCoreError))
     )
 
+    .handle("deleteDoc", ({ path: { name } }) =>
+      Effect.gen(function* () {
+        const svc = yield* DocService
+        yield* svc.remove(name)
+        return { success: true, name }
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
     .handle("updateDoc", ({ path: { name }, payload }) =>
       Effect.gen(function* () {
         const svc = yield* DocService

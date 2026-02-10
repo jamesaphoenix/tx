@@ -11,6 +11,8 @@ export interface TaskListProps {
   filters?: TaskFilters
   onSelectTask: (taskId: string) => void
   onEscape?: () => void
+  selectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
 }
 
 /**
@@ -29,7 +31,7 @@ function isReadyOnlyFilter(filters: TaskFilters): boolean {
   )
 }
 
-export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps) {
+export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, onToggleSelect }: TaskListProps) {
   // Determine which data source to use
   const useReadyEndpoint = useMemo(() => isReadyOnlyFilter(filters), [filters])
 
@@ -154,6 +156,8 @@ export function TaskList({ filters = {}, onSelectTask, onEscape }: TaskListProps
             key={task.id}
             task={task}
             isFocused={index === focusedIndex}
+            isSelected={selectedIds?.has(task.id)}
+            onToggleSelect={onToggleSelect}
             onClick={() => onSelectTask(task.id)}
           />
         ))}

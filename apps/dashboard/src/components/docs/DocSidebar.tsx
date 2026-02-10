@@ -1,4 +1,3 @@
-import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type DocSerialized } from "../../api/client"
 
@@ -7,6 +6,12 @@ interface DocSidebarProps {
   onSelectDoc: (name: string) => void
   showMap: boolean
   onToggleMap: () => void
+  kindFilter: string
+  onKindFilterChange: (kind: string) => void
+  statusFilter: string
+  onStatusFilterChange: (status: string) => void
+  selectedDocNames?: Set<string>
+  onToggleSelectDoc?: (name: string) => void
 }
 
 const KIND_COLORS: Record<string, string> = {
@@ -63,22 +68,44 @@ function groupDocs(docs: DocSerialized[]): { topLevel: DocSerialized[]; groups: 
 function DocItem({
   doc,
   isSelected,
+  isChecked,
+  onToggleCheck,
   onClick,
 }: {
   doc: DocSerialized
   isSelected: boolean
+  isChecked?: boolean
+  onToggleCheck?: (name: string) => void
   onClick: () => void
 }) {
   return (
     <button
       onClick={onClick}
       className={`w-full text-left px-3 py-2 rounded-md transition ${
-        isSelected
+        isChecked
           ? "bg-blue-600/20 border border-blue-500/50"
-          : "hover:bg-gray-800/70 border border-transparent"
+          : isSelected
+            ? "bg-blue-600/20 border border-blue-500/50"
+            : "hover:bg-gray-800/70 border border-transparent"
       }`}
     >
       <div className="flex items-center gap-2">
+        {onToggleCheck && (
+          <span
+            role="checkbox"
+            aria-checked={isChecked}
+            onClick={(e) => { e.stopPropagation(); onToggleCheck(doc.name) }}
+            className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition cursor-pointer ${
+              isChecked
+                ? "bg-blue-500 border-blue-500 text-white"
+                : "border-gray-500 hover:border-blue-400"
+            }`}
+          >
+            {isChecked && (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+          </span>
+        )}
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_DOT[doc.status] ?? "bg-gray-400"}`} />
         <span className="text-sm text-white truncate flex-1">
           {doc.name}
@@ -94,10 +121,7 @@ function DocItem({
   )
 }
 
-export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap }: DocSidebarProps) {
-  const [kindFilter, setKindFilter] = useState<string>("")
-  const [statusFilter, setStatusFilter] = useState<string>("")
-
+export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap, kindFilter, onKindFilterChange, statusFilter, onStatusFilterChange, selectedDocNames, onToggleSelectDoc }: DocSidebarProps) {
   const { data, isLoading } = useQuery({
     queryKey: ["docs", kindFilter, statusFilter],
     queryFn: () =>
@@ -151,7 +175,7 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap 
       <div className="flex gap-2 mb-3">
         <select
           value={kindFilter}
-          onChange={(e) => setKindFilter(e.target.value)}
+          onChange={(e) => onKindFilterChange(e.target.value)}
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
         >
           <option value="">All kinds</option>
@@ -161,7 +185,7 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap 
         </select>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => onStatusFilterChange(e.target.value)}
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
         >
           <option value="">All statuses</option>
@@ -178,6 +202,8 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap 
             key={doc.name}
             doc={doc}
             isSelected={selectedDocName === doc.name}
+            isChecked={selectedDocNames?.has(doc.name)}
+            onToggleCheck={onToggleSelectDoc}
             onClick={() => onSelectDoc(doc.name)}
           />
         ))}
@@ -194,6 +220,8 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap 
                   key={doc.name}
                   doc={doc}
                   isSelected={selectedDocName === doc.name}
+                  isChecked={selectedDocNames?.has(doc.name)}
+                  onToggleCheck={onToggleSelectDoc}
                   onClick={() => onSelectDoc(doc.name)}
                 />
               ))}

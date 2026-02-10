@@ -1,10 +1,14 @@
-import { useState, useEffect, useRef } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { fetchers, type ChatMessage } from "./api/client"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useStore } from "@tanstack/react-store"
+import { fetchers, type ChatMessage, type TaskWithDeps, type PaginatedTasksResponse, type Run, type PaginatedRunsResponse } from "./api/client"
 import { TaskList, TaskFilters, TaskDetail, useTaskFiltersWithUrl } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
 import { CyclePage } from "./components/cycles"
 import { DocsPage } from "./components/docs"
+import { CommandProvider, useCommandContext, type Command } from "./components/command-palette/CommandContext"
+import { CommandPalette } from "./components/command-palette/CommandPalette"
+import { selectionStore, selectionActions } from "./stores/selection-store"
 
 // =============================================================================
 // Status Badges
@@ -384,24 +388,6 @@ function ChatView({ runId }: { runId: string }) {
 // Stats & Ralph Status
 // =============================================================================
 
-function RalphStatus() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["ralph"],
-    queryFn: fetchers.ralph,
-  })
-
-  if (isLoading) return <div className="animate-pulse bg-gray-700 h-6 w-32 rounded" />
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`w-2 h-2 rounded-full ${data?.running ? "bg-green-500 animate-pulse" : "bg-gray-500"}`} />
-      <span className="text-sm text-gray-300">
-        ralph: {data?.running ? `running (iter ${data.currentIteration})` : "stopped"}
-      </span>
-    </div>
-  )
-}
-
 function Stats() {
   const { data } = useQuery({
     queryKey: ["stats"],
@@ -434,7 +420,7 @@ function Stats() {
       </div>
       <div className="bg-gray-800 p-3 rounded-lg">
         <div className="text-xl font-bold text-gray-400">{data.runsTotal ?? 0}</div>
-        <div className="text-xs text-gray-400">Total Runs</div>
+        <div className="text-xs text-gray-400">Runs</div>
       </div>
     </div>
   )
@@ -447,13 +433,37 @@ function Stats() {
 type Tab = "docs" | "tasks" | "runs" | "cycles"
 
 export default function App() {
+  return (
+    <CommandProvider>
+      <AppContent />
+      <CommandPalette />
+    </CommandProvider>
+  )
+}
+
+function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>("docs")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
+  const selectedTaskIds = useStore(selectionStore, (s) => s.taskIds)
+  const selectedRunIds = useStore(selectionStore, (s) => s.runIds)
+
+  const queryClient = useQueryClient()
+
+  const handleToggleTask = useCallback((id: string) => {
+    selectionActions.toggleTask(id)
+  }, [])
+
+  const handleToggleRun = useCallback((id: string) => {
+    selectionActions.toggleRun(id)
+  }, [])
+
   // URL state management for filters
   const { filters: taskFilters, setFilters: setTaskFilters } = useTaskFiltersWithUrl()
   const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
+
+  const { setAppCommands } = useCommandContext()
 
   // Fetch stats for task status counts
   const { data: statsData } = useQuery({
@@ -461,6 +471,18 @@ export default function App() {
     queryFn: fetchers.stats,
     staleTime: 5000,
   })
+
+  // Helper: read all loaded items from infinite query cache
+  // This ensures CMD+A/CMD+C work with ALL items loaded via scroll, not just the first page
+  const getLoadedTasks = useCallback((): TaskWithDeps[] => {
+    const queries = queryClient.getQueriesData<{ pages: PaginatedTasksResponse[] }>({ queryKey: ["tasks", "infinite"] })
+    return queries.flatMap(([, data]) => data?.pages?.flatMap(p => p.tasks) ?? [])
+  }, [queryClient])
+
+  const getLoadedRuns = useCallback((): Run[] => {
+    const queries = queryClient.getQueriesData<{ pages: PaginatedRunsResponse[] }>({ queryKey: ["runs", "infinite"] })
+    return queries.flatMap(([, data]) => data?.pages?.flatMap(p => p.runs) ?? [])
+  }, [queryClient])
 
   // Fetch runs to get available agents and status counts
   const { data: runsMetadata } = useQuery({
@@ -485,13 +507,217 @@ export default function App() {
       }
     : {}
 
+  // Register app-level commands (global + per-tab)
+  const appCommands = useMemo((): Command[] => {
+    const cmds: Command[] = []
+
+    // Tab switching — always available
+    const tabs: { tab: Tab; label: string }[] = [
+      { tab: "docs", label: "Go to Docs" },
+      { tab: "tasks", label: "Go to Tasks" },
+      { tab: "runs", label: "Go to Runs" },
+      { tab: "cycles", label: "Go to Cycles" },
+    ]
+    for (const { tab, label } of tabs) {
+      if (tab !== activeTab) {
+        cmds.push({ id: `nav:${tab}`, label, group: "Navigation", icon: "nav", action: () => setActiveTab(tab) })
+      }
+    }
+
+    // Per-tab commands
+    if (activeTab === "tasks") {
+      cmds.push({
+        id: "select-all",
+        label: "Select all tasks",
+        group: "Actions",
+        icon: "select",
+        shortcut: "⌘A",
+        action: () => {
+          const loaded = getLoadedTasks()
+          selectionActions.selectAllTasks(loaded.map(t => t.id))
+        },
+      })
+      if (selectedTaskIds.size > 0) {
+        cmds.push({
+          id: "action:copy-selected-tasks",
+          label: "Copy selected task IDs",
+          sublabel: `${selectedTaskIds.size} selected`,
+          group: "Actions",
+          icon: "copy",
+          shortcut: "⌘C",
+          action: async () => {
+            const loaded = getLoadedTasks()
+            const text = loaded
+              .filter(t => selectedTaskIds.has(t.id))
+              .map(t => `${t.id} [${t.score}] ${t.title}`)
+              .join("\n")
+            await navigator.clipboard.writeText(text)
+          },
+        })
+        cmds.push({
+          id: "action:delete-selected-tasks",
+          label: "Delete selected tasks",
+          sublabel: `${selectedTaskIds.size} selected`,
+          group: "Actions",
+          icon: "delete",
+          action: async () => {
+            if (confirm(`Delete ${selectedTaskIds.size} selected task(s)? This cannot be undone.`)) {
+              for (const id of selectedTaskIds) {
+                await fetchers.deleteTask(id)
+              }
+              selectionActions.clearTasks()
+              queryClient.invalidateQueries({ queryKey: ["tasks"] })
+              queryClient.invalidateQueries({ queryKey: ["stats"] })
+            }
+          },
+        })
+        cmds.push({
+          id: "action:clear-task-selection",
+          label: "Clear task selection",
+          sublabel: `${selectedTaskIds.size} selected`,
+          group: "Actions",
+          icon: "action",
+          action: () => selectionActions.clearTasks(),
+        })
+      }
+      cmds.push(
+        { id: "filter:task-ready", label: "Filter: Ready tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["ready"] }) },
+        { id: "filter:task-active", label: "Filter: Active tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["active"] }) },
+        { id: "filter:task-blocked", label: "Filter: Blocked tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["blocked"] }) },
+        { id: "filter:task-done", label: "Filter: Done tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["done"] }) },
+        { id: "filter:task-all", label: "Filter: Show all tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ status: [], search: "" }) },
+      )
+      if (taskFilters.search) {
+        cmds.push({ id: "action:clear-search", label: "Clear search", sublabel: `"${taskFilters.search}"`, group: "Actions", icon: "action", action: () => setTaskFilters({ ...taskFilters, search: "" }) })
+      }
+      if (selectedTaskId) {
+        cmds.push({
+          id: "action:copy-task",
+          label: "Copy task ID & title",
+          sublabel: selectedTaskId,
+          group: "Actions",
+          icon: "copy",
+          shortcut: selectedTaskIds.size === 0 ? "⌘C" : undefined,
+          action: async () => {
+            const loaded = getLoadedTasks()
+            const task = loaded.find(t => t.id === selectedTaskId)
+            const text = task ? `${task.id} ${task.title}` : selectedTaskId
+            await navigator.clipboard.writeText(text)
+          },
+        })
+        cmds.push({
+          id: "action:deselect-task",
+          label: "Deselect task",
+          group: "Actions",
+          icon: "action",
+          action: () => setSelectedTaskId(null),
+        })
+      }
+    }
+
+    if (activeTab === "runs") {
+      cmds.push({
+        id: "select-all",
+        label: "Select all runs",
+        group: "Actions",
+        icon: "select",
+        shortcut: "⌘A",
+        action: () => {
+          const loaded = getLoadedRuns()
+          selectionActions.selectAllRuns(loaded.map(r => r.id))
+        },
+      })
+      if (selectedRunIds.size > 0) {
+        cmds.push({
+          id: "action:copy-selected-runs",
+          label: "Copy selected run IDs",
+          sublabel: `${selectedRunIds.size} selected`,
+          group: "Actions",
+          icon: "copy",
+          shortcut: "⌘C",
+          action: async () => {
+            const loaded = getLoadedRuns()
+            const text = loaded
+              .filter(r => selectedRunIds.has(r.id))
+              .map(r => `${r.id} ${r.agent} ${r.status}`)
+              .join("\n")
+            await navigator.clipboard.writeText(text)
+          },
+        })
+        cmds.push({
+          id: "action:clear-run-selection",
+          label: "Clear run selection",
+          sublabel: `${selectedRunIds.size} selected`,
+          group: "Actions",
+          icon: "action",
+          action: () => selectionActions.clearRuns(),
+        })
+      }
+      cmds.push(
+        { id: "filter:run-running", label: "Filter: Running", group: "Filters", icon: "filter", action: () => setRunFilters({ ...runFilters, status: ["running"] }) },
+        { id: "filter:run-completed", label: "Filter: Completed", group: "Filters", icon: "filter", action: () => setRunFilters({ ...runFilters, status: ["completed"] }) },
+        { id: "filter:run-failed", label: "Filter: Failed", group: "Filters", icon: "filter", action: () => setRunFilters({ ...runFilters, status: ["failed"] }) },
+        { id: "filter:run-all", label: "Filter: Show all runs", group: "Filters", icon: "filter", action: () => setRunFilters({ status: [], agent: "" }) },
+      )
+      // Agent-specific filters
+      for (const agent of runsMetadata?.agents ?? []) {
+        cmds.push({
+          id: `filter:run-agent-${agent}`,
+          label: `Filter: Agent "${agent}"`,
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, agent }),
+        })
+      }
+      if (runFilters.agent) {
+        cmds.push({
+          id: "action:clear-agent",
+          label: "Clear agent filter",
+          sublabel: runFilters.agent,
+          group: "Actions",
+          icon: "action",
+          action: () => setRunFilters({ ...runFilters, agent: "" }),
+        })
+      }
+      if (selectedRunId) {
+        cmds.push({
+          id: "action:copy-run",
+          label: "Copy run ID & agent",
+          sublabel: selectedRunId,
+          group: "Actions",
+          icon: "copy",
+          shortcut: selectedRunIds.size === 0 ? "⌘C" : undefined,
+          action: async () => {
+            const loaded = getLoadedRuns()
+            const run = loaded.find(r => r.id === selectedRunId)
+            const text = run ? `${run.id} ${run.agent} ${run.status}` : selectedRunId
+            await navigator.clipboard.writeText(text)
+          },
+        })
+        cmds.push({
+          id: "action:deselect-run",
+          label: "Deselect run",
+          group: "Actions",
+          icon: "action",
+          action: () => setSelectedRunId(null),
+        })
+      }
+    }
+
+    return cmds
+  }, [activeTab, taskFilters, runFilters, selectedTaskId, selectedRunId, selectedTaskIds, selectedRunIds, getLoadedTasks, getLoadedRuns, setTaskFilters, setRunFilters, runsMetadata?.agents])
+
+  useEffect(() => {
+    setAppCommands(appCommands)
+  }, [appCommands, setAppCommands])
+
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
       {/* Header */}
       <header className="border-b border-gray-700 px-6 py-3 flex-shrink-0">
         <div className="flex items-center justify-between max-w-full">
           <div className="flex items-center gap-6">
-            <h1 className="text-xl font-bold">tx Dashboard</h1>
+            <h1 className="text-xl font-bold">tx</h1>
             <nav className="flex gap-1">
               <button
                 className={`px-4 py-1.5 rounded text-sm font-medium transition ${
@@ -527,14 +753,15 @@ export default function App() {
               </button>
             </nav>
           </div>
-          <RalphStatus />
         </div>
       </header>
 
-      {/* Stats */}
-      <div className="px-6 py-3 border-b border-gray-700 flex-shrink-0">
-        <Stats />
-      </div>
+      {/* Stats — hidden on cycles tab */}
+      {activeTab !== "cycles" && (
+        <div className="px-6 py-3 border-b border-gray-700 flex-shrink-0">
+          <Stats />
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
@@ -556,6 +783,8 @@ export default function App() {
                 filters={taskFilters}
                 onSelectTask={setSelectedTaskId}
                 onEscape={() => setSelectedTaskId(null)}
+                selectedIds={selectedTaskIds}
+                onToggleSelect={handleToggleTask}
               />
             </div>
 
@@ -597,6 +826,8 @@ export default function App() {
                 filters={runFilters}
                 onSelectRun={setSelectedRunId}
                 onEscape={() => setSelectedRunId(null)}
+                selectedIds={selectedRunIds}
+                onToggleSelect={handleToggleRun}
               />
             </div>
 

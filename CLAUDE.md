@@ -550,6 +550,18 @@ done
 4. Implementation complete → Update docs if design changed
 ```
 
+### Plans MUST Become PRD + Design Doc
+
+When a plan is requested (via `/plan`, plan mode, or explicit request), the output
+MUST be split into a PRD and a Design Doc — not a single monolithic plan file.
+
+- The PRD captures **what** and **why** (requirements, acceptance criteria)
+- The DD captures **how** (architecture, file changes, testing strategy, open questions)
+- Optionally reference the source plan file: `plan.md`, `codex-plan.md`, or `.claude/plan.md`
+- Optionally reference relevant CLAUDE.md DOCTRINE rules in the DD's References section
+
+**Do NOT** leave plans as standalone `plan.md` files. They must be formalized into PRD + DD.
+
 ### PRD Structure (docs/prd/PRD-NNN-*.md)
 
 ```markdown
@@ -598,11 +610,41 @@ New commands, endpoints, MCP tools
 | 1 | file.ts | Add X |
 | 2 | other.ts | Modify Y |
 
-## Testing Strategy
-Integration tests, fixtures needed
+## Testing Strategy (REQUIRED — must be detailed and comprehensive)
+
+This section is mandatory and must be thorough. Testing strategy is a first-class concern, not an afterthought.
+
+### Unit Tests
+- List specific functions/methods to unit test
+- Mock boundaries: what gets mocked vs real
+- Expected coverage targets
+
+### Integration Tests
+- Must use real in-memory SQLite with `getSharedTestLayer()`
+- Must use SHA256-based deterministic IDs via `fixtureId(name)`
+- List specific integration test scenarios (CRUD, edge cases, error paths)
+- Cover cross-service interactions
+
+### Edge Cases
+- Boundary conditions to test
+- Error recovery scenarios
+- Concurrent access / race conditions (if applicable)
+
+### Performance (if applicable)
+- Benchmarks to establish
+- Acceptable latency/throughput thresholds
+
+## Open Questions (REQUIRED)
+- [ ] Unresolved design decisions
+- [ ] Alternatives considered but not yet decided
+- [ ] Dependencies on external teams/systems
 
 ## Migration
 How existing data/users transition
+
+## References (optional)
+- Plan file: `plan.md` or `codex-plan.md` (if originated from a planning session)
+- CLAUDE.md section: Link to relevant DOCTRINE rules
 ```
 
 ### Linking Convention

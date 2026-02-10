@@ -40,6 +40,39 @@ interface IssueRow {
 
 export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
   handlers
+    .handle("deleteCycle", ({ path }) =>
+      Effect.gen(function* () {
+        const db = yield* SqliteClient
+
+        // Verify cycle exists and is a cycle-scanner run
+        const row = db
+          .prepare(`SELECT id, agent FROM runs WHERE id = ?`)
+          .get(path.id) as { id: string; agent: string } | undefined
+
+        if (!row) {
+          return yield* Effect.fail(new InternalError({ message: `Cycle not found: ${path.id}` }))
+        }
+
+        // Delete associated issues (tasks created by this cycle)
+        const deleteIssues = db
+          .prepare(`DELETE FROM tasks WHERE json_extract(metadata, '$.cycleId') = ?`)
+          .run(path.id)
+
+        // Delete associated events
+        db.prepare(`DELETE FROM events WHERE run_id = ?`).run(path.id)
+
+        // Delete the run itself
+        db.prepare(`DELETE FROM runs WHERE id = ?`).run(path.id)
+
+        return {
+          success: true,
+          id: path.id,
+          deletedIssues: deleteIssues.changes,
+        }
+      }).pipe(
+        Effect.catchAll((e) => Effect.fail(new InternalError({ message: String(e) })))
+      )
+    )
     .handle("listCycles", () =>
       Effect.gen(function* () {
         const db = yield* SqliteClient
@@ -160,6 +193,29 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
         })
 
         return { cycle, roundMetrics, issues }
+      }).pipe(
+        Effect.catchAll((e) => Effect.fail(new InternalError({ message: String(e) })))
+      )
+    )
+    .handle("deleteIssues", ({ payload }) =>
+      Effect.gen(function* () {
+        const db = yield* SqliteClient
+        const { issueIds } = payload
+
+        if (issueIds.length === 0) {
+          return { success: true, deletedCount: 0 }
+        }
+
+        // Delete tasks by ID (issues are stored as tasks)
+        const placeholders = issueIds.map(() => "?").join(",")
+        const result = db
+          .prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`)
+          .run(...issueIds)
+
+        return {
+          success: true,
+          deletedCount: result.changes,
+        }
       }).pipe(
         Effect.catchAll((e) => Effect.fail(new InternalError({ message: String(e) })))
       )

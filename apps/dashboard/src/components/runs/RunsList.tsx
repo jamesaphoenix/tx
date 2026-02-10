@@ -10,6 +10,8 @@ import type { Run } from "../../api/client"
 interface RunCardProps {
   run: Run
   isFocused?: boolean
+  isSelected?: boolean
+  onToggleSelect?: (id: string) => void
   onClick?: () => void
 }
 
@@ -29,7 +31,7 @@ function RunStatusBadge({ status }: { status: string }) {
 }
 
 const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
-  function RunCard({ run, isFocused = false, onClick }, ref) {
+  function RunCard({ run, isFocused = false, isSelected = false, onToggleSelect, onClick }, ref) {
     const innerRef = useRef<HTMLDivElement>(null)
 
     // Expose the inner ref via forwardRef
@@ -73,8 +75,9 @@ const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
     }
 
     const baseClasses = "p-3 rounded-lg border cursor-pointer transition-all"
-    const statusClasses =
-      run.status === "running"
+    const statusClasses = isSelected
+      ? "border-blue-500 bg-blue-600/20"
+      : run.status === "running"
         ? "border-yellow-500 bg-yellow-500/10"
         : run.status === "failed"
           ? "border-red-500/50 bg-red-500/5"
@@ -100,6 +103,20 @@ const RunCard = forwardRef<HTMLDivElement, RunCardProps>(
         tabIndex={isFocused ? 0 : -1}
       >
         <div className="flex items-start justify-between gap-2">
+          {onToggleSelect && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleSelect(run.id) }}
+              className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition ${
+                isSelected
+                  ? "bg-blue-500 border-blue-500 text-white"
+                  : "border-gray-500 hover:border-blue-400"
+              }`}
+            >
+              {isSelected && (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              )}
+            </button>
+          )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <code className="text-xs text-gray-400">{run.id}</code>
@@ -142,9 +159,11 @@ export interface RunsListProps {
   filters?: RunFilters
   onSelectRun: (runId: string) => void
   onEscape?: () => void
+  selectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
 }
 
-export function RunsList({ filters = {}, onSelectRun, onEscape }: RunsListProps) {
+export function RunsList({ filters = {}, onSelectRun, onEscape, selectedIds, onToggleSelect }: RunsListProps) {
   const {
     runs,
     fetchNextPage,
@@ -242,6 +261,8 @@ export function RunsList({ filters = {}, onSelectRun, onEscape }: RunsListProps)
             key={run.id}
             run={run}
             isFocused={index === focusedIndex}
+            isSelected={selectedIds?.has(run.id)}
+            onToggleSelect={onToggleSelect}
             onClick={() => onSelectRun(run.id)}
           />
         ))}

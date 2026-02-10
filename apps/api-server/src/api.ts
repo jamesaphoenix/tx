@@ -674,6 +674,21 @@ const CycleIdParam = HttpApiSchema.param("id", Schema.String.pipe(
   Schema.pattern(/^run-[a-f0-9]{8}$/)
 ))
 
+const CycleDeleteResponse = Schema.Struct({
+  success: Schema.Boolean,
+  id: Schema.String,
+  deletedIssues: Schema.Number.pipe(Schema.int()),
+})
+
+const DeleteIssuesBody = Schema.Struct({
+  issueIds: Schema.Array(Schema.String),
+})
+
+const DeleteIssuesResponse = Schema.Struct({
+  success: Schema.Boolean,
+  deletedCount: Schema.Number.pipe(Schema.int()),
+})
+
 export const CyclesGroup = HttpApiGroup.make("cycles")
   .add(
     HttpApiEndpoint.get("listCycles", "/api/cycles")
@@ -682,6 +697,15 @@ export const CyclesGroup = HttpApiGroup.make("cycles")
   .add(
     HttpApiEndpoint.get("getCycle")`/api/cycles/${CycleIdParam}`
       .addSuccess(CycleDetailResponse)
+  )
+  .add(
+    HttpApiEndpoint.del("deleteCycle")`/api/cycles/${CycleIdParam}`
+      .addSuccess(CycleDeleteResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("deleteIssues", "/api/cycles/issues/delete")
+      .setPayload(DeleteIssuesBody)
+      .addSuccess(DeleteIssuesResponse)
   )
 
 // =============================================================================
@@ -752,6 +776,11 @@ const DocGraphResponse = Schema.Struct({
   edges: Schema.Array(DocGraphEdgeSchema),
 })
 
+const DocDeleteResponse = Schema.Struct({
+  success: Schema.Boolean,
+  name: Schema.String,
+})
+
 export const DocsGroup = HttpApiGroup.make("docs")
   .add(
     HttpApiEndpoint.get("listDocs", "/api/docs")
@@ -771,6 +800,10 @@ export const DocsGroup = HttpApiGroup.make("docs")
     HttpApiEndpoint.patch("updateDoc")`/api/docs/${DocNameParam}`
       .setPayload(UpdateDocBody)
       .addSuccess(DocSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.del("deleteDoc")`/api/docs/${DocNameParam}`
+      .addSuccess(DocDeleteResponse)
   )
   .add(
     HttpApiEndpoint.post("lockDoc")`/api/docs/${DocNameParam}/lock`

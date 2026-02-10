@@ -23,11 +23,13 @@ function StatusBadge({ status }: { status: string }) {
 export interface TaskCardProps {
   task: TaskWithDeps
   isFocused?: boolean
+  isSelected?: boolean
+  onToggleSelect?: (id: string) => void
   onClick?: () => void
 }
 
 export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
-  function TaskCard({ task, isFocused = false, onClick }, ref) {
+  function TaskCard({ task, isFocused = false, isSelected = false, onToggleSelect, onClick }, ref) {
     const innerRef = useRef<HTMLDivElement>(null)
 
     // Expose the inner ref via forwardRef
@@ -41,9 +43,11 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
     }, [isFocused])
 
     const baseClasses = "p-3 rounded-lg border cursor-pointer transition-all"
-    const readyClasses = task.isReady
-      ? "border-blue-500 bg-blue-500/10"
-      : "border-gray-700 bg-gray-800"
+    const readyClasses = isSelected
+      ? "border-blue-500 bg-blue-600/20"
+      : task.isReady
+        ? "border-blue-500 bg-blue-500/10"
+        : "border-gray-700 bg-gray-800"
     const hoverClasses = "hover:bg-gray-700/50"
     const focusClasses = isFocused
       ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900"
@@ -65,6 +69,20 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
         tabIndex={isFocused ? 0 : -1}
       >
         <div className="flex items-start justify-between gap-2">
+          {onToggleSelect && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleSelect(task.id) }}
+              className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition ${
+                isSelected
+                  ? "bg-blue-500 border-blue-500 text-white"
+                  : "border-gray-500 hover:border-blue-400"
+              }`}
+            >
+              {isSelected && (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              )}
+            </button>
+          )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <code className="text-xs text-gray-400">{task.id}</code>

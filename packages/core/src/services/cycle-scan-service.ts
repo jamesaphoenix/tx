@@ -451,7 +451,17 @@ export const CycleScanServiceLive = Layer.effect(
 
           const results: CycleResult[] = []
 
-          for (let cycle = 1; cycle <= cycleCount; cycle++) {
+          // Query max existing cycle number for globally unique numbering
+          const maxCycleRow = db
+            .prepare(
+              `SELECT MAX(CAST(json_extract(metadata, '$.cycle') AS INTEGER)) as maxCycle
+               FROM runs WHERE agent = 'cycle-scanner'`
+            )
+            .get() as { maxCycle: number | null } | undefined
+          const cycleOffset = maxCycleRow?.maxCycle ?? 0
+
+          for (let i = 1; i <= cycleCount; i++) {
+            const cycle = cycleOffset + i
             onProgress?.({ type: "cycle_start", cycle, totalCycles: cycleCount, name: cycleName })
 
             // Create cycle group run

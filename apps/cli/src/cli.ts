@@ -5,10 +5,10 @@
  * Main entry point for the tx command line tool.
  */
 
-import { Effect, Cause, Option } from "effect"
+import { Effect, Cause, Option, Layer } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { makeAppLayer } from "@jamesaphoenix/tx-core"
+import { makeAppLayer, AgentServiceLive, CycleScanServiceLive } from "@jamesaphoenix/tx-core"
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
 import { CLI_VERSION } from "./version.js"
@@ -328,7 +328,12 @@ if (command === "init") {
 const layer = makeAppLayer(dbPath)
 const program = handler(positional, parsedFlags)
 
-const runnable = Effect.provide(program, layer) as Effect.Effect<void, unknown>
+// Cycle command needs AgentService + CycleScanService overlay
+const fullLayer = command === "cycle"
+  ? Layer.merge(layer, CycleScanServiceLive.pipe(Layer.provide(Layer.merge(layer, AgentServiceLive))))
+  : layer
+
+const runnable = Effect.provide(program, fullLayer) as Effect.Effect<void, unknown>
 
 // Exit code set by error handlers; applied after Effect runtime cleanup completes
 let _exitCode = 0

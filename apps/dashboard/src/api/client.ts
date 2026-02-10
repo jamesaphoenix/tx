@@ -284,4 +284,27 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
+  deleteDoc: async (name: string): Promise<{ success: boolean; name: string }> => {
+    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`, { method: "DELETE" })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  deleteCycle: async (id: string): Promise<{ success: boolean; id: string; deletedIssues: number }> => {
+    const res = await fetch(`/api/cycles/${id}`, { method: "DELETE" })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  deleteIssues: async (issueIds: string[]): Promise<{ success: boolean; deletedCount: number }> => {
+    const res = await fetch("/api/cycles/issues/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ issueIds }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  deleteTask: async (id: string): Promise<void> => {
+    const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  },
 }

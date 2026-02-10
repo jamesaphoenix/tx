@@ -4,11 +4,11 @@ interface CycleSummaryProps {
   cycle: CycleRun
 }
 
-function StatCard({ label, value, color }: { label: string; value: string | number; color: string }) {
+function StatCard({ label, value, subtitle, color }: { label: string; value: string | number; subtitle?: string; color: string }) {
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700/50">
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
-      <div className="text-xs text-gray-400 mt-1">{label}</div>
+      <div className="text-xs text-gray-400 mt-1">{subtitle ?? label}</div>
     </div>
   )
 }
@@ -18,7 +18,8 @@ export function CycleSummary({ cycle }: CycleSummaryProps) {
     <div className="grid grid-cols-4 gap-3">
       <StatCard
         label="Cycle"
-        value={cycle.name || `Cycle ${cycle.cycle}`}
+        value={`Cycle ${cycle.cycle}`}
+        subtitle={`${cycle.rounds} rounds`}
         color="text-white"
       />
       <StatCard
