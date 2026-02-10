@@ -9,47 +9,130 @@ description: Add blocking dependencies between tasks
 
 tx enforces two rules to maintain consistency:
 1. **No self-blocking**: A task cannot block itself
-2. **No cycles**: A→B→C→A chains are not allowed
+2. **No cycles**: A->B->C->A chains are not allowed
 
 ## Usage
 
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
 ```bash
+# Add a blocker: blocker-id must complete before task-id can start
 tx block <task-id> <blocker-id> [options]
+
+# Remove a blocker
+tx unblock <task-id> <blocker-id>
 ```
 
-## Arguments
+### Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `<task-id>` | Yes | The task that will be blocked |
 | `<blocker-id>` | Yes | The task that blocks it |
 
-## Options
+### Options
 
 | Option | Description |
 |--------|-------------|
 | `--json` | Output as JSON |
 | `--help` | Show help |
 
-## Examples
-
-### Basic Usage
+### Examples
 
 ```bash
 # tx-def456 blocks tx-abc123
 tx block tx-abc123 tx-def456
-```
 
-This means: "tx-abc123 cannot start until tx-def456 is done."
-
-### Multiple Blockers
-
-```bash
 # Add multiple blockers to a single task
 tx block tx-feature tx-design
 tx block tx-feature tx-api
 tx block tx-feature tx-tests
+
+# Remove a blocker
+tx unblock tx-abc123 tx-def456
 ```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Add blocker: blockerId must complete before id can start
+const task = await tx.tasks.block('tx-abc123', 'tx-def456')
+
+// Remove blocker
+const task = await tx.tasks.unblock('tx-abc123', 'tx-def456')
+```
+
+</Tab>
+<Tab value="MCP">
+
+### tx_block
+
+Add a blocking dependency between two tasks.
+
+```json
+{
+  "tool": "tx_block",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "blockerId": "tx-def456"
+  }
+}
+```
+
+### tx_unblock
+
+Remove a blocking dependency.
+
+```json
+{
+  "tool": "tx_unblock",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "blockerId": "tx-def456"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+### Add a blocker
+
+```bash
+POST /api/tasks/:id/block
+Content-Type: application/json
+
+{
+  "blockerId": "tx-def456"
+}
+```
+
+### Remove a blocker
+
+```bash
+DELETE /api/tasks/:id/block/:blockerId
+```
+
+### Example
+
+```bash
+# Add blocker
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/block \
+  -H "Content-Type: application/json" \
+  -d '{"blockerId": "tx-def456"}'
+
+# Remove blocker
+curl -X DELETE http://localhost:3456/api/tasks/tx-abc123/block/tx-def456
+```
+
+</Tab>
+</Tabs>
 
 ## Output
 
@@ -87,21 +170,12 @@ tx uses BFS (Breadth-First Search) to detect cycles at insert time:
 # This would create a cycle and will be rejected
 tx block tx-a tx-b
 tx block tx-b tx-c
-tx block tx-c tx-a  # Error: Would create cycle A→B→C→A
+tx block tx-c tx-a  # Error: Would create cycle A->B->C->A
 ```
 
 Error output:
 ```
-Error: Cannot add dependency - would create cycle: tx-a → tx-b → tx-c → tx-a
-```
-
-## Removing Dependencies
-
-Use `tx unblock` to remove a dependency:
-
-```bash
-# Remove the blocker
-tx unblock tx-abc123 tx-def456
+Error: Cannot add dependency - would create cycle: tx-a -> tx-b -> tx-c -> tx-a
 ```
 
 ## Dependency Visualization

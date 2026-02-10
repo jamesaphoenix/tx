@@ -7,19 +7,102 @@ description: Get contextual learnings for a task
 
 `tx context` retrieves learnings that are relevant to a specific task. It uses the task's title and description to find matching knowledge, making it easy to inject relevant context into agent prompts.
 
-The search uses hybrid BM25 + recency scoring, and optionally supports graph expansion to discover related learnings through the knowledge graph.
+The search uses hybrid BM25 + vector search with RRF fusion, optional re-ranking, and MMR diversification.
 
 ## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
 
 ```bash
 tx context <task-id> [options]
 ```
 
-## Arguments
+```bash
+# Get context for a task
+tx context tx-abc123
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<task-id>` | Yes | Task ID (e.g., `tx-a1b2c3d4`) |
+# Write context to .tx/context.md for injection
+tx context tx-abc123 --inject
+
+# Get context as JSON for programmatic use
+tx context tx-abc123 --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+// HTTP mode
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Or direct SQLite mode
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// Get context for a task
+const ctx = await tx.context.forTask('tx-abc123')
+// Returns:
+// {
+//   taskId: string
+//   taskTitle: string
+//   learnings: SerializedLearningWithScore[]
+//   searchQuery: string
+//   searchDuration: number
+// }
+
+console.log(`Found ${ctx.learnings.length} relevant learnings`)
+for (const l of ctx.learnings) {
+  console.log(`- [${(l.relevanceScore * 100).toFixed(0)}%] ${l.content}`)
+}
+```
+
+Each learning in the response includes `relevanceScore`, `bm25Score`, and `vectorScore` fields.
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_context`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `taskId` | `string` | Yes | Task ID (e.g., `tx-abc123`) |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_context",
+  "arguments": {
+    "taskId": "tx-abc123"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+GET /api/context/:taskId
+```
+
+**Path parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `taskId` | `string` | Yes | Task ID (e.g., `tx-abc123`) |
+
+**Example:**
+
+```bash
+curl http://localhost:3456/api/context/tx-abc123
+```
+
+</Tab>
+</Tabs>
 
 ## Options
 
@@ -27,41 +110,8 @@ tx context <task-id> [options]
 |--------|-------------|
 | `--json` | Output as JSON |
 | `--inject` | Write to `.tx/context.md` for injection |
-| `--expand` | Enable graph expansion to find related learnings |
-| `--depth <n>` | Graph expansion depth (default: 2) |
-| `--edge-types <types>` | Comma-separated edge types to traverse |
 | `--retriever <path>` | Use custom retriever module |
 | `--help` | Show help |
-
-## Examples
-
-### Basic Usage
-
-```bash
-# Get context for a task
-tx context tx-abc123
-```
-
-### Write to File for Injection
-
-```bash
-# Write context to .tx/context.md
-tx context tx-abc123 --inject
-```
-
-### Graph Expansion
-
-```bash
-# Expand through knowledge graph for related learnings
-tx context tx-abc123 --expand --depth 3
-```
-
-### JSON Output
-
-```bash
-# Get context as JSON for programmatic use
-tx context tx-abc123 --json
-```
 
 ## Output
 

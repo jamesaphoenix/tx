@@ -28,6 +28,9 @@ description: Git-backed JSONL synchronization
 
 Export all tasks and dependencies to a JSONL file.
 
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tab value="CLI">
+
 ### Usage
 
 ```bash
@@ -60,11 +63,42 @@ tx sync export --json
 Exported 42 operations to .tx/tasks.jsonl
 ```
 
+</Tab>
+<Tab value="TypeScript SDK">
+
+Sync operations are available through the Effect-based core API:
+
+```typescript
+import { createTx, SyncService } from '@jamesaphoenix/tx'
+import { Effect } from 'effect'
+
+const tx = createTx()
+
+// Export
+await tx.run(
+  Effect.gen(function* () {
+    const sync = yield* SyncService
+    const result = yield* sync.exportToJsonl()
+    return result
+  })
+)
+
+await tx.close()
+```
+
+For most use cases, the CLI commands are recommended for sync operations.
+
+</Tab>
+</Tabs>
+
 ---
 
 ## tx sync import
 
 Import tasks from a JSONL file using timestamp-based merge.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tab value="CLI">
 
 ### Usage
 
@@ -96,11 +130,42 @@ Import uses **timestamp-based merge**:
 - Conflicts are resolved by comparing `updatedAt` timestamps
 - Operations are applied in chronological order
 
+</Tab>
+<Tab value="TypeScript SDK">
+
+Sync operations are available through the Effect-based core API:
+
+```typescript
+import { createTx, SyncService } from '@jamesaphoenix/tx'
+import { Effect } from 'effect'
+
+const tx = createTx()
+
+// Import
+await tx.run(
+  Effect.gen(function* () {
+    const sync = yield* SyncService
+    const result = yield* sync.importFromJsonl()
+    return result
+  })
+)
+
+await tx.close()
+```
+
+For most use cases, the CLI commands are recommended for sync operations.
+
+</Tab>
+</Tabs>
+
 ---
 
 ## tx sync status
 
 Show sync status and whether the database has unexported changes.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tab value="CLI">
 
 ### Usage
 
@@ -130,11 +195,42 @@ Sync status:
   Pending changes: 8
 ```
 
+</Tab>
+<Tab value="TypeScript SDK">
+
+Sync operations are available through the Effect-based core API:
+
+```typescript
+import { createTx, SyncService } from '@jamesaphoenix/tx'
+import { Effect } from 'effect'
+
+const tx = createTx()
+
+// Get sync status
+await tx.run(
+  Effect.gen(function* () {
+    const sync = yield* SyncService
+    const status = yield* sync.status()
+    return status
+  })
+)
+
+await tx.close()
+```
+
+For most use cases, the CLI commands are recommended for sync operations.
+
+</Tab>
+</Tabs>
+
 ---
 
 ## tx sync auto
 
 Enable or disable automatic synchronization on mutations.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tab value="CLI">
 
 ### Usage
 
@@ -162,11 +258,41 @@ tx sync auto --disable
 
 When auto-sync is enabled, every task mutation automatically exports to JSONL.
 
+</Tab>
+<Tab value="TypeScript SDK">
+
+Sync operations are available through the Effect-based core API:
+
+```typescript
+import { createTx, AutoSyncService } from '@jamesaphoenix/tx'
+import { Effect } from 'effect'
+
+const tx = createTx()
+
+// Enable auto-sync
+await tx.run(
+  Effect.gen(function* () {
+    const autoSync = yield* AutoSyncService
+    yield* autoSync.enable()
+  })
+)
+
+await tx.close()
+```
+
+For most use cases, the CLI commands are recommended for sync operations.
+
+</Tab>
+</Tabs>
+
 ---
 
 ## tx sync compact
 
 Compact the JSONL file by deduplicating operations.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tab value="CLI">
 
 ### Usage
 
@@ -194,6 +320,34 @@ Compacted .tx/tasks.jsonl:
   After: 892 operations (189 KB)
   Saved: 27%
 ```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+Sync operations are available through the Effect-based core API:
+
+```typescript
+import { createTx, SyncService } from '@jamesaphoenix/tx'
+import { Effect } from 'effect'
+
+const tx = createTx()
+
+// Compact
+await tx.run(
+  Effect.gen(function* () {
+    const sync = yield* SyncService
+    const result = yield* sync.compact()
+    return result
+  })
+)
+
+await tx.close()
+```
+
+For most use cases, the CLI commands are recommended for sync operations.
+
+</Tab>
+</Tabs>
 
 ---
 

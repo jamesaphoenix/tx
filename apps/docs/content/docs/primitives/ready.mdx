@@ -14,9 +14,88 @@ Tasks are sorted by score (highest first), making it easy for agents to pick the
 
 ## Usage
 
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
 ```bash
 tx ready [options]
 ```
+
+```bash
+# Top 10 ready tasks
+tx ready
+
+# Top 5 ready tasks
+tx ready -n 5
+
+# JSON output for scripting
+tx ready --json
+
+# Get the ID of the highest-priority ready task
+tx ready --json --limit 1 | jq -r '.[0].id'
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+// HTTP mode
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Or direct SQLite mode
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// Get ready tasks
+const ready = await tx.tasks.ready({ limit: 5 })
+// Returns SerializedTaskWithDeps[] with:
+//   id, title, status, score, blockedBy, blocks, children, isReady
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_ready`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `limit` | `number` | No | Maximum tasks to return (default: 10) |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_ready",
+  "arguments": {
+    "limit": 5
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+GET /api/tasks/ready?limit=5
+```
+
+**Query parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `limit` | `number` | No | Maximum tasks to return (default: 10) |
+
+**Example:**
+
+```bash
+curl http://localhost:3456/api/tasks/ready?limit=5
+```
+
+</Tab>
+</Tabs>
 
 ## Options
 
@@ -25,28 +104,6 @@ tx ready [options]
 | `--limit, -n <n>` | Maximum tasks to show (default: 10) |
 | `--json` | Output as JSON for scripting |
 | `--help` | Show help |
-
-## Examples
-
-### Basic Usage
-
-```bash
-# Top 10 ready tasks
-tx ready
-
-# Top 5 ready tasks
-tx ready -n 5
-```
-
-### JSON Output for Scripting
-
-```bash
-# Get ready tasks as JSON
-tx ready --json
-
-# Get the ID of the highest-priority ready task
-tx ready --json --limit 1 | jq -r '.[0].id'
-```
 
 ## Output
 

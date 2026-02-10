@@ -1,41 +1,246 @@
 ---
 title: tx claim
-description: Mark a task as being worked by an agent
+description: Claim a task with a lease to prevent parallel collisions
 ---
-
-> **Status**: Planned - This primitive is not yet implemented.
 
 ## Purpose
 
-`tx claim` will mark a task as being actively worked on by a specific agent. This prevents multiple agents from picking the same task and duplicating work.
+`tx claim` marks a task as being actively worked on by a specific worker. This prevents multiple agents from picking the same task and duplicating work. Claims use a lease-based model with automatic expiry.
 
-## Planned Usage
+## Claim a Task
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
 
 ```bash
-tx claim <id> [options]
+tx claim <task-id> <worker-id> [options]
 ```
 
-## Planned Options
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<task-id>` | Yes | Task ID (e.g., `tx-a1b2c3d4`) |
+| `<worker-id>` | Yes | Worker ID (e.g., `worker-abc12345`) |
+
+### Options
 
 | Option | Description |
 |--------|-------------|
-| `--agent <name>` | Agent identifier claiming the task |
-| `--timeout <seconds>` | Auto-release after timeout (default: 3600) |
-| `--next` | Claim the next ready task automatically |
+| `--lease <m>` | Lease duration in minutes (default: 30) |
 | `--json` | Output as JSON |
+| `--help` | Show help |
 
-## Planned Examples
+### Examples
 
 ```bash
-# Claim a specific task
-tx claim tx-abc123 --agent worker-1
+# Claim with default 30-minute lease
+tx claim tx-abc123 worker-def456
 
-# Claim the next ready task
-tx claim --next --agent worker-1
+# Claim with 60-minute lease
+tx claim tx-abc123 worker-def456 --lease 60
 
-# Claim with 30-minute timeout
-tx claim tx-abc123 --agent worker-1 --timeout 1800
+# JSON output
+tx claim tx-abc123 worker-def456 --json
 ```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Claim a task with lease
+const claim = await tx.claims.claim({
+  taskId: 'tx-abc123',
+  workerId: 'worker-1',
+  leaseDurationMinutes: 60
+})
+// Returns: { id, taskId, workerId, claimedAt, leaseExpiresAt, renewedCount, status }
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_claim",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "workerId": "worker-1",
+    "leaseDurationMinutes": 60
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+POST /api/claims
+Content-Type: application/json
+
+{
+  "taskId": "tx-abc123",
+  "workerId": "worker-1",
+  "leaseDurationMinutes": 60
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/claims \
+  -H "Content-Type: application/json" \
+  -d '{"taskId": "tx-abc123", "workerId": "worker-1", "leaseDurationMinutes": 60}'
+```
+
+</Tab>
+</Tabs>
+
+## Release a Claim
+
+Release a worker's claim on a task, allowing other workers to claim it.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx claim:release <task-id> <worker-id> [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<task-id>` | Yes | Task ID |
+| `<worker-id>` | Yes | Worker ID that holds the claim |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+| `--help` | Show help |
+
+### Examples
+
+```bash
+tx claim:release tx-abc123 worker-def456
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+// Release a claim
+await tx.claims.release('tx-abc123', 'worker-1')
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_claim_release",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "workerId": "worker-1"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+DELETE /api/claims/:taskId/:workerId
+```
+
+### Example
+
+```bash
+curl -X DELETE http://localhost:3456/api/claims/tx-abc123/worker-1
+```
+
+</Tab>
+</Tabs>
+
+## Renew a Claim
+
+Extend the lease on an existing claim. Use this for long-running tasks to prevent the claim from expiring.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx claim:renew <task-id> <worker-id> [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<task-id>` | Yes | Task ID |
+| `<worker-id>` | Yes | Worker ID that holds the claim |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+| `--help` | Show help |
+
+### Limits
+
+- Maximum 10 renewals per claim
+- Fails if the lease has already expired
+- Fails if no active claim exists for this task and worker
+
+### Examples
+
+```bash
+tx claim:renew tx-abc123 worker-def456
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+// Renew a claim
+const renewed = await tx.claims.renew('tx-abc123', 'worker-1')
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_claim_renew",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "workerId": "worker-1"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+POST /api/claims/:taskId/:workerId/renew
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/claims/tx-abc123/worker-1/renew
+```
+
+</Tab>
+</Tabs>
 
 ## Use Case: Parallel Agent Execution
 
@@ -51,19 +256,39 @@ With claims:
 
 ```bash
 # Solution: Claims prevent collision
-Agent1: tx claim --next --agent worker-1  → tx-abc123
-Agent2: tx claim --next --agent worker-2  → tx-def456  # Different task
+Agent1: tx claim tx-abc123 worker-1   # Success
+Agent2: tx claim tx-abc123 worker-2   # Fails - already claimed
 ```
 
-## Planned Behavior
+### Parallel Agent Loop
 
-1. **Claiming** sets `claimed_by` and `claimed_at` on the task
-2. **Ready queries** exclude claimed tasks (unless `--include-claimed`)
-3. **Timeouts** auto-release abandoned claims
-4. **Completing** a task automatically releases its claim
+```bash
+#!/bin/bash
+WORKER_ID="worker-$$"
+
+while true; do
+  TASK=$(tx ready --json --limit 1 | jq -r '.[0].id // empty')
+  [ -z "$TASK" ] && break
+
+  # Try to claim - skip if another worker got it
+  tx claim "$TASK" "$WORKER_ID" || continue
+
+  # Work on the task
+  claude "Your task is $TASK. Run 'tx show $TASK' for details."
+
+  # Complete and release
+  tx done "$TASK"
+done
+```
+
+## Behavior
+
+1. **Claiming** creates a lease with an expiry time
+2. **Expired leases** allow other workers to claim the task
+3. **Completing** a task (`tx done`) does not require releasing the claim first
+4. **Long tasks** should periodically renew with `tx claim:renew`
 
 ## Related Commands
 
 - [`tx ready`](/docs/primitives/ready) - List unclaimed ready tasks
-- [`tx done`](/docs/primitives/done) - Complete and release claim
-- [`tx handoff`](/docs/primitives/handoff) - Transfer claim to another agent
+- [`tx done`](/docs/primitives/done) - Complete a task

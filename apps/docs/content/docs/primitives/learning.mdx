@@ -23,19 +23,14 @@ Learnings are pieces of knowledge that persist across sessions and can be retrie
 
 Add a new learning to the knowledge base.
 
-### Usage
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
 
 ```bash
 tx learning:add <content> [options]
 ```
 
-### Arguments
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<content>` | Yes | The learning content/insight to store |
-
-### Options
+**Options:**
 
 | Option | Description |
 |--------|-------------|
@@ -44,7 +39,7 @@ tx learning:add <content> [options]
 | `--source-type <type>` | Source type: `manual`, `compaction`, `run`, `claude_md` (default: manual) |
 | `--json` | Output as JSON |
 
-### Examples
+**Examples:**
 
 ```bash
 # Basic learning
@@ -57,36 +52,101 @@ tx learning:add "Rate limit is 100 req/min" -c api
 tx learning:add "Migration requires downtime" --source-ref tx-abc123
 ```
 
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const learning = await tx.learnings.add({
+  content: 'Always use transactions for multi-step DB operations',
+  sourceType: 'manual',
+  sourceRef: 'tx-abc123',
+  category: 'database',
+  keywords: ['transaction', 'database']
+})
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_learning_add`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `content` | `string` | Yes | The learning content/insight to store |
+| `category` | `string` | No | Category tag |
+| `sourceRef` | `string` | No | Reference to source |
+| `sourceType` | `string` | No | Source type (default: manual) |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_learning_add",
+  "arguments": {
+    "content": "Always use transactions for multi-step DB operations",
+    "category": "database",
+    "sourceRef": "tx-abc123"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+POST /api/learnings
+```
+
+**Body:**
+
+```json
+{
+  "content": "Always use transactions for multi-step DB operations",
+  "category": "database",
+  "sourceRef": "tx-abc123",
+  "sourceType": "manual"
+}
+```
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3456/api/learnings \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Always use transactions for multi-step DB operations", "category": "database"}'
+```
+
+</Tab>
+</Tabs>
+
 ---
 
 ## tx learning:search
 
 Search learnings using BM25 full-text search with recency weighting.
 
-### Usage
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
 
 ```bash
 tx learning:search <query> [options]
 ```
 
-### Arguments
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<query>` | Yes | Search query (keywords or phrase) |
-
-### Options
+**Options:**
 
 | Option | Description |
 |--------|-------------|
 | `-n, --limit <n>` | Maximum results (default: 10) |
 | `--min-score <n>` | Minimum relevance score 0-1 (default: 0.3) |
-| `--expand` | Enable graph expansion for related learnings |
-| `--depth <n>` | Graph expansion depth (default: 2) |
-| `--edge-types <types>` | Comma-separated edge types to traverse |
 | `--json` | Output as JSON |
 
-### Examples
+**Examples:**
 
 ```bash
 # Basic search
@@ -94,10 +154,78 @@ tx learning:search "database transactions"
 
 # Limited results with JSON output
 tx learning:search "authentication" -n 5 --json
-
-# With graph expansion
-tx learning:search "auth" --expand --depth 3
 ```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const results = await tx.learnings.search({
+  query: 'database transactions',
+  limit: 10,
+  minScore: 0.3,
+  category: 'database'
+})
+
+for (const r of results) {
+  console.log(`[${r.relevanceScore.toFixed(2)}] ${r.content}`)
+}
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_learning_search`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `query` | `string` | Yes | Search query |
+| `limit` | `number` | No | Maximum results (default: 10) |
+| `minScore` | `number` | No | Minimum relevance score 0-1 (default: 0.3) |
+| `category` | `string` | No | Filter by category |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_learning_search",
+  "arguments": {
+    "query": "database transactions",
+    "limit": 5
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+GET /api/learnings?query=database+transactions&limit=10
+```
+
+**Query parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | `string` | Yes | Search query |
+| `limit` | `number` | No | Maximum results (default: 10) |
+| `minScore` | `number` | No | Minimum relevance score 0-1 |
+| `category` | `string` | No | Filter by category |
+
+**Example:**
+
+```bash
+curl "http://localhost:3456/api/learnings?query=database+transactions&limit=5"
+```
+
+</Tab>
+</Tabs>
 
 ### Output
 
@@ -120,20 +248,21 @@ Search results for "database transactions":
 
 List recently added learnings.
 
-### Usage
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tab value="CLI">
 
 ```bash
 tx learning:recent [options]
 ```
 
-### Options
+**Options:**
 
 | Option | Description |
 |--------|-------------|
 | `-n, --limit <n>` | Maximum results (default: 10) |
 | `--json` | Output as JSON |
 
-### Examples
+**Examples:**
 
 ```bash
 # Recent learnings
@@ -143,56 +272,215 @@ tx learning:recent
 tx learning:recent -n 5 --json
 ```
 
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Search with empty query and sort by recency
+const recent = await tx.learnings.search({
+  query: '',
+  limit: 10
+})
+```
+
+</Tab>
+</Tabs>
+
 ---
 
 ## tx learning:helpful
 
 Record whether a learning was helpful for a task. This feedback improves future retrieval.
 
-### Usage
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
 
 ```bash
 tx learning:helpful <learning-id> <task-id> --yes|--no
 ```
 
-### Examples
+**Examples:**
 
 ```bash
 # Mark a learning as helpful
-tx learning:helpful lr-abc123 tx-def456 --yes
+tx learning:helpful 42 tx-def456 --yes
 
 # Mark a learning as not helpful
-tx learning:helpful lr-abc123 tx-def456 --no
+tx learning:helpful 42 tx-def456 --no
 ```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Record that learning #42 was helpful
+await tx.learnings.helpful(42)
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_learning_helpful`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `id` | `number` | Yes | Learning ID |
+| `taskId` | `string` | Yes | Task ID that used this learning |
+| `helpful` | `boolean` | Yes | Whether the learning was helpful |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_learning_helpful",
+  "arguments": {
+    "id": 42,
+    "taskId": "tx-def456",
+    "helpful": true
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+POST /api/learnings/:id/helpful
+```
+
+**Path parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | `number` | Yes | Learning ID |
+
+**Body:**
+
+```json
+{
+  "taskId": "tx-def456",
+  "helpful": true
+}
+```
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3456/api/learnings/42/helpful \
+  -H "Content-Type: application/json" \
+  -d '{"taskId": "tx-def456", "helpful": true}'
+```
+
+</Tab>
+</Tabs>
+
+---
+
+## tx learning:get
+
+Retrieve a specific learning by its ID.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK"]}>
+<Tab value="CLI">
+
+```bash
+tx learning:get <id> [--json]
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const learning = await tx.learnings.get(42)
+console.log(learning.content)
+```
+
+</Tab>
+</Tabs>
 
 ---
 
 ## tx learning:embed
 
-Compute embeddings for learnings to enable vector search.
+Batch-compute embeddings for learnings that don't have them yet. Useful for backfilling older learnings or re-embedding with a different model.
 
-### Usage
+Embeddings are computed **automatically** when a learning is created via `tx learning:add`. If an embedder is configured (OpenAI or local model), the embedding is stored immediately so vector search works without any extra steps.
+
+If no embedder is available, the learning is still created (with `embedding = NULL`) and search falls back to BM25-only.
+
+<Tabs items={["CLI"]}>
+<Tab value="CLI">
 
 ```bash
 tx learning:embed [options]
 ```
 
-### Options
+**Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--all` | Recompute all embeddings |
+| `--all` | Recompute all embeddings (including already-embedded) |
+| `--embedder <type>` | Select embedder: `auto`, `openai`, `local`, `noop` |
+| `--status` | Show embedding coverage status |
 | `--json` | Output as JSON |
 
-### Examples
+**Examples:**
 
 ```bash
-# Compute embeddings for new learnings
-tx learning:embed
+# Backfill embeddings for learnings without them
+TX_EMBEDDINGS=1 tx learning:embed
 
 # Recompute all embeddings
-tx learning:embed --all
+TX_EMBEDDINGS=1 tx learning:embed --all
+
+# Check coverage
+tx learning:embed --status
 ```
+
+</Tab>
+</Tabs>
+
+---
+
+## File Learnings
+
+Attach learnings to specific file patterns for path-based retrieval.
+
+<Tabs items={["TypeScript SDK"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// List learnings for a file
+const fileLearnings = await tx.fileLearnings.list('src/auth.ts')
+
+// Add a file-specific learning
+await tx.fileLearnings.add({
+  filePattern: 'src/auth.ts',
+  note: 'JWT tokens expire after 1 hour',
+  taskId: 'tx-abc123'
+})
+```
+
+</Tab>
+</Tabs>
 
 ---
 

@@ -11,9 +11,77 @@ When a task is completed, any tasks that were waiting on it may become unblocked
 
 ## Usage
 
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
 ```bash
 tx done <id> [options]
 ```
+
+```bash
+# Mark a task as complete
+tx done tx-abc123
+
+# Complete a task and get JSON response
+tx done tx-abc123 --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const { task, nowReady } = await tx.tasks.done('tx-abc123')
+// task: SerializedTaskWithDeps (the completed task)
+// nowReady: SerializedTaskWithDeps[] (tasks that became ready after completion)
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_done`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `id` | `string` | Yes | Task ID to mark as complete |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_done",
+  "arguments": {
+    "id": "tx-abc123"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+POST /api/tasks/:id/done
+```
+
+**Path parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | `string` | Yes | Task ID to mark as complete |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
+```
+
+</Tab>
+</Tabs>
 
 ## Arguments
 
@@ -27,22 +95,6 @@ tx done <id> [options]
 |--------|-------------|
 | `--json` | Output as JSON (includes task and newly unblocked task IDs) |
 | `--help` | Show help |
-
-## Examples
-
-### Basic Usage
-
-```bash
-# Mark a task as complete
-tx done tx-abc123
-```
-
-### JSON Output
-
-```bash
-# Complete a task and get JSON response
-tx done tx-abc123 --json
-```
 
 ## Output
 
@@ -82,18 +134,18 @@ When you complete a task, tx automatically checks which tasks were waiting on it
 Before tx done tx-auth:
 
   tx-auth [done]
-      ↓ blocks
+      | blocks
   tx-login [blocked]
-      ↓ blocks
+      | blocks
   tx-dashboard [blocked]
 
 After tx done tx-auth:
 
   tx-auth [done]
-      ↓ blocks
-  tx-login [ready]     ← Newly unblocked!
-      ↓ blocks
-  tx-dashboard [blocked]  ← Still blocked by tx-login
+      | blocks
+  tx-login [ready]     <-- Newly unblocked!
+      | blocks
+  tx-dashboard [blocked]  <-- Still blocked by tx-login
 ```
 
 ## Agent Workflow

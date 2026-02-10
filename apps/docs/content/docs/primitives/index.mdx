@@ -5,7 +5,7 @@ description: Composable building blocks for agent infrastructure
 
 ## Overview
 
-tx provides a set of CLI primitives for managing tasks, dependencies, learnings, and synchronization. These primitives are the building blocks for any agent orchestration pattern.
+tx provides a set of composable primitives for managing tasks, dependencies, learnings, and synchronization. These primitives are the building blocks for any agent orchestration pattern.
 
 ## Philosophy
 
@@ -23,21 +23,95 @@ tx is about **primitives, not frameworks**. We don't dictate how you orchestrate
 └─────────────────────────────────────────────────────┘
 ```
 
+## Access Patterns
+
+Every tx primitive is available through multiple interfaces. Choose the one that fits your workflow:
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP Tools", "REST API"]}>
+<Tab value="CLI">
+
+Install globally and use from any terminal or shell script:
+
+```bash
+npm install -g @jamesaphoenix/tx
+tx ready --limit 5
+```
+
+Best for: shell scripts, agent loops, CI/CD pipelines.
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+Use the SDK for programmatic access with full type safety:
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+// or: new TxClient({ dbPath: '.tx/tasks.db' })
+
+const ready = await tx.tasks.ready({ limit: 5 })
+const { task, nowReady } = await tx.tasks.done(ready[0].id)
+await tx.learnings.add({ content: 'Use retry logic for flaky calls' })
+```
+
+Best for: TypeScript/JavaScript agents, custom orchestrators, programmatic workflows.
+
+</Tab>
+<Tab value="MCP Tools">
+
+Use tx as an MCP server for Claude, Cursor, or any MCP-compatible client:
+
+```json
+{
+  "mcpServers": {
+    "tx": {
+      "command": "npx",
+      "args": ["@jamesaphoenix/tx-mcp-server"]
+    }
+  }
+}
+```
+
+Tools: `tx_ready`, `tx_done`, `tx_block`, `tx_add`, `tx_context`, `tx_learning_add`, etc.
+
+Best for: AI assistants, Claude Code, Cursor, IDE integrations.
+
+</Tab>
+<Tab value="REST API">
+
+Run the API server for HTTP access from any language:
+
+```bash
+npx @jamesaphoenix/tx-api-server
+# Server running on http://localhost:3456
+```
+
+```bash
+curl http://localhost:3456/api/tasks/ready?limit=5
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
+```
+
+Best for: non-TypeScript agents, distributed systems, web dashboards.
+
+</Tab>
+</Tabs>
+
 ## Core Primitives
 
-| Primitive | Purpose | Status |
-|-----------|---------|--------|
-| [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) | Available |
-| [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others | Available |
-| [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | Available |
-| [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | Available |
-| [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection | Available |
-| [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge | Available |
-| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL | Available |
-| [`tx try` / `tx attempts`](/docs/primitives/attempts) | Record and track implementation attempts | Available |
-| [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation | Available |
-| [`tx invariant *`](/docs/primitives/invariants) | Machine-checkable system rules with enforcement tracking | Available |
-| [`tx trace *`](/docs/primitives/traces) | Execution tracing and run observability | Available |
+| Primitive | Purpose | Interfaces | Status |
+|-----------|---------|------------|--------|
+| [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) | CLI, SDK, MCP, API | Available |
+| [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others | CLI, SDK, MCP, API | Available |
+| [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | CLI, SDK, MCP, API | Available |
+| [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | CLI, SDK, MCP, API | Available |
+| [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection | CLI, SDK, MCP, API | Available |
+| [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge | CLI, SDK, MCP, API | Available |
+| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL | CLI, SDK | Available |
+| [`tx try` / `tx attempts`](/docs/primitives/attempts) | Record and track implementation attempts | CLI, SDK, MCP, API | Available |
+| [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation | CLI, SDK, MCP, API | Available |
+| [`tx invariant *`](/docs/primitives/invariants) | Machine-checkable system rules with enforcement tracking | CLI, SDK, MCP, API | Available |
+| [`tx trace *`](/docs/primitives/traces) | Execution tracing and run observability | CLI, SDK, MCP, API | Available |
 
 ## Example Orchestration Patterns
 

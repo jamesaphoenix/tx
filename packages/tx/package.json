@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx",
-  "version": "0.4.2",
+  "version": "0.4.4",
   "description": "TanStack for AI agents - headless primitives for memory, tasks, and orchestration",
   "type": "module",
   "main": "./dist/index.js",
@@ -43,6 +43,7 @@
     "mcp",
     "orchestration"
   ],
+  "homepage": "https://txdocs.dev/",
   "author": "James Phoenix",
   "license": "MIT"
 }

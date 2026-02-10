@@ -1,18 +1,20 @@
 import defaultMdxComponents from 'fumadocs-ui/mdx';
-
-type MDXComponents = typeof defaultMdxComponents;
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import type { MDXComponents } from 'mdx/types';
 
 export function getMDXComponents(
-  components?: Partial<MDXComponents>
+  components?: MDXComponents
 ): MDXComponents {
   return {
     ...defaultMdxComponents,
+    Tab,
+    Tabs,
     ...components,
   };
 }
 
 export function useMDXComponents(
-  components: Partial<MDXComponents>
+  components: MDXComponents
 ): MDXComponents {
   return getMDXComponents(components);
 }
