@@ -1248,6 +1248,7 @@ export const stressLoad = (options: StressLoadOptions): StressLoadResult => {
   // Create dependencies if requested
   if (withDependencies && taskIds.length > 1) {
     const depCount = Math.floor(taskIds.length * dependencyRatio)
+    const depCountBefore = db.query<{ count: number }>("SELECT COUNT(*) as count FROM task_dependencies")[0].count
 
     db.transaction(() => {
       for (let i = 0; i < depCount; i++) {
@@ -1264,12 +1265,13 @@ export const stressLoad = (options: StressLoadOptions): StressLoadResult => {
              VALUES (?, ?, datetime('now'))`,
             [taskIds[blockerIdx], taskIds[blockedIdx]]
           )
-          depsCreated++
         } catch {
           // Ignore constraint violations (cycles, duplicates)
         }
       }
     })
+
+    depsCreated = db.query<{ count: number }>("SELECT COUNT(*) as count FROM task_dependencies")[0].count - depCountBefore
   }
 
   const elapsedMs = Date.now() - startTime

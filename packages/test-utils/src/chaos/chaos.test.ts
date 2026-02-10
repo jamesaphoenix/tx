@@ -443,22 +443,22 @@ describe("Chaos Engineering Utilities Integration", () => {
       // Create existing task
       db.run(
         `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-         VALUES ('tx-old', 'Old Task', '', 'backlog', 100, datetime('now'), datetime('now'), '{}')`,
+         VALUES ('tx-oldtask', 'Old Task', '', 'backlog', 100, datetime('now'), datetime('now'), '{}')`,
         []
       )
 
-      const jsonl = `{"v":1,"op":"upsert","ts":"2024-01-01T00:00:00Z","id":"tx-new","data":{"title":"New Task","status":"backlog","score":500,"description":"","parentId":null,"metadata":{}}}`
+      const jsonl = `{"v":1,"op":"upsert","ts":"2024-01-01T00:00:00Z","id":"tx-newtask","data":{"title":"New Task","status":"backlog","score":500,"description":"","parentId":null,"metadata":{}}}`
 
       replayJSONL({ db, content: jsonl, clearFirst: true })
 
       const tasks = db.query<{ id: string }>("SELECT id FROM tasks")
       expect(tasks.length).toBe(1)
-      expect(tasks[0].id).toBe("tx-new")
+      expect(tasks[0].id).toBe("tx-newtask")
     })
 
     it("handles invalid JSON lines gracefully", () => {
       const jsonl = `
-        {"v":1,"op":"upsert","ts":"2024-01-01T00:00:00Z","id":"tx-valid","data":{"title":"Valid Task","status":"backlog","score":500,"description":"","parentId":null,"metadata":{}}}
+        {"v":1,"op":"upsert","ts":"2024-01-01T00:00:00Z","id":"tx-valid1","data":{"title":"Valid Task","status":"backlog","score":500,"description":"","parentId":null,"metadata":{}}}
         not valid json
         {"v":1,"op":"upsert","ts":"2024-01-02T00:00:00Z","id":"tx-valid2","data":{"title":"Valid Task 2","status":"backlog","score":600,"description":"","parentId":null,"metadata":{}}}
       `

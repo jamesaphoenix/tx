@@ -56,8 +56,8 @@ if echo "$changed_files" | grep -q "^apps/cli/"; then
     done
 fi
 
-# Check if root test files were changed directly
-for f in $(echo "$changed_files" | grep "\.test\.ts$"); do
+# Check if root test files were changed directly (only files runnable by root vitest)
+for f in $(echo "$changed_files" | grep "\.test\.ts$" | grep -v "^packages/"); do
     if [ -f "$f" ]; then
         test_files="$test_files $f"
     fi
@@ -68,4 +68,21 @@ if [ -n "$test_files" ]; then
     unique_tests=$(echo "$test_files" | tr ' ' '\n' | sort -u | tr '\n' ' ')
     echo "🧪 Running targeted tests for changed files..."
     timeout 120 .claude/skills/test-quiet/scripts/run.sh $unique_tests
+fi
+
+# Run package-specific tests (these have their own vitest config)
+pkg_test_files=""
+for f in $(echo "$changed_files" | grep "^packages/.*\.test\.ts$"); do
+    if [ -f "$f" ]; then
+        pkg_test_files="$pkg_test_files $f"
+    fi
+done
+
+if [ -n "$pkg_test_files" ]; then
+    echo "🧪 Running package-specific tests..."
+    for f in $(echo "$pkg_test_files" | tr ' ' '\n' | sort -u); do
+        pkg_dir=$(echo "$f" | sed 's|^\(packages/[^/]*\)/.*|\1|')
+        rel_path=$(echo "$f" | sed "s|^$pkg_dir/||")
+        (cd "$pkg_dir" && timeout 60 bunx --bun vitest run "$rel_path") || exit 1
+    done
 fi
