@@ -7,26 +7,32 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./task": {
+      "bun": "./src/task.ts",
       "types": "./dist/task.d.ts",
       "import": "./dist/task.js"
     },
     "./learning": {
+      "bun": "./src/learning.ts",
       "types": "./dist/learning.d.ts",
       "import": "./dist/learning.js"
     },
     "./file-learning": {
+      "bun": "./src/file-learning.ts",
       "types": "./dist/file-learning.d.ts",
       "import": "./dist/file-learning.js"
     },
     "./attempt": {
+      "bun": "./src/attempt.ts",
       "types": "./dist/attempt.d.ts",
       "import": "./dist/attempt.js"
     },
     "./run": {
+      "bun": "./src/run.ts",
       "types": "./dist/run.d.ts",
       "import": "./dist/run.js"
     }

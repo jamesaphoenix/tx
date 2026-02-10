@@ -7,7 +7,7 @@ export const HELP_TEXT = `tx v${CLI_VERSION} - Task management for AI agents and
 
 Usage: tx <command> [arguments] [options]
 
-Commands:
+Tasks:
   init                    Initialize task database
   add <title>             Create a new task
   list                    List tasks
@@ -15,20 +15,20 @@ Commands:
   show <id>               Show task details
   update <id>             Update task
   done <id>               Mark task complete
-  reset <id>              Reset task to ready (recover from stuck)
+  reset <id>              Reset task to ready
   delete <id>             Delete task
+
+Dependencies & Hierarchy:
   block <id> <blocker>    Add blocking dependency
   unblock <id> <blocker>  Remove blocking dependency
   children <id>           List child tasks
   tree <id>               Show task subtree
+
+Attempts:
   try <id> <approach>     Record an attempt on a task
   attempts <id>           List attempts for a task
-  sync export             Export tasks to JSONL file
-  sync import             Import tasks from JSONL file
-  sync status             Show sync status
-  sync claude             Sync tasks to Claude Code team directory
-  sync codex              Sync tasks to Codex (coming soon)
-  migrate status          Show database migration status
+
+Memory:
   learning:add            Add a learning
   learning:search         Search learnings
   learning:recent         List recent learnings
@@ -37,61 +37,42 @@ Commands:
   context                 Get contextual learnings for a task
   learn                   Attach a learning to file/glob pattern
   recall                  Query learnings for a path
-  graph:verify            Verify anchor validity
-  graph:invalidate        Manually invalidate an anchor
-  graph:restore           Restore a soft-deleted anchor
-  graph:prune             Hard delete old invalid anchors
-  graph:status            Show graph health metrics
-  graph:pin               Pin anchor to prevent auto-invalidation
-  graph:unpin             Unpin anchor to allow auto-invalidation
-  hooks:install           Install post-commit hook for verification
-  hooks:uninstall         Remove post-commit hook
-  hooks:status            Show git hook status
-  test:cache-stats        Show LLM cache statistics
-  test:clear-cache        Clear LLM cache entries
-  daemon start            Start background daemon
-  daemon stop             Stop background daemon
-  daemon status           Show daemon status
-  coordinator start      Start the coordinator
-  coordinator stop       Stop the coordinator
-  coordinator status     Show coordinator status
-  coordinator reconcile  Force reconciliation pass
-  worker start            Start a worker process
-  worker stop             Stop a worker process
-  worker status           Show worker status
-  worker list             List all workers
-  trace list              Show recent runs with event counts
-  trace show              Show metrics events for a run
-  trace transcript        Display raw transcript content
-  trace stderr            Display stderr content
-  trace errors            Show recent errors across all runs
-  claim                   Claim a task with a lease
-  claim:release           Release a claim on a task
-  claim:renew             Renew the lease on a claim
-  compact                 Compact completed tasks and export learnings
-  history                 View compaction history
-  validate                Run pre-flight database health checks
-  bulk done <id...>       Complete multiple tasks
-  bulk score <n> <id...>  Set score for multiple tasks
-  bulk reset <id...>      Reset multiple tasks to ready
-  bulk delete <id...>     Delete multiple tasks
-  stats                   Show queue metrics and health overview
-  doctor                  Run system diagnostics for troubleshooting
-  dashboard               Start API server + dashboard and open in browser
-  daemon track            Track a project for learning extraction
-  daemon untrack          Stop tracking a project
-  daemon list             List tracked projects
-  daemon process          Process learning candidates
-  daemon review           List pending learning candidates
-  daemon promote          Promote a candidate to learning
-  daemon reject           Reject a learning candidate
+
+Messages:
   send                    Send a message to a channel
   inbox                   Read messages from a channel
   ack                     Acknowledge a message
   ack:all                 Acknowledge all messages on a channel
   outbox:pending          Count pending messages on a channel
   outbox:gc               Garbage collect old messages
-  mcp-server              Start MCP server (JSON-RPC over stdio)
+
+Docs:
+  doc <subcommand>        Manage docs (add, edit, show, list, render, lock, version, link, attach, patch, validate, drift)
+  invariant <subcommand>  Manage invariants (list, show, record, sync)
+
+Cycle Scan:
+  cycle                   Run cycle-based issue discovery with sub-agent swarms
+
+Sync & Data:
+  sync export             Export tasks to JSONL file
+  sync import             Import tasks from JSONL file
+  sync status             Show sync status
+  sync claude             Sync tasks to Claude Code team directory
+  compact                 Compact completed tasks and export learnings
+  history                 View compaction history
+  migrate status          Show database migration status
+
+Bulk Operations:
+  bulk done <id...>       Complete multiple tasks
+  bulk score <n> <id...>  Set score for multiple tasks
+  bulk reset <id...>      Reset multiple tasks to ready
+  bulk delete <id...>     Delete multiple tasks
+
+Tools:
+  stats                   Show queue metrics and health overview
+  validate                Run pre-flight database health checks
+  doctor                  Run system diagnostics
+  dashboard               Start API server + dashboard
 
 Global Options:
   --json                  Output as JSON
@@ -1798,5 +1779,379 @@ Options:
 
 Examples:
   tx outbox:gc                         # Delete expired only
-  tx outbox:gc --acked-older-than 24   # Also clean acked > 24h old`
+  tx outbox:gc --acked-older-than 24   # Also clean acked > 24h old`,
+
+  doc: `tx doc - Manage docs-as-primitives
+
+Usage: tx doc <subcommand> [options]
+
+Subcommands:
+  add <kind> <name>         Create a new doc (overview, prd, design)
+  edit <name>               Open doc YAML in $EDITOR
+  show <name>               Show doc details
+  list                      List all docs
+  render [name]             Render YAML to Markdown (all docs if no name)
+  lock <name>               Lock a doc version (immutable)
+  version <name>            Create new version from locked doc
+  link <from> <to>          Link two docs
+  attach <task-id> <name>   Attach a doc to a task
+  patch <design> <patch>    Create a design patch doc
+  validate                  Check all tasks are linked to docs
+  drift <name>              Detect hash/link drift for a doc
+
+Run 'tx doc <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx doc add prd auth-flow --title "Authentication Flow"
+  tx doc show auth-flow --json
+  tx doc list --kind design --status changing
+  tx doc lock auth-flow
+  tx doc version auth-flow
+  tx doc render
+  tx doc attach tx-abc123 auth-flow
+  tx doc drift auth-flow`,
+
+  "doc add": `tx doc add - Create a new doc
+
+Usage: tx doc add <kind> <name> [--title <title>] [--json]
+
+Creates a new doc with generated YAML template on disk and metadata in DB.
+
+Arguments:
+  <kind>    Required. Doc kind: overview, prd, or design
+  <name>    Required. Doc name (alphanumeric with dashes/dots)
+
+Options:
+  --title, -t <title>  Doc title (defaults to name)
+  --json               Output as JSON
+  --help               Show this help
+
+Examples:
+  tx doc add prd auth-flow --title "Authentication Flow"
+  tx doc add design auth-impl -t "Auth Implementation"
+  tx doc add overview system-overview`,
+
+  "doc edit": `tx doc edit - Open doc YAML in editor
+
+Usage: tx doc edit <name>
+
+Opens the doc's YAML file in $EDITOR (defaults to vi).
+
+Arguments:
+  <name>    Required. Doc name
+
+Examples:
+  tx doc edit auth-flow
+  EDITOR=code tx doc edit auth-flow`,
+
+  "doc show": `tx doc show - Show doc details
+
+Usage: tx doc show <name> [--md] [--json]
+
+Shows doc metadata. With --md, renders and displays Markdown content.
+
+Arguments:
+  <name>    Required. Doc name
+
+Options:
+  --md      Render and display Markdown content
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc show auth-flow
+  tx doc show auth-flow --md
+  tx doc show auth-flow --json`,
+
+  "doc list": `tx doc list - List all docs
+
+Usage: tx doc list [--kind <kind>] [--status <status>] [--json]
+
+Lists all docs, optionally filtered by kind or status.
+
+Options:
+  --kind, -k <kind>      Filter by kind (overview, prd, design)
+  --status, -s <status>  Filter by status (changing, locked)
+  --json                 Output as JSON
+  --help                 Show this help
+
+Examples:
+  tx doc list
+  tx doc list --kind design
+  tx doc list --status locked --json`,
+
+  "doc render": `tx doc render - Render YAML to Markdown
+
+Usage: tx doc render [name] [--json]
+
+Renders doc YAML to Markdown files. If no name given, renders all docs.
+Also regenerates index.yml and index.md.
+
+Arguments:
+  [name]    Optional. Doc name (renders all if omitted)
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc render                # Render all docs
+  tx doc render auth-flow      # Render specific doc
+  tx doc render --json`,
+
+  "doc lock": `tx doc lock - Lock a doc version
+
+Usage: tx doc lock <name> [--json]
+
+Locks a doc, making it immutable. Also renders final Markdown.
+Use 'tx doc version' to create a new editable version from a locked doc.
+
+Arguments:
+  <name>    Required. Doc name
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc lock auth-flow
+  tx doc lock auth-flow --json`,
+
+  "doc version": `tx doc version - Create new version from locked doc
+
+Usage: tx doc version <name> [--json]
+
+Creates a new editable version of a locked doc. The doc must be locked first.
+
+Arguments:
+  <name>    Required. Doc name (must be locked)
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc version auth-flow`,
+
+  "doc link": `tx doc link - Link two docs
+
+Usage: tx doc link <from-name> <to-name> [--type <link-type>]
+
+Creates a directed link between two docs. Link type is auto-inferred
+from doc kinds if not specified.
+
+Arguments:
+  <from-name>    Required. Source doc name
+  <to-name>      Required. Target doc name
+
+Options:
+  --type <type>  Link type (overview_to_prd, overview_to_design, prd_to_design, design_patch)
+  --json         Output as JSON
+  --help         Show this help
+
+Examples:
+  tx doc link system-overview auth-prd
+  tx doc link auth-prd auth-impl --type prd_to_design`,
+
+  "doc attach": `tx doc attach - Attach a doc to a task
+
+Usage: tx doc attach <task-id> <doc-name> [--type implements|references]
+
+Creates a link between a task and a doc.
+
+Arguments:
+  <task-id>     Required. Task ID (e.g., tx-a1b2c3d4)
+  <doc-name>    Required. Doc name
+
+Options:
+  --type <type>  Link type: implements (default) or references
+  --json         Output as JSON
+  --help         Show this help
+
+Examples:
+  tx doc attach tx-abc123 auth-flow
+  tx doc attach tx-abc123 auth-flow --type references`,
+
+  "doc patch": `tx doc patch - Create a design patch doc
+
+Usage: tx doc patch <design-name> <patch-name> [--title <title>]
+
+Creates a new design doc that patches an existing design doc.
+
+Arguments:
+  <design-name>  Required. Parent design doc name
+  <patch-name>   Required. New patch doc name
+
+Options:
+  --title, -t <title>  Patch title (defaults to patch name)
+  --json               Output as JSON
+  --help               Show this help
+
+Examples:
+  tx doc patch auth-impl auth-impl-v2 --title "Auth v2 Migration"`,
+
+  "doc validate": `tx doc validate - Check task-doc coverage
+
+Usage: tx doc validate [--json]
+
+Checks that all tasks are linked to at least one doc.
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc validate
+  tx doc validate --json`,
+
+  "doc drift": `tx doc drift - Detect drift for a doc
+
+Usage: tx doc drift <name> [--json]
+
+Checks for drift between the DB metadata and the YAML file on disk.
+Reports hash mismatches, missing files, and unlinked design docs.
+
+Arguments:
+  <name>    Required. Doc name
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc drift auth-flow
+  tx doc drift auth-flow --json`,
+
+  invariant: `tx invariant - Manage machine-checkable invariants
+
+Usage: tx invariant <subcommand> [options]
+
+Subcommands:
+  list                List all invariants
+  show <id>           Show invariant details
+  record <id>         Record a check result (--passed or --failed)
+  sync                Sync invariants from doc YAML files into DB
+
+Run 'tx invariant <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx invariant list
+  tx invariant list --subsystem auth --enforcement integration_test
+  tx invariant show INV-AUTH-001
+  tx invariant record INV-AUTH-001 --passed
+  tx invariant sync
+  tx invariant sync --doc auth-flow`,
+
+  "invariant list": `tx invariant list - List all invariants
+
+Usage: tx invariant list [options]
+
+Lists all invariants, optionally filtered by subsystem or enforcement type.
+
+Options:
+  --subsystem, -s <name>      Filter by subsystem
+  --enforcement, -e <type>    Filter by enforcement (integration_test, linter, llm_as_judge)
+  --json                      Output as JSON
+  --help                      Show this help
+
+Examples:
+  tx invariant list
+  tx invariant list --subsystem auth
+  tx invariant list --enforcement linter --json`,
+
+  "invariant show": `tx invariant show - Show invariant details
+
+Usage: tx invariant show <id> [--json]
+
+Shows full details for an invariant including rule, enforcement type,
+subsystem, test/lint/prompt references, and creation date.
+
+Arguments:
+  <id>    Required. Invariant ID (e.g., INV-AUTH-001)
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx invariant show INV-AUTH-001
+  tx invariant show INV-AUTH-001 --json`,
+
+  "invariant record": `tx invariant record - Record a check result
+
+Usage: tx invariant record <id> --passed|--failed [--details <text>] [--json]
+
+Records whether an invariant check passed or failed. Creates an audit
+trail entry for compliance tracking.
+
+Arguments:
+  <id>    Required. Invariant ID (e.g., INV-AUTH-001)
+
+Flags (one required):
+  --passed     Record a passing check
+  --failed     Record a failing check
+
+Options:
+  --details, -d <text>  Additional details about the check result
+  --json                Output as JSON
+  --help                Show this help
+
+Examples:
+  tx invariant record INV-AUTH-001 --passed
+  tx invariant record INV-AUTH-001 --failed --details "Missing null check"
+  tx invariant record INV-AUTH-001 --passed --json`,
+
+  "invariant sync": `tx invariant sync - Sync invariants from YAML
+
+Usage: tx invariant sync [--doc <name>] [--json]
+
+Syncs invariants from doc YAML files into the database. If a doc name
+is given, syncs only that doc's invariants. Otherwise syncs all docs.
+
+Options:
+  --doc <name>  Sync invariants from a specific doc only
+  --json        Output as JSON
+  --help        Show this help
+
+Examples:
+  tx invariant sync                  # Sync all docs
+  tx invariant sync --doc auth-flow  # Sync specific doc
+  tx invariant sync --json`,
+
+  cycle: `tx cycle - Cycle-based issue discovery with sub-agent swarms
+
+Usage: tx cycle --task-prompt <text|file> [options]
+
+Dispatches parallel sub-agent swarms to scan for codebase issues,
+deduplicates findings across rounds, and optionally fixes them.
+Uses a convergence loop: scan → dedup → score → repeat until no new
+issues are found (loss stabilizes).
+
+Arguments:
+  --task-prompt <text|file>  Required. Area/work being reviewed
+
+Options:
+  --scan-prompt <text|file>  What sub-agents look for (default: bugs, anti-patterns, security)
+  --name <text>              Cycle name (shown in dashboard)
+  --description <text>       Cycle description
+  --cycles <N>               Number of cycles (default: 1)
+  --max-rounds <N>           Max rounds per cycle (default: 10)
+  --agents <N>               Parallel scan agents per round (default: 3)
+  --model <model>            LLM model (default: claude-opus-4-6)
+  --fix                      Enable fix agent between scan rounds
+  --scan-only                Skip fix phase (explicit default)
+  --dry-run                  Report only, no DB writes
+  --score <N>                Base score for new tasks (default: 500)
+  --json                     Output as JSON
+  --help                     Show this help
+
+Loss Calculation:
+  loss = 3 * HIGH + 2 * MEDIUM + 1 * LOW
+  Convergence: loss drops to 0 or stops decreasing between rounds
+
+Examples:
+  tx cycle --task-prompt "Review core services"
+  tx cycle --task-prompt "Review auth module" --scan-prompt "Find security issues"
+  tx cycle --task-prompt "Audit API" --agents 5 --max-rounds 5 --fix
+  tx cycle --task-prompt prompt.md --dry-run --json`
 }

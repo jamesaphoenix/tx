@@ -128,9 +128,7 @@ run_and_track "ESLint (packages)" "bunx turbo lint"
 run_and_track "ESLint (root tests)" "bunx eslint test/ --max-warnings 0"
 # Tests must run with Bun to access bun:sqlite
 run_and_track "Tests (packages)" "bunx turbo test"
-# Use bun test (native test runner) for root tests - required for bun:sqlite support
-# Vitest doesn't work with bun:sqlite due to Vite's ESM loader limitations
-run_and_track "Tests (root)" "bun test test/ eslint-plugin-tx/tests/"
+run_and_track "Tests (root)" "bunx --bun vitest run"
 
 # Summary
 echo ""

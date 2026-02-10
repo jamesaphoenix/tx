@@ -387,6 +387,14 @@ export class InvariantNotFoundError extends Data.TaggedError("InvariantNotFoundE
 
 // Agent/Cycle error types (PRD-023 cycle scan)
 
+export class LlmUnavailableError extends Data.TaggedError("LlmUnavailableError")<{
+  readonly reason: string
+}> {
+  get message() {
+    return `LLM unavailable: ${this.reason}`
+  }
+}
+
 export class AgentError extends Data.TaggedError("AgentError")<{
   readonly agent: string
   readonly reason: string
@@ -473,5 +481,6 @@ export type TaskError =
   | HasChildrenError
   | MessageNotFoundError
   | MessageAlreadyAckedError
+  | LlmUnavailableError
   | AgentError
   | CycleScanError

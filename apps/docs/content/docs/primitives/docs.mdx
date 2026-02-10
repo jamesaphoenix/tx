@@ -1,0 +1,279 @@
+---
+title: tx doc
+description: Docs-as-primitives — YAML-on-disk documentation management
+---
+
+## Purpose
+
+`tx doc` manages structured documentation as first-class primitives. Docs are YAML files on disk (`.tx/docs/`) with metadata and links stored in the database. This enables:
+
+- **Version-controlled docs** that live alongside code
+- **Linked doc graphs** connecting overviews, PRDs, and design docs
+- **Rendered markdown** generated from YAML source
+- **Invariant extraction** from design docs for machine-checkable rules
+
+## Doc Kinds
+
+| Kind | Purpose |
+|------|---------|
+| `overview` | Project-level overview (one per project) |
+| `prd` | Product Requirements Document |
+| `design` | Design Document (technical specification) |
+
+## Lifecycle
+
+Docs have two statuses:
+
+```
+changing → locked
+```
+
+- **changing** — editable, can be updated freely
+- **locked** — immutable, must create a new version to make changes
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# Create a new doc
+tx doc add --kind prd --name auth-system --title "Authentication System"
+
+# Edit a doc (opens YAML in $EDITOR)
+tx doc edit auth-system
+
+# Show doc metadata
+tx doc show auth-system
+
+# List all docs
+tx doc list
+tx doc list --kind prd
+tx doc list --status locked
+
+# Render docs to markdown
+tx doc render
+tx doc render auth-system
+
+# Lock a doc (makes it immutable)
+tx doc lock auth-system
+
+# Create a new version (doc must be locked first)
+tx doc version auth-system
+
+# Link two docs
+tx doc link overview auth-system
+
+# Attach a task to a doc
+tx doc attach tx-abc123 auth-system
+
+# Create a design patch
+tx doc patch auth-design auth-patch-001 "Fix auth flow"
+
+# Validate doc graph
+tx doc validate
+
+# Detect drift between YAML and DB
+tx doc drift auth-system
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { DocService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
+
+// Create a doc
+const doc = yield* svc.create({
+  kind: 'prd',
+  name: 'auth-system',
+  title: 'Authentication System',
+  yamlContent: 'kind: prd\ntitle: Authentication System\n...',
+})
+
+// Get a doc
+const doc = yield* svc.get('auth-system')
+
+// Update YAML content
+const updated = yield* svc.update('auth-system', newYamlContent)
+
+// Lock a doc
+const locked = yield* svc.lock('auth-system')
+
+// List docs with filters
+const prds = yield* svc.list({ kind: 'prd' })
+
+// Render to markdown
+const rendered = yield* svc.render('auth-system')
+
+// Link docs
+const link = yield* svc.linkDocs('overview', 'auth-system')
+
+// Get the doc graph
+const graph = yield* svc.getDocGraph()
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_doc_list`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `kind` | `string` | No | Filter by kind (overview, prd, design) |
+| `status` | `string` | No | Filter by status (changing, locked) |
+
+**Tool name:** `tx_doc_show`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Doc name |
+
+**Tool name:** `tx_doc_add`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `kind` | `string` | Yes | Doc kind (overview, prd, design) |
+| `name` | `string` | Yes | Unique doc name |
+| `title` | `string` | Yes | Human-readable title |
+| `yamlContent` | `string` | Yes | YAML content |
+
+**Tool name:** `tx_doc_lock`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Doc name to lock |
+
+**Tool name:** `tx_doc_link`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `fromName` | `string` | Yes | Source doc name |
+| `toName` | `string` | Yes | Target doc name |
+| `linkType` | `string` | No | Link type (auto-inferred from kinds) |
+
+</Tab>
+<Tab value="REST API">
+
+```
+GET    /api/docs                  # List docs (optional ?kind=&status=)
+POST   /api/docs                  # Create a doc
+GET    /api/docs/:name            # Get doc by name
+PATCH  /api/docs/:name            # Update doc YAML content
+POST   /api/docs/:name/lock       # Lock a doc
+POST   /api/docs/link             # Link two docs
+POST   /api/docs/render           # Render docs to markdown
+GET    /api/docs/graph            # Get the doc graph
+```
+
+**Create a doc:**
+
+```bash
+curl -X POST http://localhost:3001/api/docs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "kind": "prd",
+    "name": "auth-system",
+    "title": "Authentication System",
+    "yamlContent": "kind: prd\ntitle: Authentication System\nrequirements:\n  - User login"
+  }'
+```
+
+**List PRDs:**
+
+```bash
+curl http://localhost:3001/api/docs?kind=prd
+```
+
+**Lock a doc:**
+
+```bash
+curl -X POST http://localhost:3001/api/docs/auth-system/lock
+```
+
+**Link two docs:**
+
+```bash
+curl -X POST http://localhost:3001/api/docs/link \
+  -H "Content-Type: application/json" \
+  -d '{"fromName": "overview", "toName": "auth-system"}'
+```
+
+**Get the doc graph:**
+
+```bash
+curl http://localhost:3001/api/docs/graph
+```
+
+</Tab>
+</Tabs>
+
+## YAML Structure
+
+Docs are stored as YAML files in `.tx/docs/`:
+
+```
+.tx/docs/
+  overview.yml          # Project overview
+  prd/
+    auth-system.yml     # PRD
+    data-pipeline.yml
+  design/
+    auth-design.yml     # Design doc
+    auth-patch-001.yml  # Design patch
+  index.yml             # Auto-generated index
+  index.md              # Auto-generated markdown index
+```
+
+Example PRD YAML:
+
+```yaml
+kind: prd
+name: auth-system
+title: Authentication System
+status: changing
+version: 1
+
+problem: Users cannot log in to the application
+solution: Implement JWT-based authentication
+
+requirements:
+  - User registration with email/password
+  - Login with JWT tokens
+  - Password reset flow
+
+acceptance_criteria:
+  - Users can register and log in
+  - Tokens expire after 15 minutes
+  - Refresh token rotation works
+
+invariants:
+  - id: INV-AUTH-001
+    rule: Passwords must be hashed with bcrypt
+    enforcement: integration_test
+    test_ref: test/auth.test.ts
+```
+
+## Doc Graph
+
+Docs form a directed acyclic graph (DAG):
+
+```
+overview ──overview_to_prd──► prd ──prd_to_design──► design
+                                                        │
+                                               design_patch
+                                                        │
+                                                        ▼
+                                                   design-patch
+```
+
+Link types are auto-inferred from doc kinds when not specified explicitly.
+
+## Related Commands
+
+- [`tx invariant`](/docs/primitives/invariants) - Manage machine-checkable invariants
+- [`tx sync`](/docs/primitives/sync) - Export/import tasks and docs
+- [`tx context`](/docs/primitives/context) - Get learnings relevant to a task

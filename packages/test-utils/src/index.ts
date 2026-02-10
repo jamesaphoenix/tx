@@ -108,6 +108,12 @@ export {
   type SharedTestLayerResult
 } from "./helpers/index.js"
 
+// SQLite database factory for tests
+export {
+  createSqliteDatabase,
+  createMigratedSqliteDatabase
+} from "./helpers/index.js"
+
 // Singleton Test Database - ONE DB for entire test suite
 export {
   getSharedTestLayer,

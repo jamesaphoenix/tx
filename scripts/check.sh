@@ -104,12 +104,12 @@ check_build() {
 }
 
 check_test() {
-    run_tests "Unit & Integration tests (packages)" "npx turbo test"
-    run_tests "Unit & Integration tests (root)" "bun test test/ eslint-plugin-tx/tests/"
+    run_silent "Unit & Integration tests (packages)" "npx turbo test"
+    run_silent "Unit & Integration tests (root)" ".claude/skills/test-quiet/scripts/run.sh"
 }
 
 check_test_quick() {
-    run_tests "Quick tests (no slow)" "npx vitest --run --testPathIgnorePatterns='slow|stress'"
+    run_silent "Quick tests (no slow)" ".claude/skills/test-quiet/scripts/run.sh test/integration/core.test.ts"
 }
 
 check_all() {

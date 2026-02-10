@@ -7,38 +7,47 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./database": {
+      "bun": "./src/database/index.ts",
       "types": "./dist/database/index.d.ts",
       "import": "./dist/database/index.js"
     },
     "./factories": {
+      "bun": "./src/factories/index.ts",
       "types": "./dist/factories/index.d.ts",
       "import": "./dist/factories/index.js"
     },
     "./fixtures": {
+      "bun": "./src/fixtures/index.ts",
       "types": "./dist/fixtures/index.d.ts",
       "import": "./dist/fixtures/index.js"
     },
     "./llm-cache": {
+      "bun": "./src/llm-cache/index.ts",
       "types": "./dist/llm-cache/index.d.ts",
       "import": "./dist/llm-cache/index.js"
     },
     "./mocks": {
+      "bun": "./src/mocks/index.ts",
       "types": "./dist/mocks/index.d.ts",
       "import": "./dist/mocks/index.js"
     },
     "./helpers": {
+      "bun": "./src/helpers/index.ts",
       "types": "./dist/helpers/index.d.ts",
       "import": "./dist/helpers/index.js"
     },
     "./setup": {
+      "bun": "./src/setup/index.ts",
       "types": "./dist/setup/index.d.ts",
       "import": "./dist/setup/index.js"
     },
     "./chaos": {
+      "bun": "./src/chaos/index.ts",
       "types": "./dist/chaos/index.d.ts",
       "import": "./dist/chaos/index.js"
     }
@@ -51,7 +60,7 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "bun test src/ test/"
+    "test": "bunx --bun vitest run"
   },
   "dependencies": {
     "@jamesaphoenix/tx-core": "*",

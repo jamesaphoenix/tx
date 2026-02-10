@@ -31,6 +31,8 @@ import { stats } from "./commands/stats.js"
 import { bulk } from "./commands/bulk.js"
 import { dashboard } from "./commands/dashboard.js"
 import { send, inbox, ack, ackAll, outboxPending, outboxGc } from "./commands/outbox.js"
+import { doc } from "./commands/doc.js"
+import { invariant } from "./commands/invariant.js"
 
 // --- Argv parsing helpers ---
 
@@ -163,6 +165,10 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "outbox:pending": outboxPending,
   "outbox:gc": outboxGc,
 
+  // Doc commands (DD-023 docs-as-primitives)
+  doc,
+  invariant,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -217,6 +223,20 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
+  if (command === "doc" && positional[0]) {
+    const subcommandKey = `doc ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (command === "invariant" && positional[0]) {
+    const subcommandKey = `invariant ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   // Check if we have a command with specific help
   if (command !== "help" && commandHelp[command]) {
     console.log(commandHelp[command])
@@ -247,6 +267,20 @@ if (command === "help") {
   }
   if (subcommand === "bulk" && positional[1]) {
     const subcommandKey = `bulk ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "doc" && positional[1]) {
+    const subcommandKey = `doc ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "invariant" && positional[1]) {
+    const subcommandKey = `invariant ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -314,6 +348,10 @@ const errorExitCodes: Record<string, number> = {
   ExtractionUnavailableError: 1,
   MessageNotFoundError: 2,
   MessageAlreadyAckedError: 1,
+  DocNotFoundError: 2,
+  DocLockedError: 1,
+  InvalidDocYamlError: 1,
+  InvariantNotFoundError: 2,
 }
 
 const handled = runnable.pipe(

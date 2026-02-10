@@ -61,3 +61,6 @@ CREATE TABLE IF NOT EXISTS invariant_checks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_invariant_checks_invariant_id ON invariant_checks(invariant_id);
+
+-- Record this migration
+INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (22, datetime('now'));

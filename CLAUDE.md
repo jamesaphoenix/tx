@@ -35,7 +35,7 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 │  tx primitives                                          │
 │                                                         │
 │   tx ready     tx done      tx context    tx learn      │
-│   tx claim     tx block     tx handoff    tx sync       │
+│   tx send      tx block     tx inbox      tx sync       │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -53,11 +53,8 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | Primitive | Purpose |
 |-----------|---------|
 | `tx ready` | Get next workable task (unblocked, highest priority) |
-| `tx claim <id>` | Mark task as being worked by an agent (prevents collision) |
 | `tx done <id>` | Complete task, potentially unblocking others |
 | `tx block <id> <blocker>` | Declare dependencies |
-| `tx handoff <id> --to <agent>` | Transfer task with context |
-| `tx checkpoint <id> --note "..."` | Save progress without completing |
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
 | `tx learning:add` | Record knowledge for future agents |
 | `tx send <channel> <content>` | Send a message to an agent channel |
@@ -65,7 +62,6 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx ack <id>` | Acknowledge a message |
 | `tx sync export` | Persist to git-friendly JSONL |
 | `tx sync claude` | One-way push tasks to Claude Code team directory |
-| `tx sync codex` | One-way push tasks to Codex (planned) |
 
 ### Example Loops (not THE loop)
 
@@ -81,7 +77,7 @@ done
 ```bash
 # Parallel: N agents pulling from queue
 for i in {1..5}; do
-  (while task=$(tx claim --next); do
+  (while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
     claude "Complete $task" && tx done $task
   done) &
 done
@@ -108,7 +104,7 @@ tx done $task
 ├─────────────────────────────────────────┤
 │  Task Management                        │  ← tx core (ready, block, done)
 ├─────────────────────────────────────────┤
-│  Memory / Knowledge Graph               │  ← tx learnings + context
+│  Memory                                 │  ← tx learnings + context
 ├─────────────────────────────────────────┤
 │  Storage (Git + SQLite)                 │  ← Persistence layer
 └─────────────────────────────────────────┘
@@ -260,7 +256,7 @@ All git commits MUST follow the [Conventional Commits](https://www.conventionalc
 
 **Examples:**
 ```bash
-feat(cli): add tx claim command for task locking
+feat(cli): add tx send command for agent messaging
 fix(api): prevent path traversal in sync routes
 refactor(core): extract shared validation utilities
 test(mcp): add integration tests for sync tools
@@ -443,14 +439,19 @@ tx learning:add <content>   # Store
 tx learning:search <query>  # Find
 tx context <task-id>        # Contextual retrieval
 
-# Coordination
-tx claim <id>               # Prevent collisions
-tx handoff <id> --to <agent>
-tx checkpoint <id> --note "..."
+# Messages
+tx send <channel> <msg>     # Send to channel
+tx inbox <channel>          # Read messages
+tx ack <id>                 # Acknowledge
+
+# Docs
+tx doc add <title>          # Create a doc
+tx invariant list           # List invariants
 
 # Sync
 tx sync export              # SQLite → JSONL (git-friendly)
 tx sync import              # JSONL → SQLite
+tx sync claude              # Push to Claude Code team dir
 ```
 
 ---

@@ -165,31 +165,31 @@ if $RUN_PACKAGES; then
     echo ""
 
     profile_command "pkg/dashboard" \
-        "bun vitest --run 2>&1" \
+        "bunx --bun vitest run 2>&1" \
         "$PROJECT_DIR/apps/dashboard"
 
     profile_command "pkg/api-server" \
-        "bun test 2>&1" \
+        "bunx --bun vitest run 2>&1" \
         "$PROJECT_DIR/apps/api-server"
 
     profile_command "pkg/cli" \
-        "bun vitest run --passWithNoTests 2>&1" \
+        "bunx --bun vitest run --passWithNoTests 2>&1" \
         "$PROJECT_DIR/apps/cli"
 
     profile_command "pkg/agent-sdk" \
-        "bun vitest run --passWithNoTests 2>&1" \
+        "bunx --bun vitest run --passWithNoTests 2>&1" \
         "$PROJECT_DIR/apps/agent-sdk"
 
     profile_command "pkg/mcp-server" \
-        "bun vitest run --passWithNoTests 2>&1" \
+        "bunx --bun vitest run --passWithNoTests 2>&1" \
         "$PROJECT_DIR/apps/mcp-server"
 
     profile_command "pkg/core" \
-        "bun vitest run --passWithNoTests 2>&1" \
+        "bunx --bun vitest run --passWithNoTests 2>&1" \
         "$PROJECT_DIR/packages/core"
 
     profile_command "pkg/test-utils" \
-        "bun vitest run --passWithNoTests 2>&1" \
+        "bunx --bun vitest run --passWithNoTests 2>&1" \
         "$PROJECT_DIR/packages/test-utils"
 
     echo ""
@@ -205,46 +205,46 @@ if $RUN_ROOT; then
     echo ""
 
     profile_command "group/embedding-ml" \
-        "bun test test/integration/embedding.test.ts test/integration/retrieval-e2e.test.ts test/integration/retriever.test.ts test/integration/reranker.test.ts test/integration/query-expansion.test.ts test/integration/scoring-components.test.ts test/integration/diversifier.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/embedding.test.ts test/integration/retrieval-e2e.test.ts test/integration/retriever.test.ts test/integration/reranker.test.ts test/integration/query-expansion.test.ts test/integration/scoring-components.test.ts test/integration/diversifier.test.ts 2>&1"
 
     profile_command "group/sync" \
-        "bun test test/integration/sync.test.ts test/integration/auto-sync.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/sync.test.ts test/integration/auto-sync.test.ts 2>&1"
 
     profile_command "group/daemon" \
-        "bun test test/integration/daemon.test.ts test/integration/daemon-cli.test.ts test/integration/daemon-service.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/daemon.test.ts test/integration/daemon-cli.test.ts test/integration/daemon-service.test.ts 2>&1"
 
     profile_command "group/anchor" \
-        "bun test test/integration/anchor.test.ts test/integration/anchor-service.test.ts test/integration/anchor-verification.test.ts test/integration/anchor-invalidation.test.ts test/integration/anchor-soft-delete-restore.test.ts test/integration/anchor-ttl-cache.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/anchor.test.ts test/integration/anchor-service.test.ts test/integration/anchor-verification.test.ts test/integration/anchor-invalidation.test.ts test/integration/anchor-soft-delete-restore.test.ts test/integration/anchor-ttl-cache.test.ts 2>&1"
 
     profile_command "group/graph" \
-        "bun test test/integration/graph-schema.test.ts test/integration/graph-expansion.test.ts test/integration/edge-repo.test.ts test/integration/edge-service.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/graph-schema.test.ts test/integration/graph-expansion.test.ts test/integration/edge-repo.test.ts test/integration/edge-service.test.ts 2>&1"
 
     profile_command "group/worker" \
-        "bun test test/integration/worker-process.test.ts test/integration/worker-repo.test.ts test/integration/worker-service.test.ts test/integration/worker-orchestration-e2e.test.ts test/integration/run.test.ts test/integration/run-worker.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/worker-process.test.ts test/integration/worker-repo.test.ts test/integration/worker-service.test.ts test/integration/worker-orchestration-e2e.test.ts test/integration/run.test.ts test/integration/run-worker.test.ts 2>&1"
 
     profile_command "group/core-task" \
-        "bun test test/integration/core.test.ts test/integration/claim-repo.test.ts test/integration/claim-service.test.ts test/integration/concurrency-breaker.test.ts test/integration/attempt.test.ts test/integration/deduplication.test.ts test/integration/compaction.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/core.test.ts test/integration/claim-repo.test.ts test/integration/claim-service.test.ts test/integration/concurrency-breaker.test.ts test/integration/attempt.test.ts test/integration/deduplication.test.ts test/integration/compaction.test.ts 2>&1"
 
     profile_command "group/learning" \
-        "bun test test/integration/learning.test.ts test/integration/file-learning.test.ts test/integration/file-watcher.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/learning.test.ts test/integration/file-learning.test.ts test/integration/file-watcher.test.ts 2>&1"
 
     profile_command "group/mcp" \
-        "bun test test/integration/mcp.test.ts test/integration/interface-parity.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/mcp.test.ts test/integration/interface-parity.test.ts 2>&1"
 
     profile_command "group/cli-tests" \
-        "bun test test/integration/cli-commands.test.ts test/integration/cli-graph.test.ts test/integration/cli-learning.test.ts test/integration/cli-test-cache.test.ts test/integration/cli-try.test.ts test/integration/hooks.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/cli-commands.test.ts test/integration/cli-graph.test.ts test/integration/cli-learning.test.ts test/integration/cli-test-cache.test.ts test/integration/cli-try.test.ts test/integration/hooks.test.ts 2>&1"
 
     profile_command "group/chaos" \
-        "bun test test/chaos/ 2>&1"
+        "bunx --bun vitest run test/chaos/ 2>&1"
 
     profile_command "group/golden-paths" \
-        "bun test test/golden-paths/ 2>&1"
+        "bunx --bun vitest run test/golden-paths/ 2>&1"
 
     profile_command "group/unit" \
-        "bun test test/unit/ 2>&1"
+        "bunx --bun vitest run test/unit/ 2>&1"
 
     profile_command "group/eslint-plugin" \
-        "bun test eslint-plugin-tx/tests/ 2>&1"
+        "bunx --bun vitest run eslint-plugin-tx/tests/ 2>&1"
 
     echo ""
 fi
@@ -259,33 +259,33 @@ if $RUN_INDIVIDUAL; then
     echo ""
 
     profile_command "file/daemon.test" \
-        "bun test test/integration/daemon.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/daemon.test.ts 2>&1"
 
     profile_command "file/mcp.test" \
-        "bun test test/integration/mcp.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/mcp.test.ts 2>&1"
 
     profile_command "file/sync.test" \
-        "bun test test/integration/sync.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/sync.test.ts 2>&1"
 
     profile_command "file/retrieval-e2e.test" \
-        "bun test test/integration/retrieval-e2e.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/retrieval-e2e.test.ts 2>&1"
 
     profile_command "file/embedding.test" \
-        "bun test test/integration/embedding.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/embedding.test.ts 2>&1"
 
     profile_command "file/anchor-verification.test" \
-        "bun test test/integration/anchor-verification.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/anchor-verification.test.ts 2>&1"
 
     if $INCLUDE_EMBEDDING; then
         profile_command "file/embedding-real.test (MODEL)" \
-            "SKIP_REAL_EMBEDDING_TESTS= bun test test/integration/embedding-real.test.ts 2>&1"
+            "SKIP_REAL_EMBEDDING_TESTS= bunx --bun vitest run test/integration/embedding-real.test.ts 2>&1"
     else
         printf "  ${YELLOW}⊘${NC} %-45s %s\n" "file/embedding-real.test (MODEL)" "skipped (use --embedding)"
     fi
 
     if $INCLUDE_STRESS; then
         profile_command "file/stress.test (STRESS)" \
-            "STRESS=1 bun test test/chaos/stress.test.ts 2>&1"
+            "STRESS=1 bunx --bun vitest run test/chaos/stress.test.ts 2>&1"
     else
         printf "  ${YELLOW}⊘${NC} %-45s %s\n" "file/stress.test (STRESS)" "skipped (use --stress)"
     fi

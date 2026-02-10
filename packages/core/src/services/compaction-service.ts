@@ -5,7 +5,7 @@
  * See DD-006: LLM Integration for implementation details
  */
 
-import { Context, Effect, Layer, Config, Option } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { writeFileSync, existsSync, readFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { SqliteClient } from "../db.js"
@@ -13,22 +13,7 @@ import { DatabaseError, ExtractionUnavailableError, ValidationError } from "../e
 import { CompactionRepository, type CompactionLogEntry } from "../repo/compaction-repo.js"
 import { rowToTask, type TaskRow } from "../mappers/task.js"
 import type { Task } from "@jamesaphoenix/tx-types"
-
-// Types for Anthropic SDK (imported dynamically)
-interface AnthropicMessage {
-  content: Array<{ type: string; text?: string }>
-  usage?: { input_tokens?: number; output_tokens?: number }
-}
-
-interface AnthropicClient {
-  messages: {
-    create(params: {
-      model: string
-      max_tokens: number
-      messages: Array<{ role: string; content: string }>
-    }): Promise<AnthropicMessage>
-  }
-}
+import { LlmService } from "./llm-service.js"
 
 /**
  * Output mode for compaction learnings.
@@ -77,38 +62,6 @@ export interface CompactionPreview {
 }
 
 /**
- * Parse LLM JSON response, handling common formatting issues.
- * Robust parser following DD-006 patterns.
- */
-const parseLlmJson = <T>(raw: string): T | null => {
-  // Step 1: Try direct parse
-  try { return JSON.parse(raw) } catch { /* continue */ }
-
-  // Step 2: Strip markdown code fences
-  const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)```/)
-  if (fenceMatch && fenceMatch[1]) {
-    try { return JSON.parse(fenceMatch[1].trim()) } catch { /* continue */ }
-  }
-
-  // Step 3: Find first [ or { and parse from there
-  const jsonStart = raw.search(/[[{]/)
-  if (jsonStart >= 0) {
-    const candidate = raw.slice(jsonStart)
-    try { return JSON.parse(candidate) } catch { /* continue */ }
-
-    // Step 4: Find matching bracket and extract
-    const openChar = candidate[0]
-    const closeChar = openChar === "[" ? "]" : "}"
-    const lastClose = candidate.lastIndexOf(closeChar)
-    if (lastClose > 0) {
-      try { return JSON.parse(candidate.slice(0, lastClose + 1)) } catch { /* continue */ }
-    }
-  }
-
-  return null
-}
-
-/**
  * LLM prompt template for compaction.
  */
 const COMPACTION_PROMPT = `Analyze these completed tasks and generate two outputs:
@@ -139,6 +92,17 @@ interface CompactionLlmResponse {
   learnings: string
 }
 
+/** JSON Schema for structured output from the compaction LLM call */
+const COMPACTION_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    learnings: { type: "string" },
+  },
+  required: ["summary", "learnings"],
+  additionalProperties: false,
+} as const
+
 /**
  * Validate that a target file path does not escape the project directory
  * via path traversal (e.g. "../../etc/passwd" or absolute paths outside
@@ -161,20 +125,19 @@ const validateProjectPath = (targetFile: string): Effect.Effect<string, Validati
  * CompactionService provides compaction operations for completed tasks.
  *
  * Design: Following DD-006 patterns for LLM integration with graceful degradation.
- * When ANTHROPIC_API_KEY is not set, compact() fails gracefully while preview()
- * and getSummaries() still work.
+ * Uses centralized LlmService for all LLM calls.
  */
 export class CompactionService extends Context.Tag("CompactionService")<
   CompactionService,
   {
     /**
      * Compact tasks completed before the given date.
-     * Requires ANTHROPIC_API_KEY to be set.
+     * Requires an LLM backend to be available.
      */
     readonly compact: (options: CompactionOptions) => Effect.Effect<CompactionResult, ExtractionUnavailableError | DatabaseError | ValidationError>
     /**
      * Preview what would be compacted without LLM processing.
-     * Works without ANTHROPIC_API_KEY.
+     * Works without any LLM backend.
      */
     readonly preview: (before: Date) => Effect.Effect<readonly Task[], DatabaseError>
     /**
@@ -186,7 +149,7 @@ export class CompactionService extends Context.Tag("CompactionService")<
      */
     readonly exportLearnings: (learnings: string, targetFile: string) => Effect.Effect<void, DatabaseError | ValidationError>
     /**
-     * Check if compaction functionality is available (API key set).
+     * Check if compaction functionality is available (LLM backend available).
      */
     readonly isAvailable: () => Effect.Effect<boolean>
   }
@@ -194,7 +157,7 @@ export class CompactionService extends Context.Tag("CompactionService")<
 
 /**
  * Noop implementation - returns failures for LLM operations.
- * Used for testing and when no API key is configured.
+ * Used for testing and when no LLM backend is configured.
  */
 export const CompactionServiceNoop = Layer.effect(
   CompactionService,
@@ -205,10 +168,6 @@ export const CompactionServiceNoop = Layer.effect(
     const findCompactableTasks = (before: Date): Effect.Effect<readonly Task[], DatabaseError> =>
       Effect.try({
         try: () => {
-          // Find tasks that are:
-          // 1. Status = 'done'
-          // 2. completed_at < before
-          // 3. All children are also done (subquery check)
           const beforeStr = before.toISOString()
           const rows = db.prepare(`
             SELECT t.*
@@ -231,7 +190,7 @@ export const CompactionServiceNoop = Layer.effect(
     return {
       compact: (_options) =>
         Effect.fail(new ExtractionUnavailableError({
-          reason: "Task compaction requires ANTHROPIC_API_KEY. Set it as an environment variable to enable this feature."
+          reason: "Task compaction requires an LLM backend. Ensure Agent SDK or ANTHROPIC_API_KEY is available."
         })),
 
       preview: (before) => findCompactableTasks(before),
@@ -263,54 +222,18 @@ export const CompactionServiceNoop = Layer.effect(
 )
 
 /**
- * Live implementation with Anthropic LLM support.
+ * Live implementation using centralized LlmService.
  */
 export const CompactionServiceLive = Layer.effect(
   CompactionService,
   Effect.gen(function* () {
     const compactionRepo = yield* CompactionRepository
     const db = yield* SqliteClient
-
-    // Read API key from environment (optional)
-    const apiKeyOption = yield* Config.string("ANTHROPIC_API_KEY").pipe(Effect.option)
-    const hasApiKey = Option.isSome(apiKeyOption) && apiKeyOption.value.trim().length > 0
-    const apiKey = hasApiKey ? apiKeyOption.value : null
-
-    // Lazy-load Anthropic client
-    let client: AnthropicClient | null = null
-
-    const ensureClient = Effect.gen(function* () {
-      if (!apiKey) {
-        return yield* Effect.fail(new ExtractionUnavailableError({
-          reason: "Task compaction requires ANTHROPIC_API_KEY. Set it as an environment variable to enable this feature."
-        }))
-      }
-
-      if (client) return client
-
-      // Dynamic import of Anthropic SDK (optional peer dependency)
-      const Anthropic = yield* Effect.tryPromise({
-        try: async () => {
-          // @ts-ignore - @anthropic-ai/sdk is an optional peer dependency
-          const mod = await import("@anthropic-ai/sdk")
-          return mod.default
-        },
-        catch: () => new ExtractionUnavailableError({
-          reason: "@anthropic-ai/sdk is not installed"
-        })
-      })
-
-      client = new Anthropic({ apiKey }) as unknown as AnthropicClient
-      return client
-    })
+    const llmService = yield* LlmService
 
     const findCompactableTasks = (before: Date): Effect.Effect<readonly Task[], DatabaseError> =>
       Effect.try({
         try: () => {
-          // Find tasks that are:
-          // 1. Status = 'done'
-          // 2. completed_at < before
-          // 3. All children are also done (subquery check)
           const beforeStr = before.toISOString()
           const rows = db.prepare(`
             SELECT t.*
@@ -332,8 +255,6 @@ export const CompactionServiceLive = Layer.effect(
 
     const generateSummary = (tasks: readonly Task[]): Effect.Effect<CompactionLlmResponse, ExtractionUnavailableError> =>
       Effect.gen(function* () {
-        const anthropic = yield* ensureClient
-
         // Build task list for prompt
         const taskList = tasks.map(t =>
           `- ${t.id}: ${t.title} (completed: ${t.completedAt?.toISOString().split("T")[0] ?? "unknown"})\n  ${t.description || "(no description)"}`
@@ -341,39 +262,19 @@ export const CompactionServiceLive = Layer.effect(
 
         const prompt = COMPACTION_PROMPT.replace("{tasks}", taskList)
 
-        const response = yield* Effect.tryPromise({
-          try: () => anthropic.messages.create({
-            model: "claude-haiku-4-20250514",
-            max_tokens: 2048,
-            messages: [{
-              role: "user",
-              content: prompt
-            }]
-          }),
-          catch: (e) => new ExtractionUnavailableError({
-            reason: `Anthropic API call failed: ${String(e)}`
-          })
-        })
+        const result = yield* llmService.complete({
+          prompt,
+          model: "claude-haiku-4-20250514",
+          maxTokens: 2048,
+          jsonSchema: COMPACTION_SCHEMA,
+        }).pipe(
+          Effect.mapError((e) => new ExtractionUnavailableError({
+            reason: `LLM completion failed: ${e.reason}`
+          }))
+        )
 
-        // Extract text from response
-        const textContent = response.content.find(c => c.type === "text")
-        if (!textContent || !textContent.text) {
-          return {
-            summary: "No summary generated",
-            learnings: "- No learnings extracted"
-          }
-        }
-
-        // Parse the JSON response
-        const parsed = parseLlmJson<CompactionLlmResponse>(textContent.text)
-        if (!parsed || !parsed.summary || !parsed.learnings) {
-          // Fallback: treat raw response as summary/learnings
-          return {
-            summary: textContent.text.slice(0, 1000),
-            learnings: "- No structured learnings extracted"
-          }
-        }
-
+        // Structured outputs guarantee valid JSON matching the schema
+        const parsed = JSON.parse(result.text) as CompactionLlmResponse
         return parsed
       })
 
@@ -437,8 +338,6 @@ export const CompactionServiceLive = Layer.effect(
           // CRITICAL: Export learnings to file FIRST, before database transaction.
           // This ordering prevents a false positive where the database records
           // learnings_exported_to but the file export actually failed.
-          // If file export fails, we fail loudly here before any DB changes.
-          // See task tx-b2aa12e1 and regression test in compaction.test.ts.
           if (shouldExportToMarkdown) {
             yield* exportLearningsToFile(learnings, outputFile)
           }
@@ -449,9 +348,6 @@ export const CompactionServiceLive = Layer.effect(
               db.exec("BEGIN IMMEDIATE")
               try {
                 if (shouldStoreInDatabase) {
-                  // Insert compaction log
-                  // When outputMode is 'both', store learnings in DB as backup
-                  // When outputMode is 'database', learnings are stored only in DB
                   const now = new Date().toISOString()
                   db.prepare(
                     `INSERT INTO compaction_log (compacted_at, task_count, summary, task_ids, learnings_exported_to, learnings)
@@ -477,7 +373,7 @@ export const CompactionServiceLive = Layer.effect(
                 db.exec("COMMIT")
               } catch (e) {
                 db.exec("ROLLBACK")
-                throw e
+                throw e // eslint-disable-line tx/no-throw-in-services -- re-throw for Effect.try catch
               }
             },
             catch: (cause) => new DatabaseError({ cause })
@@ -499,26 +395,28 @@ export const CompactionServiceLive = Layer.effect(
 
       exportLearnings: exportLearningsToFile,
 
-      isAvailable: () => Effect.succeed(hasApiKey)
+      isAvailable: () => llmService.isAvailable()
     }
   })
 )
 
 /**
- * Auto-detecting layer that selects the appropriate backend based on environment.
+ * Auto-detecting layer that selects the appropriate backend based on LlmService availability.
  *
  * Priority:
- * 1. ANTHROPIC_API_KEY set -> Use Live implementation
- * 2. Not set -> Use Noop (graceful degradation)
+ * 1. LlmService available -> Use Live implementation
+ * 2. Not available -> Use Noop (graceful degradation)
  */
 export const CompactionServiceAuto = Layer.unwrapEffect(
   Effect.gen(function* () {
-    const anthropicKey = yield* Config.string("ANTHROPIC_API_KEY").pipe(Effect.option)
+    const opt = yield* Effect.serviceOption(LlmService).pipe(
+      Effect.catchAll(() => Effect.succeed({ _tag: "None" as const }))
+    )
 
-    if (Option.isSome(anthropicKey) && anthropicKey.value.trim().length > 0) {
-      return CompactionServiceLive
+    if (opt._tag === "Some") {
+      const available = yield* opt.value.isAvailable()
+      if (available) return CompactionServiceLive
     }
-
     return CompactionServiceNoop
   })
 )

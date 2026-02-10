@@ -10,7 +10,7 @@
  * Uses SHA256-based fixture IDs per Rule 3.
  *
  * OPTIMIZED: Uses global singleton test layer per RULE 8 for memory efficiency.
- * Database reset is handled via afterEach hooks in each describe block (bun test doesn't load vitest.setup.ts).
+ * Database reset is handled via afterEach hooks in each describe block.
  * MCP/API runtime tests use their own :memory: databases to test initialization APIs.
  */
 
@@ -57,7 +57,7 @@ void FIXTURES
 // =============================================================================
 
 describe("Runtime Integration: @tx/core", () => {
-  // Reset shared DB between tests for isolation (bun test doesn't load vitest.setup.ts)
+  // Reset shared DB between tests for isolation
   afterEach(async () => {
     const shared = await getSharedTestLayer()
     await shared.reset()

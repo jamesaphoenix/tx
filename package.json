@@ -34,10 +34,12 @@
     "build:binary": "bun run --cwd apps/cli build:binary",
     "build:binary:all": "bun run --cwd apps/cli build:all",
     "dev": "bun apps/cli/src/cli.ts",
-    "test": "turbo test && bun test test/ eslint-plugin-tx/tests/",
+    "test": ".claude/skills/test-quiet/scripts/run.sh",
+    "test:verbose": "turbo test && bunx --bun vitest run",
     "test:packages": "turbo test",
-    "test:root": "bun test test/ eslint-plugin-tx/tests/",
-    "test:watch": "bun test --watch test/ eslint-plugin-tx/tests/",
+    "test:root": ".claude/skills/test-quiet/scripts/run.sh",
+    "test:flaky": ".claude/skills/test-quiet/scripts/run.sh --flaky",
+    "test:watch": "bunx --bun vitest --watch",
     "lint": "turbo lint",
     "lint:packages": "turbo lint",
     "lint:fix": "eslint apps/ packages/ --fix",
@@ -48,7 +50,7 @@
     "check": "./scripts/check.sh --all",
     "check:quick": "./scripts/check.sh --quick",
     "check:ci": "./scripts/check-ci.sh",
-    "validate": "bun run build && bun test && bun link",
+    "validate": "bun run build && .claude/skills/test-quiet/scripts/run.sh && bun link",
     "prepare": "husky"
   },
   "dependencies": {
@@ -57,6 +59,7 @@
     "@effect/platform-node": "^0.104.1",
     "@modelcontextprotocol/sdk": "^1.25.3",
     "effect": "^3.19.15",
+    "esbuild": "^0.27.3",
     "node-llama-cpp": "^3.15.1"
   },
   "devDependencies": {

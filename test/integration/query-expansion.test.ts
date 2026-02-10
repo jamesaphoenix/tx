@@ -77,7 +77,8 @@ describe("QueryExpansionService", () => {
         }).pipe(Effect.provide(layer))
       )
 
-      // LlmServiceNoop returns empty string, so no expansion
+      // QueryExpansionServiceLive uses Effect.either for graceful degradation:
+      // LlmServiceNoop.complete() fails, so it falls back to returning the original query
       expect(result.original).toBe("test query")
       expect(result.expanded).toEqual(["test query"])
       expect(result.wasExpanded).toBe(false)

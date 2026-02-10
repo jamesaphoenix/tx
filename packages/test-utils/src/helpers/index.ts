@@ -24,6 +24,12 @@ export {
   type SharedTestLayerResult
 } from "./shared-test-layer.js"
 
+// SQLite database factory for tests
+export {
+  createSqliteDatabase,
+  createMigratedSqliteDatabase
+} from "./sqlite-factory.js"
+
 // TODO: Implement temp file helpers
 // export { createTempDir, writeTestTypeScriptFile, createTestSourceFiles } from './temp-files.js'
 // export type { TempDir } from './temp-files.js'

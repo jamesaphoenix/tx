@@ -17,7 +17,7 @@ You are an implementation agent for the tx project.
 3. Run `tx context <id>` to get relevant learnings before starting
 4. Read existing code to match patterns exactly
 5. Implement the task
-6. Run **targeted tests only** — test the specific files you changed. NEVER run the full test suite (`bun test` with no args, or `bun test test/integration/ test/golden-paths/ test/chaos/ test/unit/`). Instead run specific test files, e.g. `bun test test/integration/core.test.ts`
+6. Run **targeted tests only** — test the specific files you changed. NEVER run the full test suite (`bunx --bun vitest run` with no args). Instead run specific test files, e.g. `bunx --bun vitest run test/integration/core.test.ts`
 7. Mark complete: `tx done <id>`
 8. Record learnings: `tx learning:add "<what you learned>" --source-ref <id>`
 

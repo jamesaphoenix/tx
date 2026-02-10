@@ -1,0 +1,189 @@
+---
+title: tx invariant
+description: Machine-checkable rules extracted from design docs
+---
+
+## Purpose
+
+Invariants are machine-checkable rules extracted from design documents. They bridge the gap between documentation and enforcement — each invariant has a defined enforcement mechanism (integration test, linter, or LLM-as-judge) and an audit trail of check results.
+
+## Enforcement Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `integration_test` | Verified by running a test | `test/auth.test.ts` |
+| `linter` | Verified by a lint rule | `tx/require-taskwithdeps-return` |
+| `llm_as_judge` | Verified by LLM evaluation | `prompts/check-auth.md` |
+
+## Invariant IDs
+
+Invariants use a structured ID format: `INV-[A-Z0-9-]+`
+
+Examples: `INV-AUTH-001`, `INV-DB-SCHEMA-002`, `INV-API-RESPONSE-003`
+
+## Audit Trail
+
+Every invariant check is recorded with:
+
+- Whether it passed or failed
+- Optional details (error messages, test output)
+- Timestamp and duration
+
+This creates an audit trail showing when invariants were last verified and their pass/fail history.
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# List all invariants
+tx invariant list
+tx invariant list --subsystem auth
+tx invariant list --enforcement integration_test
+
+# Show invariant details
+tx invariant show INV-AUTH-001
+
+# Record a check result
+tx invariant record INV-AUTH-001 --passed
+tx invariant record INV-AUTH-001 --failed --details "bcrypt not used in signup"
+
+# Sync invariants from YAML docs into DB
+tx invariant sync
+tx invariant sync --doc auth-design
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { DocService } from '@jamesaphoenix/tx-core'
+import { Effect } from 'effect'
+
+// List invariants
+const invariants = yield* svc.listInvariants()
+const authInvariants = yield* svc.listInvariants({ subsystem: 'auth' })
+const testInvariants = yield* svc.listInvariants({ enforcement: 'integration_test' })
+
+// Record a check
+const check = yield* svc.recordInvariantCheck(
+  'INV-AUTH-001',
+  true,       // passed
+  'All tests pass',  // details
+  1200        // duration in ms
+)
+
+// Sync invariants from YAML
+const synced = yield* svc.syncInvariants()       // all docs
+const synced = yield* svc.syncInvariants('auth-design')  // specific doc
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_invariant_list`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `subsystem` | `string` | No | Filter by subsystem |
+| `enforcement` | `string` | No | Filter by enforcement type |
+
+**Tool name:** `tx_invariant_show`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `id` | `string` | Yes | Invariant ID (e.g., `INV-AUTH-001`) |
+
+**Tool name:** `tx_invariant_record`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `invariantId` | `string` | Yes | Invariant ID |
+| `passed` | `boolean` | Yes | Whether the check passed |
+| `details` | `string` | No | Check details or error message |
+| `durationMs` | `number` | No | Check duration in milliseconds |
+
+**Tool name:** `tx_invariant_sync`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `docName` | `string` | No | Sync from specific doc (default: all) |
+
+</Tab>
+<Tab value="REST API">
+
+Invariant management is accessed through the docs API endpoints and the CLI/MCP tools. The REST API provides doc-level operations that include invariant data.
+
+```bash
+# Get the doc graph (includes invariant counts)
+curl http://localhost:3001/api/docs/graph
+
+# Get a doc (invariant count included in metadata)
+curl http://localhost:3001/api/docs/auth-design
+```
+
+</Tab>
+</Tabs>
+
+## Defining Invariants in YAML
+
+Invariants are defined in the `invariants` section of a design doc YAML:
+
+```yaml
+kind: design
+name: auth-design
+title: Authentication Design
+
+invariants:
+  - id: INV-AUTH-001
+    rule: Passwords must be hashed with bcrypt before storage
+    enforcement: integration_test
+    subsystem: auth
+    test_ref: test/auth.test.ts
+
+  - id: INV-AUTH-002
+    rule: JWT tokens must expire within 15 minutes
+    enforcement: integration_test
+    subsystem: auth
+    test_ref: test/jwt.test.ts
+
+  - id: INV-AUTH-003
+    rule: Login endpoints must be rate-limited
+    enforcement: linter
+    subsystem: auth
+    lint_rule: security/rate-limit-required
+
+  - id: INV-AUTH-004
+    rule: Auth error messages must not reveal user existence
+    enforcement: llm_as_judge
+    subsystem: auth
+    prompt_ref: prompts/check-auth-errors.md
+```
+
+## Syncing Invariants
+
+Running `tx invariant sync` reads the `invariants` array from each doc's YAML and upserts them into the database. Invariants that are no longer present in the YAML are marked as `deprecated`.
+
+```bash
+# Sync all docs
+tx invariant sync
+
+# Sync a specific doc
+tx invariant sync --doc auth-design
+```
+
+## Invariant Statuses
+
+| Status | Description |
+|--------|-------------|
+| `active` | Currently enforced |
+| `deprecated` | No longer in YAML, kept for audit trail |
+
+## Related Commands
+
+- [`tx doc`](/docs/primitives/docs) - Manage documentation
+- [`tx doc validate`](/docs/primitives/docs) - Validate the doc graph
+- [`tx doc drift`](/docs/primitives/docs) - Detect drift between YAML and DB

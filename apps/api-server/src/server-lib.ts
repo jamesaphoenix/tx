@@ -11,7 +11,7 @@ import { HttpApiBuilder } from "@effect/platform"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { Layer } from "effect"
 import { createServer } from "node:http"
-import { makeAppLayer } from "@jamesaphoenix/tx-core"
+import { makeAppLayer, LlmServiceNoop } from "@jamesaphoenix/tx-core"
 import { TasksLive } from "./routes/tasks.js"
 import { HealthLive } from "./routes/health.js"
 import { LearningsLive } from "./routes/learnings.js"
@@ -19,6 +19,7 @@ import { RunsLive } from "./routes/runs.js"
 import { SyncLive } from "./routes/sync.js"
 import { MessagesLive } from "./routes/messages.js"
 import { CyclesLive } from "./routes/cycles.js"
+import { DocsLive } from "./routes/docs.js"
 import { TxApi } from "./api.js"
 import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
@@ -39,6 +40,7 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(SyncLive),
   Layer.provide(MessagesLive),
   Layer.provide(CyclesLive),
+  Layer.provide(DocsLive),
 )
 
 // -----------------------------------------------------------------------------
@@ -68,6 +70,7 @@ export const makeServerLive = (options: {
     Layer.provide(HttpApiBuilder.middleware(authMiddleware)),
     Layer.provide(ApiLive),
     Layer.provide(appLayer),
+    Layer.provide(LlmServiceNoop),
     Layer.provide(NodeHttpServer.layer(() => createServer(), { port, host })),
   )
 }

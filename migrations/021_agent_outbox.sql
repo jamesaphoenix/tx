@@ -29,3 +29,6 @@ CREATE INDEX IF NOT EXISTS idx_outbox_correlation ON outbox_messages(correlation
 CREATE INDEX IF NOT EXISTS idx_outbox_task_id ON outbox_messages(task_id) WHERE task_id IS NOT NULL;
 -- TTL cleanup
 CREATE INDEX IF NOT EXISTS idx_outbox_expires ON outbox_messages(expires_at) WHERE expires_at IS NOT NULL;
+
+-- Record this migration
+INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (21, datetime('now'));

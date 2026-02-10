@@ -1,5 +1,6 @@
-import { Context, Effect, Layer, Config, Option } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { ExtractionUnavailableError } from "../errors.js"
+import { LlmService } from "./llm-service.js"
 import type {
   TranscriptChunk,
   ExtractedCandidate,
@@ -7,43 +8,6 @@ import type {
   CandidateConfidence,
   CandidateCategory
 } from "@jamesaphoenix/tx-types"
-
-// Types for Anthropic SDK (imported dynamically)
-interface AnthropicMessage {
-  content: Array<{ type: string; text?: string }>
-  usage?: { input_tokens?: number; output_tokens?: number }
-}
-
-interface AnthropicClient {
-  messages: {
-    create(params: {
-      model: string
-      max_tokens: number
-      messages: Array<{ role: string; content: string }>
-    }): Promise<AnthropicMessage>
-  }
-}
-
-// Types for OpenAI SDK (imported dynamically)
-interface OpenAIMessage {
-  choices: Array<{
-    message: { content: string | null }
-  }>
-  usage?: { prompt_tokens?: number; completion_tokens?: number }
-}
-
-interface OpenAIClient {
-  chat: {
-    completions: {
-      create(params: {
-        model: string
-        max_tokens: number
-        messages: Array<{ role: string; content: string }>
-        response_format?: { type: string }
-      }): Promise<OpenAIMessage>
-    }
-  }
-}
 
 /**
  * The prompt template for learning candidate extraction.
@@ -67,21 +31,34 @@ For each learning, provide:
 - confidence: "high" (certain, tested), "medium" (likely useful), "low" (speculative)
 - category: One of [architecture, testing, performance, security, debugging, tooling, patterns, other]
 
-Return JSON array:
-[
-  {
-    "content": "Always wrap database operations in transactions to ensure atomicity",
-    "confidence": "high",
-    "category": "patterns"
-  }
-]
-
 Rules:
 - Skip generic advice (things any developer knows)
 - Skip context-specific details that won't generalize
 - Prefer actionable "do X when Y" format
 - Maximum 5 learnings per transcript
-- If no meaningful learnings found, return empty array: []`
+- If no meaningful learnings found, return empty candidates array`
+
+/** JSON Schema for structured output from the candidate extraction LLM call */
+const EXTRACTION_SCHEMA = {
+  type: "object",
+  properties: {
+    candidates: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          content: { type: "string" },
+          confidence: { type: "string", enum: ["high", "medium", "low"] },
+          category: { type: "string", enum: ["architecture", "testing", "performance", "security", "debugging", "tooling", "patterns", "other"] },
+        },
+        required: ["content", "confidence", "category"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["candidates"],
+  additionalProperties: false,
+} as const
 
 /**
  * Valid confidence levels for validation.
@@ -101,38 +78,6 @@ const VALID_CATEGORIES: readonly CandidateCategory[] = [
   "patterns",
   "other"
 ]
-
-/**
- * Parse LLM JSON response, handling common formatting issues.
- * Robust parser following DD-006 patterns.
- */
-const parseLlmJson = <T>(raw: string): T | null => {
-  // Step 1: Try direct parse
-  try { return JSON.parse(raw) } catch { /* continue */ }
-
-  // Step 2: Strip markdown code fences
-  const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)```/)
-  if (fenceMatch && fenceMatch[1]) {
-    try { return JSON.parse(fenceMatch[1].trim()) } catch { /* continue */ }
-  }
-
-  // Step 3: Find first [ or { and parse from there
-  const jsonStart = raw.search(/[[{]/)
-  if (jsonStart >= 0) {
-    const candidate = raw.slice(jsonStart)
-    try { return JSON.parse(candidate) } catch { /* continue */ }
-
-    // Step 4: Find matching bracket and extract
-    const openChar = candidate[0]
-    const closeChar = openChar === "[" ? "]" : "}"
-    const lastClose = candidate.lastIndexOf(closeChar)
-    if (lastClose > 0) {
-      try { return JSON.parse(candidate.slice(0, lastClose + 1)) } catch { /* continue */ }
-    }
-  }
-
-  return null
-}
 
 /**
  * Validate and normalize an extracted candidate from LLM response.
@@ -168,14 +113,13 @@ const validateCandidate = (raw: unknown): ExtractedCandidate | null => {
 /**
  * CandidateExtractorService extracts learning candidates from Claude Code transcripts.
  *
- * This service uses LLM to analyze transcript content and identify:
+ * This service uses the centralized LlmService to analyze transcript content and identify:
  * - Technical decisions with rationale
  * - Gotchas and pitfalls to avoid
  * - Patterns that worked well
  * - Future improvements
  *
- * Design: Following DD-006 patterns for LLM integration with pluggable backends.
- * Supports Anthropic, OpenAI, and noop backends with graceful degradation.
+ * Design: Following DD-006 patterns for LLM integration with centralized LlmService.
  *
  * @see PRD-015 for the JSONL daemon and knowledge promotion pipeline
  */
@@ -194,7 +138,7 @@ export class CandidateExtractorService extends Context.Tag("CandidateExtractorSe
 
 /**
  * Noop implementation - returns empty results without LLM processing.
- * Used when no LLM API key is configured or for testing.
+ * Used when no LLM backend is configured or for testing.
  */
 export const CandidateExtractorServiceNoop = Layer.succeed(
   CandidateExtractorService,
@@ -209,96 +153,37 @@ export const CandidateExtractorServiceNoop = Layer.succeed(
 )
 
 /**
- * Anthropic (Claude) implementation.
- * Uses Claude to extract learning candidates from transcripts.
+ * Live implementation using centralized LlmService.
+ * Backend-agnostic — works with Agent SDK, Anthropic, or any LlmService backend.
  */
-export const CandidateExtractorServiceAnthropic = Layer.effect(
+export const CandidateExtractorServiceLive = Layer.effect(
   CandidateExtractorService,
   Effect.gen(function* () {
-    // Read API key from environment
-    const apiKey = yield* Config.string("ANTHROPIC_API_KEY").pipe(
-      Effect.mapError(() => new ExtractionUnavailableError({
-        reason: "ANTHROPIC_API_KEY environment variable is not set"
-      }))
-    )
-
-    // Lazy-load client
-    let client: AnthropicClient | null = null
-
-    const ensureClient = Effect.gen(function* () {
-      if (client) return client
-
-      // Dynamic import of Anthropic SDK (optional peer dependency)
-      const Anthropic = yield* Effect.tryPromise({
-        try: async () => {
-          // @ts-ignore - @anthropic-ai/sdk is an optional peer dependency
-          const mod = await import("@anthropic-ai/sdk")
-          return mod.default
-        },
-        catch: () => new ExtractionUnavailableError({
-          reason: "@anthropic-ai/sdk is not installed"
-        })
-      })
-
-      client = new Anthropic({ apiKey }) as unknown as AnthropicClient
-      return client
-    })
+    const llmService = yield* LlmService
 
     return {
       extract: (chunk) =>
         Effect.gen(function* () {
           const startTime = Date.now()
-          const anthropic = yield* ensureClient
 
           // Build prompt with transcript content
           const prompt = EXTRACTION_PROMPT.replace("{transcript_excerpt}", chunk.content)
 
-          const response = yield* Effect.tryPromise({
-            try: () => anthropic.messages.create({
-              model: "claude-haiku-4-20250514",
-              max_tokens: 1024,
-              messages: [{
-                role: "user",
-                content: prompt
-              }]
-            }),
-            catch: (e) => new ExtractionUnavailableError({
-              reason: `Anthropic API call failed: ${String(e)}`
-            })
-          })
+          const result = yield* llmService.complete({
+            prompt,
+            maxTokens: 1024,
+            jsonSchema: EXTRACTION_SCHEMA,
+          }).pipe(
+            Effect.mapError((e) => new ExtractionUnavailableError({
+              reason: `LLM completion failed: ${e.reason}`
+            }))
+          )
 
-          // Extract text from response
-          const textContent = response.content.find(c => c.type === "text")
-          if (!textContent || !textContent.text) {
-            return {
-              candidates: [],
-              sourceChunk: chunk,
-              wasExtracted: true,
-              metadata: {
-                model: "claude-haiku-4-20250514",
-                tokensUsed: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
-                durationMs: Date.now() - startTime
-              }
-            }
-          }
+          // Structured outputs guarantee valid JSON matching the schema
+          const parsed = JSON.parse(result.text) as { candidates: unknown[] }
 
-          // Parse the JSON array of candidates
-          const rawCandidates = parseLlmJson<unknown[]>(textContent.text)
-          if (!rawCandidates || !Array.isArray(rawCandidates)) {
-            return {
-              candidates: [],
-              sourceChunk: chunk,
-              wasExtracted: true,
-              metadata: {
-                model: "claude-haiku-4-20250514",
-                tokensUsed: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
-                durationMs: Date.now() - startTime
-              }
-            }
-          }
-
-          // Validate and normalize each candidate
-          const candidates: ExtractedCandidate[] = rawCandidates
+          // Validate and normalize each candidate (schema guarantees structure, but validate content quality)
+          const candidates: ExtractedCandidate[] = parsed.candidates
             .map(validateCandidate)
             .filter((c): c is ExtractedCandidate => c !== null)
             .slice(0, 5) // Max 5 candidates per chunk
@@ -308,159 +193,31 @@ export const CandidateExtractorServiceAnthropic = Layer.effect(
             sourceChunk: chunk,
             wasExtracted: true,
             metadata: {
-              model: "claude-haiku-4-20250514",
-              tokensUsed: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
-              durationMs: Date.now() - startTime
+              model: result.model,
+              tokensUsed: result.tokensUsed ?? 0,
+              durationMs: result.durationMs ?? (Date.now() - startTime)
             }
           }
         }),
 
-      isAvailable: () => Effect.succeed(true)
+      isAvailable: () => llmService.isAvailable()
     }
   })
 )
 
 /**
- * OpenAI (GPT) implementation.
- * Uses GPT to extract learning candidates from transcripts.
- */
-export const CandidateExtractorServiceOpenAI = Layer.effect(
-  CandidateExtractorService,
-  Effect.gen(function* () {
-    // Read API key from environment
-    const apiKey = yield* Config.string("OPENAI_API_KEY").pipe(
-      Effect.mapError(() => new ExtractionUnavailableError({
-        reason: "OPENAI_API_KEY environment variable is not set"
-      }))
-    )
-
-    // Lazy-load client
-    let client: OpenAIClient | null = null
-
-    const ensureClient = Effect.gen(function* () {
-      if (client) return client
-
-      // Dynamic import of OpenAI SDK (optional peer dependency)
-      const OpenAI = yield* Effect.tryPromise({
-        try: async () => {
-          // @ts-ignore - openai is an optional peer dependency
-          const mod = await import("openai")
-          return mod.default
-        },
-        catch: () => new ExtractionUnavailableError({
-          reason: "openai package is not installed"
-        })
-      })
-
-      client = new OpenAI({ apiKey }) as unknown as OpenAIClient
-      return client
-    })
-
-    return {
-      extract: (chunk) =>
-        Effect.gen(function* () {
-          const startTime = Date.now()
-          const openai = yield* ensureClient
-
-          // Build prompt with transcript content
-          const prompt = EXTRACTION_PROMPT.replace("{transcript_excerpt}", chunk.content)
-
-          const response = yield* Effect.tryPromise({
-            try: () => openai.chat.completions.create({
-              model: "gpt-4o-mini",
-              max_tokens: 1024,
-              messages: [{
-                role: "user",
-                content: prompt
-              }],
-              response_format: { type: "json_object" }
-            }),
-            catch: (e) => new ExtractionUnavailableError({
-              reason: `OpenAI API call failed: ${String(e)}`
-            })
-          })
-
-          // Extract text from response
-          const textContent = response.choices[0]?.message?.content
-          if (!textContent) {
-            return {
-              candidates: [],
-              sourceChunk: chunk,
-              wasExtracted: true,
-              metadata: {
-                model: "gpt-4o-mini",
-                tokensUsed: (response.usage?.prompt_tokens ?? 0) + (response.usage?.completion_tokens ?? 0),
-                durationMs: Date.now() - startTime
-              }
-            }
-          }
-
-          // Parse the JSON array of candidates
-          // OpenAI with json_object mode might wrap in an object
-          const parsed = parseLlmJson<unknown>(textContent)
-          let rawCandidates: unknown[] = []
-
-          if (Array.isArray(parsed)) {
-            rawCandidates = parsed
-          } else if (parsed && typeof parsed === "object") {
-            // Handle wrapped response like { candidates: [...] } or { learnings: [...] }
-            const obj = parsed as Record<string, unknown>
-            const arrayField = Object.values(obj).find(Array.isArray)
-            if (arrayField) {
-              rawCandidates = arrayField as unknown[]
-            }
-          }
-
-          // Validate and normalize each candidate
-          const candidates: ExtractedCandidate[] = rawCandidates
-            .map(validateCandidate)
-            .filter((c): c is ExtractedCandidate => c !== null)
-            .slice(0, 5) // Max 5 candidates per chunk
-
-          return {
-            candidates,
-            sourceChunk: chunk,
-            wasExtracted: true,
-            metadata: {
-              model: "gpt-4o-mini",
-              tokensUsed: (response.usage?.prompt_tokens ?? 0) + (response.usage?.completion_tokens ?? 0),
-              durationMs: Date.now() - startTime
-            }
-          }
-        }),
-
-      isAvailable: () => Effect.succeed(true)
-    }
-  })
-)
-
-/**
- * Auto-detecting layer that selects the appropriate backend based on environment.
- *
- * Priority:
- * 1. ANTHROPIC_API_KEY set → Use Anthropic (Claude)
- * 2. OPENAI_API_KEY set → Use OpenAI (GPT)
- * 3. Neither set → Use Noop (graceful degradation)
- *
- * This allows graceful degradation when no LLM API keys are configured.
+ * Auto-detecting layer — uses Live if LlmService is available, Noop otherwise.
  */
 export const CandidateExtractorServiceAuto = Layer.unwrapEffect(
   Effect.gen(function* () {
-    // Check for Anthropic API key first (preferred)
-    const anthropicKey = yield* Config.string("ANTHROPIC_API_KEY").pipe(Effect.option)
+    const opt = yield* Effect.serviceOption(LlmService).pipe(
+      Effect.catchAll(() => Effect.succeed({ _tag: "None" as const }))
+    )
 
-    if (Option.isSome(anthropicKey) && anthropicKey.value.trim().length > 0) {
-      return CandidateExtractorServiceAnthropic
+    if (opt._tag === "Some") {
+      const available = yield* opt.value.isAvailable()
+      if (available) return CandidateExtractorServiceLive
     }
-
-    // Fall back to OpenAI if available
-    const openaiKey = yield* Config.string("OPENAI_API_KEY").pipe(Effect.option)
-
-    if (Option.isSome(openaiKey) && openaiKey.value.trim().length > 0) {
-      return CandidateExtractorServiceOpenAI
-    }
-
-    // No API keys configured - use noop
     return CandidateExtractorServiceNoop
   })
 )

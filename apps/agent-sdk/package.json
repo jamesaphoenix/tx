@@ -30,7 +30,7 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "bun vitest run --passWithNoTests"
+    "test": "bunx --bun vitest run --passWithNoTests"
   },
   "dependencies": {
     "@jamesaphoenix/tx-types": "*"

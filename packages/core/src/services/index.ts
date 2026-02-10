@@ -91,10 +91,18 @@ export {
 export {
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
-  CandidateExtractorServiceAnthropic,
-  CandidateExtractorServiceOpenAI,
+  CandidateExtractorServiceLive,
   CandidateExtractorServiceAuto
 } from "./candidate-extractor-service.js"
+export {
+  LlmService,
+  LlmServiceNoop,
+  LlmServiceAgentSdk,
+  LlmServiceAnthropic,
+  LlmServiceAuto,
+  type LlmCompletionRequest,
+  type LlmCompletionResult
+} from "./llm-service.js"
 export {
   RetrieverService,
   RetrieverServiceNoop,
@@ -261,3 +269,7 @@ export {
   CycleScanService,
   CycleScanServiceLive
 } from "./cycle-scan-service.js"
+export {
+  DocService,
+  DocServiceLive
+} from "./doc-service.js"

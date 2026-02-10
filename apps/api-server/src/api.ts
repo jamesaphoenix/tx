@@ -18,6 +18,11 @@ import {
   TASK_STATUSES,
   LEARNING_SOURCE_TYPES,
   RUN_STATUSES,
+  DOC_KINDS,
+  DOC_STATUSES,
+  DOC_LINK_TYPES,
+  DocGraphNodeSchema,
+  DocGraphEdgeSchema,
 } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
@@ -66,12 +71,16 @@ export const mapCoreError = (e: unknown): NotFound | BadRequest | InternalError 
       case "FileLearningNotFoundError":
       case "AttemptNotFoundError":
       case "MessageNotFoundError":
+      case "DocNotFoundError":
+      case "InvariantNotFoundError":
         return new NotFound({ message })
       case "MessageAlreadyAckedError":
         return new BadRequest({ message })
       case "ValidationError":
       case "CircularDependencyError":
       case "HasChildrenError":
+      case "InvalidDocYamlError":
+      case "DocLockedError":
         return new BadRequest({ message })
       case "EmbeddingUnavailableError":
         return new ServiceUnavailable({ message })
@@ -676,6 +685,113 @@ export const CyclesGroup = HttpApiGroup.make("cycles")
   )
 
 // =============================================================================
+// DOCS GROUP
+// =============================================================================
+
+const DocNameParam = HttpApiSchema.param("name", Schema.String.pipe(Schema.minLength(1)))
+
+const DocSerializedSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  hash: Schema.String,
+  kind: Schema.Literal(...DOC_KINDS),
+  name: Schema.String,
+  title: Schema.String,
+  version: Schema.Number.pipe(Schema.int()),
+  status: Schema.Literal(...DOC_STATUSES),
+  filePath: Schema.String,
+  parentDocId: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  createdAt: Schema.String,
+  lockedAt: Schema.NullOr(Schema.String),
+})
+
+const DocListResponse = Schema.Struct({
+  docs: Schema.Array(DocSerializedSchema),
+})
+
+const DocListParams = Schema.Struct({
+  kind: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+})
+
+const CreateDocBody = Schema.Struct({
+  kind: Schema.Literal(...DOC_KINDS),
+  name: Schema.String.pipe(Schema.minLength(1)),
+  title: Schema.String.pipe(Schema.minLength(1)),
+  yamlContent: Schema.String.pipe(Schema.minLength(1)),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+
+const UpdateDocBody = Schema.Struct({
+  yamlContent: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const DocLinkBody = Schema.Struct({
+  fromName: Schema.String.pipe(Schema.minLength(1)),
+  toName: Schema.String.pipe(Schema.minLength(1)),
+  linkType: Schema.optional(Schema.Literal(...DOC_LINK_TYPES)),
+})
+
+const DocLinkResponse = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  fromDocId: Schema.Number.pipe(Schema.int()),
+  toDocId: Schema.Number.pipe(Schema.int()),
+  linkType: Schema.Literal(...DOC_LINK_TYPES),
+  createdAt: Schema.String,
+})
+
+const RenderDocsBody = Schema.Struct({
+  name: Schema.optional(Schema.NullOr(Schema.String)),
+})
+
+const RenderDocsResponse = Schema.Struct({
+  rendered: Schema.Array(Schema.String),
+})
+
+const DocGraphResponse = Schema.Struct({
+  nodes: Schema.Array(DocGraphNodeSchema),
+  edges: Schema.Array(DocGraphEdgeSchema),
+})
+
+export const DocsGroup = HttpApiGroup.make("docs")
+  .add(
+    HttpApiEndpoint.get("listDocs", "/api/docs")
+      .setUrlParams(DocListParams)
+      .addSuccess(DocListResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("createDoc", "/api/docs")
+      .setPayload(CreateDocBody)
+      .addSuccess(DocSerializedSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.get("getDoc")`/api/docs/${DocNameParam}`
+      .addSuccess(DocSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.patch("updateDoc")`/api/docs/${DocNameParam}`
+      .setPayload(UpdateDocBody)
+      .addSuccess(DocSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.post("lockDoc")`/api/docs/${DocNameParam}/lock`
+      .addSuccess(DocSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.post("linkDocs", "/api/docs/link")
+      .setPayload(DocLinkBody)
+      .addSuccess(DocLinkResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("renderDocs", "/api/docs/render")
+      .setPayload(RenderDocsBody)
+      .addSuccess(RenderDocsResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getDocGraph", "/api/docs/graph")
+      .addSuccess(DocGraphResponse)
+  )
+
+// =============================================================================
 // TOP-LEVEL API
 // =============================================================================
 
@@ -692,4 +808,5 @@ export class TxApi extends HttpApi.make("tx")
   .add(RunsGroup)
   .add(SyncGroup)
   .add(MessagesGroup)
-  .add(CyclesGroup) {}
+  .add(CyclesGroup)
+  .add(DocsGroup) {}

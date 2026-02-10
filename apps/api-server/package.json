@@ -45,7 +45,7 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "bun test src/",
+    "test": "bunx --bun vitest run",
     "dev": "tsx --watch src/server.ts",
     "start": "node dist/server.js"
   },

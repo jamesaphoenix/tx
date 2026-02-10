@@ -196,6 +196,47 @@ export interface CycleDetailResponse {
   issues: CycleIssue[]
 }
 
+// Doc types
+export interface DocSerialized {
+  id: number
+  hash: string
+  kind: "overview" | "prd" | "design"
+  name: string
+  title: string
+  version: number
+  status: "changing" | "locked"
+  filePath: string
+  parentDocId: number | null
+  createdAt: string
+  lockedAt: string | null
+}
+
+export interface DocGraphNode {
+  id: string
+  label: string
+  kind: "overview" | "prd" | "design" | "task"
+  status?: string
+}
+
+export interface DocGraphEdge {
+  source: string
+  target: string
+  type: string
+}
+
+export interface DocsListResponse {
+  docs: DocSerialized[]
+}
+
+export interface DocGraphResponse {
+  nodes: DocGraphNode[]
+  edges: DocGraphEdge[]
+}
+
+export interface DocRenderResponse {
+  rendered: string[]
+}
+
 // Promise-based wrappers for TanStack Query
 export const fetchers = {
   tasks: () => Effect.runPromise(api.getTasks()),
@@ -212,6 +253,34 @@ export const fetchers = {
   },
   cycleDetail: async (id: string): Promise<CycleDetailResponse> => {
     const res = await fetch(`/api/cycles/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  docs: async (params?: { kind?: string; status?: string }): Promise<DocsListResponse> => {
+    const qs = new URLSearchParams()
+    if (params?.kind) qs.set("kind", params.kind)
+    if (params?.status) qs.set("status", params.status)
+    const url = qs.toString() ? `/api/docs?${qs}` : "/api/docs"
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  docDetail: async (name: string): Promise<DocSerialized> => {
+    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  docRender: async (name?: string): Promise<DocRenderResponse> => {
+    const res = await fetch("/api/docs/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name ?? null }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  docGraph: async (): Promise<DocGraphResponse> => {
+    const res = await fetch("/api/docs/graph")
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },

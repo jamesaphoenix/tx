@@ -4,6 +4,7 @@ import { fetchers, type ChatMessage } from "./api/client"
 import { TaskList, TaskFilters, TaskDetail, useTaskFiltersWithUrl } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
 import { CyclePage } from "./components/cycles"
+import { DocsPage } from "./components/docs"
 
 // =============================================================================
 // Status Badges
@@ -443,10 +444,10 @@ function Stats() {
 // Main App
 // =============================================================================
 
-type Tab = "tasks" | "runs" | "cycles"
+type Tab = "docs" | "tasks" | "runs" | "cycles"
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>("runs")
+  const [activeTab, setActiveTab] = useState<Tab>("docs")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
@@ -494,6 +495,14 @@ export default function App() {
             <nav className="flex gap-1">
               <button
                 className={`px-4 py-1.5 rounded text-sm font-medium transition ${
+                  activeTab === "docs" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+                onClick={() => setActiveTab("docs")}
+              >
+                Docs
+              </button>
+              <button
+                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
                   activeTab === "tasks" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
                 }`}
                 onClick={() => setActiveTab("tasks")}
@@ -529,7 +538,9 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
-        {activeTab === "tasks" ? (
+        {activeTab === "docs" ? (
+          <DocsPage />
+        ) : activeTab === "tasks" ? (
           <>
             {/* Tasks List */}
             <div className="w-96 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">

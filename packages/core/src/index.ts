@@ -51,9 +51,16 @@ export {
   // Message errors (PRD-024 agent outbox)
   MessageNotFoundError,
   MessageAlreadyAckedError,
+  // Doc errors (DD-023 docs-as-primitives)
+  DocNotFoundError,
+  DocLockedError,
+  InvalidDocYamlError,
+  InvariantNotFoundError,
   // Agent/Cycle errors (PRD-023 cycle scan)
   AgentError,
-  CycleScanError
+  CycleScanError,
+  // LLM errors
+  LlmUnavailableError
 } from "./errors.js"
 
 // =============================================================================
@@ -117,7 +124,9 @@ export {
   CompactionServiceAuto,
   type CompactionOutputMode,
   MessageService,
-  MessageServiceLive
+  MessageServiceLive,
+  type LlmCompletionRequest,
+  type LlmCompletionResult
 } from "./layer.js"
 
 // =============================================================================
@@ -140,9 +149,13 @@ export {
   EdgeServiceLive,
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
-  CandidateExtractorServiceAnthropic,
-  CandidateExtractorServiceOpenAI,
+  CandidateExtractorServiceLive,
   CandidateExtractorServiceAuto,
+  LlmService,
+  LlmServiceNoop,
+  LlmServiceAgentSdk,
+  LlmServiceAnthropic,
+  LlmServiceAuto,
   QueryExpansionService,
   QueryExpansionServiceNoop,
   QueryExpansionServiceLive,
@@ -248,6 +261,16 @@ export {
   type OrchestratorConfig,
   runWorkerProcess,
   type WorkerProcessConfig,
+  DocService,
+  DocServiceLive,
+  AgentService,
+  AgentServiceLive,
+  AgentServiceNoop,
+  type AgentRunConfig,
+  type AgentRunResult,
+  type AgentMessageCallback,
+  CycleScanService,
+  CycleScanServiceLive,
   // Runtime interface validators for optional peer dependencies
   isValidLlama,
   isValidLlamaModel,
@@ -296,7 +319,9 @@ export {
   type CompactionLogEntry,
   type CreateCompactionLogInput,
   MessageRepository,
-  MessageRepositoryLive
+  MessageRepositoryLive,
+  DocRepository,
+  DocRepositoryLive
 } from "./repo/index.js"
 
 // =============================================================================
@@ -368,12 +393,30 @@ export {
   type MessageRow
 } from "./mappers/message.js"
 
+export {
+  rowToDoc,
+  rowToDocLink,
+  rowToTaskDocLink,
+  rowToInvariant,
+  rowToInvariantCheck,
+  isValidDocKind,
+  isValidDocStatus,
+  isValidDocLinkType,
+  isValidTaskDocLinkType,
+  isValidInvariantEnforcement,
+  isValidInvariantStatus,
+} from "./mappers/doc.js"
+
 // =============================================================================
 // Utils
 // =============================================================================
 export { cosineSimilarity } from "./utils/math.js"
+export { parseLlmJson } from "./utils/llm-json.js"
 export { matchesGlob } from "./utils/glob.js"
 export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"
+export { computeDocHash } from "./utils/doc-hash.js"
+export { renderDocToMarkdown, renderIndexToMarkdown } from "./utils/doc-renderer.js"
+export { readTxConfig } from "./utils/toml-config.js"
 
 // =============================================================================
 // Worker (PRD-018 headless worker system)

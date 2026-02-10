@@ -7,7 +7,7 @@
  * Per DD-007: Uses real in-memory SQLite and SHA256-based fixture IDs.
  * Per tx-f472d806: Agent swarm performance fuzzer.
  *
- * Run with: STRESS=1 bun test test/integration/performance-fuzzer.test.ts
+ * Run with: STRESS=1 bunx --bun vitest run test/integration/performance-fuzzer.test.ts
  *
  * @module test/integration/performance-fuzzer
  */

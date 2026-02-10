@@ -69,6 +69,8 @@ export const applyMigrations = (db: Database): void => {
       db.exec("BEGIN IMMEDIATE")
       try {
         db.exec(migration.sql)
+        // Ensure version is recorded even if the SQL file omits the INSERT
+        db.exec(`INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (${migration.version}, datetime('now'))`)
         db.exec("COMMIT")
       } catch (e) {
         db.exec("ROLLBACK")

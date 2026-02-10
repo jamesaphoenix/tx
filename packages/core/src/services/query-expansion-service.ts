@@ -1,16 +1,11 @@
-import { Context, Effect, Layer, Config, Option } from "effect"
-import { Data } from "effect"
+import { Context, Effect, Layer } from "effect"
+import { LlmUnavailableError } from "../errors.js"
+import { LlmService } from "./llm-service.js"
 
 /**
  * Error indicating query expansion is unavailable.
  */
-export class QueryExpansionUnavailableError extends Data.TaggedError("QueryExpansionUnavailableError")<{
-  readonly reason: string
-}> {
-  get message() {
-    return `Query expansion unavailable: ${this.reason}`
-  }
-}
+export { LlmUnavailableError as QueryExpansionUnavailableError }
 
 /**
  * Result of query expansion.
@@ -30,33 +25,18 @@ export const MAX_EXPANSION_QUERIES = 5
 /** Maximum character length for any single expanded query */
 export const MAX_QUERY_LENGTH = 200
 
-// Types for Anthropic SDK (imported dynamically)
-interface AnthropicMessage {
-  content: Array<{ type: string; text?: string }>
-}
-
-interface AnthropicClient {
-  messages: {
-    create(params: {
-      model: string
-      max_tokens: number
-      messages: Array<{ role: string; content: string }>
-    }): Promise<AnthropicMessage>
-  }
-}
-
 /**
  * QueryExpansionService uses an LLM to generate alternative phrasings of search queries.
  * This improves recall by searching for semantically equivalent but differently worded queries.
  *
  * Design: Following DD-006 patterns for LLM integration.
- * The service gracefully degrades when ANTHROPIC_API_KEY is not set.
+ * The service gracefully degrades when no LLM backend is available.
  */
 export class QueryExpansionService extends Context.Tag("QueryExpansionService")<
   QueryExpansionService,
   {
     /** Expand a search query into multiple alternative phrasings */
-    readonly expand: (query: string) => Effect.Effect<QueryExpansionResult, QueryExpansionUnavailableError>
+    readonly expand: (query: string) => Effect.Effect<QueryExpansionResult, LlmUnavailableError>
     /** Check if query expansion is available */
     readonly isAvailable: () => Effect.Effect<boolean>
   }
@@ -73,49 +53,29 @@ Rules:
 2. Use synonyms and related terminology
 3. Consider different ways to express the same concept
 4. Do NOT add information not implied by the original query
-5. Output ONLY a JSON array of strings, nothing else
 
 Example:
 Input: "fix authentication bug"
-Output: ["resolve auth issue", "debug login problem", "authentication error fix"]
+Output: {"alternatives": ["resolve auth issue", "debug login problem", "authentication error fix"]}
 
 Input: "add user profile page"
-Output: ["create profile view", "implement user account page", "build profile screen"]
+Output: {"alternatives": ["create profile view", "implement user account page", "build profile screen"]}
 
 Now expand this query:
 `
 
-/**
- * Parse LLM JSON response, handling common formatting issues.
- * Robust parser from DD-006.
- */
-const parseLlmJson = <T>(raw: string): T | null => {
-  // Step 1: Try direct parse
-  try { return JSON.parse(raw) } catch { /* continue */ }
-
-  // Step 2: Strip markdown code fences
-  const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)```/)
-  if (fenceMatch && fenceMatch[1]) {
-    try { return JSON.parse(fenceMatch[1].trim()) } catch { /* continue */ }
-  }
-
-  // Step 3: Find first [ or { and parse from there
-  const jsonStart = raw.search(/[[{]/)
-  if (jsonStart >= 0) {
-    const candidate = raw.slice(jsonStart)
-    try { return JSON.parse(candidate) } catch { /* continue */ }
-
-    // Step 4: Find matching bracket and extract
-    const openChar = candidate[0]
-    const closeChar = openChar === "[" ? "]" : "}"
-    const lastClose = candidate.lastIndexOf(closeChar)
-    if (lastClose > 0) {
-      try { return JSON.parse(candidate.slice(0, lastClose + 1)) } catch { /* continue */ }
-    }
-  }
-
-  return null
-}
+/** JSON Schema for structured output from the query expansion LLM call */
+const EXPANSION_SCHEMA = {
+  type: "object",
+  properties: {
+    alternatives: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+  required: ["alternatives"],
+  additionalProperties: false,
+} as const
 
 /**
  * Validate and limit expanded query alternatives.
@@ -143,7 +103,7 @@ export const validateExpansions = (
 
 /**
  * Noop implementation - returns original query only.
- * Used when ANTHROPIC_API_KEY is not set or LLM features are disabled.
+ * Used when no LLM backend is available or LLM features are disabled.
  */
 export const QueryExpansionServiceNoop = Layer.succeed(
   QueryExpansionService,
@@ -158,74 +118,39 @@ export const QueryExpansionServiceNoop = Layer.succeed(
 )
 
 /**
- * Live implementation using Anthropic Claude API.
- * Lazy-loads the SDK and caches the client.
+ * Live implementation using centralized LlmService.
+ * Depends on LlmService being provided in the layer context.
  */
 export const QueryExpansionServiceLive = Layer.effect(
   QueryExpansionService,
   Effect.gen(function* () {
-    // Read API key from environment
-    const apiKey = yield* Config.string("ANTHROPIC_API_KEY").pipe(
-      Effect.mapError(() => new QueryExpansionUnavailableError({
-        reason: "ANTHROPIC_API_KEY environment variable is not set"
-      }))
-    )
-
-    // Lazy-load client
-    let client: AnthropicClient | null = null
-
-    const ensureClient = Effect.gen(function* () {
-      if (client) return client
-
-      // Dynamic import of Anthropic SDK (optional peer dependency)
-      const Anthropic = yield* Effect.tryPromise({
-        try: async () => {
-          // @ts-ignore - @anthropic-ai/sdk is an optional peer dependency
-          const mod = await import("@anthropic-ai/sdk")
-          return mod.default
-        },
-        catch: (error) => new QueryExpansionUnavailableError({
-          reason: `@anthropic-ai/sdk is not installed or failed to load. Install with: bun add @anthropic-ai/sdk (${error instanceof Error ? error.message : String(error)})`
-        })
-      })
-
-      client = new Anthropic({ apiKey }) as unknown as AnthropicClient
-      return client
-    })
+    const llmService = yield* LlmService
 
     return {
       expand: (query) =>
         Effect.gen(function* () {
-          const anthropic = yield* ensureClient
+          const either = yield* Effect.either(llmService.complete({
+            prompt: EXPANSION_PROMPT + JSON.stringify(query),
+            model: "claude-haiku-4-20250514",
+            maxTokens: 256,
+            jsonSchema: EXPANSION_SCHEMA,
+          }))
 
-          const response = yield* Effect.tryPromise({
-            try: () => anthropic.messages.create({
-              model: "claude-haiku-4-20250514",
-              max_tokens: 256,
-              messages: [{
-                role: "user",
-                content: EXPANSION_PROMPT + JSON.stringify(query)
-              }]
-            }),
-            catch: (e) => new QueryExpansionUnavailableError({
-              reason: `API call failed: ${String(e)}`
-            })
-          })
-
-          // Extract text from response
-          const textContent = response.content.find(c => c.type === "text")
-          if (!textContent || !textContent.text) {
+          // Graceful degradation: if LLM call fails, return original query
+          if (either._tag === "Left") {
             return { original: query, expanded: [query], wasExpanded: false }
           }
 
-          // Parse the JSON array of expanded queries
-          const alternatives = parseLlmJson<string[]>(textContent.text)
-          if (!alternatives || !Array.isArray(alternatives)) {
+          const result = either.right
+          if (!result.text) {
             return { original: query, expanded: [query], wasExpanded: false }
           }
+
+          // Structured outputs guarantee valid JSON matching the schema
+          const parsed = JSON.parse(result.text) as { alternatives: string[] }
 
           // Validate and limit expansion results
-          const expanded = validateExpansions(query, alternatives)
+          const expanded = validateExpansions(query, parsed.alternatives)
 
           return {
             original: query,
@@ -234,22 +159,24 @@ export const QueryExpansionServiceLive = Layer.effect(
           }
         }),
 
-      isAvailable: () => Effect.succeed(true)
+      isAvailable: () => llmService.isAvailable()
     }
   })
 )
 
 /**
- * Auto-detecting layer that uses Live if ANTHROPIC_API_KEY is set, Noop otherwise.
- * This allows graceful degradation when the API key is not configured.
+ * Auto-detecting layer — uses Live if LlmService is available, Noop otherwise.
+ * This allows graceful degradation when no LLM backend is configured.
  */
 export const QueryExpansionServiceAuto = Layer.unwrapEffect(
   Effect.gen(function* () {
-    // Check if API key is available
-    const apiKey = yield* Config.string("ANTHROPIC_API_KEY").pipe(Effect.option)
+    const opt = yield* Effect.serviceOption(LlmService).pipe(
+      Effect.catchAll(() => Effect.succeed({ _tag: "None" as const }))
+    )
 
-    if (Option.isSome(apiKey) && apiKey.value.trim().length > 0) {
-      return QueryExpansionServiceLive
+    if (opt._tag === "Some") {
+      const available = yield* opt.value.isAvailable()
+      if (available) return QueryExpansionServiceLive
     }
     return QueryExpansionServiceNoop
   })

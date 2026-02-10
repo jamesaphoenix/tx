@@ -17,6 +17,8 @@ import { registerTaskTools } from "./tools/task.js"
 import { registerLearningTools } from "./tools/learning.js"
 import { registerSyncTools } from "./tools/sync.js"
 import { registerMessageTools } from "./tools/message.js"
+import { registerDocTools } from "./tools/doc.js"
+import { registerInvariantTools } from "./tools/invariant.js"
 import { formatErrorWithStack } from "./response.js"
 
 // Re-export for library consumers
@@ -28,6 +30,8 @@ export { registerTaskTools, serializeTask } from "./tools/task.js"
 export { registerLearningTools, serializeLearning, serializeLearningWithScore, serializeFileLearning } from "./tools/learning.js"
 export { registerSyncTools, serializeExportResult, serializeImportResult, serializeSyncStatus, serializeCompactResult } from "./tools/sync.js"
 export { registerMessageTools, serializeMessage } from "./tools/message.js"
+export { registerDocTools, serializeDoc, serializeDocLink } from "./tools/doc.js"
+export { registerInvariantTools } from "./tools/invariant.js"
 
 // -----------------------------------------------------------------------------
 // Signal Handler State (prevents handler accumulation/memory leak)
@@ -70,6 +74,8 @@ export const createMcpServer = (): McpServer => {
   registerLearningTools(server)
   registerSyncTools(server)
   registerMessageTools(server)
+  registerDocTools(server)
+  registerInvariantTools(server)
 
   return server
 }

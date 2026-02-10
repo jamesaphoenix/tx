@@ -63,7 +63,7 @@ for f in $(find "$SEARCH_DIR" -name "*.test.ts" -not -path "*/node_modules/*" -n
   total=$((total + 1))
   start=$(date +%s)
 
-  if timeout "$TIMEOUT" bun test "$f" > /dev/null 2>&1; then
+  if timeout "$TIMEOUT" bunx --bun vitest run "$f" > /dev/null 2>&1; then
     end=$(date +%s)
     duration=$((end - start))
     total_time=$((total_time + duration))

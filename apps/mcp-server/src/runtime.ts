@@ -15,7 +15,8 @@ import {
   LearningService,
   FileLearningService,
   SyncService,
-  MessageService
+  MessageService,
+  DocService
 } from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
@@ -31,6 +32,7 @@ export type McpServices =
   | FileLearningService
   | SyncService
   | MessageService
+  | DocService
 
 // -----------------------------------------------------------------------------
 // Runtime State

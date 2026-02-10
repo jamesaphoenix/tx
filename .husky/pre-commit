@@ -63,9 +63,9 @@ for f in $(echo "$changed_files" | grep "\.test\.ts$"); do
     fi
 done
 
-# Deduplicate and run
+# Deduplicate and run with context-efficient quiet runner
 if [ -n "$test_files" ]; then
     unique_tests=$(echo "$test_files" | tr ' ' '\n' | sort -u | tr '\n' ' ')
     echo "🧪 Running targeted tests for changed files..."
-    timeout 120 bun test $unique_tests
+    timeout 120 .claude/skills/test-quiet/scripts/run.sh $unique_tests
 fi

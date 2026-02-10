@@ -1,6 +1,6 @@
 ---
 name: test-diagnostics
-description: Profile all test files to find slow, hanging, or failing tests. Use when tests seem slow or when bun test hangs.
+description: Profile all test files to find slow, hanging, or failing tests. Use when tests seem slow or when vitest hangs.
 disable-model-invocation: true
 allowed-tools: Bash, Glob, Read
 ---
@@ -32,7 +32,7 @@ Options:
    - File watchers that aren't cleaned up
 3. For any **FAIL** tests, run them individually with verbose output:
    ```bash
-   bun test <path> 2>&1
+   bunx --bun vitest run <path> 2>&1
    ```
 4. For **SLOW** tests (>5s), check if they can be optimized:
    - Are they spawning CLI subprocesses unnecessarily?

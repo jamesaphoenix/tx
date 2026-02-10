@@ -19,12 +19,12 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import { DocRepository } from "../repo/doc-repo.js"
 import {
   ValidationError,
-  DatabaseError,
   DocNotFoundError,
   DocLockedError,
   InvalidDocYamlError,
   InvariantNotFoundError,
 } from "../errors.js"
+import type { DatabaseError } from "../errors.js"
 import { computeDocHash } from "../utils/doc-hash.js"
 import {
   renderDocToMarkdown,

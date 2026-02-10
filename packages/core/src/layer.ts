@@ -34,9 +34,10 @@ import { DeduplicationServiceLive } from "./services/deduplication-service.js"
 import { SyncServiceLive } from "./services/sync-service.js"
 import { AutoSyncServiceLive, AutoSyncServiceNoop } from "./services/auto-sync-service.js"
 import { MigrationServiceLive } from "./services/migration-service.js"
-import { EmbeddingServiceNoop } from "./services/embedding-service.js"
-import { QueryExpansionServiceNoop } from "./services/query-expansion-service.js"
-import { RerankerServiceNoop } from "./services/reranker-service.js"
+import { EmbeddingServiceNoop, EmbeddingServiceAuto } from "./services/embedding-service.js"
+import { QueryExpansionServiceNoop, QueryExpansionServiceAuto } from "./services/query-expansion-service.js"
+import { RerankerServiceNoop, RerankerServiceAuto } from "./services/reranker-service.js"
+import { LlmServiceAuto } from "./services/llm-service.js"
 import { RetrieverServiceLive } from "./services/retriever-service.js"
 import { GraphExpansionServiceLive } from "./services/graph-expansion.js"
 import { AnchorVerificationServiceLive } from "./services/anchor-verification.js"
@@ -54,6 +55,8 @@ import { CompactionServiceLive, CompactionServiceNoop } from "./services/compact
 import { ValidationServiceLive } from "./services/validation-service.js"
 import { MessageRepositoryLive } from "./repo/message-repo.js"
 import { MessageServiceLive } from "./services/message-service.js"
+import { DocRepositoryLive } from "./repo/doc-repo.js"
+import { DocServiceLive } from "./services/doc-service.js"
 // AgentService + CycleScanService are NOT in the default layer.
 // They are provided by the cycle CLI command via Effect.provide overlay.
 // Re-exports below make them available from @jamesaphoenix/tx-core.
@@ -99,6 +102,7 @@ export { DeduplicationService, DeduplicationServiceLive } from "./services/dedup
 export { MessageService, MessageServiceLive } from "./services/message-service.js"
 export { AgentService, AgentServiceLive, AgentServiceNoop } from "./services/agent-service.js"
 export { CycleScanService, CycleScanServiceLive } from "./services/cycle-scan-service.js"
+export { DocService, DocServiceLive } from "./services/doc-service.js"
 export {
   RetrieverService,
   RetrieverServiceNoop,
@@ -183,6 +187,15 @@ export {
   type ValidationResult,
   type ValidateOptions
 } from "./services/validation-service.js"
+export {
+  LlmService,
+  LlmServiceNoop,
+  LlmServiceAgentSdk,
+  LlmServiceAnthropic,
+  LlmServiceAuto,
+  type LlmCompletionRequest,
+  type LlmCompletionResult
+} from "./services/llm-service.js"
 
 /**
  * Create the full application layer from an existing SqliteClient infra layer.
@@ -211,7 +224,8 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     ClaimRepositoryLive,
     OrchestratorStateRepositoryLive,
     CompactionRepositoryLive,
-    MessageRepositoryLive
+    MessageRepositoryLive,
+    DocRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -230,6 +244,18 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.merge(infra, syncServiceWithDeps))
   )
 
+  // LlmService (auto-detects Agent SDK → Anthropic → Noop)
+  const llmService = LlmServiceAuto
+
+  // EmbeddingService (auto-detects local node-llama-cpp)
+  const embeddingService = EmbeddingServiceAuto
+
+  // RerankerService (auto-detects local node-llama-cpp)
+  const rerankerService = RerankerServiceAuto
+
+  // QueryExpansionService (auto-detects LlmService availability)
+  const queryExpansionService = QueryExpansionServiceAuto.pipe(Layer.provide(llmService))
+
   // EdgeServiceLive needs EdgeRepository from repos
   const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
 
@@ -245,7 +271,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
 
   // RetrieverServiceLive needs repos, embedding, query expansion, reranker, graph expansion, diversifier, and optionally feedback tracker
   const retrieverService = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService, feedbackTrackerService, DiversifierServiceLive))
+    Layer.provide(Layer.mergeAll(repos, embeddingService, queryExpansionService, rerankerService, graphExpansionService, feedbackTrackerService, DiversifierServiceLive))
   )
 
   // Services need repos, embedding, query expansion, reranker, retriever, and autoSyncService
@@ -260,7 +286,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     AnchorServiceLive,
     DeduplicationServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverService, autoSyncService))
+    Layer.provide(Layer.mergeAll(repos, embeddingService, queryExpansionService, rerankerService, retrieverService, autoSyncService))
   )
 
   // AnchorVerificationServiceLive needs AnchorRepository from repos
@@ -290,9 +316,9 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   // TracingServiceLive needs SqliteClient
   const tracingService = TracingServiceLive.pipe(Layer.provide(infra))
 
-  // CompactionServiceLive needs CompactionRepository (from repos) and SqliteClient (from infra)
+  // CompactionServiceLive needs CompactionRepository (from repos), SqliteClient (from infra), and LlmService
   const compactionService = CompactionServiceLive.pipe(
-    Layer.provide(Layer.merge(repos, infra))
+    Layer.provide(Layer.mergeAll(repos, infra, llmService))
   )
 
   // ValidationServiceLive needs SqliteClient
@@ -301,8 +327,11 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   // MessageServiceLive needs MessageRepository (from repos)
   const messageService = MessageServiceLive.pipe(Layer.provide(repos))
 
+  // DocServiceLive needs DocRepository (from repos)
+  const docService = DocServiceLive.pipe(Layer.provide(repos))
+
   // Merge all services
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
