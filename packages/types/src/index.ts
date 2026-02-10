@@ -246,6 +246,25 @@ export {
   type Match,
 } from "./symbol.js"
 
+// Message types & schemas (agent outbox)
+export {
+  MESSAGE_STATUSES,
+  MessageStatusSchema,
+  MessageIdSchema,
+  MessageSchema,
+  SendMessageInputSchema,
+  InboxFilterSchema,
+  isValidMessageStatus,
+  assertMessageStatus,
+  InvalidMessageStatusError,
+  type MessageStatus,
+  type MessageId,
+  type Message,
+  type SendMessageInput,
+  type InboxFilter,
+  type MessageRow,
+} from "./message.js"
+
 // Tracked project types & schemas (daemon monitoring)
 export {
   SOURCE_TYPES,
@@ -258,6 +277,91 @@ export {
   type CreateTrackedProjectInput,
   type TrackedProjectRow,
 } from "./tracked-project.js";
+
+// Cycle types & schemas (cycle-based issue discovery)
+export {
+  FINDING_SEVERITIES,
+  LOSS_WEIGHTS,
+  FindingSeveritySchema,
+  FindingSchema,
+  DuplicateSchema,
+  DedupResultSchema,
+  CycleConfigSchema,
+  RoundMetricsSchema,
+  CycleResultSchema,
+  type FindingSeverity,
+  type Finding,
+  type Duplicate,
+  type DedupResult,
+  type CycleConfig,
+  type RoundMetrics,
+  type CycleResult,
+  type CycleProgressEvent,
+} from "./cycle.js"
+
+// Doc types & schemas (docs-as-primitives, DD-023)
+export {
+  DOC_KINDS,
+  DOC_STATUSES,
+  DOC_LINK_TYPES,
+  TASK_DOC_LINK_TYPES,
+  INVARIANT_ENFORCEMENT_TYPES,
+  INVARIANT_STATUSES,
+  DocKindSchema,
+  DocStatusSchema,
+  DocLinkTypeSchema,
+  TaskDocLinkTypeSchema,
+  DocIdSchema,
+  DocSchema,
+  DocWithLinksSchema,
+  DocLinkSchema,
+  TaskDocLinkSchema,
+  CreateDocInputSchema,
+  InvariantEnforcementSchema,
+  InvariantStatusSchema,
+  InvariantIdSchema,
+  InvariantSchema,
+  InvariantCheckSchema,
+  UpsertInvariantInputSchema,
+  RecordInvariantCheckInputSchema,
+  DocGraphNodeSchema,
+  DocGraphEdgeSchema,
+  DocGraphSchema,
+  isValidDocKind,
+  InvalidDocKindError,
+  assertDocKind,
+  isValidDocStatus,
+  InvalidDocStatusError,
+  assertDocStatus,
+  isValidDocLinkType,
+  InvalidDocLinkTypeError,
+  assertDocLinkType,
+  type DocKind,
+  type DocStatus,
+  type DocLinkType,
+  type TaskDocLinkType,
+  type DocId,
+  type Doc,
+  type DocWithLinks,
+  type DocLink,
+  type TaskDocLink,
+  type CreateDocInput,
+  type InvariantEnforcement,
+  type InvariantStatus,
+  type InvariantId,
+  type Invariant,
+  type InvariantCheck,
+  type UpsertInvariantInput,
+  type RecordInvariantCheckInput,
+  type DocGraphNode,
+  type DocGraphEdge,
+  type DocGraph,
+  type DocRow,
+  type DocLinkRow,
+  type TaskDocLinkRow,
+  type InvariantRow,
+  type InvariantCheckRow,
+} from "./doc.js"
 
 // Response types & schemas (shared schemas for CLI, MCP, API, SDK)
 export {
@@ -282,6 +386,12 @@ export {
   serializeFileLearning,
   serializeRun,
   serializeAttempt,
+  // Message serialized schemas & types
+  MessageSerializedSchema,
+  type MessageSerialized,
+  serializeMessage,
+  InboxResponseSchema,
+  type InboxResponse,
   // Response envelope schemas
   ErrorResponseSchema,
   // Response envelopes

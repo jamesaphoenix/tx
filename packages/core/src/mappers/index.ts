@@ -122,3 +122,26 @@ export {
   ORCHESTRATOR_STATUSES,
   type OrchestratorStateRow
 } from "./orchestrator-state.js"
+
+// Message mappers (PRD-024 agent outbox)
+export {
+  rowToMessage,
+  isValidMessageStatus,
+  MESSAGE_STATUSES,
+  type MessageRow
+} from "./message.js"
+
+// Doc mappers (DD-023 docs-as-primitives)
+export {
+  rowToDoc,
+  rowToDocLink,
+  rowToTaskDocLink,
+  rowToInvariant,
+  rowToInvariantCheck,
+  isValidDocKind,
+  isValidDocStatus,
+  isValidDocLinkType,
+  isValidTaskDocLinkType,
+  isValidInvariantEnforcement,
+  isValidInvariantStatus,
+} from "./doc.js"

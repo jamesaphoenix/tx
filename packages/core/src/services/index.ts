@@ -245,3 +245,19 @@ export {
   type ValidationResult,
   type ValidateOptions
 } from "./validation-service.js"
+export {
+  MessageService,
+  MessageServiceLive
+} from "./message-service.js"
+export {
+  AgentService,
+  AgentServiceLive,
+  AgentServiceNoop,
+  type AgentRunConfig,
+  type AgentRunResult,
+  type AgentMessageCallback
+} from "./agent-service.js"
+export {
+  CycleScanService,
+  CycleScanServiceLive
+} from "./cycle-scan-service.js"

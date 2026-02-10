@@ -146,6 +146,56 @@ export const api = {
   getRunDetail: (id: string) => fetchJson<RunDetailResponse>(`/api/runs/${id}`),
 }
 
+// Cycle types
+export interface CycleRun {
+  id: string
+  cycle: number
+  name: string
+  description: string
+  startedAt: string
+  endedAt: string | null
+  status: string
+  rounds: number
+  totalNewIssues: number
+  existingIssues: number
+  finalLoss: number
+  converged: boolean
+}
+
+export interface RoundMetric {
+  cycle: number
+  round: number
+  loss: number
+  newIssues: number
+  existingIssues: number
+  duplicates: number
+  high: number
+  medium: number
+  low: number
+}
+
+export interface CycleIssue {
+  id: string
+  title: string
+  description: string
+  severity: string
+  issueType: string
+  file: string
+  line: number
+  cycle: number
+  round: number
+}
+
+export interface CyclesResponse {
+  cycles: CycleRun[]
+}
+
+export interface CycleDetailResponse {
+  cycle: CycleRun
+  roundMetrics: RoundMetric[]
+  issues: CycleIssue[]
+}
+
 // Promise-based wrappers for TanStack Query
 export const fetchers = {
   tasks: () => Effect.runPromise(api.getTasks()),
@@ -155,4 +205,14 @@ export const fetchers = {
   stats: () => Effect.runPromise(api.getStats()),
   runs: () => Effect.runPromise(api.getRuns()),
   runDetail: (id: string) => Effect.runPromise(api.getRunDetail(id)),
+  cycles: async (): Promise<CyclesResponse> => {
+    const res = await fetch("/api/cycles")
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  cycleDetail: async (id: string): Promise<CycleDetailResponse> => {
+    const res = await fetch(`/api/cycles/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
 }

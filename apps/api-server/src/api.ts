@@ -14,6 +14,7 @@ import {
   LearningSerializedSchema,
   FileLearningsSerializedSchema,
   RunSerializedSchema,
+  MessageSerializedSchema,
   TASK_STATUSES,
   LEARNING_SOURCE_TYPES,
   RUN_STATUSES,
@@ -64,7 +65,10 @@ export const mapCoreError = (e: unknown): NotFound | BadRequest | InternalError 
       case "LearningNotFoundError":
       case "FileLearningNotFoundError":
       case "AttemptNotFoundError":
+      case "MessageNotFoundError":
         return new NotFound({ message })
+      case "MessageAlreadyAckedError":
+        return new BadRequest({ message })
       case "ValidationError":
       case "CircularDependencyError":
       case "HasChildrenError":
@@ -521,6 +525,157 @@ export const SyncGroup = HttpApiGroup.make("sync")
   )
 
 // =============================================================================
+// MESSAGES GROUP
+// =============================================================================
+
+const MessageIdParam = HttpApiSchema.param("id", Schema.NumberFromString.pipe(Schema.int()))
+
+const ChannelParam = HttpApiSchema.param("channel", Schema.String.pipe(Schema.minLength(1)))
+
+const SendMessageBody = Schema.Struct({
+  channel: Schema.String.pipe(Schema.minLength(1)),
+  content: Schema.String.pipe(Schema.minLength(1)),
+  sender: Schema.optional(Schema.String),
+  taskId: Schema.optional(Schema.String),
+  ttlSeconds: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+  correlationId: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+
+const InboxParams = Schema.Struct({
+  afterId: Schema.optional(Schema.NumberFromString.pipe(Schema.int())),
+  limit: Schema.optional(Schema.NumberFromString.pipe(Schema.int())),
+  sender: Schema.optional(Schema.String),
+  correlationId: Schema.optional(Schema.String),
+  includeAcked: Schema.optional(Schema.String),
+})
+
+const InboxResponse = Schema.Struct({
+  messages: Schema.Array(MessageSerializedSchema),
+  channel: Schema.String,
+  count: Schema.Number.pipe(Schema.int()),
+})
+
+const AckResponse = Schema.Struct({
+  message: MessageSerializedSchema,
+})
+
+const AckAllResponse = Schema.Struct({
+  channel: Schema.String,
+  ackedCount: Schema.Number.pipe(Schema.int()),
+})
+
+const PendingCountResponse = Schema.Struct({
+  channel: Schema.String,
+  count: Schema.Number.pipe(Schema.int()),
+})
+
+const GcBody = Schema.Struct({
+  ackedOlderThanHours: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+})
+
+const GcResponse = Schema.Struct({
+  expired: Schema.Number.pipe(Schema.int()),
+  acked: Schema.Number.pipe(Schema.int()),
+})
+
+export const MessagesGroup = HttpApiGroup.make("messages")
+  .add(
+    HttpApiEndpoint.post("sendMessage", "/api/messages")
+      .setPayload(SendMessageBody)
+      .addSuccess(MessageSerializedSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.get("inbox")`/api/messages/inbox/${ChannelParam}`
+      .setUrlParams(InboxParams)
+      .addSuccess(InboxResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("ackMessage")`/api/messages/${MessageIdParam}/ack`
+      .addSuccess(AckResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("ackAllMessages")`/api/messages/inbox/${ChannelParam}/ack`
+      .addSuccess(AckAllResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("pendingCount")`/api/messages/inbox/${ChannelParam}/count`
+      .addSuccess(PendingCountResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("gcMessages", "/api/messages/gc")
+      .setPayload(GcBody)
+      .addSuccess(GcResponse)
+  )
+
+// =============================================================================
+// CYCLES GROUP
+// =============================================================================
+
+const CycleRunSchema = Schema.Struct({
+  id: Schema.String,
+  cycle: Schema.Number.pipe(Schema.int()),
+  name: Schema.String,
+  description: Schema.String,
+  startedAt: Schema.String,
+  endedAt: Schema.NullOr(Schema.String),
+  status: Schema.String,
+  rounds: Schema.Number.pipe(Schema.int()),
+  totalNewIssues: Schema.Number.pipe(Schema.int()),
+  existingIssues: Schema.Number.pipe(Schema.int()),
+  finalLoss: Schema.Number,
+  converged: Schema.Boolean,
+})
+
+const RoundMetricSchema = Schema.Struct({
+  cycle: Schema.Number.pipe(Schema.int()),
+  round: Schema.Number.pipe(Schema.int()),
+  loss: Schema.Number,
+  newIssues: Schema.Number.pipe(Schema.int()),
+  existingIssues: Schema.Number.pipe(Schema.int()),
+  duplicates: Schema.Number.pipe(Schema.int()),
+  high: Schema.Number.pipe(Schema.int()),
+  medium: Schema.Number.pipe(Schema.int()),
+  low: Schema.Number.pipe(Schema.int()),
+})
+
+const CycleIssueSchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  description: Schema.String,
+  severity: Schema.String,
+  issueType: Schema.String,
+  file: Schema.String,
+  line: Schema.Number.pipe(Schema.int()),
+  cycle: Schema.Number.pipe(Schema.int()),
+  round: Schema.Number.pipe(Schema.int()),
+})
+
+const CycleListResponse = Schema.Struct({
+  cycles: Schema.Array(CycleRunSchema),
+})
+
+const CycleDetailResponse = Schema.Struct({
+  cycle: CycleRunSchema,
+  roundMetrics: Schema.Array(RoundMetricSchema),
+  issues: Schema.Array(CycleIssueSchema),
+})
+
+const CycleIdParam = HttpApiSchema.param("id", Schema.String.pipe(
+  Schema.pattern(/^run-[a-f0-9]{8}$/)
+))
+
+export const CyclesGroup = HttpApiGroup.make("cycles")
+  .add(
+    HttpApiEndpoint.get("listCycles", "/api/cycles")
+      .addSuccess(CycleListResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getCycle")`/api/cycles/${CycleIdParam}`
+      .addSuccess(CycleDetailResponse)
+  )
+
+// =============================================================================
 // TOP-LEVEL API
 // =============================================================================
 
@@ -535,4 +690,6 @@ export class TxApi extends HttpApi.make("tx")
   .add(TasksGroup)
   .add(LearningsGroup)
   .add(RunsGroup)
-  .add(SyncGroup) {}
+  .add(SyncGroup)
+  .add(MessagesGroup)
+  .add(CyclesGroup) {}

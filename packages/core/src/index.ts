@@ -47,7 +47,13 @@ export {
   HasChildrenError,
   // Data validation errors
   InvalidStatusError,
-  InvalidDateError
+  InvalidDateError,
+  // Message errors (PRD-024 agent outbox)
+  MessageNotFoundError,
+  MessageAlreadyAckedError,
+  // Agent/Cycle errors (PRD-023 cycle scan)
+  AgentError,
+  CycleScanError
 } from "./errors.js"
 
 // =============================================================================
@@ -109,7 +115,9 @@ export {
   CompactionServiceLive,
   CompactionServiceNoop,
   CompactionServiceAuto,
-  type CompactionOutputMode
+  type CompactionOutputMode,
+  MessageService,
+  MessageServiceLive
 } from "./layer.js"
 
 // =============================================================================
@@ -286,7 +294,9 @@ export {
   CompactionRepository,
   CompactionRepositoryLive,
   type CompactionLogEntry,
-  type CreateCompactionLogInput
+  type CreateCompactionLogInput,
+  MessageRepository,
+  MessageRepositoryLive
 } from "./repo/index.js"
 
 // =============================================================================
@@ -351,6 +361,12 @@ export {
   WORKER_STATUSES,
   type WorkerRow
 } from "./mappers/worker.js"
+
+export {
+  rowToMessage,
+  isValidMessageStatus,
+  type MessageRow
+} from "./mappers/message.js"
 
 // =============================================================================
 // Utils

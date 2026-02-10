@@ -85,6 +85,12 @@ Commands:
   daemon review           List pending learning candidates
   daemon promote          Promote a candidate to learning
   daemon reject           Reject a learning candidate
+  send                    Send a message to a channel
+  inbox                   Read messages from a channel
+  ack                     Acknowledge a message
+  ack:all                 Acknowledge all messages on a channel
+  outbox:pending          Count pending messages on a channel
+  outbox:gc               Garbage collect old messages
   mcp-server              Start MCP server (JSON-RPC over stdio)
 
 Global Options:
@@ -1714,5 +1720,83 @@ Press Ctrl+C to stop both servers.
 Examples:
   tx dashboard              # Start and open in Brave/Chrome
   tx dashboard --no-open    # Start without opening browser
-  tx dashboard --port 3002  # Custom API port`
+  tx dashboard --port 3002  # Custom API port`,
+
+  send: `tx send - Send a message to a channel
+
+Usage: tx send <channel> <content> [options]
+
+Options:
+  --sender <s>       Sender name (default: "cli")
+  --task <id>        Associate with a task ID
+  --ttl <seconds>    Time-to-live in seconds
+  --correlation <id> Correlation ID for request/reply
+  --metadata '{}'    JSON metadata object
+  --json             Output as JSON
+
+Examples:
+  tx send worker-3 "Review PR #42" --sender orchestrator
+  tx send broadcast "v2.3.0 deployed" --sender ci --ttl 3600
+  tx send errors "OOM at step 4" --sender worker-3 --task tx-abc123
+  tx send orchestrator "Done" --correlation 550e8400-e29b`,
+
+  inbox: `tx inbox - Read messages from a channel
+
+Usage: tx inbox <channel> [options]
+
+Read-only: does NOT modify message status. Use tx ack to acknowledge.
+Use --after for cursor-based reading (each reader tracks their own position).
+
+Options:
+  --after <id>       Only messages with ID > this value (cursor)
+  --limit <n>        Max messages to return (default: 50)
+  --sender <s>       Filter by sender
+  --correlation <id> Filter by correlation ID
+  --include-acked    Include already-acknowledged messages
+  --json             Output as JSON
+
+Examples:
+  tx inbox worker-3                    # Read pending messages
+  tx inbox broadcast --after 42        # Cursor-based fan-out
+  tx inbox orchestrator --json         # JSON output
+  tx inbox errors --include-acked      # Include acked messages`,
+
+  ack: `tx ack - Acknowledge a message
+
+Usage: tx ack <message-id> [--json]
+
+Transitions a message from pending to acked.
+
+Examples:
+  tx ack 42
+  tx ack 42 --json`,
+
+  "ack:all": `tx ack:all - Acknowledge all pending messages on a channel
+
+Usage: tx ack:all <channel> [--json]
+
+Examples:
+  tx ack:all worker-3
+  tx ack:all errors --json`,
+
+  "outbox:pending": `tx outbox:pending - Count pending messages
+
+Usage: tx outbox:pending <channel> [--json]
+
+Examples:
+  tx outbox:pending errors
+  tx outbox:pending worker-3 --json`,
+
+  "outbox:gc": `tx outbox:gc - Garbage collect old messages
+
+Usage: tx outbox:gc [--acked-older-than <hours>] [--json]
+
+Deletes expired messages (past TTL) and optionally old acked messages.
+
+Options:
+  --acked-older-than <hours>  Delete acked messages older than N hours
+
+Examples:
+  tx outbox:gc                         # Delete expired only
+  tx outbox:gc --acked-older-than 24   # Also clean acked > 24h old`
 }

@@ -16,6 +16,7 @@ import { initRuntime, disposeRuntime } from "./runtime.js"
 import { registerTaskTools } from "./tools/task.js"
 import { registerLearningTools } from "./tools/learning.js"
 import { registerSyncTools } from "./tools/sync.js"
+import { registerMessageTools } from "./tools/message.js"
 import { formatErrorWithStack } from "./response.js"
 
 // Re-export for library consumers
@@ -26,6 +27,7 @@ export type { McpContent, McpResponse, StructuredError } from "./response.js"
 export { registerTaskTools, serializeTask } from "./tools/task.js"
 export { registerLearningTools, serializeLearning, serializeLearningWithScore, serializeFileLearning } from "./tools/learning.js"
 export { registerSyncTools, serializeExportResult, serializeImportResult, serializeSyncStatus, serializeCompactResult } from "./tools/sync.js"
+export { registerMessageTools, serializeMessage } from "./tools/message.js"
 
 // -----------------------------------------------------------------------------
 // Signal Handler State (prevents handler accumulation/memory leak)
@@ -67,6 +69,7 @@ export const createMcpServer = (): McpServer => {
   registerTaskTools(server)
   registerLearningTools(server)
   registerSyncTools(server)
+  registerMessageTools(server)
 
   return server
 }

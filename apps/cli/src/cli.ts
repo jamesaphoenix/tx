@@ -21,12 +21,7 @@ import { sync } from "./commands/sync.js"
 import { learningAdd, learningSearch, learningRecent, learningHelpful, learningEmbed, context, learn, recall } from "./commands/learning.js"
 import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
-import { graphVerify, graphInvalidate, graphRestore, graphPrune, graphStatus, graphPin, graphUnpin, graphLink, graphShow, graphNeighbors } from "./commands/graph.js"
-import { hooksInstall, hooksUninstall, hooksStatus } from "./commands/hooks.js"
-import { daemon } from "./commands/daemon.js"
-import { coordinator } from "./commands/coordinator.js"
-import { worker } from "./commands/worker.js"
-import { testCacheStats, testClearCache } from "./commands/test.js"
+import { cycle } from "./commands/cycle.js"
 import { trace } from "./commands/trace.js"
 import { claim, claimRelease, claimRenew } from "./commands/claim.js"
 import { compact, history } from "./commands/compact.js"
@@ -35,6 +30,7 @@ import { doctor } from "./commands/doctor.js"
 import { stats } from "./commands/stats.js"
 import { bulk } from "./commands/bulk.js"
 import { dashboard } from "./commands/dashboard.js"
+import { send, inbox, ack, ackAll, outboxPending, outboxGc } from "./commands/outbox.js"
 
 // --- Argv parsing helpers ---
 
@@ -129,40 +125,13 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   "learning:helpful": learningHelpful,
   "learning:embed": learningEmbed,
 
-  // Graph commands (colon-prefixed)
-  "graph:verify": graphVerify,
-  "graph:invalidate": graphInvalidate,
-  "graph:restore": graphRestore,
-  "graph:prune": graphPrune,
-  "graph:status": graphStatus,
-  "graph:pin": graphPin,
-  "graph:unpin": graphUnpin,
-  "graph:link": graphLink,
-  "graph:show": graphShow,
-  "graph:neighbors": graphNeighbors,
-
-  // Hooks commands (colon-prefixed)
-  "hooks:install": hooksInstall,
-  "hooks:uninstall": hooksUninstall,
-  "hooks:status": hooksStatus,
-
-  // Test commands (colon-prefixed)
-  "test:cache-stats": testCacheStats,
-  "test:clear-cache": testClearCache,
+  // Cycle scan (PRD-023)
+  cycle,
 
   // Claim commands (PRD-018)
   claim,
   "claim:release": claimRelease,
   "claim:renew": claimRenew,
-
-  // Daemon command (with subcommands)
-  daemon,
-
-  // Coordinator command (with subcommands)
-  coordinator,
-
-  // Worker command (with subcommands)
-  worker,
 
   // Trace command (with subcommands)
   trace,
@@ -185,6 +154,14 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   // Dashboard command
   dashboard,
+
+  // Outbox commands (PRD-024 agent messaging)
+  send,
+  inbox,
+  ack,
+  "ack:all": ackAll,
+  "outbox:pending": outboxPending,
+  "outbox:gc": outboxGc,
 
   // Help command
   help: (pos) =>
@@ -226,27 +203,6 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
-  if (command === "daemon" && positional[0]) {
-    const subcommandKey = `daemon ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "coordinator" && positional[0]) {
-    const subcommandKey = `coordinator ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "worker" && positional[0]) {
-    const subcommandKey = `worker ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
   if (command === "trace" && positional[0]) {
     const subcommandKey = `trace ${positional[0]}`
     if (commandHelp[subcommandKey]) {
@@ -277,27 +233,6 @@ if (command === "help") {
   // Check for compound command help (e.g., tx help sync export, tx help daemon start)
   if (subcommand === "sync" && positional[1]) {
     const subcommandKey = `sync ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "daemon" && positional[1]) {
-    const subcommandKey = `daemon ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "coordinator" && positional[1]) {
-    const subcommandKey = `coordinator ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "worker" && positional[1]) {
-    const subcommandKey = `worker ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -377,6 +312,8 @@ const errorExitCodes: Record<string, number> = {
   LeaseExpiredError: 1,
   MaxRenewalsExceededError: 1,
   ExtractionUnavailableError: 1,
+  MessageNotFoundError: 2,
+  MessageAlreadyAckedError: 1,
 }
 
 const handled = runnable.pipe(

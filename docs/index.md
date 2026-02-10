@@ -26,6 +26,8 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [PRD-018](prd/PRD-018-worker-orchestration.md)        | Worker Orchestration          | Phase 2 |
 | [PRD-019](prd/PRD-019-execution-tracing.md)           | Execution Tracing System      | Phase 2 |
 | [PRD-020](prd/PRD-020-run-observability.md)            | Run Observability & Logging   | Phase 2 |
+| [PRD-021](prd/PRD-021-platform-sync.md)               | Platform Sync                 | Phase 2 |
+| [PRD-022](prd/PRD-022-agent-outbox.md)                | Agent Outbox Messaging        | Phase 2 |
 
 ## Design Documents (DDs)
 
@@ -51,6 +53,8 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [DD-018](design/DD-018-worker-orchestration.md)      | Worker Orchestration        | PRD-018          |
 | [DD-019](design/DD-019-execution-tracing.md)         | Execution Tracing System    | PRD-019          |
 | [DD-020](design/DD-020-run-observability.md)          | Run Observability & Logging | PRD-020          |
+| [DD-021](design/DD-021-platform-sync.md)             | Platform Sync               | PRD-021          |
+| [DD-022](design/DD-022-agent-outbox.md)              | Agent Outbox Messaging      | PRD-022          |
 
 ## Implementation Phases
 

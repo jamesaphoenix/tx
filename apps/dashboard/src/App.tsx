@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { fetchers, type ChatMessage } from "./api/client"
 import { TaskList, TaskFilters, TaskDetail, useTaskFiltersWithUrl } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
+import { CyclePage } from "./components/cycles"
 
 // =============================================================================
 // Status Badges
@@ -442,7 +443,7 @@ function Stats() {
 // Main App
 // =============================================================================
 
-type Tab = "tasks" | "runs"
+type Tab = "tasks" | "runs" | "cycles"
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("runs")
@@ -507,6 +508,14 @@ export default function App() {
               >
                 Runs
               </button>
+              <button
+                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
+                  activeTab === "cycles" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+                onClick={() => setActiveTab("cycles")}
+              >
+                Cycles
+              </button>
             </nav>
           </div>
           <RalphStatus />
@@ -560,7 +569,7 @@ export default function App() {
               )}
             </div>
           </>
-        ) : (
+        ) : activeTab === "runs" ? (
           <>
             {/* Runs List */}
             <div className="w-96 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
@@ -596,6 +605,8 @@ export default function App() {
               )}
             </div>
           </>
+        ) : (
+          <CyclePage />
         )}
       </main>
     </div>

@@ -349,6 +349,82 @@ export class HasChildrenError extends Data.TaggedError("HasChildrenError")<{
   }
 }
 
+// Doc error types (DD-023 docs-as-primitives)
+
+export class DocNotFoundError extends Data.TaggedError("DocNotFoundError")<{
+  readonly name: string
+}> {
+  get message() {
+    return `Doc not found: ${this.name}`
+  }
+}
+
+export class DocLockedError extends Data.TaggedError("DocLockedError")<{
+  readonly name: string
+  readonly version: number
+}> {
+  get message() {
+    return `Doc is locked: ${this.name} v${this.version}`
+  }
+}
+
+export class InvalidDocYamlError extends Data.TaggedError("InvalidDocYamlError")<{
+  readonly name: string
+  readonly reason: string
+}> {
+  get message() {
+    return `Invalid YAML for doc '${this.name}': ${this.reason}`
+  }
+}
+
+export class InvariantNotFoundError extends Data.TaggedError("InvariantNotFoundError")<{
+  readonly id: string
+}> {
+  get message() {
+    return `Invariant not found: ${this.id}`
+  }
+}
+
+// Agent/Cycle error types (PRD-023 cycle scan)
+
+export class AgentError extends Data.TaggedError("AgentError")<{
+  readonly agent: string
+  readonly reason: string
+  readonly cause?: unknown
+}> {
+  get message() {
+    return `Agent error [${this.agent}]: ${this.reason}`
+  }
+}
+
+export class CycleScanError extends Data.TaggedError("CycleScanError")<{
+  readonly phase: string
+  readonly reason: string
+  readonly cause?: unknown
+}> {
+  get message() {
+    return `Cycle scan error [${this.phase}]: ${this.reason}`
+  }
+}
+
+// Message error types (PRD-024 agent outbox)
+
+export class MessageNotFoundError extends Data.TaggedError("MessageNotFoundError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `Message not found: ${this.id}`
+  }
+}
+
+export class MessageAlreadyAckedError extends Data.TaggedError("MessageAlreadyAckedError")<{
+  readonly id: number
+}> {
+  get message() {
+    return `Message already acked: ${this.id}`
+  }
+}
+
 export class StaleDataError extends Data.TaggedError("StaleDataError")<{
   readonly taskId: string
   readonly expectedUpdatedAt: string
@@ -362,6 +438,10 @@ export class StaleDataError extends Data.TaggedError("StaleDataError")<{
 export type TaskError =
   | TaskNotFoundError
   | ValidationError
+  | DocNotFoundError
+  | DocLockedError
+  | InvalidDocYamlError
+  | InvariantNotFoundError
   | CircularDependencyError
   | DatabaseError
   | DependencyNotFoundError
@@ -391,3 +471,7 @@ export type TaskError =
   | EntityFetchError
   | StaleDataError
   | HasChildrenError
+  | MessageNotFoundError
+  | MessageAlreadyAckedError
+  | AgentError
+  | CycleScanError

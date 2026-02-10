@@ -60,6 +60,9 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx checkpoint <id> --note "..."` | Save progress without completing |
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
 | `tx learning:add` | Record knowledge for future agents |
+| `tx send <channel> <content>` | Send a message to an agent channel |
+| `tx inbox <channel>` | Read messages (read-only, cursor-based) |
+| `tx ack <id>` | Acknowledge a message |
 | `tx sync export` | Persist to git-friendly JSONL |
 | `tx sync claude` | One-way push tasks to Claude Code team directory |
 | `tx sync codex` | One-way push tasks to Codex (planned) |

@@ -24,6 +24,8 @@ import { RunIdSchema, RunStatusSchema } from "./run.js"
 import type { Run } from "./run.js"
 import { AttemptIdSchema, AttemptOutcomeSchema } from "./attempt.js"
 import type { Attempt } from "./attempt.js"
+import { MessageIdSchema, MessageStatusSchema } from "./message.js"
+import type { Message } from "./message.js"
 import { EdgeTypeSchema } from "./edge.js"
 
 // =============================================================================
@@ -465,3 +467,57 @@ export const SyncImportResponseSchema = Schema.Struct({
   conflicts: Schema.Number.pipe(Schema.int()),
 })
 export type SyncImportResponse = typeof SyncImportResponseSchema.Type
+
+// =============================================================================
+// MESSAGE SERIALIZED SCHEMAS
+// =============================================================================
+// Serialized message types for JSON output.
+
+/**
+ * Message serialized for JSON output.
+ * All Date fields converted to ISO strings.
+ */
+export const MessageSerializedSchema = Schema.Struct({
+  id: MessageIdSchema,
+  channel: Schema.String,
+  sender: Schema.String,
+  content: Schema.String,
+  status: MessageStatusSchema,
+  correlationId: Schema.NullOr(Schema.String),
+  taskId: Schema.NullOr(Schema.String),
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  createdAt: Schema.String, // ISO string
+  ackedAt: Schema.NullOr(Schema.String), // ISO string
+  expiresAt: Schema.NullOr(Schema.String), // ISO string
+})
+export type MessageSerialized = typeof MessageSerializedSchema.Type
+
+/**
+ * Serialize a Message for JSON output.
+ * Converts Date objects to ISO strings.
+ */
+export const serializeMessage = (message: Message): MessageSerialized => ({
+  id: message.id,
+  channel: message.channel,
+  sender: message.sender,
+  content: message.content,
+  status: message.status,
+  correlationId: message.correlationId,
+  taskId: message.taskId,
+  metadata: message.metadata,
+  createdAt: message.createdAt.toISOString(),
+  ackedAt: message.ackedAt?.toISOString() ?? null,
+  expiresAt: message.expiresAt?.toISOString() ?? null,
+})
+
+// =============================================================================
+// MESSAGE RESPONSE SCHEMAS
+// =============================================================================
+
+/** Response for reading inbox messages. */
+export const InboxResponseSchema = Schema.Struct({
+  messages: Schema.Array(MessageSerializedSchema),
+  channel: Schema.String,
+  count: Schema.Number.pipe(Schema.int()),
+})
+export type InboxResponse = typeof InboxResponseSchema.Type

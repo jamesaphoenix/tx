@@ -124,18 +124,21 @@ $ eslint src/
   290:25  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                          tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/dep-repo.ts
-   87:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
-   90:34  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
-   98:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
-  101:34  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
-  113:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
-  122:31  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
-  124:46  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
-  145:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead      tx/no-as-cast-in-repos
-  154:31  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
-  156:46  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead           tx/no-as-cast-in-repos
-  201:26  warning  Unsafe "as DependencyRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
-  285:15  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                tx/no-throw-in-services
+   94:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                 tx/no-as-cast-in-repos
+   97:34  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  105:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                 tx/no-as-cast-in-repos
+  108:34  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  120:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                 tx/no-as-cast-in-repos
+  129:31  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  131:46  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  152:26  warning  Unsafe "as Array<type>" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                 tx/no-as-cast-in-repos
+  161:31  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  163:46  warning  Unsafe "as TaskId" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  190:15  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  224:26  warning  Unsafe "as DependencyRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead             tx/no-as-cast-in-repos
+  270:36  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  315:17  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md                                           tx/no-throw-in-services
+  327:18  warning  Unsafe "as InsertWithCycleCheckResult" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/edge-repo.ts
    69:25  warning  Unsafe "as EdgeRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
@@ -171,23 +174,23 @@ $ eslint src/
   102:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                         tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/learning-repo.ts
-   16:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "BM25Result". See DOCTRINE RULE 10                                     tx/no-plain-interfaces
-  111:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  115:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                             tx/no-as-cast-in-repos
-  127:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
-  136:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
-  148:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
-  151:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
-  163:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
-  166:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
-  177:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
-  188:26  warning  Unsafe "as Omit<LearningRow, type>[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead          tx/no-as-cast-in-repos
-  205:26  warning  Unsafe "as Omit<LearningRowWithBM25, type>[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
-  230:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
-  295:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
-  304:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
-  313:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
-  322:25  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
+   23:8   warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "BM25Result". See DOCTRINE RULE 10                                     tx/no-plain-interfaces
+  118:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  122:21  warning  Unsafe "as number" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                             tx/no-as-cast-in-repos
+  134:25  warning  Unsafe "as LearningRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead            tx/no-as-cast-in-repos
+  143:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  155:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  158:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  170:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  173:17  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  184:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  195:26  warning  Unsafe "as Omit<LearningRow, type>[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead          tx/no-as-cast-in-repos
+  212:26  warning  Unsafe "as Omit<LearningRowWithBM25, type>[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
+  237:26  warning  Unsafe "as LearningRow[]" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                      tx/no-as-cast-in-repos
+  302:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
+  311:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
+  320:28  warning  Unsafe "as type" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                               tx/no-as-cast-in-repos
+  329:25  warning  Unsafe "as type | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead                   tx/no-as-cast-in-repos
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/repo/orchestrator-state-repo.ts
   80:25  warning  Unsafe "as OrchestratorStateRow | undefined" assertion in DB boundary code. Use runtime validation (Schema.decode, type guard) instead  tx/no-as-cast-in-repos
@@ -394,5 +397,5 @@ $ eslint src/
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/packages/core/src/worker/run-worker.ts
   34:1  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "ShutdownState". See DOCTRINE RULE 10  tx/no-plain-interfaces
 
-✖ 286 problems (0 errors, 286 warnings)
+✖ 289 problems (0 errors, 289 warnings)
 
