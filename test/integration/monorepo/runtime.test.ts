@@ -184,17 +184,17 @@ describe("Runtime Integration: @tx/core", () => {
 })
 
 // =============================================================================
-// @tx/mcp-server Runtime Tests
+// @jamesaphoenix/tx-mcp-server Runtime Tests
 // =============================================================================
 
-describe("Runtime Integration: @tx/mcp-server", () => {
-  let initRuntime: typeof import("@tx/mcp-server").initRuntime
-  let disposeRuntime: typeof import("@tx/mcp-server").disposeRuntime
-  let runEffect: typeof import("@tx/mcp-server").runEffect
-  let getRuntime: typeof import("@tx/mcp-server").getRuntime
+describe("Runtime Integration: @jamesaphoenix/tx-mcp-server", () => {
+  let initRuntime: typeof import("@jamesaphoenix/tx-mcp-server").initRuntime
+  let disposeRuntime: typeof import("@jamesaphoenix/tx-mcp-server").disposeRuntime
+  let runEffect: typeof import("@jamesaphoenix/tx-mcp-server").runEffect
+  let getRuntime: typeof import("@jamesaphoenix/tx-mcp-server").getRuntime
 
   beforeEach(async () => {
-    const mcp = await import("@tx/mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-mcp-server")
     initRuntime = mcp.initRuntime
     disposeRuntime = mcp.disposeRuntime
     runEffect = mcp.runEffect
@@ -232,14 +232,14 @@ describe("Runtime Integration: @tx/mcp-server", () => {
   })
 
   it("can create MCP server instance", async () => {
-    const { createMcpServer } = await import("@tx/mcp-server")
+    const { createMcpServer } = await import("@jamesaphoenix/tx-mcp-server")
 
     const server = createMcpServer()
     expect(server).toBeDefined()
   })
 
   it("MCP response helpers work correctly", async () => {
-    const { mcpResponse, mcpError } = await import("@tx/mcp-server")
+    const { mcpResponse, mcpError } = await import("@jamesaphoenix/tx-mcp-server")
 
     const success = mcpResponse("Operation completed", { message: "Success" })
     expect(success.content).toBeDefined()
@@ -260,24 +260,24 @@ describe("Runtime Integration: @tx/mcp-server", () => {
 })
 
 // =============================================================================
-// @tx/api-server Runtime Tests
+// @jamesaphoenix/tx-api-server Runtime Tests
 // =============================================================================
 
-describe("Runtime Integration: @tx/api-server", () => {
+describe("Runtime Integration: @jamesaphoenix/tx-api-server", () => {
   it("exports makeServerLive factory function", async () => {
-    const { makeServerLive } = await import("@tx/api-server")
+    const { makeServerLive } = await import("@jamesaphoenix/tx-api-server")
     expect(makeServerLive).toBeDefined()
     expect(typeof makeServerLive).toBe("function")
   })
 
   it("exports TxApi definition", async () => {
-    const { TxApi } = await import("@tx/api-server")
+    const { TxApi } = await import("@jamesaphoenix/tx-api-server")
     expect(TxApi).toBeDefined()
   })
 
   it("exports all route handler layers", async () => {
     const { TasksLive, HealthLive, LearningsLive, RunsLive, SyncLive } =
-      await import("@tx/api-server")
+      await import("@jamesaphoenix/tx-api-server")
     expect(TasksLive).toBeDefined()
     expect(HealthLive).toBeDefined()
     expect(LearningsLive).toBeDefined()
@@ -287,7 +287,7 @@ describe("Runtime Integration: @tx/api-server", () => {
 
   it("exports all API group definitions", async () => {
     const { HealthGroup, TasksGroup, LearningsGroup, RunsGroup, SyncGroup } =
-      await import("@tx/api-server")
+      await import("@jamesaphoenix/tx-api-server")
     expect(HealthGroup).toBeDefined()
     expect(TasksGroup).toBeDefined()
     expect(LearningsGroup).toBeDefined()
@@ -297,7 +297,7 @@ describe("Runtime Integration: @tx/api-server", () => {
 
   it("exports all error types", async () => {
     const { NotFound, BadRequest, InternalError, Unauthorized, Forbidden, ServiceUnavailable } =
-      await import("@tx/api-server")
+      await import("@jamesaphoenix/tx-api-server")
     expect(NotFound).toBeDefined()
     expect(BadRequest).toBeDefined()
     expect(InternalError).toBeDefined()
@@ -307,7 +307,7 @@ describe("Runtime Integration: @tx/api-server", () => {
   })
 
   it("error types produce correct tagged errors", async () => {
-    const { NotFound, BadRequest, InternalError } = await import("@tx/api-server")
+    const { NotFound, BadRequest, InternalError } = await import("@jamesaphoenix/tx-api-server")
 
     const notFound = new NotFound({ message: "Task not found" })
     expect(notFound._tag).toBe("NotFound")
@@ -323,7 +323,7 @@ describe("Runtime Integration: @tx/api-server", () => {
   })
 
   it("mapCoreError maps tagged errors correctly", async () => {
-    const { mapCoreError } = await import("@tx/api-server")
+    const { mapCoreError } = await import("@jamesaphoenix/tx-api-server")
 
     const notFound = mapCoreError({ _tag: "TaskNotFoundError", message: "Not found" })
     expect(notFound._tag).toBe("NotFound")
@@ -339,7 +339,7 @@ describe("Runtime Integration: @tx/api-server", () => {
   })
 
   it("makeServerLive creates a Layer with options", async () => {
-    const { makeServerLive } = await import("@tx/api-server")
+    const { makeServerLive } = await import("@jamesaphoenix/tx-api-server")
 
     // Verify it accepts options and returns without throwing
     const layer = makeServerLive({ port: 0, dbPath: ":memory:" })
@@ -348,12 +348,12 @@ describe("Runtime Integration: @tx/api-server", () => {
 })
 
 // =============================================================================
-// @tx/agent-sdk Runtime Tests
+// @jamesaphoenix/tx-agent-sdk Runtime Tests
 // =============================================================================
 
-describe("Runtime Integration: @tx/agent-sdk", () => {
+describe("Runtime Integration: @jamesaphoenix/tx-agent-sdk", () => {
   it("can create TxClient for direct DB access", async () => {
-    const { TxClient } = await import("@tx/agent-sdk")
+    const { TxClient } = await import("@jamesaphoenix/tx-agent-sdk")
 
     const client = new TxClient({ dbPath: ":memory:" })
     expect(client).toBeDefined()
@@ -363,7 +363,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
   })
 
   it("TxClient.tasks.create works with direct DB access", async () => {
-    const { TxClient } = await import("@tx/agent-sdk")
+    const { TxClient } = await import("@jamesaphoenix/tx-agent-sdk")
 
     const client = new TxClient({ dbPath: ":memory:" })
 
@@ -378,7 +378,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
   })
 
   it("TxClient.tasks.ready works with direct DB access", async () => {
-    const { TxClient } = await import("@tx/agent-sdk")
+    const { TxClient } = await import("@jamesaphoenix/tx-agent-sdk")
 
     const client = new TxClient({ dbPath: ":memory:" })
 
@@ -396,7 +396,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
   })
 
   it("TxClient.tasks.done marks task complete", async () => {
-    const { TxClient } = await import("@tx/agent-sdk")
+    const { TxClient } = await import("@jamesaphoenix/tx-agent-sdk")
 
     const client = new TxClient({ dbPath: ":memory:" })
 
@@ -408,7 +408,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
   })
 
   it("TxClient.learnings.add works with direct DB access", async () => {
-    const { TxClient } = await import("@tx/agent-sdk")
+    const { TxClient } = await import("@jamesaphoenix/tx-agent-sdk")
 
     const client = new TxClient({ dbPath: ":memory:" })
 
@@ -428,7 +428,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
       filterByStatus,
       sortByScore,
       getNextTask,
-    } = await import("@tx/agent-sdk")
+    } = await import("@jamesaphoenix/tx-agent-sdk")
 
     // isValidTaskStatus
     expect(isValidTaskStatus("backlog")).toBe(true)
@@ -466,7 +466,7 @@ describe("Runtime Integration: @tx/agent-sdk", () => {
   })
 
   it("retry logic works correctly", async () => {
-    const { withRetry } = await import("@tx/agent-sdk")
+    const { withRetry } = await import("@jamesaphoenix/tx-agent-sdk")
 
     let attempts = 0
     const fn = async () => {
@@ -499,9 +499,9 @@ describe("Cross-Package Integration", () => {
     await shared.reset()
   })
 
-  it("@tx/types exports match @tx/agent-sdk exports", async () => {
+  it("@tx/types exports match @jamesaphoenix/tx-agent-sdk exports", async () => {
     const types = await import("@jamesaphoenix/tx-types")
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     // Both should have the same task statuses
     expect(types.TASK_STATUSES).toEqual(sdk.TASK_STATUSES)
@@ -530,7 +530,7 @@ describe("Cross-Package Integration", () => {
     expect(task1.title).toBe("Layer test task")
 
     // Test 2: MCP runtime (testing MCP server's initialization API)
-    const { initRuntime, runEffect, disposeRuntime } = await import("@tx/mcp-server")
+    const { initRuntime, runEffect, disposeRuntime } = await import("@jamesaphoenix/tx-mcp-server")
     await initRuntime(":memory:")
     const task2 = await runEffect(
       Effect.gen(function* () {
@@ -543,7 +543,7 @@ describe("Cross-Package Integration", () => {
 
     // Test 3: API server exports (api-server uses Effect HTTP platform,
     // no standalone runtime — verify makeServerLive is composable)
-    const { makeServerLive } = await import("@tx/api-server")
+    const { makeServerLive } = await import("@jamesaphoenix/tx-api-server")
     const serverLayer = makeServerLive({ port: 0, dbPath: ":memory:" })
     expect(serverLayer).toBeDefined()
 
@@ -592,8 +592,8 @@ describe("Error Handling Across Packages", () => {
     }
   })
 
-  it("@tx/agent-sdk TxError works correctly", async () => {
-    const { TxError } = await import("@tx/agent-sdk")
+  it("@jamesaphoenix/tx-agent-sdk TxError works correctly", async () => {
+    const { TxError } = await import("@jamesaphoenix/tx-agent-sdk")
 
     const error = new TxError("Test error", "VALIDATION_ERROR", 400)
     expect(error.message).toBe("Test error")

@@ -1,5 +1,5 @@
 /**
- * @tx/agent-sdk Client Tests
+ * @jamesaphoenix/tx-agent-sdk Client Tests
  *
  * Tests for TxClient singleton behavior and DirectTransport caching.
  */

@@ -1,5 +1,5 @@
 /**
- * @tx/agent-sdk Utils Tests
+ * @jamesaphoenix/tx-agent-sdk Utils Tests
  *
  * Tests for parseDate validation and other utility functions.
  */

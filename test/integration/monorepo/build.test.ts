@@ -106,7 +106,7 @@ describe("Build Outputs: @tx/core", () => {
   })
 })
 
-describe("Build Outputs: @tx/cli", () => {
+describe("Build Outputs: @jamesaphoenix/tx-cli", () => {
   const distPath = resolve(APPS.cli, "dist")
 
   it("has dist directory", () => {
@@ -136,7 +136,7 @@ describe("Build Outputs: @tx/cli", () => {
   })
 })
 
-describe("Build Outputs: @tx/mcp-server", () => {
+describe("Build Outputs: @jamesaphoenix/tx-mcp-server", () => {
   const distPath = resolve(APPS.mcpServer, "dist")
 
   it("has dist directory", () => {
@@ -170,7 +170,7 @@ describe("Build Outputs: @tx/mcp-server", () => {
   })
 })
 
-describe("Build Outputs: @tx/api-server", () => {
+describe("Build Outputs: @jamesaphoenix/tx-api-server", () => {
   const distPath = resolve(APPS.apiServer, "dist")
 
   it("has dist directory", () => {
@@ -209,7 +209,7 @@ describe("Build Outputs: @tx/api-server", () => {
   })
 })
 
-describe("Build Outputs: @tx/agent-sdk", () => {
+describe("Build Outputs: @jamesaphoenix/tx-agent-sdk", () => {
   const distPath = resolve(APPS.agentSdk, "dist")
 
   it("has dist directory", () => {

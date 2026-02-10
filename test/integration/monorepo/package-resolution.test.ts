@@ -5,10 +5,10 @@
  * These tests ensure the monorepo structure is working as expected.
  *
  * Tests:
- * - @tx/cli imports @tx/core correctly
- * - @tx/mcp-server imports @tx/core correctly
- * - @tx/api-server imports @tx/core correctly
- * - @tx/agent-sdk imports @tx/types correctly
+ * - @jamesaphoenix/tx-cli imports @tx/core correctly
+ * - @jamesaphoenix/tx-mcp-server imports @tx/core correctly
+ * - @jamesaphoenix/tx-api-server imports @tx/core correctly
+ * - @jamesaphoenix/tx-agent-sdk imports @tx/types correctly
  * - All packages resolve workspace dependencies
  *
  * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
@@ -174,7 +174,7 @@ describe("Package Resolution: @tx/core", () => {
   })
 })
 
-describe("Package Resolution: @tx/cli", () => {
+describe("Package Resolution: @jamesaphoenix/tx-cli", () => {
   it("imports @tx/core correctly", async () => {
     // The CLI package should be able to import from @tx/core
     // We verify this by checking the CLI module loads without error
@@ -194,20 +194,20 @@ describe("Package Resolution: @tx/cli", () => {
 
     expect(cliPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
     expect(cliPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
-    expect(cliPackageJson.name).toBe("@tx/cli")
+    expect(cliPackageJson.name).toBe("@jamesaphoenix/tx-cli")
   })
 })
 
-describe("Package Resolution: @tx/mcp-server", () => {
+describe("Package Resolution: @jamesaphoenix/tx-mcp-server", () => {
   it("exports server creation functions", async () => {
-    const mcp = await import("@tx/mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-mcp-server")
 
     expect(mcp.createMcpServer).toBeDefined()
     expect(typeof mcp.createMcpServer).toBe("function")
   })
 
   it("exports runtime management functions", async () => {
-    const mcp = await import("@tx/mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-mcp-server")
 
     expect(mcp.initRuntime).toBeDefined()
     expect(mcp.disposeRuntime).toBeDefined()
@@ -216,14 +216,14 @@ describe("Package Resolution: @tx/mcp-server", () => {
   })
 
   it("exports response helpers", async () => {
-    const mcp = await import("@tx/mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-mcp-server")
 
     expect(mcp.mcpResponse).toBeDefined()
     expect(mcp.mcpError).toBeDefined()
   })
 
   it("exports tool registration functions", async () => {
-    const mcp = await import("@tx/mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-mcp-server")
 
     expect(mcp.registerTaskTools).toBeDefined()
     expect(mcp.registerLearningTools).toBeDefined()
@@ -243,20 +243,20 @@ describe("Package Resolution: @tx/mcp-server", () => {
 
     expect(mcpPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
     expect(mcpPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
-    expect(mcpPackageJson.name).toBe("@tx/mcp-server")
+    expect(mcpPackageJson.name).toBe("@jamesaphoenix/tx-mcp-server")
   })
 })
 
-describe("Package Resolution: @tx/api-server", () => {
+describe("Package Resolution: @jamesaphoenix/tx-api-server", () => {
   it("exports makeServerLive layer factory", async () => {
-    const api = await import("@tx/api-server")
+    const api = await import("@jamesaphoenix/tx-api-server")
 
     expect(api.makeServerLive).toBeDefined()
     expect(typeof api.makeServerLive).toBe("function")
   })
 
   it("exports TxApi definition and error types", async () => {
-    const api = await import("@tx/api-server")
+    const api = await import("@jamesaphoenix/tx-api-server")
 
     expect(api.TxApi).toBeDefined()
     expect(api.NotFound).toBeDefined()
@@ -269,7 +269,7 @@ describe("Package Resolution: @tx/api-server", () => {
   })
 
   it("exports API group definitions", async () => {
-    const api = await import("@tx/api-server")
+    const api = await import("@jamesaphoenix/tx-api-server")
 
     expect(api.HealthGroup).toBeDefined()
     expect(api.TasksGroup).toBeDefined()
@@ -279,7 +279,7 @@ describe("Package Resolution: @tx/api-server", () => {
   })
 
   it("exports route handler layers", async () => {
-    const api = await import("@tx/api-server")
+    const api = await import("@jamesaphoenix/tx-api-server")
 
     expect(api.TasksLive).toBeDefined()
     expect(api.HealthLive).toBeDefined()
@@ -301,20 +301,20 @@ describe("Package Resolution: @tx/api-server", () => {
 
     expect(apiPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
     expect(apiPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
-    expect(apiPackageJson.name).toBe("@tx/api-server")
+    expect(apiPackageJson.name).toBe("@jamesaphoenix/tx-api-server")
   })
 })
 
-describe("Package Resolution: @tx/agent-sdk", () => {
+describe("Package Resolution: @jamesaphoenix/tx-agent-sdk", () => {
   it("exports TxClient class", async () => {
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(sdk.TxClient).toBeDefined()
     expect(typeof sdk.TxClient).toBe("function")
   })
 
   it("exports utility functions", async () => {
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(sdk.isValidTaskStatus).toBeDefined()
     expect(sdk.isValidTaskId).toBeDefined()
@@ -324,7 +324,7 @@ describe("Package Resolution: @tx/agent-sdk", () => {
   })
 
   it("exports retry logic", async () => {
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(sdk.withRetry).toBeDefined()
     expect(sdk.defaultShouldRetry).toBeDefined()
@@ -332,14 +332,14 @@ describe("Package Resolution: @tx/agent-sdk", () => {
   })
 
   it("exports TxError for error handling", async () => {
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(sdk.TxError).toBeDefined()
     expect(sdk.parseApiError).toBeDefined()
   })
 
   it("re-exports type constants from @tx/types", async () => {
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(sdk.TASK_STATUSES).toBeDefined()
     expect(sdk.VALID_TRANSITIONS).toBeDefined()
@@ -360,14 +360,14 @@ describe("Package Resolution: @tx/agent-sdk", () => {
     )
 
     expect(sdkPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
-    expect(sdkPackageJson.name).toBe("@tx/agent-sdk")
+    expect(sdkPackageJson.name).toBe("@jamesaphoenix/tx-agent-sdk")
   })
 })
 
 describe("Cross-Package Type Consistency", () => {
   it("TaskStatus is consistent across packages", async () => {
     const types = await import("@jamesaphoenix/tx-types")
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     // Both should have the same task statuses
     expect(types.TASK_STATUSES).toEqual(sdk.TASK_STATUSES)
@@ -375,14 +375,14 @@ describe("Cross-Package Type Consistency", () => {
 
   it("VALID_TRANSITIONS is consistent across packages", async () => {
     const types = await import("@jamesaphoenix/tx-types")
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(types.VALID_TRANSITIONS).toEqual(sdk.VALID_TRANSITIONS)
   })
 
   it("LEARNING_SOURCE_TYPES is consistent across packages", async () => {
     const types = await import("@jamesaphoenix/tx-types")
-    const sdk = await import("@tx/agent-sdk")
+    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(types.LEARNING_SOURCE_TYPES).toEqual(sdk.LEARNING_SOURCE_TYPES)
   })

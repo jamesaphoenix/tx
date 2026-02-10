@@ -46,7 +46,7 @@ import {
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 import { serializeTask } from "@jamesaphoenix/tx-types"
-import { TxClient } from "@tx/agent-sdk"
+import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
 
 // =============================================================================
 // Constants
@@ -60,7 +60,7 @@ const CLI_TIMEOUT = 10000
 // =============================================================================
 
 /**
- * Common serialized task interface that both @tx/types and @tx/agent-sdk satisfy.
+ * Common serialized task interface that both @tx/types and @jamesaphoenix/tx-agent-sdk satisfy.
  * Uses plain strings instead of branded types for runtime comparison.
  * This is the actual JSON shape returned by all interfaces.
  */

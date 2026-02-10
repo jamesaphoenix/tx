@@ -1,5 +1,5 @@
 /**
- * @tx/agent-sdk Utility Functions
+ * @jamesaphoenix/tx-agent-sdk Utility Functions
  *
  * Helper functions for SDK consumers.
  */

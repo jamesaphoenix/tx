@@ -6,7 +6,7 @@
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "package.json"],
       "outputs": ["dist/**"]
     },
-    "@tx/docs#build": {
+    "@jamesaphoenix/tx-docs#build": {
       "dependsOn": ["^build"],
       "inputs": [
         "app/**/*.ts",
@@ -29,7 +29,7 @@
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json"],
       "outputs": []
     },
-    "@tx/docs#typecheck": {
+    "@jamesaphoenix/tx-docs#typecheck": {
       "dependsOn": ["^build"],
       "inputs": [
         "app/**/*.ts",

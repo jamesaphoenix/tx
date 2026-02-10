@@ -1,5 +1,5 @@
 {
-  "name": "@tx/mcp-server",
+  "name": "@jamesaphoenix/tx-mcp-server",
   "version": "0.5.0",
   "description": "TX MCP server - Model Context Protocol integration for AI agents",
   "type": "module",

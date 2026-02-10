@@ -1,7 +1,7 @@
 /**
- * @tx/api-server Library Entry Point
+ * @jamesaphoenix/tx-api-server Library Entry Point
  *
- * This module provides the library exports for @tx/api-server without
+ * This module provides the library exports for @jamesaphoenix/tx-api-server without
  * auto-starting the server. Use this for programmatic access.
  *
  * For CLI usage (auto-start), use: node dist/server.js

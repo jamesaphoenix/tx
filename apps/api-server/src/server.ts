@@ -3,7 +3,7 @@
  * TX API Server CLI Entry Point
  *
  * This module auto-starts the server when executed directly.
- * For library usage without auto-start, import from '@tx/api-server' instead.
+ * For library usage without auto-start, import from '@jamesaphoenix/tx-api-server' instead.
  *
  * Usage:
  *   tx-api                      # Start with default settings

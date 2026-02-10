@@ -1,5 +1,5 @@
 /**
- * @tx/agent-sdk - TypeScript SDK for building custom agents with TX
+ * @jamesaphoenix/tx-agent-sdk - TypeScript SDK for building custom agents with TX
  *
  * This SDK provides a simple, Promise-based API for task management.
  * It supports both HTTP API mode (using the TX API server) and direct
@@ -7,7 +7,7 @@
  *
  * @example
  * ```typescript
- * import { TxClient } from "@tx/agent-sdk";
+ * import { TxClient } from "@jamesaphoenix/tx-agent-sdk";
  *
  * // HTTP mode (recommended for distributed agents)
  * const tx = new TxClient({ apiUrl: "http://localhost:3456" });

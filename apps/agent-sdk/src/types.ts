@@ -1,12 +1,12 @@
 /**
- * @tx/agent-sdk Types
+ * @jamesaphoenix/tx-agent-sdk Types
  *
  * Re-exports all types from @tx/types for convenience.
  * SDK consumers can import types directly from the SDK.
  *
  * @example
  * ```typescript
- * import { TaskWithDeps, Learning, TaskStatus } from "@tx/agent-sdk/types";
+ * import { TaskWithDeps, Learning, TaskStatus } from "@jamesaphoenix/tx-agent-sdk/types";
  * ```
  */
 

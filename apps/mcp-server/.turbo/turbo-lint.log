@@ -1,7 +1,16 @@
 $ eslint src/
 
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/tools/doc.ts
+  10:1  warning  Use Effect Schema (import { Schema } from "effect") instead of Zod. See DOCTRINE RULE 10  tx/no-zod
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/tools/invariant.ts
+  10:1  warning  Use Effect Schema (import { Schema } from "effect") instead of Zod. See DOCTRINE RULE 10  tx/no-zod
+
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/tools/learning.ts
   9:1  warning  Use Effect Schema (import { Schema } from "effect") instead of Zod. See DOCTRINE RULE 10  tx/no-zod
+
+/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/tools/message.ts
+  10:1  warning  Use Effect Schema (import { Schema } from "effect") instead of Zod. See DOCTRINE RULE 10  tx/no-zod
 
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/tools/sync.ts
   11:1  warning  Use Effect Schema (import { Schema } from "effect") instead of Zod. See DOCTRINE RULE 10  tx/no-zod
@@ -10,5 +19,5 @@ $ eslint src/
 /Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/mcp-server/src/tools/task.ts
   10:1  warning  Use Effect Schema (import { Schema } from "effect") instead of Zod. See DOCTRINE RULE 10  tx/no-zod
 
-✖ 4 problems (0 errors, 4 warnings)
+✖ 7 problems (0 errors, 7 warnings)
 

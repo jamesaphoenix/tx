@@ -1,5 +1,5 @@
 /**
- * @tx/agent-sdk Client
+ * @jamesaphoenix/tx-agent-sdk Client
  *
  * TxClient provides a unified interface for task management,
  * supporting both HTTP API mode and direct SQLite access.
