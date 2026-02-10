@@ -15,6 +15,8 @@
     "sync",
     "inbox",
     "attempts",
+    "handoff",
+    "checkpoint",
     "---Observability---",
     "traces",
     "docs",
