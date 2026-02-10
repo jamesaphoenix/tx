@@ -15,6 +15,7 @@ export interface McpContent {
 }
 
 export interface McpResponse {
+  [key: string]: unknown
   content: McpContent[]
   isError: boolean
 }

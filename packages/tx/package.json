@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "TanStack for AI agents - headless primitives for memory, tasks, and orchestration",
   "type": "module",
   "main": "./dist/index.js",

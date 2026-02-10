@@ -145,7 +145,6 @@ const handleInvariantRecord = async (args: { invariantId: string; passed: boolea
  * Register all invariant-related MCP tools on the server.
  */
 export const registerInvariantTools = (server: McpServer): void => {
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_invariant_list",
     "List project invariants (rules that must hold). Can filter by subsystem or enforcement type.",
@@ -156,7 +155,6 @@ export const registerInvariantTools = (server: McpServer): void => {
     handleInvariantList
   )
 
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_invariant_get",
     "Get a specific invariant by its ID",
@@ -166,7 +164,6 @@ export const registerInvariantTools = (server: McpServer): void => {
     handleInvariantGet
   )
 
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_invariant_record",
     "Record the result of an invariant check (pass/fail with optional details)",

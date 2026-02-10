@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../test/setup'
 import App from '../App'
 import { selectionStore, selectionActions } from '../stores/selection-store'
-import type { PaginatedTasksResponse, TaskWithDeps, PaginatedRunsResponse, Run } from '../api/client'
+import type { PaginatedTasksResponse, TaskWithDeps } from '../api/client'
 
 // ─── Fixtures ──────────────────────────────────────────────────────────
 
@@ -25,23 +25,6 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
-    ...overrides,
-  }
-}
-
-function createRun(overrides: Partial<Run> = {}): Run {
-  return {
-    id: `run-${Math.random().toString(36).slice(2, 10)}`,
-    taskId: null,
-    agent: 'test-agent',
-    startedAt: '2026-01-30T12:00:00Z',
-    endedAt: '2026-01-30T12:30:00Z',
-    status: 'completed',
-    exitCode: 0,
-    pid: null,
-    transcriptPath: null,
-    summary: null,
-    errorMessage: null,
     ...overrides,
   }
 }
@@ -90,7 +73,7 @@ function setupEmptyApiMocks() {
       HttpResponse.json({ tasks: [] })
     ),
     http.get('/api/runs', () =>
-      HttpResponse.json({ runs: [], nextCursor: null, hasMore: false } satisfies PaginatedRunsResponse)
+      HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })
     ),
     http.get('/api/docs', () =>
       HttpResponse.json({ docs: [] })
