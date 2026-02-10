@@ -8,56 +8,70 @@
  * 4. Text output formatter tests
  */
 import { describe, it, expect } from "vitest"
-import { z } from "zod"
+import { Schema, Either } from "effect"
 import { TASK_STATUSES, type TaskWithDeps, type TaskId } from "@jamesaphoenix/tx-types"
 import { fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------
-// Tool Input Schemas (mirrored from MCP server for unit testing)
+// Helper: safeParse using Effect Schema (replaces Zod safeParse)
 // -----------------------------------------------------------------------------
 
+function safeParse<A, I>(schema: Schema.Schema<A, I>, data: unknown): { success: boolean } {
+  const result = Schema.decodeUnknownEither(schema)(data)
+  return { success: Either.isRight(result) }
+}
+
+// -----------------------------------------------------------------------------
+// Tool Input Schemas (mirrored from MCP server for unit testing)
+// Using Effect Schema per DOCTRINE Rule 10
+// -----------------------------------------------------------------------------
+
+const PositiveInt = Schema.Number.pipe(Schema.int(), Schema.positive())
+
+const TaskStatusEnum = Schema.Literal(...TASK_STATUSES)
+
 const toolSchemas = {
-  tx_ready: z.object({
-    limit: z.number().int().positive().optional()
+  tx_ready: Schema.Struct({
+    limit: Schema.optional(PositiveInt)
   }),
-  tx_show: z.object({
-    id: z.string()
+  tx_show: Schema.Struct({
+    id: Schema.String
   }),
-  tx_list: z.object({
-    status: z.enum(TASK_STATUSES).optional(),
-    parentId: z.string().optional(),
-    limit: z.number().int().positive().optional()
+  tx_list: Schema.Struct({
+    status: Schema.optional(TaskStatusEnum),
+    parentId: Schema.optional(Schema.String),
+    limit: Schema.optional(PositiveInt)
   }),
-  tx_children: z.object({
-    id: z.string()
+  tx_children: Schema.Struct({
+    id: Schema.String
   }),
-  tx_add: z.object({
-    title: z.string(),
-    description: z.string().optional(),
-    parentId: z.string().optional(),
-    score: z.number().int().optional()
+  tx_add: Schema.Struct({
+    title: Schema.String,
+    description: Schema.optional(Schema.String),
+    parentId: Schema.optional(Schema.String),
+    score: Schema.optional(Schema.Number.pipe(Schema.int()))
   }),
-  tx_update: z.object({
-    id: z.string(),
-    title: z.string().optional(),
-    description: z.string().optional(),
-    status: z.enum(TASK_STATUSES).optional(),
-    parentId: z.string().nullable().optional(),
-    score: z.number().int().optional()
+  tx_update: Schema.Struct({
+    id: Schema.String,
+    title: Schema.optional(Schema.String),
+    description: Schema.optional(Schema.String),
+    status: Schema.optional(TaskStatusEnum),
+    parentId: Schema.optional(Schema.NullOr(Schema.String)),
+    score: Schema.optional(Schema.Number.pipe(Schema.int()))
   }),
-  tx_done: z.object({
-    id: z.string()
+  tx_done: Schema.Struct({
+    id: Schema.String
   }),
-  tx_delete: z.object({
-    id: z.string()
+  tx_delete: Schema.Struct({
+    id: Schema.String
   }),
-  tx_block: z.object({
-    taskId: z.string(),
-    blockerId: z.string()
+  tx_block: Schema.Struct({
+    taskId: Schema.String,
+    blockerId: Schema.String
   }),
-  tx_unblock: z.object({
-    taskId: z.string(),
-    blockerId: z.string()
+  tx_unblock: Schema.Struct({
+    taskId: Schema.String,
+    blockerId: Schema.String
   })
 } as const
 
@@ -97,24 +111,23 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
 })
 
 // TaskWithDeps validation schema for serialized output
-// ISO 8601 date pattern for validation
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/
 
-const TaskWithDepsOutputSchema = z.object({
-  id: z.string().regex(/^tx-[a-z0-9]{6,12}$/),
-  title: z.string(),
-  description: z.string(),
-  status: z.enum(TASK_STATUSES),
-  parentId: z.string().nullable(),
-  score: z.number().int(),
-  createdAt: z.string().regex(isoDatePattern),
-  updatedAt: z.string().regex(isoDatePattern),
-  completedAt: z.string().regex(isoDatePattern).nullable(),
-  metadata: z.record(z.string(), z.unknown()),
-  blockedBy: z.array(z.string()),
-  blocks: z.array(z.string()),
-  children: z.array(z.string()),
-  isReady: z.boolean()
+const TaskWithDepsOutputSchema = Schema.Struct({
+  id: Schema.String.pipe(Schema.pattern(/^tx-[a-z0-9]{6,12}$/)),
+  title: Schema.String,
+  description: Schema.String,
+  status: TaskStatusEnum,
+  parentId: Schema.NullOr(Schema.String),
+  score: Schema.Number.pipe(Schema.int()),
+  createdAt: Schema.String.pipe(Schema.pattern(isoDatePattern)),
+  updatedAt: Schema.String.pipe(Schema.pattern(isoDatePattern)),
+  completedAt: Schema.NullOr(Schema.String.pipe(Schema.pattern(isoDatePattern))),
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  blockedBy: Schema.Array(Schema.String),
+  blocks: Schema.Array(Schema.String),
+  children: Schema.Array(Schema.String),
+  isReady: Schema.Boolean
 })
 
 // -----------------------------------------------------------------------------
@@ -150,7 +163,7 @@ describe("TaskWithDeps Schema Validation", () => {
     const task = makeTestTask()
     const serialized = serializeTask(task)
 
-    const result = TaskWithDepsOutputSchema.safeParse(serialized)
+    const result = safeParse(TaskWithDepsOutputSchema, serialized)
     expect(result.success).toBe(true)
   })
 
@@ -242,7 +255,7 @@ describe("TaskWithDeps Schema Validation", () => {
     for (const status of TASK_STATUSES) {
       const task = makeTestTask({ status })
       const serialized = serializeTask(task)
-      const result = TaskWithDepsOutputSchema.safeParse(serialized)
+      const result = safeParse(TaskWithDepsOutputSchema, serialized)
       expect(result.success).toBe(true)
     }
   })
@@ -271,76 +284,76 @@ describe("TaskWithDeps Schema Validation", () => {
 describe("Tool Input Schema Validation", () => {
   describe("tx_ready", () => {
     it("accepts empty object (no parameters)", () => {
-      const result = toolSchemas.tx_ready.safeParse({})
+      const result = safeParse(toolSchemas.tx_ready, {})
       expect(result.success).toBe(true)
     })
 
     it("accepts valid limit", () => {
-      const result = toolSchemas.tx_ready.safeParse({ limit: 10 })
+      const result = safeParse(toolSchemas.tx_ready, { limit: 10 })
       expect(result.success).toBe(true)
     })
 
     it("rejects negative limit", () => {
-      const result = toolSchemas.tx_ready.safeParse({ limit: -1 })
+      const result = safeParse(toolSchemas.tx_ready, { limit: -1 })
       expect(result.success).toBe(false)
     })
 
     it("rejects zero limit", () => {
-      const result = toolSchemas.tx_ready.safeParse({ limit: 0 })
+      const result = safeParse(toolSchemas.tx_ready, { limit: 0 })
       expect(result.success).toBe(false)
     })
 
     it("rejects non-integer limit", () => {
-      const result = toolSchemas.tx_ready.safeParse({ limit: 1.5 })
+      const result = safeParse(toolSchemas.tx_ready, { limit: 1.5 })
       expect(result.success).toBe(false)
     })
 
     it("rejects string limit", () => {
-      const result = toolSchemas.tx_ready.safeParse({ limit: "10" })
+      const result = safeParse(toolSchemas.tx_ready, { limit: "10" })
       expect(result.success).toBe(false)
     })
   })
 
   describe("tx_show", () => {
     it("requires id field", () => {
-      const result = toolSchemas.tx_show.safeParse({})
+      const result = safeParse(toolSchemas.tx_show, {})
       expect(result.success).toBe(false)
     })
 
     it("accepts valid id", () => {
-      const result = toolSchemas.tx_show.safeParse({ id: "tx-12345678" })
+      const result = safeParse(toolSchemas.tx_show, { id: "tx-12345678" })
       expect(result.success).toBe(true)
     })
 
     it("accepts any string as id (validation happens at runtime)", () => {
-      const result = toolSchemas.tx_show.safeParse({ id: "invalid-id" })
+      const result = safeParse(toolSchemas.tx_show, { id: "invalid-id" })
       expect(result.success).toBe(true)
     })
   })
 
   describe("tx_list", () => {
     it("accepts empty object", () => {
-      const result = toolSchemas.tx_list.safeParse({})
+      const result = safeParse(toolSchemas.tx_list, {})
       expect(result.success).toBe(true)
     })
 
     it("accepts status filter", () => {
-      const result = toolSchemas.tx_list.safeParse({ status: "ready" })
+      const result = safeParse(toolSchemas.tx_list, { status: "ready" })
       expect(result.success).toBe(true)
     })
 
     it("accepts parentId filter", () => {
-      const result = toolSchemas.tx_list.safeParse({ parentId: "tx-12345678" })
+      const result = safeParse(toolSchemas.tx_list, { parentId: "tx-12345678" })
       expect(result.success).toBe(true)
     })
 
     it("accepts limit filter", () => {
-      const result = toolSchemas.tx_list.safeParse({ limit: 50 })
+      const result = safeParse(toolSchemas.tx_list, { limit: 50 })
       expect(result.success).toBe(true)
     })
 
     it("accepts all filters combined", () => {
-      const result = toolSchemas.tx_list.safeParse({
+      const result = safeParse(toolSchemas.tx_list, {
         status: "active",
         parentId: "tx-12345678",
         limit: 25
@@ -349,18 +362,18 @@ describe("Tool Input Schema Validation", () => {
     })
 
     it("rejects invalid limit", () => {
-      const result = toolSchemas.tx_list.safeParse({ limit: -5 })
+      const result = safeParse(toolSchemas.tx_list, { limit: -5 })
       expect(result.success).toBe(false)
     })
 
     it("rejects invalid status value", () => {
-      const result = toolSchemas.tx_list.safeParse({ status: "invalid_status" })
+      const result = safeParse(toolSchemas.tx_list, { status: "invalid_status" })
       expect(result.success).toBe(false)
     })
 
     it("accepts all valid status values", () => {
       for (const status of TASK_STATUSES) {
-        const result = toolSchemas.tx_list.safeParse({ status })
+        const result = safeParse(toolSchemas.tx_list, { status })
         expect(result.success).toBe(true)
       }
     })
@@ -368,29 +381,29 @@ describe("Tool Input Schema Validation", () => {
 
   describe("tx_children", () => {
     it("requires id field", () => {
-      const result = toolSchemas.tx_children.safeParse({})
+      const result = safeParse(toolSchemas.tx_children, {})
       expect(result.success).toBe(false)
     })
 
     it("accepts valid id", () => {
-      const result = toolSchemas.tx_children.safeParse({ id: "tx-12345678" })
+      const result = safeParse(toolSchemas.tx_children, { id: "tx-12345678" })
       expect(result.success).toBe(true)
     })
   })
 
   describe("tx_add", () => {
     it("requires title field", () => {
-      const result = toolSchemas.tx_add.safeParse({})
+      const result = safeParse(toolSchemas.tx_add, {})
       expect(result.success).toBe(false)
     })
 
     it("accepts only title", () => {
-      const result = toolSchemas.tx_add.safeParse({ title: "New task" })
+      const result = safeParse(toolSchemas.tx_add, { title: "New task" })
       expect(result.success).toBe(true)
     })
 
     it("accepts all optional fields", () => {
-      const result = toolSchemas.tx_add.safeParse({
+      const result = safeParse(toolSchemas.tx_add, {
         title: "New task",
         description: "Task description",
         parentId: "tx-12345678",
@@ -400,34 +413,34 @@ describe("Tool Input Schema Validation", () => {
     })
 
     it("accepts empty string title (validation at runtime)", () => {
-      const result = toolSchemas.tx_add.safeParse({ title: "" })
+      const result = safeParse(toolSchemas.tx_add, { title: "" })
       expect(result.success).toBe(true) // Schema allows it, runtime validation catches it
     })
 
     it("rejects non-integer score", () => {
-      const result = toolSchemas.tx_add.safeParse({ title: "Task", score: 75.5 })
+      const result = safeParse(toolSchemas.tx_add, { title: "Task", score: 75.5 })
       expect(result.success).toBe(false)
     })
 
     it("accepts negative score (valid for low priority)", () => {
-      const result = toolSchemas.tx_add.safeParse({ title: "Task", score: -100 })
+      const result = safeParse(toolSchemas.tx_add, { title: "Task", score: -100 })
       expect(result.success).toBe(true)
     })
   })
 
   describe("tx_update", () => {
     it("requires id field", () => {
-      const result = toolSchemas.tx_update.safeParse({})
+      const result = safeParse(toolSchemas.tx_update, {})
       expect(result.success).toBe(false)
     })
 
     it("accepts only id (no updates)", () => {
-      const result = toolSchemas.tx_update.safeParse({ id: "tx-12345678" })
+      const result = safeParse(toolSchemas.tx_update, { id: "tx-12345678" })
       expect(result.success).toBe(true)
     })
 
     it("accepts all update fields", () => {
-      const result = toolSchemas.tx_update.safeParse({
+      const result = safeParse(toolSchemas.tx_update, {
         id: "tx-12345678",
         title: "Updated title",
         description: "Updated description",
@@ -439,7 +452,7 @@ describe("Tool Input Schema Validation", () => {
     })
 
     it("accepts null parentId (to remove parent)", () => {
-      const result = toolSchemas.tx_update.safeParse({
+      const result = safeParse(toolSchemas.tx_update, {
         id: "tx-12345678",
         parentId: null
       })
@@ -447,7 +460,7 @@ describe("Tool Input Schema Validation", () => {
     })
 
     it("rejects non-integer score", () => {
-      const result = toolSchemas.tx_update.safeParse({
+      const result = safeParse(toolSchemas.tx_update, {
         id: "tx-12345678",
         score: 75.5
       })
@@ -455,7 +468,7 @@ describe("Tool Input Schema Validation", () => {
     })
 
     it("rejects invalid status value", () => {
-      const result = toolSchemas.tx_update.safeParse({
+      const result = safeParse(toolSchemas.tx_update, {
         id: "tx-12345678",
         status: "invalid_status"
       })
@@ -464,7 +477,7 @@ describe("Tool Input Schema Validation", () => {
 
     it("accepts all valid status values", () => {
       for (const status of TASK_STATUSES) {
-        const result = toolSchemas.tx_update.safeParse({ id: "tx-12345678", status })
+        const result = safeParse(toolSchemas.tx_update, { id: "tx-12345678", status })
         expect(result.success).toBe(true)
       }
     })
@@ -472,37 +485,37 @@ describe("Tool Input Schema Validation", () => {
 
   describe("tx_done", () => {
     it("requires id field", () => {
-      const result = toolSchemas.tx_done.safeParse({})
+      const result = safeParse(toolSchemas.tx_done, {})
       expect(result.success).toBe(false)
     })
 
     it("accepts valid id", () => {
-      const result = toolSchemas.tx_done.safeParse({ id: "tx-12345678" })
+      const result = safeParse(toolSchemas.tx_done, { id: "tx-12345678" })
       expect(result.success).toBe(true)
     })
   })
 
   describe("tx_delete", () => {
     it("requires id field", () => {
-      const result = toolSchemas.tx_delete.safeParse({})
+      const result = safeParse(toolSchemas.tx_delete, {})
       expect(result.success).toBe(false)
     })
 
     it("accepts valid id", () => {
-      const result = toolSchemas.tx_delete.safeParse({ id: "tx-12345678" })
+      const result = safeParse(toolSchemas.tx_delete, { id: "tx-12345678" })
       expect(result.success).toBe(true)
     })
   })
 
   describe("tx_block", () => {
     it("requires both taskId and blockerId", () => {
-      expect(toolSchemas.tx_block.safeParse({}).success).toBe(false)
-      expect(toolSchemas.tx_block.safeParse({ taskId: "tx-1" }).success).toBe(false)
-      expect(toolSchemas.tx_block.safeParse({ blockerId: "tx-2" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_block, {}).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_block, { taskId: "tx-1" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_block, { blockerId: "tx-2" }).success).toBe(false)
     })
 
     it("accepts valid taskId and blockerId", () => {
-      const result = toolSchemas.tx_block.safeParse({
+      const result = safeParse(toolSchemas.tx_block, {
         taskId: "tx-12345678",
         blockerId: "tx-87654321"
       })
@@ -512,13 +525,13 @@ describe("Tool Input Schema Validation", () => {
 
   describe("tx_unblock", () => {
     it("requires both taskId and blockerId", () => {
-      expect(toolSchemas.tx_unblock.safeParse({}).success).toBe(false)
-      expect(toolSchemas.tx_unblock.safeParse({ taskId: "tx-1" }).success).toBe(false)
-      expect(toolSchemas.tx_unblock.safeParse({ blockerId: "tx-2" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_unblock, {}).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_unblock, { taskId: "tx-1" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_unblock, { blockerId: "tx-2" }).success).toBe(false)
     })
 
     it("accepts valid taskId and blockerId", () => {
-      const result = toolSchemas.tx_unblock.safeParse({
+      const result = safeParse(toolSchemas.tx_unblock, {
         taskId: "tx-12345678",
         blockerId: "tx-87654321"
       })
@@ -535,7 +548,7 @@ describe("Tool Registration Verification", () => {
   it("has schema for all registered tools", () => {
     for (const toolName of REGISTERED_TOOLS) {
       expect(toolSchemas).toHaveProperty(toolName)
-      expect(typeof toolSchemas[toolName]).toBe("object")
+      expect(toolSchemas[toolName]).toBeDefined()
     }
   })
 
@@ -674,17 +687,17 @@ describe("Text Output Formatter", () => {
 
   it("handles Unicode in title and description", () => {
     const task = makeTestTask({
-      title: "Task with emoji 🎉 and symbols ™",
-      description: "日本語テスト with Arabic العربية and Cyrillic кириллица"
+      title: "Task with emoji \u{1F389} and symbols \u2122",
+      description: "\u65E5\u672C\u8A9E\u30C6\u30B9\u30C8 with Arabic \u0627\u0644\u0639\u0631\u0628\u064A\u0629 and Cyrillic \u043A\u0438\u0440\u0438\u043B\u043B\u0438\u0446\u0430"
     })
     const serialized = serializeTask(task)
     const json = JSON.stringify(serialized)
     const parsed = JSON.parse(json)
 
-    expect(parsed.title).toBe("Task with emoji 🎉 and symbols ™")
-    expect(parsed.description).toContain("日本語テスト")
-    expect(parsed.description).toContain("العربية")
-    expect(parsed.description).toContain("кириллица")
+    expect(parsed.title).toBe("Task with emoji \u{1F389} and symbols \u2122")
+    expect(parsed.description).toContain("\u65E5\u672C\u8A9E\u30C6\u30B9\u30C8")
+    expect(parsed.description).toContain("\u0627\u0644\u0639\u0631\u0628\u064A\u0629")
+    expect(parsed.description).toContain("\u043A\u0438\u0440\u0438\u043B\u043B\u0438\u0446\u0430")
   })
 
   it("handles very long strings", () => {

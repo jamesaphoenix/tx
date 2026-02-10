@@ -23,7 +23,7 @@ function renderWithProviders(ui: React.ReactNode) {
 describe('App', () => {
   it('renders without crashing', () => {
     renderWithProviders(<App />)
-    // Basic smoke test - verify dashboard title renders
-    expect(screen.getByText(/tx dashboard/i)).toBeInTheDocument()
+    // Basic smoke test - verify dashboard header renders
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('tx')
   })
 })
