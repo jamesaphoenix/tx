@@ -61,7 +61,10 @@ export interface SharedTestLayer<L> {
  */
 export const createSharedTestLayer = async () => {
   // Dynamically import to avoid circular dependencies
-  const { makeAppLayerFromInfra, SqliteClient, applyMigrations } = await import("@jamesaphoenix/tx-core")
+  // Use makeMinimalLayerFromInfra (Noop variants for LLM/embedding/reranker)
+  // instead of makeAppLayerFromInfra (Auto variants that probe for node-llama-cpp etc.)
+  // to avoid slow auto-detection overhead in tests.
+  const { makeMinimalLayerFromInfra, SqliteClient, applyMigrations } = await import("@jamesaphoenix/tx-core")
   const { Database } = await import("bun:sqlite")
 
   // Create ONE database instance directly — this ensures all tests share the
@@ -81,7 +84,7 @@ export const createSharedTestLayer = async () => {
   // Wrap with Layer.fresh so that service layers (repos, services) are NOT
   // memoized across separate Effect.provide calls. This ensures each test gets
   // fresh service instances while sharing the same underlying database.
-  const layer = Layer.fresh(makeAppLayerFromInfra(infra))
+  const layer = Layer.fresh(makeMinimalLayerFromInfra(infra))
 
   /**
    * Reset all tables in the database.

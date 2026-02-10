@@ -89,6 +89,7 @@ export {
   makeAppLayer,
   makeAppLayerFromInfra,
   makeMinimalLayer,
+  makeMinimalLayerFromInfra,
   // Re-exports for convenience
   SyncService,
   MigrationService,

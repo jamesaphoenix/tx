@@ -358,14 +358,15 @@ export const makeAppLayer = (dbPath: string) => {
 }
 
 /**
- * Create a minimal application layer without auto-sync.
- * Useful for testing and simple CLI operations.
+ * Create a minimal application layer from an existing SqliteClient infra layer.
  *
- * @param dbPath Path to SQLite database file
+ * Uses Noop variants for LLM-dependent services (embedding, query expansion,
+ * reranker, compaction, auto-sync). Useful for tests and environments where
+ * external services (LLM APIs, node-llama-cpp) are not available.
+ *
+ * @param infra A layer providing SqliteClient
  */
-export const makeMinimalLayer = (dbPath: string) => {
-  const infra = SqliteClientLive(dbPath)
-
+export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) => {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -378,15 +379,29 @@ export const makeMinimalLayer = (dbPath: string) => {
     DeduplicationRepositoryLive,
     CandidateRepositoryLive,
     TrackedProjectRepositoryLive,
-    CompactionRepositoryLive
+    WorkerRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive,
+    CompactionRepositoryLive,
+    MessageRepositoryLive,
+    DocRepositoryLive
   ).pipe(
     Layer.provide(infra)
+  )
+
+  // SyncServiceLive needs TaskService, repos, and infra
+  const syncServiceWithDeps = SyncServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(
+      infra,
+      repos,
+      TaskServiceLive.pipe(Layer.provide(repos))
+    ))
   )
 
   // EdgeServiceLive needs EdgeRepository from repos
   const edgeService = EdgeServiceLive.pipe(Layer.provide(repos))
 
-  // FeedbackTrackerServiceLive needs EdgeService (created early for RetrieverService optional dependency)
+  // FeedbackTrackerServiceLive needs EdgeService
   const feedbackTrackerService = FeedbackTrackerServiceLive.pipe(
     Layer.provide(edgeService)
   )
@@ -396,7 +411,7 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(Layer.merge(repos, edgeService))
   )
 
-  // RetrieverServiceLive needs repos, embedding, query expansion, reranker, graph expansion, diversifier, and optionally feedback tracker
+  // RetrieverServiceLive with Noop variants for LLM-dependent services
   const retrieverService = RetrieverServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService, feedbackTrackerService, DiversifierServiceLive))
   )
@@ -429,6 +444,17 @@ export const makeMinimalLayer = (dbPath: string) => {
     Layer.provide(Layer.mergeAll(repos, services, edgeService))
   )
 
+  // WorkerServiceLive needs WorkerRepository and OrchestratorStateRepository (from repos)
+  const workerService = WorkerServiceLive.pipe(Layer.provide(repos))
+
+  // ClaimServiceLive needs ClaimRepository and OrchestratorStateRepository (from repos)
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
+
+  // OrchestratorServiceLive needs WorkerService, ClaimService, TaskService, OrchestratorStateRepository, and SqliteClient
+  const orchestratorService = OrchestratorServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, services, workerService, claimService, infra))
+  )
+
   // CompactionServiceNoop for minimal layer (no LLM features)
   const compactionService = CompactionServiceNoop.pipe(
     Layer.provide(Layer.merge(repos, infra))
@@ -437,23 +463,30 @@ export const makeMinimalLayer = (dbPath: string) => {
   // ValidationServiceLive needs SqliteClient
   const validationService = ValidationServiceLive.pipe(Layer.provide(infra))
 
-  // Merge all services including edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, diversifierService, daemon service (noop), tracing service (noop), compaction service (noop for minimal layer), and validation service
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService)
+  // MessageServiceLive needs MessageRepository (from repos)
+  const messageService = MessageServiceLive.pipe(Layer.provide(repos))
+
+  // DocServiceLive needs DocRepository (from repos)
+  const docService = DocServiceLive.pipe(Layer.provide(repos))
+
+  // Merge all services
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
     Layer.provide(infra)
   )
 
-  // SyncService for manual exports
-  const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(
-      infra,
-      repos,
-      TaskServiceLive.pipe(Layer.provide(repos))
-    ))
-  )
+  // Also expose RunRepository directly for run tracking and SqliteClient for direct access
+  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, repos, infra)
+}
 
-  // Also expose RunRepository directly for run tracking
-  return Layer.mergeAll(allServices, migrationService, syncService, repos)
+/**
+ * Create a minimal application layer without auto-sync.
+ * Useful for testing and simple CLI operations.
+ *
+ * @param dbPath Path to SQLite database file
+ */
+export const makeMinimalLayer = (dbPath: string) => {
+  return makeMinimalLayerFromInfra(SqliteClientLive(dbPath))
 }
