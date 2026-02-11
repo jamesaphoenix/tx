@@ -104,19 +104,16 @@ export const RerankerServiceLive = Layer.scoped(
         return state.context
       }
 
-      // Lazy load node-llama-cpp
-      const nodeLlamaCpp = yield* Effect.tryPromise({
+      // Lazy load node-llama-cpp and get llama instance
+      const llama = yield* Effect.tryPromise({
         try: async () => {
           const mod = await import("node-llama-cpp")
-          return mod
+          const instance: Llama = await mod.getLlama()
+          return instance
         },
-        catch: () => new RerankerUnavailableError({ reason: "node-llama-cpp not installed" })
-      })
-
-      // Get llama instance
-      const llama = yield* Effect.tryPromise({
-        try: () => nodeLlamaCpp.getLlama() as unknown as Promise<Llama>,
-        catch: (e) => new RerankerUnavailableError({ reason: `Failed to initialize llama: ${String(e)}` })
+        catch: (e) => new RerankerUnavailableError({
+          reason: e instanceof Error ? e.message : "node-llama-cpp not available"
+        })
       })
 
       // Load Qwen3-Reranker model - uses HuggingFace model spec format

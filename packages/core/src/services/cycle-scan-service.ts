@@ -22,7 +22,7 @@ import { SqliteClient } from "../db.js"
 // JSON Schemas for Structured Output
 // =============================================================================
 
-const FINDINGS_SCHEMA = {
+const FINDINGS_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
     findings: {
@@ -42,9 +42,9 @@ const FINDINGS_SCHEMA = {
     },
   },
   required: ["findings"],
-} as const
+}
 
-const DEDUP_SCHEMA = {
+const DEDUP_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
     newIssues: {
@@ -76,7 +76,7 @@ const DEDUP_SCHEMA = {
     },
   },
   required: ["newIssues", "duplicates"],
-} as const
+}
 
 // =============================================================================
 // Helpers
@@ -331,7 +331,7 @@ export const CycleScanServiceLive = Layer.effect(
             model: agentModel,
             maxTurns: 20,
             persistSession: false,
-            outputFormat: { type: "json_schema", schema: FINDINGS_SCHEMA as unknown as Record<string, unknown> },
+            outputFormat: { type: "json_schema", schema: FINDINGS_SCHEMA },
           },
         }
         const result = yield* agentService
@@ -380,7 +380,7 @@ export const CycleScanServiceLive = Layer.effect(
             model: agentModel,
             maxTurns: 1,
             persistSession: false,
-            outputFormat: { type: "json_schema", schema: DEDUP_SCHEMA as unknown as Record<string, unknown> },
+            outputFormat: { type: "json_schema", schema: DEDUP_SCHEMA },
           },
         }
         const result = yield* agentService

@@ -273,6 +273,8 @@ export const LlmServiceAnthropic = Layer.effect(
           }),
       })
 
+      // Cast required: SDK's overloaded create() signatures are structurally
+      // incompatible with our simplified AnthropicClient interface
       client = new Anthropic({ apiKey }) as unknown as AnthropicClient
       return client
     })
