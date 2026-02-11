@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"
 import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
-import { z } from "zod"
+import z from "zod"
 
 import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
