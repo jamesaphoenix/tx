@@ -8,7 +8,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { resolve, sep } from "node:path"
-import { z } from "zod"
+import z from "zod"
 import type { ExportResult, ImportResult, SyncStatus, CompactResult } from "@jamesaphoenix/tx-core"
 import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"

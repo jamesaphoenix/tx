@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import { z } from "zod"
+import z from "zod"
 import type { Invariant, InvariantCheck, InvariantEnforcement } from "@jamesaphoenix/tx-types"
 import { INVARIANT_ENFORCEMENT_TYPES } from "@jamesaphoenix/tx-types"
 import { DocService, InvariantNotFoundError } from "@jamesaphoenix/tx-core"

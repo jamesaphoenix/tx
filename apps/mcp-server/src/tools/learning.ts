@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import { z } from "zod"
+import z from "zod"
 import type { Learning, LearningWithScore, FileLearning, LearningSourceType } from "@jamesaphoenix/tx-types"
 import { LEARNING_SOURCE_TYPES, assertTaskId } from "@jamesaphoenix/tx-types"
 import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"

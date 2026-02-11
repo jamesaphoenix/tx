@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import { z } from "zod"
+import z from "zod"
 import type { TaskStatus } from "@jamesaphoenix/tx-types"
 import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx-types"
 

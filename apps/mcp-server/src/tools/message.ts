@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import { z } from "zod"
+import z from "zod"
 import { serializeMessage } from "@jamesaphoenix/tx-types"
 import { MessageService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"

@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import { z } from "zod"
+import z from "zod"
 import type { Doc, DocLink, DocKind, DocStatus, DocLinkType } from "@jamesaphoenix/tx-types"
 import { DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, assertDocKind, assertDocStatus, assertDocLinkType } from "@jamesaphoenix/tx-types"
 import { DocService } from "@jamesaphoenix/tx-core"
