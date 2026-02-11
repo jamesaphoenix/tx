@@ -48,23 +48,18 @@ tx claim tx-abc123 worker-def456 --json
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { ClaimService } from '@jamesaphoenix/tx-core'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-// Claims use the Effect-based ClaimService directly
-const program = Effect.gen(function* () {
-  const svc = yield* ClaimService
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-  // Claim a task with a 60-minute lease
-  const claim = yield* svc.claim('tx-abc123', 'worker-1', 60)
-  // Returns: { id, taskId, workerId, claimedAt, leaseExpiresAt, renewedCount, status }
+// Claim a task with a 60-minute lease
+const claim = await tx.claims.claim('tx-abc123', 'worker-1', 60)
+// Returns: { id, taskId, workerId, claimedAt, leaseExpiresAt, renewedCount, status }
 
-  console.log(`Claimed until ${claim.leaseExpiresAt.toISOString()}`)
-})
+console.log(`Claimed until ${claim.leaseExpiresAt}`)
 ```
 
-> **Note:** The TxClient SDK (`@jamesaphoenix/tx-agent-sdk`) does not yet have a `claims` namespace.
-> Use the Effect-based `ClaimService` from `@jamesaphoenix/tx-core` for programmatic access.
+> **Tip:** For Effect-based access, use `ClaimService` from `@jamesaphoenix/tx-core` directly.
 
 </Tab>
 <Tab value="MCP">
@@ -129,15 +124,11 @@ tx claim:release tx-abc123 worker-def456
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { ClaimService } from '@jamesaphoenix/tx-core'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const program = Effect.gen(function* () {
-  const svc = yield* ClaimService
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-  // Release a claim
-  yield* svc.release('tx-abc123', 'worker-1')
-})
+await tx.claims.release('tx-abc123', 'worker-1')
 ```
 
 </Tab>
@@ -206,17 +197,13 @@ tx claim:renew tx-abc123 worker-def456
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { ClaimService } from '@jamesaphoenix/tx-core'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const program = Effect.gen(function* () {
-  const svc = yield* ClaimService
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-  // Renew a claim (extends the lease)
-  const renewed = yield* svc.renew('tx-abc123', 'worker-1')
-  console.log(`New expiry: ${renewed.leaseExpiresAt.toISOString()}`)
-  console.log(`Renewals: ${renewed.renewedCount}/10`)
-})
+const renewed = await tx.claims.renew('tx-abc123', 'worker-1')
+console.log(`New expiry: ${renewed.leaseExpiresAt}`)
+console.log(`Renewals: ${renewed.renewedCount}/10`)
 ```
 
 </Tab>

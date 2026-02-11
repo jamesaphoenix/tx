@@ -61,21 +61,17 @@ tx send agent-1 "hello" --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-The Agent SDK does not yet include a messages namespace. Use the REST API via `fetch` or the CLI:
-
 ```typescript
-// Using fetch against the REST API
-const res = await fetch('http://localhost:3456/api/messages', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    channel: 'agent-1',
-    content: 'Task tx-abc123 is ready for review',
-    sender: 'orchestrator',
-    ttlSeconds: 3600
-  })
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const message = await tx.messages.send({
+  channel: 'agent-1',
+  content: 'Task tx-abc123 is ready for review',
+  sender: 'orchestrator',
+  ttlSeconds: 3600
 })
-const message = await res.json()
 // Returns: { id, channel, sender, content, status, correlationId, taskId, metadata, createdAt, ackedAt, expiresAt }
 ```
 
@@ -217,12 +213,12 @@ tx inbox agent-1 --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-The Agent SDK does not yet include a messages namespace. Use the REST API via `fetch` or the CLI:
-
 ```typescript
-// Using fetch against the REST API
-const res = await fetch('http://localhost:3456/api/messages/inbox/agent-1?limit=10&afterId=42')
-const { messages, channel, count } = await res.json()
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const messages = await tx.messages.inbox('agent-1', { limit: 10, afterId: 42 })
 // messages: Array<{ id, channel, sender, content, status, ... }>
 ```
 
@@ -338,9 +334,11 @@ tx ack 42
 <Tab value="TypeScript SDK">
 
 ```typescript
-// Using fetch against the REST API
-const res = await fetch('http://localhost:3456/api/messages/42/ack', { method: 'POST' })
-const { message } = await res.json()
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const message = await tx.messages.ack(42)
 ```
 
 </Tab>
@@ -426,9 +424,11 @@ tx ack:all agent-1
 <Tab value="TypeScript SDK">
 
 ```typescript
-// Using fetch against the REST API
-const res = await fetch('http://localhost:3456/api/messages/inbox/agent-1/ack', { method: 'POST' })
-const { channel, ackedCount } = await res.json()
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const { channel, ackedCount } = await tx.messages.ackAll('agent-1')
 ```
 
 </Tab>
@@ -497,9 +497,11 @@ tx outbox:pending agent-1
 <Tab value="TypeScript SDK">
 
 ```typescript
-// Using fetch against the REST API
-const res = await fetch('http://localhost:3456/api/messages/inbox/agent-1/count')
-const { channel, count } = await res.json()
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const count = await tx.messages.pending('agent-1')
 ```
 
 </Tab>
@@ -570,13 +572,11 @@ tx outbox:gc --acked-older-than 24
 <Tab value="TypeScript SDK">
 
 ```typescript
-// Using fetch against the REST API
-const res = await fetch('http://localhost:3456/api/messages/gc', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ ackedOlderThanHours: 24 })
-})
-const { expired, acked } = await res.json()
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const { expired, acked } = await tx.messages.gc({ ackedOlderThanHours: 24 })
 ```
 
 </Tab>

@@ -582,6 +582,128 @@ await tx.fileLearnings.add({
 })
 ```
 
+### Messages
+
+Inter-agent communication via channel-based messaging.
+
+#### `tx.messages.send(data)`
+
+Send a message to a channel.
+
+```typescript
+await tx.messages.send({
+  channel: "worker-1",
+  content: "Task tx-abc123 is ready for review",
+  sender: "orchestrator",
+  ttlSeconds: 3600,
+  correlationId: "req-001",
+})
+```
+
+**Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `channel` | `string` | Yes | Channel name |
+| `content` | `string` | Yes | Message content |
+| `sender` | `string` | No | Sender name (default: `'sdk'`) |
+| `taskId` | `string` | No | Associated task ID |
+| `ttlSeconds` | `number` | No | Time-to-live in seconds |
+| `correlationId` | `string` | No | For request/reply patterns |
+| `metadata` | `Record<string, unknown>` | No | Arbitrary metadata |
+
+#### `tx.messages.inbox(channel, options?)`
+
+Read messages from a channel inbox.
+
+```typescript
+const msgs = await tx.messages.inbox("agent-1", { limit: 10 })
+const fromOrch = await tx.messages.inbox("agent-1", { sender: "orchestrator" })
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `afterId` | `number` | - | Cursor: only messages with ID > this value |
+| `limit` | `number` | - | Maximum messages to return |
+| `sender` | `string` | - | Filter by sender |
+| `correlationId` | `string` | - | Filter by correlation ID |
+| `includeAcked` | `boolean` | `false` | Include acknowledged messages |
+
+#### `tx.messages.ack(id)`
+
+Acknowledge a single message.
+
+```typescript
+await tx.messages.ack(42)
+```
+
+#### `tx.messages.ackAll(channel)`
+
+Acknowledge all pending messages on a channel.
+
+```typescript
+const { ackedCount } = await tx.messages.ackAll("agent-1")
+```
+
+#### `tx.messages.pending(channel)`
+
+Get count of pending (unacknowledged) messages.
+
+```typescript
+const count = await tx.messages.pending("agent-1")
+```
+
+#### `tx.messages.gc(options?)`
+
+Garbage collect expired and old acknowledged messages.
+
+```typescript
+const { expired, acked } = await tx.messages.gc({ ackedOlderThanHours: 24 })
+```
+
+### Claims
+
+Lease-based task claiming for worker coordination.
+
+#### `tx.claims.claim(taskId, workerId, leaseDurationMinutes?)`
+
+Claim a task with an exclusive lease.
+
+```typescript
+const claim = await tx.claims.claim("tx-abc123", "worker-1", 30)
+console.log(`Lease expires at ${claim.leaseExpiresAt}`)
+```
+
+#### `tx.claims.release(taskId, workerId)`
+
+Release a claim on a task.
+
+```typescript
+await tx.claims.release("tx-abc123", "worker-1")
+```
+
+#### `tx.claims.renew(taskId, workerId)`
+
+Renew an existing claim's lease.
+
+```typescript
+const renewed = await tx.claims.renew("tx-abc123", "worker-1")
+console.log(`New expiry: ${renewed.leaseExpiresAt}`)
+```
+
+#### `tx.claims.getActive(taskId)`
+
+Get the active claim for a task, or `null` if unclaimed.
+
+```typescript
+const claim = await tx.claims.getActive("tx-abc123")
+if (claim) {
+  console.log(`Claimed by ${claim.workerId}`)
+}
+```
+
 ## Error Handling
 
 The SDK uses `TxError` for all errors, with typed error codes:
@@ -718,4 +840,5 @@ agentLoop()
 - [tx ready](/docs/primitives/ready) - Task readiness detection
 - [tx done](/docs/primitives/done) - Task completion
 - [tx context](/docs/primitives/context) - Contextual learning retrieval
+- [tx send / tx inbox](/docs/primitives/inbox) - Agent-to-agent messaging
 - [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents

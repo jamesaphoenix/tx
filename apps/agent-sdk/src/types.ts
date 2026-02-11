@@ -54,6 +54,18 @@ export {
   type CreateFileLearningInput
 } from "@jamesaphoenix/tx-types"
 
+// Message types
+export {
+  MESSAGE_STATUSES,
+  type MessageStatus,
+  type MessageId,
+  type Message,
+  type SendMessageInput,
+  type InboxFilter,
+  type MessageSerialized,
+  serializeMessage,
+} from "@jamesaphoenix/tx-types"
+
 // Attempt types
 export {
   ATTEMPT_OUTCOMES,
@@ -241,4 +253,81 @@ export interface CreateFileLearningData {
   filePattern: string
   note: string
   taskId?: string
+}
+
+// =============================================================================
+// Message Types (SDK-specific)
+// =============================================================================
+
+/**
+ * Serialized message for JSON output (dates as ISO strings).
+ */
+export interface SerializedMessage {
+  id: number
+  channel: string
+  sender: string
+  content: string
+  status: string
+  correlationId: string | null
+  taskId: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  ackedAt: string | null
+  expiresAt: string | null
+}
+
+/**
+ * Options for sending a message.
+ */
+export interface SendMessageData {
+  channel: string
+  content: string
+  sender?: string
+  taskId?: string
+  ttlSeconds?: number
+  correlationId?: string
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * Options for reading an inbox.
+ */
+export interface InboxOptions {
+  afterId?: number
+  limit?: number
+  sender?: string
+  correlationId?: string
+  includeAcked?: boolean
+}
+
+/**
+ * Options for garbage collection.
+ */
+export interface GcOptions {
+  ackedOlderThanHours?: number
+}
+
+/**
+ * Result from garbage collection.
+ */
+export interface GcResult {
+  expired: number
+  acked: number
+}
+
+// =============================================================================
+// Claim Types (SDK-specific)
+// =============================================================================
+
+/**
+ * Serialized claim for JSON output (dates as ISO strings).
+ */
+export interface SerializedClaim {
+  id: number
+  taskId: string
+  workerId: string
+  claimedAt: string
+  leaseExpiresAt: string
+  renewedCount: number
+  status: string
 }

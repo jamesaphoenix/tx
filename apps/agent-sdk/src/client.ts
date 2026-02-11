@@ -33,7 +33,13 @@ import type {
   CreateLearningData,
   CreateFileLearningData,
   PaginatedResponse,
-  TaskStatus
+  TaskStatus,
+  SerializedMessage,
+  SendMessageData,
+  InboxOptions,
+  GcOptions,
+  GcResult,
+  SerializedClaim
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
 
@@ -70,6 +76,20 @@ interface Transport {
 
   // Context
   getContext(taskId: string): Promise<SerializedContextResult>
+
+  // Messages
+  sendMessage(data: SendMessageData): Promise<SerializedMessage>
+  inbox(channel: string, options?: InboxOptions): Promise<SerializedMessage[]>
+  ackMessage(id: number): Promise<SerializedMessage>
+  ackAllMessages(channel: string): Promise<{ channel: string; ackedCount: number }>
+  pendingCount(channel: string): Promise<number>
+  gcMessages(options?: GcOptions): Promise<GcResult>
+
+  // Claims
+  claimTask(taskId: string, workerId: string, leaseDurationMinutes?: number): Promise<SerializedClaim>
+  releaseClaim(taskId: string, workerId: string): Promise<void>
+  renewClaim(taskId: string, workerId: string): Promise<SerializedClaim>
+  getActiveClaim(taskId: string): Promise<SerializedClaim | null>
 }
 
 // =============================================================================
@@ -300,6 +320,95 @@ class HttpTransport implements Transport {
       "GET",
       `/api/context/${taskId}`
     )
+  }
+
+  // Messages
+  async sendMessage(data: SendMessageData): Promise<SerializedMessage> {
+    return await this.request<SerializedMessage>("POST", "/api/messages", {
+      body: data
+    })
+  }
+
+  async inbox(channel: string, options?: InboxOptions): Promise<SerializedMessage[]> {
+    const result = await this.request<{ messages: SerializedMessage[] }>(
+      "GET",
+      `/api/messages/inbox/${encodeURIComponent(channel)}`,
+      {
+        params: {
+          afterId: options?.afterId,
+          limit: options?.limit,
+          sender: options?.sender,
+          correlationId: options?.correlationId,
+          includeAcked: options?.includeAcked ? "true" : undefined
+        }
+      }
+    )
+    return result.messages
+  }
+
+  async ackMessage(id: number): Promise<SerializedMessage> {
+    const result = await this.request<{ message: SerializedMessage }>(
+      "POST",
+      `/api/messages/${id}/ack`
+    )
+    return result.message
+  }
+
+  async ackAllMessages(channel: string): Promise<{ channel: string; ackedCount: number }> {
+    return await this.request<{ channel: string; ackedCount: number }>(
+      "POST",
+      `/api/messages/inbox/${encodeURIComponent(channel)}/ack`
+    )
+  }
+
+  async pendingCount(channel: string): Promise<number> {
+    const result = await this.request<{ count: number }>(
+      "GET",
+      `/api/messages/inbox/${encodeURIComponent(channel)}/count`
+    )
+    return result.count
+  }
+
+  async gcMessages(options?: GcOptions): Promise<GcResult> {
+    return await this.request<GcResult>("POST", "/api/messages/gc", {
+      body: options ?? {}
+    })
+  }
+
+  // Claims
+  async claimTask(taskId: string, workerId: string, leaseDurationMinutes?: number): Promise<SerializedClaim> {
+    return await this.request<SerializedClaim>(
+      "POST",
+      `/api/tasks/${taskId}/claim`,
+      { body: { workerId, leaseDurationMinutes } }
+    )
+  }
+
+  async releaseClaim(taskId: string, workerId: string): Promise<void> {
+    await this.request<{ success: boolean }>(
+      "DELETE",
+      `/api/tasks/${taskId}/claim`,
+      { body: { workerId } }
+    )
+  }
+
+  async renewClaim(taskId: string, workerId: string): Promise<SerializedClaim> {
+    return await this.request<SerializedClaim>(
+      "POST",
+      `/api/tasks/${taskId}/claim/renew`,
+      { body: { workerId } }
+    )
+  }
+
+  async getActiveClaim(taskId: string): Promise<SerializedClaim | null> {
+    try {
+      return await this.request<SerializedClaim>(
+        "GET",
+        `/api/tasks/${taskId}/claim`
+      )
+    } catch {
+      return null
+    }
   }
 }
 
@@ -902,9 +1011,9 @@ class DirectTransport implements Transport {
   // Context
   async getContext(taskId: string): Promise<SerializedContextResult> {
     await this.ensureRuntime()
-     
+
     const Effect = (this as any).Effect
-     
+
     const core = (this as any).core
     const self = this
 
@@ -916,17 +1025,206 @@ class DirectTransport implements Transport {
     )
 
     return {
-       
+
       taskId: (result as any).taskId,
-       
+
       taskTitle: (result as any).taskTitle,
-       
+
       learnings: (result as any).learnings.map((l: any) => self.serializeLearningWithScore(l)),
-       
+
       searchQuery: (result as any).searchQuery,
-       
+
       searchDuration: (result as any).searchDuration
     }
+  }
+
+  // Messages
+  private serializeMessage(msg: any): SerializedMessage {
+    return {
+      id: msg.id,
+      channel: msg.channel,
+      sender: msg.sender,
+      content: msg.content,
+      status: msg.status,
+      correlationId: msg.correlationId,
+      taskId: msg.taskId,
+      metadata: msg.metadata ?? {},
+      createdAt: msg.createdAt instanceof Date ? msg.createdAt.toISOString() : msg.createdAt,
+      ackedAt: msg.ackedAt instanceof Date ? msg.ackedAt.toISOString() : msg.ackedAt ?? null,
+      expiresAt: msg.expiresAt instanceof Date ? msg.expiresAt.toISOString() : msg.expiresAt ?? null,
+    }
+  }
+
+  private serializeClaim(claim: any): SerializedClaim {
+    return {
+      id: claim.id,
+      taskId: claim.taskId,
+      workerId: claim.workerId,
+      claimedAt: claim.claimedAt instanceof Date ? claim.claimedAt.toISOString() : claim.claimedAt,
+      leaseExpiresAt: claim.leaseExpiresAt instanceof Date ? claim.leaseExpiresAt.toISOString() : claim.leaseExpiresAt,
+      renewedCount: claim.renewedCount,
+      status: claim.status,
+    }
+  }
+
+  async sendMessage(data: SendMessageData): Promise<SerializedMessage> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const msg = await this.run(
+      Effect.gen(function* () {
+        const messageService = yield* core.MessageService
+        return yield* messageService.send({
+          channel: data.channel,
+          content: data.content,
+          sender: data.sender ?? "sdk",
+          taskId: data.taskId ?? null,
+          correlationId: data.correlationId ?? null,
+          metadata: data.metadata,
+          ttlSeconds: data.ttlSeconds,
+        })
+      })
+    )
+
+    return this.serializeMessage(msg)
+  }
+
+  async inbox(channel: string, options?: InboxOptions): Promise<SerializedMessage[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const messages = await this.run(
+      Effect.gen(function* () {
+        const messageService = yield* core.MessageService
+        return yield* messageService.inbox({
+          channel,
+          afterId: options?.afterId,
+          limit: options?.limit,
+          sender: options?.sender,
+          correlationId: options?.correlationId,
+          includeAcked: options?.includeAcked,
+        })
+      })
+    )
+
+    return (messages as any[]).map(m => this.serializeMessage(m))
+  }
+
+  async ackMessage(id: number): Promise<SerializedMessage> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const msg = await this.run(
+      Effect.gen(function* () {
+        const messageService = yield* core.MessageService
+        return yield* messageService.ack(id)
+      })
+    )
+
+    return this.serializeMessage(msg)
+  }
+
+  async ackAllMessages(channel: string): Promise<{ channel: string; ackedCount: number }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const ackedCount = await this.run<number>(
+      Effect.gen(function* () {
+        const messageService = yield* core.MessageService
+        return yield* messageService.ackAll(channel)
+      })
+    )
+
+    return { channel, ackedCount }
+  }
+
+  async pendingCount(channel: string): Promise<number> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<number>(
+      Effect.gen(function* () {
+        const messageService = yield* core.MessageService
+        return yield* messageService.pending(channel)
+      })
+    )
+  }
+
+  async gcMessages(options?: GcOptions): Promise<GcResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<GcResult>(
+      Effect.gen(function* () {
+        const messageService = yield* core.MessageService
+        return yield* messageService.gc(options)
+      })
+    )
+  }
+
+  // Claims
+  async claimTask(taskId: string, workerId: string, leaseDurationMinutes?: number): Promise<SerializedClaim> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const claim = await this.run(
+      Effect.gen(function* () {
+        const claimService = yield* core.ClaimService
+        return yield* claimService.claim(taskId, workerId, leaseDurationMinutes)
+      })
+    )
+
+    return this.serializeClaim(claim)
+  }
+
+  async releaseClaim(taskId: string, workerId: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const claimService = yield* core.ClaimService
+        yield* claimService.release(taskId, workerId)
+      })
+    )
+  }
+
+  async renewClaim(taskId: string, workerId: string): Promise<SerializedClaim> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const claim = await this.run(
+      Effect.gen(function* () {
+        const claimService = yield* core.ClaimService
+        return yield* claimService.renew(taskId, workerId)
+      })
+    )
+
+    return this.serializeClaim(claim)
+  }
+
+  async getActiveClaim(taskId: string): Promise<SerializedClaim | null> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const claim = await this.run(
+      Effect.gen(function* () {
+        const claimService = yield* core.ClaimService
+        return yield* claimService.getActiveClaim(taskId)
+      })
+    )
+
+    return claim ? this.serializeClaim(claim) : null
   }
 
   /**
@@ -1375,13 +1673,231 @@ class ContextNamespace {
 }
 
 // =============================================================================
+// Messages Namespace
+// =============================================================================
+
+/**
+ * Messages namespace providing inter-agent communication operations.
+ *
+ * Messages use a channel-based model where agents send to named channels
+ * and read from their inbox. Messages support correlation IDs for
+ * request/response patterns and TTL-based expiry.
+ *
+ * @example
+ * ```typescript
+ * // Send a message
+ * await tx.messages.send({ channel: 'agent-1', content: 'Task complete' })
+ *
+ * // Read inbox
+ * const msgs = await tx.messages.inbox('agent-1')
+ *
+ * // Acknowledge
+ * await tx.messages.ack(msgs[0].id)
+ * ```
+ */
+class MessagesNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  /**
+   * Send a message to a channel.
+   *
+   * @param data - Message data including channel, content, and optional sender/TTL
+   * @returns The created message
+   * @example
+   * ```typescript
+   * const msg = await tx.messages.send({
+   *   channel: 'worker-1',
+   *   content: 'Please review task tx-abc123',
+   *   sender: 'orchestrator',
+   *   ttlSeconds: 3600
+   * })
+   * ```
+   */
+  async send(data: SendMessageData): Promise<SerializedMessage> {
+    return this.transport.sendMessage(data)
+  }
+
+  /**
+   * Read messages from a channel inbox.
+   *
+   * Returns unacknowledged messages by default. Use `includeAcked` to
+   * also return acknowledged messages.
+   *
+   * @param channel - Channel name to read from
+   * @param options - Filtering and pagination options
+   * @returns Array of messages in the inbox
+   * @example
+   * ```typescript
+   * const msgs = await tx.messages.inbox('agent-1', { limit: 10 })
+   * const fromOrch = await tx.messages.inbox('agent-1', { sender: 'orchestrator' })
+   * ```
+   */
+  async inbox(channel: string, options?: InboxOptions): Promise<SerializedMessage[]> {
+    return this.transport.inbox(channel, options)
+  }
+
+  /**
+   * Acknowledge a single message by ID.
+   *
+   * Acknowledged messages are excluded from future inbox reads by default.
+   *
+   * @param id - Message ID to acknowledge
+   * @returns The acknowledged message
+   * @example
+   * ```typescript
+   * const msg = await tx.messages.ack(42)
+   * console.log(`Acked message from ${msg.sender}`)
+   * ```
+   */
+  async ack(id: number): Promise<SerializedMessage> {
+    return this.transport.ackMessage(id)
+  }
+
+  /**
+   * Acknowledge all messages on a channel.
+   *
+   * @param channel - Channel to ack all messages on
+   * @returns The channel name and number of messages acknowledged
+   * @example
+   * ```typescript
+   * const { ackedCount } = await tx.messages.ackAll('agent-1')
+   * console.log(`Cleared ${ackedCount} messages`)
+   * ```
+   */
+  async ackAll(channel: string): Promise<{ channel: string; ackedCount: number }> {
+    return this.transport.ackAllMessages(channel)
+  }
+
+  /**
+   * Get the count of pending (unacknowledged) messages on a channel.
+   *
+   * @param channel - Channel to count pending messages for
+   * @returns Number of pending messages
+   * @example
+   * ```typescript
+   * const count = await tx.messages.pending('agent-1')
+   * if (count > 0) console.log(`${count} messages waiting`)
+   * ```
+   */
+  async pending(channel: string): Promise<number> {
+    return this.transport.pendingCount(channel)
+  }
+
+  /**
+   * Garbage collect expired and old acknowledged messages.
+   *
+   * @param options - GC options (e.g., age threshold for acked messages)
+   * @returns Count of expired and acked messages removed
+   * @example
+   * ```typescript
+   * const { expired, acked } = await tx.messages.gc({ ackedOlderThanHours: 24 })
+   * console.log(`Cleaned up ${expired + acked} messages`)
+   * ```
+   */
+  async gc(options?: GcOptions): Promise<GcResult> {
+    return this.transport.gcMessages(options)
+  }
+}
+
+// =============================================================================
+// Claims Namespace
+// =============================================================================
+
+/**
+ * Claims namespace providing worker coordination via lease-based task claiming.
+ *
+ * Claims prevent multiple agents from working on the same task simultaneously.
+ * Each claim has a lease duration that auto-expires if not renewed.
+ *
+ * @example
+ * ```typescript
+ * // Claim a task for 30 minutes
+ * const claim = await tx.claims.claim('tx-abc123', 'worker-1', 30)
+ *
+ * // Renew the lease
+ * await tx.claims.renew('tx-abc123', 'worker-1')
+ *
+ * // Release when done
+ * await tx.claims.release('tx-abc123', 'worker-1')
+ * ```
+ */
+class ClaimsNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  /**
+   * Claim a task with a lease for exclusive access.
+   *
+   * @param taskId - Task ID to claim
+   * @param workerId - Unique worker identifier
+   * @param leaseDurationMinutes - Lease duration in minutes (default: server-defined)
+   * @returns The created claim
+   * @throws {TxError} If the task is already claimed by another worker
+   * @example
+   * ```typescript
+   * const claim = await tx.claims.claim('tx-abc123', 'worker-1', 30)
+   * console.log(`Lease expires at ${claim.leaseExpiresAt}`)
+   * ```
+   */
+  async claim(taskId: string, workerId: string, leaseDurationMinutes?: number): Promise<SerializedClaim> {
+    return this.transport.claimTask(taskId, workerId, leaseDurationMinutes)
+  }
+
+  /**
+   * Release a claim on a task.
+   *
+   * @param taskId - Task ID to release
+   * @param workerId - Worker releasing the claim
+   * @example
+   * ```typescript
+   * await tx.claims.release('tx-abc123', 'worker-1')
+   * ```
+   */
+  async release(taskId: string, workerId: string): Promise<void> {
+    return this.transport.releaseClaim(taskId, workerId)
+  }
+
+  /**
+   * Renew an existing claim's lease.
+   *
+   * @param taskId - Task ID whose claim to renew
+   * @param workerId - Worker renewing the claim
+   * @returns The renewed claim with updated lease expiry
+   * @throws {TxError} If no active claim exists for this worker
+   * @example
+   * ```typescript
+   * const renewed = await tx.claims.renew('tx-abc123', 'worker-1')
+   * console.log(`New expiry: ${renewed.leaseExpiresAt}`)
+   * ```
+   */
+  async renew(taskId: string, workerId: string): Promise<SerializedClaim> {
+    return this.transport.renewClaim(taskId, workerId)
+  }
+
+  /**
+   * Get the active claim for a task, if any.
+   *
+   * @param taskId - Task ID to check
+   * @returns The active claim, or null if unclaimed
+   * @example
+   * ```typescript
+   * const claim = await tx.claims.getActive('tx-abc123')
+   * if (claim) console.log(`Claimed by ${claim.workerId}`)
+   * ```
+   */
+  async getActive(taskId: string): Promise<SerializedClaim | null> {
+    return this.transport.getActiveClaim(taskId)
+  }
+}
+
+// =============================================================================
 // Main Client
 // =============================================================================
 
 /**
- * TX Client for task management.
+ * TX Client for task management, messaging, and worker coordination.
  *
- * Provides a simple, Promise-based API for managing tasks and learnings.
+ * Provides a simple, Promise-based API for managing tasks, learnings,
+ * inter-agent messaging, and claim-based worker coordination.
  * Supports both HTTP API mode and direct SQLite access.
  *
  * @example
@@ -1403,6 +1919,12 @@ class ContextNamespace {
  *
  * // Get context for a task
  * const context = await tx.context.forTask(task.id)
+ *
+ * // Send a message to another agent
+ * await tx.messages.send({ channel: 'worker-1', content: 'New task available' })
+ *
+ * // Claim a task for exclusive access
+ * await tx.claims.claim(task.id, 'worker-1', 30)
  * ```
  */
 export class TxClient {
@@ -1428,6 +1950,16 @@ export class TxClient {
    * Context operations.
    */
   public readonly context: ContextNamespace
+
+  /**
+   * Message operations for inter-agent communication.
+   */
+  public readonly messages: MessagesNamespace
+
+  /**
+   * Claim operations for worker coordination.
+   */
+  public readonly claims: ClaimsNamespace
 
   /**
    * Create a new TxClient.
@@ -1457,6 +1989,8 @@ export class TxClient {
     this.learnings = new LearningsNamespace(this.transport)
     this.fileLearnings = new FileLearningsNamespace(this.transport)
     this.context = new ContextNamespace(this.transport)
+    this.messages = new MessagesNamespace(this.transport)
+    this.claims = new ClaimsNamespace(this.transport)
   }
 
   /**
