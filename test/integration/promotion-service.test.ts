@@ -16,12 +16,14 @@ import { Effect } from "effect"
 import { createHash } from "node:crypto"
 import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 
-// Import services once at module level
+// Import services and error types once at module level
 import {
   PromotionService,
   CandidateRepository,
   LearningService,
-  EdgeService
+  EdgeService,
+  CandidateNotFoundError,
+  ValidationError
 } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
@@ -270,17 +272,17 @@ describe("PromotionService.promote", () => {
   })
 
   it("fails with CandidateNotFoundError for nonexistent candidate", async () => {
-    const result = await Effect.runPromise(
+    const error = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* PromotionService
         return yield* svc.promote(99999)
-      }).pipe(Effect.provide(shared.layer), Effect.either)
+      }).pipe(
+        Effect.provide(shared.layer),
+        Effect.flip
+      )
     )
 
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect((result.left as any)._tag).toBe("CandidateNotFoundError")
-    }
+    expect(error).toBeInstanceOf(CandidateNotFoundError)
   })
 
   it("sets reviewedAt timestamp on promotion", async () => {
@@ -437,21 +439,21 @@ describe("PromotionService.reject", () => {
   })
 
   it("fails with CandidateNotFoundError for nonexistent candidate", async () => {
-    const result = await Effect.runPromise(
+    const error = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* PromotionService
         return yield* svc.reject(99999, "Some reason")
-      }).pipe(Effect.provide(shared.layer), Effect.either)
+      }).pipe(
+        Effect.provide(shared.layer),
+        Effect.flip
+      )
     )
 
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect((result.left as any)._tag).toBe("CandidateNotFoundError")
-    }
+    expect(error).toBeInstanceOf(CandidateNotFoundError)
   })
 
   it("fails with ValidationError for empty rejection reason", async () => {
-    const result = await Effect.runPromise(
+    const error = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
         const svc = yield* PromotionService
@@ -463,17 +465,17 @@ describe("PromotionService.reject", () => {
         })
 
         return yield* svc.reject(candidate.id, "")
-      }).pipe(Effect.provide(shared.layer), Effect.either)
+      }).pipe(
+        Effect.provide(shared.layer),
+        Effect.flip
+      )
     )
 
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect((result.left as any)._tag).toBe("ValidationError")
-    }
+    expect(error).toBeInstanceOf(ValidationError)
   })
 
   it("fails with ValidationError for whitespace-only rejection reason", async () => {
-    const result = await Effect.runPromise(
+    const error = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* CandidateRepository
         const svc = yield* PromotionService
@@ -485,13 +487,13 @@ describe("PromotionService.reject", () => {
         })
 
         return yield* svc.reject(candidate.id, "   ")
-      }).pipe(Effect.provide(shared.layer), Effect.either)
+      }).pipe(
+        Effect.provide(shared.layer),
+        Effect.flip
+      )
     )
 
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect((result.left as any)._tag).toBe("ValidationError")
-    }
+    expect(error).toBeInstanceOf(ValidationError)
   })
 
   it("trims whitespace from rejection reason", async () => {

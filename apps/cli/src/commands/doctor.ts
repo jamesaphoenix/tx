@@ -121,31 +121,41 @@ export const doctor = (_pos: string[], flags: Flags) =>
     })
 
     // 5. Check for stale claims/workers
-    const staleClaims = db.prepare<{ count: number }>(
-      `SELECT COUNT(*) as count FROM task_claims
-       WHERE status = 'active'
-       AND datetime(lease_expires_at) < datetime('now')`
-    ).get()
-    const staleClaimCount = staleClaims?.count ?? 0
+    // Wrap in try/catch: task_claims and workers tables may not exist if migrations
+    // haven't fully applied (e.g., migration 015+ not yet run)
+    try {
+      const staleClaims = db.prepare<{ count: number }>(
+        `SELECT COUNT(*) as count FROM task_claims
+         WHERE status = 'active'
+         AND datetime(lease_expires_at) < datetime('now')`
+      ).get()
+      const staleClaimCount = staleClaims?.count ?? 0
 
-    const deadWorkers = db.prepare<{ count: number }>(
-      `SELECT COUNT(*) as count FROM workers
-       WHERE status NOT IN ('dead', 'stopping')
-       AND datetime(last_heartbeat_at, '+5 minutes') < datetime('now')`
-    ).get()
-    const deadWorkerCount = deadWorkers?.count ?? 0
+      const deadWorkers = db.prepare<{ count: number }>(
+        `SELECT COUNT(*) as count FROM workers
+         WHERE status NOT IN ('dead', 'stopping')
+         AND datetime(last_heartbeat_at, '+5 minutes') < datetime('now')`
+      ).get()
+      const deadWorkerCount = deadWorkers?.count ?? 0
 
-    if (staleClaimCount > 0 || deadWorkerCount > 0) {
-      const parts: string[] = []
-      if (staleClaimCount > 0) parts.push(`${staleClaimCount} expired claim(s)`)
-      if (deadWorkerCount > 0) parts.push(`${deadWorkerCount} stale worker(s)`)
-      checks.push({
-        name: "stale_claims",
-        status: "warn",
-        message: `Stale claims/workers: ${parts.join(", ")}`,
-        details: "Run tx coordinator reconcile to clean up.",
-      })
-    } else {
+      if (staleClaimCount > 0 || deadWorkerCount > 0) {
+        const parts: string[] = []
+        if (staleClaimCount > 0) parts.push(`${staleClaimCount} expired claim(s)`)
+        if (deadWorkerCount > 0) parts.push(`${deadWorkerCount} stale worker(s)`)
+        checks.push({
+          name: "stale_claims",
+          status: "warn",
+          message: `Stale claims/workers: ${parts.join(", ")}`,
+          details: "Run tx coordinator reconcile to clean up.",
+        })
+      } else {
+        checks.push({
+          name: "stale_claims",
+          status: "pass",
+          message: "Claims/workers: no stale entries",
+        })
+      }
+    } catch {
       checks.push({
         name: "stale_claims",
         status: "pass",
