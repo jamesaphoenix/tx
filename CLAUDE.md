@@ -1,10 +1,34 @@
 # tx
 
-**TanStack for AI agents.** Primitives, not frameworks.
+**Headless, Local Infra for AI Agents.** Primitives, not frameworks.
 
-Headless infrastructure for memory, tasks, and orchestration.
+**Full documentation**: [docs/index.md](docs/index.md) | **Published docs**: [apps/docs/](apps/docs/)
 
-**Full documentation**: [docs/index.md](docs/index.md)
+---
+
+## Monorepo Structure
+
+Turborepo monorepo with 6 apps and 4 packages. All packages use `@jamesaphoenix/*` scope.
+
+### Apps
+
+| App | Package | Description |
+|-----|---------|-------------|
+| `apps/cli` | `@jamesaphoenix/tx-cli` | CLI — primary interface for tx |
+| `apps/api-server` | `@jamesaphoenix/tx-api-server` | REST/HTTP API (`@effect/platform`) |
+| `apps/mcp-server` | `@jamesaphoenix/tx-mcp-server` | Model Context Protocol server for AI agents |
+| `apps/agent-sdk` | `@jamesaphoenix/tx-agent-sdk` | TypeScript SDK for building custom agents |
+| `apps/dashboard` | `@jamesaphoenix/tx-dashboard` | Web UI for task visualization (Vite + React) |
+| `apps/docs` | `@jamesaphoenix/tx-docs` | Published docs site (Next.js + Fumadocs) |
+
+### Packages
+
+| Package | Name | Description |
+|---------|------|-------------|
+| `packages/core` | `@jamesaphoenix/tx-core` | Core business logic (Effect-TS services and repositories) |
+| `packages/types` | `@jamesaphoenix/tx-types` | Shared TypeScript types (Effect Schema definitions) |
+| `packages/tx` | `@jamesaphoenix/tx` | Public API bundle (re-exports core + types) |
+| `packages/test-utils` | `@jamesaphoenix/tx-test-utils` | Test utilities, factories, fixtures, and helpers |
 
 ---
 
@@ -60,6 +84,10 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx send <channel> <content>` | Send a message to an agent channel |
 | `tx inbox <channel>` | Read messages (read-only, cursor-based) |
 | `tx ack <id>` | Acknowledge a message |
+| `tx try <id> <approach>` | Record an attempt on a task |
+| `tx claim <id> <worker>` | Claim a task with a lease for worker coordination |
+| `tx learn <path> <note>` | Attach a learning to a file path or glob |
+| `tx recall [path]` | Query file-specific learnings by path |
 | `tx sync export` | Persist to git-friendly JSONL |
 | `tx sync claude` | One-way push tasks to Claude Code team directory |
 
@@ -423,47 +451,103 @@ A task is **ready** when: status is workable AND all blockers have status `done`
 | MCP | @modelcontextprotocol/sdk | [DD-005](docs/design/DD-005-mcp-agent-sdk-integration.md) |
 | IDs | SHA256-based `tx-[a-z0-9]{6,8}` | [DD-001](docs/design/DD-001-data-model-storage.md) |
 | Testing | Vitest + SHA256 fixtures | [DD-007](docs/design/DD-007-testing-strategy.md) |
+| Dashboard | Vite + React | `apps/dashboard` |
+| Docs Site | Next.js + Fumadocs | `apps/docs` |
 
 ### CLI Commands
 
+Run `tx help` for the full list or `tx help <command>` for details.
+
 ```bash
 # Tasks
-tx add <title>              # Create
-tx ready                    # List unblocked
-tx done <id>                # Complete
-tx block <id> <blocker>     # Add dependency
-tx tree <id>                # Show hierarchy
+tx init                    # Initialize database
+tx add <title>             # Create task (--parent, --score, --description)
+tx list                    # List tasks (--status, --limit)
+tx ready                   # List unblocked tasks
+tx show <id>               # Show task details
+tx update <id>             # Update task fields
+tx done <id>               # Mark complete
+tx reset <id>              # Reset to ready
+tx delete <id>             # Delete task
 
-# Memory
-tx learning:add <content>   # Store
-tx learning:search <query>  # Find
-tx context <task-id>        # Contextual retrieval
+# Dependencies & Hierarchy
+tx block <id> <blocker>    # Add blocking dependency
+tx unblock <id> <blocker>  # Remove dependency
+tx children <id>           # List child tasks
+tx tree <id>               # Show task subtree
 
-# Messages
-tx send <channel> <msg>     # Send to channel
-tx inbox <channel>          # Read messages
-tx ack <id>                 # Acknowledge
+# Attempts
+tx try <id> <approach>     # Record an attempt (--failed|--succeeded)
+tx attempts <id>           # List attempts
 
-# Docs
-tx doc add <title>          # Create a doc
-tx invariant list           # List invariants
+# Memory & Learnings
+tx learning:add <content>  # Add a learning
+tx learning:search <q>     # Search (BM25 + recency)
+tx learning:recent         # Recent learnings
+tx learning:helpful <id>   # Record helpfulness
+tx learning:embed          # Compute vector embeddings
+tx context <task-id>       # Contextual learnings for a task
+tx learn <path> <note>     # Attach learning to file/glob
+tx recall [path]           # Query file learnings
 
-# Sync
-tx sync export              # SQLite → JSONL (git-friendly)
-tx sync import              # JSONL → SQLite
-tx sync claude              # Push to Claude Code team dir
+# Messages (Agent Outbox)
+tx send <channel> <msg>    # Send to channel
+tx inbox <channel>         # Read messages
+tx ack <id>                # Acknowledge message
+tx ack:all <channel>       # Acknowledge all on channel
+tx outbox:pending <ch>     # Count pending messages
+tx outbox:gc               # Garbage collect old messages
 
-# Cycle (sub-agent swarm)
-tx cycle --task-prompt "..." --scan-prompt "..."  # Issue discovery swarm
+# Docs & Invariants
+tx doc <sub>               # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
+tx invariant <sub>         # list, show, record, sync
+
+# Claims (Worker Leasing)
+tx claim <task> <worker>   # Claim with lease (--lease minutes)
+tx claim:release <t> <w>   # Release claim
+tx claim:renew <t> <w>     # Renew lease
+
+# Traces (Run Debugging)
+tx trace list              # Recent runs
+tx trace show <run-id>     # Metrics events for a run
+tx trace transcript <id>   # Raw JSONL transcript
+tx trace stderr <id>       # Stderr output
+tx trace errors            # Recent errors across runs
+
+# Sync & Data
+tx sync export             # SQLite → JSONL (git-friendly)
+tx sync import             # JSONL → SQLite
+tx sync status             # Show sync status
+tx sync claude             # Push to Claude Code team dir
+tx compact                 # Compact done tasks + export learnings
+tx history                 # View compaction history
+tx migrate status          # Database migration status
+
+# Bulk Operations
+tx bulk done <id...>       # Complete multiple tasks
+tx bulk score <n> <id...>  # Set score for multiple tasks
+tx bulk reset <id...>      # Reset multiple tasks
+tx bulk delete <id...>     # Delete multiple tasks
+
+# Cycle (Sub-Agent Swarm)
+tx cycle                   # Issue discovery with sub-agent swarms
+
+# Tools
+tx stats                   # Queue metrics and health
+tx validate                # Database health checks (--fix)
+tx doctor                  # System diagnostics
+tx dashboard               # Start API server + dashboard UI
 ```
 
-### Cycle vs Teams — Disambiguation
+### Cycle vs Teams vs Sub-agents — Disambiguation
 
-**When the user says "cycle", "scan", or "swarm scan"**: Use `tx cycle` (the CLI command). This dispatches sub-agent swarms internally via `AgentService` — do NOT use Claude Code's built-in TeamCreate, SendMessage, or any team tools. Run `/cycle` to guide the user through the options.
+**"cycle"**: Use `tx cycle` (the CLI command). This dispatches sub-agent swarms internally via `AgentService` for automated issue discovery. Do NOT use Claude Code's built-in TeamCreate, SendMessage, or any team tools. Run `/cycle` to guide the user through the options.
 
-**When the user says "team" or "teams"**: Use Claude Code's built-in team tools (TeamCreate, SendMessage, Task tool with `team_name`). This is for coordinating multiple Claude Code agents working on separate tasks.
+**"team" or "teams"**: Use Claude Code's built-in team tools (TeamCreate, SendMessage, Task tool with `team_name`). This is for coordinating multiple Claude Code agents working on separate tasks.
 
-**Key difference**: `tx cycle` is a self-contained sub-agent swarm for automated issue discovery. Claude Code teams are for multi-agent collaboration on implementation tasks.
+**"sub-agents"**: Launch sub-agents as you normally would. This does NOT mean `tx cycle` or Claude Code teams.
+
+**Key difference**: `tx cycle` is a self-contained swarm for automated issue discovery. Claude Code teams are for multi-agent collaboration on implementation tasks. "Sub-agents" is just a pattern — the user picks the tool.
 
 ---
 
@@ -684,6 +768,15 @@ Create PRD/DD for:
 
 ## For Detailed Information
 
+### Internal Design Docs (PRDs & DDs)
+
 - **PRDs** (what to build): [docs/prd/](docs/prd/)
 - **Design Docs** (how to build): [docs/design/](docs/design/)
 - **Full index**: [docs/index.md](docs/index.md)
+
+### Published User Docs
+
+The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
+
+- **Source PRDs/DDs**: `docs/` directory — internal design artifacts, linked from CLAUDE.md
+- **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK

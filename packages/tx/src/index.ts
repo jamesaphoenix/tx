@@ -1,5 +1,5 @@
 /**
- * @jamesaphoenix/tx - TanStack for AI agents
+ * @jamesaphoenix/tx - Headless, Local Infra for AI Agents
  *
  * Headless primitives for memory, tasks, and orchestration.
  *
