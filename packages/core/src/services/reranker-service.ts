@@ -195,7 +195,7 @@ export const RerankerServiceAuto = Layer.unwrapEffect(
         return true
       },
       catch: () => false
-    })
+    }).pipe(Effect.catchAll(() => Effect.succeed(false)))
 
     if (available) {
       return RerankerServiceLive

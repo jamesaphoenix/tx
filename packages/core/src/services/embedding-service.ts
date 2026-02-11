@@ -463,7 +463,7 @@ export const EmbeddingServiceAuto = Layer.unwrapEffect(
         return true
       },
       catch: () => false
-    })
+    }).pipe(Effect.catchAll(() => Effect.succeed(false)))
 
     if (llamaAvailable) {
       yield* Effect.logDebug("EmbeddingService: Using local node-llama-cpp (package available)")

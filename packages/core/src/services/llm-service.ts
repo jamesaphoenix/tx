@@ -348,7 +348,7 @@ export const LlmServiceAuto = Layer.unwrapEffect(
         return true
       },
       catch: () => false,
-    })
+    }).pipe(Effect.catchAll(() => Effect.succeed(false)))
 
     if (agentSdkAvailable) {
       yield* Effect.logDebug("LlmService: Using Agent SDK (no API key required)")
