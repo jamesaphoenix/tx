@@ -9,9 +9,9 @@
     "preview": "vite preview",
     "server": "bun server/index.ts",
     "dev:all": "concurrently \"bun run server\" \"bun run dev\"",
-    "test": "bunx --bun vitest run",
-    "test:watch": "bunx --bun vitest --watch",
-    "test:coverage": "bunx --bun vitest run --coverage"
+    "test": "bunx vitest run",
+    "test:watch": "bunx vitest --watch",
+    "test:coverage": "bunx vitest run --coverage"
   },
   "dependencies": {
     "@effect/platform": "^0.94.2",
