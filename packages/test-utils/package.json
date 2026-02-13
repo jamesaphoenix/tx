@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-test-utils",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Test utilities, factories, fixtures, and helpers for tx monorepo",
   "type": "module",
   "main": "./dist/index.js",
