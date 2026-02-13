@@ -1,0 +1,167 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, statSync } from "node:fs"
+import { join } from "node:path"
+import { scaffoldClaude, scaffoldCodex } from "../../apps/cli/src/commands/scaffold.js"
+
+const TEST_DIR = join("/tmp", `tx-scaffold-test-${process.pid}`)
+
+function cleanup() {
+  if (existsSync(TEST_DIR)) {
+    rmSync(TEST_DIR, { recursive: true })
+  }
+}
+
+describe("scaffold", () => {
+  beforeEach(() => {
+    cleanup()
+    mkdirSync(TEST_DIR, { recursive: true })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  describe("scaffoldClaude", () => {
+    it("creates CLAUDE.md and skills in empty project", () => {
+      const result = scaffoldClaude(TEST_DIR)
+
+      expect(result.copied.length).toBeGreaterThan(0)
+      expect(result.skipped).toEqual([])
+
+      // CLAUDE.md created
+      const claudeMd = join(TEST_DIR, "CLAUDE.md")
+      expect(existsSync(claudeMd)).toBe(true)
+      const content = readFileSync(claudeMd, "utf-8")
+      expect(content).toContain("tx ready")
+      expect(content).toContain("tx done")
+      expect(content).toContain("Example Orchestration")
+
+      // Skills created
+      const workflowSkill = join(TEST_DIR, ".claude", "skills", "tx-workflow", "SKILL.md")
+      expect(existsSync(workflowSkill)).toBe(true)
+      expect(readFileSync(workflowSkill, "utf-8")).toContain("tx Workflow")
+
+      const cycleSkill = join(TEST_DIR, ".claude", "skills", "tx-cycle", "SKILL.md")
+      expect(existsSync(cycleSkill)).toBe(true)
+      expect(readFileSync(cycleSkill, "utf-8")).toContain("tx cycle")
+    })
+
+    it("appends to existing CLAUDE.md without tx section", () => {
+      const claudeMd = join(TEST_DIR, "CLAUDE.md")
+      writeFileSync(claudeMd, "# My Project\n\nExisting content.\n")
+
+      const result = scaffoldClaude(TEST_DIR)
+
+      const content = readFileSync(claudeMd, "utf-8")
+      expect(content).toContain("# My Project")
+      expect(content).toContain("Existing content.")
+      expect(content).toContain("tx ready")
+      expect(result.copied).toContain("CLAUDE.md (appended tx section)")
+    })
+
+    it("skips CLAUDE.md if tx section already present", () => {
+      const claudeMd = join(TEST_DIR, "CLAUDE.md")
+      writeFileSync(claudeMd, "# tx — Headless, Local Infra for AI Agents\n\nAlready here.\n")
+
+      const result = scaffoldClaude(TEST_DIR)
+
+      expect(result.skipped).toContain("CLAUDE.md (tx section already present)")
+      // Content should not be duplicated
+      const content = readFileSync(claudeMd, "utf-8")
+      expect(content).toBe("# tx — Headless, Local Infra for AI Agents\n\nAlready here.\n")
+    })
+
+    it("skips skill files that already exist", () => {
+      // First run
+      scaffoldClaude(TEST_DIR)
+
+      // Second run — everything should be skipped
+      const result = scaffoldClaude(TEST_DIR)
+
+      expect(result.copied).toEqual([])
+      expect(result.skipped.length).toBeGreaterThan(0)
+    })
+
+    it("respects options to exclude cycle skill", () => {
+      const result = scaffoldClaude(TEST_DIR, { cycleSkill: false })
+
+      // Workflow skill should exist
+      const workflowSkill = join(TEST_DIR, ".claude", "skills", "tx-workflow", "SKILL.md")
+      expect(existsSync(workflowSkill)).toBe(true)
+
+      // Cycle skill should NOT exist
+      const cycleSkill = join(TEST_DIR, ".claude", "skills", "tx-cycle", "SKILL.md")
+      expect(existsSync(cycleSkill)).toBe(false)
+
+      // CLAUDE.md should still be created
+      expect(existsSync(join(TEST_DIR, "CLAUDE.md"))).toBe(true)
+      expect(result.copied.some(f => f.includes("tx-cycle"))).toBe(false)
+    })
+
+    it("respects options to exclude CLAUDE.md", () => {
+      const result = scaffoldClaude(TEST_DIR, { claudeMd: false })
+
+      // Skills should exist
+      expect(existsSync(join(TEST_DIR, ".claude", "skills", "tx-workflow", "SKILL.md"))).toBe(true)
+
+      // CLAUDE.md should NOT exist
+      expect(existsSync(join(TEST_DIR, "CLAUDE.md"))).toBe(false)
+      expect(result.copied.some(f => f.includes("CLAUDE.md"))).toBe(false)
+    })
+
+    it("copies ralph script when ralphScript option is true", () => {
+      const result = scaffoldClaude(TEST_DIR, { ralphScript: true })
+
+      const ralphScript = join(TEST_DIR, "scripts", "ralph.sh")
+      expect(existsSync(ralphScript)).toBe(true)
+      expect(result.copied.some(f => f.includes("ralph.sh"))).toBe(true)
+
+      // Verify it's executable (owner execute bit)
+      const stat = statSync(ralphScript)
+      expect(stat.mode & 0o100).toBeTruthy()
+    })
+
+    it("does not copy ralph script by default", () => {
+      scaffoldClaude(TEST_DIR)
+
+      expect(existsSync(join(TEST_DIR, "scripts", "ralph.sh"))).toBe(false)
+    })
+  })
+
+  describe("scaffoldCodex", () => {
+    it("creates AGENTS.md in empty project", () => {
+      const result = scaffoldCodex(TEST_DIR)
+
+      expect(result.copied).toContain("AGENTS.md")
+      expect(result.skipped).toEqual([])
+
+      const agentsMd = join(TEST_DIR, "AGENTS.md")
+      expect(existsSync(agentsMd)).toBe(true)
+      const content = readFileSync(agentsMd, "utf-8")
+      expect(content).toContain("tx ready")
+      expect(content).toContain("tx done")
+      expect(content).toContain("codex")
+    })
+
+    it("appends to existing AGENTS.md without tx section", () => {
+      const agentsMd = join(TEST_DIR, "AGENTS.md")
+      writeFileSync(agentsMd, "# Agents\n\nExisting instructions.\n")
+
+      scaffoldCodex(TEST_DIR)
+
+      const content = readFileSync(agentsMd, "utf-8")
+      expect(content).toContain("# Agents")
+      expect(content).toContain("Existing instructions.")
+      expect(content).toContain("tx ready")
+    })
+
+    it("skips AGENTS.md if tx section already present", () => {
+      const agentsMd = join(TEST_DIR, "AGENTS.md")
+      writeFileSync(agentsMd, "# tx — Headless, Local Infra for AI Agents\n\nAlready here.\n")
+
+      const result = scaffoldCodex(TEST_DIR)
+
+      expect(result.skipped).toContain("AGENTS.md (tx section already present)")
+    })
+  })
+})

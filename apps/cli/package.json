@@ -30,6 +30,7 @@
     "test": "bunx --bun vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@clack/prompts": "^1.0.1",
     "@jamesaphoenix/tx-core": "*",
     "@jamesaphoenix/tx-test-utils": "*",
     "@jamesaphoenix/tx-types": "*",

@@ -65,28 +65,53 @@ describe("Migration system", () => {
       applyMigrations(db)
 
       const tables = db.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%'"
       ).all() as Array<{ name: string }>
       const tableNames = tables.map(t => t.name)
 
-      // Core tables from migration 1
-      expect(tableNames).toContain("tasks")
-      expect(tableNames).toContain("task_dependencies")
-      expect(tableNames).toContain("compaction_log")
-      expect(tableNames).toContain("schema_version")
+      const expectedTables = [
+        // Migration 001 — core
+        "tasks", "task_dependencies", "compaction_log", "schema_version",
+        // Migration 002 — learnings
+        "learnings", "learnings_config",
+        // Migration 003 — file learnings
+        "file_learnings",
+        // Migration 004 — attempts
+        "attempts",
+        // Migration 005 — runs
+        "runs",
+        // Migration 006/017 — events (rebuilt with span/metric types)
+        "events",
+        // Migration 007 — sync config
+        "sync_config",
+        // Migration 008 — learning anchors
+        "learning_anchors",
+        // Migration 009 — learning edges
+        "learning_edges",
+        // Migration 010 — learning candidates
+        "learning_candidates",
+        // Migration 011 — processed hashes + file progress
+        "processed_hashes", "file_progress",
+        // Migration 012 — invalidation log
+        "invalidation_log",
+        // Migration 014 — daemon tracked projects
+        "daemon_tracked_projects",
+        // Migration 015 — worker orchestration
+        "workers", "task_claims", "orchestrator_state",
+        // Migration 021 — agent outbox
+        "outbox_messages",
+        // Migration 022 — docs as primitives
+        "docs", "doc_links", "task_doc_links", "invariants", "invariant_checks",
+      ]
 
-      // Tables from migration 2
-      expect(tableNames).toContain("learnings")
-      expect(tableNames).toContain("learnings_config")
+      for (const table of expectedTables) {
+        expect(tableNames, `missing table: ${table}`).toContain(table)
+      }
 
-      // Tables from migration 3
-      expect(tableNames).toContain("file_learnings")
-
-      // Tables from migration 8
-      expect(tableNames).toContain("learning_anchors")
-
-      // Tables from migration 9
-      expect(tableNames).toContain("learning_edges")
+      // Ensure the list stays in sync — fail if new tables appear without being added here
+      const knownTables = new Set(expectedTables)
+      const unknownTables = tableNames.filter(t => !knownTables.has(t))
+      expect(unknownTables, `unexpected tables found — add them to expectedTables: ${unknownTables.join(", ")}`).toEqual([])
     })
 
     it("creates all required indexes", () => {

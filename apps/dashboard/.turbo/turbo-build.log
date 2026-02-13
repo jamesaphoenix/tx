@@ -12,4 +12,4 @@ dist/assets/index-DJESyrP6.js   806.33 kB │ gzip: 241.48 kB
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-✓ built in 2.06s
+✓ built in 1.54s

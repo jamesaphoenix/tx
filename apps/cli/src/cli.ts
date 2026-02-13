@@ -8,7 +8,7 @@
 import { Effect, Cause, Option, Layer } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { makeAppLayer, AgentServiceLive, CycleScanServiceLive } from "@jamesaphoenix/tx-core"
+import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient } from "@jamesaphoenix/tx-core"
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
 import { CLI_VERSION } from "./version.js"
@@ -33,6 +33,8 @@ import { dashboard } from "./commands/dashboard.js"
 import { send, inbox, ack, ackAll, outboxPending, outboxGc } from "./commands/outbox.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
+import { scaffoldClaude, scaffoldCodex, interactiveScaffold } from "./commands/scaffold.js"
+import * as p from "@clack/prompts"
 
 // --- Argv parsing helpers ---
 
@@ -90,12 +92,40 @@ function flag(flags: Record<string, string | boolean>, ...names: string[]): bool
 // --- Commands registry ---
 
 const commands: Record<string, (positional: string[], flags: Record<string, string | boolean>) => Effect.Effect<void, unknown, unknown>> = {
-  init: (_pos, _flags) =>
-    Effect.sync(() => {
-      // Layer construction already creates db + runs migrations
-      // Just confirm it exists
-      console.log("Initialized tx database")
-      console.log("  Tables: tasks, task_dependencies, compaction_log, schema_version")
+  init: (_pos, initFlags) =>
+    Effect.gen(function* () {
+      const db = yield* SqliteClient
+      const tables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%' ORDER BY name"
+      ).all() as Array<{ name: string }>
+      const projectDir = process.cwd()
+
+      p.intro("tx init")
+      p.log.success(`Database ready (${tables.length} tables, SQLite WAL mode)`)
+      p.log.info(`${projectDir}/.tx/tasks.db`)
+
+      // Non-interactive mode: --claude / --codex flags skip prompts
+      const forceClaude = flag(initFlags, "claude")
+      const forceCodex = flag(initFlags, "codex")
+
+      if (forceClaude || forceCodex) {
+        const results: string[] = []
+        if (forceClaude) {
+          const r = scaffoldClaude(projectDir)
+          results.push(...r.copied.map(f => `+ ${f}`), ...r.skipped.map(f => `~ ${f} (exists)`))
+        }
+        if (forceCodex) {
+          const r = scaffoldCodex(projectDir)
+          results.push(...r.copied.map(f => `+ ${f}`), ...r.skipped.map(f => `~ ${f} (exists)`))
+        }
+        if (results.length > 0) p.note(results.join("\n"), "Files")
+        p.outro("Done! Run tx ready to get started.")
+        return
+      }
+
+      // Interactive mode
+      yield* Effect.tryPromise(() => interactiveScaffold(projectDir))
+      p.outro("Done! Run tx ready to get started.")
     }),
 
   add,

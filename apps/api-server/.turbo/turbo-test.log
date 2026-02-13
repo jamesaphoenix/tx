@@ -1,111 +1,15 @@
-$ bun test src/
-bun test v1.2.20 (6ad208bc)
+$ bunx --bun vitest run
 
-src/__tests__/log-reader.test.ts:
-(pass) isAllowedRunPath > accepts valid paths under .tx/runs/ > should accept a file directly under .tx/runs/ [0.60ms]
-(pass) isAllowedRunPath > accepts valid paths under .tx/runs/ > should accept a file in a run subdirectory
-(pass) isAllowedRunPath > accepts valid paths under .tx/runs/ > should accept a nested file under .tx/runs/
-(pass) isAllowedRunPath > rejects paths outside .tx/runs/ > should reject an absolute path outside the project [0.01ms]
-(pass) isAllowedRunPath > rejects paths outside .tx/runs/ > should reject a path under .tx/ but not .tx/runs/
-(pass) isAllowedRunPath > rejects paths outside .tx/runs/ > should reject the runs directory itself (no trailing file)
-(pass) isAllowedRunPath > rejects substring bypass attacks > should reject a path from a different project containing /.tx/runs/
-(pass) isAllowedRunPath > rejects substring bypass attacks > should reject a crafted path with .tx/runs/ as a non-prefix substring
-(pass) isAllowedRunPath > rejects substring bypass attacks > should reject a path with .. that resolves outside .tx/runs/ [0.02ms]
-(pass) isAllowedRunPath > rejects substring bypass attacks > should reject a directory name that starts with 'runs' but is different [0.01ms]
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/api-server[39m
 
-src/__tests__/auth.test.ts:
-(pass) isAuthEnabled > should return false when TX_API_KEY is not set [1.12ms]
-(pass) isAuthEnabled > should return false when TX_API_KEY is empty string [0.03ms]
-(pass) isAuthEnabled > should return true when TX_API_KEY is set
-(pass) isAuthEnabled > should return true for any non-empty TX_API_KEY value
-(pass) extractApiKey > should extract X-Api-Key header
-(pass) extractApiKey > should extract Bearer token from Authorization header [0.01ms]
-(pass) extractApiKey > should prefer X-Api-Key over Authorization header
-(pass) extractApiKey > should return null when no auth headers present [0.01ms]
-(pass) extractApiKey > should return null for non-Bearer Authorization header
-(pass) extractApiKey > should return null for empty Authorization header
-(pass) extractApiKey > should handle undefined header values
-(pass) extractApiKey > should extract Bearer token with spaces in the token
-(pass) timingSafeEqual > should return true for equal strings [0.07ms]
-(pass) timingSafeEqual > should return false for different strings of same length
-(pass) timingSafeEqual > should return false for different strings of different length
-(pass) timingSafeEqual > should return true for empty strings
-(pass) timingSafeEqual > should return false when one string is empty [0.01ms]
-(pass) timingSafeEqual > should handle unicode characters [0.01ms]
-(pass) timingSafeEqual > should handle long strings [0.04ms]
-(pass) authMiddleware > should export authMiddleware as a function
-(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is disabled (no TX_API_KEY) [0.02ms]
-(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is disabled even with a key header
-(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is enabled but no key provided
-(pass) sensitive info disclosure prevention > should NOT expose sensitive info when auth is enabled but wrong key provided
-(pass) sensitive info disclosure prevention > should expose sensitive info when auth is enabled and correct key provided
-(pass) sensitive info disclosure prevention > should expose sensitive info when auth is enabled and correct Bearer token provided
+ [32m✓[39m src/__tests__/log-reader.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/__tests__/auth.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/__tests__/body-limit.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/__tests__/server-lib.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 133[2mms[22m[39m
+ [32m✓[39m src/__tests__/api.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 11[2mms[22m[39m
 
-src/__tests__/body-limit.test.ts:
-(pass) body limit constants > should define DEFAULT_MAX_BYTES as 1MB
-(pass) body limit constants > should define SYNC_MAX_BYTES as 10MB
-(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/export [0.01ms]
-(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/import
-(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/status
-(pass) getMaxBytes > should return SYNC_MAX_BYTES for /api/sync/compact
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/tasks
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/learnings
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /api/runs
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for /health
-(pass) getMaxBytes > should return DEFAULT_MAX_BYTES for root path
-(pass) bodyLimitMiddleware > should export bodyLimitMiddleware as a function
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m94 passed[39m[22m[90m (94)[39m
+[2m   Start at [22m 12:30:56
+[2m   Duration [22m 682ms[2m (transform 624ms, setup 0ms, import 2.20s, tests 179ms, environment 1ms)[22m
 
-src/__tests__/server-lib.test.ts:
-(pass) Server auth configuration > should detect auth enabled via TX_API_KEY [0.02ms]
-(pass) Server auth configuration > should detect auth disabled when TX_API_KEY not set
-(pass) Server auth configuration > should detect auth disabled for empty TX_API_KEY [0.01ms]
-(pass) CORS configuration > should default to localhost origins when TX_API_CORS_ORIGIN is not set [0.04ms]
-(pass) CORS configuration > should allow wildcard only when explicitly set to *
-(pass) CORS configuration > should parse comma-separated origins [0.05ms]
-(pass) CORS configuration > should handle single custom origin
-(pass) CORS configuration > should enable credentials when TX_API_CORS_CREDENTIALS is true
-(pass) CORS configuration > should disable credentials by default
-(pass) API definition exports > should export TxApi class from api.ts [6.20ms]
-(pass) API definition exports > should export all error types from api.ts [0.04ms]
-(pass) API definition exports > should export mapCoreError from api.ts [0.05ms]
-(pass) API definition exports > should export all API groups from api.ts [0.02ms]
-
-src/__tests__/api.test.ts:
-(pass) Error types > should create NotFound with message [0.17ms]
-(pass) Error types > should create BadRequest with message [0.02ms]
-(pass) Error types > should create InternalError with message [0.03ms]
-(pass) Error types > should create Unauthorized with message [0.03ms]
-(pass) Error types > should create Forbidden with message [0.02ms]
-(pass) Error types > should create ServiceUnavailable with message
-(pass) mapCoreError > maps not-found errors to NotFound > should map TaskNotFoundError [0.04ms]
-(pass) mapCoreError > maps not-found errors to NotFound > should map LearningNotFoundError [0.01ms]
-(pass) mapCoreError > maps not-found errors to NotFound > should map FileLearningNotFoundError [0.01ms]
-(pass) mapCoreError > maps not-found errors to NotFound > should map AttemptNotFoundError [0.01ms]
-(pass) mapCoreError > maps validation errors to BadRequest > should map ValidationError [0.02ms]
-(pass) mapCoreError > maps validation errors to BadRequest > should map CircularDependencyError [0.01ms]
-(pass) mapCoreError > maps service errors to ServiceUnavailable > should map EmbeddingUnavailableError [0.02ms]
-(pass) mapCoreError > maps database and unknown tagged errors to InternalError > should map DatabaseError [0.01ms]
-(pass) mapCoreError > maps database and unknown tagged errors to InternalError > should map unknown tagged errors to InternalError [0.01ms]
-(pass) mapCoreError > handles non-tagged errors > should map string errors to InternalError
-(pass) mapCoreError > handles non-tagged errors > should map Error objects to InternalError [0.02ms]
-(pass) mapCoreError > handles non-tagged errors > should map null to InternalError [0.01ms]
-(pass) mapCoreError > handles non-tagged errors > should map undefined to InternalError [0.01ms]
-(pass) mapCoreError > handles non-tagged errors > should use _tag as message when no message field present [0.01ms]
-(pass) API structure > should export TxApi class
-(pass) API structure > should export all groups [0.01ms]
-(pass) SafePathString > accepts valid paths > should accept absolute paths [0.19ms]
-(pass) SafePathString > accepts valid paths > should accept paths with .tx/runs/
-(pass) SafePathString > accepts valid paths > should accept tilde paths [0.02ms]
-(pass) SafePathString > accepts valid paths > should accept single dots in paths [0.01ms]
-(pass) SafePathString > accepts valid paths > should accept files named with double dots in name (not as segment) [0.01ms]
-(pass) SafePathString > rejects traversal attacks > should reject paths with .. traversal [0.09ms]
-(pass) SafePathString > rejects traversal attacks > should reject paths starting with .. [0.02ms]
-(pass) SafePathString > rejects traversal attacks > should reject paths ending with .. [0.01ms]
-(pass) SafePathString > rejects traversal attacks > should reject bare .. [0.02ms]
-(pass) SafePathString > rejects traversal attacks > should reject paths with null bytes [0.02ms]
-(pass) SafePathString > rejects traversal attacks > should reject paths with embedded null byte before extension [0.02ms]
-
- 94 pass
- 0 fail
- 130 expect() calls
-Ran 94 tests across 5 files. [143.00ms]

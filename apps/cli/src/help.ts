@@ -94,17 +94,22 @@ Examples:
 export const commandHelp: Record<string, string> = {
   init: `tx init - Initialize task database
 
-Usage: tx init [--db <path>]
+Usage: tx init [--db <path>] [--claude] [--codex]
 
 Initializes the tx database and required tables. Creates .tx/tasks.db
 by default. Safe to run multiple times (idempotent).
 
 Options:
   --db <path>   Database path (default: .tx/tasks.db)
+  --claude      Scaffold Claude Code integration (CLAUDE.md + .claude/skills/)
+  --codex       Scaffold Codex integration (AGENTS.md)
   --help        Show this help
 
 Examples:
-  tx init                     # Initialize in .tx/tasks.db
+  tx init                     # Initialize database only
+  tx init --claude            # Database + Claude Code skills & CLAUDE.md
+  tx init --codex             # Database + Codex AGENTS.md
+  tx init --claude --codex    # Database + both integrations
   tx init --db ~/my-tasks.db  # Use custom path`,
 
   add: `tx add - Create a new task
