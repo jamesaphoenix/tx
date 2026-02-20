@@ -18,6 +18,8 @@
 #   ./scripts/ralph.sh --runtime codex     # Force Codex runtime
 #   ./scripts/ralph.sh --runtime claude    # Force Claude runtime
 #   ./scripts/ralph.sh --task-timeout 2700 # 45 minutes max per task
+#   ./scripts/ralph.sh --verify-timeout 180 --learnings-timeout 180
+#   ./scripts/ralph.sh --no-commit         # Never auto-commit changes
 #   ./scripts/ralph.sh --agent-cmd "codex" # Custom command (prompt passed as final arg)
 #   ./scripts/ralph.sh --dry-run           # Show what would be dispatched
 
@@ -33,6 +35,8 @@ REVIEW_EVERY=${REVIEW_EVERY:-25}
 REVIEW_TIMEOUT=${REVIEW_TIMEOUT:-300}  # 5 minutes max per review agent
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 TASK_TIMEOUT=${TASK_TIMEOUT:-1800}  # 30 minutes max per task
+VERIFY_TIMEOUT=${VERIFY_TIMEOUT:-180}
+LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-180}
 WORKERS=${WORKERS:-1}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
 MAX_IDLE_ROUNDS=${MAX_IDLE_ROUNDS:-6}
@@ -63,6 +67,7 @@ CHILD_PIDS=()
 WORKER_TABLE_AVAILABLE=false
 WORKER_REGISTERED=false
 LAST_BACKGROUND_PID=""
+AUTO_COMMIT=${AUTO_COMMIT:-true}
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -78,6 +83,9 @@ while [[ $# -gt 0 ]]; do
     --worker-id) WORKER_ID="$2"; shift 2 ;;
     --runtime) RUNTIME_MODE="$2"; shift 2 ;;
     --task-timeout) TASK_TIMEOUT="$2"; shift 2 ;;
+    --verify-timeout) VERIFY_TIMEOUT="$2"; shift 2 ;;
+    --learnings-timeout) LEARNINGS_TIMEOUT="$2"; shift 2 ;;
+    --no-commit) AUTO_COMMIT=false; shift ;;
     --agent-cmd) AGENT_COMMAND_OVERRIDE="$2"; shift 2 ;;
     --agent-dir) AGENT_PROFILE_DIR_OVERRIDE="$2"; shift 2 ;;
     --no-review) REVIEW_ENABLED=false; shift ;;
@@ -105,6 +113,16 @@ fi
 
 if ! [[ "$TASK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$TASK_TIMEOUT" -lt 1 ]; then
   echo "Invalid --task-timeout value: $TASK_TIMEOUT (must be a positive integer in seconds)" >&2
+  exit 1
+fi
+
+if ! [[ "$VERIFY_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$VERIFY_TIMEOUT" -lt 1 ]; then
+  echo "Invalid --verify-timeout value: $VERIFY_TIMEOUT (must be a positive integer in seconds)" >&2
+  exit 1
+fi
+
+if ! [[ "$LEARNINGS_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$LEARNINGS_TIMEOUT" -lt 1 ]; then
+  echo "Invalid --learnings-timeout value: $LEARNINGS_TIMEOUT (must be a positive integer in seconds)" >&2
   exit 1
 fi
 
@@ -238,6 +256,37 @@ invoke_runtime_sync() {
       return 1
       ;;
   esac
+}
+
+run_runtime_sync_with_timeout() {
+  local prompt="$1"
+  local timeout_seconds="${2:-120}"
+  local label="${3:-Runtime sync call}"
+  local waited=0
+  local check_interval=2
+
+  invoke_runtime_sync "$prompt" 2>>"$LOG_FILE" &
+  local runtime_pid=$!
+
+  while kill -0 "$runtime_pid" 2>/dev/null; do
+    if [ "$waited" -ge "$timeout_seconds" ]; then
+      log "$label timed out after ${timeout_seconds}s - terminating"
+      terminate_pid_tree "$runtime_pid" TERM
+      sleep 1
+      if kill -0 "$runtime_pid" 2>/dev/null; then
+        terminate_pid_tree "$runtime_pid" KILL
+      fi
+      wait "$runtime_pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep "$check_interval"
+    waited=$((waited + check_interval))
+  done
+
+  if wait "$runtime_pid" 2>/dev/null; then
+    return 0
+  fi
+  return $?
 }
 
 invoke_runtime_background() {
@@ -1128,7 +1177,7 @@ run_review_cycle() {
   local doctrine_profile
   doctrine_profile=$(resolve_agent_profile_path "tx-doctrine-checker")
   local doctrine_display="$doctrine_profile"
-  [[ "$doctrine_profile" == "$PROJECT_DIR/"* ]] && doctrine_display="${doctrine_profile#$PROJECT_DIR/}"
+  [[ "$doctrine_profile" == "$PROJECT_DIR/"* ]] && doctrine_display="${doctrine_profile#"$PROJECT_DIR"/}"
   run_review_agent "doctrine-checker" "Read $doctrine_display for your instructions.
 
 Review recent changes and check for doctrine violations.
@@ -1138,7 +1187,7 @@ This is iteration $iteration of the RALPH loop."
   local test_runner_profile
   test_runner_profile=$(resolve_agent_profile_path "tx-test-runner")
   local test_runner_display="$test_runner_profile"
-  [[ "$test_runner_profile" == "$PROJECT_DIR/"* ]] && test_runner_display="${test_runner_profile#$PROJECT_DIR/}"
+  [[ "$test_runner_profile" == "$PROJECT_DIR/"* ]] && test_runner_display="${test_runner_profile#"$PROJECT_DIR"/}"
   run_review_agent "test-runner" "Read $test_runner_display for your instructions.
 
 Run ONLY targeted tests for recently changed files. Do NOT run the full test suite.
@@ -1148,20 +1197,22 @@ This is iteration $iteration of the RALPH loop."
   local quality_profile
   quality_profile=$(resolve_agent_profile_path "tx-quality-checker")
   local quality_display="$quality_profile"
-  [[ "$quality_profile" == "$PROJECT_DIR/"* ]] && quality_display="${quality_profile#$PROJECT_DIR/}"
+  [[ "$quality_profile" == "$PROJECT_DIR/"* ]] && quality_display="${quality_profile#"$PROJECT_DIR"/}"
   run_review_agent "quality-checker" "Read $quality_display for your instructions.
 
 Review recent code changes for quality issues.
 This is iteration $iteration of the RALPH loop."
 
   # Commit any review findings
-  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  if [ "$AUTO_COMMIT" = true ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     git add -A
     git commit -m "chore(ralph): review cycle at iteration $iteration
 
 Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
 $COAUTHOR_LINE" 2>>"$LOG_FILE" || true
     log "Review changes committed"
+  elif [ "$AUTO_COMMIT" = false ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    log "Review changes detected; skipping auto-commit (--no-commit)"
   fi
 
   log "=== REVIEW CYCLE COMPLETE ==="
@@ -1265,13 +1316,16 @@ run_worker_loop() {
     # Verify task actually completed - this is the key reliability check
     TASK_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
     log "[$worker_id] Task status after agent: $TASK_STATUS"
+    TASK_SUCCEEDED=false
 
     if [ "$TASK_STATUS" = "done" ]; then
       log "[$worker_id] ✓ Task completed successfully"
       on_success
+      TASK_SUCCEEDED=true
     elif [ "$TASK_STATUS" = "blocked" ]; then
       log "[$worker_id] Task is blocked (likely decomposed into subtasks)"
       on_success
+      TASK_SUCCEEDED=true
     elif [ "$AGENT_EXIT_CODE" -ne 0 ]; then
       log "[$worker_id] ✗ Agent failed and task not done - demoting"
       demote_task "$TASK_ID" "Agent failed (exit code: $AGENT_EXIT_CODE)"
@@ -1293,7 +1347,8 @@ Check if the task is actually complete:
 Be honest - only mark done if the acceptance criteria are met."
 
       # Quick verification check (no run tracking for this)
-      if invoke_runtime_sync "$VERIFY_PROMPT" 2>>"$LOG_FILE"; then
+      local verify_exit_code=0
+      if run_runtime_sync_with_timeout "$VERIFY_PROMPT" "$VERIFY_TIMEOUT" "Verification agent"; then
         # Re-check status after verification
         FINAL_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
         log "[$worker_id] Status after verification: $FINAL_STATUS"
@@ -1301,17 +1356,25 @@ Be honest - only mark done if the acceptance criteria are met."
         if [ "$FINAL_STATUS" = "done" ]; then
           log "[$worker_id] ✓ Verification agent marked task complete"
           on_success
+          TASK_SUCCEEDED=true
         elif [ "$FINAL_STATUS" = "blocked" ]; then
           log "[$worker_id] Task marked as blocked by verification agent"
           on_success
+          TASK_SUCCEEDED=true
         else
           log "[$worker_id] ✗ Task still not done after verification - demoting"
           demote_task "$TASK_ID" "Not done after verification (status: $FINAL_STATUS)"
           record_failure
         fi
       else
-        log "[$worker_id] Verification agent failed - demoting task"
-        demote_task "$TASK_ID" "Verification agent failed"
+        verify_exit_code=$?
+        if [ "$verify_exit_code" -eq 124 ]; then
+          log "[$worker_id] Verification agent timed out - demoting task"
+          demote_task "$TASK_ID" "Verification agent timed out after ${VERIFY_TIMEOUT}s"
+        else
+          log "[$worker_id] Verification agent failed - demoting task"
+          demote_task "$TASK_ID" "Verification agent failed (exit code: $verify_exit_code)"
+        fi
         record_failure
       fi
     fi
@@ -1322,10 +1385,11 @@ Be honest - only mark done if the acceptance criteria are met."
     CURRENT_TASK_ID=""
     set_worker_status "$worker_id" "idle"
 
-    # Extract learnings from the session transcript
-    if [ -n "$LAST_TRANSCRIPT_PATH" ] && [ -f "$LAST_TRANSCRIPT_PATH" ]; then
+    # Extract learnings only after a successful task outcome.
+    if [ "$TASK_SUCCEEDED" = true ] && [ -n "$LAST_TRANSCRIPT_PATH" ] && [ -f "$LAST_TRANSCRIPT_PATH" ]; then
       log "[$worker_id] Extracting learnings from session transcript..."
-      invoke_runtime_sync \
+      local learnings_exit=0
+      if run_runtime_sync_with_timeout \
         "You are a learnings extractor. Read the transcript at $LAST_TRANSCRIPT_PATH.
 
 Extract all key learnings — things that would help a future agent working on this codebase. Focus on:
@@ -1338,17 +1402,34 @@ For each learning, record it with:
   tx learning:add \"<learning>\" --source-ref $TASK_ID
 
 Skip obvious or generic observations. Only record insights specific to this project." \
-        2>>"$LOG_FILE" || log "[$worker_id] Learnings extraction had issues"
+        "$LEARNINGS_TIMEOUT" \
+        "Learnings extractor"
+      then
+        :
+      else
+        learnings_exit=$?
+        if [ "$learnings_exit" -eq 124 ]; then
+          log "[$worker_id] Learnings extraction timed out after ${LEARNINGS_TIMEOUT}s"
+        else
+          log "[$worker_id] Learnings extraction had issues (exit code: $learnings_exit)"
+        fi
+      fi
+    elif [ "$TASK_SUCCEEDED" != true ]; then
+      log "[$worker_id] Skipping learnings extraction because task did not complete successfully"
     fi
 
-    # Checkpoint: commit if there are changes
-    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    # Checkpoint: commit only on successful outcomes
+    if [ "$TASK_SUCCEEDED" = true ] && [ "$AUTO_COMMIT" = true ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
       git add -A
       git commit -m "chore(ralph): $AGENT completed $TASK_ID - $TASK_TITLE
 
 Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
 $COAUTHOR_LINE" 2>>"$LOG_FILE" || true
       log "[$worker_id] Changes committed"
+    elif [ "$AUTO_COMMIT" = false ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+      log "[$worker_id] Changes detected; skipping auto-commit (--no-commit)"
+    elif [ "$TASK_SUCCEEDED" != true ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+      log "[$worker_id] Changes detected after failed task; not committing"
     fi
 
     # Review cycle every N iterations (only on review-enabled workers)
@@ -1375,6 +1456,9 @@ spawn_parallel_workers() {
       --max "$MAX_ITERATIONS"
       --max-hours "$MAX_HOURS"
       --review-every "$REVIEW_EVERY"
+      --task-timeout "$TASK_TIMEOUT"
+      --verify-timeout "$VERIFY_TIMEOUT"
+      --learnings-timeout "$LEARNINGS_TIMEOUT"
       --claim-lease "$CLAIM_LEASE_MINUTES"
       --idle-rounds "$MAX_IDLE_ROUNDS"
       --worker-prefix "$WORKER_PREFIX"
@@ -1402,6 +1486,10 @@ spawn_parallel_workers() {
 
     if [ "$DRY_RUN" = true ]; then
       child_args+=(--dry-run)
+    fi
+
+    if [ "$AUTO_COMMIT" = false ]; then
+      child_args+=(--no-commit)
     fi
 
     if [ $i -ne 1 ]; then
@@ -1436,7 +1524,9 @@ log "Agent profiles: $ACTIVE_AGENT_PROFILE_DIR"
 log "Worker mode: workers=$WORKERS worker_id=$WORKER_ID child=$CHILD_MODE"
 log "Max iterations: $MAX_ITERATIONS"
 log "Max runtime: $MAX_HOURS hours"
+log "Task timeout: ${TASK_TIMEOUT}s (verify: ${VERIFY_TIMEOUT}s, learnings: ${LEARNINGS_TIMEOUT}s)"
 log "Review every: $REVIEW_EVERY iterations"
+log "Auto-commit: $AUTO_COMMIT"
 log ""
 
 if [ "$CHILD_MODE" = false ]; then
