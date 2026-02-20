@@ -41,6 +41,8 @@ WORKERS=${WORKERS:-1}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
 CLAIM_RENEW_INTERVAL=${CLAIM_RENEW_INTERVAL:-300}
 RUN_HEARTBEAT_INTERVAL=${RUN_HEARTBEAT_INTERVAL:-30}
+CLAUDE_STALL_SECONDS=${CLAUDE_STALL_SECONDS:-300}
+NO_PROGRESS_LOG_INTERVAL=${NO_PROGRESS_LOG_INTERVAL:-60}
 MAX_IDLE_ROUNDS=${MAX_IDLE_ROUNDS:-6}
 WORKER_PREFIX=${WORKER_PREFIX:-ralph}
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -75,6 +77,10 @@ WORKER_REGISTERED=false
 LAST_BACKGROUND_PID=""
 AUTO_COMMIT=${AUTO_COMMIT:-true}
 CLAIM_RENEW_PID=""
+LAST_RUN_ID=""
+LAST_RUN_STATUS=""
+LAST_RUN_ERROR=""
+LAST_RUN_INFRA_ABORT=false
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -87,6 +93,8 @@ while [[ $# -gt 0 ]]; do
     --claim-lease) CLAIM_LEASE_MINUTES="$2"; shift 2 ;;
     --claim-renew-interval) CLAIM_RENEW_INTERVAL="$2"; shift 2 ;;
     --heartbeat-interval) RUN_HEARTBEAT_INTERVAL="$2"; shift 2 ;;
+    --claude-stall-seconds) CLAUDE_STALL_SECONDS="$2"; shift 2 ;;
+    --no-progress-log-interval) NO_PROGRESS_LOG_INTERVAL="$2"; shift 2 ;;
     --idle-rounds) MAX_IDLE_ROUNDS="$2"; shift 2 ;;
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
     --worker-id) WORKER_ID="$2"; shift 2 ;;
@@ -124,6 +132,16 @@ fi
 
 if ! [[ "$RUN_HEARTBEAT_INTERVAL" =~ ^[0-9]+$ ]] || [ "$RUN_HEARTBEAT_INTERVAL" -lt 1 ]; then
   echo "Invalid --heartbeat-interval value: $RUN_HEARTBEAT_INTERVAL (must be a positive integer in seconds)" >&2
+  exit 1
+fi
+
+if ! [[ "$CLAUDE_STALL_SECONDS" =~ ^[0-9]+$ ]] || [ "$CLAUDE_STALL_SECONDS" -lt 0 ]; then
+  echo "Invalid --claude-stall-seconds value: $CLAUDE_STALL_SECONDS (must be a non-negative integer in seconds)" >&2
+  exit 1
+fi
+
+if ! [[ "$NO_PROGRESS_LOG_INTERVAL" =~ ^[0-9]+$ ]] || [ "$NO_PROGRESS_LOG_INTERVAL" -lt 1 ]; then
+  echo "Invalid --no-progress-log-interval value: $NO_PROGRESS_LOG_INTERVAL (must be a positive integer in seconds)" >&2
   exit 1
 fi
 
@@ -1057,6 +1075,16 @@ complete_run() {
     local escaped_run_id=$(sql_escape "$run_id")
     local escaped_status=$(sql_escape "$status")
     local escaped_error_message=$(sql_escape "$error_message")
+    local existing_status=""
+    existing_status=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "SELECT COALESCE(status, '') FROM runs WHERE id='$escaped_run_id' LIMIT 1;" 2>/dev/null || echo "")
+
+    # Preserve external terminal transitions (watchdog/reaper) and avoid clobbering them.
+    if [ -n "$existing_status" ] && [ "$existing_status" != "running" ]; then
+      log "Run $run_id already terminal ($existing_status); skipping complete_run($status)"
+      rm -f "$PROJECT_DIR/.tx/current-run"
+      return 0
+    fi
 
     if [ -n "$error_message" ]; then
       sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
@@ -1068,6 +1096,90 @@ complete_run() {
   fi
 
   rm -f "$PROJECT_DIR/.tx/current-run"
+}
+
+is_run_zero_progress() {
+  local run_id="$1"
+  local escaped_run_id=""
+  escaped_run_id=$(sql_escape "$run_id")
+
+  if ! command -v sqlite3 >/dev/null 2>&1 || [ ! -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    return 1
+  fi
+
+  local row=""
+  row=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "SELECT COALESCE(stdout_bytes,0), COALESCE(stderr_bytes,0), COALESCE(transcript_bytes,0), COALESCE(last_delta_bytes,0)
+     FROM run_heartbeat_state
+     WHERE run_id='$escaped_run_id'
+     LIMIT 1;" 2>/dev/null || echo "")
+
+  [ -z "$row" ] && return 0
+
+  local stdout_bytes=0
+  local stderr_bytes=0
+  local transcript_bytes=0
+  local delta_bytes=0
+
+  IFS='|' read -r stdout_bytes stderr_bytes transcript_bytes delta_bytes <<< "$row"
+  [[ "$stdout_bytes" =~ ^[0-9]+$ ]] || stdout_bytes=0
+  [[ "$stderr_bytes" =~ ^[0-9]+$ ]] || stderr_bytes=0
+  [[ "$transcript_bytes" =~ ^[0-9]+$ ]] || transcript_bytes=0
+  [[ "$delta_bytes" =~ ^[0-9]+$ ]] || delta_bytes=0
+
+  if [ "$stdout_bytes" -eq 0 ] && [ "$stderr_bytes" -eq 0 ] && [ "$transcript_bytes" -eq 0 ] && [ "$delta_bytes" -eq 0 ]; then
+    return 0
+  fi
+  return 1
+}
+
+record_last_run_outcome() {
+  local run_id="$1"
+
+  LAST_RUN_ID="$run_id"
+  LAST_RUN_STATUS=""
+  LAST_RUN_ERROR=""
+  LAST_RUN_INFRA_ABORT=false
+
+  if ! command -v sqlite3 >/dev/null 2>&1 || [ ! -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    return
+  fi
+
+  local escaped_run_id=""
+  escaped_run_id=$(sql_escape "$run_id")
+
+  local row=""
+  row=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "SELECT COALESCE(status,''), COALESCE(error_message,''), COALESCE(exit_code,0)
+     FROM runs
+     WHERE id='$escaped_run_id'
+     LIMIT 1;" 2>/dev/null || echo "")
+
+  [ -z "$row" ] && return
+
+  local exit_code=0
+  IFS='|' read -r LAST_RUN_STATUS LAST_RUN_ERROR exit_code <<< "$row"
+  [[ "$exit_code" =~ ^[0-9]+$ ]] || exit_code=0
+
+  if [ "$LAST_RUN_STATUS" = "cancelled" ]; then
+    if [[ "$LAST_RUN_ERROR" == Run\ reaped\ by\ heartbeat\ primitive:* ]] \
+      || [[ "$LAST_RUN_ERROR" == Watchdog:* ]] \
+      || [[ "$LAST_RUN_ERROR" == Transcript\ stalled* ]]; then
+      LAST_RUN_INFRA_ABORT=true
+      return
+    fi
+  fi
+
+  if [ "$ACTIVE_RUNTIME" = "claude" ] && [ "$exit_code" -eq 143 ] && is_run_zero_progress "$run_id"; then
+    LAST_RUN_INFRA_ABORT=true
+  fi
+}
+
+reset_last_run_outcome() {
+  LAST_RUN_ID=""
+  LAST_RUN_STATUS=""
+  LAST_RUN_ERROR=""
+  LAST_RUN_INFRA_ABORT=false
 }
 
 now_utc_iso() {
@@ -1122,6 +1234,7 @@ run_agent() {
   local task_title="$3"
   local worker_id="${4:-$WORKER_ID}"
   local profile_path
+  reset_last_run_outcome
   profile_path=$(resolve_agent_profile_path "$agent")
 
   if [ ! -f "$profile_path" ]; then
@@ -1189,6 +1302,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
 
   if ! invoke_runtime_background "$prompt" "$run_dir/stdout.log" "$run_dir/stderr.log" "$session_uuid"; then
     complete_run "$CURRENT_RUN_ID" "failed" 1 "Failed to start $ACTIVE_RUNTIME_LABEL process"
+    record_last_run_outcome "$CURRENT_RUN_ID"
     CURRENT_RUN_ID=""
     return 1
   fi
@@ -1240,6 +1354,8 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   local hb_transcript_bytes=0
   local hb_last_activity_at
   local hb_last_emit_epoch=0
+  local hb_last_progress_epoch=0
+  local hb_last_no_progress_log_epoch=0
   hb_last_activity_at=$(now_utc_iso)
 
   hb_stdout_bytes=$(file_size_bytes "$run_dir/stdout.log")
@@ -1254,6 +1370,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     "$hb_transcript_bytes" \
     0
   hb_last_emit_epoch=$(date +%s)
+  hb_last_progress_epoch=$hb_last_emit_epoch
 
   # Wait for agent with timeout
   local exit_code=0
@@ -1286,11 +1403,38 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
       hb_delta_bytes=$((hb_delta_bytes + hb_next_transcript_bytes - hb_transcript_bytes))
     fi
 
+    hb_now_epoch=$(date +%s)
+
     if [ "$hb_delta_bytes" -gt 0 ]; then
       hb_last_activity_at="$hb_check_at"
+      hb_last_progress_epoch=$hb_now_epoch
+      hb_last_no_progress_log_epoch=0
+    elif [ "$ACTIVE_RUNTIME" = "claude" ]; then
+      local idle_seconds=0
+      idle_seconds=$((hb_now_epoch - hb_last_progress_epoch))
+
+      if [ "$NO_PROGRESS_LOG_INTERVAL" -gt 0 ] && [ "$idle_seconds" -ge "$NO_PROGRESS_LOG_INTERVAL" ]; then
+        if [ "$hb_last_no_progress_log_epoch" -eq 0 ] || [ $((hb_now_epoch - hb_last_no_progress_log_epoch)) -ge "$NO_PROGRESS_LOG_INTERVAL" ]; then
+          log "[$worker_id] Claude no-progress heartbeat for ${idle_seconds}s (stdout=${hb_next_stdout_bytes}, stderr=${hb_next_stderr_bytes}, transcript=${hb_next_transcript_bytes})"
+          hb_last_no_progress_log_epoch=$hb_now_epoch
+        fi
+      fi
+
+      if [ "$CLAUDE_STALL_SECONDS" -gt 0 ] && [ "$idle_seconds" -ge "$CLAUDE_STALL_SECONDS" ]; then
+        log "[$worker_id] Claude transcript/log stalled for ${idle_seconds}s (threshold=${CLAUDE_STALL_SECONDS}s) — terminating process"
+        terminate_pid_tree "$CLAUDE_PID" TERM
+        sleep 2
+        if kill -0 "$CLAUDE_PID" 2>/dev/null; then
+          terminate_pid_tree "$CLAUDE_PID" KILL
+        fi
+        CLAUDE_PID=""
+        complete_run "$CURRENT_RUN_ID" "cancelled" 137 "Transcript stalled for ${idle_seconds}s (no output delta)"
+        record_last_run_outcome "$CURRENT_RUN_ID"
+        CURRENT_RUN_ID=""
+        return 75
+      fi
     fi
 
-    hb_now_epoch=$(date +%s)
     if [ "$hb_delta_bytes" -gt 0 ] || [ $((hb_now_epoch - hb_last_emit_epoch)) -ge "$RUN_HEARTBEAT_INTERVAL" ]; then
       update_run_heartbeat \
         "$CURRENT_RUN_ID" \
@@ -1317,6 +1461,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
       fi
       CLAUDE_PID=""
       complete_run "$CURRENT_RUN_ID" "failed" 124 "Task timed out after ${TASK_TIMEOUT}s"
+      record_last_run_outcome "$CURRENT_RUN_ID"
       CURRENT_RUN_ID=""
       return 1
     fi
@@ -1348,12 +1493,14 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   if [ $exit_code -eq 0 ]; then
     CLAUDE_PID=""
     complete_run "$CURRENT_RUN_ID" "completed" 0
+    record_last_run_outcome "$CURRENT_RUN_ID"
     CURRENT_RUN_ID=""
     return 0
   fi
 
   CLAUDE_PID=""
   complete_run "$CURRENT_RUN_ID" "failed" "$exit_code" "$ACTIVE_RUNTIME_LABEL exited with code $exit_code"
+  record_last_run_outcome "$CURRENT_RUN_ID"
   CURRENT_RUN_ID=""
   return 1
 }
@@ -1590,6 +1737,13 @@ run_worker_loop() {
       log "[$worker_id] Task is blocked (likely decomposed into subtasks)"
       on_success
       TASK_SUCCEEDED=true
+    elif [ "$LAST_RUN_INFRA_ABORT" = true ]; then
+      log "[$worker_id] Infra abort detected for run ${LAST_RUN_ID:-unknown} (status=${LAST_RUN_STATUS:-unknown} reason=${LAST_RUN_ERROR:-none})"
+      if [ "$TASK_STATUS" = "active" ]; then
+        log "[$worker_id] Resetting task to ready after infra abort"
+        tx reset "$TASK_ID" 2>/dev/null || true
+      fi
+      on_success
     elif [ "$AGENT_EXIT_CODE" -ne 0 ]; then
       log "[$worker_id] ✗ Agent failed and task not done - demoting"
       demote_task "$TASK_ID" "Agent failed (exit code: $AGENT_EXIT_CODE)"
@@ -1795,6 +1949,9 @@ log "Max runtime: $MAX_HOURS hours"
 log "Task timeout: ${TASK_TIMEOUT}s (verify: ${VERIFY_TIMEOUT}s, learnings: ${LEARNINGS_TIMEOUT}s)"
 log "Claim lease: ${CLAIM_LEASE_MINUTES}m (renew every ${CLAIM_RENEW_INTERVAL}s)"
 log "Run heartbeat interval: ${RUN_HEARTBEAT_INTERVAL}s"
+if [ "$ACTIVE_RUNTIME" = "claude" ]; then
+  log "Claude stall timeout: ${CLAUDE_STALL_SECONDS}s (no-progress log interval: ${NO_PROGRESS_LOG_INTERVAL}s)"
+fi
 log "Review every: $REVIEW_EVERY iterations"
 log "Auto-commit: $AUTO_COMMIT"
 log ""

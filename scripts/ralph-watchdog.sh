@@ -244,6 +244,7 @@ start_loop() {
     --claim-lease "$CLAIM_LEASE_MINUTES"
     --claim-renew-interval "$CLAIM_RENEW_INTERVAL"
     --heartbeat-interval "$HEARTBEAT_INTERVAL"
+    --claude-stall-seconds "$TRANSCRIPT_IDLE_SECONDS"
     --idle-rounds "$IDLE_ROUNDS"
   )
 
