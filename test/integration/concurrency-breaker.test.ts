@@ -314,7 +314,8 @@ describe("Race Conditions: Delayed Claim Detection", () => {
       checkRace: false
     })
 
-    expect(result.waitedMs).toBeGreaterThanOrEqual(100)
+    // Allow a small scheduler jitter window in CI (observed ~1ms under-run)
+    expect(result.waitedMs).toBeGreaterThanOrEqual(95)
     expect(result.waitedMs).toBeLessThan(200) // Reasonable upper bound
   })
 })

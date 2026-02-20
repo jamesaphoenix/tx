@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config"
 
+const EFFECT_INFO_LOG_RE = /^timestamp=\d{4}-\d{2}-\d{2}T.* level=INFO fiber=#\d+ message=/
+
 // Run with: bunx --bun vitest run
 // The --bun flag ensures bun is the runtime so bun:sqlite is available in forked workers.
 export default defineConfig({
@@ -34,6 +36,14 @@ export default defineConfig({
     isolate: true,
     sequence: {
       concurrent: false
+    },
+    onConsoleLog(log, type) {
+      if (
+        type === "stdout" &&
+        (EFFECT_INFO_LOG_RE.test(log) || log.startsWith("runWorker: Worker "))
+      ) {
+        return false
+      }
     },
     server: {
       deps: {
