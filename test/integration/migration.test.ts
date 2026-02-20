@@ -102,6 +102,8 @@ describe("Migration system", () => {
         "outbox_messages",
         // Migration 022 — docs as primitives
         "docs", "doc_links", "task_doc_links", "invariants", "invariant_checks",
+        // Migration 023 — task labels
+        "task_labels", "task_label_assignments",
       ]
 
       for (const table of expectedTables) {
