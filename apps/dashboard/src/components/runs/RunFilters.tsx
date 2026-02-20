@@ -87,10 +87,10 @@ export function RunFilters({
   const isAllSelected = value.status.length === 0
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {/* Agent dropdown filter */}
-      <div className="flex items-center gap-3">
-        <label htmlFor="agent-filter" className="text-sm text-gray-400">
+      <div className="flex items-center gap-2.5">
+        <label htmlFor="agent-filter" className="text-xs text-gray-400">
           Agent:
         </label>
         <select
@@ -98,9 +98,9 @@ export function RunFilters({
           value={value.agent}
           onChange={(e) => handleAgentChange(e.target.value)}
           className="
-            bg-gray-800 text-gray-200 text-sm rounded-lg
+            bg-gray-800 text-gray-200 text-xs rounded
             border border-gray-700
-            px-3 py-1.5
+            px-2.5 py-1.5
             focus:ring-2 focus:ring-blue-500 focus:border-blue-500
             outline-none
             min-w-[150px]
@@ -127,7 +127,7 @@ export function RunFilters({
               key={option.value}
               onClick={() => handleStatusToggle(option.value)}
               className={`
-                inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium
                 transition-all duration-150
                 ${
                   isSelected
@@ -149,7 +149,7 @@ export function RunFilters({
               {count !== undefined && (
                 <span
                   className={`
-                    ml-1 px-1.5 py-0.5 text-xs rounded-full min-w-[1.25rem] text-center
+                    ml-1 px-1.5 py-0.5 text-[10px] rounded-full min-w-[1.25rem] text-center
                     ${isSelected ? "bg-blue-500 text-white" : "bg-gray-700 text-gray-400"}
                   `}
                 >

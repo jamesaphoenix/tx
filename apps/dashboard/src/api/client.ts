@@ -123,6 +123,12 @@ export interface ChatMessage {
 export interface RunDetailResponse {
   run: Run
   messages: ChatMessage[]
+  logs?: {
+    stdout: string | null
+    stderr: string | null
+    stdoutTruncated?: boolean
+    stderrTruncated?: boolean
+  }
 }
 
 export interface TaskDetailResponse {

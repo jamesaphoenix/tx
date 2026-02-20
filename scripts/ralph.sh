@@ -17,6 +17,7 @@
 #   ./scripts/ralph.sh --workers 4          # Run 4 parallel workers
 #   ./scripts/ralph.sh --runtime codex     # Force Codex runtime
 #   ./scripts/ralph.sh --runtime claude    # Force Claude runtime
+#   ./scripts/ralph.sh --task-timeout 2700 # 45 minutes max per task
 #   ./scripts/ralph.sh --agent-cmd "codex" # Custom command (prompt passed as final arg)
 #   ./scripts/ralph.sh --dry-run           # Show what would be dispatched
 
@@ -76,6 +77,7 @@ while [[ $# -gt 0 ]]; do
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
     --worker-id) WORKER_ID="$2"; shift 2 ;;
     --runtime) RUNTIME_MODE="$2"; shift 2 ;;
+    --task-timeout) TASK_TIMEOUT="$2"; shift 2 ;;
     --agent-cmd) AGENT_COMMAND_OVERRIDE="$2"; shift 2 ;;
     --agent-dir) AGENT_PROFILE_DIR_OVERRIDE="$2"; shift 2 ;;
     --no-review) REVIEW_ENABLED=false; shift ;;
@@ -98,6 +100,11 @@ fi
 
 if ! [[ "$MAX_IDLE_ROUNDS" =~ ^[0-9]+$ ]] || [ "$MAX_IDLE_ROUNDS" -lt 1 ]; then
   echo "Invalid --idle-rounds value: $MAX_IDLE_ROUNDS (must be a positive integer)" >&2
+  exit 1
+fi
+
+if ! [[ "$TASK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$TASK_TIMEOUT" -lt 1 ]; then
+  echo "Invalid --task-timeout value: $TASK_TIMEOUT (must be a positive integer in seconds)" >&2
   exit 1
 fi
 
@@ -328,6 +335,27 @@ cleanup() {
 # Track current task for cleanup
 CURRENT_TASK_ID=""
 
+# Terminate a PID and any descendants. Best-effort; never throws.
+terminate_pid_tree() {
+  local pid="$1"
+  local signal="${2:-TERM}"
+
+  [ -z "$pid" ] && return 0
+
+  if command -v pgrep >/dev/null 2>&1; then
+    local children=""
+    children=$(pgrep -P "$pid" 2>/dev/null || true)
+    if [ -n "$children" ]; then
+      while IFS= read -r child_pid; do
+        [ -z "$child_pid" ] && continue
+        terminate_pid_tree "$child_pid" "$signal"
+      done <<< "$children"
+    fi
+  fi
+
+  kill "-$signal" "$pid" 2>/dev/null || true
+}
+
 # Cancel current run if RALPH is terminated unexpectedly
 cancel_current_run() {
   if [ -n "${CURRENT_RUN_ID:-}" ]; then
@@ -336,7 +364,11 @@ cancel_current_run() {
   fi
   if [ -n "${CLAUDE_PID:-}" ] && kill -0 "$CLAUDE_PID" 2>/dev/null; then
     log "Terminating agent subprocess (PID $CLAUDE_PID)"
-    kill "$CLAUDE_PID" 2>/dev/null || true
+    terminate_pid_tree "$CLAUDE_PID" TERM
+    sleep 1
+    if kill -0 "$CLAUDE_PID" 2>/dev/null; then
+      terminate_pid_tree "$CLAUDE_PID" KILL
+    fi
   fi
   # Reset current task back to ready so it can be picked up again
   if [ -n "${CURRENT_TASK_ID:-}" ]; then
@@ -401,14 +433,13 @@ kill_zombie_claude_processes() {
 
   # Find Claude processes running longer than 2 hours (7200 seconds)
   local max_age=7200
-  local now=$(date +%s)
+  local now
+  now=$(date +%s)
   local killed=0
 
-  # Get all claude --print processes with their start times
-  while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    local pid=$(echo "$line" | awk '{print $1}')
-    local start_time=$(echo "$line" | awk '{print $2}')
+  # Get all claude --print processes
+  while IFS= read -r pid; do
+    [ -z "$pid" ] && continue
 
     # Calculate age (macOS ps shows elapsed time differently, so we check the lstart)
     local process_start
@@ -424,14 +455,14 @@ kill_zombie_claude_processes() {
 
     if [ $age -gt $max_age ]; then
       log "Found zombie Claude process $pid (age: ${age}s, max: ${max_age}s)"
-      kill "$pid" 2>/dev/null || true
+      terminate_pid_tree "$pid" TERM
       sleep 1
       if kill -0 "$pid" 2>/dev/null; then
-        kill -9 "$pid" 2>/dev/null || true
+        terminate_pid_tree "$pid" KILL
       fi
       killed=$((killed + 1))
     fi
-  done < <(pgrep -f "claude.*--print" | while read pid; do echo "$pid"; done)
+  done < <(pgrep -f "claude.*--print" 2>/dev/null || true)
 
   if [ $killed -gt 0 ]; then
     log "Killed $killed zombie Claude process(es)"
@@ -470,12 +501,12 @@ cancel_orphaned_runs() {
       if [ "$parent_pid" = "1" ]; then
         log "Found orphaned agent process $pid (parent died, run $run_id)"
         log "Terminating orphaned agent process..."
-        kill "$pid" 2>/dev/null || true
+        terminate_pid_tree "$pid" TERM
         # Give it a moment to exit gracefully
         sleep 1
         # Force kill if still running
         if kill -0 "$pid" 2>/dev/null; then
-          kill -9 "$pid" 2>/dev/null || true
+          terminate_pid_tree "$pid" KILL
         fi
         local escaped_run_id=$(sql_escape "$run_id")
         sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
@@ -649,7 +680,9 @@ get_elapsed_seconds() {
 }
 
 check_time_limit() {
-  if [ $(get_elapsed_seconds) -ge $MAX_SECONDS ]; then
+  local elapsed
+  elapsed=$(get_elapsed_seconds)
+  if [ "$elapsed" -ge "$MAX_SECONDS" ]; then
     log "TIME LIMIT REACHED: $MAX_HOURS hours"
     return 1
   fi
@@ -782,31 +815,70 @@ select_agent() {
 # Run Tracking
 # ==============================================================================
 
+generate_run_id() {
+  local seed="$1"
+  local entropy=""
+
+  if command -v uuidgen >/dev/null 2>&1; then
+    entropy=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  else
+    entropy="$(date +%s)-$$-$RANDOM-$RANDOM"
+  fi
+
+  printf "run-%s" "$(printf '%s' "$seed-$entropy" | shasum -a 256 | cut -c 1-8)"
+}
+
 # Create a run record and return the run ID
 create_run() {
   local task_id="$1"
   local agent="$2"
   local metadata="$3"
 
-  # Generate run ID
-  local run_id="run-$(date +%s | shasum | head -c 8)"
-  local now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  local now=""
+  now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-  # Insert into database (if tx supports it, otherwise just track in file)
-  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
-    # Escape variables to prevent SQL injection
-    local escaped_task_id=$(sql_escape "$task_id")
-    local escaped_agent=$(sql_escape "$agent")
-    local escaped_metadata=$(sql_escape "$metadata")
-    sqlite3 "$PROJECT_DIR/.tx/tasks.db" <<EOF
+  local run_id=""
+  local inserted=false
+  local attempt=0
+
+  while [ "$attempt" -lt 5 ]; do
+    run_id=$(generate_run_id "$task_id-$agent-$WORKER_ID")
+
+    # Insert into database (if tx supports it, otherwise just track in file)
+    if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+      # Escape variables to prevent SQL injection
+      local escaped_task_id=""
+      local escaped_agent=""
+      local escaped_metadata=""
+      escaped_task_id=$(sql_escape "$task_id")
+      escaped_agent=$(sql_escape "$agent")
+      escaped_metadata=$(sql_escape "$metadata")
+      if sqlite3 "$PROJECT_DIR/.tx/tasks.db" <<EOF
 INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
 VALUES ('$run_id', '$escaped_task_id', '$escaped_agent', '$now', 'running', $$, '$escaped_metadata');
 EOF
+      then
+        inserted=true
+        break
+      fi
+    else
+      inserted=true
+      break
+    fi
+
+    attempt=$((attempt + 1))
+    sleep 0.05
+  done
+
+  if [ "$inserted" != true ]; then
+    echo "Failed to create run row after 5 attempts" >&2
+    return 1
   fi
 
   # Also write to runs log for dashboard
   echo "$run_id" > "$PROJECT_DIR/.tx/current-run"
-  echo "{\"id\":\"$run_id\",\"task_id\":\"$task_id\",\"agent\":\"$agent\",\"started_at\":\"$now\",\"status\":\"running\",\"pid\":$$}" >> "$PROJECT_DIR/.tx/runs.jsonl"
+  printf '{"id":"%s","task_id":"%s","agent":"%s","started_at":"%s","status":"running","pid":%s}\n' \
+    "$run_id" "$task_id" "$agent" "$now" "$$" >> "$PROJECT_DIR/.tx/runs.jsonl"
 
   echo "$run_id"
 }
@@ -860,7 +932,7 @@ run_agent() {
 
   local profile_display="$profile_path"
   if [[ "$profile_path" == "$PROJECT_DIR/"* ]]; then
-    profile_display="${profile_path#$PROJECT_DIR/}"
+    profile_display="${profile_path#"$PROJECT_DIR"/}"
   fi
 
   local prompt="Read $profile_display for your instructions.
@@ -881,8 +953,12 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   log "Dispatching to $ACTIVE_RUNTIME_LABEL..."
 
   # Create run record
-  local metadata="{\"iteration\":$iteration,\"worker\":\"$worker_id\",\"git_sha\":\"$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\",\"runtime\":\"$ACTIVE_RUNTIME\"}"
-  CURRENT_RUN_ID=$(create_run "$task_id" "$agent" "$metadata")
+  local metadata=""
+  metadata="{\"iteration\":$iteration,\"worker\":\"$worker_id\",\"git_sha\":\"$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\",\"runtime\":\"$ACTIVE_RUNTIME\"}"
+  if ! CURRENT_RUN_ID=$(create_run "$task_id" "$agent" "$metadata"); then
+    log "Failed to create run record for task $task_id"
+    return 1
+  fi
   log "Run: $CURRENT_RUN_ID"
 
   # Create per-run log directory
@@ -892,7 +968,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   # Save injected context
   echo "$prompt" > "$run_dir/context.md"
 
-  LAST_TRANSCRIPT_PATH=""
+  LAST_TRANSCRIPT_PATH="$run_dir/stdout.log"
   local session_uuid=""
 
   if [ "$ACTIVE_RUNTIME" = "claude" ]; then
@@ -901,7 +977,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
 
     # Claude stores sessions in ~/.claude/projects/<escaped-cwd>/<session-uuid>.jsonl
     local escaped_cwd
-    escaped_cwd=$(echo "$PROJECT_DIR" | sed 's/[^a-zA-Z0-9]/-/g')
+    escaped_cwd=${PROJECT_DIR//[^a-zA-Z0-9]/-}
     LAST_TRANSCRIPT_PATH="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
   fi
 
@@ -956,15 +1032,18 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   local exit_code=0
   local waited=0
   local check_interval=10
+  if [ "$TASK_TIMEOUT" -lt "$check_interval" ]; then
+    check_interval=1
+  fi
 
   while kill -0 "$CLAUDE_PID" 2>/dev/null; do
-    if [ $waited -ge $TASK_TIMEOUT ]; then
+    if [ "$waited" -ge "$TASK_TIMEOUT" ]; then
       log "Task timeout after ${TASK_TIMEOUT}s - killing $ACTIVE_RUNTIME_LABEL process"
-      kill "$CLAUDE_PID" 2>/dev/null || true
+      terminate_pid_tree "$CLAUDE_PID" TERM
       sleep 2
       # Force kill if still running
       if kill -0 "$CLAUDE_PID" 2>/dev/null; then
-        kill -9 "$CLAUDE_PID" 2>/dev/null || true
+        terminate_pid_tree "$CLAUDE_PID" KILL
       fi
       CLAUDE_PID=""
       complete_run "$CURRENT_RUN_ID" "failed" 124 "Task timed out after ${TASK_TIMEOUT}s"
@@ -1023,11 +1102,13 @@ run_review_agent() {
   local check_interval=5
 
   while kill -0 "$agent_pid" 2>/dev/null; do
-    if [ $waited -ge $REVIEW_TIMEOUT ]; then
+    if [ "$waited" -ge "$REVIEW_TIMEOUT" ]; then
       log "$agent_name timed out after ${REVIEW_TIMEOUT}s — killing"
-      kill "$agent_pid" 2>/dev/null || true
+      terminate_pid_tree "$agent_pid" TERM
       sleep 2
-      kill -0 "$agent_pid" 2>/dev/null && kill -9 "$agent_pid" 2>/dev/null || true
+      if kill -0 "$agent_pid" 2>/dev/null; then
+        terminate_pid_tree "$agent_pid" KILL
+      fi
       return 1
     fi
     sleep $check_interval
@@ -1076,7 +1157,7 @@ This is iteration $iteration of the RALPH loop."
   # Commit any review findings
   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     git add -A
-    git commit -m "ralph: review cycle at iteration $iteration
+    git commit -m "chore(ralph): review cycle at iteration $iteration
 
 Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
 $COAUTHOR_LINE" 2>>"$LOG_FILE" || true
@@ -1121,7 +1202,7 @@ run_worker_loop() {
   register_worker "$worker_id"
   set_worker_status "$worker_id" "idle"
 
-  while [ $iteration -lt $MAX_ITERATIONS ]; do
+  while [ "$iteration" -lt "$MAX_ITERATIONS" ]; do
     iteration=$((iteration + 1))
     echo "$iteration" > "$worker_state_file"
 
@@ -1138,7 +1219,7 @@ run_worker_loop() {
 
     if [ -z "$TASK" ] || [ "$TASK" = "null" ]; then
       idle_rounds=$((idle_rounds + 1))
-      if [ $idle_rounds -ge $MAX_IDLE_ROUNDS ]; then
+      if [ "$idle_rounds" -ge "$MAX_IDLE_ROUNDS" ]; then
         log "[$worker_id] No ready tasks after $MAX_IDLE_ROUNDS checks. Worker exiting."
         break
       fi
@@ -1263,7 +1344,7 @@ Skip obvious or generic observations. Only record insights specific to this proj
     # Checkpoint: commit if there are changes
     if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
       git add -A
-      git commit -m "ralph: $AGENT completed $TASK_ID — $TASK_TITLE
+      git commit -m "chore(ralph): $AGENT completed $TASK_ID - $TASK_TITLE
 
 Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
 $COAUTHOR_LINE" 2>>"$LOG_FILE" || true
@@ -1271,7 +1352,7 @@ $COAUTHOR_LINE" 2>>"$LOG_FILE" || true
     fi
 
     # Review cycle every N iterations (only on review-enabled workers)
-    if [ "$worker_review_enabled" = true ] && [ $((iteration - LAST_REVIEW)) -ge $REVIEW_EVERY ]; then
+    if [ "$worker_review_enabled" = true ] && [ $((iteration - LAST_REVIEW)) -ge "$REVIEW_EVERY" ]; then
       run_review_cycle $iteration
       LAST_REVIEW=$iteration
     fi
@@ -1285,7 +1366,7 @@ $COAUTHOR_LINE" 2>>"$LOG_FILE" || true
 
 spawn_parallel_workers() {
   local i=1
-  while [ $i -le $WORKERS ]; do
+  while [ "$i" -le "$WORKERS" ]; do
     local child_worker_id="${WORKER_PREFIX}-${i}"
     local child_args=(
       --child

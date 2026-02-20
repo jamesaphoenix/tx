@@ -204,13 +204,19 @@ export function RunsList({ filters = {}, onSelectRun, onEscape, selectedIds, onT
     enabled: hasNextPage && !isFetchingNextPage,
   })
 
+  const headerMeta = isLoading
+    ? "Loading..."
+    : runs.length > 0
+      ? `${runs.length} run${runs.length !== 1 ? "s" : ""}${hasNextPage ? " (scroll for more)" : ""}`
+      : "0 runs"
+
   // Initial loading state
   if (isLoading) {
     return (
       <div className="space-y-2">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-300">Runs</h2>
-          <span className="text-sm text-gray-500">Loading...</span>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-gray-400">Runs</h2>
+          <span className="text-sm text-gray-500">{headerMeta}</span>
         </div>
         <LoadingSkeleton count={5} />
       </div>
@@ -220,26 +226,38 @@ export function RunsList({ filters = {}, onSelectRun, onEscape, selectedIds, onT
   // Error state
   if (isError) {
     return (
-      <EmptyState
-        icon={<span>⚠️</span>}
-        title="Error loading runs"
-        description={error?.message ?? "An unexpected error occurred"}
-      />
+      <div className="space-y-2">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-gray-400">Runs</h2>
+          <span className="text-sm text-gray-500">-</span>
+        </div>
+        <EmptyState
+          icon={<span>⚠️</span>}
+          title="Error loading runs"
+          description={error?.message ?? "An unexpected error occurred"}
+        />
+      </div>
     )
   }
 
   // Empty state
   if (runs.length === 0) {
     return (
-      <EmptyState
-        icon={<span>🏃</span>}
-        title="No runs found"
-        description={
-          filters.agent || filters.status?.length
-            ? "Try adjusting your filters"
-            : "Runs will appear here when agents execute tasks"
-        }
-      />
+      <div className="space-y-2">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-gray-400">Runs</h2>
+          <span className="text-sm text-gray-500">{headerMeta}</span>
+        </div>
+        <EmptyState
+          icon={<span>🏃</span>}
+          title="No runs found"
+          description={
+            filters.agent || filters.status?.length
+              ? "Try adjusting your filters"
+              : "Runs will appear here when agents execute tasks"
+          }
+        />
+      </div>
     )
   }
 
@@ -247,11 +265,8 @@ export function RunsList({ filters = {}, onSelectRun, onEscape, selectedIds, onT
     <div className="space-y-2">
       {/* Header with count */}
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-300">Runs</h2>
-        <span className="text-sm text-gray-500">
-          {runs.length} run{runs.length !== 1 ? "s" : ""}
-          {hasNextPage && " (scroll for more)"}
-        </span>
+        <h2 className="text-xs font-medium uppercase tracking-wider text-gray-400">Runs</h2>
+        <span className="text-sm text-gray-500">{headerMeta}</span>
       </div>
 
       {/* Run cards */}

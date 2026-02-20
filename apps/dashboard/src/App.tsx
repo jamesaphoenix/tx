@@ -247,6 +247,7 @@ function ChatView({ runId }: { runId: string }) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [activeTab, setActiveTab] = useState<"transcript" | "logs">("transcript")
 
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["run", runId],
@@ -261,14 +262,22 @@ function ChatView({ runId }: { runId: string }) {
 
   const run = data?.run
   const messages = data?.messages ?? []
+  const logs = data?.logs
+  const stdoutLog = logs?.stdout ?? ""
+  const stderrLog = logs?.stderr ?? ""
+  const hasLogs = stdoutLog.length > 0 || stderrLog.length > 0
   const isRunning = run?.status === "running"
+
+  useEffect(() => {
+    setActiveTab("transcript")
+  }, [runId])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (autoScroll && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages.length, autoScroll])
+  }, [messages.length, stdoutLog.length, stderrLog.length, autoScroll, activeTab])
 
   // Detect if user has scrolled up (disable auto-scroll)
   const handleScroll = () => {
@@ -331,13 +340,39 @@ function ChatView({ runId }: { runId: string }) {
         </div>
       )}
 
+      {/* Transcript / Logs tabs */}
+      <div className="px-4 pt-3 border-b border-gray-800 bg-gray-900/40">
+        <div className="inline-flex rounded-lg border border-gray-700 overflow-hidden">
+          <button
+            onClick={() => setActiveTab("transcript")}
+            className={`px-3 py-1.5 text-xs font-medium transition ${
+              activeTab === "transcript"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-900 text-gray-300 hover:bg-gray-800"
+            }`}
+          >
+            Transcript
+          </button>
+          <button
+            onClick={() => setActiveTab("logs")}
+            className={`px-3 py-1.5 text-xs font-medium transition ${
+              activeTab === "logs"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-900 text-gray-300 hover:bg-gray-800"
+            }`}
+          >
+            Logs
+          </button>
+        </div>
+      </div>
+
       {/* Messages */}
       <div
         ref={messagesContainerRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-4 space-y-2"
       >
-        {messages.length === 0 ? (
+        {activeTab === "transcript" && messages.length === 0 ? (
           <div className="text-gray-500 text-center py-8">
             {isRunning ? (
               <>
@@ -358,18 +393,61 @@ function ChatView({ runId }: { runId: string }) {
               </>
             )}
           </div>
-        ) : (
+        ) : activeTab === "transcript" ? (
           <>
             {messages.map((msg, i) => (
               <ChatMessageComponent key={`${msg.role}-${msg.type ?? "text"}-${i}`} message={msg} />
             ))}
             <div ref={messagesEndRef} />
           </>
+        ) : hasLogs ? (
+          <div className="space-y-3">
+            {(logs?.stdoutTruncated || logs?.stderrTruncated) && (
+              <div className="text-xs text-amber-300">
+                Log output truncated to last 200k characters for dashboard rendering.
+              </div>
+            )}
+            {stdoutLog && (
+              <div>
+                <div className="text-xs text-gray-400 mb-1">stdout</div>
+                <pre className="text-xs text-gray-200 bg-gray-900 border border-gray-700 rounded-md p-3 whitespace-pre-wrap overflow-x-auto">
+                  {stdoutLog}
+                </pre>
+              </div>
+            )}
+            {stderrLog && (
+              <div>
+                <div className="text-xs text-gray-400 mb-1">stderr</div>
+                <pre className="text-xs text-red-200 bg-gray-900 border border-red-900/40 rounded-md p-3 whitespace-pre-wrap overflow-x-auto">
+                  {stderrLog}
+                </pre>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        ) : (
+          <div className="text-gray-500 text-center py-8">
+            {isRunning ? (
+              <>
+                <div className="animate-pulse">Waiting for execution logs...</div>
+                <div className="text-xs mt-2">
+                  stdout/stderr output will appear here as the agent runs
+                </div>
+              </>
+            ) : (
+              <>
+                No execution logs available
+                <div className="text-xs mt-2">
+                  No stdout/stderr files were captured for this run
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
 
       {/* Auto-scroll indicator */}
-      {!autoScroll && messages.length > 0 && (
+      {!autoScroll && ((activeTab === "transcript" && messages.length > 0) || (activeTab === "logs" && hasLogs)) && (
         <button
           onClick={() => {
             setAutoScroll(true)
@@ -761,38 +839,37 @@ function AppContent() {
         ) : activeTab === "docs" ? (
           <DocsPage />
         ) : activeTab === "runs" ? (
-          <div className="flex h-full w-full gap-2 px-2 pb-2">
+          <div className="flex h-full w-full overflow-hidden">
             {/* Runs List */}
-            <div className="w-96 flex-shrink-0 overflow-y-auto p-2">
-              <div className="h-full rounded-xl bg-gray-800/60 p-3">
-                {/* Run Filters - synced with URL */}
-                <div className="mb-4">
-                  <RunFilters
-                    value={runFilters}
-                    onChange={setRunFilters}
-                    statusCounts={runsMetadata?.statusCounts}
-                    availableAgents={runsMetadata?.agents}
-                  />
-                </div>
-                <RunsList
-                  filters={runFilters}
-                  onSelectRun={setSelectedRunId}
-                  onEscape={() => setSelectedRunId(null)}
-                  selectedIds={selectedRunIds}
-                  onToggleSelect={handleToggleRun}
+            <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
+              {/* Run Filters - synced with URL */}
+              <div className="mb-4">
+                <RunFilters
+                  value={runFilters}
+                  onChange={setRunFilters}
+                  statusCounts={runsMetadata?.statusCounts}
+                  availableAgents={runsMetadata?.agents}
                 />
               </div>
+              <RunsList
+                filters={runFilters}
+                onSelectRun={setSelectedRunId}
+                onEscape={() => setSelectedRunId(null)}
+                selectedIds={selectedRunIds}
+                onToggleSelect={handleToggleRun}
+              />
             </div>
 
             {/* Chat View */}
-            <div className="flex flex-1 flex-col overflow-hidden rounded-xl bg-gray-800/45">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {selectedRunId ? (
                 <ChatView runId={selectedRunId} />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-gray-500">
                   <div className="text-center">
-                    <div className="text-lg mb-2">Select a run to view conversation</div>
-                    <div className="text-sm">
+                    <div className="text-lg mb-2">Select a run to view details</div>
+                    <div className="text-sm">Runs show agent execution transcripts and outcomes</div>
+                    <div className="mt-2 text-xs text-gray-500">
                       Use <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">j</kbd>/<kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">k</kbd> or arrow keys to navigate, <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">Enter</kbd> to select
                     </div>
                   </div>

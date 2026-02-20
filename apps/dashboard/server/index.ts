@@ -1592,6 +1592,8 @@ app.get("/api/runs/:id", (c) => {
              started_at AS startedAt, ended_at AS endedAt,
              status, exit_code AS exitCode, pid,
              transcript_path AS transcriptPath,
+             stdout_path AS stdoutPath,
+             stderr_path AS stderrPath,
              context_injected AS contextInjected,
              summary, error_message AS errorMessage,
              metadata
@@ -1606,6 +1608,8 @@ app.get("/api/runs/:id", (c) => {
       exitCode: number | null
       pid: number | null
       transcriptPath: string | null
+      stdoutPath: string | null
+      stderrPath: string | null
       contextInjected: string | null
       summary: string | null
       errorMessage: string | null
@@ -1616,50 +1620,157 @@ app.get("/api/runs/:id", (c) => {
       return c.json({ error: "Run not found" }, 404)
     }
 
-    // Try to read and parse transcript if it exists and path is valid
+    const parseRunMessages = (raw: string): Array<{ role: string; content: unknown; type?: string; tool_name?: string; timestamp?: string }> => {
+      const parsed: Array<{ role: string; content: unknown; type?: string; tool_name?: string; timestamp?: string }> = []
+      const lines = raw.split("\n").filter(Boolean)
+
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line)
+
+          // Claude stream-json format
+          if (entry.type === "user" || entry.type === "assistant") {
+            const msg = entry.message
+            if (!msg) continue
+            const content = msg.content
+
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === "text") {
+                  parsed.push({ role: msg.role, content: block.text, type: "text", timestamp: entry.timestamp })
+                } else if (block.type === "tool_use") {
+                  parsed.push({
+                    role: msg.role,
+                    content: JSON.stringify(block.input),
+                    type: "tool_use",
+                    tool_name: block.name,
+                    timestamp: entry.timestamp,
+                  })
+                } else if (block.type === "tool_result") {
+                  const text = typeof block.content === "string"
+                    ? block.content
+                    : Array.isArray(block.content)
+                      ? block.content.map((c: { text?: string }) => c.text ?? "").join("\n")
+                      : JSON.stringify(block.content)
+                  parsed.push({
+                    role: msg.role,
+                    content: text,
+                    type: "tool_result",
+                    tool_name: block.tool_use_id,
+                    timestamp: entry.timestamp,
+                  })
+                }
+              }
+            } else if (typeof content === "string") {
+              parsed.push({ role: msg.role, content, type: "text", timestamp: entry.timestamp })
+            }
+            continue
+          }
+
+          // Generic role/content JSON lines
+          if (
+            (entry.role === "user" || entry.role === "assistant" || entry.role === "system")
+            && entry.content !== undefined
+          ) {
+            parsed.push({
+              role: entry.role,
+              content: typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content),
+              type: "text",
+              timestamp: typeof entry.timestamp === "string" ? entry.timestamp : undefined,
+            })
+          }
+        } catch {
+          // Skip non-JSON lines here; plain text fallback handles them below.
+        }
+      }
+
+      if (parsed.length > 0) {
+        return parsed
+      }
+
+      // Fallback for plain text logs (Codex/custom runtimes stdout).
+      const rawLines = raw
+        .split("\n")
+        .map((line) => line.replace(/\r$/, ""))
+        .filter((line) => line.trim().length > 0)
+
+      const maxLines = 400
+      const tail = rawLines.slice(-maxLines)
+
+      return tail.map((line) => {
+        const lower = line.toLowerCase()
+        if (lower.startsWith("user:")) {
+          return { role: "user", content: line.slice(5).trim(), type: "text" as const }
+        }
+        if (lower.startsWith("assistant:")) {
+          return { role: "assistant", content: line.slice(10).trim(), type: "text" as const }
+        }
+        if (lower.startsWith("system:")) {
+          return { role: "system", content: line.slice(7).trim(), type: "text" as const }
+        }
+        return { role: "assistant", content: line, type: "text" as const }
+      })
+    }
+
+    // Try transcript_path first, then stdout_path fallback.
     let messages: Array<{ role: string; content: unknown; type?: string; tool_name?: string; timestamp?: string }> = []
-    if (run.transcriptPath) {
-      const validatedPath = validateTranscriptPath(run.transcriptPath)
+    let resolvedTranscriptPath: string | null = null
+    const candidatePaths = [...new Set([run.transcriptPath, run.stdoutPath].filter((p): p is string => Boolean(p)))]
+
+    for (const candidatePath of candidatePaths) {
+      const validatedPath = validateTranscriptPath(candidatePath)
       if (validatedPath && existsSync(validatedPath)) {
         try {
           const raw = readFileSync(validatedPath, "utf-8")
-          const lines = raw.split("\n").filter(Boolean)
-          for (const line of lines) {
-            try {
-              const entry = JSON.parse(line)
-              if (entry.type === "user" || entry.type === "assistant") {
-                const msg = entry.message
-                if (!msg) continue
-                const content = msg.content
-                // Flatten content blocks into individual messages
-                if (Array.isArray(content)) {
-                  for (const block of content) {
-                    if (block.type === "text") {
-                      messages.push({ role: msg.role, content: block.text, type: "text", timestamp: entry.timestamp })
-                    } else if (block.type === "tool_use") {
-                      messages.push({ role: msg.role, content: JSON.stringify(block.input), type: "tool_use", tool_name: block.name, timestamp: entry.timestamp })
-                    } else if (block.type === "tool_result") {
-                      const text = typeof block.content === "string" ? block.content
-                        : Array.isArray(block.content) ? block.content.map((c: { text?: string }) => c.text ?? "").join("\n")
-                        : JSON.stringify(block.content)
-                      messages.push({ role: msg.role, content: text, type: "tool_result", tool_name: block.tool_use_id, timestamp: entry.timestamp })
-                    }
-                  }
-                } else if (typeof content === "string") {
-                  messages.push({ role: msg.role, content, type: "text", timestamp: entry.timestamp })
-                }
-              }
-            } catch {
-              // Skip malformed lines
-            }
-          }
+          messages = parseRunMessages(raw)
+          resolvedTranscriptPath = candidatePath
+          if (messages.length > 0) break
         } catch {
           // Failed to read file
         }
       }
     }
 
-    return c.json({ run, messages })
+    if (!run.transcriptPath && resolvedTranscriptPath) {
+      run.transcriptPath = resolvedTranscriptPath
+    }
+
+    const trimLog = (content: string): { value: string; truncated: boolean } => {
+      const maxChars = 200_000
+      if (content.length <= maxChars) {
+        return { value: content, truncated: false }
+      }
+      return { value: content.slice(-maxChars), truncated: true }
+    }
+
+    const readOptionalLog = (logPath: string | null): { content: string | null; truncated: boolean } => {
+      if (!logPath) return { content: null, truncated: false }
+      const validatedPath = validateTranscriptPath(logPath)
+      if (!validatedPath || !existsSync(validatedPath)) {
+        return { content: null, truncated: false }
+      }
+      try {
+        const raw = readFileSync(validatedPath, "utf-8")
+        const trimmed = trimLog(raw)
+        return { content: trimmed.value, truncated: trimmed.truncated }
+      } catch {
+        return { content: null, truncated: false }
+      }
+    }
+
+    const stdoutLog = readOptionalLog(run.stdoutPath)
+    const stderrLog = readOptionalLog(run.stderrPath)
+
+    return c.json({
+      run,
+      messages,
+      logs: {
+        stdout: stdoutLog.content,
+        stderr: stderrLog.content,
+        stdoutTruncated: stdoutLog.truncated,
+        stderrTruncated: stderrLog.truncated,
+      },
+    })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

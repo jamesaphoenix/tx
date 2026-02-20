@@ -246,7 +246,7 @@ export function CyclePage() {
     <div className="flex flex-col h-full w-full overflow-hidden">
       {!selectedCycleId ? (
         <div className="flex h-full w-full">
-          <div className="w-80 border-r border-gray-700 p-4 overflow-y-auto scrollbar-thin flex-shrink-0">
+          <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto scrollbar-thin flex-shrink-0">
             <CycleSidebar
               selectedCycleId={selectedCycleId}
               onSelectCycle={setSelectedCycleId}
