@@ -112,12 +112,17 @@ check_test_quick() {
     run_silent "Quick tests (no slow)" ".claude/skills/test-quiet/scripts/run.sh test/integration/core.test.ts"
 }
 
+check_workflow_policy() {
+    run_silent "Workflow policy (no hook bypass)" "./scripts/enforce-no-verify.sh"
+}
+
 check_all() {
     echo "tx checks"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     local failed=0
 
+    check_workflow_policy || failed=1
     check_types || failed=1
     check_lint || failed=1
     check_build || failed=1
@@ -140,6 +145,7 @@ check_quick() {
 
     local failed=0
 
+    check_workflow_policy || failed=1
     check_types || failed=1
     check_lint || failed=1
     check_test_quick || failed=1

@@ -1,0 +1,13 @@
+# Project policy: never bypass git verification hooks.
+
+prefix_rule(
+    pattern = ["git", ["commit", "push", "merge", "rebase", "cherry-pick"], "--no-verify"],
+    decision = "forbidden",
+    justification = "Hook bypass is disabled. Fix the underlying hook failure instead.",
+)
+
+prefix_rule(
+    pattern = ["git", "commit", "-n"],
+    decision = "forbidden",
+    justification = "Hook bypass is disabled. Use verified commits only.",
+)

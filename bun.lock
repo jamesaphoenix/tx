@@ -10,6 +10,7 @@
         "@modelcontextprotocol/sdk": "^1.26.0",
         "effect": "^3.19.16",
         "esbuild": "^0.27.3",
+        "zod": "^4.3.6",
       },
       "devDependencies": {
         "@eslint/js": "^9.39.2",
@@ -30,7 +31,7 @@
     },
     "apps/agent-sdk": {
       "name": "@jamesaphoenix/tx-agent-sdk",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "dependencies": {
         "@jamesaphoenix/tx-types": "*",
       },
@@ -49,7 +50,7 @@
     },
     "apps/api-server": {
       "name": "@jamesaphoenix/tx-api-server",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "bin": {
         "tx-api": "./dist/server.js",
       },
@@ -71,7 +72,7 @@
     },
     "apps/cli": {
       "name": "@jamesaphoenix/tx-cli",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "bin": {
         "tx": "./dist/cli.js",
       },
@@ -155,7 +156,7 @@
     },
     "apps/mcp-server": {
       "name": "@jamesaphoenix/tx-mcp-server",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "bin": {
         "tx-mcp": "./dist/server.js",
       },
@@ -175,7 +176,7 @@
     },
     "packages/core": {
       "name": "@jamesaphoenix/tx-core",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "dependencies": {
         "@jamesaphoenix/tx-types": "*",
         "chokidar": "^5.0.0",
@@ -195,7 +196,7 @@
     },
     "packages/test-utils": {
       "name": "@jamesaphoenix/tx-test-utils",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "dependencies": {
         "@jamesaphoenix/tx-core": "*",
         "@jamesaphoenix/tx-types": "*",
@@ -212,7 +213,7 @@
     },
     "packages/tx": {
       "name": "@jamesaphoenix/tx",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "dependencies": {
         "@jamesaphoenix/tx-core": "*",
         "@jamesaphoenix/tx-types": "*",
@@ -223,7 +224,7 @@
     },
     "packages/types": {
       "name": "@jamesaphoenix/tx-types",
-      "version": "0.5.1",
+      "version": "0.5.3",
       "dependencies": {
         "effect": "^3.19.15",
       },

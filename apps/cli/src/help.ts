@@ -102,13 +102,13 @@ by default. Safe to run multiple times (idempotent).
 Options:
   --db <path>   Database path (default: .tx/tasks.db)
   --claude      Scaffold Claude Code integration (CLAUDE.md + .claude/skills/)
-  --codex       Scaffold Codex integration (AGENTS.md + .codex/agents)
+  --codex       Scaffold Codex integration (AGENTS.md + .codex/agents + .codex/rules)
   --help        Show this help
 
 Examples:
   tx init                     # Initialize database only
   tx init --claude            # Database + Claude Code skills & CLAUDE.md
-  tx init --codex             # Database + Codex AGENTS.md + agent profiles
+  tx init --codex             # Database + Codex AGENTS.md + agent profiles + rules
   tx init --claude --codex    # Database + both integrations
   tx init --db ~/my-tasks.db  # Use custom path`,
 

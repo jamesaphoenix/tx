@@ -28,6 +28,8 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [PRD-020](prd/PRD-020-run-observability.md)            | Run Observability & Logging   | Phase 2 |
 | [PRD-021](prd/PRD-021-platform-sync.md)               | Platform Sync                 | Phase 2 |
 | [PRD-022](prd/PRD-022-agent-outbox.md)                | Agent Outbox Messaging        | Phase 2 |
+| [PRD-024](prd/PRD-024-dashboard-keyboard-shortcuts.md)| Dashboard Keyboard Shortcuts  | Phase 2 |
+| [PRD-025](prd/PRD-025-task-assignment-settings.md)    | Assignment Defaults & Settings| Phase 2 |
 
 ## Design Documents (DDs)
 
@@ -55,6 +57,8 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 | [DD-020](design/DD-020-run-observability.md)          | Run Observability & Logging | PRD-020          |
 | [DD-021](design/DD-021-platform-sync.md)             | Platform Sync               | PRD-021          |
 | [DD-022](design/DD-022-agent-outbox.md)              | Agent Outbox Messaging      | PRD-022          |
+| [DD-024](design/DD-024-dashboard-keyboard-shortcuts.md) | Dashboard Keyboard Shortcuts | PRD-024      |
+| [DD-025](design/DD-025-task-assignment-settings.md)  | Assignment Defaults & Settings | PRD-025       |
 
 ## Implementation Phases
 

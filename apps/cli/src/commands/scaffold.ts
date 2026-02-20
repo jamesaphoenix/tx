@@ -1,7 +1,7 @@
 /**
  * Scaffold Claude Code or Codex integration files into the current project.
  *
- * Copies template files (CLAUDE.md / AGENTS.md, skills, scripts) into the
+ * Copies template files (CLAUDE.md / AGENTS.md, skills, scripts, codex rules) into the
  * user's project, skipping any files that already exist.
  */
 
@@ -158,6 +158,13 @@ export function scaffoldCodex(projectDir: string): ScaffoldResult {
   allCopied.push(...agentsResult.copied.map(p => `.codex/agents/${p}`))
   allSkipped.push(...agentsResult.skipped.map(p => `.codex/agents/${p}`))
 
+  // Copy codex command policy rules
+  const codexRulesSrc = join(templates, "codex", "rules")
+  const codexRulesDest = join(projectDir, ".codex", "rules")
+  const rulesResult = copyTree(codexRulesSrc, codexRulesDest)
+  allCopied.push(...rulesResult.copied.map(p => `.codex/rules/${p}`))
+  allSkipped.push(...rulesResult.skipped.map(p => `.codex/rules/${p}`))
+
   const agentsMdSrc = join(templates, "codex", "AGENTS.md")
   const agentsMdDest = join(projectDir, "AGENTS.md")
 
@@ -224,7 +231,7 @@ export async function interactiveScaffold(projectDir: string): Promise<void> {
   }
 
   const wantsCodex = await p.confirm({
-    message: "Add Codex integration? (AGENTS.md + .codex/agents)",
+    message: "Add Codex integration? (AGENTS.md + .codex/agents + .codex/rules)",
     initialValue: true,
   })
   if (p.isCancel(wantsCodex)) { p.cancel("Setup cancelled."); return }

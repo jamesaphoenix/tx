@@ -975,9 +975,14 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     waited=$((waited + check_interval))
   done
 
-  # Process exited, get exit code
-  wait "$CLAUDE_PID" 2>/dev/null
-  exit_code=$?
+  # Process exited; capture exit code without tripping `set -e`.
+  # `wait` can return non-zero for expected agent failures/timeouts and
+  # must not crash the orchestrator loop before run/task reconciliation.
+  if wait "$CLAUDE_PID" 2>/dev/null; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
 
   if [ $exit_code -eq 0 ]; then
     CLAUDE_PID=""

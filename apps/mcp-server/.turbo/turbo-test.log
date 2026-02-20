@@ -1,9 +1,0 @@
-$ bunx --bun vitest run --passWithNoTests
-
-[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/Users/jamesaphoenix/Desktop/projects/just-understanding-data/tx/apps/mcp-server[39m
-
-No test files found, exiting with code 0
-
-[2minclude: [22m[33mtest/**/*.test.ts[2m, [22meslint-plugin-tx/tests/**/*.test.js[39m
-[2mexclude:  [22m[33mtest/integration/daemon-cli.test.ts[2m, [22mtest/integration/cli-graph.test.ts[2m, [22mtest/integration/cli-test-cache.test.ts[2m, [22mtest/integration/cli-learning.test.ts[39m
-

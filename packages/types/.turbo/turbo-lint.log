@@ -1,7 +1,0 @@
-$ eslint src/
-
-/Users/jamesaphoenix/Desktop/projects/just-understanding-data/tx/packages/types/src/anchor.ts
-  130:8  warning  Use Effect Schema (Schema.Struct) instead of plain interfaces for "AnchorWithFreshness". See DOCTRINE RULE 10  tx/no-plain-interfaces
-
-✖ 1 problem (0 errors, 1 warning)
-

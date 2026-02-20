@@ -122,6 +122,7 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 # Run all checks (continue on failure to report all issues)
 # Turbo handles dependency ordering via dependsOn: ["^build"] in turbo.json
 # Concurrency=2 balances speed vs CI memory limits
+run_and_track "Workflow policy (no hook bypass)" "./scripts/enforce-no-verify.sh"
 run_and_track "Build (packages)" "bunx turbo build --concurrency=2"
 run_and_track "TypeScript (packages)" "bunx turbo typecheck --concurrency=2"
 run_and_track "ESLint (packages)" "bunx turbo lint"

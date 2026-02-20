@@ -113,6 +113,14 @@ check_bash_safety() {
     deny "Blocked: git push -f can destroy remote history. Use git push --force-with-lease for safer force pushes."
   fi
 
+  # Block: bypassing git hooks with --no-verify / -n
+  if echo "$cmd" | grep -qE 'git\s+(commit|push|merge|rebase|cherry-pick)\s+.*--no-verify\b'; then
+    deny "Blocked: --no-verify bypasses repository hooks. Fix the underlying hook failure instead."
+  fi
+  if echo "$cmd" | grep -qE 'git\s+commit\s+.*(^|[[:space:]])-n([[:space:]]|$)'; then
+    deny "Blocked: git commit -n bypasses repository hooks. Fix the underlying hook failure instead."
+  fi
+
   # Block: git reset --hard
   if echo "$cmd" | grep -qE 'git\s+reset\s+--hard'; then
     deny "Blocked: git reset --hard discards all uncommitted changes permanently. Use git stash to save changes first, or git reset --soft to keep changes staged."

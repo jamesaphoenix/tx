@@ -3,38 +3,13 @@
  *
  * Deterministic output with stable section ordering per doc kind.
  * Free-text sections pass through as-is (already markdown).
- * Structured sections (invariants, failure_modes, edge_cases) render as tables.
+ * Structured sections (invariants, failure_modes, edge_cases, work_breakdown)
+ * accept either string or object forms and render deterministically.
  */
 import type { DocKind } from "@jamesaphoenix/tx-types"
 
 interface ParsedYaml {
   [key: string]: unknown
-}
-
-interface InvariantEntry {
-  id: string
-  rule: string
-  enforcement: string
-  test_ref?: string
-  lint_rule?: string
-  prompt_ref?: string
-  subsystem?: string | null
-}
-
-interface FailureModeEntry {
-  id: string
-  description: string
-  mitigation?: string
-}
-
-interface EdgeCaseEntry {
-  id: string
-  description: string
-}
-
-interface WorkBreakdownEntry {
-  description: string
-  task_id?: string
 }
 
 interface IndexPrd {
@@ -107,9 +82,9 @@ const renderOverview = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "subsystems", "Subsystems")
   renderFreeTextSection(parsed, lines, "object_model", "Object Model")
   renderFreeTextSection(parsed, lines, "storage_schema", "Storage Schema")
-  renderInvariantsTable(parsed.invariants as InvariantEntry[] | undefined, lines)
-  renderFailureModesTable(parsed.failure_modes as FailureModeEntry[] | undefined, lines)
-  renderEdgeCasesTable(parsed.edge_cases as EdgeCaseEntry[] | undefined, lines)
+  renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
+  renderFailureModesTable(parsed.failure_modes as unknown[] | undefined, lines)
+  renderEdgeCasesTable(parsed.edge_cases as unknown[] | undefined, lines)
   renderConstraintsList(parsed.constraints as string[] | undefined, lines)
   renderFreeTextSection(parsed, lines, "cross_cutting", "Cross-Cutting Concerns")
   renderFreeTextSection(parsed, lines, "data_retention", "Data Retention")
@@ -130,10 +105,10 @@ const renderDesign = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "interfaces", "Interfaces")
   renderFreeTextSection(parsed, lines, "implementation", "Implementation")
   renderFreeTextSection(parsed, lines, "data_model", "Data Model")
-  renderInvariantsTable(parsed.invariants as InvariantEntry[] | undefined, lines)
-  renderFailureModesTable(parsed.failure_modes as FailureModeEntry[] | undefined, lines)
-  renderEdgeCasesTable(parsed.edge_cases as EdgeCaseEntry[] | undefined, lines)
-  renderWorkBreakdown(parsed.work_breakdown as WorkBreakdownEntry[] | undefined, lines)
+  renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
+  renderFailureModesTable(parsed.failure_modes as unknown[] | undefined, lines)
+  renderEdgeCasesTable(parsed.edge_cases as unknown[] | undefined, lines)
+  renderWorkBreakdown(parsed.work_breakdown as unknown[] | undefined, lines)
   renderFreeTextSection(parsed, lines, "retention", "Retention")
   renderFreeTextSection(parsed, lines, "testing_strategy", "Testing Strategy")
   renderFreeTextSection(parsed, lines, "open_questions", "Open Questions")
@@ -175,59 +150,125 @@ const renderConstraintsList = (
   renderStringList(constraints, lines, "Constraints")
 }
 
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
+}
+
+const pickString = (
+  obj: Record<string, unknown> | null,
+  ...keys: string[]
+): string | null => {
+  if (!obj) return null
+  for (const key of keys) {
+    const value = obj[key]
+    if (typeof value === "string" && value.trim()) {
+      return value.trim()
+    }
+  }
+  return null
+}
+
+const markdownCell = (value: string | null | undefined): string => {
+  if (!value || !value.trim()) return "-"
+  return value.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim()
+}
+
 const renderInvariantsTable = (
-  invariants: InvariantEntry[] | undefined,
+  invariants: unknown[] | undefined,
   lines: string[]
 ): void => {
   if (!Array.isArray(invariants) || invariants.length === 0) return
   lines.push("## Invariants", "")
   lines.push("| ID | Rule | Enforcement | Reference |")
   lines.push("|-----|------|-------------|-----------|")
-  for (const inv of invariants) {
-    const ref = inv.test_ref ?? inv.lint_rule ?? inv.prompt_ref ?? "-"
-    const subsystem = inv.subsystem ? ` (${inv.subsystem})` : ""
-    lines.push(`| ${inv.id} | ${inv.rule}${subsystem} | ${inv.enforcement} | ${ref} |`)
+  for (const raw of invariants) {
+    const inv = asRecord(raw)
+    const id = pickString(inv, "id")
+    const ruleFromString = typeof raw === "string" && raw.trim() ? raw.trim() : null
+    const rule = ruleFromString ?? pickString(inv, "rule", "description", "scenario")
+    const subsystem = pickString(inv, "subsystem")
+    const enforcement = pickString(inv, "enforcement")
+    const ref = pickString(
+      inv,
+      "test_ref",
+      "testRef",
+      "lint_rule",
+      "lintRule",
+      "prompt_ref",
+      "promptRef"
+    )
+    const ruleWithSubsystem = subsystem
+      ? `${markdownCell(rule)} (${markdownCell(subsystem)})`
+      : markdownCell(rule)
+
+    lines.push(
+      `| ${markdownCell(id)} | ${ruleWithSubsystem} | ${markdownCell(enforcement)} | ${markdownCell(ref)} |`
+    )
   }
   lines.push("")
 }
 
 const renderFailureModesTable = (
-  failureModes: FailureModeEntry[] | undefined,
+  failureModes: unknown[] | undefined,
   lines: string[]
 ): void => {
   if (!Array.isArray(failureModes) || failureModes.length === 0) return
   lines.push("## Failure Modes", "")
   lines.push("| ID | Description | Mitigation |")
   lines.push("|-----|-------------|------------|")
-  for (const fm of failureModes) {
-    lines.push(`| ${fm.id} | ${fm.description} | ${fm.mitigation ?? "-"} |`)
+  for (const raw of failureModes) {
+    const fm = asRecord(raw)
+    const id = pickString(fm, "id")
+    const descriptionFromString =
+      typeof raw === "string" && raw.trim() ? raw.trim() : null
+    const description = descriptionFromString ?? pickString(fm, "description", "scenario")
+    const mitigation = pickString(fm, "mitigation")
+    lines.push(
+      `| ${markdownCell(id)} | ${markdownCell(description)} | ${markdownCell(mitigation)} |`
+    )
   }
   lines.push("")
 }
 
 const renderEdgeCasesTable = (
-  edgeCases: EdgeCaseEntry[] | undefined,
+  edgeCases: unknown[] | undefined,
   lines: string[]
 ): void => {
   if (!Array.isArray(edgeCases) || edgeCases.length === 0) return
   lines.push("## Edge Cases", "")
   lines.push("| ID | Description |")
   lines.push("|-----|-------------|")
-  for (const ec of edgeCases) {
-    lines.push(`| ${ec.id} | ${ec.description} |`)
+  for (const raw of edgeCases) {
+    const ec = asRecord(raw)
+    const id = pickString(ec, "id")
+    const descriptionFromString =
+      typeof raw === "string" && raw.trim() ? raw.trim() : null
+    const description =
+      descriptionFromString ?? pickString(ec, "description", "scenario", "case")
+    lines.push(`| ${markdownCell(id)} | ${markdownCell(description)} |`)
   }
   lines.push("")
 }
 
 const renderWorkBreakdown = (
-  items: WorkBreakdownEntry[] | undefined,
+  items: unknown[] | undefined,
   lines: string[]
 ): void => {
   if (!Array.isArray(items) || items.length === 0) return
   lines.push("## Work Breakdown", "")
   for (const item of items) {
-    const taskRef = item.task_id ? `\`${item.task_id}\` — ` : ""
-    lines.push(`- ${taskRef}${item.description}`)
+    const entry = asRecord(item)
+    const taskRef = pickString(entry, "task_id", "taskId")
+    const descriptionFromString =
+      typeof item === "string" && item.trim() ? item.trim() : null
+    const description =
+      descriptionFromString ?? pickString(entry, "description", "title", "phase")
+    if (!description) continue
+    const taskPrefix = taskRef ? `\`${taskRef}\` — ` : ""
+    lines.push(`- ${taskPrefix}${description}`)
   }
   lines.push("")
 }

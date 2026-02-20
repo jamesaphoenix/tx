@@ -181,15 +181,9 @@ EOF
                 if git commit -m "$COMMIT_MSG" 2>&1 | tee -a "$LOG_FILE"; then
                     log "Changes committed for $TASK_ID"
                 else
-                    log "WARNING: Commit failed for $TASK_ID - pre-commit hooks failed"
-                    log "Attempting commit with --no-verify as fallback..."
-                    if git commit --no-verify -m "$COMMIT_MSG [skip-hooks]" 2>&1 | tee -a "$LOG_FILE"; then
-                        log "Changes committed for $TASK_ID (hooks skipped - needs manual review)"
-                        # Create a follow-up task to fix the lint issues
-                        $TX add "Fix lint/pre-commit issues from $TASK_ID" --description "Task $TASK_ID was committed with --no-verify due to pre-commit failures. Review and fix any lint issues." --score 85 2>/dev/null || true
-                    else
-                        log "ERROR: Commit failed even with --no-verify for $TASK_ID"
-                    fi
+                    log "ERROR: Commit failed for $TASK_ID - pre-commit hooks blocked commit"
+                    # Create a follow-up task to resolve hook failures without bypassing checks
+                    $TX add "Fix pre-commit issues from $TASK_ID" --description "Task $TASK_ID could not be committed because pre-commit checks failed. Resolve lint/build/test issues and retry commit without bypassing hooks." --score 85 2>/dev/null || true
                 fi
             fi
         else

@@ -586,15 +586,19 @@ This ensures you're always testing the latest source code, not stale builds.
 
 **All development on tx MUST use tx itself to manage work.**
 
-### IMPORTANT: Use tx, NOT Built-in Task Tools
+### IMPORTANT: tx Is Canonical; Native Task Tools Are Secondary
 
-Claude Code has built-in task tools (TaskCreate, TaskUpdate, TaskList, etc.). **DO NOT USE THESE.**
+Claude Code built-in task tools (TaskCreate, TaskUpdate, TaskList, etc.) may be used as a local/native working list.
 
-Instead, use the tx CLI commands:
-- `tx add` instead of TaskCreate
-- `tx ready` instead of TaskList
-- `tx show` instead of TaskGet
-- `tx done` instead of TaskUpdate
+Task-layer source of truth policy:
+- `tx` is the **primary canonical source of truth** for task state.
+- Native task lists are convenience views, not the source of truth.
+- If pulling work from a queue, use `tx ready` as the primary place to get work.
+- Every create/update/complete/block action in native task tools **must be mirrored back to `tx`**.
+- Mirror creates with `tx add` (and `--parent` for subtasks).
+- Mirror updates with `tx update`, `tx block`, `tx unblock`, `tx done`, and `tx reset`.
+- If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
+- Before handoff, commit, or session end, run `tx sync export`.
 
 The tx database is at `.tx/tasks.db`. Tasks persist across sessions and can be synced via git with `tx sync export`.
 
@@ -619,6 +623,8 @@ while true; do
   git add -A && git commit -m "Complete $TASK"
 done
 ```
+
+Do not bypass hooks in this workflow. Commits and pushes must run with verification enabled.
 
 **Key insight**: Each task gets a fresh Claude instance. No accumulated context pollution. Memory lives in files, not conversation history.
 
@@ -727,6 +733,31 @@ This section is mandatory and must be thorough. Testing strategy is a first-clas
 ### Performance (if applicable)
 - Benchmarks to establish
 - Acceptable latency/throughput thresholds
+
+### Minimum Quality Bar (MUST)
+- A DD testing strategy is incomplete unless it includes:
+- Requirement-to-test traceability (each requirement maps to one or more tests)
+- At least 8 numbered integration scenarios with concrete setup, action, and assertions
+- Failure-path and recovery coverage (timeouts, malformed input, partial failure, retries/idempotency when relevant)
+- File-level test plan (exact test files to create or modify)
+- Observable assertions (DB rows, API responses, emitted events/metrics, status transitions)
+- Avoid vague bullets like "add tests" or "cover edge cases" without concrete inputs and expected outputs.
+
+### Prompting Template for DD Testing Strategy
+When generating or revising a DD, use this prompt shape:
+
+```text
+Write ONLY the "Testing Strategy" section for <DD-NNN>.
+
+Requirements:
+1. Provide a traceability matrix with columns:
+   Requirement | Test Type | Test Name | Assertions | File Path
+2. Include sections for Unit Tests, Integration Tests, Edge Cases, Failure Injection, and Performance.
+3. Integration tests must use getSharedTestLayer() and fixtureId(name).
+4. Provide at least 8 numbered integration scenarios, each with Setup / Action / Assert.
+5. Include non-functional thresholds where applicable (latency, throughput, memory).
+6. Do not use vague bullets; every test must name concrete files, inputs, and expected outcomes.
+```
 
 ## Open Questions (REQUIRED)
 - [ ] Unresolved design decisions
