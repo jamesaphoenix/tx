@@ -1,0 +1,9 @@
+{
+  "title": "Headful Experience",
+  "pages": [
+    "index",
+    "tasks-and-subtasks",
+    "command-palette",
+    "docs-runs-cycles"
+  ]
+}

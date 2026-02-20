@@ -107,66 +107,83 @@ export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphPro
   const edgeWidth = fullPage ? 2.5 : 1.5
 
   return (
-    <svg
-      ref={canvasRef}
-      viewBox={`0 0 ${canvasW} ${canvasH}`}
-      className={fullPage ? "absolute inset-0 w-full h-full" : "w-full h-full"}
-      style={fullPage ? undefined : { maxHeight: 200 }}
-      preserveAspectRatio="xMidYMid meet"
-    >
-      {/* Edges */}
-      {edges.map((edge, i) => {
-        const from = nodePos.get(edge.source)
-        const to = nodePos.get(edge.target)
-        if (!from || !to) return null
-        return (
-          <line
-            key={`edge-${i}`}
-            x1={from.x}
-            y1={from.y}
-            x2={to.x}
-            y2={to.y}
-            stroke="#4B5563"
-            strokeWidth={edgeWidth}
-            opacity={0.6}
-          />
-        )
-      })}
+    <div className={fullPage ? "absolute inset-0" : "relative"}>
+      <svg
+        ref={canvasRef}
+        viewBox={`0 0 ${canvasW} ${canvasH}`}
+        className={fullPage ? "absolute inset-0 w-full h-full" : "w-full h-full"}
+        style={fullPage ? undefined : { maxHeight: 220 }}
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <rect x={0} y={0} width={canvasW} height={canvasH} fill="#0f172a" opacity={0.08} rx={12} />
 
-      {/* Nodes */}
-      {positioned.map((node) => {
-        const isSelected = selectedDocName === node.label
-        const color = KIND_COLORS[node.kind] ?? "#9CA3AF"
-        const truncated = node.label.length > labelMaxLen ? node.label.slice(0, labelMaxLen - 1) + "..." : node.label
-        return (
-          <g
-            key={node.id}
-            onClick={() => onSelectDoc?.(node.label)}
-            className="cursor-pointer"
-          >
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r={isSelected ? selectedRadius : nodeRadius}
-              fill={color}
-              stroke={isSelected ? "#fff" : "transparent"}
-              strokeWidth={isSelected ? 2 : 0}
-              opacity={isSelected ? 1 : 0.8}
+        {/* Edges */}
+        {edges.map((edge, i) => {
+          const from = nodePos.get(edge.source)
+          const to = nodePos.get(edge.target)
+          if (!from || !to) return null
+          return (
+            <line
+              key={`edge-${i}`}
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+              stroke="#64748b"
+              strokeWidth={edgeWidth}
+              opacity={0.9}
             />
-            <title>{node.label} ({node.kind})</title>
-            <text
-              x={node.x}
-              y={node.y + (fullPage ? 22 : 18)}
-              textAnchor="middle"
-              fill="#9CA3AF"
-              fontSize={fontSize}
-              className="pointer-events-none"
+          )
+        })}
+
+        {/* Nodes */}
+        {positioned.map((node) => {
+          const isSelected = selectedDocName === node.label
+          const color = KIND_COLORS[node.kind] ?? "#9CA3AF"
+          const truncated = node.label.length > labelMaxLen ? node.label.slice(0, labelMaxLen - 1) + "..." : node.label
+          return (
+            <g
+              key={node.id}
+              onClick={() => onSelectDoc?.(node.label)}
+              className="cursor-pointer"
             >
-              {truncated}
-            </text>
-          </g>
-        )
-      })}
-    </svg>
+              <circle
+                cx={node.x}
+                cy={node.y}
+                r={isSelected ? selectedRadius : nodeRadius}
+                fill={color}
+                stroke={isSelected ? "#ffffff" : "#e2e8f0"}
+                strokeWidth={isSelected ? 2.5 : 1}
+                opacity={1}
+              />
+              <title>{node.label} ({node.kind})</title>
+              <text
+                x={node.x}
+                y={node.y + (fullPage ? 22 : 18)}
+                textAnchor="middle"
+                fill={fullPage ? "#cbd5e1" : "#334155"}
+                fontSize={fontSize}
+                fontWeight={600}
+                className="pointer-events-none"
+              >
+                {truncated}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+
+      {fullPage && (
+        <div className="absolute right-4 top-4 rounded border border-gray-700/80 bg-gray-900/85 px-3 py-2 text-[11px] text-gray-200">
+          <div className="font-semibold text-gray-100 mb-1">Legend</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.overview }} /> Overview</div>
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.prd }} /> PRD</div>
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.design }} /> Design</div>
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.task }} /> Task</div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

@@ -1,4 +1,4 @@
-import { type JSX, useMemo } from "react"
+import { type JSX, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type DocSerialized } from "../../api/client"
 
@@ -416,6 +416,8 @@ function RelationshipsSection({ doc, allDocs, onNavigateToDoc }: {
 // =============================================================================
 
 export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
+  const [contentMode, setContentMode] = useState<"rendered" | "source">("rendered")
+
   const { data: doc, isLoading: docLoading } = useQuery({
     queryKey: ["doc", docName],
     queryFn: () => fetchers.docDetail(docName),
@@ -433,11 +435,17 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
     queryFn: () => fetchers.docs(),
   })
 
+  const { data: sourceData, isLoading: sourceLoading } = useQuery({
+    queryKey: ["doc-source", docName],
+    queryFn: () => fetchers.docSource(docName),
+    enabled: !!docName,
+  })
+
   const allDocs = allDocsData?.docs ?? []
   // Strip leading title and Kind/Status/Version lines from rendered content
   // since we already show them in the header above
   const rendered = useMemo(() => {
-    let text = renderData?.rendered?.[0] ?? ""
+    let text = renderData?.rendered?.[0] ?? sourceData?.renderedContent ?? ""
     // Strip leading "# Title\n" line
     text = text.replace(/^#\s+[^\n]+\n+/, "")
     // Strip "**Kind**: ..." line
@@ -449,7 +457,7 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
     // Strip "**Implements**: ..." line
     text = text.replace(/^\*\*Implements\*\*:\s*[^\n]+\n+/, "")
     return text.trim()
-  }, [renderData])
+  }, [renderData, sourceData])
 
   if (docLoading) {
     return (
@@ -470,7 +478,7 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-8 pb-20">
       {/* Kind label */}
       <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest mb-3">
         {KIND_LABELS[doc.kind] ?? doc.kind.toUpperCase()}
@@ -497,17 +505,46 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
 
       {/* Content */}
       <div>
-        {renderLoading ? (
+        <div className="flex items-center gap-2 mb-4">
+          <button
+            onClick={() => setContentMode("rendered")}
+            className={`px-2.5 py-1 rounded text-xs border transition ${
+              contentMode === "rendered"
+                ? "bg-blue-600 border-blue-500 text-white"
+                : "bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700"
+            }`}
+          >
+            Rendered
+          </button>
+          <button
+            onClick={() => setContentMode("source")}
+            className={`px-2.5 py-1 rounded text-xs border transition ${
+              contentMode === "source"
+                ? "bg-blue-600 border-blue-500 text-white"
+                : "bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700"
+            }`}
+          >
+            YAML Source
+          </button>
+        </div>
+
+        {(renderLoading && contentMode === "rendered") || (sourceLoading && contentMode === "source") ? (
           <div className="space-y-3">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="animate-pulse bg-gray-800 h-4 rounded" style={{ width: `${60 + ((i * 17 + 7) % 40)}%` }} />
             ))}
           </div>
-        ) : rendered ? (
+        ) : contentMode === "rendered" && rendered ? (
           <RenderedContent content={rendered} />
+        ) : contentMode === "source" && sourceData?.yamlContent ? (
+          <pre className="bg-gray-900 border border-gray-700/50 rounded-lg p-4 text-[13px] font-mono text-gray-300 overflow-x-auto leading-6 whitespace-pre-wrap">
+            {sourceData.yamlContent}
+          </pre>
         ) : (
           <div className="text-sm text-gray-500 italic">
-            No rendered content available
+            {contentMode === "rendered"
+              ? "No rendered content available"
+              : "No YAML source available"}
           </div>
         )}
       </div>

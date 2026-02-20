@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../../../test/setup'
 import { TaskList } from '../TaskList'
 import type { PaginatedTasksResponse, ReadyResponse, TaskWithDeps } from '../../../api/client'
+import { createDeferred } from '../../../test/deferred'
 
 // Helper to create a task fixture
 function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
@@ -81,11 +82,13 @@ describe('TaskList', () => {
   })
 
   describe('loading state', () => {
-    it('shows LoadingSkeleton while loading', async () => {
-      // Mock slow response
+    it('shows structured loading UI and transitions cleanly after load', async () => {
+      const gate = createDeferred<void>()
+
+      // Keep request pending until assertions are made.
       server.use(
         http.get('/api/tasks', async () => {
-          await new Promise((resolve) => setTimeout(resolve, 100))
+          await gate.promise
           return HttpResponse.json({
             tasks: [],
             nextCursor: null,
@@ -97,10 +100,18 @@ describe('TaskList', () => {
       )
 
       const onSelectTask = vi.fn()
-      renderWithProviders(<TaskList onSelectTask={onSelectTask} />)
+      const { container } = renderWithProviders(<TaskList onSelectTask={onSelectTask} />)
 
-      // Should show loading text
+      expect(screen.getByRole('heading', { level: 2, name: 'Tasks' })).toBeInTheDocument()
       expect(screen.getByText('Loading...')).toBeInTheDocument()
+      expect(container.querySelectorAll('.animate-shimmer')).toHaveLength(5)
+
+      gate.resolve()
+
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+        expect(screen.getByText('No tasks found')).toBeInTheDocument()
+      })
     })
   })
 
@@ -256,6 +267,51 @@ describe('TaskList', () => {
         expect(screen.getByText('1 task')).toBeInTheDocument()
       })
     })
+
+    it('renders parent/child tasks as nested entries', async () => {
+      const tasks = [
+        createTask({ id: 'tx-child', title: 'Child task', parentId: 'tx-parent' }),
+        createTask({ id: 'tx-parent', title: 'Parent task', parentId: null }),
+        createTask({ id: 'tx-grandchild', title: 'Grandchild task', parentId: 'tx-child' }),
+        createTask({ id: 'tx-root-2', title: 'Another root', parentId: null }),
+      ]
+
+      server.use(
+        http.get('/api/tasks', () => {
+          return HttpResponse.json({
+            tasks,
+            nextCursor: null,
+            hasMore: false,
+            total: 4,
+            summary: { total: 4, byStatus: { ready: 4 } },
+          } satisfies PaginatedTasksResponse)
+        })
+      )
+
+      const onSelectTask = vi.fn()
+      const { container } = renderWithProviders(<TaskList onSelectTask={onSelectTask} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent task')).toBeInTheDocument()
+        expect(screen.getByText('Child task')).toBeInTheDocument()
+        expect(screen.getByText('Grandchild task')).toBeInTheDocument()
+        expect(screen.getByText('Another root')).toBeInTheDocument()
+      })
+
+      const cards = Array.from(container.querySelectorAll('[data-depth]')) as HTMLElement[]
+      const titles = cards.map((card) => card.querySelector('h3')?.textContent)
+
+      expect(titles).toEqual([
+        'Parent task',
+        'Child task',
+        'Grandchild task',
+        'Another root',
+      ])
+      expect(cards[0]).toHaveAttribute('data-depth', '0')
+      expect(cards[1]).toHaveAttribute('data-depth', '1')
+      expect(cards[2]).toHaveAttribute('data-depth', '2')
+      expect(cards[3]).toHaveAttribute('data-depth', '0')
+    })
   })
 
   describe('task selection', () => {
@@ -325,6 +381,7 @@ describe('TaskList', () => {
       // First task should be focused by default (tabIndex=0)
       const cards = container.querySelectorAll('[tabindex]')
       expect(cards[0]).toHaveAttribute('tabIndex', '0')
+      expect(cards[0]).not.toHaveClass('ring-2')
 
       // Press ArrowDown
       act(() => {
@@ -336,6 +393,7 @@ describe('TaskList', () => {
         const updatedCards = container.querySelectorAll('[tabindex]')
         expect(updatedCards[1]).toHaveAttribute('tabIndex', '0')
         expect(updatedCards[0]).toHaveAttribute('tabIndex', '-1')
+        expect(updatedCards[1]).toHaveClass('ring-2')
       })
     })
 

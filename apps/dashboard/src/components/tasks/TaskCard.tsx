@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef, useImperativeHandle } from "react"
 import type { TaskWithDeps } from "../../api/client"
+import { canonicalTaskLabelName } from "./TaskPropertySelects"
 
 // Local StatusBadge - TODO: extract to ui/StatusBadge.tsx
 function StatusBadge({ status }: { status: string }) {
@@ -23,13 +24,25 @@ function StatusBadge({ status }: { status: string }) {
 export interface TaskCardProps {
   task: TaskWithDeps
   isFocused?: boolean
+  showFocusRing?: boolean
   isSelected?: boolean
   onToggleSelect?: (id: string) => void
   onClick?: () => void
+  entryIndex?: number
+  nestingLevel?: number
 }
 
 export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
-  function TaskCard({ task, isFocused = false, isSelected = false, onToggleSelect, onClick }, ref) {
+  function TaskCard({
+    task,
+    isFocused = false,
+    showFocusRing = true,
+    isSelected = false,
+    onToggleSelect,
+    onClick,
+    entryIndex = 0,
+    nestingLevel = 0,
+  }, ref) {
     const innerRef = useRef<HTMLDivElement>(null)
 
     // Expose the inner ref via forwardRef
@@ -42,21 +55,23 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
       }
     }, [isFocused])
 
-    const baseClasses = "p-3 rounded-lg border cursor-pointer transition-all"
+    const baseClasses = "p-3 rounded-lg border cursor-pointer transition-all duration-200 shadow-sm"
     const readyClasses = isSelected
-      ? "border-blue-500 bg-blue-600/20"
-      : task.isReady
-        ? "border-blue-500 bg-blue-500/10"
-        : "border-gray-700 bg-gray-800"
-    const hoverClasses = "hover:bg-gray-700/50"
-    const focusClasses = isFocused
+      ? "border-blue-400/70 bg-blue-600/20 shadow-blue-900/20"
+      : "border-zinc-700/40 bg-gray-800/80"
+    const hoverClasses = "hover:bg-gray-700/45 hover:border-zinc-500/55"
+    const focusClasses = isFocused && showFocusRing
       ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900"
       : ""
+
+    const animationDelayMs = Math.min(entryIndex * 22, 220)
+    const indentPx = Math.min(Math.max(nestingLevel, 0), 8) * 18
 
     return (
       <div
         ref={innerRef}
-        className={`${baseClasses} ${readyClasses} ${hoverClasses} ${focusClasses}`}
+        className={`${baseClasses} ${readyClasses} ${hoverClasses} ${focusClasses} animate-task-card-enter`}
+        data-depth={nestingLevel}
         role="button"
         aria-label={`View task: ${task.title}`}
         onClick={onClick}
@@ -67,6 +82,10 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           }
         }}
         tabIndex={isFocused ? 0 : -1}
+        style={{
+          animationDelay: `${animationDelayMs}ms`,
+          marginLeft: `${indentPx}px`,
+        }}
       >
         <div className="flex items-start justify-between gap-2">
           {onToggleSelect && (
@@ -92,6 +111,22 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           </div>
           <StatusBadge status={task.status} />
         </div>
+        {task.labels && task.labels.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {task.labels.map((label) => (
+              <span
+                key={label.id}
+                className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium"
+                style={{
+                  color: label.color,
+                  backgroundColor: `${label.color}1a`,
+                }}
+              >
+                {canonicalTaskLabelName(label.name)}
+              </span>
+            ))}
+          </div>
+        )}
         {task.blockedBy?.length > 0 && (
           <div className="mt-2 text-xs text-gray-500">
             Blocked by: {task.blockedBy.join(", ")}

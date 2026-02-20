@@ -14,9 +14,11 @@ export function useKeyboardNavigation({
   enabled = true,
 }: UseKeyboardNavigationOptions): {
   focusedIndex: number
+  isKeyboardNavigating: boolean
   setFocusedIndex: React.Dispatch<React.SetStateAction<number>>
 } {
   const [focusedIndex, setFocusedIndex] = useState(0)
+  const [isKeyboardNavigating, setIsKeyboardNavigating] = useState(false)
 
   // Reset focus when item count changes
   useEffect(() => {
@@ -43,15 +45,18 @@ export function useKeyboardNavigation({
         case "ArrowDown":
         case "j":
           e.preventDefault()
+          setIsKeyboardNavigating(true)
           setFocusedIndex((i) => Math.min(i + 1, itemCount - 1))
           break
         case "ArrowUp":
         case "k":
           e.preventDefault()
+          setIsKeyboardNavigating(true)
           setFocusedIndex((i) => Math.max(i - 1, 0))
           break
         case "Enter":
           e.preventDefault()
+          setIsKeyboardNavigating(true)
           setFocusedIndex((currentIndex) => {
             onSelectRef(currentIndex)
             return currentIndex
@@ -68,5 +73,18 @@ export function useKeyboardNavigation({
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [enabled, itemCount, onSelectRef, onEscapeRef])
 
-  return { focusedIndex, setFocusedIndex }
+  useEffect(() => {
+    if (!enabled) return
+
+    const handlePointerDown = () => setIsKeyboardNavigating(false)
+
+    window.addEventListener("mousedown", handlePointerDown)
+    window.addEventListener("touchstart", handlePointerDown)
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown)
+      window.removeEventListener("touchstart", handlePointerDown)
+    }
+  }, [enabled])
+
+  return { focusedIndex, isKeyboardNavigating, setFocusedIndex }
 }

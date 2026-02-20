@@ -1,8 +1,8 @@
 #!/bin/bash
 # ralph.sh — Enhanced RALPH Loop for tx
 #
-# Spawns fresh Claude agent instances per task with periodic adversarial review.
-# Memory persists through CLAUDE.md + .tx/tasks.db + git, not conversation history.
+# Spawns fresh agent instances per task with periodic adversarial review.
+# Memory persists through AGENTS/CLAUDE docs + .tx/tasks.db + git, not conversation history.
 #
 # Based on:
 # - Geoffrey Huntley's RALPH technique: https://ghuntley.com/ralph
@@ -14,6 +14,10 @@
 #   ./scripts/ralph.sh --max-hours 8       # Run for 8 hours max
 #   ./scripts/ralph.sh --review-every 10   # Review every 10 iterations
 #   ./scripts/ralph.sh --agent tx-implementer  # Force a specific agent
+#   ./scripts/ralph.sh --workers 4          # Run 4 parallel workers
+#   ./scripts/ralph.sh --runtime codex     # Force Codex runtime
+#   ./scripts/ralph.sh --runtime claude    # Force Claude runtime
+#   ./scripts/ralph.sh --agent-cmd "codex" # Custom command (prompt passed as final arg)
 #   ./scripts/ralph.sh --dry-run           # Show what would be dispatched
 
 set -euo pipefail
@@ -28,16 +32,36 @@ REVIEW_EVERY=${REVIEW_EVERY:-25}
 REVIEW_TIMEOUT=${REVIEW_TIMEOUT:-300}  # 5 minutes max per review agent
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 TASK_TIMEOUT=${TASK_TIMEOUT:-1800}  # 30 minutes max per task
+WORKERS=${WORKERS:-1}
+CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
+MAX_IDLE_ROUNDS=${MAX_IDLE_ROUNDS:-6}
+WORKER_PREFIX=${WORKER_PREFIX:-ralph}
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 LOG_FILE="$PROJECT_DIR/.tx/ralph.log"
 LOCK_FILE="$PROJECT_DIR/.tx/ralph.lock"
 PID_FILE="$PROJECT_DIR/.tx/ralph.pid"
 STATE_FILE="$PROJECT_DIR/.tx/ralph-state"
 FORCED_AGENT=""
 DRY_RUN=false
+CHILD_MODE=false
+REVIEW_ENABLED=true
+WORKER_ID=""
 CURRENT_RUN_ID=""
 CLAUDE_PID=""
 LAST_TRANSCRIPT_PATH=""
+RUNTIME_MODE=${RUNTIME_MODE:-auto}
+AGENT_COMMAND_OVERRIDE="${AGENT_COMMAND_OVERRIDE:-}"
+AGENT_PROFILE_DIR_OVERRIDE="${AGENT_PROFILE_DIR_OVERRIDE:-}"
+ACTIVE_RUNTIME=""
+ACTIVE_RUNTIME_LABEL=""
+ACTIVE_AGENT_PROFILE_DIR=""
+COAUTHOR_LINE=""
+CUSTOM_AGENT_CMD_PARTS=()
+CHILD_PIDS=()
+WORKER_TABLE_AVAILABLE=false
+WORKER_REGISTERED=false
+LAST_BACKGROUND_PID=""
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -46,11 +70,44 @@ while [[ $# -gt 0 ]]; do
     --max-hours) MAX_HOURS="$2"; shift 2 ;;
     --review-every) REVIEW_EVERY="$2"; shift 2 ;;
     --agent) FORCED_AGENT="$2"; shift 2 ;;
+    --workers) WORKERS="$2"; shift 2 ;;
+    --claim-lease) CLAIM_LEASE_MINUTES="$2"; shift 2 ;;
+    --idle-rounds) MAX_IDLE_ROUNDS="$2"; shift 2 ;;
+    --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
+    --worker-id) WORKER_ID="$2"; shift 2 ;;
+    --runtime) RUNTIME_MODE="$2"; shift 2 ;;
+    --agent-cmd) AGENT_COMMAND_OVERRIDE="$2"; shift 2 ;;
+    --agent-dir) AGENT_PROFILE_DIR_OVERRIDE="$2"; shift 2 ;;
+    --no-review) REVIEW_ENABLED=false; shift ;;
+    --child) CHILD_MODE=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --resume) RESUME=true; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || [ "$WORKERS" -lt 1 ]; then
+  echo "Invalid --workers value: $WORKERS (must be a positive integer)" >&2
+  exit 1
+fi
+
+if ! [[ "$CLAIM_LEASE_MINUTES" =~ ^[0-9]+$ ]] || [ "$CLAIM_LEASE_MINUTES" -lt 1 ]; then
+  echo "Invalid --claim-lease value: $CLAIM_LEASE_MINUTES (must be a positive integer)" >&2
+  exit 1
+fi
+
+if ! [[ "$MAX_IDLE_ROUNDS" =~ ^[0-9]+$ ]] || [ "$MAX_IDLE_ROUNDS" -lt 1 ]; then
+  echo "Invalid --idle-rounds value: $MAX_IDLE_ROUNDS (must be a positive integer)" >&2
+  exit 1
+fi
+
+if [ -z "$WORKER_ID" ]; then
+  if [ "$CHILD_MODE" = true ]; then
+    WORKER_ID="${WORKER_PREFIX}-child"
+  else
+    WORKER_ID="${WORKER_PREFIX}-main"
+  fi
+fi
 
 # Calculate max runtime
 MAX_SECONDS=$((MAX_HOURS * 3600))
@@ -66,24 +123,205 @@ tx() {
 }
 
 # ==============================================================================
+# Runtime Selection (Claude / Codex / Custom)
+# ==============================================================================
+
+resolve_runtime() {
+  case "$RUNTIME_MODE" in
+    auto|claude|codex) ;;
+    *)
+      echo "Invalid --runtime value: $RUNTIME_MODE (expected: auto|claude|codex)" >&2
+      exit 1
+      ;;
+  esac
+
+  if [ -n "$AGENT_COMMAND_OVERRIDE" ]; then
+    read -r -a CUSTOM_AGENT_CMD_PARTS <<< "$AGENT_COMMAND_OVERRIDE"
+    if [ ${#CUSTOM_AGENT_CMD_PARTS[@]} -eq 0 ]; then
+      echo "--agent-cmd was provided but no executable could be parsed" >&2
+      exit 1
+    fi
+    ACTIVE_RUNTIME="custom"
+    ACTIVE_RUNTIME_LABEL="${CUSTOM_AGENT_CMD_PARTS[0]}"
+  elif [ "$RUNTIME_MODE" = "claude" ]; then
+    if ! command -v claude >/dev/null 2>&1; then
+      echo "Claude CLI not found in PATH. Install it or use --runtime codex / --agent-cmd." >&2
+      exit 1
+    fi
+    ACTIVE_RUNTIME="claude"
+    ACTIVE_RUNTIME_LABEL="Claude"
+  elif [ "$RUNTIME_MODE" = "codex" ]; then
+    if ! command -v codex >/dev/null 2>&1; then
+      echo "Codex CLI not found in PATH. Install it or use --runtime claude / --agent-cmd." >&2
+      exit 1
+    fi
+    ACTIVE_RUNTIME="codex"
+    ACTIVE_RUNTIME_LABEL="Codex"
+  elif command -v claude >/dev/null 2>&1; then
+    ACTIVE_RUNTIME="claude"
+    ACTIVE_RUNTIME_LABEL="Claude"
+  elif command -v codex >/dev/null 2>&1; then
+    ACTIVE_RUNTIME="codex"
+    ACTIVE_RUNTIME_LABEL="Codex"
+  else
+    echo "No supported agent runtime found. Install claude or codex, or pass --agent-cmd." >&2
+    exit 1
+  fi
+
+  if [ "$ACTIVE_RUNTIME" = "claude" ]; then
+    COAUTHOR_LINE="Co-Authored-By: Claude <noreply@anthropic.com>"
+  else
+    COAUTHOR_LINE="Co-Authored-By: Codex <noreply@openai.com>"
+  fi
+
+  if [ -n "$AGENT_PROFILE_DIR_OVERRIDE" ]; then
+    ACTIVE_AGENT_PROFILE_DIR="$AGENT_PROFILE_DIR_OVERRIDE"
+  elif [ "$ACTIVE_RUNTIME" = "claude" ]; then
+    ACTIVE_AGENT_PROFILE_DIR="$PROJECT_DIR/.claude/agents"
+  else
+    ACTIVE_AGENT_PROFILE_DIR="$PROJECT_DIR/.codex/agents"
+  fi
+
+  if [ ! -d "$ACTIVE_AGENT_PROFILE_DIR" ]; then
+    echo "Agent profile directory does not exist: $ACTIVE_AGENT_PROFILE_DIR" >&2
+    exit 1
+  fi
+}
+
+resolve_agent_profile_path() {
+  local agent="$1"
+  local primary="$ACTIVE_AGENT_PROFILE_DIR/${agent}.md"
+  if [ -f "$primary" ]; then
+    echo "$primary"
+    return
+  fi
+
+  # Runtime-aware fallback so mixed repos can still run.
+  local fallback=""
+  if [ "$ACTIVE_RUNTIME" = "claude" ]; then
+    fallback="$PROJECT_DIR/.codex/agents/${agent}.md"
+  else
+    fallback="$PROJECT_DIR/.claude/agents/${agent}.md"
+  fi
+
+  if [ -f "$fallback" ]; then
+    echo "$fallback"
+    return
+  fi
+
+  # Return the primary path for clearer downstream errors.
+  echo "$primary"
+}
+
+invoke_runtime_sync() {
+  local prompt="$1"
+
+  case "$ACTIVE_RUNTIME" in
+    claude)
+      claude --dangerously-skip-permissions --print "$prompt"
+      ;;
+    codex)
+      codex exec --skip-git-repo-check --full-auto "$prompt"
+      ;;
+    custom)
+      "${CUSTOM_AGENT_CMD_PARTS[@]}" "$prompt"
+      ;;
+    *)
+      echo "Unsupported runtime: $ACTIVE_RUNTIME" >&2
+      return 1
+      ;;
+  esac
+}
+
+invoke_runtime_background() {
+  local prompt="$1"
+  local stdout_path="$2"
+  local stderr_path="$3"
+  local session_id="${4:-}"
+
+  case "$ACTIVE_RUNTIME" in
+    claude)
+      if [ -n "$session_id" ]; then
+        claude --dangerously-skip-permissions --session-id "$session_id" \
+          --print "$prompt" \
+          > "$stdout_path" \
+          2> >(tee -a "$LOG_FILE" > "$stderr_path") &
+      else
+        claude --dangerously-skip-permissions --print "$prompt" \
+          > "$stdout_path" \
+          2> >(tee -a "$LOG_FILE" > "$stderr_path") &
+      fi
+      ;;
+    codex)
+      codex exec --skip-git-repo-check --full-auto "$prompt" \
+        > "$stdout_path" \
+        2> >(tee -a "$LOG_FILE" > "$stderr_path") &
+      ;;
+    custom)
+      "${CUSTOM_AGENT_CMD_PARTS[@]}" "$prompt" \
+        > "$stdout_path" \
+        2> >(tee -a "$LOG_FILE" > "$stderr_path") &
+      ;;
+    *)
+      echo "Unsupported runtime: $ACTIVE_RUNTIME" >&2
+      return 1
+      ;;
+  esac
+
+  LAST_BACKGROUND_PID=$!
+  return 0
+}
+
+invoke_runtime_review_background() {
+  local prompt="$1"
+
+  case "$ACTIVE_RUNTIME" in
+    claude)
+      claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE" &
+      ;;
+    codex)
+      codex exec --skip-git-repo-check --full-auto "$prompt" 2>>"$LOG_FILE" &
+      ;;
+    custom)
+      "${CUSTOM_AGENT_CMD_PARTS[@]}" "$prompt" 2>>"$LOG_FILE" &
+      ;;
+    *)
+      echo "Unsupported runtime: $ACTIVE_RUNTIME" >&2
+      return 1
+      ;;
+  esac
+
+  LAST_BACKGROUND_PID=$!
+  return 0
+}
+
+# ==============================================================================
 # Lock File (Prevent Multiple Instances)
 # ==============================================================================
 
-if [ -f "$LOCK_FILE" ]; then
-  PID=$(cat "$LOCK_FILE")
-  if kill -0 "$PID" 2>/dev/null; then
-    echo "RALPH already running (PID $PID). Exiting."
-    exit 1
-  else
-    echo "Stale lock file found. Removing."
-    rm "$LOCK_FILE"
+if [ "$CHILD_MODE" = false ]; then
+  if [ -f "$LOCK_FILE" ]; then
+    PID=$(cat "$LOCK_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+      echo "RALPH already running (PID $PID). Exiting."
+      exit 1
+    else
+      echo "Stale lock file found. Removing."
+      rm "$LOCK_FILE"
+    fi
   fi
 fi
 
 cleanup() {
-  rm -f "$LOCK_FILE"
-  rm -f "$PID_FILE"
-  set_orchestrator_stopped
+  if [ "$WORKER_REGISTERED" = true ]; then
+    mark_worker_dead "$WORKER_ID"
+    WORKER_REGISTERED=false
+  fi
+  if [ "$CHILD_MODE" = false ]; then
+    rm -f "$LOCK_FILE"
+    rm -f "$PID_FILE"
+    set_orchestrator_stopped
+  fi
   log "RALPH shutdown"
 }
 
@@ -97,13 +335,23 @@ cancel_current_run() {
     complete_run "$CURRENT_RUN_ID" "cancelled" 130 "RALPH process terminated"
   fi
   if [ -n "${CLAUDE_PID:-}" ] && kill -0 "$CLAUDE_PID" 2>/dev/null; then
-    log "Terminating Claude subprocess (PID $CLAUDE_PID)"
+    log "Terminating agent subprocess (PID $CLAUDE_PID)"
     kill "$CLAUDE_PID" 2>/dev/null || true
   fi
   # Reset current task back to ready so it can be picked up again
   if [ -n "${CURRENT_TASK_ID:-}" ]; then
     log "Resetting task $CURRENT_TASK_ID to ready"
     tx reset "$CURRENT_TASK_ID" 2>/dev/null || true
+    tx claim:release "$CURRENT_TASK_ID" "$WORKER_ID" 2>/dev/null || true
+    set_worker_status "$WORKER_ID" "idle"
+  fi
+
+  if [ "$CHILD_MODE" = false ] && [ ${#CHILD_PIDS[@]} -gt 0 ]; then
+    for child_pid in "${CHILD_PIDS[@]}"; do
+      if kill -0 "$child_pid" 2>/dev/null; then
+        kill "$child_pid" 2>/dev/null || true
+      fi
+    done
   fi
 }
 
@@ -120,8 +368,10 @@ trap 'handle_signal SIGTERM' TERM
 trap 'handle_signal SIGINT' INT
 trap 'handle_signal SIGHUP' HUP
 trap cleanup EXIT
-echo $$ > "$LOCK_FILE"
-echo $$ > "$PID_FILE"
+if [ "$CHILD_MODE" = false ]; then
+  echo $$ > "$LOCK_FILE"
+  echo $$ > "$PID_FILE"
+fi
 
 # ==============================================================================
 # Orchestrator State (for dashboard)
@@ -211,15 +461,15 @@ cancel_orphaned_runs() {
     [ -z "$run_id" ] && continue
 
     if kill -0 "$pid" 2>/dev/null; then
-      # Process is still alive - check if it's an orphaned Claude process
-      # (parent ralph.sh died but Claude kept running)
+      # Process is still alive - check if it's an orphaned agent process
+      # (parent ralph.sh died but child kept running)
       local parent_pid
       parent_pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
 
       # If parent is init (PID 1) or launchd, it's orphaned
       if [ "$parent_pid" = "1" ]; then
-        log "Found orphaned Claude process $pid (parent died, run $run_id)"
-        log "Terminating orphaned Claude process..."
+        log "Found orphaned agent process $pid (parent died, run $run_id)"
+        log "Terminating orphaned agent process..."
         kill "$pid" 2>/dev/null || true
         # Give it a moment to exit gracefully
         sleep 1
@@ -229,7 +479,7 @@ cancel_orphaned_runs() {
         fi
         local escaped_run_id=$(sql_escape "$run_id")
         sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
-          "UPDATE runs SET status='cancelled', ended_at='$now', exit_code=137, error_message='Orphaned Claude process terminated (parent RALPH died)' WHERE id='$escaped_run_id';"
+          "UPDATE runs SET status='cancelled', ended_at='$now', exit_code=137, error_message='Orphaned agent process terminated (parent RALPH died)' WHERE id='$escaped_run_id';"
         count=$((count + 1))
       fi
       # Otherwise it's a run from a different, still-active ralph instance - leave it
@@ -287,6 +537,107 @@ log() {
 # Escape single quotes for SQL strings to prevent SQL injection
 sql_escape() {
   echo "${1//\'/\'\'}"
+}
+
+# ==============================================================================
+# Worker Registration / Heartbeat (for claim FK support)
+# ==============================================================================
+
+detect_worker_table() {
+  WORKER_TABLE_AVAILABLE=false
+
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    return
+  fi
+
+  if [ ! -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    return
+  fi
+
+  local table_exists
+  table_exists=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workers';" \
+    2>/dev/null || echo "0")
+
+  if [ "$table_exists" = "1" ]; then
+    WORKER_TABLE_AVAILABLE=true
+  fi
+}
+
+register_worker() {
+  local worker_id="$1"
+
+  if [ "$WORKER_TABLE_AVAILABLE" != true ]; then
+    return
+  fi
+
+  local escaped_worker_id
+  escaped_worker_id=$(sql_escape "$worker_id")
+  local escaped_name
+  escaped_name=$(sql_escape "$worker_id")
+  local escaped_hostname
+  escaped_hostname=$(sql_escape "$(hostname 2>/dev/null || echo unknown)")
+
+  if sqlite3 "$PROJECT_DIR/.tx/tasks.db" <<EOF >/dev/null 2>&1
+INSERT INTO workers (
+  id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata
+) VALUES (
+  '$escaped_worker_id', '$escaped_name', '$escaped_hostname', $$, 'idle',
+  datetime('now'), datetime('now'), NULL, '[]', '{"source":"ralph.sh"}'
+)
+ON CONFLICT(id) DO UPDATE SET
+  name=excluded.name,
+  hostname=excluded.hostname,
+  pid=$$,
+  status='idle',
+  last_heartbeat_at=datetime('now'),
+  current_task_id=NULL,
+  metadata='{"source":"ralph.sh"}';
+EOF
+  then
+    WORKER_REGISTERED=true
+  else
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [$worker_id] Failed to register worker row; claims may fail" | tee -a "$LOG_FILE" >/dev/null
+  fi
+}
+
+set_worker_status() {
+  local worker_id="$1"
+  local status="$2"
+  local task_id="${3:-}"
+
+  if [ "$WORKER_TABLE_AVAILABLE" != true ]; then
+    return
+  fi
+
+  local escaped_worker_id
+  escaped_worker_id=$(sql_escape "$worker_id")
+
+  if [ -n "$task_id" ]; then
+    local escaped_task_id
+    escaped_task_id=$(sql_escape "$task_id")
+    sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "UPDATE workers SET status='$(sql_escape "$status")', current_task_id='$escaped_task_id', pid=$$, last_heartbeat_at=datetime('now') WHERE id='$escaped_worker_id';" \
+      >/dev/null 2>&1 || true
+  else
+    sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "UPDATE workers SET status='$(sql_escape "$status")', current_task_id=NULL, pid=$$, last_heartbeat_at=datetime('now') WHERE id='$escaped_worker_id';" \
+      >/dev/null 2>&1 || true
+  fi
+}
+
+mark_worker_dead() {
+  local worker_id="$1"
+
+  if [ "$WORKER_TABLE_AVAILABLE" != true ]; then
+    return
+  fi
+
+  local escaped_worker_id
+  escaped_worker_id=$(sql_escape "$worker_id")
+  sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "UPDATE workers SET status='dead', current_task_id=NULL, last_heartbeat_at=datetime('now') WHERE id='$escaped_worker_id';" \
+    >/dev/null 2>&1 || true
 }
 
 # ==============================================================================
@@ -491,30 +842,46 @@ complete_run() {
 }
 
 # ==============================================================================
-# Run Claude Agent
+# Run Task Agent
 # ==============================================================================
 
 run_agent() {
   local agent="$1"
   local task_id="$2"
   local task_title="$3"
+  local worker_id="${4:-$WORKER_ID}"
+  local profile_path
+  profile_path=$(resolve_agent_profile_path "$agent")
 
-  local prompt="Read .claude/agents/${agent}.md for your instructions.
+  if [ ! -f "$profile_path" ]; then
+    log "Agent profile not found: $profile_path"
+    return 1
+  fi
+
+  local profile_display="$profile_path"
+  if [[ "$profile_path" == "$PROJECT_DIR/"* ]]; then
+    profile_display="${profile_path#$PROJECT_DIR/}"
+  fi
+
+  local prompt="Read $profile_display for your instructions.
 
 Your assigned task: $task_id
 Task title: $task_title
 
-Run \`tx show $task_id\` to get full details, then follow your agent instructions.
-Run \`tx context $task_id\` to get relevant learnings and knowledge before starting work.
-When done, run \`tx done $task_id\` to mark the task complete.
-Before finishing, run \`tx learning:add \"<what you learned>\" --source-ref $task_id\` to record useful insights for future agents.
-If you discover new work, create subtasks with \`tx add\`.
-If you hit a blocker, update the task status: \`tx update $task_id --status blocked\`."
+Follow the profile instructions first.
+Helpful commands if needed:
+- \`tx show $task_id\` for full task details
+- \`tx context $task_id\` for related learnings
 
-  log "Dispatching to Claude..."
+When complete, run \`tx done $task_id\`.
+If you discover new work, create subtasks with \`tx add\`.
+If blocked, run \`tx update $task_id --status blocked\`.
+Optionally record useful insights with \`tx learning:add \"<what you learned>\" --source-ref $task_id\`."
+
+  log "Dispatching to $ACTIVE_RUNTIME_LABEL..."
 
   # Create run record
-  local metadata="{\"iteration\":$iteration,\"git_sha\":\"$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\"}"
+  local metadata="{\"iteration\":$iteration,\"worker\":\"$worker_id\",\"git_sha\":\"$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\",\"runtime\":\"$ACTIVE_RUNTIME\"}"
   CURRENT_RUN_ID=$(create_run "$task_id" "$agent" "$metadata")
   log "Run: $CURRENT_RUN_ID"
 
@@ -525,26 +892,31 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
   # Save injected context
   echo "$prompt" > "$run_dir/context.md"
 
-  # Generate a UUID for Claude's session so we can find the transcript
-  local session_uuid
-  session_uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  LAST_TRANSCRIPT_PATH=""
+  local session_uuid=""
 
-  # Compute the transcript path: Claude stores sessions in
-  # ~/.claude/projects/<escaped-cwd>/<session-uuid>.jsonl
-  local escaped_cwd
-  escaped_cwd=$(echo "$PROJECT_DIR" | sed 's/[^a-zA-Z0-9]/-/g')
-  LAST_TRANSCRIPT_PATH="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
+  if [ "$ACTIVE_RUNTIME" = "claude" ]; then
+    # Generate a UUID for Claude's session so we can find the transcript.
+    session_uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+    # Claude stores sessions in ~/.claude/projects/<escaped-cwd>/<session-uuid>.jsonl
+    local escaped_cwd
+    escaped_cwd=$(echo "$PROJECT_DIR" | sed 's/[^a-zA-Z0-9]/-/g')
+    LAST_TRANSCRIPT_PATH="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
+  fi
 
   # Export env vars so hooks can detect ralph mode and correlate artifacts
   export RALPH_MODE=true
   export RALPH_RUN_ID="$CURRENT_RUN_ID"
+  export CLAUDE_CODE_DEBUG_LOGS_DIR="$PROJECT_DIR/.tx/debug"
+  mkdir -p "$CLAUDE_CODE_DEBUG_LOGS_DIR"
 
-  # Run Claude in background with session ID, capture stdout + stderr to per-run files
-  claude --dangerously-skip-permissions --session-id "$session_uuid" \
-    --print "$prompt" \
-    > "$run_dir/stdout.log" \
-    2> >(tee -a "$LOG_FILE" > "$run_dir/stderr.log") &
-  CLAUDE_PID=$!
+  if ! invoke_runtime_background "$prompt" "$run_dir/stdout.log" "$run_dir/stderr.log" "$session_uuid"; then
+    complete_run "$CURRENT_RUN_ID" "failed" 1 "Failed to start $ACTIVE_RUNTIME_LABEL process"
+    CURRENT_RUN_ID=""
+    return 1
+  fi
+  CLAUDE_PID="$LAST_BACKGROUND_PID"
 
   # Update run record with PID and log/transcript paths
   if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
@@ -552,26 +924,42 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
     local escaped_stdout_path=$(sql_escape "$run_dir/stdout.log")
     local escaped_stderr_path=$(sql_escape "$run_dir/stderr.log")
     local escaped_context_path=$(sql_escape "$run_dir/context.md")
-    local escaped_transcript_path=$(sql_escape "$LAST_TRANSCRIPT_PATH")
-    sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
-      "UPDATE runs SET
-        pid=$CLAUDE_PID,
-        stdout_path='$escaped_stdout_path',
-        stderr_path='$escaped_stderr_path',
-        context_injected='$escaped_context_path',
-        transcript_path='$escaped_transcript_path'
-      WHERE id='$escaped_run_id';"
-  fi
-  log "Claude PID: $CLAUDE_PID, session: $session_uuid (timeout: ${TASK_TIMEOUT}s)"
 
-  # Wait for Claude with timeout
+    if [ -n "$LAST_TRANSCRIPT_PATH" ]; then
+      local escaped_transcript_path=$(sql_escape "$LAST_TRANSCRIPT_PATH")
+      sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+        "UPDATE runs SET
+          pid=$CLAUDE_PID,
+          stdout_path='$escaped_stdout_path',
+          stderr_path='$escaped_stderr_path',
+          context_injected='$escaped_context_path',
+          transcript_path='$escaped_transcript_path'
+        WHERE id='$escaped_run_id';"
+    else
+      sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+        "UPDATE runs SET
+          pid=$CLAUDE_PID,
+          stdout_path='$escaped_stdout_path',
+          stderr_path='$escaped_stderr_path',
+          context_injected='$escaped_context_path'
+        WHERE id='$escaped_run_id';"
+    fi
+  fi
+
+  if [ -n "$session_uuid" ]; then
+    log "$ACTIVE_RUNTIME_LABEL PID: $CLAUDE_PID, session: $session_uuid (timeout: ${TASK_TIMEOUT}s)"
+  else
+    log "$ACTIVE_RUNTIME_LABEL PID: $CLAUDE_PID (timeout: ${TASK_TIMEOUT}s)"
+  fi
+
+  # Wait for agent with timeout
   local exit_code=0
   local waited=0
   local check_interval=10
 
   while kill -0 "$CLAUDE_PID" 2>/dev/null; do
     if [ $waited -ge $TASK_TIMEOUT ]; then
-      log "Task timeout after ${TASK_TIMEOUT}s - killing Claude process"
+      log "Task timeout after ${TASK_TIMEOUT}s - killing $ACTIVE_RUNTIME_LABEL process"
       kill "$CLAUDE_PID" 2>/dev/null || true
       sleep 2
       # Force kill if still running
@@ -583,7 +971,7 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
       CURRENT_RUN_ID=""
       return 1
     fi
-    sleep $check_interval
+    sleep "$check_interval"
     waited=$((waited + check_interval))
   done
 
@@ -596,12 +984,12 @@ If you hit a blocker, update the task status: \`tx update $task_id --status bloc
     complete_run "$CURRENT_RUN_ID" "completed" 0
     CURRENT_RUN_ID=""
     return 0
-  else
-    CLAUDE_PID=""
-    complete_run "$CURRENT_RUN_ID" "failed" "$exit_code" "Claude exited with code $exit_code"
-    CURRENT_RUN_ID=""
-    return 1
   fi
+
+  CLAUDE_PID=""
+  complete_run "$CURRENT_RUN_ID" "failed" "$exit_code" "$ACTIVE_RUNTIME_LABEL exited with code $exit_code"
+  CURRENT_RUN_ID=""
+  return 1
 }
 
 # ==============================================================================
@@ -620,9 +1008,12 @@ run_review_agent() {
     return 0
   fi
 
-  # Run Claude in background with timeout
-  claude --dangerously-skip-permissions --print "$prompt" 2>>"$LOG_FILE" &
-  local agent_pid=$!
+  # Run review prompt in background with timeout
+  if ! invoke_runtime_review_background "$prompt"; then
+    log "$agent_name failed to start in $ACTIVE_RUNTIME_LABEL"
+    return 1
+  fi
+  local agent_pid="$LAST_BACKGROUND_PID"
   local waited=0
   local check_interval=5
 
@@ -648,19 +1039,31 @@ run_review_cycle() {
   log "=== REVIEW CYCLE (iteration $iteration) ==="
 
   # 1. Doctrine Checker
-  run_review_agent "doctrine-checker" "Read .claude/agents/tx-doctrine-checker.md for your instructions.
+  local doctrine_profile
+  doctrine_profile=$(resolve_agent_profile_path "tx-doctrine-checker")
+  local doctrine_display="$doctrine_profile"
+  [[ "$doctrine_profile" == "$PROJECT_DIR/"* ]] && doctrine_display="${doctrine_profile#$PROJECT_DIR/}"
+  run_review_agent "doctrine-checker" "Read $doctrine_display for your instructions.
 
 Review recent changes and check for doctrine violations.
 This is iteration $iteration of the RALPH loop."
 
   # 2. Test Runner
-  run_review_agent "test-runner" "Read .claude/agents/tx-test-runner.md for your instructions.
+  local test_runner_profile
+  test_runner_profile=$(resolve_agent_profile_path "tx-test-runner")
+  local test_runner_display="$test_runner_profile"
+  [[ "$test_runner_profile" == "$PROJECT_DIR/"* ]] && test_runner_display="${test_runner_profile#$PROJECT_DIR/}"
+  run_review_agent "test-runner" "Read $test_runner_display for your instructions.
 
 Run ONLY targeted tests for recently changed files. Do NOT run the full test suite.
 This is iteration $iteration of the RALPH loop."
 
   # 3. Quality Checker
-  run_review_agent "quality-checker" "Read .claude/agents/tx-quality-checker.md for your instructions.
+  local quality_profile
+  quality_profile=$(resolve_agent_profile_path "tx-quality-checker")
+  local quality_display="$quality_profile"
+  [[ "$quality_profile" == "$PROJECT_DIR/"* ]] && quality_display="${quality_profile#$PROJECT_DIR/}"
+  run_review_agent "quality-checker" "Read $quality_display for your instructions.
 
 Review recent code changes for quality issues.
 This is iteration $iteration of the RALPH loop."
@@ -671,7 +1074,7 @@ This is iteration $iteration of the RALPH loop."
     git commit -m "ralph: review cycle at iteration $iteration
 
 Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
-Co-Authored-By: Claude <noreply@anthropic.com>" 2>>"$LOG_FILE" || true
+$COAUTHOR_LINE" 2>>"$LOG_FILE" || true
     log "Review changes committed"
   fi
 
@@ -682,95 +1085,117 @@ Co-Authored-By: Claude <noreply@anthropic.com>" 2>>"$LOG_FILE" || true
 # Main Loop
 # ==============================================================================
 
-log "========================================"
-log "RALPH Loop Started"
-log "========================================"
-log "Project: $PROJECT_DIR"
-log "Max iterations: $MAX_ITERATIONS"
-log "Max runtime: $MAX_HOURS hours"
-log "Review every: $REVIEW_EVERY iterations"
-log ""
+acquire_claim() {
+  local task_id="$1"
+  local worker_id="$2"
+  tx claim "$task_id" "$worker_id" --lease "$CLAIM_LEASE_MINUTES" >/dev/null 2>&1
+}
 
-# Kill any zombie Claude processes (running too long)
-kill_zombie_claude_processes
+release_claim() {
+  local task_id="$1"
+  local worker_id="$2"
+  tx claim:release "$task_id" "$worker_id" >/dev/null 2>&1 || true
+}
 
-# Clean up any orphaned runs from previous crashed sessions
-cancel_orphaned_runs
+run_worker_loop() {
+  local worker_id="$1"
+  local worker_review_enabled="$2"
+  local worker_state_file="$STATE_FILE"
+  local idle_rounds=0
 
-# Reset any orphaned active tasks from previous sessions
-reset_orphaned_tasks
-
-# Mark orchestrator as running in database (for dashboard)
-set_orchestrator_running
-
-iteration=$(load_state)
-LAST_REVIEW=0
-
-while [ $iteration -lt $MAX_ITERATIONS ]; do
-  iteration=$((iteration + 1))
-  save_state
-
-  # Check limits
-  check_time_limit || break
-  check_circuit_breaker || break
-
-  log "--- Iteration $iteration ---"
-
-  # Get highest-priority ready task
-  READY_JSON=$(tx ready --json --limit 1 2>/dev/null || echo "[]")
-  TASK=$(echo "$READY_JSON" | jq '.[0] // empty' 2>/dev/null)
-
-  if [ -z "$TASK" ] || [ "$TASK" = "null" ]; then
-    log "No ready tasks. All done."
-    break
+  if [ "$CHILD_MODE" = true ] || [ "$WORKERS" -gt 1 ]; then
+    worker_state_file="${STATE_FILE}-${worker_id}"
   fi
 
-  TASK_ID=$(echo "$TASK" | jq -r '.id')
-  TASK_TITLE=$(echo "$TASK" | jq -r '.title')
-  AGENT=$(select_agent "$TASK")
-
-  log "Task: $TASK_ID — $TASK_TITLE"
-  log "Agent: $AGENT"
-
-  if [ "$DRY_RUN" = true ]; then
-    log "[DRY RUN] Would dispatch $TASK_ID to $AGENT"
-    sleep "$SLEEP_BETWEEN"
-    continue
-  fi
-
-  # Mark task as active and track it for signal handling
-  CURRENT_TASK_ID="$TASK_ID"
-  tx update "$TASK_ID" --status active 2>/dev/null || true
-
-  # Run the agent
-  AGENT_EXIT_CODE=0
-  if run_agent "$AGENT" "$TASK_ID" "$TASK_TITLE"; then
-    log "Agent process exited successfully"
+  if [ "${RESUME:-false}" = true ] && [ -f "$worker_state_file" ]; then
+    iteration=$(cat "$worker_state_file")
   else
-    AGENT_EXIT_CODE=$?
-    log "Agent process failed (exit code: $AGENT_EXIT_CODE)"
+    iteration=0
   fi
+  LAST_REVIEW=0
+  register_worker "$worker_id"
+  set_worker_status "$worker_id" "idle"
 
-  # Verify task actually completed - this is the key reliability check
-  TASK_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
-  log "Task status after agent: $TASK_STATUS"
+  while [ $iteration -lt $MAX_ITERATIONS ]; do
+    iteration=$((iteration + 1))
+    echo "$iteration" > "$worker_state_file"
 
-  if [ "$TASK_STATUS" = "done" ]; then
-    log "✓ Task completed successfully"
-    on_success
-  elif [ "$TASK_STATUS" = "blocked" ]; then
-    log "Task is blocked (likely decomposed into subtasks)"
-    on_success
-  elif [ "$AGENT_EXIT_CODE" -ne 0 ]; then
-    log "✗ Agent failed and task not done - demoting"
-    demote_task "$TASK_ID" "Agent failed (exit code: $AGENT_EXIT_CODE)"
-    record_failure
-  else
-    # Agent exited 0 but task not done - ask a verification agent to check
-    log "⚠ Agent exited cleanly but task not marked done (status: $TASK_STATUS)"
-    log "Running verification agent..."
+    # Check limits
+    check_time_limit || break
+    check_circuit_breaker || break
 
-    VERIFY_PROMPT="Task $TASK_ID was just worked on but is still status '$TASK_STATUS'.
+    set_worker_status "$worker_id" "idle"
+    log "[$worker_id] --- Iteration $iteration ---"
+
+    # Get highest-priority ready task
+    READY_JSON=$(tx ready --json --limit 1 2>/dev/null || echo "[]")
+    TASK=$(echo "$READY_JSON" | jq '.[0] // empty' 2>/dev/null)
+
+    if [ -z "$TASK" ] || [ "$TASK" = "null" ]; then
+      idle_rounds=$((idle_rounds + 1))
+      if [ $idle_rounds -ge $MAX_IDLE_ROUNDS ]; then
+        log "[$worker_id] No ready tasks after $MAX_IDLE_ROUNDS checks. Worker exiting."
+        break
+      fi
+      log "[$worker_id] No ready tasks. Sleeping (${idle_rounds}/${MAX_IDLE_ROUNDS})..."
+      sleep "$SLEEP_BETWEEN"
+      continue
+    fi
+    idle_rounds=0
+
+    TASK_ID=$(echo "$TASK" | jq -r '.id')
+    TASK_TITLE=$(echo "$TASK" | jq -r '.title')
+    AGENT=$(select_agent "$TASK")
+
+    log "[$worker_id] Task: $TASK_ID — $TASK_TITLE"
+    log "[$worker_id] Agent: $AGENT"
+
+    if [ "$DRY_RUN" = true ]; then
+      log "[$worker_id] [DRY RUN] Would dispatch $TASK_ID to $AGENT"
+      sleep "$SLEEP_BETWEEN"
+      continue
+    fi
+
+    if ! acquire_claim "$TASK_ID" "$worker_id"; then
+      log "[$worker_id] Claim failed for $TASK_ID (already claimed)."
+      sleep "$SLEEP_BETWEEN"
+      continue
+    fi
+
+    # Mark task as active and track it for signal handling
+    CURRENT_TASK_ID="$TASK_ID"
+    tx update "$TASK_ID" --status active 2>/dev/null || true
+    set_worker_status "$worker_id" "busy" "$TASK_ID"
+
+    # Run the agent
+    AGENT_EXIT_CODE=0
+    if run_agent "$AGENT" "$TASK_ID" "$TASK_TITLE" "$worker_id"; then
+      log "[$worker_id] Agent process exited successfully"
+    else
+      AGENT_EXIT_CODE=$?
+      log "[$worker_id] Agent process failed (exit code: $AGENT_EXIT_CODE)"
+    fi
+
+    # Verify task actually completed - this is the key reliability check
+    TASK_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
+    log "[$worker_id] Task status after agent: $TASK_STATUS"
+
+    if [ "$TASK_STATUS" = "done" ]; then
+      log "[$worker_id] ✓ Task completed successfully"
+      on_success
+    elif [ "$TASK_STATUS" = "blocked" ]; then
+      log "[$worker_id] Task is blocked (likely decomposed into subtasks)"
+      on_success
+    elif [ "$AGENT_EXIT_CODE" -ne 0 ]; then
+      log "[$worker_id] ✗ Agent failed and task not done - demoting"
+      demote_task "$TASK_ID" "Agent failed (exit code: $AGENT_EXIT_CODE)"
+      record_failure
+    else
+      # Agent exited 0 but task not done - ask a verification agent to check
+      log "[$worker_id] ⚠ Agent exited cleanly but task not marked done (status: $TASK_STATUS)"
+      log "[$worker_id] Running verification agent..."
+
+      VERIFY_PROMPT="Task $TASK_ID was just worked on but is still status '$TASK_STATUS'.
 
 Run \`tx show $TASK_ID\` to see the task details.
 
@@ -781,38 +1206,41 @@ Check if the task is actually complete:
 
 Be honest - only mark done if the acceptance criteria are met."
 
-    # Quick verification check (no run tracking for this)
-    if claude --dangerously-skip-permissions --print "$VERIFY_PROMPT" 2>>"$LOG_FILE"; then
-      # Re-check status after verification
-      FINAL_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
-      log "Status after verification: $FINAL_STATUS"
+      # Quick verification check (no run tracking for this)
+      if invoke_runtime_sync "$VERIFY_PROMPT" 2>>"$LOG_FILE"; then
+        # Re-check status after verification
+        FINAL_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
+        log "[$worker_id] Status after verification: $FINAL_STATUS"
 
-      if [ "$FINAL_STATUS" = "done" ]; then
-        log "✓ Verification agent marked task complete"
-        on_success
-      elif [ "$FINAL_STATUS" = "blocked" ]; then
-        log "Task marked as blocked by verification agent"
-        on_success
+        if [ "$FINAL_STATUS" = "done" ]; then
+          log "[$worker_id] ✓ Verification agent marked task complete"
+          on_success
+        elif [ "$FINAL_STATUS" = "blocked" ]; then
+          log "[$worker_id] Task marked as blocked by verification agent"
+          on_success
+        else
+          log "[$worker_id] ✗ Task still not done after verification - demoting"
+          demote_task "$TASK_ID" "Not done after verification (status: $FINAL_STATUS)"
+          record_failure
+        fi
       else
-        log "✗ Task still not done after verification - demoting"
-        demote_task "$TASK_ID" "Not done after verification (status: $FINAL_STATUS)"
+        log "[$worker_id] Verification agent failed - demoting task"
+        demote_task "$TASK_ID" "Verification agent failed"
         record_failure
       fi
-    else
-      log "Verification agent failed - demoting task"
-      demote_task "$TASK_ID" "Verification agent failed"
-      record_failure
     fi
-  fi
 
-  # Clear current task tracking
-  CURRENT_TASK_ID=""
+    release_claim "$TASK_ID" "$worker_id"
 
-  # Extract learnings from the session transcript
-  if [ -n "$LAST_TRANSCRIPT_PATH" ] && [ -f "$LAST_TRANSCRIPT_PATH" ]; then
-    log "Extracting learnings from session transcript..."
-    claude --dangerously-skip-permissions --print \
-      "You are a learnings extractor. Read the transcript at $LAST_TRANSCRIPT_PATH.
+    # Clear current task tracking
+    CURRENT_TASK_ID=""
+    set_worker_status "$worker_id" "idle"
+
+    # Extract learnings from the session transcript
+    if [ -n "$LAST_TRANSCRIPT_PATH" ] && [ -f "$LAST_TRANSCRIPT_PATH" ]; then
+      log "[$worker_id] Extracting learnings from session transcript..."
+      invoke_runtime_sync \
+        "You are a learnings extractor. Read the transcript at $LAST_TRANSCRIPT_PATH.
 
 Extract all key learnings — things that would help a future agent working on this codebase. Focus on:
 - Bugs discovered and their root causes
@@ -824,30 +1252,134 @@ For each learning, record it with:
   tx learning:add \"<learning>\" --source-ref $TASK_ID
 
 Skip obvious or generic observations. Only record insights specific to this project." \
-      2>>"$LOG_FILE" || log "Learnings extraction had issues"
-  fi
+        2>>"$LOG_FILE" || log "[$worker_id] Learnings extraction had issues"
+    fi
 
-  # Checkpoint: commit if there are changes
-  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-    git add -A
-    git commit -m "ralph: $AGENT completed $TASK_ID — $TASK_TITLE
+    # Checkpoint: commit if there are changes
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+      git add -A
+      git commit -m "ralph: $AGENT completed $TASK_ID — $TASK_TITLE
 
 Co-Authored-By: jamesaphoenix <jamesaphoenix@googlemail.com>
-Co-Authored-By: Claude <noreply@anthropic.com>" 2>>"$LOG_FILE" || true
-    log "Changes committed"
+$COAUTHOR_LINE" 2>>"$LOG_FILE" || true
+      log "[$worker_id] Changes committed"
+    fi
+
+    # Review cycle every N iterations (only on review-enabled workers)
+    if [ "$worker_review_enabled" = true ] && [ $((iteration - LAST_REVIEW)) -ge $REVIEW_EVERY ]; then
+      run_review_cycle $iteration
+      LAST_REVIEW=$iteration
+    fi
+
+    sleep "$SLEEP_BETWEEN"
+  done
+
+  set_worker_status "$worker_id" "idle"
+  log "[$worker_id] Worker finished after $iteration iteration(s)"
+}
+
+spawn_parallel_workers() {
+  local i=1
+  while [ $i -le $WORKERS ]; do
+    local child_worker_id="${WORKER_PREFIX}-${i}"
+    local child_args=(
+      --child
+      --workers 1
+      --worker-id "$child_worker_id"
+      --max "$MAX_ITERATIONS"
+      --max-hours "$MAX_HOURS"
+      --review-every "$REVIEW_EVERY"
+      --claim-lease "$CLAIM_LEASE_MINUTES"
+      --idle-rounds "$MAX_IDLE_ROUNDS"
+      --worker-prefix "$WORKER_PREFIX"
+    )
+
+    if [ -n "$FORCED_AGENT" ]; then
+      child_args+=(--agent "$FORCED_AGENT")
+    fi
+
+    if [ "$RUNTIME_MODE" != "auto" ]; then
+      child_args+=(--runtime "$RUNTIME_MODE")
+    fi
+
+    if [ -n "$AGENT_COMMAND_OVERRIDE" ]; then
+      child_args+=(--agent-cmd "$AGENT_COMMAND_OVERRIDE")
+    fi
+
+    if [ -n "$AGENT_PROFILE_DIR_OVERRIDE" ]; then
+      child_args+=(--agent-dir "$AGENT_PROFILE_DIR_OVERRIDE")
+    fi
+
+    if [ "${RESUME:-false}" = true ]; then
+      child_args+=(--resume)
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+      child_args+=(--dry-run)
+    fi
+
+    if [ $i -ne 1 ]; then
+      child_args+=(--no-review)
+    fi
+
+    "$SCRIPT_PATH" "${child_args[@]}" >>"$LOG_FILE" 2>&1 &
+    CHILD_PIDS+=($!)
+    log "Spawned worker $child_worker_id (pid ${CHILD_PIDS[$((i - 1))]})"
+    i=$((i + 1))
+  done
+
+  local failed=0
+  for child_pid in "${CHILD_PIDS[@]}"; do
+    if ! wait "$child_pid"; then
+      failed=1
+    fi
+  done
+
+  return $failed
+}
+
+resolve_runtime
+detect_worker_table
+
+log "========================================"
+log "RALPH Loop Started"
+log "========================================"
+log "Project: $PROJECT_DIR"
+log "Runtime: $ACTIVE_RUNTIME ($ACTIVE_RUNTIME_LABEL)"
+log "Agent profiles: $ACTIVE_AGENT_PROFILE_DIR"
+log "Worker mode: workers=$WORKERS worker_id=$WORKER_ID child=$CHILD_MODE"
+log "Max iterations: $MAX_ITERATIONS"
+log "Max runtime: $MAX_HOURS hours"
+log "Review every: $REVIEW_EVERY iterations"
+log ""
+
+if [ "$CHILD_MODE" = false ]; then
+  # Kill zombie Claude processes (Claude runtime only)
+  if [ "$ACTIVE_RUNTIME" = "claude" ]; then
+    kill_zombie_claude_processes
   fi
 
-  # Review cycle every N iterations
-  if [ $((iteration - LAST_REVIEW)) -ge $REVIEW_EVERY ]; then
-    run_review_cycle $iteration
-    LAST_REVIEW=$iteration
-  fi
+  # Clean up any orphaned runs from previous crashed sessions
+  cancel_orphaned_runs
 
-  sleep "$SLEEP_BETWEEN"
-done
+  # Reset any orphaned active tasks from previous sessions
+  reset_orphaned_tasks
+
+  # Mark orchestrator as running in database (for dashboard)
+  set_orchestrator_running
+fi
+
+if [ "$CHILD_MODE" = false ] && [ "$WORKERS" -gt 1 ]; then
+  log "Starting parallel ralph workers: $WORKERS"
+  if ! spawn_parallel_workers; then
+    log "One or more workers failed"
+    exit 1
+  fi
+else
+  run_worker_loop "$WORKER_ID" "$REVIEW_ENABLED"
+fi
 
 log "========================================"
 log "RALPH Loop Finished"
 log "========================================"
-log "Iterations completed: $iteration"
 log "Consecutive failures: $CONSECUTIVE_FAILURES"

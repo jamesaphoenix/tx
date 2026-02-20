@@ -104,6 +104,14 @@ cd your-project
 tx init
 ```
 
+Optional agent onboarding scaffolds:
+
+```bash
+tx init --claude            # CLAUDE.md + .claude/skills
+tx init --codex             # AGENTS.md + .codex/agents
+tx init --claude --codex    # scaffold both
+```
+
 This creates a `.tx/` directory:
 
 ```
@@ -217,6 +225,7 @@ The simplest agent loop pulls tasks one at a time:
 
 ```bash
 #!/bin/bash
+AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
 while true; do
   # Get highest priority ready task
   TASK=$(tx ready --json --limit 1 | jq -r '.[0].id // empty')
@@ -224,8 +233,8 @@ while true; do
   # Exit if no ready tasks
   [ -z "$TASK" ] && break
 
-  # Let Claude work on it
-  claude "Your task is $TASK. Run 'tx show $TASK' for details. When done, run 'tx done $TASK'"
+  # Let your agent work on it
+  "$AGENT_CMD" "Your task is $TASK. Run 'tx show $TASK' for details. When done, run 'tx done $TASK'"
 done
 
 echo "All tasks complete!"
@@ -276,9 +285,10 @@ git pull && tx sync import
 Run multiple agents pulling from the same queue:
 
 ```bash
+AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
 for i in {1..5}; do
   (while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
-    claude "Complete $task" && tx done $task
+    "$AGENT_CMD" "Complete $task" && tx done $task
   done) &
 done
 wait
@@ -289,11 +299,12 @@ wait
 Agent proposes, human approves:
 
 ```bash
+AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
 task=$(tx ready --json --limit 1 | jq -r '.[0].id')
-claude "Plan implementation for $task" > plan.md
+"$AGENT_CMD" "Plan implementation for $task" > plan.md
 echo "Review plan.md, then press Enter to continue..."
 read
-claude "Execute plan.md"
+"$AGENT_CMD" "Execute plan.md"
 tx done $task
 ```
 
@@ -306,7 +317,10 @@ your-project/
 │   ├── tasks.jsonl        # Tasks (git-tracked)
 │   ├── learnings.jsonl    # Learnings (git-tracked)
 │   └── runs.jsonl         # Run history (git-tracked)
-├── CLAUDE.md              # Agent instructions (optional)
+├── CLAUDE.md              # Claude instructions (optional)
+├── AGENTS.md              # Codex instructions (optional)
+├── .claude/               # Claude skills/hooks (optional)
+├── .codex/agents/         # Codex agent profiles (optional)
 └── ...your code
 ```
 

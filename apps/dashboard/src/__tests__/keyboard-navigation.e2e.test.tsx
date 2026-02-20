@@ -105,6 +105,7 @@ function dispatchKeyEvent(key: string) {
 describe('E2E: Keyboard Navigation and Detail Panel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
     // Set up default handlers for all endpoints
     server.use(
       http.get('/api/stats', () => HttpResponse.json(defaultStats)),
@@ -119,7 +120,17 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
           summary: { total: 0, byStatus: {} },
         } satisfies PaginatedTasksResponse)
       }),
-      http.get('/api/tasks/ready', () => HttpResponse.json({ tasks: [] }))
+      http.get('/api/tasks/ready', () => HttpResponse.json({ tasks: [] })),
+      http.get('/api/tasks/:id', ({ params }) => {
+        const id = String(params.id)
+        return HttpResponse.json({
+          task: createTask({ id, title: `Task ${id}` }),
+          blockedByTasks: [],
+          blocksTasks: [],
+          childTasks: [],
+        } satisfies TaskDetailResponse)
+      }),
+      http.get('/api/labels', () => HttpResponse.json({ labels: [] }))
     )
   })
 
@@ -681,9 +692,10 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
         dispatchKeyEvent('Escape')
       })
 
-      // Should show the empty state hint
+      // Should return to list view
       await waitFor(() => {
-        expect(screen.getByText(/Select a task to view details/)).toBeInTheDocument()
+        expect(screen.getByText('Task To Close')).toBeInTheDocument()
+        expect(screen.queryByText('Panel should close with Escape')).not.toBeInTheDocument()
       })
     })
   })
@@ -785,7 +797,11 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
         expect(screen.getByText('First description')).toBeInTheDocument()
       })
 
-      // Click second task
+      // Go back to list and open second task
+      fireEvent.click(screen.getByRole('button', { name: '← Back to Tasks' }))
+      await waitFor(() => {
+        expect(screen.getByText('Second Clickable')).toBeInTheDocument()
+      })
       fireEvent.click(screen.getByText('Second Clickable'))
 
       await waitFor(() => {
@@ -867,11 +883,11 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
       const detailBlockerElement = blockerElements.find(el => el.tagName === 'H4')
       expect(detailBlockerElement).toBeTruthy()
 
-      // Click the parent div which has the onClick handler (RelatedTaskCard has cursor-pointer class)
-      const clickableDiv = detailBlockerElement?.closest('.cursor-pointer')
-      expect(clickableDiv).toBeTruthy()
-      if (clickableDiv) {
-        fireEvent.click(clickableDiv)
+      // Click the card button that wraps the related task
+      const clickableButton = detailBlockerElement?.closest('button')
+      expect(clickableButton).toBeTruthy()
+      if (clickableButton) {
+        fireEvent.click(clickableButton)
       }
 
       // Should now show blocker task details
@@ -950,11 +966,11 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
       const detailBlockedElement = blockedElements.find(el => el.tagName === 'H4')
       expect(detailBlockedElement).toBeTruthy()
 
-      // Click the parent div which has the onClick handler
-      const clickableDiv = detailBlockedElement?.closest('.cursor-pointer')
-      expect(clickableDiv).toBeTruthy()
-      if (clickableDiv) {
-        fireEvent.click(clickableDiv)
+      // Click the card button that wraps the related task
+      const clickableButton = detailBlockedElement?.closest('button')
+      expect(clickableButton).toBeTruthy()
+      if (clickableButton) {
+        fireEvent.click(clickableButton)
       }
 
       // Should now show blocked task details
@@ -1033,11 +1049,11 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
       const detailChildElement = childElements.find(el => el.tagName === 'H4')
       expect(detailChildElement).toBeTruthy()
 
-      // Click the parent div which has the onClick handler
-      const clickableDiv = detailChildElement?.closest('.cursor-pointer')
-      expect(clickableDiv).toBeTruthy()
-      if (clickableDiv) {
-        fireEvent.click(clickableDiv)
+      // Click the card button that wraps the child task
+      const clickableButton = detailChildElement?.closest('button')
+      expect(clickableButton).toBeTruthy()
+      if (clickableButton) {
+        fireEvent.click(clickableButton)
       }
 
       // Should now show child task details

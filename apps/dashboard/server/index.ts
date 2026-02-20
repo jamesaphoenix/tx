@@ -1,21 +1,53 @@
 import { serve } from "@hono/node-server"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { Database } from "bun:sqlite"
 import { readFileSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
 import { homedir } from "os"
 import { fileURLToPath } from "url"
-import type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
-import { escapeLikePattern } from "@jamesaphoenix/tx-core"
+import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/tx-types"
+import { parse as parseYaml } from "yaml"
+import { escapeLikePattern, readTxConfig, renderDocToMarkdown } from "@jamesaphoenix/tx-core"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const projectRoot = resolve(__dirname, "../../..")
-const dbPath = resolve(projectRoot, ".tx/tasks.db")
-const ralphLogPath = resolve(projectRoot, ".tx/ralph-output.log")
-const ralphPidPath = resolve(projectRoot, ".tx/ralph.pid")
-const txDir = resolve(projectRoot, ".tx")
+const fallbackRoot = resolve(__dirname, "../../..")
+// TX_DB_PATH is set by the dashboard command to scope to the caller's CWD
+const dbPath = process.env.TX_DB_PATH ?? resolve(fallbackRoot, ".tx/tasks.db")
+const dbDir = dirname(dbPath)
+const ralphLogPath = resolve(dbDir, "ralph-output.log")
+const ralphPidPath = resolve(dbDir, "ralph.pid")
+const txDir = dbDir
 const claudeDir = resolve(homedir(), ".claude")
+const VALID_TASK_STATUSES = new Set<string>(TASK_STATUSES)
+const DEFAULT_LABEL_COLORS = [
+  "#2563eb", // blue
+  "#0ea5e9", // sky
+  "#14b8a6", // teal
+  "#16a34a", // green
+  "#ca8a04", // yellow
+  "#ea580c", // orange
+  "#dc2626", // red
+  "#db2777", // pink
+] as const
+const DEFAULT_TASK_LABELS = [
+  "Bug",
+  "Feature",
+  "DevOFps",
+  "Performance",
+  "Observability",
+  "Infrastructure",
+  "Refactor",
+  "Security",
+  "Testing",
+  "Documentation",
+] as const
+const LEGACY_LABEL_RENAMES = [
+  { from: "DevOps", to: "DevOFps" },
+] as const
+const LEGACY_LABELS_TO_REMOVE = [
+  "AISEO",
+] as const
 
 /**
  * Validate that a file path is within an allowed directory.
@@ -26,7 +58,7 @@ const claudeDir = resolve(homedir(), ".claude")
  * Returns the resolved absolute path if valid, null if invalid.
  */
 const validateTranscriptPath = (filePath: string): string | null => {
-  const resolved = resolve(projectRoot, filePath)
+  const resolved = resolve(dirname(dbPath), filePath)
   // Allow paths within the .tx directory
   if (resolved.startsWith(txDir + "/") || resolved === txDir) {
     return resolved
@@ -49,22 +81,460 @@ const getDb = () => {
     if (!existsSync(dbPath)) {
       throw new Error(`Database not found at ${dbPath}. Run 'tx init' first.`)
     }
-    db = new Database(dbPath, { readonly: true })
+    db = new Database(dbPath)
+    db.exec("PRAGMA foreign_keys = ON;")
+    ensureLabelSchema(db)
   }
   return db
 }
 
-/**
- * Task row with dependency information for API responses.
- * Extends TaskRow from @tx/types with computed dependency fields.
- * Note: We use snake_case TaskRow (not camelCase Task) since this
- * is a thin API layer that returns raw database rows.
- */
+function ensureLabelSchema(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_labels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_task_labels_name_ci ON task_labels(lower(name));
+    CREATE TABLE IF NOT EXISTS task_label_assignments (
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      label_id INTEGER NOT NULL REFERENCES task_labels(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (task_id, label_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_label_assignments_task ON task_label_assignments(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_label_assignments_label ON task_label_assignments(label_id);
+  `)
+  repairLegacyDefaultLabels(db)
+  seedDefaultLabels(db)
+}
+
+function repairLegacyDefaultLabels(db: Database): void {
+  const now = new Date().toISOString()
+
+  for (const rename of LEGACY_LABEL_RENAMES) {
+    const legacyRow = db.prepare(`
+      SELECT id, name, color, created_at, updated_at
+      FROM task_labels
+      WHERE lower(name) = lower(?)
+      LIMIT 1
+    `).get(rename.from) as TaskLabelRow | undefined
+
+    if (!legacyRow) continue
+
+    const canonicalRow = db.prepare(`
+      SELECT id, name, color, created_at, updated_at
+      FROM task_labels
+      WHERE lower(name) = lower(?)
+      LIMIT 1
+    `).get(rename.to) as TaskLabelRow | undefined
+
+    // Safe in-place rename when only the legacy label exists.
+    if (!canonicalRow) {
+      db.prepare(`
+        UPDATE task_labels
+        SET name = ?, color = ?, updated_at = ?
+        WHERE id = ?
+      `).run(rename.to, defaultLabelColor(rename.to), now, legacyRow.id)
+      continue
+    }
+
+    // Merge assignments into the canonical label and remove the legacy row.
+    db.prepare(`
+      INSERT OR IGNORE INTO task_label_assignments (task_id, label_id, created_at)
+      SELECT task_id, ?, created_at
+      FROM task_label_assignments
+      WHERE label_id = ?
+    `).run(canonicalRow.id, legacyRow.id)
+
+    db.prepare(`
+      DELETE FROM task_label_assignments
+      WHERE label_id = ?
+    `).run(legacyRow.id)
+
+    db.prepare(`
+      DELETE FROM task_labels
+      WHERE id = ?
+    `).run(legacyRow.id)
+
+    db.prepare(`
+      UPDATE task_labels
+      SET updated_at = ?
+      WHERE id = ?
+    `).run(now, canonicalRow.id)
+  }
+
+  for (const legacyLabelName of LEGACY_LABELS_TO_REMOVE) {
+    const legacyRows = db.prepare(`
+      SELECT id, name, color, created_at, updated_at
+      FROM task_labels
+      WHERE lower(name) = lower(?)
+    `).all(legacyLabelName) as TaskLabelRow[]
+
+    for (const row of legacyRows) {
+      db.prepare(`
+        DELETE FROM task_labels
+        WHERE id = ?
+      `).run(row.id)
+    }
+  }
+}
+
+function seedDefaultLabels(db: Database): void {
+  const now = new Date().toISOString()
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO task_labels (name, color, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+  `)
+
+  for (const name of DEFAULT_TASK_LABELS) {
+    insert.run(name, defaultLabelColor(name), now, now)
+  }
+}
+
+interface TaskLabelRow {
+  id: number
+  name: string
+  color: string
+  created_at: string
+  updated_at: string
+}
+
+interface TaskLabel {
+  id: number
+  name: string
+  color: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface TaskCreatePayload {
+  title?: string
+  description?: string
+  parentId?: string | null
+  status?: string
+  score?: number
+  metadata?: Record<string, unknown>
+}
+
+interface TaskUpdatePayload {
+  title?: string
+  description?: string
+  status?: string
+  parentId?: string | null
+  score?: number
+  metadata?: Record<string, unknown>
+}
+
+interface CreateLabelPayload {
+  name?: string
+  color?: string
+}
+
+interface AssignLabelPayload {
+  labelId?: number
+  name?: string
+  color?: string
+}
+
+interface DocRow {
+  id: number
+  hash: string
+  kind: "overview" | "prd" | "design"
+  name: string
+  title: string
+  version: number
+  status: "changing" | "locked"
+  file_path: string
+  parent_doc_id: number | null
+  created_at: string
+  locked_at: string | null
+}
+
+interface DocLinkRow {
+  from_doc_id: number
+  to_doc_id: number
+  link_type: string
+}
+
+interface TaskDocLinkRow {
+  task_id: string
+  doc_id: number
+  link_type: "implements" | "references"
+}
+
+interface DocResponse {
+  id: number
+  hash: string
+  kind: "overview" | "prd" | "design"
+  name: string
+  title: string
+  version: number
+  status: "changing" | "locked"
+  filePath: string
+  parentDocId: number | null
+  createdAt: string
+  lockedAt: string | null
+}
+
+function hashString(value: string): number {
+  let hash = 0
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
+function defaultLabelColor(name: string): string {
+  return DEFAULT_LABEL_COLORS[hashString(name) % DEFAULT_LABEL_COLORS.length]!
+}
+
+function normalizeLabelName(name: string): string {
+  return name.trim().replace(/\s+/g, " ")
+}
+
+function isTaskStatus(value: string): value is (typeof TASK_STATUSES)[number] {
+  return VALID_TASK_STATUSES.has(value)
+}
+
+function hasTable(db: Database, tableName: string): boolean {
+  const row = db.prepare(`
+    SELECT 1
+    FROM sqlite_master
+    WHERE type = 'table' AND name = ?
+    LIMIT 1
+  `).get(tableName) as { 1: number } | undefined
+  return Boolean(row)
+}
+
+function hasDocsSchema(db: Database): boolean {
+  return hasTable(db, "docs")
+}
+
+function hasDocLinksSchema(db: Database): boolean {
+  return hasTable(db, "doc_links")
+}
+
+function hasTaskDocLinksSchema(db: Database): boolean {
+  return hasTable(db, "task_doc_links")
+}
+
+function toTaskLabel(row: TaskLabelRow): TaskLabel {
+  return {
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function loadTaskLabelsMap(db: Database, taskIds: readonly string[]): Map<string, TaskLabel[]> {
+  const labelsByTask = new Map<string, TaskLabel[]>()
+  for (const taskId of taskIds) {
+    labelsByTask.set(taskId, [])
+  }
+
+  if (taskIds.length === 0) {
+    return labelsByTask
+  }
+
+  const placeholders = taskIds.map(() => "?").join(",")
+  const rows = db.prepare(`
+    SELECT tla.task_id, l.id, l.name, l.color, l.created_at, l.updated_at
+    FROM task_label_assignments tla
+    JOIN task_labels l ON l.id = tla.label_id
+    WHERE tla.task_id IN (${placeholders})
+    ORDER BY l.name COLLATE NOCASE ASC
+  `).all(...taskIds) as Array<TaskLabelRow & { task_id: string }>
+
+  for (const row of rows) {
+    const existing = labelsByTask.get(row.task_id) ?? []
+    existing.push(toTaskLabel(row))
+    labelsByTask.set(row.task_id, existing)
+  }
+
+  return labelsByTask
+}
+
+function getTaskWithDeps(db: Database, id: string): TaskRowWithDeps | null {
+  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+  if (!task) return null
+  const [enriched] = enrichTasksWithDeps(db, [task])
+  return enriched ?? null
+}
+
+function generateTaskId(db: Database): string {
+  for (let i = 0; i < 10; i++) {
+    const candidate = `tx-${Math.random().toString(36).slice(2, 10)}`
+    const exists = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(candidate) as { 1: number } | undefined
+    if (!exists) return candidate
+  }
+  throw new Error("Unable to generate unique task ID")
+}
+
+function upsertLabel(db: Database, input: { name: string; color?: string }): TaskLabel {
+  const normalizedName = normalizeLabelName(input.name)
+  if (!normalizedName) {
+    throw new Error("Label name is required")
+  }
+  const existing = db.prepare(`
+    SELECT id, name, color, created_at, updated_at
+    FROM task_labels
+    WHERE lower(name) = lower(?)
+    LIMIT 1
+  `).get(normalizedName) as TaskLabelRow | undefined
+
+  if (existing) {
+    return toTaskLabel(existing)
+  }
+
+  const now = new Date().toISOString()
+  const color = input.color?.trim() || defaultLabelColor(normalizedName)
+  const result = db.prepare(`
+    INSERT INTO task_labels (name, color, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+  `).run(normalizedName, color, now, now)
+
+  const created = db.prepare(`
+    SELECT id, name, color, created_at, updated_at
+    FROM task_labels
+    WHERE id = ?
+    LIMIT 1
+  `).get(result.lastInsertRowid) as TaskLabelRow | undefined
+
+  if (!created) {
+    throw new Error("Failed to create label")
+  }
+  return toTaskLabel(created)
+}
+
 interface TaskRowWithDeps extends TaskRow {
   blockedBy: string[]
   blocks: string[]
   children: string[]
   isReady: boolean
+  labels: TaskLabel[]
+}
+
+interface TaskWithDepsResponse {
+  id: string
+  title: string
+  description: string
+  status: string
+  parentId: string | null
+  score: number
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+  metadata: Record<string, unknown>
+  blockedBy: string[]
+  blocks: string[]
+  children: string[]
+  isReady: boolean
+  labels: TaskLabel[]
+}
+
+function parseTaskMetadata(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+function serializeTask(task: TaskRowWithDeps): TaskWithDepsResponse {
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    parentId: task.parent_id,
+    score: task.score,
+    createdAt: task.created_at,
+    updatedAt: task.updated_at,
+    completedAt: task.completed_at,
+    metadata: parseTaskMetadata(task.metadata),
+    blockedBy: task.blockedBy,
+    blocks: task.blocks,
+    children: task.children,
+    isReady: task.isReady,
+    labels: task.labels,
+  }
+}
+
+function serializeDoc(doc: DocRow): DocResponse {
+  return {
+    id: doc.id,
+    hash: doc.hash,
+    kind: doc.kind,
+    name: doc.name,
+    title: doc.title,
+    version: doc.version,
+    status: doc.status,
+    filePath: doc.file_path,
+    parentDocId: doc.parent_doc_id,
+    createdAt: doc.created_at,
+    lockedAt: doc.locked_at,
+  }
+}
+
+function extractYamlScalar(yamlContent: string, key: string): string | null {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const regex = new RegExp(`^\\s*${escapedKey}:\\s*(.+)\\s*$`, "m")
+  const match = yamlContent.match(regex)
+  if (!match?.[1]) return null
+  return match[1].trim().replace(/^["']|["']$/g, "")
+}
+
+function buildMarkdownFromYaml(yamlContent: string, filePath: string): string {
+  const title = extractYamlScalar(yamlContent, "title")
+  const kind = extractYamlScalar(yamlContent, "kind")
+  const status = extractYamlScalar(yamlContent, "status")
+  const version = extractYamlScalar(yamlContent, "version")
+  const implementsRef = extractYamlScalar(yamlContent, "implements")
+
+  const lines: string[] = []
+  lines.push(`# ${title || filePath}`)
+  if (kind) lines.push(`**Kind**: ${kind}`)
+  if (status) lines.push(`**Status**: ${status}`)
+  if (version) lines.push(`**Version**: ${version}`)
+  if (implementsRef) lines.push(`**Implements**: ${implementsRef}`)
+  lines.push("")
+  lines.push("```yaml")
+  lines.push(yamlContent.trim())
+  lines.push("```")
+  return lines.join("\n")
+}
+
+function renderMarkdownFromYaml(yamlContent: string, filePath: string): string {
+  try {
+    const parsed = parseYaml(yamlContent)
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const parsedDoc = parsed as Record<string, unknown>
+      const kindRaw = typeof parsedDoc.kind === "string" ? parsedDoc.kind.toLowerCase() : "overview"
+      const kind = kindRaw === "prd" || kindRaw === "design" || kindRaw === "overview"
+        ? kindRaw
+        : "overview"
+      return renderDocToMarkdown(parsedDoc, kind)
+    }
+  } catch {
+    // Fall through to plain YAML wrapper.
+  }
+  return buildMarkdownFromYaml(yamlContent, filePath)
+}
+
+function getDocsRootPath(): string {
+  try {
+    const config = readTxConfig(process.cwd())
+    return resolve(process.cwd(), config.docs.path)
+  } catch {
+    return resolve(dbDir, "docs")
+  }
 }
 
 // Pagination helpers
@@ -129,6 +599,7 @@ function enrichTasksWithDeps(
   // Status of all tasks for ready check
   const allTasksForStatus = allTasks ?? db.prepare("SELECT id, status FROM tasks").all() as Array<{ id: string; status: string }>
   const statusMap = new Map(allTasksForStatus.map(t => [t.id, t.status]))
+  const labelsByTask = loadTaskLabelsMap(db, tasks.map(t => t.id))
 
   const workableStatuses = ["backlog", "ready", "planning"]
 
@@ -138,8 +609,9 @@ function enrichTasksWithDeps(
     const children = childrenMap.get(task.id) ?? []
     const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
     const isReady = workableStatuses.includes(task.status) && allBlockersDone
+    const labels = labelsByTask.get(task.id) ?? []
 
-    return { ...task, blockedBy, blocks, children, isReady }
+    return { ...task, blockedBy, blocks, children, isReady, labels }
   })
 }
 
@@ -208,12 +680,293 @@ app.get("/api/tasks", (c) => {
     }, {} as Record<string, number>)
 
     return c.json({
-      tasks: enriched,
+      tasks: enriched.map(serializeTask),
       nextCursor: hasMore && tasks.length ? buildTaskCursor(tasks[tasks.length - 1]!) : null,
       hasMore,
       total,
       summary: { total, byStatus },
     })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// POST /api/tasks - Create a new task
+app.post("/api/tasks", async (c) => {
+  try {
+    const db = getDb()
+    const payload = await c.req.json<TaskCreatePayload>()
+    const title = payload.title?.trim()
+
+    if (!title) {
+      return c.json({ error: "Task title is required" }, 400)
+    }
+
+    if (payload.parentId) {
+      const parentExists = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(payload.parentId)
+      if (!parentExists) {
+        return c.json({ error: `Parent task not found: ${payload.parentId}` }, 400)
+      }
+    }
+
+    if (payload.score !== undefined && (!Number.isFinite(payload.score) || !Number.isInteger(payload.score))) {
+      return c.json({ error: "Score must be an integer" }, 400)
+    }
+
+    const now = new Date().toISOString()
+    const id = generateTaskId(db)
+    const description = payload.description ?? ""
+    const score = payload.score ?? 0
+    const status = payload.status?.trim() || "backlog"
+    const metadata = payload.metadata ?? {}
+
+    if (!isTaskStatus(status)) {
+      return c.json({
+        error: `Invalid status "${status}". Valid statuses: ${TASK_STATUSES.join(", ")}`,
+      }, 400)
+    }
+
+    db.prepare(`
+      INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      title,
+      description,
+      status,
+      payload.parentId ?? null,
+      score,
+      now,
+      now,
+      null,
+      JSON.stringify(metadata),
+    )
+
+    const task = getTaskWithDeps(db, id)
+    if (!task) {
+      return c.json({ error: "Failed to load created task" }, 500)
+    }
+    return c.json(serializeTask(task), 201)
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// PATCH /api/tasks/:id - Update task fields
+app.patch("/api/tasks/:id", async (c) => {
+  try {
+    const db = getDb()
+    const id = c.req.param("id")
+    const payload = await c.req.json<TaskUpdatePayload>()
+
+    const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+    if (!existing) {
+      return c.json({ error: "Task not found" }, 404)
+    }
+
+    if (payload.status !== undefined && !isTaskStatus(payload.status)) {
+      return c.json({
+        error: `Invalid status "${payload.status}". Valid statuses: ${TASK_STATUSES.join(", ")}`,
+      }, 400)
+    }
+
+    if (payload.parentId !== undefined) {
+      if (payload.parentId === id) {
+        return c.json({ error: "Task cannot be its own parent" }, 400)
+      }
+      if (payload.parentId) {
+        const parentExists = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(payload.parentId)
+        if (!parentExists) {
+          return c.json({ error: `Parent task not found: ${payload.parentId}` }, 400)
+        }
+      }
+    }
+
+    if (payload.score !== undefined && (!Number.isFinite(payload.score) || !Number.isInteger(payload.score))) {
+      return c.json({ error: "Score must be an integer" }, 400)
+    }
+
+    let existingMetadata: Record<string, unknown> = {}
+    try {
+      existingMetadata = JSON.parse(existing.metadata || "{}") as Record<string, unknown>
+    } catch {
+      existingMetadata = {}
+    }
+
+    const nextStatus = payload.status ?? existing.status
+    const now = new Date().toISOString()
+    const mergedMetadata = payload.metadata
+      ? { ...existingMetadata, ...payload.metadata }
+      : existingMetadata
+
+    const nextCompletedAt = nextStatus === "done"
+      ? (existing.completed_at ?? now)
+      : null
+
+    db.prepare(`
+      UPDATE tasks
+      SET title = ?,
+          description = ?,
+          status = ?,
+          parent_id = ?,
+          score = ?,
+          updated_at = ?,
+          completed_at = ?,
+          metadata = ?
+      WHERE id = ?
+    `).run(
+      payload.title ?? existing.title,
+      payload.description ?? existing.description,
+      nextStatus,
+      payload.parentId !== undefined ? payload.parentId : existing.parent_id,
+      payload.score ?? existing.score,
+      now,
+      nextCompletedAt,
+      JSON.stringify(mergedMetadata),
+      id,
+    )
+
+    const task = getTaskWithDeps(db, id)
+    if (!task) {
+      return c.json({ error: "Failed to load updated task" }, 500)
+    }
+    return c.json(serializeTask(task))
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+const listLabelsHandler = (c: Context) => {
+  try {
+    const db = getDb()
+    const rows = db.prepare(`
+      SELECT id, name, color, created_at, updated_at
+      FROM task_labels
+      ORDER BY name COLLATE NOCASE ASC
+    `).all() as TaskLabelRow[]
+
+    return c.json({ labels: rows.map(toTaskLabel) })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+}
+
+// GET /api/labels - list all task labels
+app.get("/api/labels", listLabelsHandler)
+// Backward-compatible alias for older clients.
+app.get("/api/task-labels", listLabelsHandler)
+
+const createLabelHandler = async (c: Context) => {
+  try {
+    const db = getDb()
+    const payload = await c.req.json<CreateLabelPayload>()
+    if (!payload.name || !payload.name.trim()) {
+      return c.json({ error: "Label name is required" }, 400)
+    }
+    const label = upsertLabel(db, { name: payload.name, color: payload.color })
+    return c.json(label, 201)
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+}
+
+// POST /api/labels - create (or return existing) label
+app.post("/api/labels", createLabelHandler)
+// Backward-compatible alias for older clients.
+app.post("/api/task-labels", createLabelHandler)
+
+const assignLabelHandler = async (c: Context) => {
+  try {
+    const db = getDb()
+    const taskId = c.req.param("id")
+    const taskExists = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(taskId)
+    if (!taskExists) {
+      return c.json({ error: "Task not found" }, 404)
+    }
+
+    const payload = await c.req.json<AssignLabelPayload>()
+    let label: TaskLabel | null = null
+
+    if (payload.labelId !== undefined) {
+      const row = db.prepare(`
+        SELECT id, name, color, created_at, updated_at
+        FROM task_labels
+        WHERE id = ?
+      `).get(payload.labelId) as TaskLabelRow | undefined
+      if (!row) {
+        return c.json({ error: `Label not found: ${payload.labelId}` }, 404)
+      }
+      label = toTaskLabel(row)
+    } else if (payload.name && payload.name.trim()) {
+      label = upsertLabel(db, { name: payload.name, color: payload.color })
+    } else {
+      return c.json({ error: "Either labelId or name is required" }, 400)
+    }
+
+    db.prepare(`
+      INSERT OR IGNORE INTO task_label_assignments (task_id, label_id, created_at)
+      VALUES (?, ?, ?)
+    `).run(taskId, label.id, new Date().toISOString())
+
+    const task = getTaskWithDeps(db, taskId)
+    if (!task) {
+      return c.json({ error: "Failed to load task after label assignment" }, 500)
+    }
+    return c.json({ success: true, task: serializeTask(task), label })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+}
+
+// POST /api/tasks/:id/labels - assign an existing or new label to task
+app.post("/api/tasks/:id/labels", assignLabelHandler)
+// Backward-compatible alias for older clients.
+app.post("/api/tasks/:id/task-labels", assignLabelHandler)
+
+const unassignLabelHandler = (c: Context) => {
+  try {
+    const db = getDb()
+    const taskId = c.req.param("id")
+    const labelIdRaw = c.req.param("labelId")
+    const labelId = parseInt(labelIdRaw, 10)
+    if (isNaN(labelId)) {
+      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
+    }
+
+    const taskExists = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(taskId)
+    if (!taskExists) {
+      return c.json({ error: "Task not found" }, 404)
+    }
+
+    db.prepare("DELETE FROM task_label_assignments WHERE task_id = ? AND label_id = ?").run(taskId, labelId)
+
+    const task = getTaskWithDeps(db, taskId)
+    if (!task) {
+      return c.json({ error: "Failed to load task after label removal" }, 500)
+    }
+    return c.json({ success: true, task: serializeTask(task) })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+}
+
+// DELETE /api/tasks/:id/labels/:labelId - unassign a label from task
+app.delete("/api/tasks/:id/labels/:labelId", unassignLabelHandler)
+// Backward-compatible alias for older clients.
+app.delete("/api/tasks/:id/task-labels/:labelId", unassignLabelHandler)
+
+// DELETE /api/tasks/:id - delete task
+app.delete("/api/tasks/:id", (c) => {
+  try {
+    const db = getDb()
+    const id = c.req.param("id")
+    const existing = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(id)
+    if (!existing) {
+      return c.json({ error: "Task not found" }, 404)
+    }
+
+    db.prepare("DELETE FROM tasks WHERE id = ?").run(id)
+    return c.json({ success: true, id })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -247,7 +1000,7 @@ app.get("/api/tasks/ready", (c) => {
     // Enrich with full dependency info (Rule 1: every API response MUST include TaskWithDeps)
     const enriched = enrichTasksWithDeps(db, readyTasks, allTasks)
 
-    return c.json({ tasks: enriched })
+    return c.json({ tasks: enriched.map(serializeTask) })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -397,6 +1150,295 @@ app.get("/api/stats", (c) => {
   }
 })
 
+// GET /api/docs - list docs (optional kind/status filters)
+app.get("/api/docs", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ docs: [] })
+    }
+
+    const kind = c.req.query("kind")
+    const status = c.req.query("status")
+    const conditions: string[] = []
+    const params: (string | number)[] = []
+
+    if (kind) {
+      conditions.push("kind = ?")
+      params.push(kind)
+    }
+    if (status) {
+      conditions.push("status = ?")
+      params.push(status)
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
+    const rows = db.prepare(`
+      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+      FROM docs
+      ${whereClause}
+      ORDER BY kind, name, version
+    `).all(...params) as DocRow[]
+
+    return c.json({ docs: rows.map(serializeDoc) })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/docs/graph - doc link graph plus task attachments
+app.get("/api/docs/graph", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ nodes: [], edges: [] })
+    }
+
+    const docs = db.prepare(`
+      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+      FROM docs
+      ORDER BY kind, name, version
+    `).all() as DocRow[]
+
+    const nodes: Array<{
+      id: string
+      label: string
+      kind: "overview" | "prd" | "design" | "task"
+      status?: "changing" | "locked"
+    }> = docs.map((doc) => ({
+      id: `doc:${doc.id}`,
+      label: doc.name,
+      kind: doc.kind,
+      status: doc.status,
+    }))
+
+    const edges: Array<{ source: string; target: string; type: string }> = []
+
+    const explicitDocTargets = new Map<number, number>()
+    if (hasDocLinksSchema(db)) {
+      const docLinks = db.prepare(`
+        SELECT from_doc_id, to_doc_id, link_type
+        FROM doc_links
+        ORDER BY id ASC
+      `).all() as DocLinkRow[]
+      for (const link of docLinks) {
+        explicitDocTargets.set(link.to_doc_id, (explicitDocTargets.get(link.to_doc_id) ?? 0) + 1)
+        edges.push({
+          source: `doc:${link.from_doc_id}`,
+          target: `doc:${link.to_doc_id}`,
+          type: link.link_type,
+        })
+      }
+    }
+
+    // Anchor unlinked docs under system-design overview (or first overview) for a single-root map.
+    const rootOverview = docs.find((doc) => doc.kind === "overview" && doc.name === "system-design")
+      ?? docs.find((doc) => doc.kind === "overview")
+    if (rootOverview) {
+      const existingPairs = new Set(edges.map((edge) => `${edge.source}->${edge.target}`))
+      for (const doc of docs) {
+        if (doc.id === rootOverview.id || doc.kind === "overview") continue
+        if ((explicitDocTargets.get(doc.id) ?? 0) > 0) continue
+        const source = `doc:${rootOverview.id}`
+        const target = `doc:${doc.id}`
+        const pair = `${source}->${target}`
+        if (existingPairs.has(pair)) continue
+        edges.push({
+          source,
+          target,
+          type: doc.kind === "prd" ? "overview_to_prd" : "overview_to_design",
+        })
+      }
+    }
+
+    if (hasTaskDocLinksSchema(db)) {
+      const taskLinks = db.prepare(`
+        SELECT task_id, doc_id, link_type
+        FROM task_doc_links
+        ORDER BY id ASC
+      `).all() as TaskDocLinkRow[]
+
+      const taskNodeIds = new Set<string>()
+      for (const link of taskLinks) {
+        const taskNodeId = `task:${link.task_id}`
+        if (!taskNodeIds.has(taskNodeId)) {
+          taskNodeIds.add(taskNodeId)
+          nodes.push({
+            id: taskNodeId,
+            label: link.task_id,
+            kind: "task",
+          })
+        }
+        edges.push({
+          source: taskNodeId,
+          target: `doc:${link.doc_id}`,
+          type: link.link_type,
+        })
+      }
+    }
+
+    return c.json({ nodes, edges })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// POST /api/docs/render - compatibility endpoint for docs page actions
+app.post("/api/docs/render", async (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ rendered: [] })
+    }
+
+    const payload = await c.req.json<{ name?: string | null }>()
+    const name = typeof payload?.name === "string" ? payload.name : undefined
+
+    const rows = name
+      ? db.prepare(`
+          SELECT file_path
+          FROM docs
+          WHERE name = ?
+          ORDER BY version DESC
+          LIMIT 1
+        `).all(name) as Array<{ file_path: string }>
+      : db.prepare(`
+          SELECT file_path
+          FROM docs
+          ORDER BY kind, name, version
+        `).all() as Array<{ file_path: string }>
+
+    const docsRoot = getDocsRootPath()
+    const rendered = rows.flatMap((row) => {
+      const yamlPath = resolve(docsRoot, row.file_path)
+      const mdPath = resolve(docsRoot, row.file_path.replace(/\.yml$/i, ".md"))
+
+      if (existsSync(yamlPath)) {
+        try {
+          const yamlContent = readFileSync(yamlPath, "utf-8")
+          return [renderMarkdownFromYaml(yamlContent, row.file_path)]
+        } catch {
+          return []
+        }
+      }
+
+      if (existsSync(mdPath)) {
+        try {
+          return [readFileSync(mdPath, "utf-8")]
+        } catch {
+          return []
+        }
+      }
+
+      return []
+    })
+
+    return c.json({ rendered })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/docs/:name - fetch latest version of a doc by name
+app.get("/api/docs/:name", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+    }
+
+    const name = c.req.param("name")
+    const row = db.prepare(`
+      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+      FROM docs
+      WHERE name = ?
+      ORDER BY version DESC
+      LIMIT 1
+    `).get(name) as DocRow | undefined
+
+    if (!row) {
+      return c.json({ error: "Doc not found" }, 404)
+    }
+    return c.json(serializeDoc(row))
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/docs/:name/source - fetch source YAML and rendered markdown for a doc
+app.get("/api/docs/:name/source", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+    }
+
+    const name = c.req.param("name")
+    const row = db.prepare(`
+      SELECT file_path
+      FROM docs
+      WHERE name = ?
+      ORDER BY version DESC
+      LIMIT 1
+    `).get(name) as { file_path: string } | undefined
+
+    if (!row) {
+      return c.json({ error: "Doc not found" }, 404)
+    }
+
+    const docsRoot = getDocsRootPath()
+    const yamlPath = resolve(docsRoot, row.file_path)
+    const mdPath = resolve(docsRoot, row.file_path.replace(/\.yml$/i, ".md"))
+
+    const yamlContent = existsSync(yamlPath) ? readFileSync(yamlPath, "utf-8") : null
+    const renderedContent = yamlContent
+      ? renderMarkdownFromYaml(yamlContent, row.file_path)
+      : existsSync(mdPath)
+        ? readFileSync(mdPath, "utf-8")
+        : null
+
+    return c.json({
+      name,
+      yamlContent,
+      renderedContent,
+      filePath: row.file_path,
+    })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// DELETE /api/docs/:name - delete latest mutable doc version
+app.delete("/api/docs/:name", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+    }
+
+    const name = c.req.param("name")
+    const row = db.prepare(`
+      SELECT id, status
+      FROM docs
+      WHERE name = ?
+      ORDER BY version DESC
+      LIMIT 1
+    `).get(name) as { id: number; status: "changing" | "locked" } | undefined
+
+    if (!row) {
+      return c.json({ error: "Doc not found" }, 404)
+    }
+    if (row.status === "locked") {
+      return c.json({ error: "Cannot delete a locked doc version" }, 409)
+    }
+
+    db.prepare("DELETE FROM docs WHERE id = ?").run(row.id)
+    return c.json({ success: true, name })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
 // GET /api/runs - List runs with cursor-based pagination
 app.get("/api/runs", (c) => {
   try {
@@ -529,10 +1571,10 @@ app.get("/api/tasks/:id", (c) => {
     const [enrichedTask] = enrichTasksWithDeps(db, [task])
 
     return c.json({
-      task: enrichedTask,
-      blockedByTasks,
-      blocksTasks,
-      childTasks,
+      task: serializeTask(enrichedTask),
+      blockedByTasks: blockedByTasks.map(serializeTask),
+      blocksTasks: blocksTasks.map(serializeTask),
+      childTasks: childTasks.map(serializeTask),
     })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -623,7 +1665,7 @@ app.get("/api/runs/:id", (c) => {
   }
 })
 
-const port = 3001
+const port = Number(process.env.PORT ?? "3001")
 console.log(`Dashboard API running on http://localhost:${port}`)
 
 serve({ fetch: app.fetch, port })

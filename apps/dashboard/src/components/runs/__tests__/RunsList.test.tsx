@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../../../test/setup'
 import { RunsList } from '../RunsList'
 import type { PaginatedRunsResponse, Run } from '../../../api/client'
+import { createDeferred } from '../../../test/deferred'
 
 // Helper to create a run fixture
 function createRun(overrides: Partial<Run> = {}): Run {
@@ -71,11 +72,13 @@ describe('RunsList', () => {
   })
 
   describe('loading state', () => {
-    it('shows LoadingSkeleton while loading', async () => {
-      // Mock slow response
+    it('shows structured loading UI and transitions cleanly after load', async () => {
+      const gate = createDeferred<void>()
+
+      // Keep request pending until assertions are made.
       server.use(
         http.get('/api/runs', async () => {
-          await new Promise((resolve) => setTimeout(resolve, 100))
+          await gate.promise
           return HttpResponse.json({
             runs: [],
             nextCursor: null,
@@ -85,10 +88,18 @@ describe('RunsList', () => {
       )
 
       const onSelectRun = vi.fn()
-      renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
+      const { container } = renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
-      // Should show loading text
+      expect(screen.getByRole('heading', { level: 2, name: 'Runs' })).toBeInTheDocument()
       expect(screen.getByText('Loading...')).toBeInTheDocument()
+      expect(container.querySelectorAll('.animate-shimmer')).toHaveLength(5)
+
+      gate.resolve()
+
+      await waitFor(() => {
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+        expect(screen.getByText('No runs found')).toBeInTheDocument()
+      })
     })
   })
 

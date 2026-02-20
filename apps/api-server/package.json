@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-api-server",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "TX REST/HTTP API server - OpenAPI-compliant HTTP interface",
   "type": "module",
   "main": "./dist/index.js",

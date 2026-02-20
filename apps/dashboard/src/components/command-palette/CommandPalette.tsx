@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { useCommandContext, type Command } from "./CommandContext"
+import { useCommandContext, useShortcutScope, type Command } from "./CommandContext"
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   nav: (
@@ -69,6 +69,7 @@ export function CommandPalette() {
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  useShortcutScope("palette", isOpen)
 
   // Reset on open
   useEffect(() => {
@@ -192,6 +193,7 @@ export function CommandPalette() {
           </svg>
           <input
             ref={inputRef}
+            data-command-palette-input="true"
             type="text"
             value={query}
             onChange={(e) => {

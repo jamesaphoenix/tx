@@ -64,6 +64,7 @@ export function SearchInput({
         type="text"
         value={localValue}
         onChange={handleChange}
+        data-native-select-all="true"
         placeholder={placeholder}
         className="w-full pl-10 pr-10 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
       />

@@ -19,6 +19,9 @@ const docKindStrings: readonly string[] = DOC_KINDS
 export const doc = (pos: string[], flags: Flags) => {
   const sub = pos[0]
   const rest = pos.slice(1)
+  if (!sub) {
+    return docList([], flags)
+  }
   switch (sub) {
     case "add": return docAdd(rest, flags)
     case "edit": return docEdit(rest, flags)

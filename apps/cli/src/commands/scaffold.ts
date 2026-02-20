@@ -18,6 +18,14 @@ function templatesDir(): string {
 }
 
 /**
+ * Detect whether a document already has the tx onboarding section.
+ * Accepts either '-' or '—' in the heading to avoid accidental duplicates.
+ */
+function hasTxSection(content: string): boolean {
+  return /^\s*#\s*tx\s*[—-]\s*Headless,\s*Local Infra for AI Agents\s*$/im.test(content)
+}
+
+/**
  * Recursively copy files from src to dest, skipping files that already exist.
  * Returns arrays of copied and skipped file paths (relative to dest).
  */
@@ -46,7 +54,15 @@ function copyTree(
       if (existsSync(destPath)) {
         skipped.push(relPath)
       } else {
-        mkdirSync(dirname(destPath), { recursive: true })
+        try {
+          mkdirSync(dirname(destPath), { recursive: true })
+        } catch (error) {
+          const err = error as NodeJS.ErrnoException
+          if (err.code === "ENOTDIR") {
+            throw new Error(`Cannot scaffold '${relPath}': a parent path exists as a file. Move/delete conflicting path and retry.`)
+          }
+          throw error
+        }
         writeFileSync(destPath, readFileSync(srcPath))
         // Make .sh files executable
         if (destPath.endsWith(".sh")) {
@@ -111,7 +127,7 @@ export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): Sca
 
     if (existsSync(claudeMdDest)) {
       const existing = readFileSync(claudeMdDest, "utf-8")
-      if (existing.includes("# tx — Headless, Local Infra for AI Agents")) {
+      if (hasTxSection(existing)) {
         allSkipped.push("CLAUDE.md (tx section already present)")
       } else {
         const txSection = readFileSync(claudeMdSrc, "utf-8")
@@ -135,12 +151,19 @@ export function scaffoldCodex(projectDir: string): ScaffoldResult {
   const allSkipped: string[] = []
   const templates = templatesDir()
 
+  // Copy codex agent profiles
+  const codexAgentsSrc = join(templates, "codex", "agents")
+  const codexAgentsDest = join(projectDir, ".codex", "agents")
+  const agentsResult = copyTree(codexAgentsSrc, codexAgentsDest)
+  allCopied.push(...agentsResult.copied.map(p => `.codex/agents/${p}`))
+  allSkipped.push(...agentsResult.skipped.map(p => `.codex/agents/${p}`))
+
   const agentsMdSrc = join(templates, "codex", "AGENTS.md")
   const agentsMdDest = join(projectDir, "AGENTS.md")
 
   if (existsSync(agentsMdDest)) {
     const existing = readFileSync(agentsMdDest, "utf-8")
-    if (existing.includes("# tx — Headless, Local Infra for AI Agents")) {
+    if (hasTxSection(existing)) {
       allSkipped.push("AGENTS.md (tx section already present)")
     } else {
       const txSection = readFileSync(agentsMdSrc, "utf-8")
@@ -201,8 +224,8 @@ export async function interactiveScaffold(projectDir: string): Promise<void> {
   }
 
   const wantsCodex = await p.confirm({
-    message: "Add Codex integration? (AGENTS.md)",
-    initialValue: false,
+    message: "Add Codex integration? (AGENTS.md + .codex/agents)",
+    initialValue: true,
   })
   if (p.isCancel(wantsCodex)) { p.cancel("Setup cancelled."); return }
 

@@ -1,7 +1,11 @@
 $ eslint src/
 
-/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/cli/src/commands/compact.ts
+/Users/jamesaphoenix/Desktop/projects/just-understanding-data/tx/apps/cli/src/commands/compact.ts
   30:5  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
 
-✖ 1 problem (0 errors, 1 warning)
+/Users/jamesaphoenix/Desktop/projects/just-understanding-data/tx/apps/cli/src/commands/scaffold.ts
+  62:13  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+  64:11  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
+
+✖ 3 problems (0 errors, 3 warnings)
 

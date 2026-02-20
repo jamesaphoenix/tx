@@ -257,21 +257,42 @@ describe('TaskCard', () => {
     })
   })
 
-  describe('isReady styling', () => {
-    it('shows blue border when task isReady', () => {
+  describe('card styling', () => {
+    it('uses neutral styling when task isReady but not selected', () => {
       const task = createTask({ isReady: true })
       const { container } = render(<TaskCard task={task} />)
 
       const card = container.firstChild as HTMLElement
-      expect(card).toHaveClass('border-blue-500')
+      expect(card).toHaveClass('border-zinc-700/40')
+      expect(card).toHaveClass('bg-gray-800/80')
     })
 
-    it('shows gray border when task is not ready', () => {
+    it('uses selected styling when task is selected', () => {
+      const task = createTask({ isReady: true })
+      const { container } = render(<TaskCard task={task} isSelected={true} />)
+
+      const card = container.firstChild as HTMLElement
+      expect(card).toHaveClass('border-blue-400/70')
+      expect(card).toHaveClass('bg-blue-600/20')
+    })
+
+    it('uses neutral styling when task is not ready', () => {
       const task = createTask({ isReady: false })
       const { container } = render(<TaskCard task={task} />)
 
       const card = container.firstChild as HTMLElement
-      expect(card).toHaveClass('border-gray-700')
+      expect(card).toHaveClass('border-zinc-700/40')
+    })
+  })
+
+  describe('nesting', () => {
+    it('applies nesting depth metadata and indentation', () => {
+      const task = createTask()
+      const { container } = render(<TaskCard task={task} nestingLevel={2} />)
+
+      const card = container.firstChild as HTMLElement
+      expect(card).toHaveAttribute('data-depth', '2')
+      expect(card).toHaveStyle({ marginLeft: '36px' })
     })
   })
 })

@@ -71,6 +71,17 @@ describe("scaffold", () => {
       expect(content).toBe("# tx — Headless, Local Infra for AI Agents\n\nAlready here.\n")
     })
 
+    it("skips CLAUDE.md when tx heading uses hyphen variant", () => {
+      const claudeMd = join(TEST_DIR, "CLAUDE.md")
+      writeFileSync(claudeMd, "# tx - Headless, Local Infra for AI Agents\n\nAlready here.\n")
+
+      const result = scaffoldClaude(TEST_DIR)
+
+      expect(result.skipped).toContain("CLAUDE.md (tx section already present)")
+      const content = readFileSync(claudeMd, "utf-8")
+      expect(content.match(/Headless, Local Infra for AI Agents/g)?.length ?? 0).toBe(1)
+    })
+
     it("skips skill files that already exist", () => {
       // First run
       scaffoldClaude(TEST_DIR)
@@ -129,7 +140,7 @@ describe("scaffold", () => {
   })
 
   describe("scaffoldCodex", () => {
-    it("creates AGENTS.md in empty project", () => {
+    it("creates AGENTS.md and codex agent profiles in empty project", () => {
       const result = scaffoldCodex(TEST_DIR)
 
       expect(result.copied).toContain("AGENTS.md")
@@ -141,6 +152,10 @@ describe("scaffold", () => {
       expect(content).toContain("tx ready")
       expect(content).toContain("tx done")
       expect(content).toContain("codex")
+
+      const codexImplementer = join(TEST_DIR, ".codex", "agents", "tx-implementer.md")
+      expect(existsSync(codexImplementer)).toBe(true)
+      expect(readFileSync(codexImplementer, "utf-8")).toContain("Read AGENTS.md")
     })
 
     it("appends to existing AGENTS.md without tx section", () => {
@@ -162,6 +177,32 @@ describe("scaffold", () => {
       const result = scaffoldCodex(TEST_DIR)
 
       expect(result.skipped).toContain("AGENTS.md (tx section already present)")
+      expect(result.skipped.some(f => f.startsWith(".codex/agents/"))).toBe(false)
+    })
+
+    it("skips AGENTS.md when tx heading uses hyphen variant", () => {
+      const agentsMd = join(TEST_DIR, "AGENTS.md")
+      writeFileSync(agentsMd, "# tx - Headless, Local Infra for AI Agents\n\nAlready here.\n")
+
+      const result = scaffoldCodex(TEST_DIR)
+
+      expect(result.skipped).toContain("AGENTS.md (tx section already present)")
+      const content = readFileSync(agentsMd, "utf-8")
+      expect(content.match(/Headless, Local Infra for AI Agents/g)?.length ?? 0).toBe(1)
+    })
+
+    it("skips codex agent profiles that already exist", () => {
+      scaffoldCodex(TEST_DIR)
+
+      const result = scaffoldCodex(TEST_DIR)
+
+      expect(result.skipped.some(f => f.startsWith(".codex/agents/"))).toBe(true)
+    })
+
+    it("throws a clear error when .codex path collides with a file", () => {
+      writeFileSync(join(TEST_DIR, ".codex"), "not-a-directory")
+
+      expect(() => scaffoldCodex(TEST_DIR)).toThrow(/parent path exists as a file/i)
     })
   })
 })

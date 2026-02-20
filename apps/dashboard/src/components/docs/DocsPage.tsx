@@ -164,7 +164,7 @@ export function DocsPage() {
   // Full-page map mode
   if (showMap) {
     return (
-      <div className="flex flex-col h-full w-full overflow-hidden">
+      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-700/50 flex-shrink-0">
           <button
             onClick={() => setShowMap(false)}
@@ -176,7 +176,7 @@ export function DocsPage() {
             Document Graph
           </span>
         </div>
-        <div className="flex-1 bg-gray-900 p-6 overflow-hidden relative">
+      <div className="min-h-0 flex-1 bg-gray-900 p-6 overflow-hidden relative">
           <DocGraph
             selectedDocName={selectedDocName}
             onSelectDoc={(name) => {
@@ -191,8 +191,8 @@ export function DocsPage() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <div className="w-72 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
+    <div className="flex h-full min-h-0 w-full overflow-hidden">
+      <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
         <DocSidebar
           selectedDocName={selectedDocName}
           onSelectDoc={setSelectedDocName}
@@ -207,7 +207,7 @@ export function DocsPage() {
         />
       </div>
       {!selectedDocName ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500">
+        <div className="min-h-0 flex-1 flex items-center justify-center text-gray-500">
           <div className="text-center">
             <div className="text-4xl mb-4 opacity-30">&#x1F4C4;</div>
             <div className="text-lg mb-2">Select a doc to view details</div>
@@ -217,7 +217,7 @@ export function DocsPage() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <DocDetail
             docName={selectedDocName}
             onNavigateToDoc={setSelectedDocName}

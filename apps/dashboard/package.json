@@ -25,6 +25,7 @@
     "hono": "^4.7.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-select": "^5.10.2",
     "recharts": "^3.7.0"
   },
   "devDependencies": {

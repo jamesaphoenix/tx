@@ -102,13 +102,13 @@ by default. Safe to run multiple times (idempotent).
 Options:
   --db <path>   Database path (default: .tx/tasks.db)
   --claude      Scaffold Claude Code integration (CLAUDE.md + .claude/skills/)
-  --codex       Scaffold Codex integration (AGENTS.md)
+  --codex       Scaffold Codex integration (AGENTS.md + .codex/agents)
   --help        Show this help
 
 Examples:
   tx init                     # Initialize database only
   tx init --claude            # Database + Claude Code skills & CLAUDE.md
-  tx init --codex             # Database + Codex AGENTS.md
+  tx init --codex             # Database + Codex AGENTS.md + agent profiles
   tx init --claude --codex    # Database + both integrations
   tx init --db ~/my-tasks.db  # Use custom path`,
 
@@ -1788,7 +1788,7 @@ Examples:
 
   doc: `tx doc - Manage docs-as-primitives
 
-Usage: tx doc <subcommand> [options]
+Usage: tx doc [subcommand] [options]
 
 Subcommands:
   add <kind> <name>         Create a new doc (overview, prd, design)
@@ -1805,6 +1805,7 @@ Subcommands:
   drift <name>              Detect hash/link drift for a doc
 
 Run 'tx doc <subcommand> --help' for subcommand-specific help.
+Running 'tx doc' with no subcommand defaults to 'tx doc list'.
 
 Examples:
   tx doc add prd auth-flow --title "Authentication Flow"

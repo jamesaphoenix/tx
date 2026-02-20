@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useInfiniteTasks, type TaskFilters } from "../../hooks/useInfiniteTasks"
 import { useReadyTasks } from "../../hooks/useReadyTasks"
 import { useIntersectionObserver } from "../../hooks/useIntersectionObserver"
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation"
+import type { TaskWithDeps } from "../../api/client"
 import { LoadingSkeleton } from "../ui/LoadingSkeleton"
 import { EmptyState } from "../ui/EmptyState"
 import { TaskCard } from "./TaskCard"
@@ -31,7 +32,70 @@ function isReadyOnlyFilter(filters: TaskFilters): boolean {
   )
 }
 
+interface NestedTaskEntry {
+  task: TaskWithDeps
+  depth: number
+}
+
+function buildNestedTaskEntries(tasks: TaskWithDeps[]): NestedTaskEntry[] {
+  if (tasks.length <= 1) {
+    return tasks.map((task) => ({ task, depth: 0 }))
+  }
+
+  const taskById = new Map(tasks.map((task) => [task.id, task]))
+  const childrenByParent = new Map<string, TaskWithDeps[]>()
+
+  for (const task of tasks) {
+    if (!task.parentId || !taskById.has(task.parentId)) {
+      continue
+    }
+    const siblings = childrenByParent.get(task.parentId) ?? []
+    siblings.push(task)
+    childrenByParent.set(task.parentId, siblings)
+  }
+
+  const roots = tasks.filter((task) => !task.parentId || !taskById.has(task.parentId))
+  const nested: NestedTaskEntry[] = []
+  const visited = new Set<string>()
+
+  const appendWithChildren = (task: TaskWithDeps, depth: number): void => {
+    if (visited.has(task.id)) return
+    visited.add(task.id)
+    nested.push({ task, depth })
+
+    const children = childrenByParent.get(task.id) ?? []
+    for (const child of children) {
+      appendWithChildren(child, depth + 1)
+    }
+  }
+
+  for (const root of roots) {
+    appendWithChildren(root, 0)
+  }
+
+  // Defensive fallback if there is an unexpected cycle in incoming data.
+  for (const task of tasks) {
+    if (!visited.has(task.id)) {
+      appendWithChildren(task, 0)
+    }
+  }
+
+  return nested
+}
+
 export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, onToggleSelect }: TaskListProps) {
+  const statusMotionKey = useMemo(
+    () => (filters.status?.length ? filters.status.join(",") : "all"),
+    [filters.status]
+  )
+  const [isBucketAnimating, setIsBucketAnimating] = useState(false)
+
+  useEffect(() => {
+    setIsBucketAnimating(true)
+    const timer = window.setTimeout(() => setIsBucketAnimating(false), 220)
+    return () => window.clearTimeout(timer)
+  }, [statusMotionKey])
+
   // Determine which data source to use
   const useReadyEndpoint = useMemo(() => isReadyOnlyFilter(filters), [filters])
 
@@ -67,22 +131,24 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
   // Pagination controls (only used for infinite scroll mode)
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = infiniteResult
 
+  const nestedTaskEntries = useMemo(() => buildNestedTaskEntries(tasks), [tasks])
+
   // Keyboard navigation
   const handleSelect = useCallback(
     (index: number) => {
-      const task = tasks[index]
+      const task = nestedTaskEntries[index]?.task
       if (task) {
         onSelectTask(task.id)
       }
     },
-    [tasks, onSelectTask]
+    [nestedTaskEntries, onSelectTask]
   )
 
-  const { focusedIndex } = useKeyboardNavigation({
-    itemCount: tasks.length,
+  const { focusedIndex, isKeyboardNavigating } = useKeyboardNavigation({
+    itemCount: nestedTaskEntries.length,
     onSelect: handleSelect,
     onEscape,
-    enabled: tasks.length > 0,
+    enabled: nestedTaskEntries.length > 0,
   })
 
   // Infinite scroll via intersection observer (only for paginated mode)
@@ -100,7 +166,7 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
   // Initial loading state
   if (isLoading) {
     return (
-      <div className="space-y-2">
+      <div className={`space-y-2 ${isBucketAnimating ? "animate-bucket-swap" : ""}`}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-gray-300">Tasks</h2>
           <span className="text-sm text-gray-500">Loading...</span>
@@ -137,7 +203,7 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
   }
 
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${isBucketAnimating ? "animate-bucket-swap" : ""}`}>
       {/* Header with total count */}
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-semibold text-gray-300">
@@ -151,14 +217,17 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
 
       {/* Task cards */}
       <div className="space-y-2">
-        {tasks.map((task, index) => (
+        {nestedTaskEntries.map(({ task, depth }, index) => (
           <TaskCard
-            key={task.id}
+            key={`${statusMotionKey}-${task.id}`}
             task={task}
+            nestingLevel={depth}
             isFocused={index === focusedIndex}
+            showFocusRing={isKeyboardNavigating && index === focusedIndex}
             isSelected={selectedIds?.has(task.id)}
             onToggleSelect={onToggleSelect}
             onClick={() => onSelectTask(task.id)}
+            entryIndex={index}
           />
         ))}
       </div>

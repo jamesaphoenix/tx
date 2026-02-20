@@ -9,6 +9,14 @@ npm install -g @jamesaphoenix/tx-cli
 tx init
 ```
 
+Agent onboarding (optional, both supported):
+
+```bash
+tx init --claude            # CLAUDE.md + .claude/skills
+tx init --codex             # AGENTS.md + .codex/agents
+tx init --claude --codex    # scaffold both
+```
+
 ---
 
 ## The Problem
@@ -132,18 +140,20 @@ We ship **example loops**, not **the loop**:
 
 ```bash
 # Simple: one agent, one task
+AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
 while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
-  claude "Work on task $task, then run: tx done $task"
+  "$AGENT_CMD" "Work on task $task, then run: tx done $task"
 done
 ```
 
 ```bash
 # Parallel: N agents with claims
+AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
 for i in {1..5}; do
   (while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
     [ -z "$task" ] && break
     tx claim "$task" "worker-$i" || continue
-    claude "Complete $task" && tx done "$task"
+    "$AGENT_CMD" "Complete $task" && tx done "$task"
   done) &
 done
 wait
@@ -151,9 +161,10 @@ wait
 
 ```bash
 # Human-in-loop: agent proposes, human approves
+AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
 task=$(tx ready --json --limit 1 | jq -r '.[0].id')
-claude "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " && claude "Execute plan.md"
+"$AGENT_CMD" "Plan implementation for $task" > plan.md
+read -p "Approve? [y/n] " && "$AGENT_CMD" "Execute plan.md"
 tx done $task
 ```
 
@@ -326,6 +337,7 @@ Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code
 
 - **[txdocs.dev](https://txdocs.dev)**: Documentation
 - **[CLAUDE.md](CLAUDE.md)**: Doctrine and quick reference
+- **[AGENTS.md](AGENTS.md)**: Codex onboarding and quick reference
 - **[docs/](docs/)**: PRDs and Design Docs
 
 ---

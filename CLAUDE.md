@@ -561,7 +561,6 @@ All package management and script execution MUST use `bun`:
 bun install              # NOT npm install
 bun run build            # NOT npm run build
 bun run test             # NOT npm run test
-bun run lint:docs        # Lint PRDs and DDs
 ```
 
 ### Running the tx CLI

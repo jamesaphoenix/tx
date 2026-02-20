@@ -9,6 +9,13 @@ tx provides composable primitives for agent infrastructure — task management, 
 - [Overview](https://tx-docs.vercel.app/docs): What tx is and why primitives beat frameworks
 - [Getting Started](https://tx-docs.vercel.app/docs/getting-started): Install tx and run your first agent loop
 
+## Headful Experience (Dashboard)
+
+- [Headful Experience](https://tx-docs.vercel.app/docs/headful): Dashboard UX overview
+- [Tasks and Sub-Tasks](https://tx-docs.vercel.app/docs/headful/tasks-and-subtasks): Task list, task detail, and child task bulk operations
+- [Command Palette](https://tx-docs.vercel.app/docs/headful/command-palette): `Cmd+K` / `Ctrl+K` global actions and navigation
+- [Docs, Runs, and Cycles](https://tx-docs.vercel.app/docs/headful/docs-runs-cycles): Non-task dashboard surfaces and empty states
+
 ## Primitives
 
 - [tx ready](https://tx-docs.vercel.app/docs/primitives/ready): Get next workable task (unblocked, highest priority)

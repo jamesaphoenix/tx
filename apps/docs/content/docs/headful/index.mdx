@@ -1,0 +1,29 @@
+---
+title: Headful Experience
+description: Dashboard UX for tasks, docs, runs, and cycles
+---
+
+The dashboard gives you a visual, keyboard-first layer on top of tx primitives. This section documents the current headful UX and the workflows it unlocks.
+
+## What Changed Recently
+
+- `Cmd+K` / `Ctrl+K` command palette is available everywhere in the dashboard.
+- Task and sub-task workflows now support faster bulk selection and action flows.
+- Task detail layout is tighter, with a stronger split between content and properties.
+- Docs, Runs, and Cycles views have clearer empty states and panel behavior.
+
+![Tasks dashboard overview with metrics, filters, and task list](/images/headful/dashboard-tasks-overview.png)
+
+## Explore The Headful Docs
+
+- [Tasks and sub-tasks](/docs/headful/tasks-and-subtasks)
+- [Command palette (Cmd+K)](/docs/headful/command-palette)
+- [Docs, runs, and cycles views](/docs/headful/docs-runs-cycles)
+
+## Headful + Headless
+
+The UI is intentionally a layer over the same primitives:
+
+- Work queue and status transitions map to `tx ready`, `tx done`, and status updates.
+- Task relationships and bulk operations map to dependency and hierarchy primitives.
+- Keyboard actions mirror command-line intent for fast operator workflows.

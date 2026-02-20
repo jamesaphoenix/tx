@@ -113,11 +113,71 @@ describe('TaskDetail', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Detailed task')).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Detailed task' })).toBeInTheDocument()
         expect(screen.getByText('This is the task description')).toBeInTheDocument()
         expect(screen.getByText('active')).toBeInTheDocument()
         expect(screen.getByText('750')).toBeInTheDocument()
       })
+
+      const title = screen.getByRole('heading', { name: 'Detailed task' })
+      const description = screen.getByText('This is the task description')
+      expect(title.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('autosaves description changes after debounce', async () => {
+      let currentDescription = 'Initial description'
+      const patchPayloads: Array<{ description?: string }> = []
+
+      server.use(
+        http.get('/api/tasks/:id', ({ params }) => {
+          expect(params.id).toBe('tx-description-edit')
+          return HttpResponse.json({
+            task: createTask({
+              id: 'tx-description-edit',
+              title: 'Editable description task',
+              description: currentDescription,
+            }),
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        }),
+        http.patch('/api/tasks/:id', async ({ params, request }) => {
+          expect(params.id).toBe('tx-description-edit')
+          const payload = await request.json() as { description?: string }
+          patchPayloads.push(payload)
+          currentDescription = payload.description ?? ''
+
+          return HttpResponse.json(
+            createTask({
+              id: 'tx-description-edit',
+              title: 'Editable description task',
+              description: currentDescription,
+            })
+          )
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-description-edit" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Task description')).toHaveValue('Initial description')
+      })
+
+      fireEvent.change(screen.getByLabelText('Task description'), {
+        target: { value: 'Updated inline description' },
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Changes pending...')).toBeInTheDocument()
+      })
+
+      await waitFor(() => {
+        expect(patchPayloads).toContainEqual({ description: 'Updated inline description' })
+        expect(screen.getByLabelText('Task description')).toHaveValue('Updated inline description')
+      }, { timeout: 2500 })
     })
 
     it('displays task ID', async () => {
@@ -198,6 +258,34 @@ describe('TaskDetail', () => {
         expect(screen.getByText(/Completed:/)).toBeInTheDocument()
       })
     })
+
+    it('parses sqlite-style timestamps for created and updated fields', async () => {
+      const task = createTask({
+        id: 'tx-sqlite-timestamps',
+        createdAt: '2026-01-30 12:00:00',
+        updatedAt: '2026-01-30 14:00:00',
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-sqlite-timestamps" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        expect(screen.queryByText('Created: —')).not.toBeInTheDocument()
+        expect(screen.queryByText('Updated: —')).not.toBeInTheDocument()
+      })
+    })
   })
 
   describe('parent task', () => {
@@ -230,6 +318,70 @@ describe('TaskDetail', () => {
       // Click parent link
       fireEvent.click(screen.getByText('tx-parent1'))
       expect(onNavigate).toHaveBeenCalledWith('tx-parent1')
+    })
+
+    it('renders task breadcrumbs and supports ancestor navigation', async () => {
+      const rootTask = createTask({
+        id: 'tx-root1',
+        title: 'Root task',
+        parentId: null,
+      })
+      const parentTask = createTask({
+        id: 'tx-parent2',
+        title: 'Parent task',
+        parentId: 'tx-root1',
+      })
+      const childTask = createTask({
+        id: 'tx-child2',
+        title: 'Child task',
+        parentId: 'tx-parent2',
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', ({ params }) => {
+          const id = String(params.id)
+          const taskById: Record<string, TaskWithDeps> = {
+            'tx-root1': rootTask,
+            'tx-parent2': parentTask,
+            'tx-child2': childTask,
+          }
+          const matchedTask = taskById[id]
+          if (!matchedTask) {
+            return HttpResponse.json({ error: 'Task not found' }, { status: 404 })
+          }
+          return HttpResponse.json({
+            task: matchedTask,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      const onNavigate = vi.fn()
+      const onNavigateToList = vi.fn()
+      renderWithProviders(
+        <TaskDetail
+          taskId="tx-child2"
+          onNavigateToTask={onNavigate}
+          onNavigateToList={onNavigateToList}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Tasks' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Root task' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Parent task' })).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      expect(onNavigateToList).toHaveBeenCalledTimes(1)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Root task' }))
+      expect(onNavigate).toHaveBeenCalledWith('tx-root1')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Parent task' }))
+      expect(onNavigate).toHaveBeenCalledWith('tx-parent2')
     })
   })
 
@@ -279,7 +431,7 @@ describe('TaskDetail', () => {
       expect(onNavigate).toHaveBeenCalledWith('tx-blocker1')
     })
 
-    it('shows empty message when no blockers', async () => {
+    it('hides blockedBy section when no blockers', async () => {
       const task = createTask({
         id: 'tx-unblocked',
         blockedBy: [],
@@ -302,10 +454,8 @@ describe('TaskDetail', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Blocked By (0)')).toBeInTheDocument()
-        expect(
-          screen.getByText('No blockers - this task is unblocked')
-        ).toBeInTheDocument()
+        expect(screen.queryByText(/^Blocked By/)).not.toBeInTheDocument()
+        expect(screen.queryByText('No blockers - this task is unblocked')).not.toBeInTheDocument()
       })
     })
   })
@@ -356,7 +506,7 @@ describe('TaskDetail', () => {
       expect(onNavigate).toHaveBeenCalledWith('tx-blocked2')
     })
 
-    it('shows empty message when task blocks nothing', async () => {
+    it('hides blocks section when task blocks nothing', async () => {
       const task = createTask({
         id: 'tx-noblockers',
         blocks: [],
@@ -379,10 +529,8 @@ describe('TaskDetail', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Blocks (0)')).toBeInTheDocument()
-        expect(
-          screen.getByText('Does not block any other tasks')
-        ).toBeInTheDocument()
+        expect(screen.queryByText(/^Blocks/)).not.toBeInTheDocument()
+        expect(screen.queryByText('Does not block any other tasks')).not.toBeInTheDocument()
       })
     })
   })
@@ -547,6 +695,176 @@ describe('TaskDetail', () => {
         expect(blocksSection?.textContent).toContain('blocked')
         expect(blocksSection?.textContent).toContain('600')
       })
+    })
+  })
+
+  describe('properties panel actions', () => {
+    it('renders properties panel and supports status changes', async () => {
+      const task = createTask({
+        id: 'tx-properties',
+        title: 'Properties task',
+        status: 'active',
+      })
+      const onChangeStatusStage = vi.fn()
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail
+          taskId="tx-properties"
+          onNavigateToTask={vi.fn()}
+          statusStage="in_progress"
+          onChangeStatusStage={onChangeStatusStage}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Properties')).toBeInTheDocument()
+      })
+
+      const statusInput = document.getElementById('react-select-task-detail-status-tx-properties-input')
+      expect(statusInput).toBeTruthy()
+      fireEvent.keyDown(statusInput as HTMLElement, { key: 'ArrowDown' })
+      let doneOption: HTMLElement | null = null
+      await waitFor(() => {
+        doneOption = document.getElementById('react-select-task-detail-status-tx-properties-option-2')
+        expect(doneOption).not.toBeNull()
+      })
+      fireEvent.click(doneOption!)
+      expect(onChangeStatusStage).toHaveBeenCalledWith('done')
+    })
+
+    it('creates child tasks from the children section CTA', async () => {
+      const task = createTask({
+        id: 'tx-parent-cta',
+        title: 'Parent task',
+      })
+      const onCreateChild = vi.fn()
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail
+          taskId="tx-parent-cta"
+          onNavigateToTask={vi.fn()}
+          onCreateChild={onCreateChild}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: '+ Create new task' })).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Create new task' }))
+      expect(onCreateChild).toHaveBeenCalledTimes(1)
+    })
+
+    it('supports child selection and delete-selected action', async () => {
+      const task = createTask({
+        id: 'tx-parent-select',
+        title: 'Parent selectable',
+        children: ['tx-child-1'],
+      })
+      const childTask = createTask({
+        id: 'tx-child-1',
+        title: 'Only child',
+        parentId: 'tx-parent-select',
+      })
+
+      const onToggleChildSelection = vi.fn()
+      const onDeleteSelectedChildren = vi.fn()
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [childTask],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail
+          taskId="tx-parent-select"
+          onNavigateToTask={vi.fn()}
+          selectedChildIds={new Set(['tx-child-1'])}
+          onToggleChildSelection={onToggleChildSelection}
+          onDeleteSelectedChildren={onDeleteSelectedChildren}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Select child task tx-child-1')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByLabelText('Select child task tx-child-1'))
+      expect(onToggleChildSelection).toHaveBeenCalledWith('tx-child-1')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete selected (1)' }))
+      expect(onDeleteSelectedChildren).toHaveBeenCalledTimes(1)
+    })
+
+    it('toggles labels from the properties sidebar', async () => {
+      const task = createTask({
+        id: 'tx-label-panel',
+        title: 'Label task',
+      })
+      const bugLabel = { id: 11, name: 'Bug', color: '#ef4444', createdAt: '', updatedAt: '' }
+      const onToggleLabel = vi.fn()
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail
+          taskId="tx-label-panel"
+          onNavigateToTask={vi.fn()}
+          allLabels={[bugLabel]}
+          onToggleLabel={onToggleLabel}
+        />
+      )
+
+      let labelsInput: HTMLInputElement | null = null
+      await waitFor(() => {
+        labelsInput = document.querySelector<HTMLInputElement>('[id^="react-select-task-detail-labels-"][id$="-input"]')
+        expect(labelsInput).not.toBeNull()
+      })
+      fireEvent.keyDown(labelsInput!, { key: 'ArrowDown' })
+      let bugOption: HTMLElement | null = null
+      await waitFor(() => {
+        bugOption = document.getElementById('react-select-task-detail-labels-tx-label-panel-option-0')
+        expect(bugOption).not.toBeNull()
+      })
+      fireEvent.click(bugOption!)
+      expect(onToggleLabel).toHaveBeenCalledWith(bugLabel)
     })
   })
 })

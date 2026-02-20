@@ -18,6 +18,12 @@ describe('SearchInput', () => {
     expect(screen.getByPlaceholderText('Search tasks...')).toBeInTheDocument()
   })
 
+  it('marks the input for native select-all handling', () => {
+    const onChange = vi.fn()
+    render(<SearchInput value="" onChange={onChange} />)
+    expect(screen.getByPlaceholderText('Search...')).toHaveAttribute('data-native-select-all', 'true')
+  })
+
   it('renders default placeholder when not provided', () => {
     const onChange = vi.fn()
     render(<SearchInput value="" onChange={onChange} />)

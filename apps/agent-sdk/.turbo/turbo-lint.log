@@ -1,9 +1,9 @@
 $ eslint src/
 
-/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/agent-sdk/src/client.ts
+/Users/jamesaphoenix/Desktop/projects/just-understanding-data/tx/apps/agent-sdk/src/client.ts
   148:9  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
 
-/Users/jamesaphoenix/Desktop/projects/just_understanding_data/tx/apps/agent-sdk/src/utils.ts
+/Users/jamesaphoenix/Desktop/projects/just-understanding-data/tx/apps/agent-sdk/src/utils.ts
   248:9  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
   256:3  warning  Use Effect.fail() with a typed error instead of throw. See DOCTRINE RULE 5 in CLAUDE.md  tx/no-throw-in-services
 

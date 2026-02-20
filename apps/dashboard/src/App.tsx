@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
-import { fetchers, type ChatMessage, type TaskWithDeps, type PaginatedTasksResponse, type Run, type PaginatedRunsResponse } from "./api/client"
-import { TaskList, TaskFilters, TaskDetail, useTaskFiltersWithUrl } from "./components/tasks"
+import { fetchers, type ChatMessage, type Run, type PaginatedRunsResponse } from "./api/client"
+import { TasksPage } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
 import { CyclePage } from "./components/cycles"
 import { DocsPage } from "./components/docs"
@@ -398,27 +398,27 @@ function Stats() {
 
   return (
     <div className="grid grid-cols-6 gap-3">
-      <div className="bg-gray-800 p-3 rounded-lg">
+      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-white">{data.tasks}</div>
         <div className="text-xs text-gray-400">Tasks</div>
       </div>
-      <div className="bg-gray-800 p-3 rounded-lg">
+      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-blue-400">{data.ready}</div>
         <div className="text-xs text-gray-400">Ready</div>
       </div>
-      <div className="bg-gray-800 p-3 rounded-lg">
+      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-green-400">{data.done}</div>
         <div className="text-xs text-gray-400">Done</div>
       </div>
-      <div className="bg-gray-800 p-3 rounded-lg">
+      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-purple-400">{data.learnings}</div>
         <div className="text-xs text-gray-400">Learnings</div>
       </div>
-      <div className="bg-gray-800 p-3 rounded-lg">
+      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-yellow-400">{data.runsRunning ?? 0}</div>
         <div className="text-xs text-gray-400">Running</div>
       </div>
-      <div className="bg-gray-800 p-3 rounded-lg">
+      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-gray-400">{data.runsTotal ?? 0}</div>
         <div className="text-xs text-gray-400">Runs</div>
       </div>
@@ -430,7 +430,74 @@ function Stats() {
 // Main App
 // =============================================================================
 
-type Tab = "docs" | "tasks" | "runs" | "cycles"
+type Tab = "tasks" | "docs" | "runs" | "cycles"
+type ThemeMode = "light" | "dark"
+
+const THEME_STORAGE_KEY = "tx-dashboard-theme"
+
+function getThemeStorage(): Pick<Storage, "getItem" | "setItem"> | null {
+  if (typeof window === "undefined") return null
+  const maybeStorage = window.localStorage as Partial<Storage> | undefined
+  if (!maybeStorage) return null
+  if (typeof maybeStorage.getItem !== "function") return null
+  if (typeof maybeStorage.setItem !== "function") return null
+  return maybeStorage as Pick<Storage, "getItem" | "setItem">
+}
+
+function readInitialTheme(): ThemeMode {
+  try {
+    const storage = getThemeStorage()
+    if (!storage) return "light"
+    const storedTheme = storage.getItem(THEME_STORAGE_KEY)
+    return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "light"
+  } catch {
+    return "light"
+  }
+}
+
+function ThemeToggleIcon({ themeMode }: { themeMode: ThemeMode }) {
+  if (themeMode === "light") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        width="18"
+        height="18"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="4" />
+      <line x1="12" y1="2" x2="12" y2="5" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+      <line x1="2" y1="12" x2="5" y2="12" />
+      <line x1="19" y1="12" x2="22" y2="12" />
+      <line x1="4.93" y1="4.93" x2="7.05" y2="7.05" />
+      <line x1="16.95" y1="16.95" x2="19.07" y2="19.07" />
+      <line x1="16.95" y1="7.05" x2="19.07" y2="4.93" />
+      <line x1="4.93" y1="19.07" x2="7.05" y2="16.95" />
+    </svg>
+  )
+}
 
 export default function App() {
   return (
@@ -442,42 +509,36 @@ export default function App() {
 }
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<Tab>("docs")
+  const [activeTab, setActiveTab] = useState<Tab>("tasks")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme())
 
-  const selectedTaskIds = useStore(selectionStore, (s) => s.taskIds)
   const selectedRunIds = useStore(selectionStore, (s) => s.runIds)
 
   const queryClient = useQueryClient()
-
-  const handleToggleTask = useCallback((id: string) => {
-    selectionActions.toggleTask(id)
-  }, [])
 
   const handleToggleRun = useCallback((id: string) => {
     selectionActions.toggleRun(id)
   }, [])
 
+  const toggleThemeMode = useCallback(() => {
+    setThemeMode((current) => current === "light" ? "dark" : "light")
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode
+    document.documentElement.style.colorScheme = themeMode
+    try {
+      getThemeStorage()?.setItem(THEME_STORAGE_KEY, themeMode)
+    } catch {
+      // Ignore storage write failures (e.g. restricted environments)
+    }
+  }, [themeMode])
+
   // URL state management for filters
-  const { filters: taskFilters, setFilters: setTaskFilters } = useTaskFiltersWithUrl()
   const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
 
   const { setAppCommands } = useCommandContext()
-
-  // Fetch stats for task status counts
-  const { data: statsData } = useQuery({
-    queryKey: ["stats"],
-    queryFn: fetchers.stats,
-    staleTime: 5000,
-  })
-
-  // Helper: read all loaded items from infinite query cache
-  // This ensures CMD+A/CMD+C work with ALL items loaded via scroll, not just the first page
-  const getLoadedTasks = useCallback((): TaskWithDeps[] => {
-    const queries = queryClient.getQueriesData<{ pages: PaginatedTasksResponse[] }>({ queryKey: ["tasks", "infinite"] })
-    return queries.flatMap(([, data]) => data?.pages?.flatMap(p => p.tasks) ?? [])
-  }, [queryClient])
 
   const getLoadedRuns = useCallback((): Run[] => {
     const queries = queryClient.getQueriesData<{ pages: PaginatedRunsResponse[] }>({ queryKey: ["runs", "infinite"] })
@@ -499,22 +560,14 @@ function AppContent() {
     staleTime: 5000,
   })
 
-  // Task status counts from stats endpoint
-  const taskStatusCounts = statsData
-    ? {
-        ready: statsData.ready,
-        done: statsData.done,
-      }
-    : {}
-
   // Register app-level commands (global + per-tab)
   const appCommands = useMemo((): Command[] => {
     const cmds: Command[] = []
 
     // Tab switching — always available
     const tabs: { tab: Tab; label: string }[] = [
-      { tab: "docs", label: "Go to Docs" },
       { tab: "tasks", label: "Go to Tasks" },
+      { tab: "docs", label: "Go to Docs" },
       { tab: "runs", label: "Go to Runs" },
       { tab: "cycles", label: "Go to Cycles" },
     ]
@@ -525,96 +578,6 @@ function AppContent() {
     }
 
     // Per-tab commands
-    if (activeTab === "tasks") {
-      cmds.push({
-        id: "select-all",
-        label: "Select all tasks",
-        group: "Actions",
-        icon: "select",
-        shortcut: "⌘A",
-        action: () => {
-          const loaded = getLoadedTasks()
-          selectionActions.selectAllTasks(loaded.map(t => t.id))
-        },
-      })
-      if (selectedTaskIds.size > 0) {
-        cmds.push({
-          id: "action:copy-selected-tasks",
-          label: "Copy selected task IDs",
-          sublabel: `${selectedTaskIds.size} selected`,
-          group: "Actions",
-          icon: "copy",
-          shortcut: "⌘C",
-          action: async () => {
-            const loaded = getLoadedTasks()
-            const text = loaded
-              .filter(t => selectedTaskIds.has(t.id))
-              .map(t => `${t.id} [${t.score}] ${t.title}`)
-              .join("\n")
-            await navigator.clipboard.writeText(text)
-          },
-        })
-        cmds.push({
-          id: "action:delete-selected-tasks",
-          label: "Delete selected tasks",
-          sublabel: `${selectedTaskIds.size} selected`,
-          group: "Actions",
-          icon: "delete",
-          action: async () => {
-            if (confirm(`Delete ${selectedTaskIds.size} selected task(s)? This cannot be undone.`)) {
-              for (const id of selectedTaskIds) {
-                await fetchers.deleteTask(id)
-              }
-              selectionActions.clearTasks()
-              queryClient.invalidateQueries({ queryKey: ["tasks"] })
-              queryClient.invalidateQueries({ queryKey: ["stats"] })
-            }
-          },
-        })
-        cmds.push({
-          id: "action:clear-task-selection",
-          label: "Clear task selection",
-          sublabel: `${selectedTaskIds.size} selected`,
-          group: "Actions",
-          icon: "action",
-          action: () => selectionActions.clearTasks(),
-        })
-      }
-      cmds.push(
-        { id: "filter:task-ready", label: "Filter: Ready tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["ready"] }) },
-        { id: "filter:task-active", label: "Filter: Active tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["active"] }) },
-        { id: "filter:task-blocked", label: "Filter: Blocked tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["blocked"] }) },
-        { id: "filter:task-done", label: "Filter: Done tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ ...taskFilters, status: ["done"] }) },
-        { id: "filter:task-all", label: "Filter: Show all tasks", group: "Filters", icon: "filter", action: () => setTaskFilters({ status: [], search: "" }) },
-      )
-      if (taskFilters.search) {
-        cmds.push({ id: "action:clear-search", label: "Clear search", sublabel: `"${taskFilters.search}"`, group: "Actions", icon: "action", action: () => setTaskFilters({ ...taskFilters, search: "" }) })
-      }
-      if (selectedTaskId) {
-        cmds.push({
-          id: "action:copy-task",
-          label: "Copy task ID & title",
-          sublabel: selectedTaskId,
-          group: "Actions",
-          icon: "copy",
-          shortcut: selectedTaskIds.size === 0 ? "⌘C" : undefined,
-          action: async () => {
-            const loaded = getLoadedTasks()
-            const task = loaded.find(t => t.id === selectedTaskId)
-            const text = task ? `${task.id} ${task.title}` : selectedTaskId
-            await navigator.clipboard.writeText(text)
-          },
-        })
-        cmds.push({
-          id: "action:deselect-task",
-          label: "Deselect task",
-          group: "Actions",
-          icon: "action",
-          action: () => setSelectedTaskId(null),
-        })
-      }
-    }
-
     if (activeTab === "runs") {
       cmds.push({
         id: "select-all",
@@ -705,28 +668,20 @@ function AppContent() {
     }
 
     return cmds
-  }, [activeTab, taskFilters, runFilters, selectedTaskId, selectedRunId, selectedTaskIds, selectedRunIds, getLoadedTasks, getLoadedRuns, setTaskFilters, setRunFilters, runsMetadata?.agents])
+  }, [activeTab, runFilters, selectedRunId, selectedRunIds, getLoadedRuns, setRunFilters, runsMetadata?.agents])
 
   useEffect(() => {
     setAppCommands(appCommands)
   }, [appCommands, setAppCommands])
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900 text-white">
+    <div className="h-screen flex flex-col overflow-hidden bg-gray-900 text-white">
       {/* Header */}
-      <header className="border-b border-gray-700 px-6 py-3 flex-shrink-0">
-        <div className="flex items-center justify-between max-w-full">
+      <header className="flex-shrink-0 px-4 py-2.5">
+        <div className="flex max-w-full items-center justify-between">
           <div className="flex items-center gap-6">
             <h1 className="text-xl font-bold">tx</h1>
             <nav className="flex gap-1">
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "docs" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("docs")}
-              >
-                Docs
-              </button>
               <button
                 className={`px-4 py-1.5 rounded text-sm font-medium transition ${
                   activeTab === "tasks" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
@@ -734,6 +689,14 @@ function AppContent() {
                 onClick={() => setActiveTab("tasks")}
               >
                 Tasks
+              </button>
+              <button
+                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
+                  activeTab === "docs" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+                onClick={() => setActiveTab("docs")}
+              >
+                Docs
               </button>
               <button
                 className={`px-4 py-1.5 rounded text-sm font-medium transition ${
@@ -753,86 +716,60 @@ function AppContent() {
               </button>
             </nav>
           </div>
+          <button
+            type="button"
+            onClick={toggleThemeMode}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-gray-300 transition hover:bg-gray-700"
+            aria-label={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
+            title={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
+          >
+            <ThemeToggleIcon themeMode={themeMode} />
+            <span className="sr-only">
+              Switch to {themeMode === "light" ? "dark" : "light"} mode
+            </span>
+          </button>
         </div>
       </header>
 
       {/* Stats — hidden on cycles tab */}
       {activeTab !== "cycles" && (
-        <div className="px-6 py-3 border-b border-gray-700 flex-shrink-0">
+        <div className="flex-shrink-0 px-4 pb-2">
           <Stats />
         </div>
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex overflow-hidden">
-        {activeTab === "docs" ? (
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {activeTab === "tasks" ? (
+          <TasksPage themeMode={themeMode} />
+        ) : activeTab === "docs" ? (
           <DocsPage />
-        ) : activeTab === "tasks" ? (
-          <>
-            {/* Tasks List */}
-            <div className="w-96 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
-              {/* Task Filters - synced with URL */}
-              <div className="mb-4">
-                <TaskFilters
-                  value={taskFilters}
-                  onChange={setTaskFilters}
-                  statusCounts={taskStatusCounts}
-                />
-              </div>
-              <TaskList
-                filters={taskFilters}
-                onSelectTask={setSelectedTaskId}
-                onEscape={() => setSelectedTaskId(null)}
-                selectedIds={selectedTaskIds}
-                onToggleSelect={handleToggleTask}
-              />
-            </div>
-
-            {/* Task Detail */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {selectedTaskId ? (
-                <div className="flex-1 overflow-y-auto p-4">
-                  <TaskDetail
-                    taskId={selectedTaskId}
-                    onNavigateToTask={setSelectedTaskId}
+        ) : activeTab === "runs" ? (
+          <div className="flex h-full w-full gap-2 px-2 pb-2">
+            {/* Runs List */}
+            <div className="w-96 flex-shrink-0 overflow-y-auto p-2">
+              <div className="h-full rounded-xl bg-gray-800/60 p-3">
+                {/* Run Filters - synced with URL */}
+                <div className="mb-4">
+                  <RunFilters
+                    value={runFilters}
+                    onChange={setRunFilters}
+                    statusCounts={runsMetadata?.statusCounts}
+                    availableAgents={runsMetadata?.agents}
                   />
                 </div>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-gray-500">
-                  <div className="text-center">
-                    <div className="text-lg mb-2">Select a task to view details</div>
-                    <div className="text-sm">
-                      Use <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">j</kbd>/<kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">k</kbd> or arrow keys to navigate, <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">Enter</kbd> to select
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        ) : activeTab === "runs" ? (
-          <>
-            {/* Runs List */}
-            <div className="w-96 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
-              {/* Run Filters - synced with URL */}
-              <div className="mb-4">
-                <RunFilters
-                  value={runFilters}
-                  onChange={setRunFilters}
-                  statusCounts={runsMetadata?.statusCounts}
-                  availableAgents={runsMetadata?.agents}
+                <RunsList
+                  filters={runFilters}
+                  onSelectRun={setSelectedRunId}
+                  onEscape={() => setSelectedRunId(null)}
+                  selectedIds={selectedRunIds}
+                  onToggleSelect={handleToggleRun}
                 />
               </div>
-              <RunsList
-                filters={runFilters}
-                onSelectRun={setSelectedRunId}
-                onEscape={() => setSelectedRunId(null)}
-                selectedIds={selectedRunIds}
-                onToggleSelect={handleToggleRun}
-              />
             </div>
 
             {/* Chat View */}
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex flex-1 flex-col overflow-hidden rounded-xl bg-gray-800/45">
               {selectedRunId ? (
                 <ChatView runId={selectedRunId} />
               ) : (
@@ -846,7 +783,7 @@ function AppContent() {
                 </div>
               )}
             </div>
-          </>
+          </div>
         ) : (
           <CyclePage />
         )}
