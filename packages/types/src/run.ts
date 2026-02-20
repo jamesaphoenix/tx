@@ -81,6 +81,7 @@ export const UpdateRunInputSchema = Schema.Struct({
   transcriptPath: Schema.optional(Schema.String),
   stderrPath: Schema.optional(Schema.String),
   stdoutPath: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 })
 export type UpdateRunInput = typeof UpdateRunInputSchema.Type
 

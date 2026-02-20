@@ -18,6 +18,10 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     createdAt: "2026-01-30T12:00:00Z",
     updatedAt: "2026-01-30T12:00:00Z",
     completedAt: null,
+    assigneeType: "agent",
+    assigneeId: null,
+    assignedAt: "2026-01-30T12:00:00Z",
+    assignedBy: "test",
     metadata: {},
     blockedBy: [],
     blocks: [],
@@ -41,10 +45,11 @@ function createQueryClient() {
   })
 }
 
-function dispatchCmdK() {
+function dispatchCmdShiftK() {
   const event = new KeyboardEvent("keydown", {
     key: "k",
     metaKey: true,
+    shiftKey: true,
     bubbles: true,
     cancelable: true,
   })
@@ -65,7 +70,7 @@ async function runCommand(label: string) {
   if (!screen.queryByPlaceholderText("Type a command...")) {
     for (let attempt = 0; attempt < 3 && !screen.queryByPlaceholderText("Type a command..."); attempt += 1) {
       act(() => {
-        dispatchCmdK()
+        dispatchCmdShiftK()
       })
       await act(async () => {
         await Promise.resolve()
@@ -142,6 +147,7 @@ describe("Task CMD+K operations", () => {
     server.use(
       http.get("*/api/stats", () => HttpResponse.json({ tasks: 3, done: 0, ready: 1, learnings: 0, runsRunning: 0, runsTotal: 0 })),
       http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
+      http.get("*/api/settings", () => HttpResponse.json({ dashboard: { defaultTaskAssigmentType: "human" } })),
       http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),

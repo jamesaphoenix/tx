@@ -2,7 +2,7 @@
 // See DD-009 for specification details.
 
 import { Schema } from "effect"
-import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES, TaskAssigneeTypeSchema } from "@jamesaphoenix/tx-types"
 
 // Schema version - v=1 for all sync operations
 export const SyncVersion = Schema.Literal(1)
@@ -27,6 +27,10 @@ export const TaskDataSchema = Schema.Struct({
   status: TaskStatusSchema,
   score: Schema.Number.pipe(Schema.int()),
   parentId: Schema.NullOr(TaskIdSchema),
+  assigneeType: Schema.optional(Schema.NullOr(TaskAssigneeTypeSchema)),
+  assigneeId: Schema.optional(Schema.NullOr(Schema.String)),
+  assignedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  assignedBy: Schema.optional(Schema.NullOr(Schema.String)),
   metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown })
 })
 

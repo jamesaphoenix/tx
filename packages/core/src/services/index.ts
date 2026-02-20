@@ -206,6 +206,15 @@ export {
   type FindDeadConfig
 } from "./worker-service.js"
 export {
+  RunHeartbeatService,
+  RunHeartbeatServiceLive,
+  type RunHeartbeatInput,
+  type StalledRun,
+  type StalledRunQuery,
+  type ReapStalledOptions,
+  type ReapedRun
+} from "./run-heartbeat-service.js"
+export {
   ClaimService,
   ClaimServiceLive
 } from "./claim-service.js"

@@ -39,7 +39,13 @@ import type {
   InboxOptions,
   GcOptions,
   GcResult,
-  SerializedClaim
+  SerializedClaim,
+  RunHeartbeatData,
+  RunHeartbeatResult,
+  StalledRunsOptions,
+  ReapStalledRunsOptions,
+  SerializedStalledRun,
+  SerializedReapedRun
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
 
@@ -90,6 +96,11 @@ interface Transport {
   releaseClaim(taskId: string, workerId: string): Promise<void>
   renewClaim(taskId: string, workerId: string): Promise<SerializedClaim>
   getActiveClaim(taskId: string): Promise<SerializedClaim | null>
+
+  // Runs / heartbeat primitives
+  runHeartbeat(runId: string, data?: RunHeartbeatData): Promise<RunHeartbeatResult>
+  listStalledRuns(options?: StalledRunsOptions): Promise<SerializedStalledRun[]>
+  reapStalledRuns(options?: ReapStalledRunsOptions): Promise<SerializedReapedRun[]>
 }
 
 // =============================================================================
@@ -410,6 +421,37 @@ class HttpTransport implements Transport {
       return null
     }
   }
+
+  async runHeartbeat(runId: string, data: RunHeartbeatData = {}): Promise<RunHeartbeatResult> {
+    return await this.request<RunHeartbeatResult>(
+      "POST",
+      `/api/runs/${runId}/heartbeat`,
+      { body: data }
+    )
+  }
+
+  async listStalledRuns(options: StalledRunsOptions = {}): Promise<SerializedStalledRun[]> {
+    const result = await this.request<{ runs: SerializedStalledRun[] }>(
+      "GET",
+      "/api/runs/stalled",
+      {
+        params: {
+          transcriptIdleSeconds: options.transcriptIdleSeconds,
+          heartbeatLagSeconds: options.heartbeatLagSeconds,
+        },
+      }
+    )
+    return result.runs
+  }
+
+  async reapStalledRuns(options: ReapStalledRunsOptions = {}): Promise<SerializedReapedRun[]> {
+    const result = await this.request<{ runs: SerializedReapedRun[] }>(
+      "POST",
+      "/api/runs/stalled/reap",
+      { body: options }
+    )
+    return result.runs
+  }
 }
 
 // =============================================================================
@@ -589,6 +631,26 @@ class DirectTransport implements Transport {
       note: learning.note,
       taskId: learning.taskId,
       createdAt: learning.createdAt instanceof Date ? learning.createdAt.toISOString() : learning.createdAt
+    }
+  }
+
+  private serializeRun(run: any): SerializedStalledRun["run"] {
+    return {
+      id: run.id,
+      taskId: run.taskId,
+      agent: run.agent,
+      startedAt: run.startedAt instanceof Date ? run.startedAt.toISOString() : run.startedAt,
+      endedAt: run.endedAt instanceof Date ? run.endedAt.toISOString() : run.endedAt ?? null,
+      status: run.status,
+      exitCode: run.exitCode,
+      pid: run.pid,
+      transcriptPath: run.transcriptPath,
+      stderrPath: run.stderrPath,
+      stdoutPath: run.stdoutPath,
+      contextInjected: run.contextInjected,
+      summary: run.summary,
+      errorMessage: run.errorMessage,
+      metadata: run.metadata ?? {},
     }
   }
 
@@ -1227,6 +1289,107 @@ class DirectTransport implements Transport {
     return claim ? this.serializeClaim(claim) : null
   }
 
+  async runHeartbeat(runId: string, data: RunHeartbeatData = {}): Promise<RunHeartbeatResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const parseIsoDate = (value: string | undefined, field: string): Date | undefined => {
+      if (!value) return undefined
+      const parsed = new Date(value)
+      if (Number.isNaN(parsed.getTime())) {
+        throw new TxError(`Invalid ${field}: must be an ISO timestamp`, "VALIDATION_ERROR")
+      }
+      return parsed
+    }
+
+    const checkAt = parseIsoDate(data.checkAt, "checkAt")
+    const activityAt = parseIsoDate(data.activityAt, "activityAt")
+
+    return await this.run<RunHeartbeatResult>(
+      Effect.gen(function* () {
+        const heartbeatService = yield* core.RunHeartbeatService
+        yield* heartbeatService.heartbeat({
+          runId,
+          checkAt,
+          activityAt,
+          stdoutBytes: data.stdoutBytes ?? 0,
+          stderrBytes: data.stderrBytes ?? 0,
+          transcriptBytes: data.transcriptBytes ?? 0,
+          deltaBytes: data.deltaBytes,
+        })
+
+        return {
+          runId,
+          checkAt: (checkAt ?? new Date()).toISOString(),
+          activityAt: activityAt?.toISOString() ?? null,
+          stdoutBytes: data.stdoutBytes ?? 0,
+          stderrBytes: data.stderrBytes ?? 0,
+          transcriptBytes: data.transcriptBytes ?? 0,
+          deltaBytes: data.deltaBytes ?? 0,
+        }
+      })
+    )
+  }
+
+  async listStalledRuns(options: StalledRunsOptions = {}): Promise<SerializedStalledRun[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    return await this.run<SerializedStalledRun[]>(
+      Effect.gen(function* () {
+        const heartbeatService = yield* core.RunHeartbeatService
+        const rows = yield* heartbeatService.listStalled({
+          transcriptIdleSeconds: options.transcriptIdleSeconds ?? 300,
+          heartbeatLagSeconds: options.heartbeatLagSeconds,
+        })
+
+        return rows.map((row: any) => ({
+          run: self.serializeRun(row.run),
+          reason: row.reason,
+          transcriptIdleSeconds: row.transcriptIdleSeconds,
+          heartbeatLagSeconds: row.heartbeatLagSeconds,
+          lastActivityAt: row.lastActivityAt instanceof Date ? row.lastActivityAt.toISOString() : row.lastActivityAt ?? null,
+          lastCheckAt: row.lastCheckAt instanceof Date ? row.lastCheckAt.toISOString() : row.lastCheckAt ?? null,
+          stdoutBytes: row.stdoutBytes,
+          stderrBytes: row.stderrBytes,
+          transcriptBytes: row.transcriptBytes,
+        }))
+      })
+    )
+  }
+
+  async reapStalledRuns(options: ReapStalledRunsOptions = {}): Promise<SerializedReapedRun[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedReapedRun[]>(
+      Effect.gen(function* () {
+        const heartbeatService = yield* core.RunHeartbeatService
+        const rows = yield* heartbeatService.reapStalled({
+          transcriptIdleSeconds: options.transcriptIdleSeconds ?? 300,
+          heartbeatLagSeconds: options.heartbeatLagSeconds,
+          resetTask: options.resetTask,
+          dryRun: options.dryRun,
+        })
+
+        return rows.map((row: any) => ({
+          id: row.id,
+          taskId: row.taskId,
+          pid: row.pid,
+          reason: row.reason,
+          transcriptIdleSeconds: row.transcriptIdleSeconds,
+          heartbeatLagSeconds: row.heartbeatLagSeconds,
+          processTerminated: row.processTerminated,
+          taskReset: row.taskReset,
+        }))
+      })
+    )
+  }
+
   /**
    * Dispose of the runtime and release resources.
    * Only actually disposes when all clients using this dbPath have disposed.
@@ -1672,6 +1835,34 @@ class ContextNamespace {
   }
 }
 
+/**
+ * Run heartbeat namespace for transcript/log progress primitives.
+ */
+class RunsNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  /**
+   * Record a run heartbeat sample for progress monitoring.
+   */
+  async heartbeat(runId: string, data: RunHeartbeatData = {}): Promise<RunHeartbeatResult> {
+    return this.transport.runHeartbeat(runId, data)
+  }
+
+  /**
+   * List currently running runs that appear stalled.
+   */
+  async stalled(options: StalledRunsOptions = {}): Promise<SerializedStalledRun[]> {
+    return this.transport.listStalledRuns(options)
+  }
+
+  /**
+   * Reap stalled runs by terminating process trees and cancelling runs.
+   */
+  async reap(options: ReapStalledRunsOptions = {}): Promise<SerializedReapedRun[]> {
+    return this.transport.reapStalledRuns(options)
+  }
+}
+
 // =============================================================================
 // Messages Namespace
 // =============================================================================
@@ -1952,6 +2143,11 @@ export class TxClient {
   public readonly context: ContextNamespace
 
   /**
+   * Run heartbeat and stall-detection operations.
+   */
+  public readonly runs: RunsNamespace
+
+  /**
    * Message operations for inter-agent communication.
    */
   public readonly messages: MessagesNamespace
@@ -1989,6 +2185,7 @@ export class TxClient {
     this.learnings = new LearningsNamespace(this.transport)
     this.fileLearnings = new FileLearningsNamespace(this.transport)
     this.context = new ContextNamespace(this.transport)
+    this.runs = new RunsNamespace(this.transport)
     this.messages = new MessagesNamespace(this.transport)
     this.claims = new ClaimsNamespace(this.transport)
   }

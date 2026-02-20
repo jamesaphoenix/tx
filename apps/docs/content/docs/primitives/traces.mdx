@@ -7,10 +7,11 @@ import { Tab, Tabs } from "fumadocs-ui/components/tabs"
 
 ## Purpose
 
-`tx trace` provides execution tracing for debugging agent run failures. It combines two primitives:
+`tx trace` provides execution tracing for debugging agent run failures. It combines three primitives:
 
 1. **IO Capture** -- File paths to transcripts, stderr, and stdout stored on run records
 2. **Metrics Events** -- Operational spans and metrics written to the `events` table
+3. **Run Heartbeat** -- Stall detection/reaping based on transcript/log progress samples
 
 Traces help answer "why did this run fail?" by correlating internal service timing with agent tool calls.
 
@@ -122,6 +123,89 @@ curl http://localhost:3456/api/runs?limit=10&status=failed
   "hasMore": false,
   "total": 1
 }
+```
+
+</Tab>
+</Tabs>
+
+## Run Heartbeat and Stall Detection
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# Record a heartbeat sample for a running run
+tx trace heartbeat run-abc12345 --transcript-bytes 2048 --delta-bytes 256
+
+# List stalled runs (default transcript idle threshold: 300s)
+tx trace stalled
+
+# Reap stalled runs
+tx trace stalled --reap --transcript-idle-seconds 300
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.runs.heartbeat('run-abc12345', {
+  transcriptBytes: 2048,
+  deltaBytes: 256,
+})
+
+const stalled = await tx.runs.stalled({ transcriptIdleSeconds: 300 })
+const reaped = await tx.runs.reap({ transcriptIdleSeconds: 300, dryRun: false })
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_run_heartbeat",
+  "arguments": {
+    "runId": "run-abc12345",
+    "transcriptBytes": 2048,
+    "deltaBytes": 256
+  }
+}
+```
+
+```json
+{
+  "tool": "tx_run_stalled",
+  "arguments": {
+    "transcriptIdleSeconds": 300
+  }
+}
+```
+
+```json
+{
+  "tool": "tx_run_reap",
+  "arguments": {
+    "transcriptIdleSeconds": 300
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+POST /api/runs/:id/heartbeat
+GET /api/runs/stalled?transcriptIdleSeconds=300
+POST /api/runs/stalled/reap
+```
+
+```bash
+curl -X POST http://localhost:3456/api/runs/run-abc12345/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{"transcriptBytes":2048,"deltaBytes":256}'
 ```
 
 </Tab>

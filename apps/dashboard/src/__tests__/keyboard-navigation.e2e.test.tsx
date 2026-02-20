@@ -28,6 +28,10 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     createdAt: '2026-01-30T12:00:00Z',
     updatedAt: '2026-01-30T12:00:00Z',
     completedAt: null,
+    assigneeType: 'agent',
+    assigneeId: null,
+    assignedAt: '2026-01-30T12:00:00Z',
+    assignedBy: 'test',
     metadata: {},
     blockedBy: [],
     blocks: [],
@@ -108,6 +112,7 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
     window.history.replaceState({}, '', '/')
     // Set up default handlers for all endpoints
     server.use(
+      http.get('/api/settings', () => HttpResponse.json({ dashboard: { defaultTaskAssigmentType: 'human' } })),
       http.get('/api/stats', () => HttpResponse.json(defaultStats)),
       http.get('/api/ralph', () => HttpResponse.json(defaultRalph)),
       http.get('/api/runs', () => HttpResponse.json(defaultRuns)),

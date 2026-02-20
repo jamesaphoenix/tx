@@ -20,9 +20,11 @@
 // Task types & schemas
 export {
   TASK_STATUSES,
+  TASK_ASSIGNEE_TYPES,
   VALID_TRANSITIONS,
   TASK_ID_PATTERN,
   TaskStatusSchema,
+  TaskAssigneeTypeSchema,
   TaskIdSchema,
   TaskSchema,
   TaskWithDepsSchema,
@@ -39,6 +41,7 @@ export {
   assertTaskStatus,
   InvalidTaskStatusError,
   type TaskStatus,
+  type TaskAssigneeType,
   type TaskId,
   type Task,
   type TaskWithDeps,

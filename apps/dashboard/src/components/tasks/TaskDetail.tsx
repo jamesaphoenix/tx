@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useQuery, keepPreviousData, useQueryClient } from "@tanstack/react-query"
-import { fetchers, type TaskDetailResponse, type TaskLabel, type TaskWithDeps } from "../../api/client"
+import {
+  fetchers,
+  type TaskAssigneeType,
+  type TaskDetailResponse,
+  type TaskLabel,
+  type TaskWithDeps
+} from "../../api/client"
 import { useDebounce } from "../../hooks/useDebounce"
 import {
   canonicalTaskLabelName,
   TaskLabelsSelect,
+  TaskAssigneeTypeSelect,
   TaskStatusSelect,
   toHumanTaskStage,
   type HumanTaskStage,
@@ -171,6 +178,11 @@ export interface TaskDetailProps {
   onCopyTaskReference?: () => void
   statusStage?: HumanTaskStage
   onChangeStatusStage?: (stage: HumanTaskStage) => void | Promise<void>
+  onUpdateAssignment?: (payload: {
+    assigneeType: TaskAssigneeType | null
+    assigneeId: string | null
+    assignedBy?: string | null
+  }) => void | Promise<void>
   allLabels?: TaskLabel[]
   isLabelAssigned?: (label: TaskLabel) => boolean
   onToggleLabel?: (label: TaskLabel) => void | Promise<void>
@@ -191,6 +203,7 @@ export function TaskDetail({
   onCopyTaskReference,
   statusStage,
   onChangeStatusStage,
+  onUpdateAssignment,
   allLabels = [],
   isLabelAssigned,
   onToggleLabel,
@@ -208,9 +221,18 @@ export function TaskDetail({
   const [descriptionDraft, setDescriptionDraft] = useState("")
   const [isSavingDescription, setIsSavingDescription] = useState(false)
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
+  const [selectedAssigneeType, setSelectedAssigneeType] = useState<TaskAssigneeType>("human")
+  const [assigneeIdDraft, setAssigneeIdDraft] = useState("")
+  const [isSavingAssignment, setIsSavingAssignment] = useState(false)
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null)
   const lastSavedDescriptionRef = useRef("")
+  const lastSavedAssignmentRef = useRef<{ assigneeType: TaskAssigneeType; assigneeId: string }>({
+    assigneeType: "human",
+    assigneeId: "",
+  })
   const saveSequenceRef = useRef(0)
+  const assignmentSaveSequenceRef = useRef(0)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["task", debouncedTaskId],
@@ -257,7 +279,10 @@ export function TaskDetail({
     setCreateLabelError(null)
     setIsSavingDescription(false)
     setDescriptionError(null)
+    setIsSavingAssignment(false)
+    setAssignmentError(null)
     saveSequenceRef.current += 1
+    assignmentSaveSequenceRef.current += 1
   }, [taskId])
 
   useEffect(() => {
@@ -267,6 +292,17 @@ export function TaskDetail({
     lastSavedDescriptionRef.current = nextDescription
     setDescriptionError(null)
     setIsSavingDescription(false)
+
+    const nextAssigneeType = data.task.assigneeType ?? "human"
+    const nextAssigneeId = data.task.assigneeId ?? ""
+    setSelectedAssigneeType(nextAssigneeType)
+    setAssigneeIdDraft(nextAssigneeId)
+    lastSavedAssignmentRef.current = {
+      assigneeType: nextAssigneeType,
+      assigneeId: nextAssigneeId,
+    }
+    setAssignmentError(null)
+    setIsSavingAssignment(false)
   }, [data?.task.id])
 
   useEffect(() => {
@@ -315,6 +351,44 @@ export function TaskDetail({
 
     return () => window.clearTimeout(timer)
   }, [data?.task.id, descriptionDraft, queryClient])
+
+  const persistAssignment = useCallback(async (
+    assigneeType: TaskAssigneeType,
+    assigneeIdInput: string
+  ) => {
+    if (!onUpdateAssignment) return
+
+    const normalizedAssigneeId = assigneeIdInput.trim()
+    const lastSaved = lastSavedAssignmentRef.current
+    if (lastSaved.assigneeType === assigneeType && lastSaved.assigneeId === normalizedAssigneeId) {
+      return
+    }
+
+    const requestSequence = ++assignmentSaveSequenceRef.current
+    setIsSavingAssignment(true)
+    setAssignmentError(null)
+
+    try {
+      await onUpdateAssignment({
+        assigneeType,
+        assigneeId: normalizedAssigneeId || null,
+        assignedBy: "dashboard:detail",
+      })
+      if (requestSequence !== assignmentSaveSequenceRef.current) return
+      lastSavedAssignmentRef.current = {
+        assigneeType,
+        assigneeId: normalizedAssigneeId,
+      }
+      setAssigneeIdDraft(normalizedAssigneeId)
+      setSelectedAssigneeType(assigneeType)
+    } catch (error) {
+      if (requestSequence !== assignmentSaveSequenceRef.current) return
+      setAssignmentError(error instanceof Error ? error.message : "Failed to update assignment")
+    } finally {
+      if (requestSequence !== assignmentSaveSequenceRef.current) return
+      setIsSavingAssignment(false)
+    }
+  }, [onUpdateAssignment])
 
   if (isLoading) {
     return (
@@ -379,6 +453,17 @@ export function TaskDetail({
     : isSavingDescription
       ? "Saving..."
       : descriptionIsDirty
+        ? "Changes pending..."
+        : "Saved"
+  const normalizedAssigneeIdDraft = assigneeIdDraft.trim()
+  const assignmentIsDirty =
+    selectedAssigneeType !== lastSavedAssignmentRef.current.assigneeType
+    || normalizedAssigneeIdDraft !== lastSavedAssignmentRef.current.assigneeId
+  const assignmentStatusMessage = assignmentError
+    ? "Assignment save failed"
+    : isSavingAssignment
+      ? "Saving..."
+      : assignmentIsDirty
         ? "Changes pending..."
         : "Saved"
   const breadcrumbs = [...ancestorBreadcrumbs, { id: task.id, title: task.title }]
@@ -630,6 +715,59 @@ export function TaskDetail({
               theme={themeMode}
             />
             <p className="mt-2 text-[11px] text-gray-500">Internal status: {task.status}</p>
+          </section>
+
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Assignment</p>
+              <span className={`text-[11px] ${
+                assignmentError
+                  ? "text-red-400"
+                  : isSavingAssignment
+                    ? "text-blue-300"
+                    : assignmentIsDirty
+                      ? "text-amber-300"
+                      : "text-gray-500"
+              }`}>
+                {assignmentStatusMessage}
+              </span>
+            </div>
+
+            <TaskAssigneeTypeSelect
+              instanceId={`task-detail-assignee-type-${task.id}`}
+              value={selectedAssigneeType}
+              onChange={(nextType) => {
+                setSelectedAssigneeType(nextType)
+                void persistAssignment(nextType, assigneeIdDraft)
+              }}
+              theme={themeMode}
+            />
+
+            <label htmlFor={`task-detail-assignee-id-${task.id}`} className="mt-3 block text-[11px] font-medium uppercase tracking-wide text-gray-500">
+              Assignee ID
+            </label>
+            <input
+              id={`task-detail-assignee-id-${task.id}`}
+              value={assigneeIdDraft}
+              onChange={(event) => setAssigneeIdDraft(event.target.value)}
+              onBlur={() => {
+                void persistAssignment(selectedAssigneeType, assigneeIdDraft)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return
+                event.preventDefault()
+                void persistAssignment(selectedAssigneeType, assigneeIdDraft)
+              }}
+              placeholder="Optional assignee ID"
+              className="mt-1 w-full rounded-md border border-gray-600 bg-gray-800 px-2.5 py-2 text-sm text-gray-200 outline-none transition focus:border-blue-400"
+            />
+
+            <p className="mt-2 text-[11px] text-gray-500">
+              Assigned at: {formatTimestamp(task.assignedAt)}
+            </p>
+            <p className="text-[11px] text-gray-500">
+              Assigned by: {task.assignedBy ?? "—"}
+            </p>
           </section>
 
           <section>

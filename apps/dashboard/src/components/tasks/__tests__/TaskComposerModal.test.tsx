@@ -60,7 +60,7 @@ describe("TaskComposerModal", () => {
     fireEvent.keyDown(comboboxes[0]!, { key: "ArrowDown" })
     fireEvent.click(await screen.findByText("In Progress"))
 
-    fireEvent.keyDown(comboboxes[1]!, { key: "ArrowDown" })
+    fireEvent.keyDown(comboboxes[2]!, { key: "ArrowDown" })
     fireEvent.click(await screen.findByText("Bug"))
 
     fireEvent.click(screen.getByRole("button", { name: "Create task" }))
@@ -74,6 +74,8 @@ describe("TaskComposerModal", () => {
       description: "Improve palette indexing strategy.",
       stage: "in_progress",
       parentId: null,
+      assigneeType: "human",
+      assigneeId: null,
       labelIds: [1],
       createMore: false,
     })
@@ -107,11 +109,47 @@ describe("TaskComposerModal", () => {
       description: undefined,
       stage: "backlog",
       parentId: null,
+      assigneeType: "human",
+      assigneeId: null,
       labelIds: [],
       createMore: true,
     })
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByPlaceholderText("Task title")).toHaveValue("")
+  })
+
+  it("uses provided default assignment type", async () => {
+    const onSubmit = vi.fn(async () => {})
+
+    renderComposer({
+      open: true,
+      heading: "New task",
+      submitLabel: "Create task",
+      defaultAssigneeType: "agent",
+      availableLabels: [],
+      onClose: () => {},
+      onSubmit,
+    })
+
+    fireEvent.change(screen.getByPlaceholderText("Task title"), {
+      target: { value: "Assigned to agent by default" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }))
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1)
+    })
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      title: "Assigned to agent by default",
+      description: undefined,
+      stage: "backlog",
+      parentId: null,
+      assigneeType: "agent",
+      assigneeId: null,
+      labelIds: [],
+      createMore: false,
+    })
   })
 
   it("uses CMD+A to select title/description text while modal is open", () => {

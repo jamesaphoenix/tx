@@ -9,7 +9,7 @@ import { Effect } from "effect"
 
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { serializeRun } from "@jamesaphoenix/tx-types"
-import { RunRepository } from "@jamesaphoenix/tx-core"
+import { RunRepository, RunHeartbeatService } from "@jamesaphoenix/tx-core"
 import { TxApi, NotFound, BadRequest, mapCoreError } from "../api.js"
 import { parseTranscript, findMatchingTranscript, isAllowedTranscriptPath, type ChatMessage } from "../utils/transcript-parser.js"
 import { readLogFile, isAllowedRunPath } from "../utils/log-reader.js"
@@ -34,6 +34,15 @@ const parseRunCursor = (cursor: string): ParsedRunCursor | null => {
 
 const buildRunCursor = (run: Run): string => {
   return `${run.startedAt.toISOString()}:${run.id}`
+}
+
+const parseIsoDateOrFail = (value: string | undefined, fieldName: string) => {
+  if (!value) return Effect.succeed(undefined as Date | undefined)
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return Effect.fail(new BadRequest({ message: `Invalid ${fieldName}: must be an ISO timestamp` }))
+  }
+  return Effect.succeed(parsed)
 }
 
 // -----------------------------------------------------------------------------
@@ -103,6 +112,55 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
             : null,
           hasMore,
           total,
+        }
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("listStalledRuns", ({ urlParams }) =>
+      Effect.gen(function* () {
+        const runHeartbeat = yield* RunHeartbeatService
+        const runs = yield* runHeartbeat.listStalled({
+          transcriptIdleSeconds: urlParams.transcriptIdleSeconds ?? 300,
+          heartbeatLagSeconds: urlParams.heartbeatLagSeconds,
+        })
+
+        return {
+          runs: runs.map((item) => ({
+            run: serializeRun(item.run),
+            reason: item.reason,
+            transcriptIdleSeconds: item.transcriptIdleSeconds,
+            heartbeatLagSeconds: item.heartbeatLagSeconds,
+            lastActivityAt: item.lastActivityAt?.toISOString() ?? null,
+            lastCheckAt: item.lastCheckAt?.toISOString() ?? null,
+            stdoutBytes: item.stdoutBytes,
+            stderrBytes: item.stderrBytes,
+            transcriptBytes: item.transcriptBytes,
+          })),
+        }
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("reapStalledRuns", ({ payload }) =>
+      Effect.gen(function* () {
+        const runHeartbeat = yield* RunHeartbeatService
+        const runs = yield* runHeartbeat.reapStalled({
+          transcriptIdleSeconds: payload.transcriptIdleSeconds ?? 300,
+          heartbeatLagSeconds: payload.heartbeatLagSeconds,
+          resetTask: payload.resetTask,
+          dryRun: payload.dryRun,
+        })
+
+        return {
+          runs: runs.map((item) => ({
+            id: item.id,
+            taskId: item.taskId,
+            pid: item.pid,
+            reason: item.reason,
+            transcriptIdleSeconds: item.transcriptIdleSeconds,
+            heartbeatLagSeconds: item.heartbeatLagSeconds,
+            processTerminated: item.processTerminated,
+            taskReset: item.taskReset,
+          })),
         }
       }).pipe(Effect.mapError(mapCoreError))
     )
@@ -194,17 +252,46 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
         const runRepo = yield* RunRepository
         yield* runRepo.update(path.id as RunId, {
           status: payload.status,
-          endedAt: payload.endedAt ? new Date(payload.endedAt) : undefined,
+          endedAt: yield* parseIsoDateOrFail(payload.endedAt, "endedAt"),
           exitCode: payload.exitCode,
           summary: payload.summary,
           errorMessage: payload.errorMessage,
           transcriptPath: payload.transcriptPath,
+          metadata: payload.metadata,
         })
         const updated = yield* runRepo.findById(path.id as RunId)
         if (!updated) {
           return yield* Effect.fail(new NotFound({ message: `Run not found: ${path.id}` }))
         }
         return serializeRun(updated)
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("heartbeatRun", ({ path, payload }) =>
+      Effect.gen(function* () {
+        const runHeartbeat = yield* RunHeartbeatService
+        const checkAt = yield* parseIsoDateOrFail(payload.checkAt, "checkAt")
+        const activityAt = yield* parseIsoDateOrFail(payload.activityAt, "activityAt")
+
+        yield* runHeartbeat.heartbeat({
+          runId: path.id as RunId,
+          checkAt,
+          activityAt,
+          stdoutBytes: payload.stdoutBytes ?? 0,
+          stderrBytes: payload.stderrBytes ?? 0,
+          transcriptBytes: payload.transcriptBytes ?? 0,
+          deltaBytes: payload.deltaBytes,
+        })
+
+        return {
+          runId: path.id,
+          checkAt: (checkAt ?? new Date()).toISOString(),
+          activityAt: activityAt?.toISOString() ?? null,
+          stdoutBytes: payload.stdoutBytes ?? 0,
+          stderrBytes: payload.stderrBytes ?? 0,
+          transcriptBytes: payload.transcriptBytes ?? 0,
+          deltaBytes: payload.deltaBytes ?? 0,
+        }
       }).pipe(Effect.mapError(mapCoreError))
     )
 

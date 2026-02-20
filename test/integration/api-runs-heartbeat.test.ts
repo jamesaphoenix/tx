@@ -1,0 +1,385 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest"
+import { spawnSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { mkdtempSync, rmSync, existsSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
+import { createServer } from "node:net"
+import { Database } from "bun:sqlite"
+import { fixtureId } from "../fixtures.js"
+import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
+
+const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
+const API_SERVER_SRC = resolve(__dirname, "../../apps/api-server/src/server.ts")
+
+const runFixtureId = (name: string): string => `run-${fixtureId(`api-runs-heartbeat:${name}`).slice(3)}`
+const taskFixtureId = (name: string): string => fixtureId(`api-runs-heartbeat:${name}`)
+
+interface ExecResult {
+  status: number
+  stdout: string
+  stderr: string
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => {
+  setTimeout(resolveSleep, ms)
+})
+
+function getFreePort(): Promise<number> {
+  return new Promise((resolvePort, rejectPort) => {
+    const server = createServer()
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address()
+      if (!address || typeof address === "string") {
+        server.close(() => rejectPort(new Error("Failed to acquire free port")))
+        return
+      }
+      const { port } = address
+      server.close((err) => {
+        if (err) rejectPort(err)
+        else resolvePort(port)
+      })
+    })
+    server.on("error", rejectPort)
+  })
+}
+
+function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
+  const res = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
+    cwd,
+    encoding: "utf-8",
+    timeout: 20000,
+  })
+  return {
+    status: res.status ?? 1,
+    stdout: res.stdout ?? "",
+    stderr: res.stderr ?? "",
+  }
+}
+
+async function waitForHealth(baseUrl: string, proc: ChildProcessWithoutNullStreams): Promise<void> {
+  const deadline = Date.now() + 30000
+  while (Date.now() < deadline) {
+    if (proc.exitCode !== null) {
+      throw new Error(`API server exited early with code ${proc.exitCode}`)
+    }
+    try {
+      const res = await fetch(`${baseUrl}/health`)
+      if (res.ok) return
+    } catch {
+      // keep polling until deadline
+    }
+    await sleep(200)
+  }
+  throw new Error("Timed out waiting for API server health endpoint")
+}
+
+function insertTask(db: Database, taskId: string, status: string = "active"): void {
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+     VALUES (?, ?, ?, ?, NULL, 500, ?, ?, NULL, '{}')`
+  ).run(taskId, `Task ${taskId}`, "API heartbeat integration task", status, now, now)
+}
+
+function insertRun(
+  db: Database,
+  runId: string,
+  taskId: string | null = null,
+  startedAt: string = new Date().toISOString()
+): void {
+  db.prepare(
+    `INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
+     VALUES (?, ?, 'tx-implementer', ?, 'running', NULL, '{}')`
+  ).run(runId, taskId, startedAt)
+}
+
+describe("API + SDK run heartbeat integration", () => {
+  let tmpProjectDir: string
+  let dbPath: string
+  let db: Database
+  let apiProc: ChildProcessWithoutNullStreams
+  let apiPort: number
+  let baseUrl: string
+  let serverLogs = ""
+
+  beforeAll(async () => {
+    tmpProjectDir = mkdtempSync(join(tmpdir(), "tx-api-runs-heartbeat-"))
+    dbPath = join(tmpProjectDir, "tasks.db")
+
+    const init = runTx(["init"], dbPath, tmpProjectDir)
+    if (init.status !== 0) {
+      throw new Error(`Failed to init test database: ${init.stderr || init.stdout}`)
+    }
+
+    db = new Database(dbPath)
+    apiPort = await getFreePort()
+    baseUrl = `http://127.0.0.1:${apiPort}`
+
+    apiProc = spawn("bun", [API_SERVER_SRC, "--host", "127.0.0.1", "--port", String(apiPort), "--db", dbPath], {
+      cwd: tmpProjectDir,
+      env: {
+        ...process.env,
+        TX_API_HOST: "127.0.0.1",
+        TX_API_PORT: String(apiPort),
+        TX_DB_PATH: dbPath,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+
+    apiProc.stdout.on("data", (chunk: Buffer) => {
+      serverLogs += chunk.toString()
+    })
+    apiProc.stderr.on("data", (chunk: Buffer) => {
+      serverLogs += chunk.toString()
+    })
+
+    try {
+      await waitForHealth(baseUrl, apiProc)
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\nLogs:\n${serverLogs}`)
+    }
+  }, 90000)
+
+  afterEach(() => {
+    db.exec("DELETE FROM run_heartbeat_state")
+    db.exec("DELETE FROM runs")
+    db.exec("DELETE FROM task_dependencies")
+    db.exec("DELETE FROM tasks")
+    db.exec("DELETE FROM events")
+  })
+
+  afterAll(async () => {
+    db.close()
+
+    if (apiProc && apiProc.exitCode === null) {
+      apiProc.kill("SIGTERM")
+      await Promise.race([
+        new Promise<void>((resolveExit) => {
+          apiProc.once("exit", () => resolveExit())
+        }),
+        sleep(3000),
+      ])
+      if (apiProc.exitCode === null) {
+        apiProc.kill("SIGKILL")
+      }
+    }
+
+    if (existsSync(tmpProjectDir)) {
+      rmSync(tmpProjectDir, { recursive: true, force: true })
+    }
+  })
+
+  it("POST /api/runs/:id/heartbeat persists heartbeat state", async () => {
+    const runId = runFixtureId("api-heartbeat")
+    const checkAt = "2026-02-20T20:00:00.000Z"
+    const activityAt = "2026-02-20T19:58:00.000Z"
+    insertRun(db, runId)
+
+    const res = await fetch(`${baseUrl}/api/runs/${runId}/heartbeat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stdoutBytes: 120,
+        stderrBytes: 7,
+        transcriptBytes: 2048,
+        deltaBytes: 256,
+        checkAt,
+        activityAt,
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    const payload = await res.json() as {
+      runId: string
+      stdoutBytes: number
+      stderrBytes: number
+      transcriptBytes: number
+      deltaBytes: number
+      checkAt: string
+      activityAt: string | null
+    }
+
+    expect(payload.runId).toBe(runId)
+    expect(payload.stdoutBytes).toBe(120)
+    expect(payload.stderrBytes).toBe(7)
+    expect(payload.transcriptBytes).toBe(2048)
+    expect(payload.deltaBytes).toBe(256)
+    expect(payload.checkAt).toBe(checkAt)
+    expect(payload.activityAt).toBe(activityAt)
+
+    const row = db.prepare(
+      `SELECT last_check_at, last_activity_at, stdout_bytes, stderr_bytes, transcript_bytes, last_delta_bytes
+       FROM run_heartbeat_state
+       WHERE run_id = ?`
+    ).get(runId) as {
+      last_check_at: string
+      last_activity_at: string
+      stdout_bytes: number
+      stderr_bytes: number
+      transcript_bytes: number
+      last_delta_bytes: number
+    } | null
+
+    expect(row).not.toBeNull()
+    expect(row?.last_check_at).toBe(checkAt)
+    expect(row?.last_activity_at).toBe(activityAt)
+    expect(row?.stdout_bytes).toBe(120)
+    expect(row?.stderr_bytes).toBe(7)
+    expect(row?.transcript_bytes).toBe(2048)
+    expect(row?.last_delta_bytes).toBe(256)
+  })
+
+  it("GET /api/runs/stalled lists stalled runs", async () => {
+    const runId = runFixtureId("api-stalled-list")
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    insertRun(db, runId)
+
+    const heartbeat = await fetch(`${baseUrl}/api/runs/${runId}/heartbeat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stdoutBytes: 0,
+        stderrBytes: 0,
+        transcriptBytes: 42,
+        deltaBytes: 0,
+        checkAt: old,
+        activityAt: old,
+      }),
+    })
+    expect(heartbeat.status).toBe(200)
+
+    const res = await fetch(`${baseUrl}/api/runs/stalled?transcriptIdleSeconds=300`)
+    expect(res.status).toBe(200)
+
+    const payload = await res.json() as {
+      runs: Array<{
+        run: { id: string }
+        reason: string
+        transcriptBytes: number
+      }>
+    }
+    expect(payload.runs.length).toBeGreaterThanOrEqual(1)
+
+    const stalled = payload.runs.find((item) => item.run.id === runId)
+    expect(stalled).toBeDefined()
+    expect(stalled?.reason).toBe("transcript_idle")
+    expect(stalled?.transcriptBytes).toBe(42)
+  })
+
+  it("POST /api/runs/stalled/reap cancels run and resets task by default", async () => {
+    const runId = runFixtureId("api-reap-default")
+    const taskId = taskFixtureId("api-reap-default-task")
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+
+    insertTask(db, taskId, "active")
+    insertRun(db, runId, taskId)
+
+    const heartbeat = await fetch(`${baseUrl}/api/runs/${runId}/heartbeat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stdoutBytes: 0,
+        stderrBytes: 0,
+        transcriptBytes: 0,
+        deltaBytes: 0,
+        checkAt: old,
+        activityAt: old,
+      }),
+    })
+    expect(heartbeat.status).toBe(200)
+
+    const res = await fetch(`${baseUrl}/api/runs/stalled/reap`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transcriptIdleSeconds: 300,
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const payload = await res.json() as {
+      runs: Array<{
+        id: string
+        taskId: string | null
+        taskReset: boolean
+        processTerminated: boolean
+      }>
+    }
+    const reaped = payload.runs.find((item) => item.id === runId)
+    expect(reaped).toBeDefined()
+    expect(reaped?.taskId).toBe(taskId)
+    expect(reaped?.taskReset).toBe(true)
+    expect(reaped?.processTerminated).toBe(false)
+
+    const runRow = db.prepare("SELECT status, exit_code FROM runs WHERE id = ?").get(runId) as
+      | { status: string; exit_code: number | null }
+      | null
+    const taskRow = db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId) as
+      | { status: string }
+      | null
+
+    expect(runRow?.status).toBe("cancelled")
+    expect(runRow?.exit_code).toBe(137)
+    expect(taskRow?.status).toBe("ready")
+  })
+
+  it("SDK HTTP client can heartbeat/list/reap stalled runs", async () => {
+    const runId = runFixtureId("sdk-http")
+    const taskId = taskFixtureId("sdk-http-task")
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+
+    insertTask(db, taskId, "active")
+    insertRun(db, runId, taskId)
+
+    const tx = new TxClient({ apiUrl: baseUrl })
+
+    const heartbeat = await tx.runs.heartbeat(runId, {
+      stdoutBytes: 12,
+      stderrBytes: 1,
+      transcriptBytes: 100,
+      deltaBytes: 0,
+      checkAt: old,
+      activityAt: old,
+    })
+    expect(heartbeat.runId).toBe(runId)
+    expect(heartbeat.transcriptBytes).toBe(100)
+
+    const stalled = await tx.runs.stalled({ transcriptIdleSeconds: 300 })
+    expect(stalled.some((row) => row.run.id === runId)).toBe(true)
+
+    const reaped = await tx.runs.reap({
+      transcriptIdleSeconds: 300,
+      resetTask: false,
+    })
+    const row = reaped.find((item) => item.id === runId)
+    expect(row).toBeDefined()
+    expect(row?.taskReset).toBe(false)
+
+    const runRow = db.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as
+      | { status: string }
+      | null
+    const taskRow = db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId) as
+      | { status: string }
+      | null
+
+    expect(runRow?.status).toBe("cancelled")
+    expect(taskRow?.status).toBe("active")
+  })
+
+  it("POST /api/runs/:id/heartbeat validates ISO timestamps", async () => {
+    const runId = runFixtureId("api-invalid-check-at")
+    insertRun(db, runId)
+
+    const res = await fetch(`${baseUrl}/api/runs/${runId}/heartbeat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        checkAt: "not-an-iso-date",
+      }),
+    })
+
+    expect(res.status).toBe(400)
+    const body = await res.text()
+    expect(body).toContain("checkAt")
+  })
+})

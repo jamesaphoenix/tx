@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server"
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { Database } from "bun:sqlite"
-import { readFileSync, existsSync } from "fs"
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs"
 import { resolve, dirname } from "path"
 import { homedir } from "os"
 import { fileURLToPath } from "url"
@@ -21,6 +21,10 @@ const ralphPidPath = resolve(dbDir, "ralph.pid")
 const txDir = resolve(dbDir)
 const claudeDir = resolve(homedir(), ".claude")
 const VALID_TASK_STATUSES = new Set<string>(TASK_STATUSES)
+type DashboardDefaultTaskAssigmentType = "human" | "agent"
+const VALID_ASSIGNEE_TYPES = new Set<DashboardDefaultTaskAssigmentType>(["human", "agent"])
+const DASHBOARD_CONFIG_SECTION = "dashboard"
+const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
 const DEFAULT_LABEL_COLORS = [
   "#2563eb", // blue
   "#0ea5e9", // sky
@@ -211,12 +215,23 @@ interface TaskLabel {
   updatedAt: string
 }
 
+interface TaskRowWithAssignment extends TaskRow {
+  assignee_type?: string | null
+  assignee_id?: string | null
+  assigned_at?: string | null
+  assigned_by?: string | null
+}
+
 interface TaskCreatePayload {
   title?: string
   description?: string
   parentId?: string | null
   status?: string
   score?: number
+  assigneeType?: DashboardDefaultTaskAssigmentType | null
+  assigneeId?: string | null
+  assignedAt?: string | null
+  assignedBy?: string | null
   metadata?: Record<string, unknown>
 }
 
@@ -226,7 +241,23 @@ interface TaskUpdatePayload {
   status?: string
   parentId?: string | null
   score?: number
+  assigneeType?: DashboardDefaultTaskAssigmentType | null
+  assigneeId?: string | null
+  assignedAt?: string | null
+  assignedBy?: string | null
   metadata?: Record<string, unknown>
+}
+
+interface SettingsResponse {
+  dashboard: {
+    defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
+  }
+}
+
+interface SettingsPatchPayload {
+  dashboard?: {
+    defaultTaskAssigmentType?: DashboardDefaultTaskAssigmentType
+  }
 }
 
 interface CreateLabelPayload {
@@ -301,6 +332,26 @@ function isTaskStatus(value: string): value is (typeof TASK_STATUSES)[number] {
   return VALID_TASK_STATUSES.has(value)
 }
 
+function isAssigneeType(
+  value: string | null | undefined
+): value is DashboardDefaultTaskAssigmentType | null {
+  return value === undefined || value === null || VALID_ASSIGNEE_TYPES.has(value as DashboardDefaultTaskAssigmentType)
+}
+
+function normalizeAssigneeType(
+  value: string | null | undefined
+): DashboardDefaultTaskAssigmentType | null {
+  return value === "human" || value === "agent" ? value : null
+}
+
+function toSettingsResponse(): SettingsResponse {
+  return {
+    dashboard: {
+      defaultTaskAssigmentType: readDashboardDefaultTaskAssigmentType(process.cwd()),
+    },
+  }
+}
+
 function hasTable(db: Database, tableName: string): boolean {
   const row = db.prepare(`
     SELECT 1
@@ -321,6 +372,124 @@ function hasDocLinksSchema(db: Database): boolean {
 
 function hasTaskDocLinksSchema(db: Database): boolean {
   return hasTable(db, "task_doc_links")
+}
+
+function readDashboardDefaultTaskAssigmentType(
+  cwd: string
+): DashboardDefaultTaskAssigmentType {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  if (!existsSync(configPath)) {
+    return "human"
+  }
+  try {
+    const raw = readFileSync(configPath, "utf8")
+    const configuredValue = extractTomlValue(
+      raw,
+      DASHBOARD_CONFIG_SECTION,
+      DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY
+    )
+    if (configuredValue === "human" || configuredValue === "agent") {
+      return configuredValue
+    }
+    return "human"
+  } catch {
+    return "human"
+  }
+}
+
+function writeDashboardDefaultTaskAssigmentType(
+  value: DashboardDefaultTaskAssigmentType,
+  cwd: string
+): void {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const patched = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CONFIG_SECTION,
+    DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
+    `"${value}"`
+  )
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeFileSync(configPath, patched.endsWith("\n") ? patched : `${patched}\n`, "utf8")
+}
+
+function extractTomlValue(toml: string, section: string, key: string): string | null {
+  const lines = toml.split("\n")
+  let inSection = false
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed === `[${section}]`) {
+      inSection = true
+      continue
+    }
+    if (trimmed.startsWith("[") && inSection) {
+      break
+    }
+    if (!inSection) continue
+    const quoted = trimmed.match(new RegExp(`^${key}\\s*=\\s*["'](.+?)["']$`))
+    if (quoted) {
+      return quoted[1]
+    }
+    const unquoted = trimmed.match(new RegExp(`^${key}\\s*=\\s*([^#\\s]+)`))
+    if (unquoted) {
+      return unquoted[1]
+    }
+  }
+  return null
+}
+
+function patchTomlKey(
+  toml: string,
+  section: string,
+  key: string,
+  renderedValue: string
+): string {
+  const lines = toml.length > 0 ? toml.split("\n") : []
+  const sectionHeader = `[${section}]`
+  const sectionRegex = /^\s*\[[^\]]+\]\s*$/
+  const keyRegex = new RegExp(`^(\\s*)${escapeRegex(key)}\\s*=`)
+
+  let sectionStart = -1
+  for (let i = 0; i < lines.length; i++) {
+    if ((lines[i] ?? "").trim() === sectionHeader) {
+      sectionStart = i
+      break
+    }
+  }
+
+  const renderedLine = `${key} = ${renderedValue}`
+
+  if (sectionStart === -1) {
+    if (lines.length > 0 && lines[lines.length - 1] !== "") {
+      lines.push("")
+    }
+    lines.push(sectionHeader, renderedLine)
+    return lines.join("\n")
+  }
+
+  let sectionEnd = lines.length
+  for (let i = sectionStart + 1; i < lines.length; i++) {
+    if (sectionRegex.test(lines[i] ?? "")) {
+      sectionEnd = i
+      break
+    }
+  }
+
+  for (let i = sectionStart + 1; i < sectionEnd; i++) {
+    const line = lines[i] ?? ""
+    const match = line.match(keyRegex)
+    if (!match) continue
+    const indent = match[1] ?? ""
+    lines[i] = `${indent}${key} = ${renderedValue}`
+    return lines.join("\n")
+  }
+
+  lines.splice(sectionEnd, 0, renderedLine)
+  return lines.join("\n")
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function toTaskLabel(row: TaskLabelRow): TaskLabel {
@@ -362,7 +531,7 @@ function loadTaskLabelsMap(db: Database, taskIds: readonly string[]): Map<string
 }
 
 function getTaskWithDeps(db: Database, id: string): TaskRowWithDeps | null {
-  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRowWithAssignment | undefined
   if (!task) return null
   const [enriched] = enrichTasksWithDeps(db, [task])
   return enriched ?? null
@@ -413,7 +582,7 @@ function upsertLabel(db: Database, input: { name: string; color?: string }): Tas
   return toTaskLabel(created)
 }
 
-interface TaskRowWithDeps extends TaskRow {
+interface TaskRowWithDeps extends TaskRowWithAssignment {
   blockedBy: string[]
   blocks: string[]
   children: string[]
@@ -431,6 +600,10 @@ interface TaskWithDepsResponse {
   createdAt: string
   updatedAt: string
   completedAt: string | null
+  assigneeType: DashboardDefaultTaskAssigmentType | null
+  assigneeId: string | null
+  assignedAt: string | null
+  assignedBy: string | null
   metadata: Record<string, unknown>
   blockedBy: string[]
   blocks: string[]
@@ -459,6 +632,10 @@ function serializeTask(task: TaskRowWithDeps): TaskWithDepsResponse {
     createdAt: task.created_at,
     updatedAt: task.updated_at,
     completedAt: task.completed_at,
+    assigneeType: normalizeAssigneeType(task.assignee_type),
+    assigneeId: task.assignee_id ?? null,
+    assignedAt: task.assigned_at ?? null,
+    assignedBy: task.assigned_by ?? null,
     metadata: parseTaskMetadata(task.metadata),
     blockedBy: task.blockedBy,
     blocks: task.blocks,
@@ -557,7 +734,7 @@ function parseRunCursor(cursor: string): { startedAt: string; id: string } {
   return { startedAt: match[1]!, id: match[2]! }
 }
 
-function buildTaskCursor(task: TaskRow): string {
+function buildTaskCursor(task: TaskRowWithAssignment): string {
   return `${task.score}:${task.id}`
 }
 
@@ -569,8 +746,8 @@ function buildRunCursor(run: { startedAt: string; id: string }): string {
 // Helper to enrich tasks with dependency info
 function enrichTasksWithDeps(
   db: Database,
-  tasks: TaskRow[],
-  allTasks?: TaskRow[]
+  tasks: TaskRowWithAssignment[],
+  allTasks?: TaskRowWithAssignment[]
 ): TaskRowWithDeps[] {
   // Get all dependencies
   const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
@@ -616,6 +793,30 @@ function enrichTasksWithDeps(
   })
 }
 
+app.get("/api/settings", (c) => {
+  try {
+    return c.json(toSettingsResponse())
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+app.patch("/api/settings", async (c) => {
+  try {
+    const payload = await c.req.json<SettingsPatchPayload>()
+    const nextType = payload?.dashboard?.defaultTaskAssigmentType
+
+    if (!isAssigneeType(nextType) || nextType === null) {
+      return c.json({ error: "dashboard.defaultTaskAssigmentType must be \"human\" or \"agent\"" }, 400)
+    }
+
+    writeDashboardDefaultTaskAssigmentType(nextType, process.cwd())
+    return c.json(toSettingsResponse())
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
 // GET /api/tasks - with cursor-based pagination
 app.get("/api/tasks", (c) => {
   try {
@@ -657,7 +858,7 @@ app.get("/api/tasks", (c) => {
     `
     params.push(limit + 1)
 
-    const rows = db.prepare(sql).all(...params) as TaskRow[]
+    const rows = db.prepare(sql).all(...params) as TaskRowWithAssignment[]
     const hasMore = rows.length > limit
     const tasks = hasMore ? rows.slice(0, limit) : rows
 
@@ -719,6 +920,10 @@ app.post("/api/tasks", async (c) => {
     const description = payload.description ?? ""
     const score = payload.score ?? 0
     const status = payload.status?.trim() || "backlog"
+    const defaultAssigneeType = readDashboardDefaultTaskAssigmentType(process.cwd())
+    const requestedAssigneeType = payload.assigneeType === undefined
+      ? defaultAssigneeType
+      : payload.assigneeType
     const metadata = payload.metadata ?? {}
 
     if (!isTaskStatus(status)) {
@@ -727,9 +932,23 @@ app.post("/api/tasks", async (c) => {
       }, 400)
     }
 
+    if (!isAssigneeType(requestedAssigneeType)) {
+      return c.json({
+        error: `Invalid assigneeType "${String(payload.assigneeType)}". Valid values: human, agent, null`,
+      }, 400)
+    }
+
+    const assigneeType = requestedAssigneeType ?? null
+    const assigneeId = assigneeType === null ? null : (payload.assigneeId ?? null)
+    const assignedAt = assigneeType === null ? null : (payload.assignedAt ?? now)
+    const assignedBy = assigneeType === null ? null : (payload.assignedBy ?? "dashboard:create")
+
     db.prepare(`
-      INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (
+        id, title, description, status, parent_id, score, created_at, updated_at, completed_at,
+        assignee_type, assignee_id, assigned_at, assigned_by, metadata
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       title,
@@ -740,6 +959,10 @@ app.post("/api/tasks", async (c) => {
       now,
       now,
       null,
+      assigneeType,
+      assigneeId,
+      assignedAt,
+      assignedBy,
       JSON.stringify(metadata),
     )
 
@@ -760,7 +983,7 @@ app.patch("/api/tasks/:id", async (c) => {
     const id = c.req.param("id")
     const payload = await c.req.json<TaskUpdatePayload>()
 
-    const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+    const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRowWithAssignment | undefined
     if (!existing) {
       return c.json({ error: "Task not found" }, 404)
     }
@@ -787,6 +1010,12 @@ app.patch("/api/tasks/:id", async (c) => {
       return c.json({ error: "Score must be an integer" }, 400)
     }
 
+    if (!isAssigneeType(payload.assigneeType)) {
+      return c.json({
+        error: `Invalid assigneeType "${String(payload.assigneeType)}". Valid values: human, agent, null`,
+      }, 400)
+    }
+
     let existingMetadata: Record<string, unknown> = {}
     try {
       existingMetadata = JSON.parse(existing.metadata || "{}") as Record<string, unknown>
@@ -804,6 +1033,38 @@ app.patch("/api/tasks/:id", async (c) => {
       ? (existing.completed_at ?? now)
       : null
 
+    const existingAssigneeType = isAssigneeType(existing.assignee_type)
+      ? existing.assignee_type
+      : null
+    const assigneeTypeChanged = payload.assigneeType !== undefined
+      && payload.assigneeType !== existingAssigneeType
+    const assigneeIdChanged = payload.assigneeId !== undefined
+      && payload.assigneeId !== (existing.assignee_id ?? null)
+
+    let nextAssigneeType = payload.assigneeType !== undefined
+      ? payload.assigneeType
+      : existingAssigneeType
+    let nextAssigneeId = payload.assigneeId !== undefined
+      ? payload.assigneeId
+      : (existing.assignee_id ?? null)
+    let nextAssignedAt = payload.assignedAt !== undefined
+      ? payload.assignedAt
+      : (existing.assigned_at ?? null)
+    let nextAssignedBy = payload.assignedBy !== undefined
+      ? payload.assignedBy
+      : (existing.assigned_by ?? null)
+
+    if (nextAssigneeType === null) {
+      nextAssigneeId = null
+      nextAssignedAt = null
+      nextAssignedBy = null
+    } else if ((assigneeTypeChanged || assigneeIdChanged) && payload.assignedAt === undefined) {
+      nextAssignedAt = now
+      if (payload.assignedBy === undefined) {
+        nextAssignedBy = "dashboard:update"
+      }
+    }
+
     db.prepare(`
       UPDATE tasks
       SET title = ?,
@@ -813,6 +1074,10 @@ app.patch("/api/tasks/:id", async (c) => {
           score = ?,
           updated_at = ?,
           completed_at = ?,
+          assignee_type = ?,
+          assignee_id = ?,
+          assigned_at = ?,
+          assigned_by = ?,
           metadata = ?
       WHERE id = ?
     `).run(
@@ -823,6 +1088,10 @@ app.patch("/api/tasks/:id", async (c) => {
       payload.score ?? existing.score,
       now,
       nextCompletedAt,
+      nextAssigneeType,
+      nextAssigneeId,
+      nextAssignedAt,
+      nextAssignedBy,
       JSON.stringify(mergedMetadata),
       id,
     )
@@ -979,7 +1248,7 @@ app.get("/api/tasks/ready", (c) => {
     const db = getDb()
 
     // Get all tasks to compute ready status and children
-    const allTasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
+    const allTasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRowWithAssignment[]
     const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
 
     const blockedByMap = new Map<string, string[]>()
@@ -1538,7 +1807,7 @@ app.get("/api/tasks/:id", (c) => {
     const db = getDb()
     const id = c.req.param("id")
 
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRowWithAssignment | undefined
     if (!task) {
       return c.json({ error: "Task not found" }, 404)
     }
@@ -1560,7 +1829,7 @@ app.get("/api/tasks/:id", (c) => {
     const fetchTasksByIds = (ids: string[]): TaskRowWithDeps[] => {
       if (ids.length === 0) return []
       const placeholders = ids.map(() => "?").join(",")
-      const tasks = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
+      const tasks = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRowWithAssignment[]
       return enrichTasksWithDeps(db, tasks)
     }
 

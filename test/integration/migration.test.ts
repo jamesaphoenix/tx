@@ -133,6 +133,8 @@ describe("Migration system", () => {
         "docs", "doc_links", "task_doc_links", "invariants", "invariant_checks",
         // Migration 023 — task labels
         "task_labels", "task_label_assignments",
+        // Migration 025 — run heartbeat state
+        "run_heartbeat_state",
       ]
 
       for (const table of expectedTables) {
@@ -188,6 +190,10 @@ describe("Migration system", () => {
       // Indexes from migration 24 (task assignment)
       expect(indexNames).toContain("idx_tasks_assignee_type")
       expect(indexNames).toContain("idx_tasks_assignee_type_id")
+
+      // Indexes from migration 25 (run heartbeat state)
+      expect(indexNames).toContain("idx_run_heartbeat_check_at")
+      expect(indexNames).toContain("idx_run_heartbeat_activity_at")
     })
 
     it("is idempotent (running twice is safe)", () => {

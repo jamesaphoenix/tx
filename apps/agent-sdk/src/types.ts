@@ -85,6 +85,74 @@ export {
   type UpdateRunInput
 } from "@jamesaphoenix/tx-types"
 
+export interface RunHeartbeatData {
+  stdoutBytes?: number
+  stderrBytes?: number
+  transcriptBytes?: number
+  deltaBytes?: number
+  checkAt?: string
+  activityAt?: string
+}
+
+export interface RunHeartbeatResult {
+  runId: string
+  checkAt: string
+  activityAt: string | null
+  stdoutBytes: number
+  stderrBytes: number
+  transcriptBytes: number
+  deltaBytes: number
+}
+
+export interface StalledRunsOptions {
+  transcriptIdleSeconds?: number
+  heartbeatLagSeconds?: number
+}
+
+export interface ReapStalledRunsOptions extends StalledRunsOptions {
+  resetTask?: boolean
+  dryRun?: boolean
+}
+
+export interface SerializedStalledRun {
+  run: {
+    id: string
+    taskId: string | null
+    agent: string
+    startedAt: string
+    endedAt: string | null
+    status: string
+    exitCode: number | null
+    pid: number | null
+    transcriptPath: string | null
+    stderrPath: string | null
+    stdoutPath: string | null
+    contextInjected: string | null
+    summary: string | null
+    errorMessage: string | null
+    metadata: Record<string, unknown>
+  }
+  reason: "transcript_idle" | "heartbeat_stale"
+  transcriptIdleSeconds: number | null
+  heartbeatLagSeconds: number | null
+  lastActivityAt: string | null
+  lastCheckAt: string | null
+  stdoutBytes: number
+  stderrBytes: number
+  transcriptBytes: number
+}
+
+export interface SerializedReapedRun {
+  id: string
+  taskId: string | null
+  pid: number | null
+  reason: "transcript_idle" | "heartbeat_stale"
+  transcriptIdleSeconds: number | null
+  heartbeatLagSeconds: number | null
+  processTerminated: boolean
+  taskReset: boolean
+}
+
 // =============================================================================
 // SDK-Specific Types
 // =============================================================================

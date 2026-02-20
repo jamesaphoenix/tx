@@ -252,6 +252,13 @@ export {
   type LearningUsageFeedback,
   WorkerService,
   WorkerServiceLive,
+  RunHeartbeatService,
+  RunHeartbeatServiceLive,
+  type RunHeartbeatInput,
+  type StalledRun,
+  type StalledRunQuery,
+  type ReapStalledOptions,
+  type ReapedRun,
   type WorkerRegistration,
   type WorkerFilter,
   type FindDeadConfig,
@@ -417,7 +424,12 @@ export { matchesGlob } from "./utils/glob.js"
 export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"
 export { computeDocHash } from "./utils/doc-hash.js"
 export { renderDocToMarkdown, renderIndexToMarkdown } from "./utils/doc-renderer.js"
-export { readTxConfig } from "./utils/toml-config.js"
+export {
+  readTxConfig,
+  writeDashboardDefaultTaskAssigmentType,
+  DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
+  type DashboardDefaultTaskAssigmentType
+} from "./utils/toml-config.js"
 
 // =============================================================================
 // Worker (PRD-018 headless worker system)

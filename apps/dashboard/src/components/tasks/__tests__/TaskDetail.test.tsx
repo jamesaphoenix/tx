@@ -18,6 +18,10 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     createdAt: '2026-01-30T12:00:00Z',
     updatedAt: '2026-01-30T12:00:00Z',
     completedAt: null,
+    assigneeType: 'agent',
+    assigneeId: null,
+    assignedAt: '2026-01-30T12:00:00Z',
+    assignedBy: 'test',
     metadata: {},
     blockedBy: [],
     blocks: [],
@@ -178,6 +182,51 @@ describe('TaskDetail', () => {
         expect(patchPayloads).toContainEqual({ description: 'Updated inline description' })
         expect(screen.getByLabelText('Task description')).toHaveValue('Updated inline description')
       }, { timeout: 2500 })
+    })
+
+    it('persists assignment edits from task detail controls', async () => {
+      const task = createTask({
+        id: 'tx-assignment-edit',
+        title: 'Assignment task',
+        assigneeType: 'human',
+        assigneeId: null,
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      const onUpdateAssignment = vi.fn(async () => {})
+      renderWithProviders(
+        <TaskDetail
+          taskId="tx-assignment-edit"
+          onNavigateToTask={vi.fn()}
+          onUpdateAssignment={onUpdateAssignment}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Assignee ID')).toBeInTheDocument()
+      })
+
+      const assigneeInput = screen.getByLabelText('Assignee ID')
+      fireEvent.change(assigneeInput, { target: { value: 'worker-123' } })
+      fireEvent.blur(assigneeInput)
+
+      await waitFor(() => {
+        expect(onUpdateAssignment).toHaveBeenCalledWith({
+          assigneeType: 'human',
+          assigneeId: 'worker-123',
+          assignedBy: 'dashboard:detail',
+        })
+      })
     })
 
     it('displays task ID', async () => {

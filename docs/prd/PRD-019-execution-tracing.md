@@ -21,7 +21,7 @@ Currently there is no way to:
 - Query operational metrics for a run
 - Trace Effect-TS service operations within a run
 
-## Solution: Two Primitives
+## Solution: Four Primitives
 
 This PRD introduces two distinct primitives:
 
@@ -98,6 +98,26 @@ Transcript adapters abstract parsing so `tx trace` commands work regardless of s
 ```
 
 The `runs` table stores which adapter to use via `agent` column (e.g., `claude-code`, `codex`).
+
+### Primitive 4: Run Heartbeat + Stall Detection
+
+Store run heartbeat progress in a dedicated `run_heartbeat_state` table so orchestration loops can detect hung runs without dictating orchestration policy.
+
+```
+run_heartbeat_state table:
+├── run_id            → links to running run
+├── last_check_at     → most recent heartbeat sample
+├── last_activity_at  → most recent transcript/log progress timestamp
+├── stdout_bytes      → latest stdout byte count
+├── stderr_bytes      → latest stderr byte count
+├── transcript_bytes  → latest transcript byte count
+└── last_delta_bytes  → bytes changed since last sample
+```
+
+This enables a headless primitive:
+- Record heartbeat snapshots from any loop
+- List stalled runs using transcript idle and/or heartbeat lag thresholds
+- Optionally reap stalled runs (cancel run, kill PID tree, reset task)
 
 ### Key Design Principle
 
@@ -247,6 +267,25 @@ wait
 - [ ] Document adapter interface for future LLM tools (Codex, etc.)
 - [ ] Registry pattern for adapter lookup
 
+### Primitive 4: Run Heartbeat + Stall Detection
+
+#### Storage and Service
+- [ ] Add `run_heartbeat_state` table with run FK + byte counters + activity/check timestamps
+- [ ] Add `RunHeartbeatService` with `heartbeat`, `listStalled`, and `reapStalled`
+- [ ] Keep primitive orchestration-agnostic (threshold-based query + optional reap only)
+
+#### CLI Commands
+- [ ] `tx trace heartbeat <run-id>` - persist heartbeat snapshot
+- [ ] `tx trace stalled` - list stalled runs
+- [ ] `tx trace stalled --reap` - reap stalled runs (kill/cancel/reset)
+
+#### API / SDK / MCP
+- [ ] REST: `POST /api/runs/:id/heartbeat`
+- [ ] REST: `GET /api/runs/stalled`
+- [ ] REST: `POST /api/runs/stalled/reap`
+- [ ] SDK: `tx.runs.heartbeat()`, `tx.runs.stalled()`, `tx.runs.reap()`
+- [ ] MCP: `tx_run_heartbeat`, `tx_run_stalled`, `tx_run_reap`
+
 ### Combined View
 
 - [ ] `tx trace show <run-id> --full` - combines events timeline with transcript tool calls
@@ -262,6 +301,9 @@ wait
 5. **CLI queryable**: Can view transcript with `tx trace transcript <run-id>`
 6. **Metrics queryable**: Can view operational spans with `tx trace show <run-id>`
 7. **Combined debugging**: `tx trace show <run-id> --full` shows interleaved timeline
+8. **Heartbeat primitive**: Orchestrators can persist run heartbeat snapshots via CLI/API/SDK/MCP
+9. **Stall detection**: Stalled runs are queryable by transcript idle and heartbeat lag thresholds
+10. **Self-healing primitive**: Stalled runs can be reaped without prescribing loop architecture
 
 ## Out of Scope
 

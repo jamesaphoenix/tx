@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
-import { fetchers, type ChatMessage, type Run, type PaginatedRunsResponse } from "./api/client"
+import {
+  fetchers,
+  type ChatMessage,
+  type Run,
+  type PaginatedRunsResponse,
+  type TaskAssigneeType
+} from "./api/client"
 import { TasksPage } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
 import { CyclePage } from "./components/cycles"
@@ -508,7 +514,7 @@ function Stats() {
 // Main App
 // =============================================================================
 
-type Tab = "tasks" | "docs" | "runs" | "cycles"
+type Tab = "tasks" | "docs" | "runs" | "cycles" | "settings"
 type ThemeMode = "light" | "dark"
 
 const THEME_STORAGE_KEY = "tx-dashboard-theme"
@@ -577,6 +583,106 @@ function ThemeToggleIcon({ themeMode }: { themeMode: ThemeMode }) {
   )
 }
 
+function SettingsIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h.02A1.65 1.65 0 0 0 9.9 3.1V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.02a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.02a1.65 1.65 0 0 0 1.51 1.01H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function SettingsPage({
+  defaultTaskAssigmentType,
+  isSaving,
+  errorMessage,
+  onSave,
+}: {
+  defaultTaskAssigmentType: TaskAssigneeType
+  isSaving: boolean
+  errorMessage: string | null
+  onSave: (nextType: TaskAssigneeType) => void
+}) {
+  const [draftType, setDraftType] = useState<TaskAssigneeType>(defaultTaskAssigmentType)
+
+  useEffect(() => {
+    setDraftType(defaultTaskAssigmentType)
+  }, [defaultTaskAssigmentType])
+
+  const hasChanges = draftType !== defaultTaskAssigmentType
+
+  return (
+    <div className="mx-auto w-full max-w-2xl p-6">
+      <h2 className="text-xl font-semibold text-white">Settings</h2>
+      <p className="mt-1 text-sm text-gray-400">
+        Configure dashboard defaults for new task creation.
+      </p>
+
+      <section className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+        <h3 className="text-sm font-semibold text-gray-200">Default Task Assignment Type</h3>
+        <p className="mt-1 text-xs text-gray-400">
+          Applied when creating tasks from the dashboard composer.
+        </p>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setDraftType("human")}
+            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+              draftType === "human"
+                ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+            }`}
+          >
+            Human
+          </button>
+          <button
+            type="button"
+            onClick={() => setDraftType("agent")}
+            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+              draftType === "agent"
+                ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+            }`}
+          >
+            Agent
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            type="button"
+            disabled={isSaving || !hasChanges}
+            onClick={() => onSave(draftType)}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? "Saving..." : "Save settings"}
+          </button>
+          <span className="text-xs text-gray-500">
+            Current default: {defaultTaskAssigmentType}
+          </span>
+        </div>
+
+        {errorMessage && (
+          <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+            {errorMessage}
+          </p>
+        )}
+      </section>
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <CommandProvider>
@@ -616,6 +722,35 @@ function AppContent() {
 
   // URL state management for filters
   const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null)
+
+  const { data: settingsData } = useQuery({
+    queryKey: ["settings"],
+    queryFn: fetchers.settings,
+    staleTime: 5000,
+    retry: false,
+  })
+
+  const defaultTaskAssigmentType: TaskAssigneeType =
+    settingsData?.dashboard.defaultTaskAssigmentType ?? "human"
+
+  const saveDashboardDefaultAssigmentType = useCallback(async (nextType: TaskAssigneeType) => {
+    setIsSavingSettings(true)
+    setSettingsSaveError(null)
+    try {
+      const updated = await fetchers.updateSettings({
+        dashboard: {
+          defaultTaskAssigmentType: nextType,
+        },
+      })
+      queryClient.setQueryData(["settings"], updated)
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }, [queryClient])
 
   const { setAppCommands } = useCommandContext()
 
@@ -664,6 +799,7 @@ function AppContent() {
       { tab: "docs", label: "Go to Docs" },
       { tab: "runs", label: "Go to Runs" },
       { tab: "cycles", label: "Go to Cycles" },
+      { tab: "settings", label: "Go to Settings" },
     ]
     for (const { tab, label } of tabs) {
       if (tab !== activeTab) {
@@ -810,23 +946,39 @@ function AppContent() {
               </button>
             </nav>
           </div>
-          <button
-            type="button"
-            onClick={toggleThemeMode}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-gray-300 transition hover:bg-gray-700"
-            aria-label={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
-            title={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
-          >
-            <ThemeToggleIcon themeMode={themeMode} />
-            <span className="sr-only">
-              Switch to {themeMode === "light" ? "dark" : "light"} mode
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab("settings")}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-gray-300 transition ${
+                activeTab === "settings"
+                  ? "border-blue-500 bg-blue-500/20"
+                  : "border-gray-700 bg-gray-800 hover:bg-gray-700"
+              }`}
+              aria-label="Open settings"
+              title="Open settings"
+            >
+              <SettingsIcon />
+              <span className="sr-only">Open settings</span>
+            </button>
+            <button
+              type="button"
+              onClick={toggleThemeMode}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-gray-300 transition hover:bg-gray-700"
+              aria-label={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
+              title={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
+            >
+              <ThemeToggleIcon themeMode={themeMode} />
+              <span className="sr-only">
+                Switch to {themeMode === "light" ? "dark" : "light"} mode
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Stats — hidden on cycles tab */}
-      {activeTab !== "cycles" && (
+      {activeTab !== "cycles" && activeTab !== "settings" && (
         <div className="flex-shrink-0 px-4 pb-2">
           <Stats />
         </div>
@@ -835,7 +987,11 @@ function AppContent() {
       {/* Main Content */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === "tasks" ? (
-          <TasksPage themeMode={themeMode} newTaskRequestNonce={newTaskRequestNonce} />
+          <TasksPage
+            themeMode={themeMode}
+            defaultTaskAssigmentType={defaultTaskAssigmentType}
+            newTaskRequestNonce={newTaskRequestNonce}
+          />
         ) : activeTab === "docs" ? (
           <DocsPage />
         ) : activeTab === "runs" ? (
@@ -877,6 +1033,15 @@ function AppContent() {
               )}
             </div>
           </div>
+        ) : activeTab === "settings" ? (
+          <SettingsPage
+            defaultTaskAssigmentType={defaultTaskAssigmentType}
+            isSaving={isSavingSettings}
+            errorMessage={settingsSaveError}
+            onSave={(nextType) => {
+              void saveDashboardDefaultAssigmentType(nextType)
+            }}
+          />
         ) : (
           <CyclePage />
         )}

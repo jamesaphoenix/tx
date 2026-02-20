@@ -16,6 +16,8 @@ export interface TaskLabel {
   updatedAt: string
 }
 
+export type TaskAssigneeType = "human" | "agent"
+
 export interface TaskRow {
   id: string
   title: string
@@ -26,8 +28,31 @@ export interface TaskRow {
   createdAt: string
   updatedAt: string
   completedAt: string | null
+  assigneeType: TaskAssigneeType | null
+  assigneeId: string | null
+  assignedAt: string | null
+  assignedBy: string | null
   metadata: Record<string, unknown>
   labels?: TaskLabel[]
+}
+
+export interface DashboardSettings {
+  dashboard: {
+    defaultTaskAssigmentType: TaskAssigneeType
+  }
+}
+
+export interface TaskMutationPayload {
+  title?: string
+  description?: string
+  parentId?: string | null
+  status?: string
+  score?: number
+  assigneeType?: TaskAssigneeType | null
+  assigneeId?: string | null
+  assignedAt?: string | null
+  assignedBy?: string | null
+  metadata?: Record<string, unknown>
 }
 
 export interface TaskWithDeps extends TaskRow {
@@ -209,7 +234,7 @@ export const api = {
   getTasks: () => fetchJson<TasksResponse>("/api/tasks"),
   getReady: () => fetchJson<ReadyResponse>("/api/tasks/ready"),
   getTaskDetail: (id: string, options?: { signal?: AbortSignal }) => fetchJson<TaskDetailResponse>(`/api/tasks/${id}`, options),
-  createTask: (payload: { title: string; description?: string; parentId?: string | null; status?: string; score?: number; metadata?: Record<string, unknown> }) =>
+  createTask: (payload: TaskMutationPayload & { title: string }) =>
     Effect.tryPromise({
       try: async () => {
         const res = await fetch("/api/tasks", {
@@ -222,7 +247,7 @@ export const api = {
       },
       catch: (e) => new ApiError({ message: String(e) }),
     }),
-  updateTask: (id: string, payload: { title?: string; description?: string; status?: string; parentId?: string | null; score?: number; metadata?: Record<string, unknown> }) =>
+  updateTask: (id: string, payload: TaskMutationPayload) =>
     Effect.tryPromise({
       try: async () => {
         const res = await fetch(`/api/tasks/${id}`, {
@@ -232,6 +257,20 @@ export const api = {
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
         return res.json() as Promise<TaskWithDeps>
+      },
+      catch: (e) => new ApiError({ message: String(e) }),
+    }),
+  getSettings: () => fetchJson<DashboardSettings>("/api/settings"),
+  updateSettings: (payload: DashboardSettings) =>
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetch("/api/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        return res.json() as Promise<DashboardSettings>
       },
       catch: (e) => new ApiError({ message: String(e) }),
     }),
@@ -391,10 +430,12 @@ export const fetchers = {
   tasks: () => Effect.runPromise(api.getTasks()),
   ready: () => Effect.runPromise(api.getReady()),
   taskDetail: (id: string, options?: { signal?: AbortSignal }) => Effect.runPromise(api.getTaskDetail(id, options)),
-  createTask: (payload: { title: string; description?: string; parentId?: string | null; status?: string; score?: number; metadata?: Record<string, unknown> }) =>
+  createTask: (payload: TaskMutationPayload & { title: string }) =>
     Effect.runPromise(api.createTask(payload)),
-  updateTask: (id: string, payload: { title?: string; description?: string; status?: string; parentId?: string | null; score?: number; metadata?: Record<string, unknown> }) =>
+  updateTask: (id: string, payload: TaskMutationPayload) =>
     Effect.runPromise(api.updateTask(id, payload)),
+  settings: () => Effect.runPromise(api.getSettings()),
+  updateSettings: (payload: DashboardSettings) => Effect.runPromise(api.updateSettings(payload)),
   labels: () => Effect.runPromise(api.getLabels()),
   createLabel: (payload: { name: string; color?: string }) => Effect.runPromise(api.createLabel(payload)),
   assignTaskLabel: (taskId: string, payload: { labelId?: number; name?: string; color?: string }) =>

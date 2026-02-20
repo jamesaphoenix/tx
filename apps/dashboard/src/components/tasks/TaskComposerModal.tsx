@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { TaskLabel } from "../../api/client"
+import type { TaskAssigneeType, TaskLabel } from "../../api/client"
 import { useOverlayCommands, useShortcutScope, type Command } from "../command-palette/CommandContext"
 import {
   HUMAN_STAGE_OPTIONS,
   type HumanTaskStage,
+  TaskAssigneeTypeSelect,
   TaskLabelsSelect,
   TaskStatusSelect,
 } from "./TaskPropertySelects"
@@ -15,6 +16,8 @@ export interface TaskComposerModalSubmit {
   description?: string
   stage: HumanTaskStage
   parentId: string | null
+  assigneeType: TaskAssigneeType
+  assigneeId: string | null
   labelIds: number[]
   createMore: boolean
 }
@@ -24,6 +27,7 @@ interface TaskComposerModalProps {
   heading: string
   submitLabel: string
   parentId?: string | null
+  defaultAssigneeType?: TaskAssigneeType
   availableLabels: TaskLabel[]
   onClose: () => void
   onSubmit: (payload: TaskComposerModalSubmit) => Promise<void> | void
@@ -35,6 +39,7 @@ export function TaskComposerModal({
   heading,
   submitLabel,
   parentId = null,
+  defaultAssigneeType = "human",
   availableLabels,
   onClose,
   onSubmit,
@@ -49,6 +54,8 @@ export function TaskComposerModal({
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [selectedStage, setSelectedStage] = useState<HumanTaskStage>("backlog")
+  const [selectedAssigneeType, setSelectedAssigneeType] = useState<TaskAssigneeType>(defaultAssigneeType)
+  const [assigneeId, setAssigneeId] = useState("")
   const [selectedLabelIds, setSelectedLabelIds] = useState<Set<number>>(new Set())
   const [commandCreatedLabels, setCommandCreatedLabels] = useState<TaskLabel[]>([])
   const [createMore, setCreateMore] = useState(false)
@@ -60,6 +67,8 @@ export function TaskComposerModal({
   const titleValueRef = useRef("")
   const descriptionValueRef = useRef("")
   const selectedStageRef = useRef<HumanTaskStage>("backlog")
+  const selectedAssigneeTypeRef = useRef<TaskAssigneeType>(defaultAssigneeType)
+  const assigneeIdRef = useRef("")
   const selectedLabelIdsRef = useRef<Set<number>>(new Set())
   const createMoreRef = useRef(false)
   const isSubmittingRef = useRef(false)
@@ -94,12 +103,19 @@ export function TaskComposerModal({
     pendingCommandLabelCreateRef.current = null
 
     if (!keepSelections) {
+      selectedStageRef.current = "backlog"
+      selectedAssigneeTypeRef.current = defaultAssigneeType
+      assigneeIdRef.current = ""
+      selectedLabelIdsRef.current = new Set()
+      createMoreRef.current = false
       setSelectedStage("backlog")
+      setSelectedAssigneeType(defaultAssigneeType)
+      setAssigneeId("")
       setSelectedLabelIds(new Set())
       setCommandCreatedLabels([])
       setCreateMore(false)
     }
-  }, [])
+  }, [defaultAssigneeType])
 
   useEffect(() => {
     if (!open) return
@@ -123,6 +139,17 @@ export function TaskComposerModal({
     setSelectedStage(stage)
   }, [])
 
+  const handleAssigneeTypeChange = useCallback((assigneeType: TaskAssigneeType) => {
+    selectedAssigneeTypeRef.current = assigneeType
+    setSelectedAssigneeType(assigneeType)
+  }, [])
+
+  const toggleAssigneeType = useCallback(() => {
+    const nextType: TaskAssigneeType = selectedAssigneeTypeRef.current === "human" ? "agent" : "human"
+    selectedAssigneeTypeRef.current = nextType
+    setSelectedAssigneeType(nextType)
+  }, [])
+
   useEffect(() => {
     titleValueRef.current = title
   }, [title])
@@ -134,6 +161,14 @@ export function TaskComposerModal({
   useEffect(() => {
     selectedStageRef.current = selectedStage
   }, [selectedStage])
+
+  useEffect(() => {
+    selectedAssigneeTypeRef.current = selectedAssigneeType
+  }, [selectedAssigneeType])
+
+  useEffect(() => {
+    assigneeIdRef.current = assigneeId
+  }, [assigneeId])
 
   useEffect(() => {
     selectedLabelIdsRef.current = selectedLabelIds
@@ -169,6 +204,8 @@ export function TaskComposerModal({
         description: descriptionValueRef.current.trim() || undefined,
         stage: selectedStageRef.current,
         parentId,
+        assigneeType: selectedAssigneeTypeRef.current,
+        assigneeId: assigneeIdRef.current.trim() || null,
         labelIds: Array.from(selectedLabelIdsRef.current),
         createMore: createMoreRef.current,
       })
@@ -272,6 +309,14 @@ export function TaskComposerModal({
           descriptionRef.current?.focus()
           descriptionRef.current?.select()
         },
+      },
+      {
+        id: "composer:assignment-toggle",
+        label: `Toggle assignment (${selectedAssigneeType === "human" ? "Human → Agent" : "Agent → Human"})`,
+        group: "Composer",
+        icon: "action",
+        shortcut: "⌘K",
+        action: toggleAssigneeType,
       },
       {
         id: "composer:select-all-labels",
@@ -381,10 +426,12 @@ export function TaskComposerModal({
     submitComposer,
     onClose,
     createMore,
+    selectedAssigneeType,
     selectedLabelIds,
     onCreateLabel,
     mergedAvailableLabels,
     handleStageChange,
+    toggleAssigneeType,
     isCreatingCommandLabel,
   ])
 
@@ -485,6 +532,41 @@ export function TaskComposerModal({
                 value={selectedStage}
                 onChange={handleStageChange}
                 theme={modalTheme}
+              />
+            </div>
+
+            <div>
+              <p className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${
+                isDarkTheme ? "text-gray-400" : "text-zinc-600"
+              }`}>
+                Assignment Type
+              </p>
+              <TaskAssigneeTypeSelect
+                instanceId="task-composer-assignee-type"
+                value={selectedAssigneeType}
+                onChange={handleAssigneeTypeChange}
+                theme={modalTheme}
+              />
+            </div>
+
+            <div>
+              <p className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${
+                isDarkTheme ? "text-gray-400" : "text-zinc-600"
+              }`}>
+                Assignee ID
+              </p>
+              <input
+                value={assigneeId}
+                onChange={(event) => {
+                  assigneeIdRef.current = event.target.value
+                  setAssigneeId(event.target.value)
+                }}
+                placeholder="Optional assignee ID"
+                className={`w-full rounded-md border px-2.5 py-2 text-sm outline-none transition ${
+                  isDarkTheme
+                    ? "border-gray-600 bg-gray-800 text-gray-200 placeholder:text-gray-500 focus:border-indigo-400"
+                    : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500 focus:border-indigo-500"
+                }`}
               />
             </div>
 

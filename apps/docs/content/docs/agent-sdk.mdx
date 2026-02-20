@@ -545,6 +545,43 @@ curl http://localhost:3456/api/context/tx-abc123
 </Tab>
 </Tabs>
 
+### Runs
+
+Run-level heartbeat primitives for orchestration loops and watchdogs.
+
+#### `tx.runs.heartbeat(runId, data?)`
+
+Record transcript/log progress for a running run.
+
+```typescript
+await tx.runs.heartbeat("run-abc12345", {
+  transcriptBytes: 2048,
+  deltaBytes: 256,
+})
+```
+
+#### `tx.runs.stalled(options?)`
+
+List currently running runs that appear stalled.
+
+```typescript
+const stalled = await tx.runs.stalled({
+  transcriptIdleSeconds: 300,
+  heartbeatLagSeconds: 180,
+})
+```
+
+#### `tx.runs.reap(options?)`
+
+Reap stalled runs by cancelling the run and optionally resetting task status.
+
+```typescript
+const reaped = await tx.runs.reap({
+  transcriptIdleSeconds: 300,
+  dryRun: false,
+})
+```
+
 ### File Learnings
 
 #### `tx.fileLearnings.list(path?)`

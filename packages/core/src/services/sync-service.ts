@@ -266,6 +266,10 @@ const taskToUpsertOp = (task: Task): TaskUpsertOp => ({
     status: task.status,
     score: task.score,
     parentId: task.parentId,
+    assigneeType: task.assigneeType ?? null,
+    assigneeId: task.assigneeId ?? null,
+    assignedAt: task.assignedAt?.toISOString() ?? null,
+    assignedBy: task.assignedBy ?? null,
     metadata: task.metadata
   }
 })
@@ -431,12 +435,15 @@ export const SyncServiceLive = Layer.effect(
           // better-sqlite3 prepared statements are reusable across transactions.
           const findTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?")
           const insertTaskStmt = db.prepare(
-            `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at,
+                                assignee_type, assignee_id, assigned_at, assigned_by, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           const updateTaskStmt = db.prepare(
             `UPDATE tasks SET title = ?, description = ?, status = ?, parent_id = ?,
-             score = ?, updated_at = ?, completed_at = ?, metadata = ? WHERE id = ?`
+             score = ?, updated_at = ?, completed_at = ?,
+             assignee_type = ?, assignee_id = ?, assigned_at = ?, assigned_by = ?,
+             metadata = ? WHERE id = ?`
           )
           const deleteTaskStmt = db.prepare("DELETE FROM tasks WHERE id = ?")
           const insertDepStmt = db.prepare(
@@ -487,6 +494,10 @@ export const SyncServiceLive = Layer.effect(
                     const effectiveParentId = parentId && checkParentExistsStmt.get(parentId)
                       ? parentId
                       : null
+                    const assigneeType = op.data.assigneeType ?? null
+                    const assigneeId = assigneeType === null ? null : (op.data.assigneeId ?? null)
+                    const assignedAt = assigneeType === null ? null : (op.data.assignedAt ?? null)
+                    const assignedBy = assigneeType === null ? null : (op.data.assignedBy ?? null)
 
                     if (!existingRow) {
                       // Create new task with the specified ID
@@ -501,6 +512,10 @@ export const SyncServiceLive = Layer.effect(
                         op.ts,
                         op.ts,
                         op.data.status === "done" ? now.toISOString() : null,
+                        assigneeType,
+                        assigneeId,
+                        assignedAt,
+                        assignedBy,
                         JSON.stringify(op.data.metadata)
                       )
                       imported++
@@ -516,6 +531,10 @@ export const SyncServiceLive = Layer.effect(
                           op.data.score,
                           op.ts,
                           op.data.status === "done" ? (existingRow.completed_at ?? new Date().toISOString()) : null,
+                          assigneeType,
+                          assigneeId,
+                          assignedAt,
+                          assignedBy,
                           JSON.stringify(op.data.metadata),
                           id
                         )

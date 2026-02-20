@@ -12,13 +12,14 @@ import { Database } from "bun:sqlite"
 import z from "zod"
 
 import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { seedFixtures, FIXTURES } from "../fixtures.js"
+import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepositoryLive,
   DependencyRepositoryLive,
   LearningRepositoryLive,
   FileLearningRepositoryLive,
+  RunRepositoryLive,
   TaskServiceLive,
   TaskService,
   DependencyServiceLive,
@@ -35,9 +36,11 @@ import {
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
-  RetrieverServiceLive
+  RetrieverServiceLive,
+  RunHeartbeatService,
+  RunHeartbeatServiceLive,
 } from "@jamesaphoenix/tx-core"
-import type { TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
+import type { RunId, TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 
 // -----------------------------------------------------------------------------
@@ -45,7 +48,14 @@ import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 // -----------------------------------------------------------------------------
 
 /** Services required by MCP tools */
-export type McpTestServices = TaskService | ReadyService | DependencyService | HierarchyService | LearningService | FileLearningService
+export type McpTestServices =
+  | TaskService
+  | ReadyService
+  | DependencyService
+  | HierarchyService
+  | LearningService
+  | FileLearningService
+  | RunHeartbeatService
 
 /** MCP tool response format */
 export interface McpToolResponse {
@@ -79,7 +89,8 @@ export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<Mcp
     TaskRepositoryLive,
     DependencyRepositoryLive,
     LearningRepositoryLive,
-    FileLearningRepositoryLive
+    FileLearningRepositoryLive,
+    RunRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -89,7 +100,17 @@ export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<Mcp
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
   )
 
-  const services = Layer.mergeAll(
+  const sharedDeps = Layer.mergeAll(
+    infra,
+    repos,
+    EmbeddingServiceNoop,
+    QueryExpansionServiceNoop,
+    RerankerServiceNoop,
+    retrieverLayer,
+    AutoSyncServiceNoop
+  )
+
+  const baseServices = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
@@ -97,8 +118,14 @@ export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<Mcp
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
+    Layer.provide(sharedDeps)
   )
+
+  const runHeartbeatService = RunHeartbeatServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(baseServices, infra, repos))
+  )
+
+  const services = Layer.merge(baseServices, runHeartbeatService)
 
   return ManagedRuntime.make(services)
 }
@@ -181,6 +208,26 @@ const toolSchemas = {
   }),
   tx_recall: z.object({
     path: z.string().optional()
+  }),
+  // Run heartbeat tools
+  tx_run_heartbeat: z.object({
+    runId: z.string(),
+    stdoutBytes: z.number().int().nonnegative().optional(),
+    stderrBytes: z.number().int().nonnegative().optional(),
+    transcriptBytes: z.number().int().nonnegative().optional(),
+    deltaBytes: z.number().int().nonnegative().optional(),
+    checkAt: z.string().optional(),
+    activityAt: z.string().optional(),
+  }),
+  tx_run_stalled: z.object({
+    transcriptIdleSeconds: z.number().int().positive().optional(),
+    heartbeatLagSeconds: z.number().int().positive().optional(),
+  }),
+  tx_run_reap: z.object({
+    transcriptIdleSeconds: z.number().int().positive().optional(),
+    heartbeatLagSeconds: z.number().int().positive().optional(),
+    resetTask: z.boolean().optional(),
+    dryRun: z.boolean().optional(),
   })
 } as const
 
@@ -252,6 +299,49 @@ const serializeFileLearning = (learning: FileLearning): Record<string, unknown> 
   taskId: learning.taskId,
   createdAt: learning.createdAt.toISOString()
 })
+
+const serializeRun = (run: {
+  id: string
+  taskId: string | null
+  agent: string
+  startedAt: Date
+  endedAt: Date | null
+  status: string
+  exitCode: number | null
+  pid: number | null
+  transcriptPath: string | null
+  stderrPath: string | null
+  stdoutPath: string | null
+  contextInjected: string | null
+  summary: string | null
+  errorMessage: string | null
+  metadata: Record<string, unknown>
+}): Record<string, unknown> => ({
+  id: run.id,
+  taskId: run.taskId,
+  agent: run.agent,
+  startedAt: run.startedAt.toISOString(),
+  endedAt: run.endedAt?.toISOString() ?? null,
+  status: run.status,
+  exitCode: run.exitCode,
+  pid: run.pid,
+  transcriptPath: run.transcriptPath,
+  stderrPath: run.stderrPath,
+  stdoutPath: run.stdoutPath,
+  contextInjected: run.contextInjected,
+  summary: run.summary,
+  errorMessage: run.errorMessage,
+  metadata: run.metadata,
+})
+
+const parseIsoDate = (value: string | undefined, field: string): Date | undefined => {
+  if (!value) return undefined
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid ${field}: must be an ISO timestamp`)
+  }
+  return parsed
+}
 
 /**
  * Create the Effect for a specific MCP tool.
@@ -672,6 +762,135 @@ function createToolEffect(
           Effect.succeed({
             content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true
+          })
+        )
+      )
+
+    // ---------------------------------------------------------------------------
+    // Run Heartbeat Tools
+    // ---------------------------------------------------------------------------
+
+    case "tx_run_heartbeat":
+      return Effect.gen(function* () {
+        const {
+          runId,
+          stdoutBytes,
+          stderrBytes,
+          transcriptBytes,
+          deltaBytes,
+          checkAt,
+          activityAt,
+        } = args as z.infer<typeof toolSchemas.tx_run_heartbeat>
+
+        const runHeartbeat = yield* RunHeartbeatService
+        const parsedCheckAt = parseIsoDate(checkAt, "checkAt")
+        const parsedActivityAt = parseIsoDate(activityAt, "activityAt")
+
+        yield* runHeartbeat.heartbeat({
+          runId: runId as RunId,
+          checkAt: parsedCheckAt,
+          activityAt: parsedActivityAt,
+          stdoutBytes: stdoutBytes ?? 0,
+          stderrBytes: stderrBytes ?? 0,
+          transcriptBytes: transcriptBytes ?? 0,
+          deltaBytes,
+        })
+
+        return {
+          content: [
+            { type: "text" as const, text: `Heartbeat updated for run: ${runId}` },
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                runId,
+                checkAt: (parsedCheckAt ?? new Date()).toISOString(),
+                activityAt: parsedActivityAt?.toISOString() ?? null,
+                stdoutBytes: stdoutBytes ?? 0,
+                stderrBytes: stderrBytes ?? 0,
+                transcriptBytes: transcriptBytes ?? 0,
+                deltaBytes: deltaBytes ?? 0,
+              }),
+            },
+          ],
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true,
+          })
+        )
+      )
+
+    case "tx_run_stalled":
+      return Effect.gen(function* () {
+        const { transcriptIdleSeconds, heartbeatLagSeconds } = args as z.infer<typeof toolSchemas.tx_run_stalled>
+        const runHeartbeat = yield* RunHeartbeatService
+        const runs = yield* runHeartbeat.listStalled({
+          transcriptIdleSeconds: transcriptIdleSeconds ?? 300,
+          heartbeatLagSeconds,
+        })
+
+        const serialized = runs.map((item) => ({
+          run: serializeRun(item.run),
+          reason: item.reason,
+          transcriptIdleSeconds: item.transcriptIdleSeconds,
+          heartbeatLagSeconds: item.heartbeatLagSeconds,
+          lastActivityAt: item.lastActivityAt?.toISOString() ?? null,
+          lastCheckAt: item.lastCheckAt?.toISOString() ?? null,
+          stdoutBytes: item.stdoutBytes,
+          stderrBytes: item.stderrBytes,
+          transcriptBytes: item.transcriptBytes,
+        }))
+
+        return {
+          content: [
+            { type: "text" as const, text: `Found ${serialized.length} stalled run(s)` },
+            { type: "text" as const, text: JSON.stringify(serialized) },
+          ],
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true,
+          })
+        )
+      )
+
+    case "tx_run_reap":
+      return Effect.gen(function* () {
+        const { transcriptIdleSeconds, heartbeatLagSeconds, resetTask, dryRun } = args as z.infer<typeof toolSchemas.tx_run_reap>
+        const runHeartbeat = yield* RunHeartbeatService
+        const runs = yield* runHeartbeat.reapStalled({
+          transcriptIdleSeconds: transcriptIdleSeconds ?? 300,
+          heartbeatLagSeconds,
+          resetTask,
+          dryRun,
+        })
+
+        const serialized = runs.map((item) => ({
+          id: item.id,
+          taskId: item.taskId,
+          pid: item.pid,
+          reason: item.reason,
+          transcriptIdleSeconds: item.transcriptIdleSeconds,
+          heartbeatLagSeconds: item.heartbeatLagSeconds,
+          processTerminated: item.processTerminated,
+          taskReset: item.taskReset,
+        }))
+
+        return {
+          content: [
+            { type: "text" as const, text: `Reaped ${serialized.length} stalled run(s)` },
+            { type: "text" as const, text: JSON.stringify(serialized) },
+          ],
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true,
           })
         )
       )
@@ -3137,5 +3356,198 @@ describe("MCP tx_recall Tool", () => {
     expect(response2.isError).toBe(false)
     expect(response2.data).toHaveLength(1)
     expect(response2.data[0].note).toBe("Special brackets")
+  })
+})
+
+describe("MCP run heartbeat tools", () => {
+  let shared: SharedTestLayerResult
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  const runFixtureId = (name: string): RunId => `run-${fixtureId(`mcp-run-heartbeat:${name}`).slice(3)}` as RunId
+  const taskFixtureId = (name: string): TaskId => fixtureId(`mcp-run-heartbeat:${name}`) as TaskId
+
+  const insertTask = (id: TaskId, status: string = "active"): void => {
+    const now = new Date().toISOString()
+    shared.getDb().prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, NULL, 500, ?, ?, NULL, '{}')`
+    ).run(id, `Task ${id}`, "MCP run heartbeat test task", status, now, now)
+  }
+
+  const insertRun = (
+    id: RunId,
+    taskId: TaskId | null = null,
+    startedAt: string = new Date().toISOString()
+  ): void => {
+    shared.getDb().prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
+       VALUES (?, ?, 'tx-implementer', ?, 'running', NULL, '{}')`
+    ).run(id, taskId, startedAt)
+  }
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
+  beforeEach(async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await runtime.dispose()
+    await shared.close()
+  })
+
+  it("tx_run_heartbeat records run heartbeat state", async () => {
+    const runId = runFixtureId("heartbeat")
+    const checkAt = "2026-02-20T20:00:00.000Z"
+    const activityAt = "2026-02-20T19:58:00.000Z"
+    insertRun(runId)
+
+    const response = await callMcpToolParsed<"tx_run_heartbeat", {
+      runId: string
+      transcriptBytes: number
+      deltaBytes: number
+      checkAt: string
+      activityAt: string | null
+    }>(runtime, "tx_run_heartbeat", {
+      runId,
+      stdoutBytes: 100,
+      stderrBytes: 2,
+      transcriptBytes: 512,
+      deltaBytes: 64,
+      checkAt,
+      activityAt,
+    })
+
+    expect(response.isError).toBe(false)
+    expect(response.data.runId).toBe(runId)
+    expect(response.data.transcriptBytes).toBe(512)
+    expect(response.data.deltaBytes).toBe(64)
+    expect(response.data.checkAt).toBe(checkAt)
+    expect(response.data.activityAt).toBe(activityAt)
+
+    const row = shared.getDb().prepare(
+      `SELECT transcript_bytes, last_delta_bytes, last_check_at, last_activity_at
+       FROM run_heartbeat_state
+       WHERE run_id = ?`
+    ).get(runId) as {
+      transcript_bytes: number
+      last_delta_bytes: number
+      last_check_at: string
+      last_activity_at: string
+    } | undefined
+
+    expect(row).toBeDefined()
+    expect(row?.transcript_bytes).toBe(512)
+    expect(row?.last_delta_bytes).toBe(64)
+    expect(row?.last_check_at).toBe(checkAt)
+    expect(row?.last_activity_at).toBe(activityAt)
+  })
+
+  it("tx_run_stalled returns transcript-idle runs", async () => {
+    const runId = runFixtureId("stalled")
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    insertRun(runId)
+
+    await callMcpTool(runtime, "tx_run_heartbeat", {
+      runId,
+      transcriptBytes: 10,
+      deltaBytes: 0,
+      checkAt: old,
+      activityAt: old,
+    })
+
+    const response = await callMcpToolParsed<"tx_run_stalled", Array<{
+      run: { id: string }
+      reason: string
+      transcriptBytes: number
+    }>>(runtime, "tx_run_stalled", { transcriptIdleSeconds: 300 })
+
+    expect(response.isError).toBe(false)
+    const row = response.data.find((item) => item.run.id === runId)
+    expect(row).toBeDefined()
+    expect(row?.reason).toBe("transcript_idle")
+    expect(row?.transcriptBytes).toBe(10)
+  })
+
+  it("tx_run_reap cancels runs and resets tasks by default", async () => {
+    const runId = runFixtureId("reap-default")
+    const taskId = taskFixtureId("reap-default-task")
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+
+    insertTask(taskId, "active")
+    insertRun(runId, taskId)
+    await callMcpTool(runtime, "tx_run_heartbeat", {
+      runId,
+      transcriptBytes: 0,
+      deltaBytes: 0,
+      checkAt: old,
+      activityAt: old,
+    })
+
+    const response = await callMcpToolParsed<"tx_run_reap", Array<{
+      id: string
+      taskId: string | null
+      taskReset: boolean
+    }>>(runtime, "tx_run_reap", {
+      transcriptIdleSeconds: 300,
+    })
+
+    expect(response.isError).toBe(false)
+    const reaped = response.data.find((item) => item.id === runId)
+    expect(reaped).toBeDefined()
+    expect(reaped?.taskId).toBe(taskId)
+    expect(reaped?.taskReset).toBe(true)
+
+    const runRow = shared.getDb().prepare(
+      "SELECT status, exit_code FROM runs WHERE id = ?"
+    ).get(runId) as { status: string; exit_code: number | null } | undefined
+    const taskRow = shared.getDb().prepare(
+      "SELECT status FROM tasks WHERE id = ?"
+    ).get(taskId) as { status: string } | undefined
+
+    expect(runRow?.status).toBe("cancelled")
+    expect(runRow?.exit_code).toBe(137)
+    expect(taskRow?.status).toBe("ready")
+  })
+
+  it("tx_run_reap respects resetTask=false", async () => {
+    const runId = runFixtureId("reap-no-reset")
+    const taskId = taskFixtureId("reap-no-reset-task")
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+
+    insertTask(taskId, "active")
+    insertRun(runId, taskId)
+    await callMcpTool(runtime, "tx_run_heartbeat", {
+      runId,
+      transcriptBytes: 0,
+      deltaBytes: 0,
+      checkAt: old,
+      activityAt: old,
+    })
+
+    const response = await callMcpToolParsed<"tx_run_reap", Array<{
+      id: string
+      taskReset: boolean
+    }>>(runtime, "tx_run_reap", {
+      transcriptIdleSeconds: 300,
+      resetTask: false,
+    })
+
+    expect(response.isError).toBe(false)
+    const reaped = response.data.find((item) => item.id === runId)
+    expect(reaped).toBeDefined()
+    expect(reaped?.taskReset).toBe(false)
+
+    const taskRow = shared.getDb().prepare(
+      "SELECT status FROM tasks WHERE id = ?"
+    ).get(taskId) as { status: string } | undefined
+    expect(taskRow?.status).toBe("active")
   })
 })

@@ -46,6 +46,7 @@ import { PromotionServiceLive } from "./services/promotion-service.js"
 import { FeedbackTrackerServiceLive } from "./services/feedback-tracker.js"
 import { DiversifierServiceLive } from "./services/diversifier-service.js"
 import { WorkerServiceLive } from "./services/worker-service.js"
+import { RunHeartbeatServiceLive } from "./services/run-heartbeat-service.js"
 import { ClaimServiceLive } from "./services/claim-service.js"
 import { OrchestratorServiceLive } from "./services/orchestrator-service.js"
 import { DaemonServiceLive, DaemonServiceNoop } from "./services/daemon-service.js"
@@ -154,6 +155,15 @@ export {
   DiversifierServiceLive,
   DiversifierServiceAuto
 } from "./services/diversifier-service.js"
+export {
+  RunHeartbeatService,
+  RunHeartbeatServiceLive,
+  type RunHeartbeatInput,
+  type StalledRun,
+  type StalledRunQuery,
+  type ReapStalledOptions,
+  type ReapedRun
+} from "./services/run-heartbeat-service.js"
 export { CandidateRepository, CandidateRepositoryLive } from "./repo/candidate-repo.js"
 export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./repo/tracked-project-repo.js"
 export {
@@ -331,7 +341,11 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   const docService = DocServiceLive.pipe(Layer.provide(repos))
 
   // Merge all services
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService)
+  const runHeartbeatService = RunHeartbeatServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, services, infra))
+  )
+
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -470,7 +484,11 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   const docService = DocServiceLive.pipe(Layer.provide(repos))
 
   // Merge all services
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService)
+  const runHeartbeatService = RunHeartbeatServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, services, infra))
+  )
+
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(

@@ -59,7 +59,13 @@ export type {
   SerializedContextResult,
   SearchLearningsOptions,
   CreateLearningData,
-  CreateFileLearningData
+  CreateFileLearningData,
+  RunHeartbeatData,
+  RunHeartbeatResult,
+  StalledRunsOptions,
+  ReapStalledRunsOptions,
+  SerializedStalledRun,
+  SerializedReapedRun
 } from "./types.js"
 
 // Re-export common types from @tx/types for convenience

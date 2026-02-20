@@ -20,6 +20,10 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     createdAt: '2026-01-30T12:00:00Z',
     updatedAt: '2026-01-30T12:00:00Z',
     completedAt: null,
+    assigneeType: 'agent',
+    assigneeId: null,
+    assignedAt: '2026-01-30T12:00:00Z',
+    assignedBy: 'test',
     metadata: {},
     blockedBy: [],
     blocks: [],
@@ -44,11 +48,12 @@ function createTestQueryClient() {
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
-function dispatchKeyCombo(key: string, meta = false, ctrl = false) {
+function dispatchKeyCombo(key: string, meta = false, ctrl = false, shift = false) {
   const event = new KeyboardEvent('keydown', {
     key,
     metaKey: meta,
     ctrlKey: ctrl,
+    shiftKey: shift,
     bubbles: true,
     cancelable: true,
   })
@@ -58,6 +63,9 @@ function dispatchKeyCombo(key: string, meta = false, ctrl = false) {
 /** Set up default API mocks that return empty data */
 function setupEmptyApiMocks() {
   server.use(
+    http.get('/api/settings', () =>
+      HttpResponse.json({ dashboard: { defaultTaskAssigmentType: 'human' } })
+    ),
     http.get('/api/stats', () =>
       HttpResponse.json({ tasks: 0, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })
     ),
@@ -451,9 +459,52 @@ describe('Keyboard shortcuts', () => {
     })
   })
 
-  describe('CMD+K opens command palette everywhere', () => {
-    it('opens from the task list and task detail views', async () => {
-      const parentTask = createTask({ id: 'tx-parent-01', title: 'Parent task' })
+  describe('CMD+K behavior', () => {
+    it('opens and closes command palette in task list', async () => {
+      const parentTask = createTask({ id: 'tx-parent-list', title: 'Parent list task' })
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks: [parentTask],
+            nextCursor: null,
+            hasMore: false,
+            total: 1,
+            summary: { total: 1, byStatus: { backlog: 1 } },
+          } satisfies PaginatedTasksResponse)
+        ),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent list task')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('k', true)
+      })
+      expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
+
+      act(() => {
+        dispatchKeyCombo('k', true)
+      })
+      await waitFor(() => {
+        expect(screen.queryByPlaceholderText('Type a command...')).not.toBeInTheDocument()
+      })
+    })
+
+    it('toggles assignment in task detail with CMD+K and keeps palette closed', async () => {
+      const parentTask = createTask({
+        id: 'tx-parent-toggle',
+        title: 'Parent toggle task',
+        assigneeType: 'human',
+      })
+      const patchPayloads: Array<{ assigneeType?: string | null }> = []
 
       server.use(
         http.get('/api/tasks', () =>
@@ -467,7 +518,67 @@ describe('Keyboard shortcuts', () => {
         ),
         http.get('/api/tasks/:id', ({ params }) =>
           HttpResponse.json({
-            task: createTask({ id: String(params.id), title: 'Parent task' }),
+            task: createTask({ id: String(params.id), title: 'Parent toggle task', assigneeType: 'human' }),
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          })
+        ),
+        http.patch('/api/tasks/:id', async ({ params, request }) => {
+          expect(params.id).toBe('tx-parent-toggle')
+          const payload = await request.json() as { assigneeType?: string | null }
+          patchPayloads.push(payload)
+          return HttpResponse.json(createTask({
+            id: 'tx-parent-toggle',
+            title: 'Parent toggle task',
+            assigneeType: payload.assigneeType === 'human' || payload.assigneeType === 'agent'
+              ? payload.assigneeType
+              : 'human',
+          }))
+        }),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent toggle task')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Parent toggle task'))
+      await waitFor(() => {
+        expect(screen.getByText('Properties')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('k', true)
+      })
+
+      await waitFor(() => {
+        expect(patchPayloads.some((payload) => payload.assigneeType === 'agent')).toBe(true)
+      })
+      expect(screen.queryByPlaceholderText('Type a command...')).not.toBeInTheDocument()
+    })
+
+    it('opens command palette in task detail with CMD+Shift+K fallback', async () => {
+      const parentTask = createTask({ id: 'tx-parent-shift-k', title: 'Parent shift k task' })
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks: [parentTask],
+            nextCursor: null,
+            hasMore: false,
+            total: 1,
+            summary: { total: 1, byStatus: { backlog: 1 } },
+          } satisfies PaginatedTasksResponse)
+        ),
+        http.get('/api/tasks/:id', ({ params }) =>
+          HttpResponse.json({
+            task: createTask({ id: String(params.id), title: 'Parent shift k task' }),
             blockedByTasks: [],
             blocksTasks: [],
             childTasks: [],
@@ -482,31 +593,17 @@ describe('Keyboard shortcuts', () => {
       })
 
       await waitFor(() => {
-        expect(screen.getByText('Parent task')).toBeInTheDocument()
+        expect(screen.getByText('Parent shift k task')).toBeInTheDocument()
       })
 
-      act(() => {
-        dispatchKeyCombo('k', true)
-      })
-
-      expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
-
-      act(() => {
-        dispatchKeyCombo('k', true)
-      })
-
-      await waitFor(() => {
-        expect(screen.queryByPlaceholderText('Type a command...')).not.toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByText('Parent task'))
+      fireEvent.click(screen.getByText('Parent shift k task'))
 
       await waitFor(() => {
         expect(screen.getByText('Properties')).toBeInTheDocument()
       })
 
       act(() => {
-        dispatchKeyCombo('k', true)
+        dispatchKeyCombo('k', true, false, true)
       })
 
       expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()

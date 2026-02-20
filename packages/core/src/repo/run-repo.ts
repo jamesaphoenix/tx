@@ -158,6 +158,10 @@ export const RunRepositoryLive = Layer.effect(
               updates.push("stdout_path = ?")
               values.push(input.stdoutPath)
             }
+            if (input.metadata !== undefined) {
+              updates.push("metadata = ?")
+              values.push(JSON.stringify(input.metadata))
+            }
 
             if (updates.length === 0) return
 

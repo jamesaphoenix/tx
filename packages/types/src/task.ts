@@ -27,6 +27,12 @@ export const TASK_STATUSES = [
 ] as const;
 
 /**
+ * Valid task assignment intent values.
+ * Assignment is routing metadata, not lease ownership.
+ */
+export const TASK_ASSIGNEE_TYPES = ["human", "agent"] as const;
+
+/**
  * Regex pattern for valid task IDs.
  */
 export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,12}$/;
@@ -54,6 +60,10 @@ export const VALID_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
 export const TaskStatusSchema = Schema.Literal(...TASK_STATUSES)
 export type TaskStatus = typeof TaskStatusSchema.Type
 
+/** Task assignment intent type. */
+export const TaskAssigneeTypeSchema = Schema.Literal(...TASK_ASSIGNEE_TYPES)
+export type TaskAssigneeType = typeof TaskAssigneeTypeSchema.Type
+
 /** Task ID - branded string matching tx-[a-z0-9]{6,12}. */
 export const TaskIdSchema = Schema.String.pipe(
   Schema.pattern(TASK_ID_PATTERN),
@@ -76,6 +86,10 @@ export const TaskSchema = Schema.Struct({
   createdAt: Schema.DateFromSelf,
   updatedAt: Schema.DateFromSelf,
   completedAt: Schema.NullOr(Schema.DateFromSelf),
+  assigneeType: Schema.NullOr(TaskAssigneeTypeSchema),
+  assigneeId: Schema.NullOr(Schema.String),
+  assignedAt: Schema.NullOr(Schema.DateFromSelf),
+  assignedBy: Schema.NullOr(Schema.String),
   metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
 })
 export type Task = typeof TaskSchema.Type
@@ -121,6 +135,10 @@ export const CreateTaskInputSchema = Schema.Struct({
   description: Schema.optional(Schema.String),
   parentId: Schema.optional(Schema.NullOr(Schema.String)),
   score: Schema.optional(Schema.Number.pipe(Schema.int())),
+  assigneeType: Schema.optional(Schema.NullOr(TaskAssigneeTypeSchema)),
+  assigneeId: Schema.optional(Schema.NullOr(Schema.String)),
+  assignedAt: Schema.optional(Schema.NullOr(Schema.DateFromSelf)),
+  assignedBy: Schema.optional(Schema.NullOr(Schema.String)),
   metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 })
 export type CreateTaskInput = typeof CreateTaskInputSchema.Type
@@ -132,6 +150,10 @@ export const UpdateTaskInputSchema = Schema.Struct({
   status: Schema.optional(TaskStatusSchema),
   parentId: Schema.optional(Schema.NullOr(Schema.String)),
   score: Schema.optional(Schema.Number.pipe(Schema.int())),
+  assigneeType: Schema.optional(Schema.NullOr(TaskAssigneeTypeSchema)),
+  assigneeId: Schema.optional(Schema.NullOr(Schema.String)),
+  assignedAt: Schema.optional(Schema.NullOr(Schema.DateFromSelf)),
+  assignedBy: Schema.optional(Schema.NullOr(Schema.String)),
   metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 })
 export type UpdateTaskInput = typeof UpdateTaskInputSchema.Type
@@ -230,6 +252,10 @@ export interface TaskRow {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  assignee_type?: string | null;
+  assignee_id?: string | null;
+  assigned_at?: string | null;
+  assigned_by?: string | null;
   metadata: string;
 }
 

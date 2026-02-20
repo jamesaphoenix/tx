@@ -40,6 +40,7 @@ LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-180}
 WORKERS=${WORKERS:-1}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
 CLAIM_RENEW_INTERVAL=${CLAIM_RENEW_INTERVAL:-300}
+RUN_HEARTBEAT_INTERVAL=${RUN_HEARTBEAT_INTERVAL:-30}
 MAX_IDLE_ROUNDS=${MAX_IDLE_ROUNDS:-6}
 WORKER_PREFIX=${WORKER_PREFIX:-ralph}
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -65,6 +66,8 @@ ACTIVE_RUNTIME=""
 ACTIVE_RUNTIME_LABEL=""
 ACTIVE_AGENT_PROFILE_DIR=""
 COAUTHOR_LINE=""
+CLAUDE_STREAM_JSON_MODE=${CLAUDE_STREAM_JSON_MODE:-auto}
+CLAUDE_STREAM_JSON_ENABLED=false
 CUSTOM_AGENT_CMD_PARTS=()
 CHILD_PIDS=()
 WORKER_TABLE_AVAILABLE=false
@@ -83,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --workers) WORKERS="$2"; shift 2 ;;
     --claim-lease) CLAIM_LEASE_MINUTES="$2"; shift 2 ;;
     --claim-renew-interval) CLAIM_RENEW_INTERVAL="$2"; shift 2 ;;
+    --heartbeat-interval) RUN_HEARTBEAT_INTERVAL="$2"; shift 2 ;;
     --idle-rounds) MAX_IDLE_ROUNDS="$2"; shift 2 ;;
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
     --worker-id) WORKER_ID="$2"; shift 2 ;;
@@ -115,6 +119,11 @@ fi
 
 if ! [[ "$CLAIM_RENEW_INTERVAL" =~ ^[0-9]+$ ]] || [ "$CLAIM_RENEW_INTERVAL" -lt 1 ]; then
   echo "Invalid --claim-renew-interval value: $CLAIM_RENEW_INTERVAL (must be a positive integer in seconds)" >&2
+  exit 1
+fi
+
+if ! [[ "$RUN_HEARTBEAT_INTERVAL" =~ ^[0-9]+$ ]] || [ "$RUN_HEARTBEAT_INTERVAL" -lt 1 ]; then
+  echo "Invalid --heartbeat-interval value: $RUN_HEARTBEAT_INTERVAL (must be a positive integer in seconds)" >&2
   exit 1
 fi
 
@@ -258,6 +267,32 @@ resolve_agent_profile_path() {
   echo "$primary"
 }
 
+configure_claude_stream_json_mode() {
+  CLAUDE_STREAM_JSON_ENABLED=false
+
+  if [ "$ACTIVE_RUNTIME" != "claude" ]; then
+    return
+  fi
+
+  case "$CLAUDE_STREAM_JSON_MODE" in
+    true|1|yes|on)
+      CLAUDE_STREAM_JSON_ENABLED=true
+      ;;
+    false|0|no|off)
+      CLAUDE_STREAM_JSON_ENABLED=false
+      ;;
+    auto|"")
+      if claude --help 2>/dev/null | grep -q -- "--output-format"; then
+        CLAUDE_STREAM_JSON_ENABLED=true
+      fi
+      ;;
+    *)
+      echo "Invalid CLAUDE_STREAM_JSON_MODE value: $CLAUDE_STREAM_JSON_MODE (expected: auto|true|false)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 invoke_runtime_sync() {
   local prompt="$1"
 
@@ -317,16 +352,19 @@ invoke_runtime_background() {
 
   case "$ACTIVE_RUNTIME" in
     claude)
+      local claude_args=(claude --dangerously-skip-permissions)
       if [ -n "$session_id" ]; then
-        claude --dangerously-skip-permissions --session-id "$session_id" \
-          --print "$prompt" \
-          > "$stdout_path" \
-          2> >(tee -a "$LOG_FILE" > "$stderr_path") &
-      else
-        claude --dangerously-skip-permissions --print "$prompt" \
-          > "$stdout_path" \
-          2> >(tee -a "$LOG_FILE" > "$stderr_path") &
+        claude_args+=(--session-id "$session_id")
       fi
+      if [ "$CLAUDE_STREAM_JSON_ENABLED" = true ]; then
+        # Emit structured incremental output so heartbeat/transcript deltas move continuously.
+        claude_args+=(--output-format stream-json --include-partial-messages --verbose)
+      fi
+      claude_args+=(--print "$prompt")
+
+      "${claude_args[@]}" \
+        > "$stdout_path" \
+        2> >(tee -a "$LOG_FILE" > "$stderr_path") &
       ;;
     codex)
       codex exec --skip-git-repo-check --full-auto "$prompt" \
@@ -395,6 +433,7 @@ configure_lock_paths() {
 # ==============================================================================
 
 resolve_runtime
+configure_claude_stream_json_mode
 configure_lock_paths
 
 # Guard against recursive/nested top-level loop launches from agent subprocesses.
@@ -1031,6 +1070,48 @@ complete_run() {
   rm -f "$PROJECT_DIR/.tx/current-run"
 }
 
+now_utc_iso() {
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+file_size_bytes() {
+  local file_path="$1"
+  local bytes="0"
+
+  if [ -n "$file_path" ] && [ -f "$file_path" ]; then
+    bytes=$(wc -c < "$file_path" 2>/dev/null | tr -d '[:space:]' || echo "0")
+  fi
+
+  if ! [[ "$bytes" =~ ^[0-9]+$ ]]; then
+    bytes="0"
+  fi
+
+  echo "$bytes"
+}
+
+update_run_heartbeat() {
+  local run_id="$1"
+  local check_at="$2"
+  local activity_at="$3"
+  local stdout_bytes="$4"
+  local stderr_bytes="$5"
+  local transcript_bytes="$6"
+  local delta_bytes="${7:-0}"
+
+  [[ "$stdout_bytes" =~ ^[0-9]+$ ]] || stdout_bytes=0
+  [[ "$stderr_bytes" =~ ^[0-9]+$ ]] || stderr_bytes=0
+  [[ "$transcript_bytes" =~ ^[0-9]+$ ]] || transcript_bytes=0
+  [[ "$delta_bytes" =~ ^[0-9]+$ ]] || delta_bytes=0
+
+  tx trace heartbeat "$run_id" \
+    --check-at "$check_at" \
+    --activity-at "$activity_at" \
+    --stdout-bytes "$stdout_bytes" \
+    --stderr-bytes "$stderr_bytes" \
+    --transcript-bytes "$transcript_bytes" \
+    --delta-bytes "$delta_bytes" >/dev/null 2>&1 || true
+}
+
 # ==============================================================================
 # Run Task Agent
 # ==============================================================================
@@ -1088,15 +1169,16 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
 
   LAST_TRANSCRIPT_PATH="$run_dir/stdout.log"
   local session_uuid=""
+  local claude_native_transcript_path=""
 
   if [ "$ACTIVE_RUNTIME" = "claude" ]; then
-    # Generate a UUID for Claude's session so we can find the transcript.
+    # Generate a UUID for Claude session correlation. The canonical transcript path is stdout.log.
     session_uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
 
-    # Claude stores sessions in ~/.claude/projects/<escaped-cwd>/<session-uuid>.jsonl
+    # Keep expected native path for diagnostics only (not canonical for run heartbeat/transcripts).
     local escaped_cwd
     escaped_cwd=${PROJECT_DIR//[^a-zA-Z0-9]/-}
-    LAST_TRANSCRIPT_PATH="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
+    claude_native_transcript_path="$HOME/.claude/projects/$escaped_cwd/$session_uuid.jsonl"
   fi
 
   # Export env vars so hooks can detect ralph mode and correlate artifacts
@@ -1141,10 +1223,37 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   fi
 
   if [ -n "$session_uuid" ]; then
-    log "$ACTIVE_RUNTIME_LABEL PID: $CLAUDE_PID, session: $session_uuid (timeout: ${TASK_TIMEOUT}s)"
+    if [ "$CLAUDE_STREAM_JSON_ENABLED" = true ]; then
+      log "$ACTIVE_RUNTIME_LABEL PID: $CLAUDE_PID, session: $session_uuid, transcript: $LAST_TRANSCRIPT_PATH (stream-json, timeout: ${TASK_TIMEOUT}s)"
+    elif [ -n "$claude_native_transcript_path" ]; then
+      log "$ACTIVE_RUNTIME_LABEL PID: $CLAUDE_PID, session: $session_uuid, native transcript: $claude_native_transcript_path (timeout: ${TASK_TIMEOUT}s)"
+    else
+      log "$ACTIVE_RUNTIME_LABEL PID: $CLAUDE_PID, session: $session_uuid (timeout: ${TASK_TIMEOUT}s)"
+    fi
   else
     log "$ACTIVE_RUNTIME_LABEL PID: $CLAUDE_PID (timeout: ${TASK_TIMEOUT}s)"
   fi
+
+  # Initialize run heartbeat state (transcript/log byte counters + activity timestamp).
+  local hb_stdout_bytes=0
+  local hb_stderr_bytes=0
+  local hb_transcript_bytes=0
+  local hb_last_activity_at
+  local hb_last_emit_epoch=0
+  hb_last_activity_at=$(now_utc_iso)
+
+  hb_stdout_bytes=$(file_size_bytes "$run_dir/stdout.log")
+  hb_stderr_bytes=$(file_size_bytes "$run_dir/stderr.log")
+  hb_transcript_bytes=$(file_size_bytes "$LAST_TRANSCRIPT_PATH")
+  update_run_heartbeat \
+    "$CURRENT_RUN_ID" \
+    "$hb_last_activity_at" \
+    "$hb_last_activity_at" \
+    "$hb_stdout_bytes" \
+    "$hb_stderr_bytes" \
+    "$hb_transcript_bytes" \
+    0
+  hb_last_emit_epoch=$(date +%s)
 
   # Wait for agent with timeout
   local exit_code=0
@@ -1155,6 +1264,49 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   fi
 
   while kill -0 "$CLAUDE_PID" 2>/dev/null; do
+    local hb_check_at
+    local hb_now_epoch=0
+    local hb_delta_bytes=0
+    local hb_next_stdout_bytes=0
+    local hb_next_stderr_bytes=0
+    local hb_next_transcript_bytes=0
+
+    hb_check_at=$(now_utc_iso)
+    hb_next_stdout_bytes=$(file_size_bytes "$run_dir/stdout.log")
+    hb_next_stderr_bytes=$(file_size_bytes "$run_dir/stderr.log")
+    hb_next_transcript_bytes=$(file_size_bytes "$LAST_TRANSCRIPT_PATH")
+
+    if [ "$hb_next_stdout_bytes" -gt "$hb_stdout_bytes" ]; then
+      hb_delta_bytes=$((hb_delta_bytes + hb_next_stdout_bytes - hb_stdout_bytes))
+    fi
+    if [ "$hb_next_stderr_bytes" -gt "$hb_stderr_bytes" ]; then
+      hb_delta_bytes=$((hb_delta_bytes + hb_next_stderr_bytes - hb_stderr_bytes))
+    fi
+    if [ "$hb_next_transcript_bytes" -gt "$hb_transcript_bytes" ]; then
+      hb_delta_bytes=$((hb_delta_bytes + hb_next_transcript_bytes - hb_transcript_bytes))
+    fi
+
+    if [ "$hb_delta_bytes" -gt 0 ]; then
+      hb_last_activity_at="$hb_check_at"
+    fi
+
+    hb_now_epoch=$(date +%s)
+    if [ "$hb_delta_bytes" -gt 0 ] || [ $((hb_now_epoch - hb_last_emit_epoch)) -ge "$RUN_HEARTBEAT_INTERVAL" ]; then
+      update_run_heartbeat \
+        "$CURRENT_RUN_ID" \
+        "$hb_check_at" \
+        "$hb_last_activity_at" \
+        "$hb_next_stdout_bytes" \
+        "$hb_next_stderr_bytes" \
+        "$hb_next_transcript_bytes" \
+        "$hb_delta_bytes"
+      hb_last_emit_epoch=$hb_now_epoch
+    fi
+
+    hb_stdout_bytes="$hb_next_stdout_bytes"
+    hb_stderr_bytes="$hb_next_stderr_bytes"
+    hb_transcript_bytes="$hb_next_transcript_bytes"
+
     if [ "$waited" -ge "$TASK_TIMEOUT" ]; then
       log "Task timeout after ${TASK_TIMEOUT}s - killing $ACTIVE_RUNTIME_LABEL process"
       terminate_pid_tree "$CLAUDE_PID" TERM
@@ -1171,6 +1323,18 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     sleep "$check_interval"
     waited=$((waited + check_interval))
   done
+
+  # Emit one last heartbeat snapshot after process exit for final byte counters.
+  local hb_final_check_at
+  hb_final_check_at=$(now_utc_iso)
+  update_run_heartbeat \
+    "$CURRENT_RUN_ID" \
+    "$hb_final_check_at" \
+    "$hb_last_activity_at" \
+    "$(file_size_bytes "$run_dir/stdout.log")" \
+    "$(file_size_bytes "$run_dir/stderr.log")" \
+    "$(file_size_bytes "$LAST_TRANSCRIPT_PATH")" \
+    0
 
   # Process exited; capture exit code without tripping `set -e`.
   # `wait` can return non-zero for expected agent failures/timeouts and
@@ -1338,7 +1502,8 @@ run_worker_loop() {
   local idle_rounds=0
 
   if [ "$CHILD_MODE" = true ] || [ "$WORKERS" -gt 1 ]; then
-    worker_state_file="${STATE_FILE}-${worker_id}"
+    # Keep per-worker checkpoints stable and readable across lock-scope variants.
+    worker_state_file="$PROJECT_DIR/.tx/ralph-state-${worker_id}"
   fi
 
   if [ "${RESUME:-false}" = true ] && [ -f "$worker_state_file" ]; then
@@ -1560,6 +1725,7 @@ spawn_parallel_workers() {
       --learnings-timeout "$LEARNINGS_TIMEOUT"
       --claim-lease "$CLAIM_LEASE_MINUTES"
       --claim-renew-interval "$CLAIM_RENEW_INTERVAL"
+      --heartbeat-interval "$RUN_HEARTBEAT_INTERVAL"
       --idle-rounds "$MAX_IDLE_ROUNDS"
       --worker-prefix "$WORKER_PREFIX"
     )
@@ -1619,12 +1785,16 @@ log "RALPH Loop Started"
 log "========================================"
 log "Project: $PROJECT_DIR"
 log "Runtime: $ACTIVE_RUNTIME ($ACTIVE_RUNTIME_LABEL)"
+if [ "$ACTIVE_RUNTIME" = "claude" ]; then
+  log "Claude stream-json output: $CLAUDE_STREAM_JSON_ENABLED (mode=$CLAUDE_STREAM_JSON_MODE)"
+fi
 log "Agent profiles: $ACTIVE_AGENT_PROFILE_DIR"
 log "Worker mode: workers=$WORKERS worker_id=$WORKER_ID child=$CHILD_MODE"
 log "Max iterations: $MAX_ITERATIONS"
 log "Max runtime: $MAX_HOURS hours"
 log "Task timeout: ${TASK_TIMEOUT}s (verify: ${VERIFY_TIMEOUT}s, learnings: ${LEARNINGS_TIMEOUT}s)"
 log "Claim lease: ${CLAIM_LEASE_MINUTES}m (renew every ${CLAIM_RENEW_INTERVAL}s)"
+log "Run heartbeat interval: ${RUN_HEARTBEAT_INTERVAL}s"
 log "Review every: $REVIEW_EVERY iterations"
 log "Auto-commit: $AUTO_COMMIT"
 log ""

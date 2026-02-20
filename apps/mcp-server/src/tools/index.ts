@@ -39,3 +39,4 @@ export { registerSyncTools, serializeExportResult, serializeImportResult, serial
 export { registerMessageTools, serializeMessage } from "./message.js"
 export { registerDocTools, serializeDoc, serializeDocLink } from "./doc.js"
 export { registerInvariantTools } from "./invariant.js"
+export { registerRunTools } from "./run.js"

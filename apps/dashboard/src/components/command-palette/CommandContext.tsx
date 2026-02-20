@@ -164,8 +164,24 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       const isTextInput = isTextInputElement(e.target)
       const isPaletteInput = isPaletteInputElement(e.target)
 
-      // Always allow CMD+K to open/close palette
+      // CMD+Shift+K always toggles the command palette.
+      if (shortcut === "⌘⇧K") {
+        e.preventDefault()
+        setOpen((prev) => !prev)
+        return
+      }
+
+      // CMD+K toggles assignment in task context when a command claims it.
       if (shortcut === "⌘K") {
+        if (!isTextInput) {
+          const command = shortcutCommands.find((c) => c.shortcut === "⌘K")
+          if (command) {
+            e.preventDefault()
+            void command.action()
+            return
+          }
+        }
+
         e.preventDefault()
         setOpen((prev) => !prev)
         return

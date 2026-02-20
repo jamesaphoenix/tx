@@ -61,16 +61,31 @@ export class ServiceUnavailable extends Schema.TaggedError<ServiceUnavailable>()
  * Maps tx-core tagged errors to API error types.
  * Used by all route handlers for consistent error handling.
  */
-export const mapCoreError = (e: unknown): NotFound | BadRequest | InternalError | ServiceUnavailable => {
+export const mapCoreError = (
+  e: unknown
+): NotFound | BadRequest | InternalError | ServiceUnavailable | Unauthorized | Forbidden => {
   if (e && typeof e === "object" && "_tag" in e) {
     const tag = (e as { _tag: string })._tag
     const message = "message" in e ? String((e as { message: unknown }).message) : tag
     switch (tag) {
+      case "NotFound":
+        return new NotFound({ message })
+      case "BadRequest":
+        return new BadRequest({ message })
+      case "InternalError":
+        return new InternalError({ message })
+      case "ServiceUnavailable":
+        return new ServiceUnavailable({ message })
+      case "Unauthorized":
+        return new Unauthorized({ message })
+      case "Forbidden":
+        return new Forbidden({ message })
       case "TaskNotFoundError":
       case "LearningNotFoundError":
       case "FileLearningNotFoundError":
       case "AttemptNotFoundError":
       case "MessageNotFoundError":
+      case "RunNotFoundError":
       case "DocNotFoundError":
       case "InvariantNotFoundError":
         return new NotFound({ message })
@@ -433,6 +448,79 @@ const UpdateRunBody = Schema.Struct({
   summary: Schema.optional(Schema.String),
   errorMessage: Schema.optional(Schema.String),
   transcriptPath: Schema.optional(SafePathString),
+  metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+})
+
+const RunHeartbeatBody = Schema.Struct({
+  stdoutBytes: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0))),
+  stderrBytes: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0))),
+  transcriptBytes: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0))),
+  deltaBytes: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0))),
+  checkAt: Schema.optional(Schema.String),
+  activityAt: Schema.optional(Schema.String),
+})
+
+const RunHeartbeatResponse = Schema.Struct({
+  runId: Schema.String,
+  checkAt: Schema.String,
+  activityAt: Schema.NullOr(Schema.String),
+  stdoutBytes: Schema.Number.pipe(Schema.int()),
+  stderrBytes: Schema.Number.pipe(Schema.int()),
+  transcriptBytes: Schema.Number.pipe(Schema.int()),
+  deltaBytes: Schema.Number.pipe(Schema.int()),
+})
+
+const StalledRunsParams = Schema.Struct({
+  transcriptIdleSeconds: Schema.optional(
+    Schema.NumberFromString.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1))
+  ),
+  heartbeatLagSeconds: Schema.optional(
+    Schema.NumberFromString.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1))
+  ),
+})
+
+const StalledRunReasonSchema = Schema.Literal("transcript_idle", "heartbeat_stale")
+
+const StalledRunEntryResponse = Schema.Struct({
+  run: RunSerializedSchema,
+  reason: StalledRunReasonSchema,
+  transcriptIdleSeconds: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  heartbeatLagSeconds: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  lastActivityAt: Schema.NullOr(Schema.String),
+  lastCheckAt: Schema.NullOr(Schema.String),
+  stdoutBytes: Schema.Number.pipe(Schema.int()),
+  stderrBytes: Schema.Number.pipe(Schema.int()),
+  transcriptBytes: Schema.Number.pipe(Schema.int()),
+})
+
+const StalledRunsResponse = Schema.Struct({
+  runs: Schema.Array(StalledRunEntryResponse),
+})
+
+const ReapStalledBody = Schema.Struct({
+  transcriptIdleSeconds: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1))
+  ),
+  heartbeatLagSeconds: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1))
+  ),
+  resetTask: Schema.optional(Schema.Boolean),
+  dryRun: Schema.optional(Schema.Boolean),
+})
+
+const ReapedRunEntryResponse = Schema.Struct({
+  id: Schema.String,
+  taskId: Schema.NullOr(Schema.String),
+  pid: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  reason: StalledRunReasonSchema,
+  transcriptIdleSeconds: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  heartbeatLagSeconds: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  processTerminated: Schema.Boolean,
+  taskReset: Schema.Boolean,
+})
+
+const ReapedRunsResponse = Schema.Struct({
+  runs: Schema.Array(ReapedRunEntryResponse),
 })
 
 const LogTailParams = Schema.Struct({
@@ -451,6 +539,16 @@ export const RunsGroup = HttpApiGroup.make("runs")
       .addSuccess(PaginatedRunsResponse)
   )
   .add(
+    HttpApiEndpoint.get("listStalledRuns", "/api/runs/stalled")
+      .setUrlParams(StalledRunsParams)
+      .addSuccess(StalledRunsResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("reapStalledRuns", "/api/runs/stalled/reap")
+      .setPayload(ReapStalledBody)
+      .addSuccess(ReapedRunsResponse)
+  )
+  .add(
     HttpApiEndpoint.get("getRun")`/api/runs/${RunIdParam}`
       .addSuccess(RunDetailWithMessagesResponse)
   )
@@ -463,6 +561,11 @@ export const RunsGroup = HttpApiGroup.make("runs")
     HttpApiEndpoint.patch("updateRun")`/api/runs/${RunIdParam}`
       .setPayload(UpdateRunBody)
       .addSuccess(RunSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.post("heartbeatRun")`/api/runs/${RunIdParam}/heartbeat`
+      .setPayload(RunHeartbeatBody)
+      .addSuccess(RunHeartbeatResponse)
   )
   .add(
     HttpApiEndpoint.get("getRunStdout")`/api/runs/${RunIdParam}/stdout`

@@ -1395,6 +1395,8 @@ Subcommands:
   show <run-id>         Show metrics events for a run
   transcript <run-id>   Display raw transcript content
   stderr <run-id>       Display stderr content
+  heartbeat <run-id>    Update run transcript heartbeat state
+  stalled               List or reap stalled running runs
   errors                Show recent errors across all runs
 
 Run 'tx trace <subcommand> --help' for subcommand-specific help.
@@ -1406,6 +1408,9 @@ Examples:
   tx trace show run-abc123 --full  # Combined events + tool calls timeline
   tx trace transcript run-abc123   # Raw JSONL transcript
   tx trace stderr run-abc123       # Stderr output for debugging
+  tx trace heartbeat run-abc123 --transcript-bytes 2048 --delta-bytes 256
+  tx trace stalled --transcript-idle-seconds 300
+  tx trace stalled --reap --transcript-idle-seconds 300
   tx trace errors                  # Recent errors across all runs
   tx trace errors --hours 48       # Errors from last 48 hours`,
 
@@ -1461,6 +1466,51 @@ Examples:
   tx trace show run-abc123           # Metrics events only
   tx trace show run-abc123 --full    # Combined timeline with tool calls
   tx trace show run-abc123 --json    # JSON output for scripting`,
+
+  "trace heartbeat": `tx trace heartbeat - Update run heartbeat state
+
+Usage: tx trace heartbeat <run-id> [options]
+
+Records a run-level heartbeat used for transcript progress monitoring.
+This is a primitive for orchestration loops and watchdogs.
+
+Arguments:
+  <run-id>   Required. Run ID (e.g., run-abc12345)
+
+Options:
+  --stdout-bytes <n>      Current stdout byte count (default: 0)
+  --stderr-bytes <n>      Current stderr byte count (default: 0)
+  --transcript-bytes <n>  Current transcript byte count (default: 0)
+  --delta-bytes <n>       Bytes changed since last sample (default: 0)
+  --check-at <iso>        Override check timestamp (ISO format)
+  --activity-at <iso>     Override activity timestamp (ISO format)
+  --json                  Output as JSON
+  --help                  Show this help
+
+Examples:
+  tx trace heartbeat run-abc123 --transcript-bytes 1024 --delta-bytes 128
+  tx trace heartbeat run-abc123 --stdout-bytes 500 --stderr-bytes 120 --json`,
+
+  "trace stalled": `tx trace stalled - List or reap stalled running runs
+
+Usage: tx trace stalled [options]
+
+Finds running runs whose transcript heartbeat has not progressed in time.
+With --reap, kills stalled processes, marks runs cancelled, and resets tasks.
+
+Options:
+  --transcript-idle-seconds <n>  Idle threshold for transcript activity (default: 300)
+  --heartbeat-lag-seconds <n>    Optional threshold for stale heartbeat checks
+  --reap, --kill                 Reap (kill + cancel) stalled runs
+  --dry-run                      Show what would be reaped without mutating state
+  --no-reset-task                Do not reset associated tasks to ready on reap
+  --json                         Output as JSON
+  --help                         Show this help
+
+Examples:
+  tx trace stalled --transcript-idle-seconds 300
+  tx trace stalled --reap --transcript-idle-seconds 300
+  tx trace stalled --reap --dry-run --json`,
 
   "trace errors": `tx trace errors - Show recent errors across all runs
 

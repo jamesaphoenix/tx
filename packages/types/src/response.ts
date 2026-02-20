@@ -49,6 +49,10 @@ export const TaskWithDepsSerializedSchema = Schema.Struct({
   createdAt: Schema.String, // ISO string
   updatedAt: Schema.String, // ISO string
   completedAt: Schema.NullOr(Schema.String), // ISO string
+  assigneeType: Schema.NullOr(Schema.Literal("human", "agent")),
+  assigneeId: Schema.NullOr(Schema.String),
+  assignedAt: Schema.NullOr(Schema.String), // ISO string
+  assignedBy: Schema.NullOr(Schema.String),
   metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
   /** Task IDs that block this task */
   blockedBy: Schema.Array(TaskIdSchema),
@@ -182,6 +186,10 @@ export const serializeTask = (task: TaskWithDeps): TaskWithDepsSerialized => ({
   createdAt: task.createdAt.toISOString(),
   updatedAt: task.updatedAt.toISOString(),
   completedAt: task.completedAt?.toISOString() ?? null,
+  assigneeType: task.assigneeType ?? null,
+  assigneeId: task.assigneeId ?? null,
+  assignedAt: task.assignedAt?.toISOString() ?? null,
+  assignedBy: task.assignedBy ?? null,
   metadata: task.metadata,
   blockedBy: task.blockedBy,
   blocks: task.blocks,

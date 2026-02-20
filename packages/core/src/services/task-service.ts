@@ -4,7 +4,7 @@ import { DependencyRepository } from "../repo/dep-repo.js"
 import { TaskNotFoundError, ValidationError, DatabaseError, StaleDataError, HasChildrenError } from "../errors.js"
 import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
-import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput, TaskAssigneeType } from "@jamesaphoenix/tx-types"
 
 export class TaskService extends Context.Tag("TaskService")<
   TaskService,
@@ -39,6 +39,11 @@ const trimVisible = (s: string): string =>
 
 /** Strips null bytes (\0) which cause C API truncation, JSON issues, and terminal corruption. */
 const stripNullBytes = (s: string): string => s.replace(/\0/g, "")
+
+const isValidAssigneeType = (
+  assigneeType: TaskAssigneeType | null | undefined
+): assigneeType is TaskAssigneeType | null =>
+  assigneeType === undefined || assigneeType === null || assigneeType === "human" || assigneeType === "agent"
 
 /** Max recursion depth for destructive operations that must find ALL descendants.
  *  Bounded to avoid unbounded CTE recursion in SQLite while being deep enough
@@ -216,12 +221,23 @@ export const TaskServiceLive = Layer.effect(
             }))
           }
 
+          if (!isValidAssigneeType(input.assigneeType)) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Invalid assigneeType: ${String(input.assigneeType)}`
+            }))
+          }
+
           if (input.parentId) {
             const parent = yield* taskRepo.findById(input.parentId)
             if (!parent) {
               return yield* Effect.fail(new ValidationError({ reason: `Parent ${input.parentId} not found` }))
             }
           }
+
+          const assigneeType = input.assigneeType ?? null
+          const assigneeId = assigneeType === null ? null : (input.assigneeId ?? null)
+          const assignedAt = assigneeType === null ? null : (input.assignedAt ?? null)
+          const assignedBy = assigneeType === null ? null : (input.assignedBy ?? null)
 
           const now = new Date()
           const makeTask = (id: string): Task => ({
@@ -234,6 +250,10 @@ export const TaskServiceLive = Layer.effect(
             createdAt: now,
             updatedAt: now,
             completedAt: null,
+            assigneeType,
+            assigneeId,
+            assignedAt,
+            assignedBy,
             metadata: input.metadata ?? {}
           })
 
@@ -314,6 +334,12 @@ export const TaskServiceLive = Layer.effect(
             }))
           }
 
+          if (!isValidAssigneeType(input.assigneeType)) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Invalid assigneeType: ${String(input.assigneeType)}`
+            }))
+          }
+
           if (input.parentId) {
             if (input.parentId === id) {
               return yield* Effect.fail(new ValidationError({ reason: "Task cannot be its own parent" }))
@@ -337,6 +363,24 @@ export const TaskServiceLive = Layer.effect(
 
           const now = new Date()
           const isDone = input.status === "done" && existing.status !== "done"
+          const assigneeTypeChanged =
+            input.assigneeType !== undefined && input.assigneeType !== existing.assigneeType
+          const assigneeIdChanged =
+            input.assigneeId !== undefined && input.assigneeId !== existing.assigneeId
+
+          let nextAssigneeType = input.assigneeType !== undefined ? input.assigneeType : existing.assigneeType
+          let nextAssigneeId = input.assigneeId !== undefined ? input.assigneeId : existing.assigneeId
+          let nextAssignedAt = input.assignedAt !== undefined ? input.assignedAt : existing.assignedAt
+          let nextAssignedBy = input.assignedBy !== undefined ? input.assignedBy : existing.assignedBy
+
+          if (nextAssigneeType === null) {
+            nextAssigneeId = null
+            nextAssignedAt = null
+            nextAssignedBy = null
+          } else if ((assigneeTypeChanged || assigneeIdChanged) && input.assignedAt === undefined) {
+            nextAssignedAt = now
+          }
+
           const updated: Task = {
             ...existing,
             title: title !== undefined ? trimVisible(title) : existing.title,
@@ -346,6 +390,10 @@ export const TaskServiceLive = Layer.effect(
             score: input.score ?? existing.score,
             updatedAt: now,
             completedAt: isDone ? now : existing.completedAt,
+            assigneeType: nextAssigneeType,
+            assigneeId: nextAssigneeId,
+            assignedAt: nextAssignedAt,
+            assignedBy: nextAssignedBy,
             metadata: input.metadata ? { ...existing.metadata, ...input.metadata } : existing.metadata
           }
 

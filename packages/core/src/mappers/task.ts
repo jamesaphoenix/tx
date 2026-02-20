@@ -5,6 +5,7 @@
 import { Schema } from "effect"
 import type {
   Task,
+  TaskAssigneeType,
   TaskStatus,
   TaskRow,
   TaskDependency,
@@ -51,6 +52,18 @@ const parseMetadata = (metadataJson: string | null): Record<string, unknown> => 
   }
 }
 
+const parseAssigneeType = (
+  assigneeType: string | null | undefined,
+  rowId: string
+): TaskAssigneeType | null => {
+  if (assigneeType == null) return null
+  if (assigneeType === "human" || assigneeType === "agent") return assigneeType
+  console.warn(
+    `[tx] Invalid assignee_type "${assigneeType}" for task ${rowId}. Falling back to null.`
+  )
+  return null
+}
+
 // Re-export types and constants from @tx/types for convenience
 export type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
 export { TASK_STATUSES }
@@ -79,6 +92,10 @@ export const rowToTask = (row: TaskRow): Task => {
     createdAt: parseDate(row.created_at, "created_at", row.id),
     updatedAt: parseDate(row.updated_at, "updated_at", row.id),
     completedAt: row.completed_at ? parseDate(row.completed_at, "completed_at", row.id) : null,
+    assigneeType: parseAssigneeType(row.assignee_type, row.id),
+    assigneeId: row.assignee_id ?? null,
+    assignedAt: row.assigned_at ? parseDate(row.assigned_at, "assigned_at", row.id) : null,
+    assignedBy: row.assigned_by ?? null,
     metadata: parseMetadata(row.metadata)
   }
 }

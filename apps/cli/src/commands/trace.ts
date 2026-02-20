@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
   RunRepository,
+  RunHeartbeatService,
   SqliteClient,
   type DatabaseError,
   getAdapter,
@@ -17,7 +18,7 @@ import {
 import type { Run, RunId } from "@jamesaphoenix/tx-types"
 import { toJson, truncate } from "../output.js"
 import { commandHelp } from "../help.js"
-import { type Flags, flag, parseIntOpt } from "../utils/parse.js"
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 
 /**
  * Calculate relative time string (e.g., "2h ago", "3d ago").
@@ -600,6 +601,141 @@ interface FailedRunRow {
   error_message: string | null
 }
 
+const parseRunId = (raw: string): RunId => {
+  if (!/^run-.+$/.test(raw)) {
+    console.error(`Invalid run ID: "${raw}". Expected format: run-<id>`)
+    process.exit(1)
+  }
+  return raw as RunId
+}
+
+/**
+ * tx trace heartbeat <run-id> - Update run heartbeat state.
+ *
+ * Primitive used by orchestration loops to record transcript/log progress.
+ */
+export const traceHeartbeat = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const raw = pos[0]
+    if (!raw) {
+      console.error("Error: run-id is required")
+      console.error("Usage: tx trace heartbeat <run-id> [--stdout-bytes <n>] [--stderr-bytes <n>] [--transcript-bytes <n>] [--delta-bytes <n>] [--check-at <iso>] [--activity-at <iso>]")
+      process.exit(1)
+    }
+
+    const runId = parseRunId(raw)
+    const svc = yield* RunHeartbeatService
+
+    const stdoutBytes = parseIntOpt(flags, "stdout-bytes", "stdout-bytes") ?? 0
+    const stderrBytes = parseIntOpt(flags, "stderr-bytes", "stderr-bytes") ?? 0
+    const transcriptBytes = parseIntOpt(flags, "transcript-bytes", "transcript-bytes") ?? 0
+    const deltaBytes = parseIntOpt(flags, "delta-bytes", "delta-bytes") ?? 0
+
+    const parseDateFlag = (name: string): Date | undefined => {
+      const rawValue = opt(flags, name)
+      if (!rawValue) return undefined
+      const parsed = new Date(rawValue)
+      if (Number.isNaN(parsed.getTime())) {
+        console.error(`Invalid value for --${name}: "${rawValue}" is not a valid ISO timestamp`)
+        process.exit(1)
+      }
+      return parsed
+    }
+
+    const checkAt = parseDateFlag("check-at")
+    const activityAt = parseDateFlag("activity-at")
+
+    yield* svc.heartbeat({
+      runId,
+      checkAt,
+      activityAt,
+      stdoutBytes,
+      stderrBytes,
+      transcriptBytes,
+      deltaBytes,
+    })
+
+    if (flag(flags, "json")) {
+      console.log(toJson({
+        runId,
+        checkAt: (checkAt ?? new Date()).toISOString(),
+        activityAt: activityAt?.toISOString() ?? null,
+        stdoutBytes,
+        stderrBytes,
+        transcriptBytes,
+        deltaBytes,
+      }))
+    } else {
+      console.log(`Heartbeat updated: ${runId}`)
+    }
+  }) as Effect.Effect<void, DatabaseError, RunHeartbeatService>
+
+/**
+ * tx trace stalled - Find or reap stalled running runs.
+ *
+ * A run is considered stalled when transcript activity has not moved
+ * for longer than --transcript-idle-seconds.
+ */
+export const traceStalled = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const _ = pos // reserved for future positional args
+    void _
+
+    const svc = yield* RunHeartbeatService
+    const transcriptIdleSeconds = parseIntOpt(flags, "transcript-idle-seconds", "transcript-idle-seconds") ?? 300
+    const heartbeatLagSeconds = parseIntOpt(flags, "heartbeat-lag-seconds", "heartbeat-lag-seconds")
+    const reap = flag(flags, "reap", "kill")
+    const dryRun = flag(flags, "dry-run")
+    const noResetTask = flag(flags, "no-reset-task")
+
+    if (reap) {
+      const results = yield* svc.reapStalled({
+        transcriptIdleSeconds,
+        heartbeatLagSeconds,
+        dryRun,
+        resetTask: !noResetTask,
+      })
+
+      if (flag(flags, "json")) {
+        console.log(toJson(results))
+        return
+      }
+
+      if (results.length === 0) {
+        console.log("No stalled running runs found.")
+        return
+      }
+
+      console.log(`Reaped stalled runs (${results.length}):`)
+      for (const row of results) {
+        console.log(`  ${row.id} [${row.reason}] pid=${row.pid ?? "-"} task=${row.taskId ?? "-"}`)
+        console.log(`    processTerminated=${row.processTerminated} taskReset=${row.taskReset}`)
+      }
+      return
+    }
+
+    const results = yield* svc.listStalled({
+      transcriptIdleSeconds,
+      heartbeatLagSeconds,
+    })
+
+    if (flag(flags, "json")) {
+      console.log(toJson(results))
+      return
+    }
+
+    if (results.length === 0) {
+      console.log("No stalled running runs found.")
+      return
+    }
+
+    console.log(`Stalled running runs (${results.length}):`)
+    for (const row of results) {
+      console.log(`  ${row.run.id} [${row.reason}] pid=${row.run.pid ?? "-"} task=${row.run.taskId ?? "-"}`)
+      console.log(`    transcriptIdleSeconds=${row.transcriptIdleSeconds ?? "-"} heartbeatLagSeconds=${row.heartbeatLagSeconds ?? "-"}`)
+    }
+  }) as Effect.Effect<void, DatabaseError, RunHeartbeatService>
+
 /**
  * tx trace errors - Show recent errors across all runs.
  */
@@ -756,6 +892,8 @@ Subcommands:
   show <run-id>               Show metrics events for a run
   transcript <run-id>         Display raw transcript content
   stderr <run-id>             Display stderr content
+  heartbeat <run-id>          Update heartbeat state for a run
+  stalled                     List or reap stalled running runs
   errors                      Show recent errors across all runs
 
 Options:
@@ -784,6 +922,10 @@ Options:
       yield* traceTranscript(pos.slice(1), flags)
     } else if (subcommand === "stderr") {
       yield* traceStderr(pos.slice(1), flags)
+    } else if (subcommand === "heartbeat") {
+      yield* traceHeartbeat(pos.slice(1), flags)
+    } else if (subcommand === "stalled") {
+      yield* traceStalled(pos.slice(1), flags)
     } else if (subcommand === "errors") {
       yield* traceErrors(pos.slice(1), flags)
     } else {
@@ -791,4 +933,4 @@ Options:
       console.error(`Run 'tx trace --help' for usage information`)
       process.exit(1)
     }
-  }) as Effect.Effect<void, DatabaseError, RunRepository | SqliteClient>
+  }) as Effect.Effect<void, DatabaseError, RunRepository | RunHeartbeatService | SqliteClient>

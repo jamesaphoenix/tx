@@ -2,9 +2,11 @@
 
 ## Overview
 
-Two-primitive execution tracing for debugging RALPH run failures:
+Four-primitive execution tracing for debugging RALPH run failures:
 1. **IO Capture** - File paths to transcript/stderr/stdout stored on runs record
 2. **Metrics Events** - Operational spans written to events table
+3. **Transcript Adapters** - Agent-specific transcript parsers behind a common interface
+4. **Run Heartbeat** - Stall detection/reaping based on transcript/log progress
 
 → [PRD-019](../prd/PRD-019-execution-tracing.md)
 
@@ -207,6 +209,62 @@ const GenericJSONLAdapter: TranscriptAdapter = {
       })),
 }
 ```
+
+---
+
+### Primitive 4: Run Heartbeat + Stall Detection
+
+Provide a headless primitive for heartbeat persistence and stall remediation that loops can compose however they want.
+
+#### Data Model
+
+```sql
+CREATE TABLE run_heartbeat_state (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  last_check_at TEXT NOT NULL,
+  last_activity_at TEXT NOT NULL,
+  stdout_bytes INTEGER NOT NULL DEFAULT 0 CHECK (stdout_bytes >= 0),
+  stderr_bytes INTEGER NOT NULL DEFAULT 0 CHECK (stderr_bytes >= 0),
+  transcript_bytes INTEGER NOT NULL DEFAULT 0 CHECK (transcript_bytes >= 0),
+  last_delta_bytes INTEGER NOT NULL DEFAULT 0 CHECK (last_delta_bytes >= 0),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+#### Service Interface
+
+```typescript
+interface RunHeartbeatService {
+  heartbeat: (input: {
+    runId: RunId
+    checkAt?: Date
+    activityAt?: Date
+    stdoutBytes: number
+    stderrBytes: number
+    transcriptBytes: number
+    deltaBytes?: number
+  }) => Effect.Effect<void, ValidationError | RunNotFoundError | DatabaseError>
+
+  listStalled: (query: {
+    transcriptIdleSeconds: number
+    heartbeatLagSeconds?: number
+  }) => Effect.Effect<readonly StalledRun[], ValidationError | DatabaseError>
+
+  reapStalled: (options: {
+    transcriptIdleSeconds: number
+    heartbeatLagSeconds?: number
+    resetTask?: boolean
+    dryRun?: boolean
+  }) => Effect.Effect<readonly ReapedRun[], ValidationError | RunNotFoundError | DatabaseError>
+}
+```
+
+#### Interface Surfaces
+
+- CLI: `tx trace heartbeat`, `tx trace stalled`, `tx trace stalled --reap`
+- API: `POST /api/runs/:id/heartbeat`, `GET /api/runs/stalled`, `POST /api/runs/stalled/reap`
+- SDK: `tx.runs.heartbeat()`, `tx.runs.stalled()`, `tx.runs.reap()`
+- MCP: `tx_run_heartbeat`, `tx_run_stalled`, `tx_run_reap`
 
 ---
 
@@ -453,6 +511,11 @@ Combined Timeline:
 | 5 | `scripts/ralph.sh` | Capture transcript/stderr, store paths |
 | 6 | `apps/cli/src/commands/trace.ts` | CLI commands using adapters |
 | 7 | `apps/cli/src/cli.ts` | Register trace commands |
+| 8 | `migrations/025_run_heartbeat_state.sql` | Add run heartbeat state table |
+| 9 | `packages/core/src/services/run-heartbeat-service.ts` | Run heartbeat + stalled/reap primitive |
+| 10 | `apps/api-server/src/api.ts`, `apps/api-server/src/routes/runs.ts` | Run heartbeat/stalled/reap endpoints |
+| 11 | `apps/agent-sdk/src/client.ts` | SDK runs namespace heartbeat/stalled/reap methods |
+| 12 | `apps/mcp-server/src/tools/run.ts` | MCP run heartbeat/stalled/reap tools |
 
 ---
 
@@ -467,6 +530,9 @@ Combined Timeline:
 - Execute traced operations, verify events recorded
 - Query traces via CLI commands
 - Combined view correctly interleaves by timestamp
+- Run heartbeat upsert + stall detection thresholds
+- Reap dry-run vs mutating mode behavior
+- API/SDK/MCP parity for run heartbeat primitives
 
 ### Fixtures
 ```typescript

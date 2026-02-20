@@ -70,6 +70,20 @@ describe("Error types", () => {
 // =============================================================================
 
 describe("mapCoreError", () => {
+  describe("preserves API-tagged errors", () => {
+    it("should preserve BadRequest", () => {
+      const result = mapCoreError(new BadRequest({ message: "Invalid checkAt timestamp" }))
+      expect(result._tag).toBe("BadRequest")
+      expect(result.message).toBe("Invalid checkAt timestamp")
+    })
+
+    it("should preserve NotFound", () => {
+      const result = mapCoreError(new NotFound({ message: "Run not found" }))
+      expect(result._tag).toBe("NotFound")
+      expect(result.message).toBe("Run not found")
+    })
+  })
+
   describe("maps not-found errors to NotFound", () => {
     it("should map TaskNotFoundError", () => {
       const result = mapCoreError({ _tag: "TaskNotFoundError", message: "Task tx-abc123 not found" })
@@ -91,6 +105,12 @@ describe("mapCoreError", () => {
     it("should map AttemptNotFoundError", () => {
       const result = mapCoreError({ _tag: "AttemptNotFoundError", message: "Not found" })
       expect(result._tag).toBe("NotFound")
+    })
+
+    it("should map RunNotFoundError", () => {
+      const result = mapCoreError({ _tag: "RunNotFoundError", message: "Run missing" })
+      expect(result._tag).toBe("NotFound")
+      expect(result.message).toBe("Run missing")
     })
   })
 

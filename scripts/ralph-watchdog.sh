@@ -23,6 +23,8 @@ LOG_FILE="$PROJECT_DIR/.tx/ralph-watchdog.log"
 
 POLL_SECONDS=${POLL_SECONDS:-300}
 RUN_STALE_SECONDS=${RUN_STALE_SECONDS:-5400}
+TRANSCRIPT_IDLE_SECONDS=${TRANSCRIPT_IDLE_SECONDS:-300}
+HEARTBEAT_LAG_SECONDS=${HEARTBEAT_LAG_SECONDS:-180}
 ERROR_BURST_WINDOW_MINUTES=${ERROR_BURST_WINDOW_MINUTES:-20}
 ERROR_BURST_THRESHOLD=${ERROR_BURST_THRESHOLD:-4}
 RESTART_COOLDOWN_SECONDS=${RESTART_COOLDOWN_SECONDS:-900}
@@ -42,6 +44,7 @@ VERIFY_TIMEOUT=${VERIFY_TIMEOUT:-180}
 LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-180}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
 CLAIM_RENEW_INTERVAL=${CLAIM_RENEW_INTERVAL:-300}
+HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-30}
 IDLE_ROUNDS=${IDLE_ROUNDS:-300}
 AUTO_COMMIT=${AUTO_COMMIT:-true}
 REVIEW_ENABLED=${REVIEW_ENABLED:-false}
@@ -51,9 +54,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --interval) POLL_SECONDS="$2"; shift 2 ;;
     --run-stale-seconds) RUN_STALE_SECONDS="$2"; shift 2 ;;
+    --transcript-idle-seconds) TRANSCRIPT_IDLE_SECONDS="$2"; shift 2 ;;
+    --heartbeat-lag-seconds) HEARTBEAT_LAG_SECONDS="$2"; shift 2 ;;
     --error-window-minutes) ERROR_BURST_WINDOW_MINUTES="$2"; shift 2 ;;
     --error-threshold) ERROR_BURST_THRESHOLD="$2"; shift 2 ;;
     --restart-cooldown-seconds) RESTART_COOLDOWN_SECONDS="$2"; shift 2 ;;
+    --heartbeat-interval) HEARTBEAT_INTERVAL="$2"; shift 2 ;;
     --idle-rounds) IDLE_ROUNDS="$2"; shift 2 ;;
     --codex-prefix) CODEX_PREFIX="$2"; shift 2 ;;
     --claude-prefix) CLAUDE_PREFIX="$2"; shift 2 ;;
@@ -75,6 +81,16 @@ if ! [[ "$RUN_STALE_SECONDS" =~ ^[0-9]+$ ]] || [ "$RUN_STALE_SECONDS" -lt 60 ]; 
   exit 1
 fi
 
+if ! [[ "$TRANSCRIPT_IDLE_SECONDS" =~ ^[0-9]+$ ]] || [ "$TRANSCRIPT_IDLE_SECONDS" -lt 60 ]; then
+  echo "Invalid --transcript-idle-seconds value: $TRANSCRIPT_IDLE_SECONDS" >&2
+  exit 1
+fi
+
+if ! [[ "$HEARTBEAT_LAG_SECONDS" =~ ^[0-9]+$ ]] || [ "$HEARTBEAT_LAG_SECONDS" -lt 1 ]; then
+  echo "Invalid --heartbeat-lag-seconds value: $HEARTBEAT_LAG_SECONDS" >&2
+  exit 1
+fi
+
 if ! [[ "$ERROR_BURST_WINDOW_MINUTES" =~ ^[0-9]+$ ]] || [ "$ERROR_BURST_WINDOW_MINUTES" -lt 1 ]; then
   echo "Invalid --error-window-minutes value: $ERROR_BURST_WINDOW_MINUTES" >&2
   exit 1
@@ -87,6 +103,11 @@ fi
 
 if ! [[ "$RESTART_COOLDOWN_SECONDS" =~ ^[0-9]+$ ]] || [ "$RESTART_COOLDOWN_SECONDS" -lt 1 ]; then
   echo "Invalid --restart-cooldown-seconds value: $RESTART_COOLDOWN_SECONDS" >&2
+  exit 1
+fi
+
+if ! [[ "$HEARTBEAT_INTERVAL" =~ ^[0-9]+$ ]] || [ "$HEARTBEAT_INTERVAL" -lt 1 ]; then
+  echo "Invalid --heartbeat-interval value: $HEARTBEAT_INTERVAL" >&2
   exit 1
 fi
 
@@ -222,6 +243,7 @@ start_loop() {
     --learnings-timeout "$LEARNINGS_TIMEOUT"
     --claim-lease "$CLAIM_LEASE_MINUTES"
     --claim-renew-interval "$CLAIM_RENEW_INTERVAL"
+    --heartbeat-interval "$HEARTBEAT_INTERVAL"
     --idle-rounds "$IDLE_ROUNDS"
   )
 
@@ -388,6 +410,25 @@ reset_orphaned_active_tasks() {
   fi
 }
 
+reap_stalled_runs_via_primitive() {
+  local cmd=(
+    trace stalled
+    --reap
+    --json
+    --transcript-idle-seconds "$TRANSCRIPT_IDLE_SECONDS"
+    --heartbeat-lag-seconds "$HEARTBEAT_LAG_SECONDS"
+  )
+
+  local output="[]"
+  output=$(tx "${cmd[@]}" 2>/dev/null || echo "[]")
+
+  local reaped_count="0"
+  reaped_count=$(echo "$output" | jq 'length' 2>/dev/null || echo "0")
+  if [ "$reaped_count" -gt 0 ]; then
+    log "Reaped $reaped_count stalled run(s) via tx primitive (transcript_idle>${TRANSCRIPT_IDLE_SECONDS}s)"
+  fi
+}
+
 check_error_burst_for_worker() {
   local runtime="$1"
   local prefix="$2"
@@ -427,6 +468,7 @@ acquire_watchdog_lock
 trap 'release_watchdog_lock' EXIT INT TERM
 
 log "Watchdog started interval=${POLL_SECONDS}s codex=${CODEX_ENABLED} claude=${CLAUDE_ENABLED} auto_start=${AUTO_START} idle_rounds=${IDLE_ROUNDS}"
+log "Stall thresholds: transcript_idle=${TRANSCRIPT_IDLE_SECONDS}s heartbeat_lag=${HEARTBEAT_LAG_SECONDS}s run_stale=${RUN_STALE_SECONDS}s"
 
 while true; do
   ensure_loop "codex" "$CODEX_PREFIX" "$CODEX_ENABLED"
@@ -434,6 +476,7 @@ while true; do
 
   reconcile_running_runs
   reset_orphaned_active_tasks
+  reap_stalled_runs_via_primitive
 
   check_error_burst_for_worker "codex" "$CODEX_PREFIX" "$CODEX_ENABLED"
   check_error_burst_for_worker "claude" "$CLAUDE_PREFIX" "$CLAUDE_ENABLED"

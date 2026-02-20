@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
-import { fetchers, type TaskWithDeps, type PaginatedTasksResponse, type TaskLabel } from "../../api/client"
+import {
+  fetchers,
+  type TaskAssigneeType,
+  type TaskWithDeps,
+  type PaginatedTasksResponse,
+  type TaskLabel
+} from "../../api/client"
 import { SearchInput } from "../ui/SearchInput"
 import { TaskList } from "./TaskList"
 import { TaskDetail } from "./TaskDetail"
@@ -21,6 +27,7 @@ type ThemeMode = "light" | "dark"
 
 export interface TasksPageProps {
   themeMode?: ThemeMode
+  defaultTaskAssigmentType?: TaskAssigneeType
   /**
    * Incrementing signal from the app shell to request opening the
    * task composer even before page-level shortcut registration settles.
@@ -94,7 +101,11 @@ async function copyToClipboard(value: string): Promise<void> {
   }
 }
 
-export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: TasksPageProps) {
+export function TasksPage({
+  themeMode = "light",
+  defaultTaskAssigmentType = "human",
+  newTaskRequestNonce = 0
+}: TasksPageProps) {
   const queryClient = useQueryClient()
   const selectedTaskIds = useStore(selectionStore, (s) => s.taskIds)
   const lastHandledNewTaskRequestRef = useRef(0)
@@ -222,6 +233,9 @@ export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: Task
       description: payload.description,
       parentId: payload.parentId,
       status: HUMAN_STAGE_TO_STATUS[payload.stage],
+      assigneeType: payload.assigneeType,
+      assigneeId: payload.assigneeId,
+      assignedBy: "dashboard:composer",
     })
 
     const persistedLabelIds = payload.labelIds.filter((labelId) => labelId > 0)
@@ -316,6 +330,30 @@ export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: Task
     await fetchers.updateTask(taskId, { status: HUMAN_STAGE_TO_STATUS[stage] })
     await invalidateTaskQueries()
   }, [viewState.taskId, invalidateTaskQueries])
+
+  const updateTaskAssignment = useCallback(async (payload: {
+    assigneeType: TaskAssigneeType | null
+    assigneeId: string | null
+    assignedBy?: string | null
+  }, taskId: string | null = viewState.taskId) => {
+    if (!taskId) return
+    await fetchers.updateTask(taskId, {
+      assigneeType: payload.assigneeType,
+      assigneeId: payload.assigneeId,
+      assignedBy: payload.assignedBy ?? "dashboard:task-detail",
+    })
+    await invalidateTaskQueries()
+  }, [viewState.taskId, invalidateTaskQueries])
+
+  const toggleSelectedTaskAssigneeType = useCallback(async () => {
+    if (!selectedTask) return
+    const nextType: TaskAssigneeType = selectedTask.assigneeType === "human" ? "agent" : "human"
+    await updateTaskAssignment({
+      assigneeType: nextType,
+      assigneeId: selectedTask.assigneeId ?? null,
+      assignedBy: "dashboard:cmdk",
+    }, selectedTask.id)
+  }, [selectedTask, updateTaskAssignment])
 
   const cycleTaskStatusStage = useCallback(async () => {
     if (!selectedTask) return
@@ -588,6 +626,14 @@ export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: Task
         action: cycleTaskStatusStage,
       },
       {
+        id: "tasks:assignment-toggle",
+        label: `Toggle assignment (switch to ${selectedTask?.assigneeType === "human" ? "Agent" : "Human"})`,
+        group: "Actions",
+        icon: "action",
+        shortcut: "⌘K",
+        action: () => void toggleSelectedTaskAssigneeType(),
+      },
+      {
         id: "tasks:labels-prompt",
         label: "Create + assign label",
         group: "Labels",
@@ -719,6 +765,7 @@ export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: Task
     setBucket,
     copySelectedTaskReference,
     cycleTaskStatusStage,
+    toggleSelectedTaskAssigneeType,
     promptCreateAndAssignLabel,
     changeTaskStatusStage,
     toggleLabel,
@@ -813,6 +860,7 @@ export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: Task
               onCreateLabel={(payload) => createAndAssignLabel(payload)}
               statusStage={selectedTask ? toHumanTaskStage(selectedTask.status) : undefined}
               onChangeStatusStage={(stage) => { void changeTaskStatusStage(stage) }}
+              onUpdateAssignment={(payload) => { void updateTaskAssignment(payload) }}
               selectedChildIds={selectedChildIds}
               onToggleChildSelection={toggleChildSelection}
               onSelectAllChildren={() => setSelectedChildIds(new Set(childTasks.map((task) => task.id)))}
@@ -828,6 +876,7 @@ export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: Task
         heading={composer?.heading ?? ""}
         submitLabel={composer?.submitLabel ?? "Create"}
         parentId={composer?.parentId ?? null}
+        defaultAssigneeType={defaultTaskAssigmentType}
         availableLabels={allLabels}
         onClose={closeComposer}
         onSubmit={createTaskFromComposer}

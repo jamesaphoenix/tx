@@ -216,8 +216,9 @@ export const TaskRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const result = db.prepare(
-              `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at,
+                                  assignee_type, assignee_id, assigned_at, assigned_by, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
               task.id,
               task.title,
@@ -228,6 +229,10 @@ export const TaskRepositoryLive = Layer.effect(
               task.createdAt.toISOString(),
               task.updatedAt.toISOString(),
               task.completedAt?.toISOString() ?? null,
+              task.assigneeType,
+              task.assigneeId,
+              task.assignedAt?.toISOString() ?? null,
+              task.assignedBy,
               JSON.stringify(task.metadata)
             )
             if (result.changes !== 1) {
@@ -250,7 +255,9 @@ export const TaskRepositoryLive = Layer.effect(
                 db.prepare(
                   `UPDATE tasks SET
                     title = ?, description = ?, status = ?, parent_id = ?,
-                    score = ?, updated_at = ?, completed_at = ?, metadata = ?
+                    score = ?, updated_at = ?, completed_at = ?,
+                    assignee_type = ?, assignee_id = ?, assigned_at = ?, assigned_by = ?,
+                    metadata = ?
                    WHERE id = ? AND updated_at = ?`
                 ).run(
                   task.title,
@@ -260,6 +267,10 @@ export const TaskRepositoryLive = Layer.effect(
                   task.score,
                   task.updatedAt.toISOString(),
                   task.completedAt?.toISOString() ?? null,
+                  task.assigneeType,
+                  task.assigneeId,
+                  task.assignedAt?.toISOString() ?? null,
+                  task.assignedBy,
                   JSON.stringify(task.metadata),
                   task.id,
                   expectedUpdatedAt.toISOString()
@@ -291,7 +302,9 @@ export const TaskRepositoryLive = Layer.effect(
                 db.prepare(
                   `UPDATE tasks SET
                     title = ?, description = ?, status = ?, parent_id = ?,
-                    score = ?, updated_at = ?, completed_at = ?, metadata = ?
+                    score = ?, updated_at = ?, completed_at = ?,
+                    assignee_type = ?, assignee_id = ?, assigned_at = ?, assigned_by = ?,
+                    metadata = ?
                    WHERE id = ?`
                 ).run(
                   task.title,
@@ -301,6 +314,10 @@ export const TaskRepositoryLive = Layer.effect(
                   task.score,
                   task.updatedAt.toISOString(),
                   task.completedAt?.toISOString() ?? null,
+                  task.assigneeType,
+                  task.assigneeId,
+                  task.assignedAt?.toISOString() ?? null,
+                  task.assignedBy,
                   JSON.stringify(task.metadata),
                   task.id
                 ),
@@ -319,7 +336,9 @@ export const TaskRepositoryLive = Layer.effect(
           const updateStmt = db.prepare(
             `UPDATE tasks SET
               title = ?, description = ?, status = ?, parent_id = ?,
-              score = ?, updated_at = ?, completed_at = ?, metadata = ?
+              score = ?, updated_at = ?, completed_at = ?,
+              assignee_type = ?, assignee_id = ?, assigned_at = ?, assigned_by = ?,
+              metadata = ?
              WHERE id = ?`
           )
 
@@ -361,6 +380,10 @@ export const TaskRepositoryLive = Layer.effect(
                     task.score,
                     task.updatedAt.toISOString(),
                     task.completedAt?.toISOString() ?? null,
+                    task.assigneeType,
+                    task.assigneeId,
+                    task.assignedAt?.toISOString() ?? null,
+                    task.assignedBy,
                     JSON.stringify(task.metadata),
                     task.id
                   )

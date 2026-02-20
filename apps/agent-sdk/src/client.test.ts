@@ -216,5 +216,13 @@ describe("TxClient", () => {
       expect(client.context).toBeDefined()
       expect(typeof client.context.forTask).toBe("function")
     })
+
+    it("exposes runs namespace", () => {
+      const client = new TxClient({ apiUrl: "http://localhost:3456" })
+      expect(client.runs).toBeDefined()
+      expect(typeof client.runs.heartbeat).toBe("function")
+      expect(typeof client.runs.stalled).toBe("function")
+      expect(typeof client.runs.reap).toBe("function")
+    })
   })
 })

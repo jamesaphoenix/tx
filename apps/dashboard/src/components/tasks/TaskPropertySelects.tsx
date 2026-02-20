@@ -12,6 +12,11 @@ interface StageOption {
   label: string
 }
 
+interface AssigneeOption {
+  value: "human" | "agent"
+  label: string
+}
+
 interface LabelOption {
   value: number
   label: string
@@ -22,6 +27,11 @@ const HUMAN_STAGE_OPTIONS_INTERNAL: readonly StageOption[] = [
   { value: "backlog", label: "Backlog" },
   { value: "in_progress", label: "In Progress" },
   { value: "done", label: "Done" },
+]
+
+const ASSIGNEE_OPTIONS_INTERNAL: readonly AssigneeOption[] = [
+  { value: "human", label: "Human" },
+  { value: "agent", label: "Agent" },
 ]
 
 const AUTO_LABEL_COLORS = [
@@ -103,7 +113,7 @@ export function canonicalTaskLabelName(name: string): string {
   return LEGACY_LABEL_NAME_ALIASES[normalized.toLowerCase()] ?? normalized
 }
 
-function buildSelectStyles(theme: SelectTheme): StylesConfig<StageOption | LabelOption, boolean> {
+function buildSelectStyles(theme: SelectTheme): StylesConfig<StageOption | AssigneeOption | LabelOption, boolean> {
   const palette = theme === "dark" ? DARK_THEME : LIGHT_THEME
 
   return {
@@ -214,6 +224,39 @@ export interface TaskLabelsSelectProps {
   disabled?: boolean
   placeholder?: string
   noOptionsMessage?: string
+}
+
+export interface TaskAssigneeTypeSelectProps {
+  instanceId: string
+  value: "human" | "agent"
+  onChange: (assigneeType: "human" | "agent") => void
+  theme?: SelectTheme
+}
+
+export function TaskAssigneeTypeSelect({
+  instanceId,
+  value,
+  onChange,
+  theme = "light",
+}: TaskAssigneeTypeSelectProps) {
+  const selectedOption =
+    ASSIGNEE_OPTIONS_INTERNAL.find((option) => option.value === value) ?? ASSIGNEE_OPTIONS_INTERNAL[0]
+
+  return (
+    <Select<AssigneeOption, false>
+      instanceId={instanceId}
+      options={ASSIGNEE_OPTIONS_INTERNAL as AssigneeOption[]}
+      value={selectedOption}
+      isClearable={false}
+      isSearchable={false}
+      styles={buildSelectStyles(theme) as unknown as StylesConfig<AssigneeOption, false>}
+      onChange={(next: SingleValue<AssigneeOption>) => {
+        if (!next) return
+        onChange(next.value)
+      }}
+      placeholder="Select assignee type..."
+    />
+  )
 }
 
 export function TaskLabelsSelect({
