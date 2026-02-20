@@ -39,6 +39,7 @@ VERIFY_TIMEOUT=${VERIFY_TIMEOUT:-180}
 LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-180}
 WORKERS=${WORKERS:-1}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
+CLAIM_RENEW_INTERVAL=${CLAIM_RENEW_INTERVAL:-300}
 MAX_IDLE_ROUNDS=${MAX_IDLE_ROUNDS:-6}
 WORKER_PREFIX=${WORKER_PREFIX:-ralph}
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -70,6 +71,7 @@ WORKER_TABLE_AVAILABLE=false
 WORKER_REGISTERED=false
 LAST_BACKGROUND_PID=""
 AUTO_COMMIT=${AUTO_COMMIT:-true}
+CLAIM_RENEW_PID=""
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -80,6 +82,7 @@ while [[ $# -gt 0 ]]; do
     --agent) FORCED_AGENT="$2"; shift 2 ;;
     --workers) WORKERS="$2"; shift 2 ;;
     --claim-lease) CLAIM_LEASE_MINUTES="$2"; shift 2 ;;
+    --claim-renew-interval) CLAIM_RENEW_INTERVAL="$2"; shift 2 ;;
     --idle-rounds) MAX_IDLE_ROUNDS="$2"; shift 2 ;;
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
     --worker-id) WORKER_ID="$2"; shift 2 ;;
@@ -107,6 +110,11 @@ fi
 
 if ! [[ "$CLAIM_LEASE_MINUTES" =~ ^[0-9]+$ ]] || [ "$CLAIM_LEASE_MINUTES" -lt 1 ]; then
   echo "Invalid --claim-lease value: $CLAIM_LEASE_MINUTES (must be a positive integer)" >&2
+  exit 1
+fi
+
+if ! [[ "$CLAIM_RENEW_INTERVAL" =~ ^[0-9]+$ ]] || [ "$CLAIM_RENEW_INTERVAL" -lt 1 ]; then
+  echo "Invalid --claim-renew-interval value: $CLAIM_RENEW_INTERVAL (must be a positive integer in seconds)" >&2
   exit 1
 fi
 
@@ -376,7 +384,7 @@ configure_lock_paths() {
     esac
   fi
 
-  lock_key=$(echo "$lock_key" | tr -c 'a-zA-Z0-9._-' '-')
+  lock_key=$(printf '%s' "$lock_key" | tr -c 'a-zA-Z0-9._-' '-')
   LOCK_FILE="$PROJECT_DIR/.tx/ralph-${lock_key}.lock"
   PID_FILE="$PROJECT_DIR/.tx/ralph-${lock_key}.pid"
   STATE_FILE="$PROJECT_DIR/.tx/ralph-state-${lock_key}"
@@ -410,6 +418,8 @@ if [ "$CHILD_MODE" = false ]; then
 fi
 
 cleanup() {
+  stop_claim_renewer
+
   if [ "$WORKER_REGISTERED" = true ]; then
     mark_worker_dead "$WORKER_ID"
     WORKER_REGISTERED=false
@@ -448,6 +458,8 @@ terminate_pid_tree() {
 
 # Cancel current run if RALPH is terminated unexpectedly
 cancel_current_run() {
+  stop_claim_renewer
+
   if [ -n "${CURRENT_RUN_ID:-}" ]; then
     log "Cancelling current run $CURRENT_RUN_ID due to unexpected termination"
     complete_run "$CURRENT_RUN_ID" "cancelled" 130 "RALPH process terminated"
@@ -1012,7 +1024,7 @@ complete_run() {
         "UPDATE runs SET status='$escaped_status', ended_at='$now', exit_code=$exit_code, error_message='$escaped_error_message' WHERE id='$escaped_run_id';"
     else
       sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
-        "UPDATE runs SET status='$escaped_status', ended_at='$now', exit_code=$exit_code WHERE id='$escaped_run_id';"
+        "UPDATE runs SET status='$escaped_status', ended_at='$now', exit_code=$exit_code, error_message=NULL WHERE id='$escaped_run_id';"
     fi
   fi
 
@@ -1291,6 +1303,34 @@ release_claim() {
   tx claim:release "$task_id" "$worker_id" >/dev/null 2>&1 || true
 }
 
+start_claim_renewer() {
+  local task_id="$1"
+  local worker_id="$2"
+
+  if [ "$CLAIM_RENEW_INTERVAL" -le 0 ]; then
+    return
+  fi
+
+  stop_claim_renewer
+
+  (
+    while true; do
+      sleep "$CLAIM_RENEW_INTERVAL"
+      tx claim:renew "$task_id" "$worker_id" >/dev/null 2>&1 || exit 0
+      log "[$worker_id] Claim renewed for $task_id"
+    done
+  ) &
+  CLAIM_RENEW_PID=$!
+}
+
+stop_claim_renewer() {
+  if [ -n "${CLAIM_RENEW_PID:-}" ] && kill -0 "$CLAIM_RENEW_PID" 2>/dev/null; then
+    kill "$CLAIM_RENEW_PID" 2>/dev/null || true
+    wait "$CLAIM_RENEW_PID" 2>/dev/null || true
+  fi
+  CLAIM_RENEW_PID=""
+}
+
 run_worker_loop() {
   local worker_id="$1"
   local worker_review_enabled="$2"
@@ -1360,6 +1400,7 @@ run_worker_loop() {
     CURRENT_TASK_ID="$TASK_ID"
     tx update "$TASK_ID" --status active 2>/dev/null || true
     set_worker_status "$worker_id" "busy" "$TASK_ID"
+    start_claim_renewer "$TASK_ID" "$worker_id"
 
     # Run the agent
     AGENT_EXIT_CODE=0
@@ -1369,6 +1410,7 @@ run_worker_loop() {
       AGENT_EXIT_CODE=$?
       log "[$worker_id] Agent process failed (exit code: $AGENT_EXIT_CODE)"
     fi
+    stop_claim_renewer
 
     # Verify task actually completed - this is the key reliability check
     TASK_STATUS=$(tx show "$TASK_ID" --json 2>/dev/null | jq -r '.status // "unknown"')
@@ -1517,6 +1559,7 @@ spawn_parallel_workers() {
       --verify-timeout "$VERIFY_TIMEOUT"
       --learnings-timeout "$LEARNINGS_TIMEOUT"
       --claim-lease "$CLAIM_LEASE_MINUTES"
+      --claim-renew-interval "$CLAIM_RENEW_INTERVAL"
       --idle-rounds "$MAX_IDLE_ROUNDS"
       --worker-prefix "$WORKER_PREFIX"
     )
@@ -1581,6 +1624,7 @@ log "Worker mode: workers=$WORKERS worker_id=$WORKER_ID child=$CHILD_MODE"
 log "Max iterations: $MAX_ITERATIONS"
 log "Max runtime: $MAX_HOURS hours"
 log "Task timeout: ${TASK_TIMEOUT}s (verify: ${VERIFY_TIMEOUT}s, learnings: ${LEARNINGS_TIMEOUT}s)"
+log "Claim lease: ${CLAIM_LEASE_MINUTES}m (renew every ${CLAIM_RENEW_INTERVAL}s)"
 log "Review every: $REVIEW_EVERY iterations"
 log "Auto-commit: $AUTO_COMMIT"
 log ""
