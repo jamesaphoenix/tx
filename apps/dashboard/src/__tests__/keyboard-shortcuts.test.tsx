@@ -513,7 +513,47 @@ describe('Keyboard shortcuts', () => {
     })
   })
 
-  describe('CMD+N behavior in task detail', () => {
+  describe('CMD+N behavior', () => {
+    it('supports CTRL+N when no tasks are loaded in list view', async () => {
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('No tasks found')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('n', false, true)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Task title')).toBeInTheDocument()
+      })
+    })
+
+    it('opens task composer from Runs tab via global CTRL+N fallback', async () => {
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('No runs found')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('n', false, true)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Task title')).toBeInTheDocument()
+      })
+    })
+
     it('creates a sub-task when task detail is open', async () => {
       const parentTask = createTask({ id: 'tx-parent-open', title: 'Parent open task' })
       const createdTask = createTask({ id: 'tx-child-new', title: 'Child from shortcut', parentId: 'tx-parent-open' })

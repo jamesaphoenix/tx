@@ -512,6 +512,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>("tasks")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme())
+  const [newTaskRequestNonce, setNewTaskRequestNonce] = useState(0)
 
   const selectedRunIds = useStore(selectionStore, (s) => s.runIds)
 
@@ -562,7 +563,22 @@ function AppContent() {
 
   // Register app-level commands (global + per-tab)
   const appCommands = useMemo((): Command[] => {
-    const cmds: Command[] = []
+    const cmds: Command[] = [
+      {
+        id: "global:task:new",
+        label: "Create new task",
+        group: "Actions",
+        icon: "action",
+        shortcut: "⌘N",
+        allowInInput: true,
+        action: () => {
+          setNewTaskRequestNonce((current) => current + 1)
+          if (activeTab !== "tasks") {
+            setActiveTab("tasks")
+          }
+        },
+      },
+    ]
 
     // Tab switching — always available
     const tabs: { tab: Tab; label: string }[] = [
@@ -741,7 +757,7 @@ function AppContent() {
       {/* Main Content */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === "tasks" ? (
-          <TasksPage themeMode={themeMode} />
+          <TasksPage themeMode={themeMode} newTaskRequestNonce={newTaskRequestNonce} />
         ) : activeTab === "docs" ? (
           <DocsPage />
         ) : activeTab === "runs" ? (

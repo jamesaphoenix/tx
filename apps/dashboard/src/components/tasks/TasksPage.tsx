@@ -21,6 +21,11 @@ type ThemeMode = "light" | "dark"
 
 export interface TasksPageProps {
   themeMode?: ThemeMode
+  /**
+   * Incrementing signal from the app shell to request opening the
+   * task composer even before page-level shortcut registration settles.
+   */
+  newTaskRequestNonce?: number
 }
 
 interface TaskViewState {
@@ -89,9 +94,10 @@ async function copyToClipboard(value: string): Promise<void> {
   }
 }
 
-export function TasksPage({ themeMode = "light" }: TasksPageProps) {
+export function TasksPage({ themeMode = "light", newTaskRequestNonce = 0 }: TasksPageProps) {
   const queryClient = useQueryClient()
   const selectedTaskIds = useStore(selectionStore, (s) => s.taskIds)
+  const lastHandledNewTaskRequestRef = useRef(0)
   const nextComposerLabelIdRef = useRef(-1)
   const [viewState, setViewState] = useState<TaskViewState>(() => readTaskViewStateFromUrl())
   const [composer, setComposer] = useState<ComposerState | null>(null)
@@ -149,6 +155,16 @@ export function TasksPage({ themeMode = "light" }: TasksPageProps) {
     setComposerFallbackLabels({})
     nextComposerLabelIdRef.current = -1
   }, [])
+
+  useEffect(() => {
+    if (newTaskRequestNonce <= lastHandledNewTaskRequestRef.current) return
+    lastHandledNewTaskRequestRef.current = newTaskRequestNonce
+    openComposer({
+      heading: "New task",
+      submitLabel: "Create task",
+      parentId: null,
+    })
+  }, [newTaskRequestNonce, openComposer])
 
   const openTask = useCallback((taskId: string) => {
     if (viewState.taskId === taskId) return
