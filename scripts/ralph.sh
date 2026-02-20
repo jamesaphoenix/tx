@@ -44,9 +44,11 @@ WORKER_PREFIX=${WORKER_PREFIX:-ralph}
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 LOG_FILE="$PROJECT_DIR/.tx/ralph.log"
-LOCK_FILE="$PROJECT_DIR/.tx/ralph.lock"
-PID_FILE="$PROJECT_DIR/.tx/ralph.pid"
-STATE_FILE="$PROJECT_DIR/.tx/ralph-state"
+LOCK_SCOPE=${LOCK_SCOPE:-runtime_worker}
+LOCK_KEY_OVERRIDE="${LOCK_KEY_OVERRIDE:-}"
+LOCK_FILE=""
+PID_FILE=""
+STATE_FILE=""
 FORCED_AGENT=""
 DRY_RUN=false
 CHILD_MODE=false
@@ -82,6 +84,8 @@ while [[ $# -gt 0 ]]; do
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
     --worker-id) WORKER_ID="$2"; shift 2 ;;
     --runtime) RUNTIME_MODE="$2"; shift 2 ;;
+    --lock-scope) LOCK_SCOPE="$2"; shift 2 ;;
+    --lock-key) LOCK_KEY_OVERRIDE="$2"; shift 2 ;;
     --task-timeout) TASK_TIMEOUT="$2"; shift 2 ;;
     --verify-timeout) VERIFY_TIMEOUT="$2"; shift 2 ;;
     --learnings-timeout) LEARNINGS_TIMEOUT="$2"; shift 2 ;;
@@ -125,6 +129,14 @@ if ! [[ "$LEARNINGS_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$LEARNINGS_TIMEOUT" -lt 1 ]; t
   echo "Invalid --learnings-timeout value: $LEARNINGS_TIMEOUT (must be a positive integer in seconds)" >&2
   exit 1
 fi
+
+case "$LOCK_SCOPE" in
+  global|runtime|worker|runtime_worker) ;;
+  *)
+    echo "Invalid --lock-scope value: $LOCK_SCOPE (expected: global|runtime|worker|runtime_worker)" >&2
+    exit 1
+    ;;
+esac
 
 if [ -z "$WORKER_ID" ]; then
   if [ "$CHILD_MODE" = true ]; then
@@ -351,9 +363,38 @@ invoke_runtime_review_background() {
   return 0
 }
 
+configure_lock_paths() {
+  local lock_key="$LOCK_KEY_OVERRIDE"
+
+  if [ -z "$lock_key" ]; then
+    case "$LOCK_SCOPE" in
+      global) lock_key="global" ;;
+      runtime) lock_key="$ACTIVE_RUNTIME" ;;
+      worker) lock_key="$WORKER_PREFIX" ;;
+      runtime_worker) lock_key="${ACTIVE_RUNTIME}-${WORKER_PREFIX}" ;;
+      *) lock_key="${ACTIVE_RUNTIME}-${WORKER_PREFIX}" ;;
+    esac
+  fi
+
+  lock_key=$(echo "$lock_key" | tr -c 'a-zA-Z0-9._-' '-')
+  LOCK_FILE="$PROJECT_DIR/.tx/ralph-${lock_key}.lock"
+  PID_FILE="$PROJECT_DIR/.tx/ralph-${lock_key}.pid"
+  STATE_FILE="$PROJECT_DIR/.tx/ralph-state-${lock_key}"
+}
+
 # ==============================================================================
 # Lock File (Prevent Multiple Instances)
 # ==============================================================================
+
+resolve_runtime
+configure_lock_paths
+
+# Guard against recursive/nested top-level loop launches from agent subprocesses.
+if [ -n "${RALPH_LOOP_PID:-}" ] && [ "${RALPH_LOOP_PID}" != "$$" ] && [ "$CHILD_MODE" = false ]; then
+  echo "Nested RALPH invocation detected (parent loop PID ${RALPH_LOOP_PID}). Exiting." >&2
+  exit 1
+fi
+export RALPH_LOOP_PID=$$
 
 if [ "$CHILD_MODE" = false ]; then
   if [ -f "$LOCK_FILE" ]; then
@@ -582,7 +623,23 @@ cancel_orphaned_runs() {
 # Reset orphaned active tasks from previous sessions
 reset_orphaned_tasks() {
   local active_tasks
-  active_tasks=$(tx list --status active --json 2>/dev/null | jq -r '.[].id' 2>/dev/null || echo "")
+
+  # In multi-loop mode, only reset truly orphaned active tasks:
+  # tasks marked active that do not have any currently running run record.
+  if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    active_tasks=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+      "SELECT t.id
+       FROM tasks t
+       WHERE t.status = 'active'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM runs r
+           WHERE r.task_id = t.id
+             AND r.status = 'running'
+         );" 2>/dev/null || echo "")
+  else
+    active_tasks=$(tx list --status active --json 2>/dev/null | jq -r '.[].id' 2>/dev/null || echo "")
+  fi
 
   if [ -z "$active_tasks" ]; then
     return
@@ -1512,7 +1569,6 @@ spawn_parallel_workers() {
   return $failed
 }
 
-resolve_runtime
 detect_worker_table
 
 log "========================================"
