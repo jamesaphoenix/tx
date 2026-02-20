@@ -10,10 +10,39 @@ import {
   MIGRATIONS,
   getLatestVersion
 } from "@jamesaphoenix/tx-core"
+import { fixtureId } from "@jamesaphoenix/tx-test-utils"
+
+const ASSIGNMENT_MIGRATION_VERSION = 24
+const ASSIGNMENT_MIGRATION_BACKFILL_MARKER = "migration:024_task_assignment"
 
 function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as Database)
   return MigrationServiceLive.pipe(Layer.provide(infra))
+}
+
+function applyMigrationsThroughVersion(db: Database, maxVersionInclusive: number) {
+  for (const migration of MIGRATIONS) {
+    if (migration.version > maxVersionInclusive) {
+      break
+    }
+
+    db.exec("BEGIN IMMEDIATE")
+    try {
+      db.exec(migration.sql)
+      db.exec(`INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (${migration.version}, datetime('now'))`)
+      db.exec("COMMIT")
+    } catch (error) {
+      db.exec("ROLLBACK")
+      throw error
+    }
+  }
+}
+
+function createPreAssignmentMigrationDb(): Database {
+  const db = new Database(":memory:")
+  db.run("PRAGMA foreign_keys = ON")
+  applyMigrationsThroughVersion(db, ASSIGNMENT_MIGRATION_VERSION - 1)
+  return db
 }
 
 describe("Migration system", () => {
@@ -155,6 +184,10 @@ describe("Migration system", () => {
 
       // Index from migration 19 (tasks updated_at for sync dirty detection)
       expect(indexNames).toContain("idx_tasks_updated")
+
+      // Indexes from migration 24 (task assignment)
+      expect(indexNames).toContain("idx_tasks_assignee_type")
+      expect(indexNames).toContain("idx_tasks_assignee_type_id")
     })
 
     it("is idempotent (running twice is safe)", () => {
@@ -220,6 +253,109 @@ describe("Migration system", () => {
         "SELECT name FROM sqlite_master WHERE type='table' AND name='learnings'"
       ).all()
       expect(tables).toHaveLength(0)
+    })
+
+    describe("migration 024 task assignment", () => {
+      it("adds assignment columns and indexes when migrating from version 23", () => {
+        const db = createPreAssignmentMigrationDb()
+        expect(getSchemaVersion(db)).toBe(ASSIGNMENT_MIGRATION_VERSION - 1)
+
+        applyMigrations(db)
+
+        const taskColumns = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>
+        const columnNames = taskColumns.map((column) => column.name)
+
+        expect(columnNames).toContain("assignee_type")
+        expect(columnNames).toContain("assignee_id")
+        expect(columnNames).toContain("assigned_at")
+        expect(columnNames).toContain("assigned_by")
+
+        const indexes = db.prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_tasks_assignee_type', 'idx_tasks_assignee_type_id')"
+        ).all() as Array<{ name: string }>
+        const indexNames = indexes.map((index) => index.name)
+
+        expect(indexNames).toContain("idx_tasks_assignee_type")
+        expect(indexNames).toContain("idx_tasks_assignee_type_id")
+      })
+
+      it("backfills legacy tasks with agent assignment defaults", () => {
+        const db = createPreAssignmentMigrationDb()
+        const now = new Date().toISOString()
+        const legacyTaskA = fixtureId("migration-024-backfill-legacy-task-a")
+        const legacyTaskB = fixtureId("migration-024-backfill-legacy-task-b")
+
+        db.prepare(
+          "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).run(legacyTaskA, "Legacy task A", "backlog", now, now)
+        db.prepare(
+          "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).run(legacyTaskB, "Legacy task B", "active", now, now)
+
+        applyMigrations(db)
+
+        const rows = db.prepare(
+          `SELECT id, assignee_type, assignee_id, assigned_at, assigned_by
+           FROM tasks
+           WHERE id IN (?, ?)
+           ORDER BY id`
+        ).all(legacyTaskA, legacyTaskB) as Array<{
+          id: string
+          assignee_type: string | null
+          assignee_id: string | null
+          assigned_at: string | null
+          assigned_by: string | null
+        }>
+
+        expect(rows).toHaveLength(2)
+        for (const row of rows) {
+          expect(row.assignee_type).toBe("agent")
+          expect(row.assignee_id).toBeNull()
+          expect(row.assigned_by).toBe(ASSIGNMENT_MIGRATION_BACKFILL_MARKER)
+          expect(row.assigned_at).toBeTruthy()
+        }
+      })
+
+      it("is idempotent when migration application is retried", () => {
+        const db = createPreAssignmentMigrationDb()
+        const now = new Date().toISOString()
+        const legacyTask = fixtureId("migration-024-idempotent-legacy-task")
+
+        db.prepare(
+          "INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).run(legacyTask, "Legacy idempotency task", "ready", now, now)
+
+        applyMigrations(db)
+
+        const selectAssignment = db.prepare(
+          "SELECT assignee_type, assignee_id, assigned_at, assigned_by FROM tasks WHERE id = ?"
+        )
+
+        const assignmentAfterFirstRun = selectAssignment.get(legacyTask) as {
+          assignee_type: string | null
+          assignee_id: string | null
+          assigned_at: string | null
+          assigned_by: string | null
+        }
+
+        applyMigrations(db)
+
+        const assignmentAfterSecondRun = selectAssignment.get(legacyTask) as {
+          assignee_type: string | null
+          assignee_id: string | null
+          assigned_at: string | null
+          assigned_by: string | null
+        }
+        const migrationVersionRows = db.prepare(
+          "SELECT COUNT(*) as count FROM schema_version WHERE version = ?"
+        ).get(ASSIGNMENT_MIGRATION_VERSION) as { count: number }
+
+        expect(assignmentAfterFirstRun.assignee_type).toBe("agent")
+        expect(assignmentAfterFirstRun.assignee_id).toBeNull()
+        expect(assignmentAfterFirstRun.assigned_by).toBe(ASSIGNMENT_MIGRATION_BACKFILL_MARKER)
+        expect(assignmentAfterSecondRun).toEqual(assignmentAfterFirstRun)
+        expect(migrationVersionRows.count).toBe(1)
+      })
     })
   })
 
