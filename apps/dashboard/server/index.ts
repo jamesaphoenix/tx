@@ -13,11 +13,12 @@ import { escapeLikePattern, readTxConfig, renderDocToMarkdown } from "@jamesapho
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fallbackRoot = resolve(__dirname, "../../..")
 // TX_DB_PATH is set by the dashboard command to scope to the caller's CWD
-const dbPath = process.env.TX_DB_PATH ?? resolve(fallbackRoot, ".tx/tasks.db")
+const configuredDbPath = process.env.TX_DB_PATH ?? resolve(fallbackRoot, ".tx/tasks.db")
+const dbPath = resolve(configuredDbPath)
 const dbDir = dirname(dbPath)
 const ralphLogPath = resolve(dbDir, "ralph-output.log")
 const ralphPidPath = resolve(dbDir, "ralph.pid")
-const txDir = dbDir
+const txDir = resolve(dbDir)
 const claudeDir = resolve(homedir(), ".claude")
 const VALID_TASK_STATUSES = new Set<string>(TASK_STATUSES)
 const DEFAULT_LABEL_COLORS = [
