@@ -187,6 +187,10 @@ describe("Migration system", () => {
       // Index from migration 19 (tasks updated_at for sync dirty detection)
       expect(indexNames).toContain("idx_tasks_updated")
 
+      // Indexes from migration 26 (task list ordering for dashboard polling)
+      expect(indexNames).toContain("idx_tasks_score_id")
+      expect(indexNames).toContain("idx_tasks_status_score_id")
+
       // Indexes from migration 24 (task assignment)
       expect(indexNames).toContain("idx_tasks_assignee_type")
       expect(indexNames).toContain("idx_tasks_assignee_type_id")
@@ -194,6 +198,47 @@ describe("Migration system", () => {
       // Indexes from migration 25 (run heartbeat state)
       expect(indexNames).toContain("idx_run_heartbeat_check_at")
       expect(indexNames).toContain("idx_run_heartbeat_activity_at")
+    })
+
+    it("uses composite task-order indexes without temp B-tree for dashboard task list query shapes", () => {
+      const db = new Database(":memory:")
+      db.run("PRAGMA foreign_keys = ON")
+      applyMigrations(db)
+
+      const insertTask = db.prepare(
+        "INSERT INTO tasks (id, title, status, score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      const nowIso = new Date().toISOString()
+
+      // Seed enough rows with repeated scores to exercise ORDER BY tie-breaking.
+      for (let i = 0; i < 120; i++) {
+        const status = i < 90 ? "done" : "ready"
+        const score = 100 - (i % 10)
+        insertTask.run(
+          fixtureId(`migration-026-task-${i}`),
+          `Task ${i}`,
+          status,
+          score,
+          nowIso,
+          nowIso
+        )
+      }
+
+      const unfilteredPlan = db.prepare(
+        "EXPLAIN QUERY PLAN SELECT * FROM tasks ORDER BY score DESC, id ASC LIMIT ?"
+      ).all(20) as Array<{ detail: string }>
+      const unfilteredPlanDetails = unfilteredPlan.map(row => row.detail).join(" | ")
+
+      expect(unfilteredPlanDetails).toContain("idx_tasks_score_id")
+      expect(unfilteredPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+      const filteredPlan = db.prepare(
+        "EXPLAIN QUERY PLAN SELECT * FROM tasks WHERE status IN (?) ORDER BY score DESC, id ASC LIMIT ?"
+      ).all("ready", 20) as Array<{ detail: string }>
+      const filteredPlanDetails = filteredPlan.map(row => row.detail).join(" | ")
+
+      expect(filteredPlanDetails).toContain("idx_tasks_status_score_id")
+      expect(filteredPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
     })
 
     it("is idempotent (running twice is safe)", () => {
