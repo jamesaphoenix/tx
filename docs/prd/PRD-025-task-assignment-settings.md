@@ -39,6 +39,8 @@ This remains orchestration-neutral: assignment indicates intent; claim/lease rem
 - [ ] Dashboard task composer and task detail expose full assignment edit controls.
 - [ ] `Cmd+K` in task context toggles assignment type `human ↔ agent`.
 - [ ] Task payloads returned across interfaces include assignment fields (nullable for compatibility).
+- [ ] Invariant: agent-driven completion cannot mark a parent task `done` while any direct child is not `done`.
+- [ ] Human headful dashboard flow may still override and mark parent tasks `done` when needed.
 
 ## Acceptance Criteria
 
@@ -52,6 +54,8 @@ This remains orchestration-neutral: assignment indicates intent; claim/lease rem
    - `agent → human`
 7. Assignment toggle does not break claim behavior or ready detection semantics.
 8. API/SDK/MCP/CLI task payloads include assignment fields (null-safe for older data).
+9. Agent paths (`tx done`, MCP `tx_done`, SDK `completeTask`, API complete endpoint) reject completing parent tasks with incomplete children.
+10. Dashboard human task edit flow can still mark parent tasks `done` (manual override).
 
 ## Out of Scope
 

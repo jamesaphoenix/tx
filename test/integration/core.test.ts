@@ -204,6 +204,37 @@ describe("Task CRUD", () => {
     expect(task.completedAt).not.toBeNull()
   })
 
+  it("prevents agent completion of parent task when children are incomplete", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        const parent = yield* svc.create({ title: "Parent invariant", score: 800 })
+        yield* svc.create({ title: "Child pending", parentId: parent.id, score: 400 })
+        return yield* svc.update(parent.id, { status: "done" }).pipe(Effect.either)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+      expect((result.left as any).reason).toContain("Agent cannot mark parent task")
+    }
+  })
+
+  it("allows human completion override for parent task with incomplete children", async () => {
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        const parent = yield* svc.create({ title: "Parent override", score: 800 })
+        yield* svc.create({ title: "Child pending", parentId: parent.id, score: 400 })
+        return yield* svc.update(parent.id, { status: "done" }, { actor: "human" })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(task.status).toBe("done")
+    expect(task.completedAt).not.toBeNull()
+  })
+
   it("create fails with ValidationError for empty title", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(

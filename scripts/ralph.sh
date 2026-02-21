@@ -21,6 +21,7 @@
 #   ./scripts/ralph.sh --verify-timeout 180 --learnings-timeout 180
 #   ./scripts/ralph.sh --no-commit         # Never auto-commit changes
 #   ./scripts/ralph.sh --agent-cmd "codex" # Custom command (prompt passed as final arg)
+#   ./scripts/ralph.sh --ignore-hup        # Keep running if terminal closes (detach-safe)
 #   ./scripts/ralph.sh --dry-run           # Show what would be dispatched
 
 set -euo pipefail
@@ -81,6 +82,7 @@ LAST_RUN_ID=""
 LAST_RUN_STATUS=""
 LAST_RUN_ERROR=""
 LAST_RUN_INFRA_ABORT=false
+IGNORE_HUP=false
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -108,12 +110,17 @@ while [[ $# -gt 0 ]]; do
     --agent-cmd) AGENT_COMMAND_OVERRIDE="$2"; shift 2 ;;
     --agent-dir) AGENT_PROFILE_DIR_OVERRIDE="$2"; shift 2 ;;
     --no-review) REVIEW_ENABLED=false; shift ;;
+    --ignore-hup) IGNORE_HUP=true; shift ;;
     --child) CHILD_MODE=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --resume) RESUME=true; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+case "${RALPH_IGNORE_HUP:-}" in
+  1|true|TRUE|yes|on) IGNORE_HUP=true ;;
+esac
 
 if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || [ "$WORKERS" -lt 1 ]; then
   echo "Invalid --workers value: $WORKERS (must be a positive integer)" >&2
@@ -555,9 +562,17 @@ handle_signal() {
   exit 130
 }
 
+handle_hup() {
+  if [ "$IGNORE_HUP" = true ]; then
+    log "Received SIGHUP signal (ignored)"
+    return
+  fi
+  handle_signal SIGHUP
+}
+
 trap 'handle_signal SIGTERM' TERM
 trap 'handle_signal SIGINT' INT
-trap 'handle_signal SIGHUP' HUP
+trap 'handle_hup' HUP
 trap cleanup EXIT
 if [ "$CHILD_MODE" = false ]; then
   echo $$ > "$LOCK_FILE"

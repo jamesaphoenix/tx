@@ -138,14 +138,65 @@ log() {
   echo "$msg" | tee -a "$LOG_FILE"
 }
 
+pid_is_live() {
+  local pid="$1"
+  if [ -z "$pid" ]; then
+    return 1
+  fi
+  if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  kill -0 "$pid" 2>/dev/null
+}
+
+pid_command() {
+  local pid="$1"
+  ps -p "$pid" -o command= 2>/dev/null || true
+}
+
+watchdog_pid_is_live() {
+  local pid="$1"
+  local cmd=""
+  if ! pid_is_live "$pid"; then
+    return 1
+  fi
+
+  cmd=$(pid_command "$pid")
+  [ -n "$cmd" ] || return 1
+  echo "$cmd" | grep -q "ralph-watchdog.sh"
+}
+
+loop_pid_is_live() {
+  local pid="$1"
+  local cmd=""
+  if ! pid_is_live "$pid"; then
+    return 1
+  fi
+
+  cmd=$(pid_command "$pid")
+  [ -n "$cmd" ] || return 1
+  echo "$cmd" | grep -Eq '(^|[ /])ralph\.sh([[:space:]]|$)'
+}
+
 acquire_watchdog_lock() {
   if [ -f "$WATCHDOG_PID_FILE" ]; then
     local existing_pid=""
     existing_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)
-    if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
+
+    if watchdog_pid_is_live "$existing_pid"; then
       log "Another watchdog is already running (pid=$existing_pid). Exiting."
       exit 0
     fi
+
+    if [ -n "$existing_pid" ]; then
+      if pid_is_live "$existing_pid"; then
+        log "Watchdog pid file points to non-watchdog process (pid=$existing_pid); replacing stale lock"
+      else
+        log "Removing stale watchdog pid file (pid=$existing_pid)"
+      fi
+    fi
+
+    rm -f "$WATCHDOG_PID_FILE"
   fi
 
   echo "$$" > "$WATCHDOG_PID_FILE"
@@ -261,13 +312,13 @@ start_loop() {
     return 0
   fi
 
-  "${cmd[@]}" >>"$out_log" 2>&1 &
+  RALPH_IGNORE_HUP=1 nohup "${cmd[@]}" >>"$out_log" 2>&1 < /dev/null &
   local launcher_pid="$!"
   sleep 1
 
   local pid=""
   pid=$(loop_pid "$runtime" "$prefix" 2>/dev/null || true)
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  if [ -n "$pid" ] && loop_pid_is_live "$pid"; then
     log "Started runtime=$runtime prefix=$prefix pid=$pid"
   else
     log "Start attempted runtime=$runtime prefix=$prefix launcher_pid=$launcher_pid"
@@ -281,15 +332,19 @@ restart_loop() {
   local pid=""
   pid=$(loop_pid "$runtime" "$prefix" 2>/dev/null || true)
 
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  if [ -n "$pid" ] && loop_pid_is_live "$pid"; then
     log "Restarting runtime=$runtime prefix=$prefix pid=$pid reason=$reason"
     terminate_pid_tree "$pid" TERM
     sleep 2
-    if kill -0 "$pid" 2>/dev/null; then
+    if loop_pid_is_live "$pid"; then
       terminate_pid_tree "$pid" KILL
     fi
   else
-    log "Restart runtime=$runtime prefix=$prefix reason=$reason (no live pid)"
+    if [ -n "$pid" ]; then
+      log "Restart runtime=$runtime prefix=$prefix reason=$reason (stale pid=$pid)"
+    else
+      log "Restart runtime=$runtime prefix=$prefix reason=$reason (no live pid)"
+    fi
   fi
 
   start_loop "$runtime" "$prefix"
@@ -331,8 +386,12 @@ ensure_loop() {
 
   local pid=""
   pid=$(loop_pid "$runtime" "$prefix" 2>/dev/null || true)
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  if [ -n "$pid" ] && loop_pid_is_live "$pid"; then
     return
+  fi
+  if [ -n "$pid" ]; then
+    log "Detected stale loop pid runtime=$runtime prefix=$prefix pid=$pid; restarting"
+    rm -f "$(pid_file_for "$runtime" "$prefix")"
   fi
 
   log "Loop missing runtime=$runtime prefix=$prefix; starting"
@@ -467,6 +526,7 @@ check_error_burst_for_worker() {
 
 acquire_watchdog_lock
 trap 'release_watchdog_lock' EXIT INT TERM
+trap 'log "Received SIGHUP signal; ignoring to stay detached"' HUP
 
 log "Watchdog started interval=${POLL_SECONDS}s codex=${CODEX_ENABLED} claude=${CLAUDE_ENABLED} auto_start=${AUTO_START} idle_rounds=${IDLE_ROUNDS}"
 log "Stall thresholds: transcript_idle=${TRANSCRIPT_IDLE_SECONDS}s heartbeat_lag=${HEARTBEAT_LAG_SECONDS}s run_stale=${RUN_STALE_SECONDS}s"

@@ -13,7 +13,11 @@ export class TaskService extends Context.Tag("TaskService")<
     readonly get: (id: TaskId) => Effect.Effect<Task, TaskNotFoundError | DatabaseError>
     readonly getWithDeps: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly getWithDepsBatch: (ids: readonly TaskId[]) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
-    readonly update: (id: TaskId, input: UpdateTaskInput) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
+    readonly update: (
+      id: TaskId,
+      input: UpdateTaskInput,
+      options?: { actor?: "agent" | "human" }
+    ) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
     readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
     readonly remove: (id: TaskId, options?: { cascade?: boolean }) => Effect.Effect<void, TaskNotFoundError | HasChildrenError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
@@ -302,7 +306,7 @@ export const TaskServiceLive = Layer.effect(
           return yield* enrichWithDepsBatch(tasks)
         }),
 
-      update: (id, input) =>
+      update: (id, input, options) =>
         Effect.gen(function* () {
           const existing = yield* taskRepo.findById(id)
           if (!existing) {
@@ -362,7 +366,24 @@ export const TaskServiceLive = Layer.effect(
           }
 
           const now = new Date()
+          const actor = options?.actor ?? "agent"
           const isDone = input.status === "done" && existing.status !== "done"
+          if (isDone && actor === "agent") {
+            const childIds = yield* taskRepo.getChildIds(id)
+            if (childIds.length > 0) {
+              const children = yield* taskRepo.findByIds(childIds)
+              const incompleteChildIds = children
+                .filter((child) => child.status !== "done")
+                .map((child) => child.id)
+
+              if (incompleteChildIds.length > 0) {
+                return yield* Effect.fail(new ValidationError({
+                  reason: `Agent cannot mark parent task ${id} done while children are incomplete: ${incompleteChildIds.join(", ")}`
+                }))
+              }
+            }
+          }
+
           const assigneeTypeChanged =
             input.assigneeType !== undefined && input.assigneeType !== existing.assigneeType
           const assigneeIdChanged =

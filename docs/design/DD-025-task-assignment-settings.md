@@ -88,6 +88,14 @@ Rules:
 - `update` accepts partial assignment edits.
 - `getWithDeps` / `listWithDeps` / batch variants always emit assignment fields.
 
+#### Completion Invariant (Agent vs Human)
+
+- Add an explicit completion invariant in `TaskService.update`:
+  - Default actor context is `agent`.
+  - If an `agent` attempts `status -> done` on a task that has any direct child with status != `done`, reject with `ValidationError`.
+  - `human` actor context can still mark parent tasks `done` as an intentional override.
+- This preserves orchestration safety for autonomous loops while keeping human triage escape hatches in headful UI.
+
 ### API/CLI Changes
 
 #### Dashboard Server API
@@ -184,6 +192,8 @@ To preserve deterministic access to the palette from task context, add fallback:
 - Core task lifecycle:
   - Create/update/list/get returns assignment fields.
   - Existing operations (ready/done/block) unaffected.
+  - Agent completion invariant blocks parent completion when children are incomplete.
+  - Human completion override succeeds for the same parent state.
 - Dashboard server endpoints:
   - `GET/PATCH /api/settings` roundtrip to `.tx/config.toml`.
   - `POST/PATCH /api/tasks` assignment persistence.
