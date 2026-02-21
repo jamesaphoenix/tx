@@ -106,14 +106,15 @@ done
     join(binDir, "ps"),
     `#!/bin/bash
 set -euo pipefail
+default_cmd="\${WATCHDOG_TEST_PS_DEFAULT_COMMAND:-ralph-watchdog.sh}"
 if [ "\${1:-}" = "-p" ] && [ "\${3:-}" = "-o" ]; then
   pid="\${2:-}"
   if kill -0 "$pid" 2>/dev/null; then
-    echo "ralph-watchdog.sh"
+    echo "$default_cmd"
   fi
   exit 0
 fi
-echo "ralph-watchdog.sh"
+echo "$default_cmd"
 `
   )
 
@@ -317,7 +318,7 @@ function createReconcileSchema(db: Database): void {
   `)
 }
 
-function runWatchdogSweep(harness: Harness): SpawnSyncReturns<string> {
+function runWatchdogSweep(harness: Harness, extraEnv?: Record<string, string>): SpawnSyncReturns<string> {
   return harness.runWatchdog([
     "--once",
     "--no-start",
@@ -330,7 +331,7 @@ function runWatchdogSweep(harness: Harness): SpawnSyncReturns<string> {
     "1",
     "--run-stale-seconds",
     "60",
-  ])
+  ], extraEnv)
 }
 
 function insertActiveClaim(db: Database, taskId: string, workerId: string): void {
@@ -644,15 +645,21 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
       const runId = `run-${fixtureId("watchdog-stale-run").slice(3)}`
       const workerId = fixtureId("watchdog-stale-run-worker")
       const oldStart = new Date(Date.now() - 120_000).toISOString()
+      const metadata = JSON.stringify({
+        runtime: "codex",
+        worker: "ralph-codex-live-main",
+      })
 
       db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
       db.prepare(
         "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
-      ).run(runId, taskId, stalePid, "running", oldStart, "{}")
+      ).run(runId, taskId, stalePid, "running", oldStart, metadata)
       insertActiveClaim(db, taskId, workerId)
       db.close()
 
-      const result = runWatchdogSweep(harness)
+      const result = runWatchdogSweep(harness, {
+        WATCHDOG_TEST_PS_DEFAULT_COMMAND: `${join(harness.tmpDir, "scripts", "ralph.sh")} --runtime codex --worker-prefix ralph-codex-live`,
+      })
       expect(result.status).toBe(0)
 
       const checkDb = new Database(dbPath)
@@ -675,6 +682,65 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
       expect(isPidLive(stalePid)).toBe(false)
     } finally {
       terminatePid(stalePid)
+    }
+  })
+
+  it("cancels stale runs without killing unrelated live PIDs when ownership cannot be confirmed", () => {
+    const harness = createHarness()
+    harnesses.push(harness)
+
+    const unrelatedProc = spawn("/bin/sleep", ["30"], { stdio: "ignore" })
+    const unrelatedPid = unrelatedProc.pid ?? -1
+
+    try {
+      expect(unrelatedPid).toBeGreaterThan(0)
+
+      const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
+      const db = new Database(dbPath)
+      createReconcileSchema(db)
+
+      const taskId = fixtureId("watchdog-pid-reuse-task")
+      const runId = `run-${fixtureId("watchdog-pid-reuse-run").slice(3)}`
+      const workerId = fixtureId("watchdog-pid-reuse-worker")
+      const oldStart = new Date(Date.now() - 120_000).toISOString()
+      const metadata = JSON.stringify({
+        runtime: "codex",
+        worker: "ralph-codex-live-main",
+      })
+
+      db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
+      db.prepare(
+        "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run(runId, taskId, unrelatedPid, "running", oldStart, metadata)
+      insertActiveClaim(db, taskId, workerId)
+      db.close()
+
+      const result = runWatchdogSweep(harness)
+      expect(result.status).toBe(0)
+
+      const checkDb = new Database(dbPath)
+      const row = checkDb
+        .query("SELECT status, error_message FROM runs WHERE id = ?")
+        .get(runId) as { status: string; error_message: string | null } | null
+      const claimStatus = getClaimStatus(checkDb, taskId)
+      const activeClaimCount = getActiveClaimCount(checkDb, taskId)
+      checkDb.close()
+
+      expect(row).not.toBeNull()
+      expect(row?.status).toBe("cancelled")
+      expect(row?.error_message ?? "").toContain("ownership not confirmed")
+      expect(claimStatus).toBe("expired")
+      expect(activeClaimCount).toBe(0)
+      expect(isPidLive(unrelatedPid)).toBe(true)
+
+      const resetsLogPath = join(harness.stateDir, "resets.log")
+      expect(existsSync(resetsLogPath)).toBe(true)
+      expect(readFileSync(resetsLogPath, "utf-8")).toContain(taskId)
+
+      const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
+      expect(watchdogLog).toContain("ownership not confirmed")
+    } finally {
+      terminatePid(unrelatedPid)
     }
   })
 

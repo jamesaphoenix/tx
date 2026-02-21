@@ -249,6 +249,61 @@ loop_pid_is_live() {
   echo "$cmd" | grep -Eq '(^|[ /])ralph\.sh([[:space:]]|$)'
 }
 
+command_has_arg_pair() {
+  local command_line="$1"
+  local flag="$2"
+  local value="$3"
+
+  [ -n "$value" ] || return 1
+
+  case " $command_line " in
+    *" $flag $value "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+expected_prefix_for_runtime() {
+  local runtime="$1"
+  case "$runtime" in
+    codex) echo "$CODEX_PREFIX" ;;
+    claude) echo "$CLAUDE_PREFIX" ;;
+    *) echo "" ;;
+  esac
+}
+
+run_pid_is_owned_by_tx_runtime() {
+  local pid="$1"
+  local runtime="$2"
+  local worker="$3"
+  local cmd=""
+  local expected_prefix=""
+  local worker_prefix=""
+
+  if ! pid_is_live "$pid"; then
+    return 1
+  fi
+
+  [ -n "$runtime" ] || return 1
+  expected_prefix=$(expected_prefix_for_runtime "$runtime")
+  [ -n "$expected_prefix" ] || return 1
+
+  cmd=$(pid_command "$pid")
+  [ -n "$cmd" ] || return 1
+
+  echo "$cmd" | grep -F -- "$PROJECT_DIR/scripts/ralph.sh" >/dev/null || return 1
+  command_has_arg_pair "$cmd" "--runtime" "$runtime" || return 1
+  command_has_arg_pair "$cmd" "--worker-prefix" "$expected_prefix" || return 1
+
+  if [ -n "$worker" ]; then
+    worker_prefix="${worker%-main}"
+    if [ -n "$worker_prefix" ] && [ "$worker_prefix" != "$worker" ]; then
+      command_has_arg_pair "$cmd" "--worker-prefix" "$worker_prefix" || return 1
+    fi
+  fi
+
+  return 0
+}
+
 read_watchdog_pid_file() {
   local pid=""
 
@@ -547,13 +602,13 @@ ensure_loop() {
 reconcile_running_runs() {
   local rows=""
   rows=$(sqlite3 "$DB_PATH" \
-    "SELECT id, COALESCE(task_id,''), COALESCE(pid,0), CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
+    "SELECT id, COALESCE(task_id,''), COALESCE(pid,0), CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER), COALESCE(json_extract(metadata, '$.runtime'), ''), COALESCE(json_extract(metadata, '$.worker'), '')
      FROM runs
      WHERE status='running';" 2>/dev/null || echo "")
 
   [ -z "$rows" ] && return
 
-  while IFS='|' read -r run_id task_id pid age; do
+  while IFS='|' read -r run_id task_id pid age runtime worker; do
     [ -z "$run_id" ] && continue
 
     if [ "$pid" -le 0 ]; then
@@ -575,6 +630,15 @@ reconcile_running_runs() {
     fi
 
     if [ "$age" -gt "$RUN_STALE_SECONDS" ]; then
+      if ! run_pid_is_owned_by_tx_runtime "$pid" "$runtime" "$worker"; then
+        log "Stale run detected run=$run_id pid=$pid age=${age}s; ownership not confirmed, cancelling without kill"
+        sqlite3 "$DB_PATH" \
+          "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: stale running run cancelled without kill (ownership not confirmed for pid $pid, age ${age}s)' WHERE id='$(sql_escape "$run_id")';" \
+          >/dev/null 2>&1 || true
+        [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
+        continue
+      fi
+
       log "Stale run detected run=$run_id pid=$pid age=${age}s; terminating"
       terminate_pid_tree "$pid" TERM
       sleep 2
