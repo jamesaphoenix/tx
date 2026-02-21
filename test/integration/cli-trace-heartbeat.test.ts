@@ -143,6 +143,53 @@ describe("CLI trace heartbeat integration", () => {
     }
   })
 
+  it("filters trace list by hours cutoff in SQL while preserving span counts", () => {
+    const recentRunId = runFixtureId("trace-list-recent")
+    const oldRunId = runFixtureId("trace-list-old")
+    const now = Date.now()
+    const recentStartedAt = new Date(now - 30 * 60 * 1000).toISOString()
+    const oldStartedAt = new Date(now - 3 * 60 * 60 * 1000).toISOString()
+
+    const db = new Database(dbPath)
+    try {
+      insertRun(db, recentRunId, null, recentStartedAt)
+      insertRun(db, oldRunId, null, oldStartedAt)
+
+      db.prepare(
+        `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
+         VALUES (?, 'span', ?, NULL, 'tx-implementer', NULL, ?, '{"status":"ok"}', 12)`
+      ).run(recentStartedAt, recentRunId, "span-1")
+
+      db.prepare(
+        `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
+         VALUES (?, 'span', ?, NULL, 'tx-implementer', NULL, ?, '{"status":"ok"}', 8)`
+      ).run(recentStartedAt, recentRunId, "span-2")
+
+      db.prepare(
+        `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
+         VALUES (?, 'span', ?, NULL, 'tx-implementer', NULL, ?, '{"status":"ok"}', 5)`
+      ).run(oldStartedAt, oldRunId, "old-span")
+    } finally {
+      db.close()
+    }
+
+    const result = runTx([
+      "trace",
+      "list",
+      "--hours",
+      "1",
+      "--limit",
+      "5",
+      "--json",
+    ], dbPath, tmpProjectDir)
+
+    expect(result.status).toBe(0)
+    const rows = JSON.parse(result.stdout) as Array<{ id: string; spanCount: number }>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.id).toBe(recentRunId)
+    expect(rows[0]?.spanCount).toBe(2)
+  })
+
   it("lists stalled runs via tx trace stalled", () => {
     const runId = runFixtureId("lists-stalled")
     const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()

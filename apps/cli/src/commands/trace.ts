@@ -51,7 +51,7 @@ const getSpanCountsForRuns = (
   const rows = db.prepare(`
     SELECT run_id, COUNT(*) as count
     FROM events
-    WHERE run_id IN (${placeholders}) AND event_type = 'span'
+    WHERE event_type = 'span' AND run_id IN (${placeholders})
     GROUP BY run_id
   `).all(...runIds)
 
@@ -81,15 +81,9 @@ export const traceList = (_pos: string[], flags: Flags) =>
     const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 20
     const hours = parseIntOpt(flags, "hours", "hours") ?? 24
 
-    // Get recent runs - for now we'll get more than needed and filter by time
-    // A more efficient approach would be to add a time-filtered query to RunRepository
-    const allRuns = yield* runRepo.findRecent(limit * 2) // Get extra to account for time filtering
-
-    // Filter to runs within the specified hours
-    const cutoff = Date.now() - hours * 60 * 60 * 1000
-    const recentRuns = allRuns
-      .filter(r => r.startedAt.getTime() >= cutoff)
-      .slice(0, limit)
+    // Push time-window filtering into SQL to avoid overfetching runs in memory.
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000)
+    const recentRuns = yield* runRepo.findRecentSince(cutoff, limit)
 
     // Get span counts for all runs
     const runIds = recentRuns.map(r => r.id)
@@ -754,10 +748,10 @@ export const traceErrors = (_pos: string[], flags: Flags) =>
     const failedRuns = db.prepare(`
       SELECT id, task_id, agent, ended_at, error_message
       FROM runs
-      WHERE status = 'failed' AND ended_at >= ?
+      WHERE status = ? AND ended_at >= ?
       ORDER BY ended_at DESC
       LIMIT ?
-    `).all(cutoff, limit) as FailedRunRow[]
+    `).all("failed", cutoff, limit) as FailedRunRow[]
 
     for (const run of failedRuns) {
       errors.push({
@@ -776,12 +770,12 @@ export const traceErrors = (_pos: string[], flags: Flags) =>
     const errorSpans = db.prepare(`
       SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
       FROM events
-      WHERE event_type = 'span'
+      WHERE event_type = ?
+        AND json_extract(metadata, '$.status') = ?
         AND timestamp >= ?
-        AND json_extract(metadata, '$.status') = 'error'
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(cutoff, limit) as ErrorSpanRow[]
+    `).all("span", "error", cutoff, limit) as ErrorSpanRow[]
 
     for (const span of errorSpans) {
       let errorMessage = "Unknown error"
@@ -810,10 +804,10 @@ export const traceErrors = (_pos: string[], flags: Flags) =>
     const errorEvents = db.prepare(`
       SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
       FROM events
-      WHERE event_type = 'error' AND timestamp >= ?
+      WHERE event_type = ? AND timestamp >= ?
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(cutoff, limit) as ErrorSpanRow[]
+    `).all("error", cutoff, limit) as ErrorSpanRow[]
 
     for (const event of errorEvents) {
       errors.push({

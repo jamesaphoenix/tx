@@ -22,6 +22,9 @@ export class RunRepository extends Context.Tag("RunRepository")<
     /** Get recent runs */
     readonly findRecent: (limit: number) => Effect.Effect<readonly Run[], DatabaseError>
 
+    /** Get recent runs since a cutoff timestamp */
+    readonly findRecentSince: (since: Date, limit: number) => Effect.Effect<readonly Run[], DatabaseError>
+
     /** Update a run */
     readonly update: (id: RunId, input: UpdateRunInput) => Effect.Effect<void, DatabaseError>
 
@@ -115,6 +118,20 @@ export const RunRepositoryLive = Layer.effect(
             const rows = db.prepare(
               "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?"
             ).all(limit) as RunRow[]
+            return rows.map(rowToRun)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findRecentSince: (since, limit) =>
+        Effect.try({
+          try: () => {
+            const rows = db.prepare(`
+              SELECT * FROM runs
+              WHERE started_at >= ?
+              ORDER BY started_at DESC
+              LIMIT ?
+            `).all(since.toISOString(), limit) as RunRow[]
             return rows.map(rowToRun)
           },
           catch: (cause) => new DatabaseError({ cause })
