@@ -50,6 +50,28 @@ function insertRun(
   ).run(runId, taskId, startedAt)
 }
 
+function insertWorker(
+  db: Database,
+  workerId: string,
+  status: "starting" | "idle" | "busy" | "stopping" | "dead" = "busy",
+): void {
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO workers (
+       id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '[]', '{}')`
+  ).run(workerId, `Worker ${workerId}`, "localhost", 31337, status, now, now)
+}
+
+function insertActiveClaim(db: Database, taskId: string, workerId: string): void {
+  const claimedAt = new Date()
+  const leaseExpiresAt = new Date(claimedAt.getTime() + 30 * 60 * 1000)
+  db.prepare(
+    `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+     VALUES (?, ?, ?, ?, 0, 'active')`
+  ).run(taskId, workerId, claimedAt.toISOString(), leaseExpiresAt.toISOString())
+}
+
 function insertSpanEvents(db: Database, runId: string, timestamp: string, count: number): void {
   const insertSpan = db.prepare(
     `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
@@ -264,12 +286,15 @@ describe("CLI trace heartbeat integration", () => {
   it("reaps stalled runs and resets task by default", () => {
     const runId = runFixtureId("reap-default")
     const taskId = taskFixtureId("reap-default-task")
+    const workerId = fixtureId("cli-trace-heartbeat:reap-default-worker")
     const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
 
     const db = new Database(dbPath)
     try {
       insertTask(db, taskId, "active")
       insertRun(db, runId, taskId)
+      insertWorker(db, workerId)
+      insertActiveClaim(db, taskId, workerId)
     } finally {
       db.close()
     }
@@ -324,12 +349,20 @@ describe("CLI trace heartbeat integration", () => {
       const taskRow = verifyDb.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId) as
         | { status: string }
         | null
+      const claimRow = verifyDb.prepare(
+        "SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1"
+      ).get(taskId) as { status: string } | null
+      const activeClaims = verifyDb.prepare(
+        "SELECT COUNT(*) as count FROM task_claims WHERE task_id = ? AND status = 'active'"
+      ).get(taskId) as { count: number } | null
 
       expect(runRow).not.toBeNull()
       expect(runRow?.status).toBe("cancelled")
       expect(runRow?.exit_code).toBe(137)
       expect(runRow?.error_message).toContain("Run reaped by heartbeat primitive")
       expect(taskRow?.status).toBe("ready")
+      expect(claimRow?.status).toBe("expired")
+      expect(activeClaims?.count ?? 0).toBe(0)
     } finally {
       verifyDb.close()
     }
@@ -338,12 +371,15 @@ describe("CLI trace heartbeat integration", () => {
   it("reaps stalled runs without resetting task when --no-reset-task is set", () => {
     const runId = runFixtureId("reap-no-reset")
     const taskId = taskFixtureId("reap-no-reset-task")
+    const workerId = fixtureId("cli-trace-heartbeat:reap-no-reset-worker")
     const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
 
     const db = new Database(dbPath)
     try {
       insertTask(db, taskId, "active")
       insertRun(db, runId, taskId)
+      insertWorker(db, workerId)
+      insertActiveClaim(db, taskId, workerId)
     } finally {
       db.close()
     }
@@ -394,9 +430,17 @@ describe("CLI trace heartbeat integration", () => {
       const taskRow = verifyDb.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId) as
         | { status: string }
         | null
+      const claimRow = verifyDb.prepare(
+        "SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1"
+      ).get(taskId) as { status: string } | null
+      const activeClaims = verifyDb.prepare(
+        "SELECT COUNT(*) as count FROM task_claims WHERE task_id = ? AND status = 'active'"
+      ).get(taskId) as { count: number } | null
 
       expect(runRow?.status).toBe("cancelled")
       expect(taskRow?.status).toBe("active")
+      expect(claimRow?.status).toBe("expired")
+      expect(activeClaims?.count ?? 0).toBe(0)
     } finally {
       verifyDb.close()
     }

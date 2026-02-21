@@ -7,6 +7,7 @@ import type { RunId, TaskId } from "@jamesaphoenix/tx-types"
 
 const runFixtureId = (name: string): RunId => `run-${fixtureId(`run-heartbeat:${name}`).slice(3)}` as RunId
 const taskFixtureId = (name: string): TaskId => fixtureId(`run-heartbeat:${name}`) as TaskId
+const workerFixtureId = (name: string): string => fixtureId(`run-heartbeat-worker:${name}`)
 
 const insertTask = (shared: SharedTestLayerResult, id: TaskId, status: string = "ready"): void => {
   const now = new Date().toISOString()
@@ -26,6 +27,28 @@ const insertRun = (
     `INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
      VALUES (?, ?, 'tx-implementer', ?, 'running', NULL, '{}')`
   ).run(id, taskId, startedAt)
+}
+
+const insertWorker = (
+  shared: SharedTestLayerResult,
+  workerId: string,
+  status: "starting" | "idle" | "busy" | "stopping" | "dead" = "busy",
+): void => {
+  const now = new Date().toISOString()
+  shared.getDb().prepare(
+    `INSERT INTO workers (
+       id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '[]', '{}')`
+  ).run(workerId, `Worker ${workerId}`, "localhost", 42424, status, now, now)
+}
+
+const insertActiveClaim = (shared: SharedTestLayerResult, taskId: TaskId, workerId: string): void => {
+  const claimedAt = new Date()
+  const leaseExpiresAt = new Date(claimedAt.getTime() + 30 * 60 * 1000)
+  shared.getDb().prepare(
+    `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+     VALUES (?, ?, ?, ?, 0, 'active')`
+  ).run(taskId, workerId, claimedAt.toISOString(), leaseExpiresAt.toISOString())
 }
 
 describe("RunHeartbeatService integration", () => {
@@ -123,8 +146,11 @@ describe("RunHeartbeatService integration", () => {
   it("dry-run reap returns candidates without mutating run/task status", async () => {
     const runId = runFixtureId("dry-reap")
     const taskId = taskFixtureId("dry-reap-task")
+    const workerId = workerFixtureId("dry-reap-worker")
     insertTask(shared, taskId, "active")
     insertRun(shared, runId, taskId)
+    insertWorker(shared, workerId)
+    insertActiveClaim(shared, taskId, workerId)
     const old = new Date(Date.now() - 10 * 60 * 1000)
 
     const result = await Effect.runPromise(
@@ -160,13 +186,21 @@ describe("RunHeartbeatService integration", () => {
       | { status: string }
       | undefined
     expect(taskRow?.status).toBe("active")
+
+    const claimStatusRow = shared.getDb().prepare(
+      "SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1"
+    ).get(taskId) as { status: string } | undefined
+    expect(claimStatusRow?.status).toBe("active")
   })
 
   it("reaps stalled runs and resets task to ready by default", async () => {
     const runId = runFixtureId("real-reap")
     const taskId = taskFixtureId("real-reap-task")
+    const workerId = workerFixtureId("real-reap-worker")
     insertTask(shared, taskId, "active")
     insertRun(shared, runId, taskId)
+    insertWorker(shared, workerId)
+    insertActiveClaim(shared, taskId, workerId)
     const old = new Date(Date.now() - 10 * 60 * 1000)
 
     const result = await Effect.runPromise(
@@ -203,13 +237,26 @@ describe("RunHeartbeatService integration", () => {
       | { status: string }
       | undefined
     expect(taskRow?.status).toBe("ready")
+
+    const claimStatusRow = shared.getDb().prepare(
+      "SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1"
+    ).get(taskId) as { status: string } | undefined
+    const activeClaims = shared.getDb().prepare(
+      "SELECT COUNT(*) as count FROM task_claims WHERE task_id = ? AND status = 'active'"
+    ).get(taskId) as { count: number } | undefined
+
+    expect(claimStatusRow?.status).toBe("expired")
+    expect(activeClaims?.count ?? 0).toBe(0)
   })
 
   it("reaps stalled runs without resetting task when resetTask is false", async () => {
     const runId = runFixtureId("real-reap-no-reset")
     const taskId = taskFixtureId("real-reap-no-reset-task")
+    const workerId = workerFixtureId("real-reap-no-reset-worker")
     insertTask(shared, taskId, "active")
     insertRun(shared, runId, taskId)
+    insertWorker(shared, workerId)
+    insertActiveClaim(shared, taskId, workerId)
     const old = new Date(Date.now() - 10 * 60 * 1000)
 
     const result = await Effect.runPromise(
@@ -246,6 +293,16 @@ describe("RunHeartbeatService integration", () => {
       | { status: string }
       | undefined
     expect(taskRow?.status).toBe("active")
+
+    const claimStatusRow = shared.getDb().prepare(
+      "SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1"
+    ).get(taskId) as { status: string } | undefined
+    const activeClaims = shared.getDb().prepare(
+      "SELECT COUNT(*) as count FROM task_claims WHERE task_id = ? AND status = 'active'"
+    ).get(taskId) as { count: number } | undefined
+
+    expect(claimStatusRow?.status).toBe("expired")
+    expect(activeClaims?.count ?? 0).toBe(0)
   })
 
   it("returns validation errors for invalid stalled query thresholds", async () => {

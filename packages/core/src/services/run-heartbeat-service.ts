@@ -225,6 +225,20 @@ export const RunHeartbeatServiceLive = Layer.effect(
         return stalled
       })
 
+    const expireActiveClaimsForTask = (
+      taskId: TaskId
+    ): Effect.Effect<void, DatabaseError> =>
+      Effect.try({
+        try: () => {
+          db.prepare(
+            `UPDATE task_claims
+             SET status = 'expired'
+             WHERE task_id = ? AND status = 'active'`
+          ).run(taskId)
+        },
+        catch: (cause) => new DatabaseError({ cause }),
+      }).pipe(Effect.asVoid)
+
     return {
       heartbeat: (input) =>
         Effect.gen(function* () {
@@ -327,6 +341,10 @@ export const RunHeartbeatServiceLive = Layer.effect(
                 exitCode: 137,
                 errorMessage: `Run reaped by heartbeat primitive: ${reasonText}`,
               })
+
+              if (item.run.taskId && isTaskId(item.run.taskId)) {
+                yield* expireActiveClaimsForTask(item.run.taskId)
+              }
 
               if (resetTask && item.run.taskId && isTaskId(item.run.taskId)) {
                 taskReset = yield* taskSvc.forceStatus(item.run.taskId, "ready").pipe(

@@ -275,6 +275,13 @@ function getClaimStatus(db: Database, taskId: string): string | null {
   return row?.status ?? null
 }
 
+function getActiveClaimCount(db: Database, taskId: string): number {
+  const row = db
+    .query("SELECT COUNT(*) AS count FROM task_claims WHERE task_id = ? AND status = 'active'")
+    .get(taskId) as { count: number } | null
+  return row?.count ?? 0
+}
+
 afterEach(() => {
   for (const harness of harnesses.splice(0, harnesses.length)) {
     cleanupHarness(harness)
@@ -344,12 +351,14 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
       .query("SELECT status, error_message FROM runs WHERE id = ?")
       .get(runId) as { status: string; error_message: string | null } | null
     const claimStatus = getClaimStatus(checkDb, taskId)
+    const activeClaimCount = getActiveClaimCount(checkDb, taskId)
     checkDb.close()
 
     expect(row).not.toBeNull()
     expect(row?.status).toBe("cancelled")
     expect(row?.error_message ?? "").toContain("missing PID")
     expect(claimStatus).toBe("expired")
+    expect(activeClaimCount).toBe(0)
 
     const resetsLogPath = join(harness.stateDir, "resets.log")
     expect(existsSync(resetsLogPath)).toBe(true)
@@ -388,12 +397,14 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
       .query("SELECT status, error_message FROM runs WHERE id = ?")
       .get(runId) as { status: string; error_message: string | null } | null
     const claimStatus = getClaimStatus(checkDb, taskId)
+    const activeClaimCount = getActiveClaimCount(checkDb, taskId)
     checkDb.close()
 
     expect(row).not.toBeNull()
     expect(row?.status).toBe("cancelled")
     expect(row?.error_message ?? "").toContain("process not alive")
     expect(claimStatus).toBe("expired")
+    expect(activeClaimCount).toBe(0)
 
     const resetsLogPath = join(harness.stateDir, "resets.log")
     expect(existsSync(resetsLogPath)).toBe(true)
@@ -434,12 +445,14 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
         .query("SELECT status, error_message FROM runs WHERE id = ?")
         .get(runId) as { status: string; error_message: string | null } | null
       const claimStatus = getClaimStatus(checkDb, taskId)
+      const activeClaimCount = getActiveClaimCount(checkDb, taskId)
       checkDb.close()
 
       expect(row).not.toBeNull()
       expect(row?.status).toBe("cancelled")
       expect(row?.error_message ?? "").toContain("stale running run killed")
       expect(claimStatus).toBe("expired")
+      expect(activeClaimCount).toBe(0)
 
       const resetsLogPath = join(harness.stateDir, "resets.log")
       expect(existsSync(resetsLogPath)).toBe(true)
@@ -470,9 +483,11 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
 
     const checkDb = new Database(dbPath)
     const claimStatus = getClaimStatus(checkDb, taskId)
+    const activeClaimCount = getActiveClaimCount(checkDb, taskId)
     checkDb.close()
 
     expect(claimStatus).toBe("expired")
+    expect(activeClaimCount).toBe(0)
 
     const resetsLogPath = join(harness.stateDir, "resets.log")
     expect(existsSync(resetsLogPath)).toBe(true)
