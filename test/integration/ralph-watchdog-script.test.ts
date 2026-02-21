@@ -44,11 +44,13 @@ function writeWatchdogEnv(tmpDir: string): void {
       "WATCHDOG_CLAUDE_ENABLED=0",
       "WATCHDOG_POLL_SECONDS=1",
       "WATCHDOG_TRANSCRIPT_IDLE_SECONDS=60",
+      "WATCHDOG_CLAUDE_STALL_GRACE_SECONDS=90",
       "WATCHDOG_HEARTBEAT_LAG_SECONDS=1",
       "WATCHDOG_RUN_STALE_SECONDS=60",
       "WATCHDOG_IDLE_ROUNDS=1",
       "WATCHDOG_ERROR_BURST_WINDOW_MINUTES=20",
       "WATCHDOG_ERROR_BURST_THRESHOLD=4",
+      "WATCHDOG_ERROR_BURST_GRACE_SECONDS=2",
       "WATCHDOG_RESTART_COOLDOWN_SECONDS=1",
       "WATCHDOG_DETACHED=1",
       "",
@@ -314,6 +316,8 @@ describe("watchdog launcher integration", () => {
 
     const eventsLog = readFileSync(join(harness.tmpDir, ".tx", "watchdog-events.log"), "utf-8")
     expect(eventsLog.match(/^start /gm)?.length ?? 0).toBeGreaterThanOrEqual(2)
+    expect(eventsLog).toContain("--claude-stall-grace-seconds 90")
+    expect(eventsLog).toContain("--error-burst-grace-seconds 2")
 
     const stop = harness.runLauncher(["stop"])
     expect(stop.status).toBe(0)

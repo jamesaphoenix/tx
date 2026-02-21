@@ -23,10 +23,12 @@ LOG_FILE="$PROJECT_DIR/.tx/ralph-watchdog.log"
 
 POLL_SECONDS=${POLL_SECONDS:-300}
 RUN_STALE_SECONDS=${RUN_STALE_SECONDS:-5400}
-TRANSCRIPT_IDLE_SECONDS=${TRANSCRIPT_IDLE_SECONDS:-300}
+TRANSCRIPT_IDLE_SECONDS=${TRANSCRIPT_IDLE_SECONDS:-600}
 HEARTBEAT_LAG_SECONDS=${HEARTBEAT_LAG_SECONDS:-180}
+CLAUDE_STALL_GRACE_SECONDS=${CLAUDE_STALL_GRACE_SECONDS:-900}
 ERROR_BURST_WINDOW_MINUTES=${ERROR_BURST_WINDOW_MINUTES:-20}
 ERROR_BURST_THRESHOLD=${ERROR_BURST_THRESHOLD:-4}
+ERROR_BURST_GRACE_SECONDS=${ERROR_BURST_GRACE_SECONDS:-600}
 RESTART_COOLDOWN_SECONDS=${RESTART_COOLDOWN_SECONDS:-900}
 
 CODEX_ENABLED=true
@@ -56,8 +58,10 @@ while [[ $# -gt 0 ]]; do
     --run-stale-seconds) RUN_STALE_SECONDS="$2"; shift 2 ;;
     --transcript-idle-seconds) TRANSCRIPT_IDLE_SECONDS="$2"; shift 2 ;;
     --heartbeat-lag-seconds) HEARTBEAT_LAG_SECONDS="$2"; shift 2 ;;
+    --claude-stall-grace-seconds) CLAUDE_STALL_GRACE_SECONDS="$2"; shift 2 ;;
     --error-window-minutes) ERROR_BURST_WINDOW_MINUTES="$2"; shift 2 ;;
     --error-threshold) ERROR_BURST_THRESHOLD="$2"; shift 2 ;;
+    --error-burst-grace-seconds) ERROR_BURST_GRACE_SECONDS="$2"; shift 2 ;;
     --restart-cooldown-seconds) RESTART_COOLDOWN_SECONDS="$2"; shift 2 ;;
     --heartbeat-interval) HEARTBEAT_INTERVAL="$2"; shift 2 ;;
     --idle-rounds) IDLE_ROUNDS="$2"; shift 2 ;;
@@ -91,6 +95,11 @@ if ! [[ "$HEARTBEAT_LAG_SECONDS" =~ ^[0-9]+$ ]] || [ "$HEARTBEAT_LAG_SECONDS" -l
   exit 1
 fi
 
+if ! [[ "$CLAUDE_STALL_GRACE_SECONDS" =~ ^[0-9]+$ ]] || [ "$CLAUDE_STALL_GRACE_SECONDS" -lt 0 ]; then
+  echo "Invalid --claude-stall-grace-seconds value: $CLAUDE_STALL_GRACE_SECONDS" >&2
+  exit 1
+fi
+
 if ! [[ "$ERROR_BURST_WINDOW_MINUTES" =~ ^[0-9]+$ ]] || [ "$ERROR_BURST_WINDOW_MINUTES" -lt 1 ]; then
   echo "Invalid --error-window-minutes value: $ERROR_BURST_WINDOW_MINUTES" >&2
   exit 1
@@ -98,6 +107,11 @@ fi
 
 if ! [[ "$ERROR_BURST_THRESHOLD" =~ ^[0-9]+$ ]] || [ "$ERROR_BURST_THRESHOLD" -lt 1 ]; then
   echo "Invalid --error-threshold value: $ERROR_BURST_THRESHOLD" >&2
+  exit 1
+fi
+
+if ! [[ "$ERROR_BURST_GRACE_SECONDS" =~ ^[0-9]+$ ]] || [ "$ERROR_BURST_GRACE_SECONDS" -lt 1 ]; then
+  echo "Invalid --error-burst-grace-seconds value: $ERROR_BURST_GRACE_SECONDS" >&2
   exit 1
 fi
 
@@ -152,6 +166,63 @@ pid_is_live() {
 pid_command() {
   local pid="$1"
   ps -p "$pid" -o command= 2>/dev/null || true
+}
+
+duration_to_seconds() {
+  local value="$1"
+  local days=0
+  local hours=0
+  local mins=0
+  local secs=0
+
+  [ -z "$value" ] && { echo "0"; return; }
+  value=$(echo "$value" | tr -d '[:space:]')
+  [ -z "$value" ] && { echo "0"; return; }
+
+  if [[ "$value" == *-* ]]; then
+    days="${value%%-*}"
+    value="${value#*-}"
+  fi
+
+  case "$(echo "$value" | awk -F: '{print NF}')" in
+    3)
+      hours="${value%%:*}"
+      value="${value#*:}"
+      mins="${value%%:*}"
+      secs="${value#*:}"
+      ;;
+    2)
+      mins="${value%%:*}"
+      secs="${value#*:}"
+      ;;
+    1)
+      secs="$value"
+      ;;
+    *)
+      echo "0"
+      return
+      ;;
+  esac
+
+  [[ "$days" =~ ^[0-9]+$ ]] || days=0
+  [[ "$hours" =~ ^[0-9]+$ ]] || hours=0
+  [[ "$mins" =~ ^[0-9]+$ ]] || mins=0
+  [[ "$secs" =~ ^[0-9]+$ ]] || secs=0
+
+  echo $((days * 86400 + hours * 3600 + mins * 60 + secs))
+}
+
+pid_elapsed_seconds() {
+  local pid="$1"
+  local raw=""
+
+  if ! pid_is_live "$pid"; then
+    echo "0"
+    return
+  fi
+
+  raw=$(ps -p "$pid" -o etime= 2>/dev/null || echo "")
+  duration_to_seconds "$raw"
 }
 
 watchdog_pid_is_live() {
@@ -277,6 +348,26 @@ terminate_pid_tree() {
   kill "-$signal" "$pid" 2>/dev/null || true
 }
 
+expire_active_claims_for_task() {
+  local task_id="$1"
+  [ -z "$task_id" ] && return
+
+  sqlite3 "$DB_PATH" \
+    "UPDATE task_claims
+     SET status='expired'
+     WHERE task_id='$(sql_escape "$task_id")'
+       AND status='active';" \
+    >/dev/null 2>&1 || true
+}
+
+reset_task_and_expire_claims() {
+  local task_id="$1"
+  [ -z "$task_id" ] && return
+
+  expire_active_claims_for_task "$task_id"
+  tx reset "$task_id" >/dev/null 2>&1 || true
+}
+
 start_loop() {
   local runtime="$1"
   local prefix="$2"
@@ -296,6 +387,7 @@ start_loop() {
     --claim-renew-interval "$CLAIM_RENEW_INTERVAL"
     --heartbeat-interval "$HEARTBEAT_INTERVAL"
     --claude-stall-seconds "$TRANSCRIPT_IDLE_SECONDS"
+    --claude-stall-grace-seconds "$CLAUDE_STALL_GRACE_SECONDS"
     --idle-rounds "$IDLE_ROUNDS"
   )
 
@@ -414,7 +506,7 @@ reconcile_running_runs() {
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: missing PID for running run' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
-      [ -n "$task_id" ] && tx reset "$task_id" >/dev/null 2>&1 || true
+      [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
       log "Reconciled run=$run_id (missing pid)"
       continue
     fi
@@ -423,7 +515,7 @@ reconcile_running_runs() {
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: process not alive' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
-      [ -n "$task_id" ] && tx reset "$task_id" >/dev/null 2>&1 || true
+      [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
       log "Reconciled run=$run_id (dead pid=$pid)"
       continue
     fi
@@ -438,7 +530,7 @@ reconcile_running_runs() {
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: stale running run killed (age ${age}s)' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
-      [ -n "$task_id" ] && tx reset "$task_id" >/dev/null 2>&1 || true
+      [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
     fi
   done <<< "$rows"
 }
@@ -461,7 +553,7 @@ reset_orphaned_active_tasks() {
   local count=0
   while IFS= read -r task_id; do
     [ -z "$task_id" ] && continue
-    tx reset "$task_id" >/dev/null 2>&1 || true
+    reset_task_and_expire_claims "$task_id"
     count=$((count + 1))
   done <<< "$tasks"
 
@@ -499,6 +591,12 @@ check_error_burst_for_worker() {
   fi
 
   local worker="${prefix}-main"
+  local ready_count="0"
+  ready_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM tasks WHERE status='ready';" 2>/dev/null || echo "0")
+  if [ "$ready_count" -eq 0 ]; then
+    return
+  fi
+
   local count="0"
   count=$(sqlite3 "$DB_PATH" \
     "SELECT COUNT(*)
@@ -508,6 +606,17 @@ check_error_burst_for_worker() {
        AND json_extract(metadata, '$.worker') = '$(sql_escape "$worker")';" 2>/dev/null || echo "0")
 
   if [ "$count" -ge "$ERROR_BURST_THRESHOLD" ]; then
+    local loop_pid_val=""
+    loop_pid_val=$(loop_pid "$runtime" "$prefix" 2>/dev/null || true)
+    if [ -n "$loop_pid_val" ] && loop_pid_is_live "$loop_pid_val"; then
+      local loop_age_seconds="0"
+      loop_age_seconds=$(pid_elapsed_seconds "$loop_pid_val")
+      if [ "$loop_age_seconds" -lt "$ERROR_BURST_GRACE_SECONDS" ]; then
+        log "Error burst detected runtime=$runtime prefix=$prefix count=$count but loop uptime=${loop_age_seconds}s < grace=${ERROR_BURST_GRACE_SECONDS}s; skipping restart"
+        return
+      fi
+    fi
+
     local worker_running_count="0"
     worker_running_count=$(sqlite3 "$DB_PATH" \
       "SELECT COUNT(*)
@@ -529,7 +638,7 @@ trap 'release_watchdog_lock' EXIT INT TERM
 trap 'log "Received SIGHUP signal; ignoring to stay detached"' HUP
 
 log "Watchdog started interval=${POLL_SECONDS}s codex=${CODEX_ENABLED} claude=${CLAUDE_ENABLED} auto_start=${AUTO_START} idle_rounds=${IDLE_ROUNDS}"
-log "Stall thresholds: transcript_idle=${TRANSCRIPT_IDLE_SECONDS}s heartbeat_lag=${HEARTBEAT_LAG_SECONDS}s run_stale=${RUN_STALE_SECONDS}s"
+log "Stall thresholds: transcript_idle=${TRANSCRIPT_IDLE_SECONDS}s claude_grace=${CLAUDE_STALL_GRACE_SECONDS}s heartbeat_lag=${HEARTBEAT_LAG_SECONDS}s run_stale=${RUN_STALE_SECONDS}s"
 
 while true; do
   ensure_loop "codex" "$CODEX_PREFIX" "$CODEX_ENABLED"

@@ -85,17 +85,16 @@ Required keys and defaults:
 | `WATCHDOG_CODEX_ENABLED` | runtime-dependent | `0|1` | `--no-codex` inversion |
 | `WATCHDOG_CLAUDE_ENABLED` | runtime-dependent | `0|1` | `--no-claude` inversion |
 | `WATCHDOG_POLL_SECONDS` | `300` | integer `>=1` | `--interval` |
-| `WATCHDOG_TRANSCRIPT_IDLE_SECONDS` | `300` | integer `>=60` | `--transcript-idle-seconds` |
+| `WATCHDOG_TRANSCRIPT_IDLE_SECONDS` | `600` | integer `>=60` | `--transcript-idle-seconds` |
+| `WATCHDOG_CLAUDE_STALL_GRACE_SECONDS` | `900` | integer `>=0` | `--claude-stall-grace-seconds` |
 | `WATCHDOG_HEARTBEAT_LAG_SECONDS` | `180` | integer `>=1` | `--heartbeat-lag-seconds` |
 | `WATCHDOG_RUN_STALE_SECONDS` | `5400` | integer `>=60` | `--run-stale-seconds` |
 | `WATCHDOG_IDLE_ROUNDS` | `300` | integer `>=1` | `--idle-rounds` |
+| `WATCHDOG_ERROR_BURST_WINDOW_MINUTES` | `20` | integer `>=1` | `--error-window-minutes` |
+| `WATCHDOG_ERROR_BURST_THRESHOLD` | `4` | integer `>=1` | `--error-threshold` |
+| `WATCHDOG_ERROR_BURST_GRACE_SECONDS` | `600` | integer `>=1` | `--error-burst-grace-seconds` |
+| `WATCHDOG_RESTART_COOLDOWN_SECONDS` | `900` | integer `>=1` | `--restart-cooldown-seconds` |
 | `WATCHDOG_DETACHED` | `1` | `0|1` | Launcher mode |
-
-Optional advanced knobs (if scaffold chooses to expose):
-
-- `WATCHDOG_ERROR_BURST_WINDOW_MINUTES` (default `20`)
-- `WATCHDOG_ERROR_BURST_THRESHOLD` (default `4`)
-- `WATCHDOG_RESTART_COOLDOWN_SECONDS` (default `900`)
 
 ### Detached Mode Contract (WOC-005)
 

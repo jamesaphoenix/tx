@@ -42,7 +42,8 @@ WORKERS=${WORKERS:-1}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
 CLAIM_RENEW_INTERVAL=${CLAIM_RENEW_INTERVAL:-300}
 RUN_HEARTBEAT_INTERVAL=${RUN_HEARTBEAT_INTERVAL:-30}
-CLAUDE_STALL_SECONDS=${CLAUDE_STALL_SECONDS:-300}
+CLAUDE_STALL_SECONDS=${CLAUDE_STALL_SECONDS:-600}
+CLAUDE_STALL_GRACE_SECONDS=${CLAUDE_STALL_GRACE_SECONDS:-900}
 NO_PROGRESS_LOG_INTERVAL=${NO_PROGRESS_LOG_INTERVAL:-60}
 MAX_IDLE_ROUNDS=${MAX_IDLE_ROUNDS:-6}
 WORKER_PREFIX=${WORKER_PREFIX:-ralph}
@@ -96,6 +97,7 @@ while [[ $# -gt 0 ]]; do
     --claim-renew-interval) CLAIM_RENEW_INTERVAL="$2"; shift 2 ;;
     --heartbeat-interval) RUN_HEARTBEAT_INTERVAL="$2"; shift 2 ;;
     --claude-stall-seconds) CLAUDE_STALL_SECONDS="$2"; shift 2 ;;
+    --claude-stall-grace-seconds) CLAUDE_STALL_GRACE_SECONDS="$2"; shift 2 ;;
     --no-progress-log-interval) NO_PROGRESS_LOG_INTERVAL="$2"; shift 2 ;;
     --idle-rounds) MAX_IDLE_ROUNDS="$2"; shift 2 ;;
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
@@ -144,6 +146,11 @@ fi
 
 if ! [[ "$CLAUDE_STALL_SECONDS" =~ ^[0-9]+$ ]] || [ "$CLAUDE_STALL_SECONDS" -lt 0 ]; then
   echo "Invalid --claude-stall-seconds value: $CLAUDE_STALL_SECONDS (must be a non-negative integer in seconds)" >&2
+  exit 1
+fi
+
+if ! [[ "$CLAUDE_STALL_GRACE_SECONDS" =~ ^[0-9]+$ ]] || [ "$CLAUDE_STALL_GRACE_SECONDS" -lt 0 ]; then
+  echo "Invalid --claude-stall-grace-seconds value: $CLAUDE_STALL_GRACE_SECONDS (must be a non-negative integer in seconds)" >&2
   exit 1
 fi
 
@@ -1216,6 +1223,89 @@ file_size_bytes() {
   echo "$bytes"
 }
 
+duration_to_seconds() {
+  local value="$1"
+  local days=0
+  local hours=0
+  local mins=0
+  local secs=0
+
+  [ -z "$value" ] && { echo "0"; return; }
+  value=$(echo "$value" | tr -d '[:space:]')
+  [ -z "$value" ] && { echo "0"; return; }
+
+  if [[ "$value" == *-* ]]; then
+    days="${value%%-*}"
+    value="${value#*-}"
+  fi
+
+  case "$(echo "$value" | awk -F: '{print NF}')" in
+    3)
+      hours="${value%%:*}"
+      value="${value#*:}"
+      mins="${value%%:*}"
+      secs="${value#*:}"
+      ;;
+    2)
+      mins="${value%%:*}"
+      secs="${value#*:}"
+      ;;
+    1)
+      secs="$value"
+      ;;
+    *)
+      echo "0"
+      return
+      ;;
+  esac
+
+  [[ "$days" =~ ^[0-9]+$ ]] || days=0
+  [[ "$hours" =~ ^[0-9]+$ ]] || hours=0
+  [[ "$mins" =~ ^[0-9]+$ ]] || mins=0
+  [[ "$secs" =~ ^[0-9]+$ ]] || secs=0
+
+  echo $((days * 86400 + hours * 3600 + mins * 60 + secs))
+}
+
+process_cpu_seconds() {
+  local pid="$1"
+  local raw=""
+
+  [ -n "$pid" ] || { echo "0"; return; }
+  [[ "$pid" =~ ^[0-9]+$ ]] || { echo "0"; return; }
+  kill -0 "$pid" 2>/dev/null || { echo "0"; return; }
+
+  raw=$(ps -p "$pid" -o time= 2>/dev/null || echo "")
+  duration_to_seconds "$raw"
+}
+
+process_tree_cpu_seconds() {
+  local root_pid="$1"
+  local total=0
+
+  [ -n "$root_pid" ] || { echo "0"; return; }
+  [[ "$root_pid" =~ ^[0-9]+$ ]] || { echo "0"; return; }
+
+  total=$(process_cpu_seconds "$root_pid")
+  [[ "$total" =~ ^[0-9]+$ ]] || total=0
+
+  if command -v pgrep >/dev/null 2>&1; then
+    local children=""
+    children=$(pgrep -P "$root_pid" 2>/dev/null || true)
+    if [ -n "$children" ]; then
+      while IFS= read -r child_pid; do
+        [ -z "$child_pid" ] && continue
+        local child_total=0
+        child_total=$(process_tree_cpu_seconds "$child_pid")
+        [[ "$child_total" =~ ^[0-9]+$ ]] || child_total=0
+        total=$((total + child_total))
+      done <<< "$children"
+    fi
+  fi
+
+  echo "$total"
+}
+
 update_run_heartbeat() {
   local run_id="$1"
   local check_at="$2"
@@ -1371,11 +1461,14 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   local hb_last_emit_epoch=0
   local hb_last_progress_epoch=0
   local hb_last_no_progress_log_epoch=0
+  local hb_cpu_seconds=0
+  local hb_has_seen_progress=false
   hb_last_activity_at=$(now_utc_iso)
 
   hb_stdout_bytes=$(file_size_bytes "$run_dir/stdout.log")
   hb_stderr_bytes=$(file_size_bytes "$run_dir/stderr.log")
   hb_transcript_bytes=$(file_size_bytes "$LAST_TRANSCRIPT_PATH")
+  hb_cpu_seconds=$(process_tree_cpu_seconds "$CLAUDE_PID")
   update_run_heartbeat \
     "$CURRENT_RUN_ID" \
     "$hb_last_activity_at" \
@@ -1402,11 +1495,14 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     local hb_next_stdout_bytes=0
     local hb_next_stderr_bytes=0
     local hb_next_transcript_bytes=0
+    local hb_next_cpu_seconds=0
+    local hb_cpu_delta=0
 
     hb_check_at=$(now_utc_iso)
     hb_next_stdout_bytes=$(file_size_bytes "$run_dir/stdout.log")
     hb_next_stderr_bytes=$(file_size_bytes "$run_dir/stderr.log")
     hb_next_transcript_bytes=$(file_size_bytes "$LAST_TRANSCRIPT_PATH")
+    hb_next_cpu_seconds=$(process_tree_cpu_seconds "$CLAUDE_PID")
 
     if [ "$hb_next_stdout_bytes" -gt "$hb_stdout_bytes" ]; then
       hb_delta_bytes=$((hb_delta_bytes + hb_next_stdout_bytes - hb_stdout_bytes))
@@ -1417,26 +1513,35 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     if [ "$hb_next_transcript_bytes" -gt "$hb_transcript_bytes" ]; then
       hb_delta_bytes=$((hb_delta_bytes + hb_next_transcript_bytes - hb_transcript_bytes))
     fi
+    if [ "$hb_next_cpu_seconds" -gt "$hb_cpu_seconds" ]; then
+      hb_cpu_delta=$((hb_next_cpu_seconds - hb_cpu_seconds))
+    fi
 
     hb_now_epoch=$(date +%s)
 
-    if [ "$hb_delta_bytes" -gt 0 ]; then
+    if [ "$hb_delta_bytes" -gt 0 ] || [ "$hb_cpu_delta" -gt 0 ]; then
       hb_last_activity_at="$hb_check_at"
       hb_last_progress_epoch=$hb_now_epoch
       hb_last_no_progress_log_epoch=0
+      hb_has_seen_progress=true
     elif [ "$ACTIVE_RUNTIME" = "claude" ]; then
       local idle_seconds=0
+      local effective_stall_seconds=0
       idle_seconds=$((hb_now_epoch - hb_last_progress_epoch))
+      effective_stall_seconds="$CLAUDE_STALL_SECONDS"
+      if [ "$hb_has_seen_progress" != true ] && [ "$CLAUDE_STALL_GRACE_SECONDS" -gt "$effective_stall_seconds" ]; then
+        effective_stall_seconds="$CLAUDE_STALL_GRACE_SECONDS"
+      fi
 
       if [ "$NO_PROGRESS_LOG_INTERVAL" -gt 0 ] && [ "$idle_seconds" -ge "$NO_PROGRESS_LOG_INTERVAL" ]; then
         if [ "$hb_last_no_progress_log_epoch" -eq 0 ] || [ $((hb_now_epoch - hb_last_no_progress_log_epoch)) -ge "$NO_PROGRESS_LOG_INTERVAL" ]; then
-          log "[$worker_id] Claude no-progress heartbeat for ${idle_seconds}s (stdout=${hb_next_stdout_bytes}, stderr=${hb_next_stderr_bytes}, transcript=${hb_next_transcript_bytes})"
+          log "[$worker_id] Claude no-progress heartbeat for ${idle_seconds}s (stdout=${hb_next_stdout_bytes}, stderr=${hb_next_stderr_bytes}, transcript=${hb_next_transcript_bytes}, cpu_delta=${hb_cpu_delta})"
           hb_last_no_progress_log_epoch=$hb_now_epoch
         fi
       fi
 
-      if [ "$CLAUDE_STALL_SECONDS" -gt 0 ] && [ "$idle_seconds" -ge "$CLAUDE_STALL_SECONDS" ]; then
-        log "[$worker_id] Claude transcript/log stalled for ${idle_seconds}s (threshold=${CLAUDE_STALL_SECONDS}s) — terminating process"
+      if [ "$effective_stall_seconds" -gt 0 ] && [ "$idle_seconds" -ge "$effective_stall_seconds" ]; then
+        log "[$worker_id] Claude transcript/log stalled for ${idle_seconds}s (threshold=${effective_stall_seconds}s, grace=${CLAUDE_STALL_GRACE_SECONDS}s) — terminating process"
         terminate_pid_tree "$CLAUDE_PID" TERM
         sleep 2
         if kill -0 "$CLAUDE_PID" 2>/dev/null; then
@@ -1465,6 +1570,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     hb_stdout_bytes="$hb_next_stdout_bytes"
     hb_stderr_bytes="$hb_next_stderr_bytes"
     hb_transcript_bytes="$hb_next_transcript_bytes"
+    hb_cpu_seconds="$hb_next_cpu_seconds"
 
     if [ "$waited" -ge "$TASK_TIMEOUT" ]; then
       log "Task timeout after ${TASK_TIMEOUT}s - killing $ACTIVE_RUNTIME_LABEL process"
@@ -1965,7 +2071,7 @@ log "Task timeout: ${TASK_TIMEOUT}s (verify: ${VERIFY_TIMEOUT}s, learnings: ${LE
 log "Claim lease: ${CLAIM_LEASE_MINUTES}m (renew every ${CLAIM_RENEW_INTERVAL}s)"
 log "Run heartbeat interval: ${RUN_HEARTBEAT_INTERVAL}s"
 if [ "$ACTIVE_RUNTIME" = "claude" ]; then
-  log "Claude stall timeout: ${CLAUDE_STALL_SECONDS}s (no-progress log interval: ${NO_PROGRESS_LOG_INTERVAL}s)"
+  log "Claude stall timeout: ${CLAUDE_STALL_SECONDS}s (grace: ${CLAUDE_STALL_GRACE_SECONDS}s, no-progress log interval: ${NO_PROGRESS_LOG_INTERVAL}s)"
 fi
 log "Review every: $REVIEW_EVERY iterations"
 log "Auto-commit: $AUTO_COMMIT"

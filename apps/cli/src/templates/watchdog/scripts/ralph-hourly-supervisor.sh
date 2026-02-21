@@ -23,7 +23,8 @@ WATCHDOG_OUT="$PROJECT_DIR/.tx/ralph-watchdog.daemon.out"
 DURATION_SECONDS=${DURATION_SECONDS:-3600}
 INTERVAL_SECONDS=${INTERVAL_SECONDS:-600}
 WATCHDOG_INTERVAL_SECONDS=${WATCHDOG_INTERVAL_SECONDS:-300}
-TRANSCRIPT_IDLE_SECONDS=${TRANSCRIPT_IDLE_SECONDS:-300}
+TRANSCRIPT_IDLE_SECONDS=${TRANSCRIPT_IDLE_SECONDS:-600}
+CLAUDE_STALL_GRACE_SECONDS=${CLAUDE_STALL_GRACE_SECONDS:-900}
 HEARTBEAT_LAG_SECONDS=${HEARTBEAT_LAG_SECONDS:-180}
 RUN_STALE_SECONDS=${RUN_STALE_SECONDS:-5400}
 
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --interval-seconds) INTERVAL_SECONDS="$2"; shift 2 ;;
     --watchdog-interval-seconds) WATCHDOG_INTERVAL_SECONDS="$2"; shift 2 ;;
     --transcript-idle-seconds) TRANSCRIPT_IDLE_SECONDS="$2"; shift 2 ;;
+    --claude-stall-grace-seconds) CLAUDE_STALL_GRACE_SECONDS="$2"; shift 2 ;;
     --heartbeat-lag-seconds) HEARTBEAT_LAG_SECONDS="$2"; shift 2 ;;
     --run-stale-seconds) RUN_STALE_SECONDS="$2"; shift 2 ;;
     --log-file) LOG_FILE="$2"; shift 2 ;;
@@ -62,6 +64,11 @@ fi
 
 if ! is_positive_int "$TRANSCRIPT_IDLE_SECONDS"; then
   echo "Invalid --transcript-idle-seconds value: $TRANSCRIPT_IDLE_SECONDS" >&2
+  exit 1
+fi
+
+if ! [[ "$CLAUDE_STALL_GRACE_SECONDS" =~ ^[0-9]+$ ]]; then
+  echo "Invalid --claude-stall-grace-seconds value: $CLAUDE_STALL_GRACE_SECONDS" >&2
   exit 1
 fi
 
@@ -127,6 +134,7 @@ start_watchdog() {
   nohup /bin/bash "$PROJECT_DIR/scripts/ralph-watchdog.sh" \
     --interval "$WATCHDOG_INTERVAL_SECONDS" \
     --transcript-idle-seconds "$TRANSCRIPT_IDLE_SECONDS" \
+    --claude-stall-grace-seconds "$CLAUDE_STALL_GRACE_SECONDS" \
     --heartbeat-lag-seconds "$HEARTBEAT_LAG_SECONDS" \
     --run-stale-seconds "$RUN_STALE_SECONDS" \
     > "$WATCHDOG_OUT" 2>&1 < /dev/null &
@@ -183,6 +191,7 @@ reset_orphaned_active_tasks_if_needed() {
       --once \
       --interval "$WATCHDOG_INTERVAL_SECONDS" \
       --transcript-idle-seconds "$TRANSCRIPT_IDLE_SECONDS" \
+      --claude-stall-grace-seconds "$CLAUDE_STALL_GRACE_SECONDS" \
       --heartbeat-lag-seconds "$HEARTBEAT_LAG_SECONDS" \
       --run-stale-seconds "$RUN_STALE_SECONDS" \
       >> "$LOG_FILE" 2>&1 || true
@@ -250,7 +259,7 @@ start_epoch=$(date +%s)
 deadline=$((start_epoch + DURATION_SECONDS))
 iteration=0
 
-log "Hourly supervisor started duration=${DURATION_SECONDS}s interval=${INTERVAL_SECONDS}s watchdog_interval=${WATCHDOG_INTERVAL_SECONDS}s"
+log "Hourly supervisor started duration=${DURATION_SECONDS}s interval=${INTERVAL_SECONDS}s watchdog_interval=${WATCHDOG_INTERVAL_SECONDS}s transcript_idle=${TRANSCRIPT_IDLE_SECONDS}s claude_grace=${CLAUDE_STALL_GRACE_SECONDS}s"
 
 while true; do
   iteration=$((iteration + 1))

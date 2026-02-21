@@ -105,6 +105,9 @@ describe("tx init onboarding edge cases", () => {
     expect(envContent).toContain("WATCHDOG_ENABLED=1")
     expect(envContent).toContain("WATCHDOG_CODEX_ENABLED=1")
     expect(envContent).toContain("WATCHDOG_CLAUDE_ENABLED=0")
+    expect(envContent).toContain("WATCHDOG_TRANSCRIPT_IDLE_SECONDS=600")
+    expect(envContent).toContain("WATCHDOG_CLAUDE_STALL_GRACE_SECONDS=900")
+    expect(envContent).toContain("WATCHDOG_ERROR_BURST_GRACE_SECONDS=600")
   })
 
   it("init --watchdog preserves existing watchdog files without overwrite", () => {

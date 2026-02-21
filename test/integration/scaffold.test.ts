@@ -237,6 +237,9 @@ describe("scaffold", () => {
       expect(env).toContain("WATCHDOG_RUNTIME_MODE=auto")
       expect(env).toContain("WATCHDOG_CODEX_ENABLED=1")
       expect(env).toContain("WATCHDOG_CLAUDE_ENABLED=0")
+      expect(env).toContain("WATCHDOG_TRANSCRIPT_IDLE_SECONDS=600")
+      expect(env).toContain("WATCHDOG_CLAUDE_STALL_GRACE_SECONDS=900")
+      expect(env).toContain("WATCHDOG_ERROR_BURST_GRACE_SECONDS=600")
       expect(env).toContain("WATCHDOG_DETACHED=1")
 
       const stat = statSync(join(TEST_DIR, "scripts", "watchdog-launcher.sh"))
