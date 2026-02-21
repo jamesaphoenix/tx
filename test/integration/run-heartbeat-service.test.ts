@@ -2,7 +2,7 @@ import { beforeAll, afterEach, describe, expect, it } from "vitest"
 import { Effect } from "effect"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { fixtureId } from "../fixtures.js"
-import { RunHeartbeatService, RunRepository } from "@jamesaphoenix/tx-core"
+import { ReadyService, RunHeartbeatService, RunRepository } from "@jamesaphoenix/tx-core"
 import type { RunId, TaskId } from "@jamesaphoenix/tx-types"
 
 const runFixtureId = (name: string): RunId => `run-${fixtureId(`run-heartbeat:${name}`).slice(3)}` as RunId
@@ -190,7 +190,12 @@ describe("RunHeartbeatService integration", () => {
     const claimStatusRow = shared.getDb().prepare(
       "SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1"
     ).get(taskId) as { status: string } | undefined
+    const activeClaims = shared.getDb().prepare(
+      "SELECT COUNT(*) as count FROM task_claims WHERE task_id = ? AND status = 'active'"
+    ).get(taskId) as { count: number } | undefined
+
     expect(claimStatusRow?.status).toBe("active")
+    expect(activeClaims?.count ?? 0).toBe(1)
   })
 
   it("reaps stalled runs and resets task to ready by default", async () => {
@@ -207,6 +212,7 @@ describe("RunHeartbeatService integration", () => {
       Effect.gen(function* () {
         const heartbeat = yield* RunHeartbeatService
         const runRepo = yield* RunRepository
+        const readySvc = yield* ReadyService
 
         yield* heartbeat.heartbeat({
           runId,
@@ -223,7 +229,8 @@ describe("RunHeartbeatService integration", () => {
           dryRun: false,
         })
         const run = yield* runRepo.findById(runId)
-        return { reaped, run }
+        const readyTaskIds = (yield* readySvc.getReady(10)).map((task) => task.id)
+        return { reaped, run, readyTaskIds }
       }).pipe(Effect.provide(shared.layer))
     )
 
@@ -232,6 +239,7 @@ describe("RunHeartbeatService integration", () => {
     expect(result.reaped[0]?.taskReset).toBe(true)
     expect(result.run?.status).toBe("cancelled")
     expect(result.run?.exitCode).toBe(137)
+    expect(result.readyTaskIds).toContain(taskId)
 
     const taskRow = shared.getDb().prepare("SELECT status FROM tasks WHERE id = ?").get(taskId) as
       | { status: string }

@@ -283,6 +283,86 @@ describe("CLI trace heartbeat integration", () => {
     expect(row?.transcriptBytes).toBe(100)
   })
 
+  it("dry-run reap returns candidates without mutating run/task/claim state", () => {
+    const runId = runFixtureId("reap-dry-run")
+    const taskId = taskFixtureId("reap-dry-run-task")
+    const workerId = fixtureId("cli-trace-heartbeat:reap-dry-run-worker")
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+
+    const db = new Database(dbPath)
+    try {
+      insertTask(db, taskId, "active")
+      insertRun(db, runId, taskId)
+      insertWorker(db, workerId)
+      insertActiveClaim(db, taskId, workerId)
+    } finally {
+      db.close()
+    }
+
+    const heartbeat = runTx([
+      "trace",
+      "heartbeat",
+      runId,
+      "--stdout-bytes",
+      "0",
+      "--stderr-bytes",
+      "0",
+      "--transcript-bytes",
+      "0",
+      "--delta-bytes",
+      "0",
+      "--check-at",
+      old,
+      "--activity-at",
+      old,
+    ], dbPath, tmpProjectDir)
+    expect(heartbeat.status).toBe(0)
+
+    const reap = runTx([
+      "trace",
+      "stalled",
+      "--reap",
+      "--dry-run",
+      "--transcript-idle-seconds",
+      "300",
+      "--json",
+    ], dbPath, tmpProjectDir)
+    expect(reap.status).toBe(0)
+
+    const rows = JSON.parse(reap.stdout) as Array<{
+      id: string
+      taskReset: boolean
+      processTerminated: boolean
+    }>
+    const row = rows.find((item) => item.id === runId)
+    expect(row).toBeDefined()
+    expect(row?.taskReset).toBe(false)
+    expect(row?.processTerminated).toBe(false)
+
+    const verifyDb = new Database(dbPath)
+    try {
+      const runRow = verifyDb.prepare("SELECT status FROM runs WHERE id = ?").get(runId) as
+        | { status: string }
+        | null
+      const taskRow = verifyDb.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId) as
+        | { status: string }
+        | null
+      const claimRow = verifyDb.prepare(
+        "SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1"
+      ).get(taskId) as { status: string } | null
+      const activeClaims = verifyDb.prepare(
+        "SELECT COUNT(*) as count FROM task_claims WHERE task_id = ? AND status = 'active'"
+      ).get(taskId) as { count: number } | null
+
+      expect(runRow?.status).toBe("running")
+      expect(taskRow?.status).toBe("active")
+      expect(claimRow?.status).toBe("active")
+      expect(activeClaims?.count ?? 0).toBe(1)
+    } finally {
+      verifyDb.close()
+    }
+  })
+
   it("reaps stalled runs and resets task by default", () => {
     const runId = runFixtureId("reap-default")
     const taskId = taskFixtureId("reap-default-task")
@@ -366,6 +446,11 @@ describe("CLI trace heartbeat integration", () => {
     } finally {
       verifyDb.close()
     }
+
+    const ready = runTx(["ready", "--json"], dbPath, tmpProjectDir)
+    expect(ready.status).toBe(0)
+    const readyRows = JSON.parse(ready.stdout) as Array<{ id: string }>
+    expect(readyRows.map((item) => item.id)).toContain(taskId)
   })
 
   it("reaps stalled runs without resetting task when --no-reset-task is set", () => {
