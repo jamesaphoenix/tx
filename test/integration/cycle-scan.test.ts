@@ -11,6 +11,9 @@
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import {
   SqliteClient,
   applyMigrations,
@@ -35,12 +38,15 @@ function createMockAgentService(opts: {
   scanResponses: Array<{ findings: Finding[] }>
   dedupResponses?: Array<{ newIssues: Finding[]; duplicates: Array<{ findingIdx: number; existingIssueId: string; reason: string }> }>
   failScan?: boolean
+  scanMessage?: unknown
+  dedupMessage?: unknown
+  fixMessage?: unknown
 }) {
   let scanCallIdx = 0
   let dedupCallIdx = 0
 
   return Layer.succeed(AgentService, {
-    run: (config: AgentRunConfig, _onMessage?: AgentMessageCallback) => {
+    run: (config: AgentRunConfig, onMessage?: AgentMessageCallback) => {
       // Determine if this is a scan, dedup, or fix agent based on prompt content
       const prompt = config.prompt
       const isScan = prompt.includes("## Your Mission")
@@ -56,6 +62,9 @@ function createMockAgentService(opts: {
       }
 
       if (isScan) {
+        if (opts.scanMessage && onMessage) {
+          onMessage(opts.scanMessage)
+        }
         const response = opts.scanResponses[scanCallIdx % opts.scanResponses.length]
         scanCallIdx++
         return Effect.succeed({
@@ -65,6 +74,9 @@ function createMockAgentService(opts: {
       }
 
       if (isDedup && opts.dedupResponses) {
+        if (opts.dedupMessage && onMessage) {
+          onMessage(opts.dedupMessage)
+        }
         const response = opts.dedupResponses[dedupCallIdx % opts.dedupResponses.length]
         dedupCallIdx++
         return Effect.succeed({
@@ -74,6 +86,9 @@ function createMockAgentService(opts: {
       }
 
       // Fix agent or unknown — return empty
+      if (opts.fixMessage && onMessage) {
+        onMessage(opts.fixMessage)
+      }
       return Effect.succeed({
         text: "",
         structuredOutput: null,
@@ -606,6 +621,136 @@ describe("CycleScanService — Scan Failure Handling", () => {
     expect(results).toHaveLength(1)
     expect(results[0].totalNewIssues).toBe(0)
     expect(results[0].converged).toBe(true)
+  })
+
+  it("records transcript-only capture metadata for failed scan runs", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CycleScanService
+        return yield* svc.runCycles({
+          taskPrompt: "Review code",
+          scanPrompt: "Find issues",
+          cycles: 1,
+          agents: 1,
+          maxRounds: 1,
+        })
+      }).pipe(Effect.provide(testDb.layer))
+    )
+
+    const failedRun = testDb.db
+      .prepare(
+        `SELECT transcript_path, stdout_path, stderr_path, metadata
+         FROM runs
+         WHERE agent LIKE 'scan-agent-%'
+         ORDER BY started_at DESC
+         LIMIT 1`
+      )
+      .get() as {
+        transcript_path: string | null
+        stdout_path: string | null
+        stderr_path: string | null
+        metadata: string
+      }
+
+    expect(failedRun.transcript_path).not.toBeNull()
+    expect(failedRun.stdout_path).toBeNull()
+    expect(failedRun.stderr_path).toBeNull()
+
+    const meta = JSON.parse(failedRun.metadata) as {
+      logCapture?: {
+        mode?: string
+        reason?: string
+        failureReason?: string | null
+        stdout?: { state?: string }
+        stderr?: { state?: string }
+      }
+    }
+
+    expect(meta.logCapture?.mode).toBe("transcript_only")
+    expect(meta.logCapture?.reason).toBe("failed_without_stdio_capture")
+    expect(meta.logCapture?.failureReason).toContain("Mock scan failure")
+    expect(meta.logCapture?.stdout?.state).toBe("not_reported")
+    expect(meta.logCapture?.stderr?.state).toBe("not_reported")
+  })
+})
+
+describe("CycleScanService — Run Log Path Persistence", () => {
+  let testDb: TestDb
+  let tempLogDir: string
+  let hintedStdoutPath: string
+  let hintedStderrPath: string
+
+  beforeAll(async () => {
+    tempLogDir = mkdtempSync(join(tmpdir(), "tx-cycle-scan-logs-"))
+    mkdirSync(tempLogDir, { recursive: true })
+    hintedStdoutPath = join(tempLogDir, "scan-agent.stdout")
+    hintedStderrPath = join(tempLogDir, "scan-agent.stderr")
+    writeFileSync(hintedStdoutPath, "scan stdout output")
+    writeFileSync(hintedStderrPath, "scan stderr output")
+
+    const mockAgent = createMockAgentService({
+      scanResponses: [{ findings: [FINDING_LOW] }],
+      scanMessage: {
+        stdout_path: hintedStdoutPath,
+        stderr_path: hintedStderrPath,
+      },
+    })
+    testDb = await setupTestDb(mockAgent)
+  })
+
+  afterEach(() => {
+    testDb.reset()
+  })
+
+  afterAll(() => {
+    testDb.db.close()
+    rmSync(tempLogDir, { recursive: true, force: true })
+  })
+
+  it("persists stdout/stderr paths and captured-state metadata when scan log files exist", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CycleScanService
+        return yield* svc.runCycles({
+          taskPrompt: "Review code",
+          scanPrompt: "Find issues",
+          cycles: 1,
+          agents: 1,
+          maxRounds: 1,
+        })
+      }).pipe(Effect.provide(testDb.layer))
+    )
+
+    const scanRun = testDb.db
+      .prepare(
+        `SELECT stdout_path, stderr_path, metadata
+         FROM runs
+         WHERE agent LIKE 'scan-agent-%'
+         ORDER BY started_at DESC
+         LIMIT 1`
+      )
+      .get() as {
+        stdout_path: string | null
+        stderr_path: string | null
+        metadata: string
+      }
+
+    expect(scanRun.stdout_path).toBe(hintedStdoutPath)
+    expect(scanRun.stderr_path).toBe(hintedStderrPath)
+
+    const meta = JSON.parse(scanRun.metadata) as {
+      logCapture?: {
+        mode?: string
+        reason?: string
+        stdout?: { state?: string }
+        stderr?: { state?: string }
+      }
+    }
+
+    expect(meta.logCapture?.mode).toBe("stdio_captured")
+    expect(meta.logCapture?.reason).toBe("stdio_paths_reported")
+    expect(meta.logCapture?.stdout?.state).toBe("captured")
+    expect(meta.logCapture?.stderr?.state).toBe("captured")
   })
 })
 

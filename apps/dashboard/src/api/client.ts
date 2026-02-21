@@ -122,8 +122,12 @@ export interface Run {
   exitCode: number | null
   pid: number | null
   transcriptPath: string | null
+  stderrPath: string | null
+  stdoutPath: string | null
+  contextInjected: string | null
   summary: string | null
   errorMessage: string | null
+  metadata: Record<string, unknown>
   taskTitle?: string | null
 }
 
@@ -148,11 +152,11 @@ export interface ChatMessage {
 export interface RunDetailResponse {
   run: Run
   messages: ChatMessage[]
-  logs?: {
+  logs: {
     stdout: string | null
     stderr: string | null
-    stdoutTruncated?: boolean
-    stderrTruncated?: boolean
+    stdoutTruncated: boolean
+    stderrTruncated: boolean
   }
 }
 

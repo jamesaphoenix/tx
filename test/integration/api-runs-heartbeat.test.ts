@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest"
 import { spawnSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
-import { mkdtempSync, rmSync, existsSync } from "node:fs"
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createServer } from "node:net"
@@ -227,6 +227,273 @@ describe("API + SDK run heartbeat integration", () => {
     expect(row?.stderr_bytes).toBe(7)
     expect(row?.transcript_bytes).toBe(2048)
     expect(row?.last_delta_bytes).toBe(256)
+  })
+
+  it("GET /api/runs/:id returns messages, logs payload, and source-path metadata", async () => {
+    const runId = runFixtureId("api-run-detail-logs")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "runs")
+    mkdirSync(runLogsDir, { recursive: true })
+
+    const transcriptPath = join(runLogsDir, `${runId}.jsonl`)
+    const stdoutPath = join(runLogsDir, `${runId}.stdout`)
+    const stderrPath = join(runLogsDir, `${runId}.stderr`)
+    const contextPath = join(runLogsDir, `${runId}.context.md`)
+
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "show status" },
+          timestamp: now,
+          uuid: "tx-run-detail-user",
+        }),
+        JSON.stringify({
+          type: "assistant",
+          message: { role: "assistant", content: [{ type: "text", text: "status ready" }] },
+          timestamp: now,
+          uuid: "tx-run-detail-assistant",
+        }),
+      ].join("\n")
+    )
+    writeFileSync(stdoutPath, "stdout line 1\nstdout line 2\n")
+    writeFileSync(stderrPath, "stderr line 1\n")
+    writeFileSync(contextPath, "context payload")
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
+       VALUES (?, NULL, 'tx-implementer', ?, 'running', NULL, ?, ?, ?, ?, '{}')`
+    ).run(runId, now, transcriptPath, stdoutPath, stderrPath, contextPath)
+
+    const res = await fetch(`${baseUrl}/api/runs/${runId}`)
+    expect(res.status).toBe(200)
+
+    const payload = await res.json() as {
+      run: {
+        id: string
+        transcriptPath: string | null
+        stdoutPath: string | null
+        stderrPath: string | null
+        contextInjected: string | null
+      }
+      messages: Array<{ role: string; content: unknown }>
+      logs: {
+        stdout: string | null
+        stderr: string | null
+        stdoutTruncated: boolean
+        stderrTruncated: boolean
+      }
+    }
+
+    expect(payload.run.id).toBe(runId)
+    expect(payload.run.transcriptPath).toBe(transcriptPath)
+    expect(payload.run.stdoutPath).toBe(stdoutPath)
+    expect(payload.run.stderrPath).toBe(stderrPath)
+    expect(payload.run.contextInjected).toBe(contextPath)
+    expect(payload.messages.length).toBe(2)
+    expect(payload.logs.stdout).toContain("stdout line 1")
+    expect(payload.logs.stderr).toContain("stderr line 1")
+    expect(payload.logs.stdoutTruncated).toBe(false)
+    expect(payload.logs.stderrTruncated).toBe(false)
+  })
+
+  it("GET /api/runs/:id truncates oversized logs and ignores invalid log paths safely", async () => {
+    const runId = runFixtureId("api-run-detail-truncation")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "runs")
+    mkdirSync(runLogsDir, { recursive: true })
+
+    const stdoutPath = join(runLogsDir, `${runId}.stdout`)
+    const outsideStderrPath = join(tmpProjectDir, "..", `${runId}.stderr`)
+
+    writeFileSync(stdoutPath, "x".repeat(250_000))
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
+       VALUES (?, NULL, 'tx-implementer', ?, 'failed', NULL, NULL, ?, ?, NULL, '{}')`
+    ).run(runId, now, stdoutPath, outsideStderrPath)
+
+    const res = await fetch(`${baseUrl}/api/runs/${runId}`)
+    expect(res.status).toBe(200)
+
+    const payload = await res.json() as {
+      logs: {
+        stdout: string | null
+        stderr: string | null
+        stdoutTruncated: boolean
+        stderrTruncated: boolean
+      }
+    }
+
+    expect(payload.logs.stdout).not.toBeNull()
+    expect(payload.logs.stdout?.length).toBe(200_000)
+    expect(payload.logs.stdoutTruncated).toBe(true)
+    expect(payload.logs.stderr).toBeNull()
+    expect(payload.logs.stderrTruncated).toBe(false)
+  })
+
+  it("GET /api/runs/:id returns null log content when configured log file is missing", async () => {
+    const runId = runFixtureId("api-run-detail-missing-log")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "runs")
+    mkdirSync(runLogsDir, { recursive: true })
+
+    const missingStdoutPath = join(runLogsDir, `${runId}.stdout`)
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
+       VALUES (?, NULL, 'tx-implementer', ?, 'failed', NULL, NULL, ?, NULL, NULL, '{}')`
+    ).run(runId, now, missingStdoutPath)
+
+    const res = await fetch(`${baseUrl}/api/runs/${runId}`)
+    expect(res.status).toBe(200)
+
+    const payload = await res.json() as {
+      logs: {
+        stdout: string | null
+        stderr: string | null
+        stdoutTruncated: boolean
+        stderrTruncated: boolean
+      }
+    }
+
+    expect(payload.logs.stdout).toBeNull()
+    expect(payload.logs.stderr).toBeNull()
+    expect(payload.logs.stdoutTruncated).toBe(false)
+    expect(payload.logs.stderrTruncated).toBe(false)
+  })
+
+  it("GET /api/runs/:id preserves logs payload and transcript-only logCapture metadata for failed scan/cycle runs", async () => {
+    const scanRunId = runFixtureId("api-run-detail-failed-scan")
+    const cycleRunId = runFixtureId("api-run-detail-failed-cycle")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "logs")
+    mkdirSync(runLogsDir, { recursive: true })
+
+    const scanTranscriptPath = join(runLogsDir, `${scanRunId}.jsonl`)
+    const cycleTranscriptPath = join(runLogsDir, `${cycleRunId}.jsonl`)
+
+    writeFileSync(
+      scanTranscriptPath,
+      `${JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "scan failed without stdio capture" }] },
+        timestamp: now,
+      })}\n`
+    )
+    writeFileSync(
+      cycleTranscriptPath,
+      `${JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "cycle failed without stdio capture" }] },
+        timestamp: now,
+      })}\n`
+    )
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
+       VALUES (?, NULL, 'scan-agent-1', ?, 'failed', NULL, ?, NULL, NULL, NULL, ?)`
+    ).run(
+      scanRunId,
+      now,
+      scanTranscriptPath,
+      JSON.stringify({
+        type: "scan",
+        cycle: 9,
+        round: 1,
+        cycleRunId,
+        logCapture: {
+          mode: "transcript_only",
+          reason: "failed_without_stdio_capture",
+          stdout: { path: null, state: "not_reported", reason: "path_not_reported" },
+          stderr: { path: null, state: "not_reported", reason: "path_not_reported" },
+          failureReason: "authentication_failed",
+          updatedAt: now,
+        },
+      })
+    )
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
+       VALUES (?, NULL, 'cycle-scanner', ?, 'failed', NULL, ?, NULL, NULL, NULL, ?)`
+    ).run(
+      cycleRunId,
+      now,
+      cycleTranscriptPath,
+      JSON.stringify({
+        type: "cycle",
+        cycle: 9,
+        name: "failed cycle",
+        description: "cycle failure example",
+        logCapture: {
+          mode: "transcript_only",
+          reason: "failed_without_stdio_capture",
+          stdout: { path: null, state: "not_reported", reason: "path_not_reported" },
+          stderr: { path: null, state: "not_reported", reason: "path_not_reported" },
+          failureReason: "authentication_failed",
+          updatedAt: now,
+        },
+      })
+    )
+
+    const scanResponse = await fetch(`${baseUrl}/api/runs/${scanRunId}`)
+    expect(scanResponse.status).toBe(200)
+    const scanPayload = await scanResponse.json() as {
+      run: {
+        agent: string
+        transcriptPath: string | null
+        stdoutPath: string | null
+        stderrPath: string | null
+        metadata: {
+          logCapture?: { mode?: string; reason?: string; failureReason?: string | null }
+        }
+      }
+      logs: {
+        stdout: string | null
+        stderr: string | null
+        stdoutTruncated: boolean
+        stderrTruncated: boolean
+      }
+    }
+
+    expect(scanPayload.run.agent).toBe("scan-agent-1")
+    expect(scanPayload.run.transcriptPath).toBe(scanTranscriptPath)
+    expect(scanPayload.run.stdoutPath).toBeNull()
+    expect(scanPayload.run.stderrPath).toBeNull()
+    expect(scanPayload.run.metadata.logCapture?.mode).toBe("transcript_only")
+    expect(scanPayload.run.metadata.logCapture?.reason).toBe("failed_without_stdio_capture")
+    expect(scanPayload.logs.stdout).toBeNull()
+    expect(scanPayload.logs.stderr).toBeNull()
+    expect(scanPayload.logs.stdoutTruncated).toBe(false)
+    expect(scanPayload.logs.stderrTruncated).toBe(false)
+
+    const cycleResponse = await fetch(`${baseUrl}/api/runs/${cycleRunId}`)
+    expect(cycleResponse.status).toBe(200)
+    const cyclePayload = await cycleResponse.json() as {
+      run: {
+        agent: string
+        transcriptPath: string | null
+        metadata: {
+          logCapture?: { mode?: string; reason?: string; failureReason?: string | null }
+        }
+      }
+      logs: {
+        stdout: string | null
+        stderr: string | null
+        stdoutTruncated: boolean
+        stderrTruncated: boolean
+      }
+    }
+
+    expect(cyclePayload.run.agent).toBe("cycle-scanner")
+    expect(cyclePayload.run.transcriptPath).toBe(cycleTranscriptPath)
+    expect(cyclePayload.run.metadata.logCapture?.mode).toBe("transcript_only")
+    expect(cyclePayload.run.metadata.logCapture?.reason).toBe("failed_without_stdio_capture")
+    expect(cyclePayload.logs.stdout).toBeNull()
+    expect(cyclePayload.logs.stderr).toBeNull()
+    expect(cyclePayload.logs.stdoutTruncated).toBe(false)
+    expect(cyclePayload.logs.stderrTruncated).toBe(false)
   })
 
   it("GET /api/runs/stalled lists stalled runs", async () => {

@@ -155,6 +155,21 @@ function generateId(prefix: string): string {
 // =============================================================================
 
 const LOGS_DIR = resolve(".tx", "logs")
+const RUNS_DIR = resolve(".tx", "runs")
+
+type RunLogStream = "stdout" | "stderr"
+
+interface RunLogPathHints {
+  readonly stdoutPath?: string | null
+  readonly stderrPath?: string | null
+}
+
+interface RunPathRow {
+  readonly transcript_path: string | null
+  readonly stdout_path: string | null
+  readonly stderr_path: string | null
+  readonly metadata: unknown
+}
 
 function ensureLogsDir(): void {
   mkdirSync(LOGS_DIR, { recursive: true })
@@ -185,6 +200,92 @@ function writeOrchestratorLog(runId: string, text: string): void {
     },
     timestamp: new Date().toISOString(),
   })
+}
+
+function asNonEmptyPath(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function extractRunLogPathHints(message: unknown): RunLogPathHints {
+  if (!message || typeof message !== "object") {
+    return {}
+  }
+
+  const queue: Array<{ readonly value: unknown; readonly depth: number }> = [{ value: message, depth: 0 }]
+  const seen = new Set<unknown>()
+  let stdoutPath: string | null = null
+  let stderrPath: string | null = null
+
+  while (queue.length > 0 && (!stdoutPath || !stderrPath)) {
+    const next = queue.shift()
+    if (!next) break
+    const { value, depth } = next
+
+    if (!value || typeof value !== "object" || seen.has(value)) {
+      continue
+    }
+    seen.add(value)
+
+    const record = value as Record<string, unknown>
+    if (!stdoutPath) {
+      stdoutPath = asNonEmptyPath(record.stdout_path) ?? asNonEmptyPath(record.stdoutPath)
+    }
+    if (!stderrPath) {
+      stderrPath = asNonEmptyPath(record.stderr_path) ?? asNonEmptyPath(record.stderrPath)
+    }
+
+    if (depth >= 2) continue
+
+    for (const child of Object.values(record)) {
+      if (child && typeof child === "object") {
+        queue.push({ value: child, depth: depth + 1 })
+      }
+    }
+  }
+
+  return {
+    ...(stdoutPath ? { stdoutPath } : {}),
+    ...(stderrPath ? { stderrPath } : {}),
+  }
+}
+
+function buildRunLogPathCandidates(runId: string, stream: RunLogStream): readonly string[] {
+  const suffixes = stream === "stdout" ? ["stdout", "stdout.log"] : ["stderr", "stderr.log"]
+
+  return [
+    resolve(LOGS_DIR, `${runId}.${suffixes[0]}`),
+    resolve(LOGS_DIR, `${runId}.${suffixes[1]}`),
+    resolve(RUNS_DIR, `${runId}.${suffixes[0]}`),
+    resolve(RUNS_DIR, `${runId}.${suffixes[1]}`),
+  ]
+}
+
+function discoverRunLogPath(runId: string, stream: RunLogStream): string | null {
+  const candidates = buildRunLogPathCandidates(runId, stream)
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+  return null
+}
+
+function parseRunMetadata(raw: unknown): Record<string, unknown> {
+  if (!raw) return {}
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>
+  }
+  if (typeof raw !== "string") return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
+  }
 }
 
 // =============================================================================
@@ -262,14 +363,141 @@ export const CycleScanServiceLive = Layer.effect(
     // DB helpers
     const db = sqliteClient
 
+    const dbReadRunPathRow = (runId: string): RunPathRow | null =>
+      db.prepare(
+        `SELECT transcript_path, stdout_path, stderr_path, metadata
+         FROM runs
+         WHERE id = ?`
+      ).get(runId) as RunPathRow | null
+
+    const classifyRunLogPath = (path: string | null): { state: string; reason: string } => {
+      if (!path) {
+        return {
+          state: "not_reported",
+          reason: "path_not_reported",
+        }
+      }
+      if (existsSync(path)) {
+        return {
+          state: "captured",
+          reason: "path_reported_file_exists",
+        }
+      }
+      return {
+        state: "missing_file",
+        reason: "path_reported_file_missing",
+      }
+    }
+
+    const buildLogCaptureMetadata = (row: RunPathRow, failureReason: string | null): Record<string, unknown> => {
+      const stdout = classifyRunLogPath(row.stdout_path)
+      const stderr = classifyRunLogPath(row.stderr_path)
+
+      const mode = ((): string => {
+        if (stdout.state === "captured" || stderr.state === "captured") return "stdio_captured"
+        if (stdout.state === "missing_file" || stderr.state === "missing_file") return "stdio_path_missing_file"
+        if (row.transcript_path) return "transcript_only"
+        return "no_capture"
+      })()
+
+      const reason = ((): string => {
+        if (mode === "stdio_captured") return "stdio_paths_reported"
+        if (mode === "stdio_path_missing_file") return "reported_stdio_path_missing_file"
+        if (mode === "transcript_only" && failureReason) return "failed_without_stdio_capture"
+        if (mode === "transcript_only") return "stdio_paths_not_reported"
+        return "no_capture_paths_reported"
+      })()
+
+      return {
+        mode,
+        reason,
+        transcriptPath: row.transcript_path,
+        stdout: {
+          path: row.stdout_path,
+          state: stdout.state,
+          reason: stdout.reason,
+        },
+        stderr: {
+          path: row.stderr_path,
+          state: stderr.state,
+          reason: stderr.reason,
+        },
+        failureReason,
+        updatedAt: new Date().toISOString(),
+      }
+    }
+
+    const dbUpdateRunMetadata = (runId: string, metadataPatch: Record<string, unknown>): void => {
+      const existing = dbReadRunPathRow(runId)
+      const currentMetadata = parseRunMetadata(existing?.metadata)
+      const mergedMetadata = {
+        ...currentMetadata,
+        ...metadataPatch,
+      }
+      db.prepare(`UPDATE runs SET metadata = ? WHERE id = ?`).run(JSON.stringify(mergedMetadata), runId)
+    }
+
+    const dbSyncRunLogPaths = (runId: string, hints: RunLogPathHints = {}): RunPathRow | null => {
+      const current = dbReadRunPathRow(runId)
+      if (!current) return null
+
+      const hintedStdoutPath = asNonEmptyPath(hints.stdoutPath)
+      const hintedStderrPath = asNonEmptyPath(hints.stderrPath)
+
+      const nextStdoutPath =
+        current.stdout_path
+        ?? hintedStdoutPath
+        ?? discoverRunLogPath(runId, "stdout")
+      const nextStderrPath =
+        current.stderr_path
+        ?? hintedStderrPath
+        ?? discoverRunLogPath(runId, "stderr")
+
+      if (nextStdoutPath !== current.stdout_path || nextStderrPath !== current.stderr_path) {
+        db.prepare(
+          `UPDATE runs
+           SET stdout_path = ?, stderr_path = ?
+           WHERE id = ?`
+        ).run(nextStdoutPath, nextStderrPath, runId)
+      }
+
+      return {
+        transcript_path: current.transcript_path,
+        stdout_path: nextStdoutPath,
+        stderr_path: nextStderrPath,
+        metadata: current.metadata,
+      }
+    }
+
+    const dbRecordRunLogPathHints = (runId: string, hints: RunLogPathHints): void => {
+      const row = dbSyncRunLogPaths(runId, hints)
+      if (!row) return
+      dbUpdateRunMetadata(runId, {
+        logCapture: buildLogCaptureMetadata(row, null),
+      })
+    }
+
     const dbCreateRun = (agent: string): string => {
       const id = generateId("run")
       const now = new Date().toISOString()
       const transcriptPath = logPath(id)
+      const discoveredStdoutPath = discoverRunLogPath(id, "stdout")
+      const discoveredStderrPath = discoverRunLogPath(id, "stderr")
       db.prepare(
-        `INSERT INTO runs (id, agent, started_at, status, metadata, transcript_path)
-         VALUES (?, ?, ?, 'running', '{}', ?)`
-      ).run(id, agent, now, transcriptPath)
+        `INSERT INTO runs (id, agent, started_at, status, metadata, transcript_path, stdout_path, stderr_path)
+         VALUES (?, ?, ?, 'running', '{}', ?, ?, ?)`
+      ).run(id, agent, now, transcriptPath, discoveredStdoutPath, discoveredStderrPath)
+      dbUpdateRunMetadata(id, {
+        logCapture: buildLogCaptureMetadata(
+          {
+            transcript_path: transcriptPath,
+            stdout_path: discoveredStdoutPath,
+            stderr_path: discoveredStderrPath,
+            metadata: "{}",
+          },
+          null
+        ),
+      })
       return id
     }
 
@@ -297,8 +525,17 @@ export const CycleScanServiceLive = Layer.effect(
       }
     }
 
-    const dbUpdateRunMetadata = (runId: string, metadata: Record<string, unknown>): void => {
-      db.prepare(`UPDATE runs SET metadata = ? WHERE id = ?`).run(JSON.stringify(metadata), runId)
+    const dbFinalizeRun = (
+      runId: string,
+      updates: { status?: string; summary?: string; errorMessage?: string },
+      failureReason: string | null = null
+    ): void => {
+      dbUpdateRun(runId, updates)
+      const row = dbSyncRunLogPaths(runId)
+      if (!row) return
+      dbUpdateRunMetadata(runId, {
+        logCapture: buildLogCaptureMetadata(row, failureReason),
+      })
     }
 
     const dbCreateTask = (data: { title: string; description: string; score: number; metadata: Record<string, unknown> }): string => {
@@ -336,6 +573,14 @@ export const CycleScanServiceLive = Layer.effect(
         }
         const result = yield* agentService
           .run(config, (msg) => {
+            try {
+              const logPathHints = extractRunLogPathHints(msg)
+              if (logPathHints.stdoutPath || logPathHints.stderrPath) {
+                dbRecordRunLogPathHints(runId, logPathHints)
+              }
+            } catch {
+              // Never let path-hint parsing block cycle execution.
+            }
             writeTranscriptLine(runId, { ...msg as Record<string, unknown>, timestamp: new Date().toISOString() })
           })
           .pipe(
@@ -385,6 +630,14 @@ export const CycleScanServiceLive = Layer.effect(
         }
         const result = yield* agentService
           .run(config, (msg) => {
+            try {
+              const logPathHints = extractRunLogPathHints(msg)
+              if (logPathHints.stdoutPath || logPathHints.stderrPath) {
+                dbRecordRunLogPathHints(runId, logPathHints)
+              }
+            } catch {
+              // Never let path-hint parsing block cycle execution.
+            }
             writeTranscriptLine(runId, { ...msg as Record<string, unknown>, timestamp: new Date().toISOString() })
           })
           .pipe(
@@ -418,6 +671,14 @@ export const CycleScanServiceLive = Layer.effect(
         }
         yield* agentService
           .run(config, (msg) => {
+            try {
+              const logPathHints = extractRunLogPathHints(msg)
+              if (logPathHints.stdoutPath || logPathHints.stderrPath) {
+                dbRecordRunLogPathHints(runId, logPathHints)
+              }
+            } catch {
+              // Never let path-hint parsing block cycle execution.
+            }
             writeTranscriptLine(runId, { ...msg as Record<string, unknown>, timestamp: new Date().toISOString() })
           })
           .pipe(
@@ -509,8 +770,16 @@ export const CycleScanServiceLive = Layer.effect(
                   const scanRunId = dbCreateRun(`scan-agent-${i + 1}`)
                   dbUpdateRunMetadata(scanRunId, { type: "scan", cycle, round, cycleRunId })
                   const findings = yield* runScanAgent(taskPrompt, scanPrompt, model, scanRunId).pipe(
-                    Effect.tap(() => Effect.sync(() => dbUpdateRun(scanRunId, { status: "completed" }))),
-                    Effect.tapError(() => Effect.sync(() => dbUpdateRun(scanRunId, { status: "failed" }))),
+                    Effect.tap(() => Effect.sync(() => dbFinalizeRun(scanRunId, { status: "completed" }))),
+                    Effect.tapError((error) =>
+                      Effect.sync(() =>
+                        dbFinalizeRun(
+                          scanRunId,
+                          { status: "failed", errorMessage: error.reason },
+                          error.reason
+                        )
+                      )
+                    ),
                     Effect.catchAll(() => Effect.succeed([] as Finding[]))
                   )
                   return findings
@@ -550,8 +819,16 @@ export const CycleScanServiceLive = Layer.effect(
               const dedupRunId = dbCreateRun("dedup-agent")
               dbUpdateRunMetadata(dedupRunId, { type: "dedup", cycle, round, cycleRunId })
               const dedupResult = yield* runDedupAgent(allFindings, issuesMap, model, dedupRunId).pipe(
-                Effect.tap(() => Effect.sync(() => dbUpdateRun(dedupRunId, { status: "completed" }))),
-                Effect.tapError(() => Effect.sync(() => dbUpdateRun(dedupRunId, { status: "failed" }))),
+                Effect.tap(() => Effect.sync(() => dbFinalizeRun(dedupRunId, { status: "completed" }))),
+                Effect.tapError((error) =>
+                  Effect.sync(() =>
+                    dbFinalizeRun(
+                      dedupRunId,
+                      { status: "failed", errorMessage: error.reason },
+                      error.reason
+                    )
+                  )
+                ),
                 Effect.catchAll(() => Effect.succeed({ newIssues: allFindings, duplicates: [] } as DedupResult))
               )
 
@@ -627,8 +904,16 @@ export const CycleScanServiceLive = Layer.effect(
                 const fixRunId = dbCreateRun("fix-agent")
                 dbUpdateRunMetadata(fixRunId, { type: "fix", cycle, round, cycleRunId })
                 yield* runFixAgent(dedupResult.newIssues, model, fixRunId).pipe(
-                  Effect.tap(() => Effect.sync(() => dbUpdateRun(fixRunId, { status: "completed" }))),
-                  Effect.tapError(() => Effect.sync(() => dbUpdateRun(fixRunId, { status: "failed" }))),
+                  Effect.tap(() => Effect.sync(() => dbFinalizeRun(fixRunId, { status: "completed" }))),
+                  Effect.tapError((error) =>
+                    Effect.sync(() =>
+                      dbFinalizeRun(
+                        fixRunId,
+                        { status: "failed", errorMessage: error.reason },
+                        error.reason
+                      )
+                    )
+                  ),
                   Effect.catchAll(() => Effect.void)
                 )
               }
@@ -670,7 +955,7 @@ export const CycleScanServiceLive = Layer.effect(
             })
 
             // UPDATE CYCLE RUN
-            dbUpdateRun(cycleRunId, {
+            dbFinalizeRun(cycleRunId, {
               status: "completed",
               summary: `Cycle ${cycle}: ${roundCount} rounds, ${totalNewIssues} new issues, loss ${finalLoss}${converged ? " (converged)" : ""}`,
             })

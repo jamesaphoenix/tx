@@ -6,6 +6,7 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
+import { existsSync } from "node:fs"
 
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { serializeRun } from "@jamesaphoenix/tx-types"
@@ -43,6 +44,21 @@ const parseIsoDateOrFail = (value: string | undefined, fieldName: string) => {
     return Effect.fail(new BadRequest({ message: `Invalid ${fieldName}: must be an ISO timestamp` }))
   }
   return Effect.succeed(parsed)
+}
+
+const MAX_DASHBOARD_LOG_CHARS = 200_000
+
+const trimDashboardLog = (content: string, alreadyTruncated: boolean): {
+  content: string
+  truncated: boolean
+} => {
+  if (content.length <= MAX_DASHBOARD_LOG_CHARS) {
+    return { content, truncated: alreadyTruncated }
+  }
+  return {
+    content: content.slice(-MAX_DASHBOARD_LOG_CHARS),
+    truncated: true,
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -175,10 +191,10 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
 
         // Parse transcript if available
         let messages: ChatMessage[] = []
-        let transcriptPath = found.transcriptPath
+        let resolvedTranscriptPath = found.transcriptPath
 
         // If no explicit transcript path, try to find one by timestamp correlation
-        if (!transcriptPath) {
+        if (!resolvedTranscriptPath) {
           // Derive project root from DB path (e.g. /path/to/project/.tx/tasks.db -> /path/to/project)
           // Falls back to process.cwd() if TX_DB_PATH is not absolute
           const dbPath = process.env.TX_DB_PATH ?? ""
@@ -189,18 +205,55 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
             try: () => findMatchingTranscript(projectRoot, found.startedAt, found.endedAt),
             catch: () => null,
           })
-          transcriptPath = discovered
+          resolvedTranscriptPath = discovered
         }
 
-        if (transcriptPath) {
-          const parsed = yield* parseTranscript(transcriptPath).pipe(
+        if (resolvedTranscriptPath) {
+          const parsed = yield* parseTranscript(resolvedTranscriptPath).pipe(
             Effect.catchAll(() => Effect.succeed([] as ChatMessage[]))
           )
           messages = parsed
         }
 
+        const readOptionalRunLog = (logPath: string | null): Effect.Effect<{
+          content: string | null
+          truncated: boolean
+        }, never> =>
+          Effect.gen(function* () {
+            if (!logPath) {
+              return { content: null, truncated: false }
+            }
+            if (!isAllowedRunPath(logPath)) {
+              return { content: null, truncated: false }
+            }
+            if (!existsSync(logPath)) {
+              return { content: null, truncated: false }
+            }
+
+            const read = yield* readLogFile(logPath).pipe(
+              Effect.catchAll(() => Effect.succeed(null as { content: string; truncated: boolean } | null))
+            )
+            if (!read) {
+              return { content: null, truncated: false }
+            }
+            const trimmed = trimDashboardLog(read.content, read.truncated)
+
+            return {
+              content: trimmed.content,
+              truncated: trimmed.truncated,
+            }
+          })
+
+        const [stdoutLog, stderrLog] = yield* Effect.all([
+          readOptionalRunLog(found.stdoutPath),
+          readOptionalRunLog(found.stderrPath),
+        ])
+
         return {
-          run: serializeRun(found),
+          run: {
+            ...serializeRun(found),
+            transcriptPath: resolvedTranscriptPath,
+          },
           messages: messages as Array<{
             role: "user" | "assistant" | "system"
             content: unknown
@@ -208,6 +261,12 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
             tool_name?: string
             timestamp?: string
           }>,
+          logs: {
+            stdout: stdoutLog.content,
+            stderr: stderrLog.content,
+            stdoutTruncated: stdoutLog.truncated,
+            stderrTruncated: stderrLog.truncated,
+          },
         }
       }).pipe(Effect.mapError(mapCoreError))
     )

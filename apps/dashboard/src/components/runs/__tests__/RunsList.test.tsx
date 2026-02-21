@@ -19,8 +19,12 @@ function createRun(overrides: Partial<Run> = {}): Run {
     exitCode: 0,
     pid: null,
     transcriptPath: null,
+    stderrPath: null,
+    stdoutPath: null,
+    contextInjected: null,
     summary: 'Test run summary',
     errorMessage: null,
+    metadata: {},
     taskTitle: 'Test Task',
     ...overrides,
   }

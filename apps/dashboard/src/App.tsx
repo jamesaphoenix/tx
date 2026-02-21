@@ -249,6 +249,14 @@ function ChatMessageComponent({ message }: { message: ChatMessage }) {
   )
 }
 
+function SourcePathRow({ label, path }: { label: string; path: string }) {
+  return (
+    <div className="text-xs text-gray-500 truncate" title={path}>
+      <span className="text-gray-400">{label}:</span> <code className="text-[11px]">{path}</code>
+    </div>
+  )
+}
+
 function ChatView({ runId }: { runId: string }) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -269,10 +277,28 @@ function ChatView({ runId }: { runId: string }) {
   const run = data?.run
   const messages = data?.messages ?? []
   const logs = data?.logs
-  const stdoutLog = logs?.stdout ?? ""
-  const stderrLog = logs?.stderr ?? ""
-  const hasLogs = stdoutLog.length > 0 || stderrLog.length > 0
+  const logsPayloadMissing = Boolean(data && logs === undefined)
+  const stdoutLog = logs?.stdout ?? null
+  const stderrLog = logs?.stderr ?? null
+  const hasStdoutLog = typeof stdoutLog === "string" && stdoutLog.length > 0
+  const hasStderrLog = typeof stderrLog === "string" && stderrLog.length > 0
+  const hasLogs = hasStdoutLog || hasStderrLog
+  const hasLogPaths = Boolean(run?.stdoutPath || run?.stderrPath)
+  const hasReadableEmptyLog = stdoutLog === "" || stderrLog === ""
+  const hasUnreadableLogPath = Boolean(
+    (run?.stdoutPath && stdoutLog === null)
+      || (run?.stderrPath && stderrLog === null)
+  )
   const isRunning = run?.status === "running"
+  const sourcePaths = [
+    { label: "Transcript", path: run?.transcriptPath ?? null },
+    { label: "Stdout", path: run?.stdoutPath ?? null },
+    { label: "Stderr", path: run?.stderrPath ?? null },
+    { label: "Context", path: run?.contextInjected ?? null },
+  ]
+  const availableSourcePaths = sourcePaths.filter(
+    (source): source is { label: string; path: string } => Boolean(source.path)
+  )
 
   useEffect(() => {
     setActiveTab("transcript")
@@ -283,7 +309,7 @@ function ChatView({ runId }: { runId: string }) {
     if (autoScroll && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages.length, stdoutLog.length, stderrLog.length, autoScroll, activeTab])
+  }, [messages.length, stdoutLog?.length, stderrLog?.length, autoScroll, activeTab])
 
   // Detect if user has scrolled up (disable auto-scroll)
   const handleScroll = () => {
@@ -332,9 +358,11 @@ function ChatView({ runId }: { runId: string }) {
               Task: <code className="text-xs">{run.taskId}</code>
             </div>
           )}
-          {run.transcriptPath && (
-            <div className="text-xs text-gray-500 mt-1 truncate" title={run.transcriptPath}>
-              Transcript: {run.transcriptPath}
+          {availableSourcePaths.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {availableSourcePaths.map((source) => (
+                <SourcePathRow key={source.label} label={source.label} path={source.path} />
+              ))}
             </div>
           )}
           {run.summary && (
@@ -367,7 +395,7 @@ function ChatView({ runId }: { runId: string }) {
                 : "bg-gray-900 text-gray-300 hover:bg-gray-800"
             }`}
           >
-            Logs
+            Execution Logs
           </button>
         </div>
       </div>
@@ -378,34 +406,49 @@ function ChatView({ runId }: { runId: string }) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-4 space-y-2"
       >
-        {activeTab === "transcript" && messages.length === 0 ? (
-          <div className="text-gray-500 text-center py-8">
-            {isRunning ? (
-              <>
-                <div className="animate-pulse">Waiting for transcript...</div>
-                <div className="text-xs mt-2">
-                  The conversation will appear here as the agent works
-                </div>
-              </>
-            ) : (
-              <>
-                No conversation transcript available
-                <div className="text-xs mt-2">
-                  {run?.transcriptPath
-                    ? "Transcript file could not be read"
-                    : "No transcript path associated with this run"
-                  }
-                </div>
-              </>
-            )}
+        {activeTab === "transcript" ? (
+          messages.length === 0 ? (
+            <div className="text-gray-500 text-center py-8">
+              {isRunning ? (
+                <>
+                  <div className="animate-pulse">Waiting for transcript...</div>
+                  <div className="text-xs mt-2">
+                    {run?.transcriptPath
+                      ? "Transcript path is configured; messages will stream here as they are parsed."
+                      : "Run has not reported a transcript path yet."
+                    }
+                  </div>
+                </>
+              ) : (
+                <>
+                  No conversation transcript available
+                  <div className="text-xs mt-2">
+                    {run?.transcriptPath
+                      ? "Transcript path was recorded, but the file was empty or unreadable."
+                      : "No transcript path was captured for this run."
+                    }
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              {messages.map((msg, i) => (
+                <ChatMessageComponent key={`${msg.role}-${msg.type ?? "text"}-${i}`} message={msg} />
+              ))}
+              <div ref={messagesEndRef} />
+            </>
+          )
+        ) : logsPayloadMissing ? (
+          <div className="text-center py-8">
+            <div className="text-amber-300">Execution logs payload unavailable</div>
+            <div className="text-xs text-gray-500 mt-2">
+              {isRunning
+                ? "Run detail response did not include the logs payload yet; waiting for the next compatible update."
+                : "Run detail response omitted logs payload, so stdout/stderr could not be rendered."
+              }
+            </div>
           </div>
-        ) : activeTab === "transcript" ? (
-          <>
-            {messages.map((msg, i) => (
-              <ChatMessageComponent key={`${msg.role}-${msg.type ?? "text"}-${i}`} message={msg} />
-            ))}
-            <div ref={messagesEndRef} />
-          </>
         ) : hasLogs ? (
           <div className="space-y-3">
             {(logs?.stdoutTruncated || logs?.stderrTruncated) && (
@@ -413,7 +456,7 @@ function ChatView({ runId }: { runId: string }) {
                 Log output truncated to last 200k characters for dashboard rendering.
               </div>
             )}
-            {stdoutLog && (
+            {hasStdoutLog && (
               <div>
                 <div className="text-xs text-gray-400 mb-1">stdout</div>
                 <pre className="text-xs text-gray-200 bg-gray-900 border border-gray-700 rounded-md p-3 whitespace-pre-wrap overflow-x-auto">
@@ -421,7 +464,7 @@ function ChatView({ runId }: { runId: string }) {
                 </pre>
               </div>
             )}
-            {stderrLog && (
+            {hasStderrLog && (
               <div>
                 <div className="text-xs text-gray-400 mb-1">stderr</div>
                 <pre className="text-xs text-red-200 bg-gray-900 border border-red-900/40 rounded-md p-3 whitespace-pre-wrap overflow-x-auto">
@@ -437,14 +480,26 @@ function ChatView({ runId }: { runId: string }) {
               <>
                 <div className="animate-pulse">Waiting for execution logs...</div>
                 <div className="text-xs mt-2">
-                  stdout/stderr output will appear here as the agent runs
+                  {hasLogPaths
+                    ? hasReadableEmptyLog
+                      ? "stdout/stderr files are present but currently empty."
+                      : "stdout/stderr paths are configured; output will appear once bytes are written."
+                    : "Run has not reported stdout/stderr source paths yet."
+                  }
                 </div>
               </>
             ) : (
               <>
                 No execution logs available
                 <div className="text-xs mt-2">
-                  No stdout/stderr files were captured for this run
+                  {!hasLogPaths
+                    ? "No stdout/stderr files were captured for this run."
+                    : hasUnreadableLogPath && hasReadableEmptyLog
+                      ? "Some log files were empty and others were unreadable."
+                      : hasUnreadableLogPath
+                        ? "stdout/stderr paths were recorded, but log files were unreadable or missing."
+                        : "Log files were captured but contained no output."
+                  }
                 </div>
               </>
             )}

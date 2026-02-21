@@ -427,9 +427,17 @@ const ChatMessageSchema = Schema.Struct({
   timestamp: Schema.optional(Schema.String),
 })
 
+const RunDetailLogsSchema = Schema.Struct({
+  stdout: Schema.NullOr(Schema.String),
+  stderr: Schema.NullOr(Schema.String),
+  stdoutTruncated: Schema.Boolean,
+  stderrTruncated: Schema.Boolean,
+})
+
 const RunDetailWithMessagesResponse = Schema.Struct({
   run: RunSerializedSchema,
   messages: Schema.Array(ChatMessageSchema),
+  logs: RunDetailLogsSchema,
 })
 
 const CreateRunBody = Schema.Struct({
