@@ -420,41 +420,46 @@ describeIf("ralph.sh integration", () => {
     expect(existsSync(join(h.tmpDir, ".tx", "ralph-state-ralph-2"))).toBe(true)
   })
 
-  it("does not remove lock files when a non-owner invocation exits", async () => {
+  it("owner-safe-cleanup: does not remove lock/pid files when a non-owner invocation exits", async () => {
     const h = setupHarness()
     harnesses.push(h)
 
     const lockKey = "owner-safe-cleanup"
     const lockFile = join(h.tmpDir, ".tx", `ralph-${lockKey}.lock`)
+    const pidFile = join(h.tmpDir, ".tx", `ralph-${lockKey}.pid`)
     const ownerProc = h.runAsync(
       ["--runtime", "codex", "--lock-key", lockKey, "--max", "1", "--max-hours", "1", "--idle-rounds", "50"],
       { MOCK_AGENT_SLEEP_SECONDS: "60" },
     )
 
     try {
-      await waitForCondition(() => existsSync(lockFile), 5000)
+      await waitForCondition(() => existsSync(lockFile) && existsSync(pidFile), 5000)
       const ownerPid = Number(readFileSync(lockFile, "utf-8").trim())
       expect(isPidLive(ownerPid)).toBe(true)
+      expect(readFileSync(pidFile, "utf-8").trim()).toBe(String(ownerPid))
 
       const contender = h.run(["--runtime", "codex", "--lock-key", lockKey, "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
       expect(contender.status).not.toBe(0)
       expect(contender.stdout + contender.stderr).toContain("RALPH already running")
 
       expect(existsSync(lockFile)).toBe(true)
+      expect(existsSync(pidFile)).toBe(true)
       expect(readFileSync(lockFile, "utf-8").trim()).toBe(String(ownerPid))
+      expect(readFileSync(pidFile, "utf-8").trim()).toBe(String(ownerPid))
       expect(isPidLive(ownerPid)).toBe(true)
     } finally {
       await terminateChild(ownerProc)
     }
   })
 
-  it("allows only one winner when concurrent starters race against a stale lock", async () => {
+  it("stale-race: allows only one winner when concurrent starters race against a stale lock", async () => {
     const h = setupHarness()
     harnesses.push(h)
 
     const lockKey = "stale-race"
     const txDir = join(h.tmpDir, ".tx")
     const lockFile = join(txDir, `ralph-${lockKey}.lock`)
+    const pidFile = join(txDir, `ralph-${lockKey}.pid`)
     mkdirSync(txDir, { recursive: true })
     writeFileSync(lockFile, "999999\n")
 
@@ -482,7 +487,17 @@ describeIf("ralph.sh integration", () => {
       expect(liveCount).toBe(1)
 
       const exited = proc1.exitCode !== null ? proc1 : proc2
+      const winner = exited === proc1 ? proc2 : proc1
       expect(exited.exitCode).not.toBe(0)
+      expect(winner.exitCode).toBeNull()
+      expect(existsSync(lockFile)).toBe(true)
+      expect(existsSync(pidFile)).toBe(true)
+      const lockPid = Number(readFileSync(lockFile, "utf-8").trim())
+      const pidFilePid = Number(readFileSync(pidFile, "utf-8").trim())
+      expect(Number.isFinite(lockPid)).toBe(true)
+      expect(pidFilePid).toBe(lockPid)
+      expect(lockPid).toBe(winner.pid ?? -1)
+      expect(isPidLive(lockPid)).toBe(true)
       expect((proc1Out + proc2Out).includes("No such file or directory")).toBe(false)
     } finally {
       await terminateChild(proc1)
