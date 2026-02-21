@@ -724,6 +724,30 @@ kill_zombie_claude_processes() {
 }
 
 # Cancel runs from previous sessions where RALPH died unexpectedly
+expire_active_claims_for_task() {
+  local task_id="$1"
+  [ -z "$task_id" ] && return
+
+  if ! command -v sqlite3 >/dev/null 2>&1 || [ ! -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    return
+  fi
+
+  sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "UPDATE task_claims
+     SET status='expired'
+     WHERE task_id='$(sql_escape "$task_id")'
+       AND status='active';" \
+    >/dev/null 2>&1 || true
+}
+
+reset_task_and_expire_claims() {
+  local task_id="$1"
+  [ -z "$task_id" ] && return
+
+  expire_active_claims_for_task "$task_id"
+  tx reset "$task_id" 2>/dev/null || true
+}
+
 cancel_orphaned_runs() {
   if ! command -v sqlite3 >/dev/null 2>&1 || [ ! -f "$PROJECT_DIR/.tx/tasks.db" ]; then
     return
@@ -732,7 +756,7 @@ cancel_orphaned_runs() {
   # Find all running runs and check if their PIDs are still alive
   local orphaned_runs
   orphaned_runs=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
-    "SELECT id, pid FROM runs WHERE status = 'running' AND pid IS NOT NULL;" 2>/dev/null || echo "")
+    "SELECT id, pid, task_id FROM runs WHERE status = 'running' AND pid IS NOT NULL;" 2>/dev/null || echo "")
 
   if [ -z "$orphaned_runs" ]; then
     return
@@ -741,7 +765,7 @@ cancel_orphaned_runs() {
   local now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   local count=0
 
-  while IFS='|' read -r run_id pid; do
+  while IFS='|' read -r run_id pid task_id; do
     # Skip empty lines
     [ -z "$run_id" ] && continue
 
@@ -765,6 +789,7 @@ cancel_orphaned_runs() {
         local escaped_run_id=$(sql_escape "$run_id")
         sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
           "UPDATE runs SET status='cancelled', ended_at='$now', exit_code=137, error_message='Orphaned agent process terminated (parent RALPH died)' WHERE id='$escaped_run_id';"
+        expire_active_claims_for_task "$task_id"
         count=$((count + 1))
       fi
       # Otherwise it's a run from a different, still-active ralph instance - leave it
@@ -776,6 +801,7 @@ cancel_orphaned_runs() {
     local escaped_run_id=$(sql_escape "$run_id")
     sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
       "UPDATE runs SET status='cancelled', ended_at='$now', exit_code=137, error_message='RALPH process died unexpectedly (orphaned)' WHERE id='$escaped_run_id';"
+    expire_active_claims_for_task "$task_id"
     count=$((count + 1))
   done <<< "$orphaned_runs"
 
@@ -813,7 +839,7 @@ reset_orphaned_tasks() {
   while IFS= read -r task_id; do
     [ -z "$task_id" ] && continue
     log "Resetting orphaned active task: $task_id"
-    tx reset "$task_id" 2>/dev/null || true
+    reset_task_and_expire_claims "$task_id"
     count=$((count + 1))
   done <<< "$active_tasks"
 

@@ -1,8 +1,10 @@
+import { Database } from "bun:sqlite"
 import { describe, it, expect, afterEach } from "vitest"
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnSyncReturns } from "child_process"
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
+import { fixtureId } from "../fixtures"
 
 interface Harness {
   tmpDir: string
@@ -14,7 +16,9 @@ interface Harness {
 }
 
 const hasJq = spawnSync("jq", ["--version"], { stdio: "pipe" }).status === 0
+const hasSqlite3 = spawnSync("sqlite3", ["--version"], { stdio: "pipe" }).status === 0
 const describeIf = hasJq ? describe : describe.skip
+const itIfSqlite3 = hasSqlite3 ? it : it.skip
 
 const SOURCE_RALPH = resolve(__dirname, "../../scripts/ralph.sh")
 
@@ -261,6 +265,70 @@ async function terminateChild(proc: ChildProcessWithoutNullStreams): Promise<voi
   }
 }
 
+function createReconcileSchema(db: Database): void {
+  db.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL
+    );
+    CREATE TABLE runs (
+      id TEXT PRIMARY KEY,
+      task_id TEXT,
+      pid INTEGER,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      exit_code INTEGER,
+      error_message TEXT,
+      metadata TEXT
+    );
+    CREATE TABLE task_claims (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      claimed_at TEXT NOT NULL,
+      lease_expires_at TEXT NOT NULL,
+      renewed_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL
+    );
+    CREATE TABLE orchestrator_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      status TEXT NOT NULL,
+      pid INTEGER,
+      started_at TEXT,
+      updated_at TEXT
+    );
+  `)
+
+  db.prepare(
+    `INSERT INTO orchestrator_state (id, status, pid, started_at, updated_at)
+     VALUES (1, 'stopped', NULL, NULL, datetime('now'))`
+  ).run()
+}
+
+function insertActiveClaim(db: Database, taskId: string, workerId: string): void {
+  const now = new Date()
+  const leaseExpiresAt = new Date(now.getTime() + 5 * 60_000)
+  db.prepare(
+    `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+     VALUES (?, ?, ?, ?, 0, 'active')`
+  ).run(taskId, workerId, now.toISOString(), leaseExpiresAt.toISOString())
+}
+
+function getClaimStatus(db: Database, taskId: string): string | null {
+  const row = db
+    .query("SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1")
+    .get(taskId) as { status: string } | null
+  return row?.status ?? null
+}
+
+function getActiveClaimCount(db: Database, taskId: string): number {
+  const row = db
+    .query("SELECT COUNT(*) AS count FROM task_claims WHERE task_id = ? AND status = 'active'")
+    .get(taskId) as { count: number } | null
+  return row?.count ?? 0
+}
+
 describeIf("ralph.sh integration", () => {
   const harnesses: Harness[] = []
 
@@ -420,5 +488,82 @@ describeIf("ralph.sh integration", () => {
       await terminateChild(proc1)
       await terminateChild(proc2)
     }
+  })
+
+  itIfSqlite3("cancels orphaned runs and expires active claims for linked tasks", () => {
+    const h = setupHarness()
+    harnesses.push(h)
+
+    mkdirSync(join(h.tmpDir, ".tx"), { recursive: true })
+    const dbPath = join(h.tmpDir, ".tx", "tasks.db")
+    const db = new Database(dbPath)
+    createReconcileSchema(db)
+
+    const taskId = fixtureId("ralph-orphan-run-task")
+    const runId = `run-${fixtureId("ralph-orphan-run").slice(3)}`
+    const workerId = fixtureId("ralph-orphan-run-worker")
+    const now = new Date().toISOString()
+
+    db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
+    db.prepare(
+      "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(runId, taskId, 999999, "running", now, "{}")
+    insertActiveClaim(db, taskId, workerId)
+    db.close()
+
+    const result = h.run(["--runtime", "codex", "--max", "0", "--max-hours", "1", "--idle-rounds", "1"])
+    expect(result.status).toBe(0)
+
+    const checkDb = new Database(dbPath)
+    const runRow = checkDb
+      .query("SELECT status, error_message FROM runs WHERE id = ?")
+      .get(runId) as { status: string; error_message: string | null } | null
+    const claimStatus = getClaimStatus(checkDb, taskId)
+    const activeClaimCount = getActiveClaimCount(checkDb, taskId)
+    checkDb.close()
+
+    expect(runRow).not.toBeNull()
+    expect(runRow?.status).toBe("cancelled")
+    expect(runRow?.error_message ?? "").toContain("orphaned")
+    expect(claimStatus).toBe("expired")
+    expect(activeClaimCount).toBe(0)
+
+    const log = readFileSync(join(h.tmpDir, ".tx", "ralph.log"), "utf-8")
+    expect(log).toContain("Cancelled 1 orphaned run(s)")
+  })
+
+  itIfSqlite3("resets orphaned active tasks and expires active claims during startup reconciliation", () => {
+    const h = setupHarness()
+    harnesses.push(h)
+
+    mkdirSync(join(h.tmpDir, ".tx"), { recursive: true })
+    const dbPath = join(h.tmpDir, ".tx", "tasks.db")
+    const db = new Database(dbPath)
+    createReconcileSchema(db)
+
+    const taskId = fixtureId("ralph-orphan-active-task")
+    const workerId = fixtureId("ralph-orphan-active-worker")
+
+    db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "active")
+    insertActiveClaim(db, taskId, workerId)
+    db.close()
+
+    const result = h.run(["--runtime", "codex", "--max", "0", "--max-hours", "1", "--idle-rounds", "1"])
+    expect(result.status).toBe(0)
+
+    const checkDb = new Database(dbPath)
+    const claimStatus = getClaimStatus(checkDb, taskId)
+    const activeClaimCount = getActiveClaimCount(checkDb, taskId)
+    checkDb.close()
+
+    expect(claimStatus).toBe("expired")
+    expect(activeClaimCount).toBe(0)
+
+    const resetsLogPath = join(h.stateDir, "resets.log")
+    expect(existsSync(resetsLogPath)).toBe(true)
+    expect(readFileSync(resetsLogPath, "utf-8")).toContain(taskId)
+
+    const log = readFileSync(join(h.tmpDir, ".tx", "ralph.log"), "utf-8")
+    expect(log).toContain("Reset 1 orphaned active task(s)")
   })
 })
