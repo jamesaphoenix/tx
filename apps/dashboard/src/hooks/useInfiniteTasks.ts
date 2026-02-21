@@ -20,7 +20,16 @@ export interface UseInfiniteTasksResult {
   total: number
 }
 
-export function useInfiniteTasks(filters: TaskFilters = {}): UseInfiniteTasksResult {
+export interface UseInfiniteTasksOptions {
+  enabled?: boolean
+}
+
+export function useInfiniteTasks(
+  filters: TaskFilters = {},
+  options: UseInfiniteTasksOptions = {}
+): UseInfiniteTasksResult {
+  const enabled = options.enabled ?? true
+
   const query = useInfiniteQuery({
     queryKey: ["tasks", "infinite", filters] as const,
     queryFn: async ({ pageParam }): Promise<PaginatedTasksResponse> => {
@@ -52,8 +61,9 @@ export function useInfiniteTasks(filters: TaskFilters = {}): UseInfiniteTasksRes
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     initialPageParam: undefined as string | undefined,
+    enabled,
     staleTime: 2000, // Refetch after 2s
-    refetchInterval: 5000, // Poll every 5s
+    refetchInterval: enabled ? 5000 : false, // Poll every 5s when active
   })
 
   // Flatten tasks from all pages

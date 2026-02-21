@@ -99,11 +99,10 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
   // Determine which data source to use
   const useReadyEndpoint = useMemo(() => isReadyOnlyFilter(filters), [filters])
 
-  // Ready tasks (non-paginated, all at once)
-  const readyResult = useReadyTasks()
-
-  // Paginated tasks (infinite scroll)
-  const infiniteResult = useInfiniteTasks(filters)
+  // Keep only one query path active to avoid duplicate polling.
+  // Ready-only filter uses /api/tasks/ready, all other cases use paginated /api/tasks.
+  const readyResult = useReadyTasks({ enabled: useReadyEndpoint })
+  const infiniteResult = useInfiniteTasks(filters, { enabled: !useReadyEndpoint })
 
   // Select the appropriate result based on filter
   const {

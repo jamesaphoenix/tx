@@ -568,6 +568,37 @@ describe('TaskList', () => {
       })
     })
 
+    it('does not call paginated endpoint when ready-only filter is active', async () => {
+      const readyTasks = [
+        createTask({ id: 'tx-ready1', title: 'Ready task 1', status: 'ready' }),
+      ]
+      const readyHandler = vi.fn(() =>
+        HttpResponse.json({
+          tasks: readyTasks,
+        } satisfies ReadyResponse)
+      )
+      const paginatedHandler = vi.fn(() =>
+        HttpResponse.json(emptyPaginatedResponse)
+      )
+
+      server.use(
+        http.get('/api/tasks/ready', readyHandler),
+        http.get('/api/tasks', paginatedHandler)
+      )
+
+      const onSelectTask = vi.fn()
+      renderWithProviders(
+        <TaskList onSelectTask={onSelectTask} filters={{ status: ['ready'] }} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Ready task 1')).toBeInTheDocument()
+      })
+
+      expect(readyHandler).toHaveBeenCalledTimes(1)
+      expect(paginatedHandler).not.toHaveBeenCalled()
+    })
+
     it('uses paginated endpoint when search is active with ready filter', async () => {
       const tasks = [createTask({ id: 'tx-task1', title: 'Ready task matching search' })]
 
@@ -597,6 +628,37 @@ describe('TaskList', () => {
       await waitFor(() => {
         expect(screen.getByText('Ready task matching search')).toBeInTheDocument()
       })
+    })
+
+    it('does not call ready endpoint when paginated endpoint is active', async () => {
+      const tasks = [createTask({ id: 'tx-task1', title: 'Regular task list query' })]
+      const readyHandler = vi.fn(() =>
+        HttpResponse.json(emptyReadyResponse)
+      )
+      const paginatedHandler = vi.fn(() =>
+        HttpResponse.json({
+          tasks,
+          nextCursor: null,
+          hasMore: false,
+          total: 1,
+          summary: { total: 1, byStatus: { ready: 1 } },
+        } satisfies PaginatedTasksResponse)
+      )
+
+      server.use(
+        http.get('/api/tasks/ready', readyHandler),
+        http.get('/api/tasks', paginatedHandler)
+      )
+
+      const onSelectTask = vi.fn()
+      renderWithProviders(<TaskList onSelectTask={onSelectTask} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Regular task list query')).toBeInTheDocument()
+      })
+
+      expect(paginatedHandler).toHaveBeenCalledTimes(1)
+      expect(readyHandler).not.toHaveBeenCalled()
     })
   })
 
