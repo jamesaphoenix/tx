@@ -662,4 +662,88 @@ describe("runWorker", () => {
     // After shutdown, the worker should be deregistered (no longer in the list)
     expect(workersAfterShutdown.every(w => w.id !== registeredWorkerId)).toBe(true)
   })
+
+  it("cleans up expired claim and restores task readiness after renewal-triggered shutdown", async () => {
+    const {
+      OrchestratorService,
+      TaskRepository,
+      WorkerService,
+      ClaimService,
+      ReadyService,
+      runWorker
+    } = await import("@jamesaphoenix/tx-core")
+    const layer = await makeTestLayer()
+
+    let executionCount = 0
+    let registeredWorkerId = ""
+    let activeClaimAfterShutdown: unknown = undefined
+    let readyTaskIdsAfterShutdown: readonly string[] = []
+    let workersAfterShutdown: readonly { id: string }[] = []
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const orchestrator = yield* OrchestratorService
+        const taskRepo = yield* TaskRepository
+        const workerSvc = yield* WorkerService
+        const claimSvc = yield* ClaimService
+        const readySvc = yield* ReadyService
+
+        // Deliberately make lease shorter than renewal interval so first renewal fails.
+        yield* orchestrator.start({
+          workerPoolSize: 1,
+          heartbeatIntervalSeconds: 0.1,
+          leaseDurationMinutes: 0.001
+        })
+
+        const taskId = FIXTURES.TASK_2 as Parameters<typeof taskRepo.insert>[0]["id"]
+        yield* taskRepo.insert({
+          id: taskId,
+          title: "Renewal shutdown claim cleanup regression",
+          description: "",
+          status: "ready",
+          parentId: null,
+          score: 500,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: null,
+          metadata: {}
+        })
+
+        const workerFiber = yield* Effect.fork(
+          runWorker({
+            name: "renewal-shutdown-worker",
+            heartbeatIntervalSeconds: 0.1,
+            execute: async (_task, ctx) => {
+              executionCount += 1
+              registeredWorkerId = ctx.workerId
+
+              // If renewal shutdown did not trigger, fail fast on second execution.
+              if (executionCount > 1) {
+                process.emit("SIGTERM", "SIGTERM")
+                return { success: false, error: "Unexpected second execution after renewal failure" }
+              }
+
+              await new Promise((resolve) => setTimeout(resolve, 2200))
+              return { success: true }
+            }
+          })
+        )
+
+        // Wait for renewal loop failure, execution completion, and worker shutdown.
+        yield* Effect.sleep("4 seconds")
+        yield* Fiber.interrupt(workerFiber)
+        yield* Effect.sleep("200 millis")
+
+        activeClaimAfterShutdown = yield* claimSvc.getActiveClaim(taskId)
+        readyTaskIdsAfterShutdown = (yield* readySvc.getReady(10)).map(task => task.id)
+        workersAfterShutdown = yield* workerSvc.list()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(executionCount).toBe(1)
+    expect(registeredWorkerId).toMatch(/^worker-[a-z0-9]{8}$/)
+    expect(activeClaimAfterShutdown).toBeNull()
+    expect(readyTaskIdsAfterShutdown).toContain(FIXTURES.TASK_2)
+    expect(workersAfterShutdown.every(w => w.id !== registeredWorkerId)).toBe(true)
+  })
 })
