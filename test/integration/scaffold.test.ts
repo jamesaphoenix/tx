@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, statSync } from "node:fs"
+import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, statSync, chmodSync } from "node:fs"
 import { join } from "node:path"
-import { scaffoldClaude, scaffoldCodex } from "../../apps/cli/src/commands/scaffold.js"
+import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog } from "../../apps/cli/src/commands/scaffold.js"
 
 const TEST_DIR = join("/tmp", `tx-scaffold-test-${process.pid}`)
 
@@ -9,6 +9,15 @@ function cleanup() {
   if (existsSync(TEST_DIR)) {
     rmSync(TEST_DIR, { recursive: true })
   }
+}
+
+function createMockRuntime(name: string): string {
+  const binDir = join(TEST_DIR, ".bin")
+  mkdirSync(binDir, { recursive: true })
+  const cmdPath = join(binDir, name)
+  writeFileSync(cmdPath, "#!/bin/bash\nexit 0\n")
+  chmodSync(cmdPath, 0o755)
+  return binDir
 }
 
 describe("scaffold", () => {
@@ -203,6 +212,54 @@ describe("scaffold", () => {
       writeFileSync(join(TEST_DIR, ".codex"), "not-a-directory")
 
       expect(() => scaffoldCodex(TEST_DIR)).toThrow(/parent path exists as a file/i)
+    })
+  })
+
+  describe("scaffoldWatchdog", () => {
+    it("creates watchdog scripts/service assets and runtime-enabled env config", () => {
+      const pathEnv = createMockRuntime("codex")
+      const result = scaffoldWatchdog(TEST_DIR, { runtimeMode: "auto", pathEnv })
+
+      expect(result.warnings).toEqual([])
+      expect(result.watchdogEnabled).toBe(true)
+      expect(result.codexEnabled).toBe(true)
+      expect(result.claudeEnabled).toBe(false)
+
+      expect(existsSync(join(TEST_DIR, "scripts", "ralph-watchdog.sh"))).toBe(true)
+      expect(existsSync(join(TEST_DIR, "scripts", "ralph-hourly-supervisor.sh"))).toBe(true)
+      expect(existsSync(join(TEST_DIR, "scripts", "watchdog-launcher.sh"))).toBe(true)
+      expect(existsSync(join(TEST_DIR, "ops", "watchdog", "com.tx.ralph-watchdog.plist"))).toBe(true)
+      expect(existsSync(join(TEST_DIR, "ops", "watchdog", "tx-ralph-watchdog.service"))).toBe(true)
+      expect(existsSync(join(TEST_DIR, ".tx", "watchdog.env"))).toBe(true)
+
+      const env = readFileSync(join(TEST_DIR, ".tx", "watchdog.env"), "utf-8")
+      expect(env).toContain("WATCHDOG_ENABLED=1")
+      expect(env).toContain("WATCHDOG_RUNTIME_MODE=auto")
+      expect(env).toContain("WATCHDOG_CODEX_ENABLED=1")
+      expect(env).toContain("WATCHDOG_CLAUDE_ENABLED=0")
+      expect(env).toContain("WATCHDOG_DETACHED=1")
+
+      const stat = statSync(join(TEST_DIR, "scripts", "watchdog-launcher.sh"))
+      expect(stat.mode & 0o100).toBeTruthy()
+    })
+
+    it("fails clearly when runtime mode requires unavailable CLIs", () => {
+      expect(() => scaffoldWatchdog(TEST_DIR, { runtimeMode: "both", pathEnv: "" }))
+        .toThrow(/requires codex and claude; missing: codex, claude/i)
+    })
+
+    it("does not overwrite existing watchdog assets", () => {
+      mkdirSync(join(TEST_DIR, "scripts"), { recursive: true })
+      mkdirSync(join(TEST_DIR, ".tx"), { recursive: true })
+      writeFileSync(join(TEST_DIR, "scripts", "ralph-watchdog.sh"), "# sentinel-watchdog\n")
+      writeFileSync(join(TEST_DIR, ".tx", "watchdog.env"), "WATCHDOG_ENABLED=0\n")
+
+      const result = scaffoldWatchdog(TEST_DIR, { runtimeMode: "auto", pathEnv: "" })
+
+      expect(result.skipped).toContain("scripts/ralph-watchdog.sh")
+      expect(result.skipped).toContain(".tx/watchdog.env")
+      expect(readFileSync(join(TEST_DIR, "scripts", "ralph-watchdog.sh"), "utf-8")).toBe("# sentinel-watchdog\n")
+      expect(readFileSync(join(TEST_DIR, ".tx", "watchdog.env"), "utf-8")).toBe("WATCHDOG_ENABLED=0\n")
     })
   })
 })

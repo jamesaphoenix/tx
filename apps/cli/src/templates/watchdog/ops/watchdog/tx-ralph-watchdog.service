@@ -1,0 +1,14 @@
+[Unit]
+Description=tx RALPH Watchdog
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=/bin/bash __PROJECT_DIR__/scripts/watchdog-launcher.sh start --foreground
+ExecStop=/bin/bash __PROJECT_DIR__/scripts/watchdog-launcher.sh stop
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -5,8 +5,8 @@
  * user's project, skipping any files that already exist.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, chmodSync } from "node:fs"
-import { resolve, join, dirname, relative } from "node:path"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, chmodSync, accessSync, constants as fsConstants } from "node:fs"
+import { resolve, join, dirname, relative, delimiter } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as p from "@clack/prompts"
 
@@ -86,6 +86,154 @@ export interface ClaudeOptions {
   workflowSkill?: boolean
   cycleSkill?: boolean
   ralphScript?: boolean
+}
+
+export type WatchdogRuntimeMode = "auto" | "codex" | "claude" | "both"
+
+const WATCHDOG_RUNTIME_MODES = ["auto", "codex", "claude", "both"] as const
+
+export interface WatchdogScaffoldOptions {
+  runtimeMode?: WatchdogRuntimeMode
+  detached?: boolean
+  pathEnv?: string
+}
+
+export interface WatchdogScaffoldResult extends ScaffoldResult {
+  warnings: string[]
+  runtimeMode: WatchdogRuntimeMode
+  watchdogEnabled: boolean
+  codexEnabled: boolean
+  claudeEnabled: boolean
+}
+
+export interface InteractiveScaffoldOptions {
+  watchdogRuntimeMode?: WatchdogRuntimeMode
+}
+
+interface ResolvedWatchdogRuntime {
+  warnings: string[]
+  watchdogEnabled: boolean
+  codexEnabled: boolean
+  claudeEnabled: boolean
+}
+
+export function parseWatchdogRuntimeMode(value: string | boolean | undefined): WatchdogRuntimeMode {
+  if (value === undefined) {
+    return "auto"
+  }
+  if (value === true) {
+    throw new Error("Flag --watchdog-runtime requires a value: auto|codex|claude|both.")
+  }
+  if (typeof value !== "string") {
+    throw new Error("Flag --watchdog-runtime must be one of: auto|codex|claude|both.")
+  }
+  if (WATCHDOG_RUNTIME_MODES.includes(value as WatchdogRuntimeMode)) {
+    return value as WatchdogRuntimeMode
+  }
+  throw new Error(`Invalid --watchdog-runtime value: ${value} (expected: auto|codex|claude|both)`)
+}
+
+function commandAvailable(commandName: string, pathEnv: string): boolean {
+  if (!pathEnv) {
+    return false
+  }
+
+  const pathEntries = pathEnv.split(delimiter).filter(Boolean)
+  const isWindows = process.platform === "win32"
+  const extensions = isWindows
+    ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")
+    : [""]
+
+  for (const entry of pathEntries) {
+    for (const ext of extensions) {
+      const candidate = join(entry, isWindows ? `${commandName}${ext}` : commandName)
+      try {
+        accessSync(candidate, fsConstants.X_OK)
+        if (statSync(candidate).isFile()) {
+          return true
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+
+  return false
+}
+
+function resolveWatchdogRuntime(mode: WatchdogRuntimeMode, pathEnv: string): ResolvedWatchdogRuntime {
+  const codexAvailable = commandAvailable("codex", pathEnv)
+  const claudeAvailable = commandAvailable("claude", pathEnv)
+
+  if (mode === "codex") {
+    if (!codexAvailable) {
+      throw new Error(
+        "Watchdog runtime 'codex' unavailable: codex CLI not found in PATH. Install codex or use --watchdog-runtime auto|claude."
+      )
+    }
+    return { warnings: [], watchdogEnabled: true, codexEnabled: true, claudeEnabled: false }
+  }
+
+  if (mode === "claude") {
+    if (!claudeAvailable) {
+      throw new Error(
+        "Watchdog runtime 'claude' unavailable: claude CLI not found in PATH. Install claude or use --watchdog-runtime auto|codex."
+      )
+    }
+    return { warnings: [], watchdogEnabled: true, codexEnabled: false, claudeEnabled: true }
+  }
+
+  if (mode === "both") {
+    const missing: string[] = []
+    if (!codexAvailable) missing.push("codex")
+    if (!claudeAvailable) missing.push("claude")
+    if (missing.length > 0) {
+      throw new Error(`Watchdog runtime 'both' requires codex and claude; missing: ${missing.join(", ")}.`)
+    }
+    return { warnings: [], watchdogEnabled: true, codexEnabled: true, claudeEnabled: true }
+  }
+
+  const codexEnabled = codexAvailable
+  const claudeEnabled = claudeAvailable
+  const watchdogEnabled = codexEnabled || claudeEnabled
+  const warnings = watchdogEnabled
+    ? []
+    : [
+        "Watchdog runtime auto-detect found no codex/claude CLI in PATH. Assets were scaffolded with WATCHDOG_ENABLED=0.",
+        "Install a runtime and update .tx/watchdog.env to enable watchdog supervision.",
+      ]
+
+  return {
+    warnings,
+    watchdogEnabled,
+    codexEnabled,
+    claudeEnabled,
+  }
+}
+
+function renderWatchdogEnv(
+  mode: WatchdogRuntimeMode,
+  runtime: ResolvedWatchdogRuntime,
+  detached: boolean,
+): string {
+  const as01 = (value: boolean): string => (value ? "1" : "0")
+  const lines = [
+    `WATCHDOG_ENABLED=${as01(runtime.watchdogEnabled)}`,
+    `WATCHDOG_RUNTIME_MODE=${mode}`,
+    `WATCHDOG_CODEX_ENABLED=${as01(runtime.codexEnabled)}`,
+    `WATCHDOG_CLAUDE_ENABLED=${as01(runtime.claudeEnabled)}`,
+    "WATCHDOG_POLL_SECONDS=300",
+    "WATCHDOG_TRANSCRIPT_IDLE_SECONDS=300",
+    "WATCHDOG_HEARTBEAT_LAG_SECONDS=180",
+    "WATCHDOG_RUN_STALE_SECONDS=5400",
+    "WATCHDOG_IDLE_ROUNDS=300",
+    "WATCHDOG_ERROR_BURST_WINDOW_MINUTES=20",
+    "WATCHDOG_ERROR_BURST_THRESHOLD=4",
+    "WATCHDOG_RESTART_COOLDOWN_SECONDS=900",
+    `WATCHDOG_DETACHED=${detached ? "1" : "0"}`,
+  ]
+
+  return `${lines.join("\n")}\n`
 }
 
 /**
@@ -185,6 +333,50 @@ export function scaffoldCodex(projectDir: string): ScaffoldResult {
   return { copied: allCopied, skipped: allSkipped }
 }
 
+/**
+ * Scaffold watchdog supervision scripts/config into the current project.
+ * Runtime-specific toggles are persisted in .tx/watchdog.env.
+ */
+export function scaffoldWatchdog(projectDir: string, options?: WatchdogScaffoldOptions): WatchdogScaffoldResult {
+  const allCopied: string[] = []
+  const allSkipped: string[] = []
+  const mode = options?.runtimeMode ?? "auto"
+  const runtime = resolveWatchdogRuntime(mode, options?.pathEnv ?? (process.env.PATH ?? ""))
+  const detached = options?.detached !== false
+  const templates = templatesDir()
+
+  const scriptsSrc = join(templates, "watchdog", "scripts")
+  const scriptsDest = join(projectDir, "scripts")
+  const scriptsResult = copyTree(scriptsSrc, scriptsDest)
+  allCopied.push(...scriptsResult.copied.map(p => `scripts/${p}`))
+  allSkipped.push(...scriptsResult.skipped.map(p => `scripts/${p}`))
+
+  const opsSrc = join(templates, "watchdog", "ops")
+  const opsDest = join(projectDir, "ops")
+  const opsResult = copyTree(opsSrc, opsDest)
+  allCopied.push(...opsResult.copied.map(p => `ops/${p}`))
+  allSkipped.push(...opsResult.skipped.map(p => `ops/${p}`))
+
+  const envPath = join(projectDir, ".tx", "watchdog.env")
+  if (existsSync(envPath)) {
+    allSkipped.push(".tx/watchdog.env")
+  } else {
+    mkdirSync(dirname(envPath), { recursive: true })
+    writeFileSync(envPath, renderWatchdogEnv(mode, runtime, detached))
+    allCopied.push(".tx/watchdog.env")
+  }
+
+  return {
+    copied: allCopied,
+    skipped: allSkipped,
+    warnings: runtime.warnings,
+    runtimeMode: mode,
+    watchdogEnabled: runtime.watchdogEnabled,
+    codexEnabled: runtime.codexEnabled,
+    claudeEnabled: runtime.claudeEnabled,
+  }
+}
+
 /** Format scaffold results for clack note */
 function formatResults(results: ScaffoldResult[]): string {
   const lines: string[] = []
@@ -199,7 +391,8 @@ function formatResults(results: ScaffoldResult[]): string {
  * Interactive scaffold using @clack/prompts.
  * Asks the user what they want step by step.
  */
-export async function interactiveScaffold(projectDir: string): Promise<void> {
+export async function interactiveScaffold(projectDir: string, options?: InteractiveScaffoldOptions): Promise<void> {
+  const watchdogRuntimeMode = options?.watchdogRuntimeMode ?? "auto"
   const wantsClaude = await p.confirm({
     message: "Add Claude Code integration? (CLAUDE.md + skills)",
     initialValue: true,
@@ -240,12 +433,26 @@ export async function interactiveScaffold(projectDir: string): Promise<void> {
     results.push(scaffoldCodex(projectDir))
   }
 
+  const wantsWatchdog = await p.confirm({
+    message: "Enable watchdog supervision for detached RALPH loops? (default: No)",
+    initialValue: false,
+  })
+  if (p.isCancel(wantsWatchdog)) { p.cancel("Setup cancelled."); return }
+
+  if (wantsWatchdog) {
+    const watchdogResult = scaffoldWatchdog(projectDir, { runtimeMode: watchdogRuntimeMode })
+    for (const warning of watchdogResult.warnings) {
+      p.log.warn(warning)
+    }
+    results.push(watchdogResult)
+  }
+
   const output = formatResults(results)
   if (output) {
     p.note(output, "Files")
   }
 
-  if (!wantsClaude && !wantsCodex) {
-    p.log.info("Skipped agent integration. Run tx init --claude or tx init --codex later.")
+  if (!wantsClaude && !wantsCodex && !wantsWatchdog) {
+    p.log.info("Skipped integrations. Run tx init --claude, --codex, or --watchdog later.")
   }
 }

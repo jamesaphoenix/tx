@@ -33,7 +33,7 @@ import { dashboard } from "./commands/dashboard.js"
 import { send, inbox, ack, ackAll, outboxPending, outboxGc } from "./commands/outbox.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
-import { scaffoldClaude, scaffoldCodex, interactiveScaffold } from "./commands/scaffold.js"
+import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
 import * as p from "@clack/prompts"
 
 // --- Argv parsing helpers ---
@@ -104,11 +104,17 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       p.log.success(`Database ready (${tables.length} tables, SQLite WAL mode)`)
       p.log.info(`${projectDir}/.tx/tasks.db`)
 
-      // Non-interactive mode: --claude / --codex flags skip prompts
+      // Non-interactive mode: explicit init flags skip prompts
       const forceClaude = flag(initFlags, "claude")
       const forceCodex = flag(initFlags, "codex")
+      const forceWatchdog = flag(initFlags, "watchdog")
 
-      if (forceClaude || forceCodex) {
+      if (initFlags["watchdog-runtime"] !== undefined && !forceWatchdog) {
+        throw new Error("--watchdog-runtime requires --watchdog.")
+      }
+      const watchdogRuntimeMode = parseWatchdogRuntimeMode(initFlags["watchdog-runtime"])
+
+      if (forceClaude || forceCodex || forceWatchdog) {
         const results: string[] = []
         if (forceClaude) {
           const r = scaffoldClaude(projectDir)
@@ -118,13 +124,20 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
           const r = scaffoldCodex(projectDir)
           results.push(...r.copied.map(f => `+ ${f}`), ...r.skipped.map(f => `~ ${f} (exists)`))
         }
+        if (forceWatchdog) {
+          const r = scaffoldWatchdog(projectDir, { runtimeMode: watchdogRuntimeMode })
+          results.push(...r.copied.map(f => `+ ${f}`), ...r.skipped.map(f => `~ ${f} (exists)`))
+          for (const warning of r.warnings) {
+            p.log.warn(warning)
+          }
+        }
         if (results.length > 0) p.note(results.join("\n"), "Files")
         p.outro("Done! Run tx ready to get started.")
         return
       }
 
       // Interactive mode
-      yield* Effect.tryPromise(() => interactiveScaffold(projectDir))
+      yield* Effect.tryPromise(() => interactiveScaffold(projectDir, { watchdogRuntimeMode }))
       p.outro("Done! Run tx ready to get started.")
     }),
 

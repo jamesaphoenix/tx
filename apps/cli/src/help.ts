@@ -94,7 +94,7 @@ Examples:
 export const commandHelp: Record<string, string> = {
   init: `tx init - Initialize task database
 
-Usage: tx init [--db <path>] [--claude] [--codex]
+Usage: tx init [--db <path>] [--claude] [--codex] [--watchdog] [--watchdog-runtime <auto|codex|claude|both>]
 
 Initializes the tx database and required tables. Creates .tx/tasks.db
 by default. Safe to run multiple times (idempotent).
@@ -103,6 +103,9 @@ Options:
   --db <path>   Database path (default: .tx/tasks.db)
   --claude      Scaffold Claude Code integration (CLAUDE.md + .claude/skills/)
   --codex       Scaffold Codex integration (AGENTS.md + .codex/agents + .codex/rules)
+  --watchdog    Scaffold watchdog launcher/scripts/assets (default off)
+  --watchdog-runtime <mode>
+                Runtime mode for watchdog: auto|codex|claude|both (default: auto, requires --watchdog)
   --help        Show this help
 
 Examples:
@@ -110,6 +113,9 @@ Examples:
   tx init --claude            # Database + Claude Code skills & CLAUDE.md
   tx init --codex             # Database + Codex AGENTS.md + agent profiles + rules
   tx init --claude --codex    # Database + both integrations
+  tx init --watchdog          # Database + watchdog scaffolding (runtime auto-detect)
+  tx init --watchdog --watchdog-runtime both
+                              # Require both codex and claude runtimes for watchdog
   tx init --db ~/my-tasks.db  # Use custom path`,
 
   add: `tx add - Create a new task

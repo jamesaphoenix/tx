@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, symlinkSync, existsSync, readFileSync, writeFileSync } from "fs"
+import { mkdtempSync, rmSync, symlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 
@@ -9,6 +9,7 @@ interface Sandbox {
 }
 
 const REPO_ROOT = resolve(__dirname, "..", "..")
+const BUN_BIN = process.execPath.includes("bun") ? process.execPath : "bun"
 const sandboxes: Sandbox[] = []
 
 function createSandbox(): Sandbox {
@@ -22,13 +23,31 @@ function createSandbox(): Sandbox {
   return sandbox
 }
 
-function runInit(sandbox: Sandbox, args: string[]) {
-  return spawnSync("bun", ["apps/cli/src/cli.ts", "init", ...args], {
+function runInit(
+  sandbox: Sandbox,
+  args: string[],
+  options?: { env?: NodeJS.ProcessEnv; input?: string }
+) {
+  return spawnSync(BUN_BIN, ["apps/cli/src/cli.ts", "init", ...args], {
     cwd: sandbox.dir,
     encoding: "utf-8",
     stdio: "pipe",
     timeout: 90000,
+    input: options?.input,
+    env: {
+      ...process.env,
+      ...options?.env,
+    },
   })
+}
+
+function createMockRuntime(sandbox: Sandbox, name: string): string {
+  const binDir = join(sandbox.dir, ".bin")
+  mkdirSync(binDir, { recursive: true })
+  const runtimePath = join(binDir, name)
+  writeFileSync(runtimePath, "#!/bin/bash\nexit 0\n")
+  chmodSync(runtimePath, 0o755)
+  return binDir
 }
 
 afterEach(() => {
@@ -66,6 +85,56 @@ describe("tx init onboarding edge cases", () => {
     expect(existsSync(join(sandbox.dir, ".codex", "agents", "tx-implementer.md"))).toBe(true)
   })
 
+  it("init --watchdog scaffolds watchdog assets with runtime auto-detect", () => {
+    const sandbox = createSandbox()
+    const binDir = createMockRuntime(sandbox, "codex")
+    const result = runInit(
+      sandbox,
+      ["--watchdog", "--watchdog-runtime", "auto"],
+      { env: { PATH: `${binDir}:/usr/bin:/bin` } },
+    )
+    expect(result.status).toBe(0)
+    expect(existsSync(join(sandbox.dir, "scripts", "watchdog-launcher.sh"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, "scripts", "ralph-watchdog.sh"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, "scripts", "ralph-hourly-supervisor.sh"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, "ops", "watchdog", "com.tx.ralph-watchdog.plist"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, "ops", "watchdog", "tx-ralph-watchdog.service"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".tx", "watchdog.env"))).toBe(true)
+
+    const envContent = readFileSync(join(sandbox.dir, ".tx", "watchdog.env"), "utf-8")
+    expect(envContent).toContain("WATCHDOG_ENABLED=1")
+    expect(envContent).toContain("WATCHDOG_CODEX_ENABLED=1")
+    expect(envContent).toContain("WATCHDOG_CLAUDE_ENABLED=0")
+  })
+
+  it("init --codex keeps watchdog onboarding default-off", () => {
+    const sandbox = createSandbox()
+    const result = runInit(sandbox, ["--codex"])
+    expect(result.status).toBe(0)
+    expect(existsSync(join(sandbox.dir, "scripts", "watchdog-launcher.sh"))).toBe(false)
+    expect(existsSync(join(sandbox.dir, ".tx", "watchdog.env"))).toBe(false)
+  })
+
+  it("fails with actionable error when explicit watchdog runtime is missing", () => {
+    const sandbox = createSandbox()
+    const emptyBin = join(sandbox.dir, "empty-bin")
+    mkdirSync(emptyBin, { recursive: true })
+    const result = runInit(
+      sandbox,
+      ["--watchdog", "--watchdog-runtime", "codex"],
+      { env: { PATH: `${emptyBin}:/usr/bin:/bin` } },
+    )
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain("Watchdog runtime 'codex' unavailable")
+  })
+
+  it("rejects --watchdog-runtime when --watchdog is not set", () => {
+    const sandbox = createSandbox()
+    const result = runInit(sandbox, ["--watchdog-runtime", "auto", "--codex"])
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain("--watchdog-runtime requires --watchdog")
+  })
+
   it("does not duplicate AGENTS tx section when heading uses hyphen variant", () => {
     const sandbox = createSandbox()
     writeFileSync(join(sandbox.dir, "AGENTS.md"), "# tx - Headless, Local Infra for AI Agents\n\ncustom\n")
@@ -86,4 +155,3 @@ describe("tx init onboarding edge cases", () => {
     expect(result.stderr).toContain("parent path exists as a file")
   })
 })
-
