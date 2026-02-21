@@ -249,38 +249,92 @@ loop_pid_is_live() {
   echo "$cmd" | grep -Eq '(^|[ /])ralph\.sh([[:space:]]|$)'
 }
 
-acquire_watchdog_lock() {
-  if [ -f "$WATCHDOG_PID_FILE" ]; then
-    local existing_pid=""
-    existing_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)
+read_watchdog_pid_file() {
+  local pid=""
 
-    if watchdog_pid_is_live "$existing_pid"; then
-      log "Another watchdog is already running (pid=$existing_pid). Exiting."
+  if [ ! -f "$WATCHDOG_PID_FILE" ]; then
+    echo ""
+    return
+  fi
+
+  pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null | tr -d '[:space:]')
+  if [[ "$pid" =~ ^[0-9]+$ ]]; then
+    echo "$pid"
+  else
+    echo ""
+  fi
+}
+
+acquire_watchdog_lock() {
+  local attempts=0
+  local max_attempts=8
+
+  while [ "$attempts" -lt "$max_attempts" ]; do
+    if ( set -o noclobber; printf '%s\n' "$$" > "$WATCHDOG_PID_FILE" ) 2>/dev/null; then
+      return 0
+    fi
+
+    local lock_pid=""
+    lock_pid=$(read_watchdog_pid_file)
+    if watchdog_pid_is_live "$lock_pid"; then
+      log "Another watchdog is already running (pid=$lock_pid). Exiting."
       exit 0
     fi
 
-    if [ -n "$existing_pid" ]; then
-      if pid_is_live "$existing_pid"; then
-        log "Watchdog pid file points to non-watchdog process (pid=$existing_pid); replacing stale lock"
+    if [ -n "$lock_pid" ]; then
+      if pid_is_live "$lock_pid"; then
+        log "Watchdog pid file points to non-watchdog process (pid=$lock_pid); replacing stale lock"
       else
-        log "Removing stale watchdog pid file (pid=$existing_pid)"
+        log "Removing stale watchdog pid file (pid=$lock_pid)"
       fi
     fi
 
-    rm -f "$WATCHDOG_PID_FILE"
+    # Race-safe stale cleanup: only remove when contents match what we observed.
+    local latest_pid=""
+    latest_pid=$(read_watchdog_pid_file)
+    if [ "$latest_pid" = "$lock_pid" ]; then
+      rm -f "$WATCHDOG_PID_FILE" 2>/dev/null || true
+    fi
+
+    attempts=$((attempts + 1))
+    sleep 0.02
+  done
+
+  local final_pid=""
+  final_pid=$(read_watchdog_pid_file)
+  if watchdog_pid_is_live "$final_pid"; then
+    log "Another watchdog is already running (pid=$final_pid). Exiting."
+    exit 0
   fi
 
-  echo "$$" > "$WATCHDOG_PID_FILE"
+  log "Unable to acquire watchdog lock after retries; exiting."
+  exit 1
+}
+
+remove_owned_watchdog_pid_file() {
+  if [ ! -f "$WATCHDOG_PID_FILE" ]; then
+    return 0
+  fi
+
+  local owner_pid=""
+  owner_pid=$(read_watchdog_pid_file)
+  if [ "$owner_pid" = "$$" ]; then
+    rm -f "$WATCHDOG_PID_FILE"
+  fi
 }
 
 release_watchdog_lock() {
-  if [ -f "$WATCHDOG_PID_FILE" ]; then
-    local owner_pid=""
-    owner_pid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)
-    if [ "$owner_pid" = "$$" ]; then
-      rm -f "$WATCHDOG_PID_FILE"
-    fi
-  fi
+  remove_owned_watchdog_pid_file
+}
+
+handle_watchdog_shutdown_signal() {
+  local signal="$1"
+  local exit_code="$2"
+
+  trap - INT TERM
+  log "Received SIG${signal}; releasing watchdog lock and exiting"
+  release_watchdog_lock
+  exit "$exit_code"
 }
 
 restart_stamp_file_for() {
@@ -634,7 +688,9 @@ check_error_burst_for_worker() {
 }
 
 acquire_watchdog_lock
-trap 'release_watchdog_lock' EXIT INT TERM
+trap 'release_watchdog_lock' EXIT
+trap 'handle_watchdog_shutdown_signal INT 130' INT
+trap 'handle_watchdog_shutdown_signal TERM 143' TERM
 trap 'log "Received SIGHUP signal; ignoring to stay detached"' HUP
 
 log "Watchdog started interval=${POLL_SECONDS}s codex=${CODEX_ENABLED} claude=${CLAUDE_ENABLED} auto_start=${AUTO_START} idle_rounds=${IDLE_ROUNDS}"

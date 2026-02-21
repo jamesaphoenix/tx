@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
-import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process"
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnSyncReturns } from "node:child_process"
 import {
   chmodSync,
   copyFileSync,
@@ -20,6 +20,7 @@ interface Harness {
   stateDir: string
   runLauncher: (args: string[], extraEnv?: Record<string, string>) => SpawnSyncReturns<string>
   runWatchdog: (args: string[], extraEnv?: Record<string, string>) => SpawnSyncReturns<string>
+  runWatchdogAsync: (args: string[], extraEnv?: Record<string, string>) => ChildProcessWithoutNullStreams
 }
 
 const LAUNCHER_TEMPLATE = resolve(__dirname, "../../apps/cli/src/templates/watchdog/scripts/watchdog-launcher.sh")
@@ -165,12 +166,68 @@ echo "0"
       },
     })
 
+  const runScriptAsync = (
+    scriptPath: string,
+    args: string[],
+    extraEnv?: Record<string, string>,
+  ): ChildProcessWithoutNullStreams =>
+    spawn("/bin/bash", [scriptPath, ...args], {
+      cwd: tmpDir,
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH ?? ""}`,
+        WATCHDOG_TEST_STATE_DIR: stateDir,
+        ...extraEnv,
+      },
+    })
+
   return {
     tmpDir,
     stateDir,
     runLauncher: (args, extraEnv) => runScript(join(tmpDir, "scripts", "watchdog-launcher.sh"), args, extraEnv),
     runWatchdog: (args, extraEnv) => runScript(join(tmpDir, "scripts", "ralph-watchdog.sh"), args, extraEnv),
+    runWatchdogAsync: (args, extraEnv) => runScriptAsync(join(tmpDir, "scripts", "ralph-watchdog.sh"), args, extraEnv),
   }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => {
+  setTimeout(resolveSleep, ms)
+})
+
+async function waitForCondition(
+  condition: () => boolean,
+  timeoutMs: number,
+  intervalMs: number = 25,
+): Promise<void> {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    if (condition()) {
+      return
+    }
+    await sleep(intervalMs)
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms`)
+}
+
+async function waitForExit(proc: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<number | null> {
+  if (proc.exitCode !== null) {
+    return proc.exitCode
+  }
+
+  return await new Promise<number | null>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      proc.removeListener("exit", onExit)
+      reject(new Error(`Timed out waiting for process ${proc.pid} to exit`))
+    }, timeoutMs)
+
+    const onExit = (code: number | null) => {
+      clearTimeout(timer)
+      resolve(code)
+    }
+
+    proc.once("exit", onExit)
+  })
 }
 
 function isPidLive(pid: number): boolean {
@@ -201,6 +258,21 @@ function terminatePid(pid: number): void {
     } catch {
       // Ignore cleanup races.
     }
+  }
+}
+
+async function terminateChild(proc: ChildProcessWithoutNullStreams): Promise<void> {
+  if (proc.exitCode !== null) {
+    return
+  }
+
+  proc.kill("SIGTERM")
+  try {
+    await waitForExit(proc, 2000)
+    return
+  } catch {
+    proc.kill("SIGKILL")
+    await waitForExit(proc, 2000)
   }
 }
 
@@ -323,6 +395,145 @@ describe("watchdog launcher integration", () => {
     expect(stop.status).toBe(0)
     expect(`${stop.stdout}\n${stop.stderr}`).toContain("Watchdog stopped")
     expect(existsSync(pidFile)).toBe(false)
+  })
+})
+
+describe("ralph-watchdog singleton lock integration", () => {
+  const watchdogArgs = [
+    "--interval",
+    "5",
+    "--no-start",
+    "--no-codex",
+    "--transcript-idle-seconds",
+    "60",
+    "--heartbeat-lag-seconds",
+    "1",
+    "--run-stale-seconds",
+    "60",
+  ]
+
+  async function expectSingleWinner(options?: { preseedStalePidFile?: boolean }): Promise<void> {
+    const harness = createHarness()
+    harnesses.push(harness)
+
+    const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
+    const db = new Database(dbPath)
+    db.close()
+
+    const pidFile = join(harness.tmpDir, ".tx", "ralph-watchdog.pid")
+    if (options?.preseedStalePidFile === true) {
+      writeFileSync(pidFile, "999999\n")
+    }
+
+    const proc1 = harness.runWatchdogAsync(watchdogArgs)
+    const proc2 = harness.runWatchdogAsync(watchdogArgs)
+
+    let proc1Out = ""
+    let proc2Out = ""
+    proc1.stdout.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc1.stderr.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc2.stdout.on("data", (chunk) => { proc2Out += chunk.toString() })
+    proc2.stderr.on("data", (chunk) => { proc2Out += chunk.toString() })
+
+    try {
+      await waitForCondition(() => proc1.exitCode !== null || proc2.exitCode !== null, 8000)
+      await waitForCondition(() => {
+        const logPath = join(harness.tmpDir, ".tx", "ralph-watchdog.log")
+        if (!existsSync(logPath)) {
+          return false
+        }
+        const logContents = readFileSync(logPath, "utf-8")
+        return logContents.includes("Watchdog started interval=")
+      }, 8000)
+      await sleep(300)
+
+      const liveCount = [proc1, proc2].filter((proc) => proc.exitCode === null).length
+      expect(liveCount).toBe(1)
+
+      const exited = proc1.exitCode !== null ? proc1 : proc2
+      expect(exited.exitCode).toBe(0)
+
+      const combinedOut = `${proc1Out}\n${proc2Out}`
+      expect(combinedOut).toContain("Another watchdog is already running")
+      expect(combinedOut).not.toContain("No such file or directory")
+
+      const logContents = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
+      expect(logContents.match(/Watchdog started interval=/g)?.length ?? 0).toBe(1)
+    } finally {
+      await terminateChild(proc1)
+      await terminateChild(proc2)
+    }
+  }
+
+  it("allows only one winner when concurrent starts race with an empty pid file", async () => {
+    await expectSingleWinner()
+  })
+
+  it("allows only one winner when concurrent starts race with a stale pid file", async () => {
+    await expectSingleWinner({ preseedStalePidFile: true })
+  })
+})
+
+describe("ralph-watchdog signal trap integration", () => {
+  const watchdogArgs = [
+    "--interval",
+    "5",
+    "--no-start",
+    "--no-codex",
+    "--transcript-idle-seconds",
+    "60",
+    "--heartbeat-lag-seconds",
+    "1",
+    "--run-stale-seconds",
+    "60",
+  ]
+
+  async function expectSignalStopsWatchdog(
+    signal: "SIGTERM" | "SIGINT",
+    expectedExitCode: number,
+  ): Promise<void> {
+    const harness = createHarness()
+    harnesses.push(harness)
+
+    const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
+    const db = new Database(dbPath)
+    db.close()
+
+    const pidFile = join(harness.tmpDir, ".tx", "ralph-watchdog.pid")
+    const proc = harness.runWatchdogAsync(watchdogArgs)
+    let procOut = ""
+    proc.stdout.on("data", (chunk) => { procOut += chunk.toString() })
+    proc.stderr.on("data", (chunk) => { procOut += chunk.toString() })
+
+    try {
+      expect(proc.pid ?? 0).toBeGreaterThan(0)
+      await waitForCondition(() => {
+        if (!existsSync(pidFile)) {
+          return false
+        }
+        const lockOwner = readFileSync(pidFile, "utf-8").trim()
+        return lockOwner === String(proc.pid)
+      }, 8000)
+
+      proc.kill(signal)
+
+      const exitCode = await waitForExit(proc, 2000)
+      expect(exitCode, procOut).toBe(expectedExitCode)
+      await waitForCondition(() => !existsSync(pidFile), 2000)
+
+      const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
+      expect(watchdogLog).toContain(`Received ${signal}`)
+    } finally {
+      await terminateChild(proc)
+    }
+  }
+
+  it("exits cleanly on SIGTERM after releasing the watchdog lock", async () => {
+    await expectSignalStopsWatchdog("SIGTERM", 143)
+  })
+
+  it("exits cleanly on SIGINT after releasing the watchdog lock", async () => {
+    await expectSignalStopsWatchdog("SIGINT", 130)
   })
 })
 
