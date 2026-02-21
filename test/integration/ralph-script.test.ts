@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { spawnSync, type SpawnSyncReturns } from "child_process"
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnSyncReturns } from "child_process"
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
@@ -9,6 +9,7 @@ interface Harness {
   stateDir: string
   scriptPath: string
   run: (args: string[], extraEnv?: Record<string, string>) => SpawnSyncReturns<string>
+  runAsync: (args: string[], extraEnv?: Record<string, string>) => ChildProcessWithoutNullStreams
   readStateFile: (name: string) => string
 }
 
@@ -140,6 +141,9 @@ echo "11111111-2222-3333-4444-555555555555"
 set -euo pipefail
 STATE_DIR="\${RALPH_TEST_STATE_DIR:?}"
 echo "$*" >> "$STATE_DIR/codex.log"
+if [ -n "\${MOCK_AGENT_SLEEP_SECONDS:-}" ]; then
+  sleep "\${MOCK_AGENT_SLEEP_SECONDS}"
+fi
 `
     )
   }
@@ -151,21 +155,34 @@ echo "$*" >> "$STATE_DIR/codex.log"
 set -euo pipefail
 STATE_DIR="\${RALPH_TEST_STATE_DIR:?}"
 echo "$*" >> "$STATE_DIR/claude.log"
+if [ -n "\${MOCK_AGENT_SLEEP_SECONDS:-}" ]; then
+  sleep "\${MOCK_AGENT_SLEEP_SECONDS}"
+fi
 `
     )
   }
+
+  const baseEnv = (extraEnv?: Record<string, string>) => ({
+    ...process.env,
+    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    RALPH_TEST_STATE_DIR: stateDir,
+    RALPH_LOOP_PID: "",
+    ...extraEnv,
+  })
 
   const run = (args: string[], extraEnv?: Record<string, string>) =>
     spawnSync(scriptPath, args, {
       cwd: tmpDir,
       encoding: "utf-8",
       timeout: 30000,
-      env: {
-        ...process.env,
-        PATH: `${binDir}:${process.env.PATH ?? ""}`,
-        RALPH_TEST_STATE_DIR: stateDir,
-        ...extraEnv,
-      },
+      env: baseEnv(extraEnv),
+    })
+
+  const runAsync = (args: string[], extraEnv?: Record<string, string>) =>
+    spawn(scriptPath, args, {
+      cwd: tmpDir,
+      stdio: "pipe",
+      env: baseEnv(extraEnv),
     })
 
   return {
@@ -173,7 +190,74 @@ echo "$*" >> "$STATE_DIR/claude.log"
     stateDir,
     scriptPath,
     run,
+    runAsync,
     readStateFile: (name: string) => readFileSync(join(stateDir, name), "utf-8"),
+  }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => {
+  setTimeout(resolveSleep, ms)
+})
+
+async function waitForCondition(
+  condition: () => boolean,
+  timeoutMs: number,
+  intervalMs: number = 25,
+): Promise<void> {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    if (condition()) {
+      return
+    }
+    await sleep(intervalMs)
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms`)
+}
+
+async function waitForExit(proc: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<number | null> {
+  if (proc.exitCode !== null) {
+    return proc.exitCode
+  }
+
+  return await new Promise<number | null>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      proc.removeListener("exit", onExit)
+      reject(new Error(`Timed out waiting for process ${proc.pid} to exit`))
+    }, timeoutMs)
+
+    const onExit = (code: number | null) => {
+      clearTimeout(timer)
+      resolve(code)
+    }
+
+    proc.once("exit", onExit)
+  })
+}
+
+function isPidLive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return false
+  }
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function terminateChild(proc: ChildProcessWithoutNullStreams): Promise<void> {
+  if (proc.exitCode !== null) {
+    return
+  }
+
+  proc.kill("SIGTERM")
+  try {
+    await waitForExit(proc, 2000)
+    return
+  } catch {
+    proc.kill("SIGKILL")
+    await waitForExit(proc, 2000)
   }
 }
 
@@ -266,5 +350,75 @@ describeIf("ralph.sh integration", () => {
 
     expect(existsSync(join(h.tmpDir, ".tx", "ralph-state-ralph-1"))).toBe(true)
     expect(existsSync(join(h.tmpDir, ".tx", "ralph-state-ralph-2"))).toBe(true)
+  })
+
+  it("does not remove lock files when a non-owner invocation exits", async () => {
+    const h = setupHarness()
+    harnesses.push(h)
+
+    const lockKey = "owner-safe-cleanup"
+    const lockFile = join(h.tmpDir, ".tx", `ralph-${lockKey}.lock`)
+    const ownerProc = h.runAsync(
+      ["--runtime", "codex", "--lock-key", lockKey, "--max", "1", "--max-hours", "1", "--idle-rounds", "50"],
+      { MOCK_AGENT_SLEEP_SECONDS: "60" },
+    )
+
+    try {
+      await waitForCondition(() => existsSync(lockFile), 5000)
+      const ownerPid = Number(readFileSync(lockFile, "utf-8").trim())
+      expect(isPidLive(ownerPid)).toBe(true)
+
+      const contender = h.run(["--runtime", "codex", "--lock-key", lockKey, "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
+      expect(contender.status).not.toBe(0)
+      expect(contender.stdout + contender.stderr).toContain("RALPH already running")
+
+      expect(existsSync(lockFile)).toBe(true)
+      expect(readFileSync(lockFile, "utf-8").trim()).toBe(String(ownerPid))
+      expect(isPidLive(ownerPid)).toBe(true)
+    } finally {
+      await terminateChild(ownerProc)
+    }
+  })
+
+  it("allows only one winner when concurrent starters race against a stale lock", async () => {
+    const h = setupHarness()
+    harnesses.push(h)
+
+    const lockKey = "stale-race"
+    const txDir = join(h.tmpDir, ".tx")
+    const lockFile = join(txDir, `ralph-${lockKey}.lock`)
+    mkdirSync(txDir, { recursive: true })
+    writeFileSync(lockFile, "999999\n")
+
+    const proc1 = h.runAsync(
+      ["--runtime", "codex", "--lock-key", lockKey, "--max", "1", "--max-hours", "1", "--idle-rounds", "50"],
+      { MOCK_AGENT_SLEEP_SECONDS: "60" },
+    )
+    const proc2 = h.runAsync(
+      ["--runtime", "codex", "--lock-key", lockKey, "--max", "1", "--max-hours", "1", "--idle-rounds", "50"],
+      { MOCK_AGENT_SLEEP_SECONDS: "60" },
+    )
+
+    let proc1Out = ""
+    let proc2Out = ""
+    proc1.stdout.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc1.stderr.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc2.stdout.on("data", (chunk) => { proc2Out += chunk.toString() })
+    proc2.stderr.on("data", (chunk) => { proc2Out += chunk.toString() })
+
+    try {
+      await waitForCondition(() => proc1.exitCode !== null || proc2.exitCode !== null, 8000)
+      await sleep(300)
+
+      const liveCount = [proc1, proc2].filter((proc) => proc.exitCode === null).length
+      expect(liveCount).toBe(1)
+
+      const exited = proc1.exitCode !== null ? proc1 : proc2
+      expect(exited.exitCode).not.toBe(0)
+      expect((proc1Out + proc2Out).includes("No such file or directory")).toBe(false)
+    } finally {
+      await terminateChild(proc1)
+      await terminateChild(proc2)
+    }
   })
 })
