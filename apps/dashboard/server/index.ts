@@ -590,6 +590,13 @@ interface TaskRowWithDeps extends TaskRowWithAssignment {
   labels: TaskLabel[]
 }
 
+interface TaskDependencySnapshot {
+  blockedByMap: Map<string, string[]>
+  blocksMap: Map<string, string[]>
+  childrenMap: Map<string, string[]>
+  statusMap: Map<string, string>
+}
+
 interface TaskWithDepsResponse {
   id: string
   title: string
@@ -715,6 +722,49 @@ function getDocsRootPath(): string {
   }
 }
 
+const WORKABLE_TASK_STATUSES = new Set<string>(["backlog", "ready", "planning"])
+
+function pushToMapList(map: Map<string, string[]>, key: string, value: string): void {
+  const existing = map.get(key)
+  if (existing) {
+    existing.push(value)
+    return
+  }
+  map.set(key, [value])
+}
+
+function buildDependencySnapshot(
+  db: Database,
+  allTasks?: ReadonlyArray<Pick<TaskRowWithAssignment, "id" | "parent_id" | "status">>
+): TaskDependencySnapshot {
+  const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
+  const blockedByMap = new Map<string, string[]>()
+  const blocksMap = new Map<string, string[]>()
+
+  for (const dep of deps) {
+    pushToMapList(blockedByMap, dep.blocked_id, dep.blocker_id)
+    pushToMapList(blocksMap, dep.blocker_id, dep.blocked_id)
+  }
+
+  const tasksForSnapshot = allTasks
+    ?? (db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
+      id: string
+      parent_id: string | null
+      status: string
+    }>)
+
+  const childrenMap = new Map<string, string[]>()
+  const statusMap = new Map<string, string>()
+  for (const task of tasksForSnapshot) {
+    statusMap.set(task.id, task.status)
+    if (task.parent_id) {
+      pushToMapList(childrenMap, task.parent_id, task.id)
+    }
+  }
+
+  return { blockedByMap, blocksMap, childrenMap, statusMap }
+}
+
 // Pagination helpers
 function parseTaskCursor(cursor: string): { score: number; id: string } {
   const colonIndex = cursor.lastIndexOf(':')
@@ -747,46 +797,17 @@ function buildRunCursor(run: { startedAt: string; id: string }): string {
 function enrichTasksWithDeps(
   db: Database,
   tasks: TaskRowWithAssignment[],
-  allTasks?: TaskRowWithAssignment[]
+  snapshot?: TaskDependencySnapshot
 ): TaskRowWithDeps[] {
-  // Get all dependencies
-  const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
-
-  // Build maps
-  const blockedByMap = new Map<string, string[]>()
-  const blocksMap = new Map<string, string[]>()
-
-  for (const dep of deps) {
-    const existing = blockedByMap.get(dep.blocked_id) ?? []
-    blockedByMap.set(dep.blocked_id, [...existing, dep.blocker_id])
-
-    const existingBlocks = blocksMap.get(dep.blocker_id) ?? []
-    blocksMap.set(dep.blocker_id, [...existingBlocks, dep.blocked_id])
-  }
-
-  // Build children map from all tasks if provided, otherwise query
-  const tasksForChildren = allTasks ?? db.prepare("SELECT id, parent_id FROM tasks").all() as Array<{ id: string; parent_id: string | null }>
-  const childrenMap = new Map<string, string[]>()
-  for (const task of tasksForChildren) {
-    if (task.parent_id) {
-      const existing = childrenMap.get(task.parent_id) ?? []
-      childrenMap.set(task.parent_id, [...existing, task.id])
-    }
-  }
-
-  // Status of all tasks for ready check
-  const allTasksForStatus = allTasks ?? db.prepare("SELECT id, status FROM tasks").all() as Array<{ id: string; status: string }>
-  const statusMap = new Map(allTasksForStatus.map(t => [t.id, t.status]))
+  const dependencySnapshot = snapshot ?? buildDependencySnapshot(db)
   const labelsByTask = loadTaskLabelsMap(db, tasks.map(t => t.id))
 
-  const workableStatuses = ["backlog", "ready", "planning"]
-
   return tasks.map(task => {
-    const blockedBy = blockedByMap.get(task.id) ?? []
-    const blocks = blocksMap.get(task.id) ?? []
-    const children = childrenMap.get(task.id) ?? []
-    const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
-    const isReady = workableStatuses.includes(task.status) && allBlockersDone
+    const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
+    const blocks = dependencySnapshot.blocksMap.get(task.id) ?? []
+    const children = dependencySnapshot.childrenMap.get(task.id) ?? []
+    const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
+    const isReady = WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
     const labels = labelsByTask.get(task.id) ?? []
 
     return { ...task, blockedBy, blocks, children, isReady, labels }
@@ -871,8 +892,10 @@ app.get("/api/tasks", (c) => {
     const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
     const total = (db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
 
+    const dependencySnapshot = buildDependencySnapshot(db)
+
     // Enrich with deps
-    const enriched = enrichTasksWithDeps(db, tasks)
+    const enriched = enrichTasksWithDeps(db, tasks, dependencySnapshot)
 
     // Summary (from all tasks matching filter, not just current page)
     const summaryRows = db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
@@ -1249,26 +1272,17 @@ app.get("/api/tasks/ready", (c) => {
 
     // Get all tasks to compute ready status and children
     const allTasks = db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRowWithAssignment[]
-    const deps = db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as DependencyRow[]
-
-    const blockedByMap = new Map<string, string[]>()
-    for (const dep of deps) {
-      const existing = blockedByMap.get(dep.blocked_id) ?? []
-      blockedByMap.set(dep.blocked_id, [...existing, dep.blocker_id])
-    }
-
-    const statusMap = new Map(allTasks.map(t => [t.id, t.status]))
-    const workableStatuses = ["backlog", "ready", "planning"]
+    const dependencySnapshot = buildDependencySnapshot(db, allTasks)
 
     // Filter to ready tasks
     const readyTasks = allTasks.filter(task => {
-      const blockedBy = blockedByMap.get(task.id) ?? []
-      const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
-      return workableStatuses.includes(task.status) && allBlockersDone
+      const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
+      const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
+      return WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
     })
 
     // Enrich with full dependency info (Rule 1: every API response MUST include TaskWithDeps)
-    const enriched = enrichTasksWithDeps(db, readyTasks, allTasks)
+    const enriched = enrichTasksWithDeps(db, readyTasks, dependencySnapshot)
 
     return c.json({ tasks: enriched.map(serializeTask) })
   } catch (e) {
@@ -1812,33 +1826,25 @@ app.get("/api/tasks/:id", (c) => {
       return c.json({ error: "Task not found" }, 404)
     }
 
-    // Get dependency info
-    const blockedByIds = db.prepare(
-      "SELECT blocker_id FROM task_dependencies WHERE blocked_id = ?"
-    ).all(id) as Array<{ blocker_id: string }>
-
-    const blocksIds = db.prepare(
-      "SELECT blocked_id FROM task_dependencies WHERE blocker_id = ?"
-    ).all(id) as Array<{ blocked_id: string }>
-
-    const childIds = db.prepare(
-      "SELECT id FROM tasks WHERE parent_id = ?"
-    ).all(id) as Array<{ id: string }>
+    const dependencySnapshot = buildDependencySnapshot(db)
+    const blockedByIds = dependencySnapshot.blockedByMap.get(id) ?? []
+    const blocksIds = dependencySnapshot.blocksMap.get(id) ?? []
+    const childIds = dependencySnapshot.childrenMap.get(id) ?? []
 
     // Fetch full task data for related tasks
     const fetchTasksByIds = (ids: string[]): TaskRowWithDeps[] => {
       if (ids.length === 0) return []
       const placeholders = ids.map(() => "?").join(",")
       const tasks = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRowWithAssignment[]
-      return enrichTasksWithDeps(db, tasks)
+      return enrichTasksWithDeps(db, tasks, dependencySnapshot)
     }
 
-    const blockedByTasks = fetchTasksByIds(blockedByIds.map(r => r.blocker_id))
-    const blocksTasks = fetchTasksByIds(blocksIds.map(r => r.blocked_id))
-    const childTasks = fetchTasksByIds(childIds.map(r => r.id))
+    const blockedByTasks = fetchTasksByIds(blockedByIds)
+    const blocksTasks = fetchTasksByIds(blocksIds)
+    const childTasks = fetchTasksByIds(childIds)
 
     // Enrich the main task
-    const [enrichedTask] = enrichTasksWithDeps(db, [task])
+    const [enrichedTask] = enrichTasksWithDeps(db, [task], dependencySnapshot)
 
     return c.json({
       task: serializeTask(enrichedTask),
