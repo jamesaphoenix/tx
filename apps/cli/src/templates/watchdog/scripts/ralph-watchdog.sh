@@ -277,6 +277,26 @@ terminate_pid_tree() {
   kill "-$signal" "$pid" 2>/dev/null || true
 }
 
+expire_active_claims_for_task() {
+  local task_id="$1"
+  [ -z "$task_id" ] && return
+
+  sqlite3 "$DB_PATH" \
+    "UPDATE task_claims
+     SET status='expired'
+     WHERE task_id='$(sql_escape "$task_id")'
+       AND status='active';" \
+    >/dev/null 2>&1 || true
+}
+
+reset_task_and_expire_claims() {
+  local task_id="$1"
+  [ -z "$task_id" ] && return
+
+  expire_active_claims_for_task "$task_id"
+  tx reset "$task_id" >/dev/null 2>&1 || true
+}
+
 start_loop() {
   local runtime="$1"
   local prefix="$2"
@@ -414,7 +434,7 @@ reconcile_running_runs() {
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: missing PID for running run' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
-      [ -n "$task_id" ] && tx reset "$task_id" >/dev/null 2>&1 || true
+      [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
       log "Reconciled run=$run_id (missing pid)"
       continue
     fi
@@ -423,7 +443,7 @@ reconcile_running_runs() {
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: process not alive' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
-      [ -n "$task_id" ] && tx reset "$task_id" >/dev/null 2>&1 || true
+      [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
       log "Reconciled run=$run_id (dead pid=$pid)"
       continue
     fi
@@ -438,7 +458,7 @@ reconcile_running_runs() {
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: stale running run killed (age ${age}s)' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
-      [ -n "$task_id" ] && tx reset "$task_id" >/dev/null 2>&1 || true
+      [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
     fi
   done <<< "$rows"
 }
@@ -461,7 +481,7 @@ reset_orphaned_active_tasks() {
   local count=0
   while IFS= read -r task_id; do
     [ -z "$task_id" ] && continue
-    tx reset "$task_id" >/dev/null 2>&1 || true
+    reset_task_and_expire_claims "$task_id"
     count=$((count + 1))
   done <<< "$tasks"
 

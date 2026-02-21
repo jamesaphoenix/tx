@@ -9,7 +9,7 @@
  * DD-018 "Headless Worker Design" section.
  */
 
-import { Effect, Duration, Fiber, Ref } from "effect"
+import { Effect, Duration, Fiber, Ref, Schedule } from "effect"
 import * as os from "os"
 import { WorkerService } from "../services/worker-service.js"
 import { ClaimService } from "../services/claim-service.js"
@@ -32,7 +32,7 @@ const LEASE_RENEWAL_MULTIPLIER = 10
  * Internal shutdown state shared between signal handlers and worker loop.
  */
 interface ShutdownState {
-  readonly requested: boolean
+  shutdownRequested: boolean
 }
 
 /**
@@ -61,10 +61,11 @@ export const runWorker = <TContext = object>(
 
     const heartbeatInterval = config.heartbeatIntervalSeconds ?? DEFAULT_HEARTBEAT_INTERVAL
 
-    // Shutdown state ref (mutable, shared with signal handlers)
-    const shutdownState = yield* Ref.make<ShutdownState>({
-      requested: false
-    })
+    // Mutable shutdown state shared with signal handlers and fibers.
+    // Avoids Effect.runSync in signal handlers.
+    const shutdownState: ShutdownState = {
+      shutdownRequested: false
+    }
 
     // Register with orchestrator
     const worker = yield* workerService.register({
@@ -76,21 +77,44 @@ export const runWorker = <TContext = object>(
     const workerId = worker.id
     yield* Effect.log(`runWorker: Worker ${workerId} registered`)
 
+    const releaseRetrySchedule = Schedule.exponential(Duration.seconds(1)).pipe(
+      Schedule.jittered,
+      Schedule.compose(Schedule.recurs(3))
+    )
+
+    const releaseClaimSafely = (taskId: string) =>
+      claimService.release(taskId, workerId).pipe(
+        Effect.catchTag("ClaimNotFoundError", () => Effect.void),
+        Effect.catchTag("ClaimIdNotFoundError", () => Effect.void),
+        Effect.retry(releaseRetrySchedule),
+        Effect.catchAll((error) =>
+          Effect.log(
+            `runWorker: Failed to release claim for task ${taskId} after retries: ${error.message}`
+          )
+        )
+      )
+
+    const releaseAllClaimsSafely = claimService.releaseByWorker(workerId).pipe(
+      Effect.retry(releaseRetrySchedule),
+      Effect.catchAll((error) =>
+        Effect.log(`runWorker: Failed to release claims for worker ${workerId}: ${error.message}`).pipe(
+          Effect.as(0)
+        )
+      )
+    )
+
     // Set up signal handlers for graceful shutdown
     const handleSignal = (signal: string) => {
       console.log(`runWorker: Worker ${workerId} received ${signal}`)
 
-      // Mark shutdown as requested (sync since signal handlers can't use async)
-      Effect.runSync(
-        Ref.update(shutdownState, (state) => ({
-          ...state,
-          requested: true
-        }))
-      )
+      // Mark shutdown as requested (signal handlers must stay synchronous)
+      shutdownState.shutdownRequested = true
     }
 
-    process.on("SIGTERM", () => handleSignal("SIGTERM"))
-    process.on("SIGINT", () => handleSignal("SIGINT"))
+    const sigtermHandler = () => handleSignal("SIGTERM")
+    const sigintHandler = () => handleSignal("SIGINT")
+    process.on("SIGTERM", sigtermHandler)
+    process.on("SIGINT", sigintHandler)
 
     // Completed tasks counter for metrics
     const tasksCompletedRef = yield* Ref.make(0)
@@ -104,8 +128,7 @@ export const runWorker = <TContext = object>(
       // Main work loop
       while (true) {
         // Check if shutdown was requested
-        const state = yield* Ref.get(shutdownState)
-        if (state.requested) {
+        if (shutdownState.shutdownRequested) {
           yield* Effect.log(`runWorker: Worker ${workerId} shutting down gracefully`)
           break
         }
@@ -206,12 +229,10 @@ export const runWorker = <TContext = object>(
           ...(config.context ?? {})
         } as WorkerContext & TContext
 
-        let result: ExecutionResult
-
         try {
           // USER HOOK: Execute (all your logic here)
           // Use Effect.tryPromise to properly handle the async execute hook
-          result = yield* Effect.tryPromise({
+          const result = yield* Effect.tryPromise({
             try: () => config.execute(task as Task, mergedContext),
             catch: (error) => error
           }).pipe(
@@ -242,30 +263,22 @@ export const runWorker = <TContext = object>(
         } finally {
           // Stop renewal fiber
           yield* Fiber.interrupt(renewFiber)
+          // Always release claim when task execution scope ends (success, error, or interrupt)
+          yield* releaseClaimSafely(task.id)
         }
-
-        // Release the claim
-        yield* claimService.release(task.id, workerId).pipe(
-          Effect.catchAll((error) =>
-            Effect.log(`runWorker: Failed to release claim for task ${task.id}: ${error.message}`)
-          )
-        )
       }
 
       // Graceful shutdown: mark as stopping
       yield* workerService.updateStatus(workerId, "stopping")
     } finally {
+      process.off("SIGTERM", sigtermHandler)
+      process.off("SIGINT", sigintHandler)
+
       // Cleanup: stop heartbeat fiber and deregister
       yield* Fiber.interrupt(heartbeatFiber)
 
       // Release any active claims before deregistering
-      yield* claimService.releaseByWorker(workerId).pipe(
-        Effect.catchAll((error) =>
-          Effect.log(`runWorker: Failed to release claims for worker ${workerId}: ${error.message}`).pipe(
-            Effect.as(0)
-          )
-        )
-      )
+      yield* releaseAllClaimsSafely
 
       yield* workerService.deregister(workerId).pipe(
         Effect.catchAll((error) =>
@@ -284,7 +297,7 @@ export const runWorker = <TContext = object>(
 const runHeartbeatLoop = (
   workerId: string,
   intervalSeconds: number,
-  shutdownState: Ref.Ref<ShutdownState>,
+  shutdownState: ShutdownState,
   tasksCompletedRef: Ref.Ref<number>
 ) =>
   Effect.gen(function* () {
@@ -292,8 +305,7 @@ const runHeartbeatLoop = (
 
     while (true) {
       // Check shutdown before heartbeat
-      const state = yield* Ref.get(shutdownState)
-      if (state.requested) break
+      if (shutdownState.shutdownRequested) break
 
       const tasksCompleted = yield* Ref.get(tasksCompletedRef)
 
@@ -327,7 +339,7 @@ const runLeaseRenewalLoop = (
   taskId: string,
   workerId: string,
   intervalSeconds: number,
-  shutdownState: Ref.Ref<ShutdownState>
+  shutdownState: ShutdownState
 ) =>
   Effect.gen(function* () {
     const claimService = yield* ClaimService
@@ -337,8 +349,7 @@ const runLeaseRenewalLoop = (
       yield* Effect.sleep(Duration.seconds(intervalSeconds))
 
       // Check shutdown before renewal
-      const state = yield* Ref.get(shutdownState)
-      if (state.requested) break
+      if (shutdownState.shutdownRequested) break
 
       const renewResult = yield* claimService
         .renew(taskId, workerId)
@@ -352,10 +363,7 @@ const runLeaseRenewalLoop = (
               )
               // Stop the worker to prevent duplicate task execution
               // Another worker may have claimed this task after lease expiry
-              yield* Ref.update(shutdownState, (state) => ({
-                ...state,
-                requested: true
-              }))
+              shutdownState.shutdownRequested = true
               return false
             })
           )

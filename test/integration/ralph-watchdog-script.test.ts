@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
-import { spawnSync, type SpawnSyncReturns } from "node:child_process"
+import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process"
 import {
   chmodSync,
   copyFileSync,
@@ -214,6 +214,67 @@ function cleanupHarness(h: Harness): void {
   }
 }
 
+function createReconcileSchema(db: Database): void {
+  db.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL
+    );
+    CREATE TABLE runs (
+      id TEXT PRIMARY KEY,
+      task_id TEXT,
+      pid INTEGER,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      exit_code INTEGER,
+      error_message TEXT,
+      metadata TEXT
+    );
+    CREATE TABLE task_claims (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      claimed_at TEXT NOT NULL,
+      lease_expires_at TEXT NOT NULL,
+      renewed_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL
+    );
+  `)
+}
+
+function runWatchdogSweep(harness: Harness): SpawnSyncReturns<string> {
+  return harness.runWatchdog([
+    "--once",
+    "--no-start",
+    "--no-claude",
+    "--interval",
+    "1",
+    "--transcript-idle-seconds",
+    "60",
+    "--heartbeat-lag-seconds",
+    "1",
+    "--run-stale-seconds",
+    "60",
+  ])
+}
+
+function insertActiveClaim(db: Database, taskId: string, workerId: string): void {
+  const now = new Date()
+  const leaseExpiresAt = new Date(now.getTime() + 5 * 60_000)
+  db.prepare(
+    `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+     VALUES (?, ?, ?, ?, 0, 'active')`
+  ).run(taskId, workerId, now.toISOString(), leaseExpiresAt.toISOString())
+}
+
+function getClaimStatus(db: Database, taskId: string): string | null {
+  const row = db
+    .query("SELECT status FROM task_claims WHERE task_id = ? ORDER BY id DESC LIMIT 1")
+    .get(taskId) as { status: string } | null
+  return row?.status ?? null
+}
+
 afterEach(() => {
   for (const harness of harnesses.splice(0, harnesses.length)) {
     cleanupHarness(harness)
@@ -255,64 +316,40 @@ describe("watchdog launcher integration", () => {
 })
 
 describeIfSqlite3("ralph-watchdog reconcile integration", () => {
-  it("cancels running rows with missing pid and resets the linked task", () => {
+  it("cancels running rows with missing pid, resets task, and expires active claims", () => {
     const harness = createHarness()
     harnesses.push(harness)
 
     const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
     const db = new Database(dbPath)
-    db.exec(`
-      CREATE TABLE tasks (
-        id TEXT PRIMARY KEY,
-        status TEXT NOT NULL
-      );
-      CREATE TABLE runs (
-        id TEXT PRIMARY KEY,
-        task_id TEXT,
-        pid INTEGER,
-        status TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        exit_code INTEGER,
-        error_message TEXT,
-        metadata TEXT
-      );
-    `)
+    createReconcileSchema(db)
 
     const taskId = fixtureId("watchdog-reconcile-task")
     const runId = `run-${fixtureId("watchdog-reconcile-run").slice(3)}`
+    const workerId = fixtureId("watchdog-reconcile-worker")
     const now = new Date().toISOString()
 
     db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
     db.prepare(
       "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
     ).run(runId, taskId, 0, "running", now, "{}")
+    insertActiveClaim(db, taskId, workerId)
     db.close()
 
-    const result = harness.runWatchdog([
-      "--once",
-      "--no-start",
-      "--no-claude",
-      "--interval",
-      "1",
-      "--transcript-idle-seconds",
-      "60",
-      "--heartbeat-lag-seconds",
-      "1",
-      "--run-stale-seconds",
-      "60",
-    ])
+    const result = runWatchdogSweep(harness)
     expect(result.status).toBe(0)
 
     const checkDb = new Database(dbPath)
     const row = checkDb
       .query("SELECT status, error_message FROM runs WHERE id = ?")
       .get(runId) as { status: string; error_message: string | null } | null
+    const claimStatus = getClaimStatus(checkDb, taskId)
     checkDb.close()
 
     expect(row).not.toBeNull()
     expect(row?.status).toBe("cancelled")
     expect(row?.error_message ?? "").toContain("missing PID")
+    expect(claimStatus).toBe("expired")
 
     const resetsLogPath = join(harness.stateDir, "resets.log")
     expect(existsSync(resetsLogPath)).toBe(true)
@@ -321,5 +358,127 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
     expect(watchdogLog).toContain(`Reconciled run=${runId} (missing pid)`)
     expect(existsSync(join(harness.tmpDir, ".tx", "ralph-watchdog.pid"))).toBe(false)
+  })
+
+  it("cancels running rows with dead pid, resets task, and expires active claims", () => {
+    const harness = createHarness()
+    harnesses.push(harness)
+
+    const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
+    const db = new Database(dbPath)
+    createReconcileSchema(db)
+
+    const taskId = fixtureId("watchdog-dead-pid-task")
+    const runId = `run-${fixtureId("watchdog-dead-pid-run").slice(3)}`
+    const workerId = fixtureId("watchdog-dead-pid-worker")
+    const now = new Date().toISOString()
+
+    db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
+    db.prepare(
+      "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(runId, taskId, 999_999, "running", now, "{}")
+    insertActiveClaim(db, taskId, workerId)
+    db.close()
+
+    const result = runWatchdogSweep(harness)
+    expect(result.status).toBe(0)
+
+    const checkDb = new Database(dbPath)
+    const row = checkDb
+      .query("SELECT status, error_message FROM runs WHERE id = ?")
+      .get(runId) as { status: string; error_message: string | null } | null
+    const claimStatus = getClaimStatus(checkDb, taskId)
+    checkDb.close()
+
+    expect(row).not.toBeNull()
+    expect(row?.status).toBe("cancelled")
+    expect(row?.error_message ?? "").toContain("process not alive")
+    expect(claimStatus).toBe("expired")
+
+    const resetsLogPath = join(harness.stateDir, "resets.log")
+    expect(existsSync(resetsLogPath)).toBe(true)
+    expect(readFileSync(resetsLogPath, "utf-8")).toContain(taskId)
+  })
+
+  it("cancels stale running rows, resets task, and expires active claims", () => {
+    const harness = createHarness()
+    harnesses.push(harness)
+
+    const staleProc = spawn("/bin/sleep", ["30"], { stdio: "ignore" })
+    const stalePid = staleProc.pid ?? -1
+
+    try {
+      expect(stalePid).toBeGreaterThan(0)
+
+      const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
+      const db = new Database(dbPath)
+      createReconcileSchema(db)
+
+      const taskId = fixtureId("watchdog-stale-run-task")
+      const runId = `run-${fixtureId("watchdog-stale-run").slice(3)}`
+      const workerId = fixtureId("watchdog-stale-run-worker")
+      const oldStart = new Date(Date.now() - 120_000).toISOString()
+
+      db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
+      db.prepare(
+        "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run(runId, taskId, stalePid, "running", oldStart, "{}")
+      insertActiveClaim(db, taskId, workerId)
+      db.close()
+
+      const result = runWatchdogSweep(harness)
+      expect(result.status).toBe(0)
+
+      const checkDb = new Database(dbPath)
+      const row = checkDb
+        .query("SELECT status, error_message FROM runs WHERE id = ?")
+        .get(runId) as { status: string; error_message: string | null } | null
+      const claimStatus = getClaimStatus(checkDb, taskId)
+      checkDb.close()
+
+      expect(row).not.toBeNull()
+      expect(row?.status).toBe("cancelled")
+      expect(row?.error_message ?? "").toContain("stale running run killed")
+      expect(claimStatus).toBe("expired")
+
+      const resetsLogPath = join(harness.stateDir, "resets.log")
+      expect(existsSync(resetsLogPath)).toBe(true)
+      expect(readFileSync(resetsLogPath, "utf-8")).toContain(taskId)
+      expect(isPidLive(stalePid)).toBe(false)
+    } finally {
+      terminatePid(stalePid)
+    }
+  })
+
+  it("resets orphaned active tasks and expires active claims", () => {
+    const harness = createHarness()
+    harnesses.push(harness)
+
+    const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
+    const db = new Database(dbPath)
+    createReconcileSchema(db)
+
+    const taskId = fixtureId("watchdog-orphan-task")
+    const workerId = fixtureId("watchdog-orphan-worker")
+
+    db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "active")
+    insertActiveClaim(db, taskId, workerId)
+    db.close()
+
+    const result = runWatchdogSweep(harness)
+    expect(result.status).toBe(0)
+
+    const checkDb = new Database(dbPath)
+    const claimStatus = getClaimStatus(checkDb, taskId)
+    checkDb.close()
+
+    expect(claimStatus).toBe("expired")
+
+    const resetsLogPath = join(harness.stateDir, "resets.log")
+    expect(existsSync(resetsLogPath)).toBe(true)
+    expect(readFileSync(resetsLogPath, "utf-8")).toContain(taskId)
+
+    const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
+    expect(watchdogLog).toContain("Reset 1 orphaned active task(s)")
   })
 })

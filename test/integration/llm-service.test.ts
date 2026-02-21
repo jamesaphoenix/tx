@@ -1,10 +1,27 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { Effect } from "effect"
 import {
   LlmService,
   LlmServiceNoop,
   LlmServiceAuto,
 } from "@jamesaphoenix/tx-core"
+import { normalizeClaudeDebugLogPath } from "../../packages/core/src/utils/claude-debug-log.js"
+
+const CLAUDE_DEBUG_LOG_ENV = "CLAUDE_CODE_DEBUG_LOGS_DIR"
+const originalClaudeDebugLogPath = process.env[CLAUDE_DEBUG_LOG_ENV]
+
+const prepareClaudeDebugLogPathForAgentSdk = (): void => {
+  normalizeClaudeDebugLogPath()
+}
+
+const restoreClaudeDebugLogPath = (): void => {
+  if (originalClaudeDebugLogPath === undefined) {
+    delete process.env[CLAUDE_DEBUG_LOG_ENV]
+    return
+  }
+
+  process.env[CLAUDE_DEBUG_LOG_ENV] = originalClaudeDebugLogPath
+}
 
 describe("LlmService", () => {
   describe("LlmServiceNoop", () => {
@@ -53,6 +70,7 @@ describe("LlmService", () => {
 // Check if a real LLM backend is available
 const llmAvailable = await (async () => {
   try {
+    prepareClaudeDebugLogPathForAgentSdk()
     await import("@anthropic-ai/claude-agent-sdk")
     return true
   } catch {
@@ -60,7 +78,15 @@ const llmAvailable = await (async () => {
   }
 })()
 
+afterAll(() => {
+  restoreClaudeDebugLogPath()
+})
+
 describe.skipIf(!llmAvailable)("LlmServiceAuto (real backend)", () => {
+  beforeAll(() => {
+    prepareClaudeDebugLogPathForAgentSdk()
+  })
+
   it("completes a simple prompt", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
