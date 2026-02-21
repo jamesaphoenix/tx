@@ -110,6 +110,8 @@ Optional agent onboarding scaffolds:
 tx init --claude            # CLAUDE.md + .claude/skills
 tx init --codex             # AGENTS.md + .codex/agents
 tx init --claude --codex    # scaffold both
+tx init --watchdog          # watchdog scripts + launcher + service templates (opt-in)
+tx init --watchdog --watchdog-runtime codex
 ```
 
 This creates a `.tx/` directory:
@@ -121,6 +123,54 @@ This creates a `.tx/` directory:
 ├── learnings.jsonl    # Git-tracked learnings
 └── runs.jsonl         # Git-tracked run history
 ```
+
+## Watchdog Onboarding (Opt-In)
+
+Watchdog onboarding is explicit opt-in and default-off. `tx init` alone does not enable detached supervision.
+
+Use watchdog when you need:
+- Long-running unattended RALPH loops
+- Automatic restart and health checks for Codex/Claude loops
+- Automatic reconciliation of stale runs and orphaned active tasks
+
+Skip watchdog when you only run short, interactive sessions.
+
+Enable watchdog during init:
+
+```bash
+tx init --watchdog --watchdog-runtime auto
+```
+
+Runtime mode behavior:
+
+| Mode | Behavior |
+|------|----------|
+| `auto` | Enables only runtimes available in `PATH`; if none are available, scaffolds assets with `WATCHDOG_ENABLED=0` |
+| `codex` | Requires `codex` CLI in `PATH` or exits with actionable error |
+| `claude` | Requires `claude` CLI in `PATH` or exits with actionable error |
+| `both` | Requires both CLIs in `PATH` or exits with actionable error |
+
+Watchdog scaffolding adds:
+
+```
+scripts/ralph-watchdog.sh
+scripts/ralph-hourly-supervisor.sh
+scripts/watchdog-launcher.sh
+.tx/watchdog.env
+ops/watchdog/com.tx.ralph-watchdog.plist
+ops/watchdog/tx-ralph-watchdog.service
+```
+
+Initial rollout check:
+
+```bash
+./scripts/watchdog-launcher.sh start
+./scripts/watchdog-launcher.sh status
+tail -n 50 .tx/ralph-watchdog.log
+```
+
+For detached service setup (`launchd`/`systemd`), rollback, stale PID cleanup, and troubleshooting, see:
+- **[Watchdog Runbook](/docs/watchdog-runbook)**
 
 ## Quick Start
 
@@ -327,6 +377,7 @@ your-project/
 ## Next Steps
 
 - **[CLI Primitives](/docs/primitives)** -- Full reference for all tx commands
+- **[Watchdog Runbook](/docs/watchdog-runbook)** -- Detached supervision + rollback/recovery playbook
 - **[tx ready](/docs/primitives/ready)** -- Deep dive into task readiness detection
 - **[tx context](/docs/primitives/context)** -- Contextual learning retrieval
 - **[tx sync](/docs/primitives/sync)** -- Git synchronization details

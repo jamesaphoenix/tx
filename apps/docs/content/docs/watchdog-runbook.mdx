@@ -1,0 +1,234 @@
+---
+title: Watchdog Runbook
+description: Opt-in watchdog onboarding, detached rollout, rollback, and failure recovery
+---
+
+Watchdog supervision is explicit opt-in. It is never enabled by default.
+
+Use watchdog when you need detached, long-running RALPH loops with automatic health checks and stale-run recovery.
+
+## Onboarding and Rollout
+
+### 1. Scaffold watchdog assets
+
+```bash
+tx init --watchdog --watchdog-runtime auto
+```
+
+Generated files:
+
+```
+scripts/ralph-watchdog.sh
+scripts/ralph-hourly-supervisor.sh
+scripts/watchdog-launcher.sh
+.tx/watchdog.env
+ops/watchdog/com.tx.ralph-watchdog.plist
+ops/watchdog/tx-ralph-watchdog.service
+```
+
+Runtime modes:
+
+| Mode | Behavior |
+|------|----------|
+| `auto` | Enables only installed runtimes; may scaffold with `WATCHDOG_ENABLED=0` if no runtime is found |
+| `codex` | Fails unless `codex` is available in `PATH` |
+| `claude` | Fails unless `claude` is available in `PATH` |
+| `both` | Fails unless both `codex` and `claude` are available |
+
+### 2. Validate and smoke-test
+
+```bash
+command -v codex || true
+command -v claude || true
+cat .tx/watchdog.env
+
+./scripts/watchdog-launcher.sh start
+./scripts/watchdog-launcher.sh status
+tail -n 50 .tx/ralph-watchdog.log
+```
+
+## Detached Supervision
+
+### macOS `launchd` (user agent)
+
+The scaffolded plist contains `__PROJECT_DIR__` placeholders. Render it before loading:
+
+```bash
+PROJECT_DIR="$(pwd)"
+PLIST_SRC="ops/watchdog/com.tx.ralph-watchdog.plist"
+PLIST_DEST="$HOME/Library/LaunchAgents/com.tx.ralph-watchdog.plist"
+
+mkdir -p "$HOME/Library/LaunchAgents"
+sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" "$PLIST_SRC" > "$PLIST_DEST"
+
+launchctl bootout "gui/$(id -u)" "$PLIST_DEST" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
+launchctl kickstart -k "gui/$(id -u)/com.tx.ralph-watchdog"
+launchctl print "gui/$(id -u)/com.tx.ralph-watchdog" | head -n 20
+```
+
+### Linux `systemd` (user unit)
+
+The scaffolded unit also contains `__PROJECT_DIR__` placeholders:
+
+```bash
+PROJECT_DIR="$(pwd)"
+UNIT_SRC="ops/watchdog/tx-ralph-watchdog.service"
+UNIT_DEST="$HOME/.config/systemd/user/tx-ralph-watchdog.service"
+
+mkdir -p "$HOME/.config/systemd/user"
+sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" "$UNIT_SRC" > "$UNIT_DEST"
+
+systemctl --user daemon-reload
+systemctl --user enable --now tx-ralph-watchdog.service
+systemctl --user status tx-ralph-watchdog.service --no-pager
+journalctl --user -u tx-ralph-watchdog.service -n 100 --no-pager
+```
+
+If the service must keep running after logout, enable lingering once:
+
+```bash
+loginctl enable-linger "$USER"
+```
+
+## Failure Recovery
+
+Use this when runs/tasks look stuck after runtime crashes, machine sleep, or abrupt terminal shutdown.
+
+### 1. Inspect current state
+
+```bash
+tx trace list --hours 6
+tx trace errors --hours 6
+tx list --status active
+```
+
+### 2. Reap stalled runs
+
+```bash
+tx trace stalled --reap --transcript-idle-seconds 300 --heartbeat-lag-seconds 180
+```
+
+### 3. Reconcile orphaned runs/tasks without starting new loops
+
+```bash
+/bin/bash ./scripts/ralph-watchdog.sh --once --no-start
+```
+
+### 4. Clear stale PID locks if status still reports stale files
+
+```bash
+rm -f .tx/ralph-watchdog.pid \
+      .tx/ralph-hourly-supervisor.pid \
+      .tx/ralph-codex-live.pid \
+      .tx/ralph-claude-live.pid
+```
+
+### 5. Reset any remaining stuck active tasks
+
+```bash
+tx list --status active --json | jq -r '.[].id' | while IFS= read -r task_id; do
+  [ -n "$task_id" ] && tx reset "$task_id"
+done
+```
+
+### 6. Verify recovery
+
+```bash
+tx ready --limit 10
+tx trace errors --hours 1 --limit 20
+```
+
+## Rollback
+
+Use rollback when you need to disable watchdog supervision and return to manual loop operation.
+
+### 1. Stop detached service manager
+
+macOS:
+
+```bash
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.tx.ralph-watchdog.plist" 2>/dev/null || true
+```
+
+Linux:
+
+```bash
+systemctl --user disable --now tx-ralph-watchdog.service || true
+systemctl --user daemon-reload
+```
+
+### 2. Stop launcher-managed watchdog process
+
+```bash
+./scripts/watchdog-launcher.sh stop || true
+```
+
+### 3. Disable watchdog in config
+
+Set `WATCHDOG_ENABLED=0` in `.tx/watchdog.env`.
+
+### 4. Clean stale PID files
+
+```bash
+rm -f .tx/ralph-watchdog.pid \
+      .tx/ralph-hourly-supervisor.pid \
+      .tx/ralph-codex-live.pid \
+      .tx/ralph-claude-live.pid
+```
+
+### 5. Continue with manual loop
+
+```bash
+/bin/bash ./scripts/ralph.sh
+```
+
+## Troubleshooting
+
+### Missing runtime CLI (`codex` or `claude`)
+
+Symptoms:
+- `tx init --watchdog --watchdog-runtime codex|claude|both` fails
+- `./scripts/watchdog-launcher.sh start` reports unavailable runtime(s)
+
+Actions:
+1. Verify runtime binaries:
+   `command -v codex` and `command -v claude`
+2. Install missing runtime CLIs or disable them in `.tx/watchdog.env`:
+   `WATCHDOG_CODEX_ENABLED=0` or `WATCHDOG_CLAUDE_ENABLED=0`
+3. Restart watchdog:
+   `./scripts/watchdog-launcher.sh restart`
+
+### Noisy restart loops
+
+Symptoms:
+- Frequent watchdog restarts
+- Repeated error-burst messages in `.tx/ralph-watchdog.log`
+
+Actions:
+1. Inspect logs:
+   - `.tx/ralph-watchdog.log`
+   - `.tx/ralph-watchdog.daemon.out`
+   - `journalctl --user -u tx-ralph-watchdog.service` (systemd)
+2. Increase stabilization thresholds in `.tx/watchdog.env`:
+   - `WATCHDOG_ERROR_BURST_THRESHOLD`
+   - `WATCHDOG_RESTART_COOLDOWN_SECONDS`
+   - `WATCHDOG_TRANSCRIPT_IDLE_SECONDS`
+   - `WATCHDOG_RUN_STALE_SECONDS`
+3. Temporarily pause supervision:
+   - set `WATCHDOG_ENABLED=0`
+   - run `./scripts/watchdog-launcher.sh stop`
+
+### Stale PID warnings
+
+Run:
+
+```bash
+./scripts/watchdog-launcher.sh status
+```
+
+If status shows stale PID, remove PID files (see rollback/recovery sections) and start again:
+
+```bash
+./scripts/watchdog-launcher.sh start
+```

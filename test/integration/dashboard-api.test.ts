@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from "vitest"
 import { Hono } from "hono"
 import { createSharedTestLayer, wrapDbAsTestDatabase, type SharedTestLayerResult, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
@@ -28,6 +28,15 @@ interface TaskWithDeps extends TaskRow {
   isReady: boolean
 }
 
+interface TaskDependencySnapshot {
+  blockedByMap: Map<string, string[]>
+  blocksMap: Map<string, string[]>
+  childrenMap: Map<string, string[]>
+  statusMap: Map<string, string>
+}
+
+const WORKABLE_TASK_STATUSES = new Set<string>(["backlog", "ready", "planning"])
+
 // Create test app with injected database
 function createTestApp(db: TestDatabase, txDir: string) {
   const app = new Hono()
@@ -47,46 +56,62 @@ function createTestApp(db: TestDatabase, txDir: string) {
     return null
   }
 
-  // Helper to enrich tasks with dependency info (mirrors server logic)
-  function enrichTasksWithDeps(
-    tasks: TaskRow[],
-    allTasks?: TaskRow[]
-  ): TaskWithDeps[] {
+  function pushToMapList(map: Map<string, string[]>, key: string, value: string): void {
+    const existing = map.get(key)
+    if (existing) {
+      existing.push(value)
+      return
+    }
+    map.set(key, [value])
+  }
+
+  function buildDependencySnapshot(
+    allTasks?: ReadonlyArray<Pick<TaskRow, "id" | "parent_id" | "status">>
+  ): TaskDependencySnapshot {
     const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
       blocker_id: string
       blocked_id: string
     }>
-
     const blockedByMap = new Map<string, string[]>()
     const blocksMap = new Map<string, string[]>()
 
     for (const dep of deps) {
-      const existing = blockedByMap.get(dep.blocked_id) ?? []
-      blockedByMap.set(dep.blocked_id, [...existing, dep.blocker_id])
-
-      const existingBlocks = blocksMap.get(dep.blocker_id) ?? []
-      blocksMap.set(dep.blocker_id, [...existingBlocks, dep.blocked_id])
+      pushToMapList(blockedByMap, dep.blocked_id, dep.blocker_id)
+      pushToMapList(blocksMap, dep.blocker_id, dep.blocked_id)
     }
 
-    const tasksForChildren = allTasks ?? db.db.prepare("SELECT id, parent_id FROM tasks").all() as Array<{ id: string; parent_id: string | null }>
+    const tasksForSnapshot = allTasks
+      ?? (db.db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
+        id: string
+        parent_id: string | null
+        status: string
+      }>)
+
     const childrenMap = new Map<string, string[]>()
-    for (const task of tasksForChildren) {
+    const statusMap = new Map<string, string>()
+    for (const task of tasksForSnapshot) {
+      statusMap.set(task.id, task.status)
       if (task.parent_id) {
-        const existing = childrenMap.get(task.parent_id) ?? []
-        childrenMap.set(task.parent_id, [...existing, task.id])
+        pushToMapList(childrenMap, task.parent_id, task.id)
       }
     }
 
-    const allTasksForStatus = allTasks ?? db.db.prepare("SELECT id, status FROM tasks").all() as Array<{ id: string; status: string }>
-    const statusMap = new Map(allTasksForStatus.map(t => [t.id, t.status]))
-    const workableStatuses = ["backlog", "ready", "planning"]
+    return { blockedByMap, blocksMap, childrenMap, statusMap }
+  }
+
+  // Helper to enrich tasks with dependency info (mirrors server logic)
+  function enrichTasksWithDeps(
+    tasks: TaskRow[],
+    snapshot?: TaskDependencySnapshot
+  ): TaskWithDeps[] {
+    const dependencySnapshot = snapshot ?? buildDependencySnapshot()
 
     return tasks.map(task => {
-      const blockedBy = blockedByMap.get(task.id) ?? []
-      const blocks = blocksMap.get(task.id) ?? []
-      const children = childrenMap.get(task.id) ?? []
-      const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
-      const isReady = workableStatuses.includes(task.status) && allBlockersDone
+      const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
+      const blocks = dependencySnapshot.blocksMap.get(task.id) ?? []
+      const children = dependencySnapshot.childrenMap.get(task.id) ?? []
+      const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
+      const isReady = WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
 
       return { ...task, blockedBy, blocks, children, isReady }
     })
@@ -165,7 +190,8 @@ function createTestApp(db: TestDatabase, txDir: string) {
       const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
       const total = (db.db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
 
-      const enriched = enrichTasksWithDeps(tasks)
+      const dependencySnapshot = buildDependencySnapshot()
+      const enriched = enrichTasksWithDeps(tasks, dependencySnapshot)
 
       const summaryRows = db.db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
       const byStatus = summaryRows.reduce((acc, r) => {
@@ -189,27 +215,15 @@ function createTestApp(db: TestDatabase, txDir: string) {
   app.get("/api/tasks/ready", (c) => {
     try {
       const tasks = db.db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
-      const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
-        blocker_id: string
-        blocked_id: string
-      }>
-
-      const blockedByMap = new Map<string, string[]>()
-      for (const dep of deps) {
-        const existing = blockedByMap.get(dep.blocked_id) ?? []
-        blockedByMap.set(dep.blocked_id, [...existing, dep.blocker_id])
-      }
-
-      const statusMap = new Map(tasks.map(t => [t.id, t.status]))
-      const workableStatuses = ["backlog", "ready", "planning"]
-
+      const dependencySnapshot = buildDependencySnapshot(tasks)
       const ready = tasks.filter(task => {
-        const blockedBy = blockedByMap.get(task.id) ?? []
-        const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
-        return workableStatuses.includes(task.status) && allBlockersDone
+        const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
+        const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
+        return WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
       })
+      const enriched = enrichTasksWithDeps(ready, dependencySnapshot)
 
-      return c.json({ tasks: ready })
+      return c.json({ tasks: enriched })
     } catch (e) {
       return c.json({ error: String(e) }, 500)
     }
@@ -225,30 +239,23 @@ function createTestApp(db: TestDatabase, txDir: string) {
         return c.json({ error: "Task not found" }, 404)
       }
 
-      const blockedByIds = db.db.prepare(
-        "SELECT blocker_id FROM task_dependencies WHERE blocked_id = ?"
-      ).all(id) as Array<{ blocker_id: string }>
-
-      const blocksIds = db.db.prepare(
-        "SELECT blocked_id FROM task_dependencies WHERE blocker_id = ?"
-      ).all(id) as Array<{ blocked_id: string }>
-
-      const childIds = db.db.prepare(
-        "SELECT id FROM tasks WHERE parent_id = ?"
-      ).all(id) as Array<{ id: string }>
+      const dependencySnapshot = buildDependencySnapshot()
+      const blockedByIds = dependencySnapshot.blockedByMap.get(id) ?? []
+      const blocksIds = dependencySnapshot.blocksMap.get(id) ?? []
+      const childIds = dependencySnapshot.childrenMap.get(id) ?? []
 
       const fetchTasksByIds = (ids: string[]): TaskWithDeps[] => {
         if (ids.length === 0) return []
         const placeholders = ids.map(() => "?").join(",")
         const tasks = db.db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
-        return enrichTasksWithDeps(tasks)
+        return enrichTasksWithDeps(tasks, dependencySnapshot)
       }
 
-      const blockedByTasks = fetchTasksByIds(blockedByIds.map(r => r.blocker_id))
-      const blocksTasks = fetchTasksByIds(blocksIds.map(r => r.blocked_id))
-      const childTasks = fetchTasksByIds(childIds.map(r => r.id))
+      const blockedByTasks = fetchTasksByIds(blockedByIds)
+      const blocksTasks = fetchTasksByIds(blocksIds)
+      const childTasks = fetchTasksByIds(childIds)
 
-      const [enrichedTask] = enrichTasksWithDeps([task])
+      const [enrichedTask] = enrichTasksWithDeps([task], dependencySnapshot)
 
       return c.json({
         task: enrichedTask,
@@ -455,6 +462,391 @@ async function request(app: Hono, path: string, options?: RequestInit) {
   }
 }
 
+const DEPENDENCY_SNAPSHOT_SQL = "select blocker_id, blocked_id from task_dependencies"
+
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim().toLowerCase()
+}
+
+function countPrepareCallsByQueryShape(
+  calls: ReadonlyArray<ReadonlyArray<unknown>>,
+  predicate: (normalizedSql: string) => boolean
+): number {
+  return calls.reduce((count, call) => {
+    const sql = call[0]
+    if (typeof sql !== "string") {
+      return count
+    }
+    return predicate(normalizeSql(sql)) ? count + 1 : count
+  }, 0)
+}
+
+function seedDependencySnapshotFixtures(db: TestDatabase, prefix: string, pairCount = 8): string[] {
+  const now = new Date().toISOString()
+  const insertTask = db.db.prepare(
+    `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  const insertDep = db.db.prepare(
+    `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
+  )
+
+  const blockedIds: string[] = []
+  for (let i = 0; i < pairCount; i++) {
+    const blockerId = fixtureId(`${prefix}-blocker-${i}`)
+    const blockedId = fixtureId(`${prefix}-blocked-${i}`)
+
+    insertTask.run(
+      blockerId,
+      `Perf blocker ${i}`,
+      `Deterministic blocker fixture ${i}`,
+      "ready",
+      FIXTURES.TASK_ROOT,
+      400 - i,
+      now,
+      now,
+      null,
+      "{}"
+    )
+    insertTask.run(
+      blockedId,
+      `Perf blocked ${i}`,
+      `Deterministic blocked fixture ${i}`,
+      "backlog",
+      FIXTURES.TASK_ROOT,
+      300 - i,
+      now,
+      now,
+      null,
+      "{}"
+    )
+    insertDep.run(blockerId, blockedId, now)
+    blockedIds.push(blockedId)
+  }
+
+  return blockedIds
+}
+
+interface TaskOrderFixtureRow {
+  id: string
+  status: string
+  score: number
+}
+
+interface TaskListQueryPlanOptions {
+  statuses?: string[]
+  cursor?: { score: number; id: string }
+  limit?: number
+}
+
+function compareTaskListOrder(
+  left: Pick<TaskOrderFixtureRow, "score" | "id">,
+  right: Pick<TaskOrderFixtureRow, "score" | "id">
+): number {
+  if (left.score !== right.score) {
+    return right.score - left.score
+  }
+  return left.id.localeCompare(right.id)
+}
+
+function seedTaskOrderRegressionFixtures(
+  db: TestDatabase,
+  prefix: string,
+  planningCount = 12,
+  doneCount = 8
+): {
+  rows: TaskOrderFixtureRow[]
+  orderedPlanningIds: string[]
+  orderedAllIds: string[]
+  scoreById: Map<string, number>
+} {
+  const now = new Date().toISOString()
+  const insertTask = db.db.prepare(
+    `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+
+  const rows: TaskOrderFixtureRow[] = []
+
+  for (let i = 0; i < planningCount; i++) {
+    const id = fixtureId(`${prefix}-planning-${i}`)
+    const score = 700 - Math.floor(i / 3) * 10
+    insertTask.run(
+      id,
+      `Planning fixture ${i}`,
+      `Planning fixture for query plan regression ${i}`,
+      "planning",
+      FIXTURES.TASK_ROOT,
+      score,
+      now,
+      now,
+      null,
+      "{}"
+    )
+    rows.push({ id, status: "planning", score })
+  }
+
+  for (let i = 0; i < doneCount; i++) {
+    const id = fixtureId(`${prefix}-done-${i}`)
+    const score = 700 - Math.floor(i / 2) * 10
+    insertTask.run(
+      id,
+      `Done fixture ${i}`,
+      `Done fixture for query plan regression ${i}`,
+      "done",
+      FIXTURES.TASK_ROOT,
+      score,
+      now,
+      now,
+      now,
+      "{}"
+    )
+    rows.push({ id, status: "done", score })
+  }
+
+  const orderedPlanningIds = [...rows]
+    .filter(row => row.status === "planning")
+    .sort(compareTaskListOrder)
+    .map(row => row.id)
+
+  const orderedAllIds = [...rows]
+    .sort(compareTaskListOrder)
+    .map(row => row.id)
+
+  const scoreById = new Map(rows.map(row => [row.id, row.score]))
+
+  return { rows, orderedPlanningIds, orderedAllIds, scoreById }
+}
+
+function explainTaskListQueryPlan(db: TestDatabase, options: TaskListQueryPlanOptions): string {
+  const conditions: string[] = []
+  const params: (string | number)[] = []
+
+  if (options.statuses?.length) {
+    conditions.push(`status IN (${options.statuses.map(() => "?").join(",")})`)
+    params.push(...options.statuses)
+  }
+
+  if (options.cursor) {
+    conditions.push("(score < ? OR (score = ? AND id > ?))")
+    params.push(options.cursor.score, options.cursor.score, options.cursor.id)
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+  const sql = `
+    EXPLAIN QUERY PLAN
+    SELECT * FROM tasks
+    ${whereClause}
+    ORDER BY score DESC, id ASC
+    LIMIT ?
+  `
+  params.push((options.limit ?? 20) + 1)
+
+  const rows = db.db.prepare(sql).all(...params) as Array<{ detail: string }>
+  return rows.map(row => row.detail).join(" | ")
+}
+
+interface RunsEventsQueryPlanFixtures {
+  orphanActiveTaskId: string
+  primaryWorker: string
+  traceCutoffIso: string
+}
+
+interface RunsListQueryPlanOptions {
+  statuses?: string[]
+  agent?: string
+  limit?: number
+}
+
+const HOT_QUERY_PLAN_INDEXES = {
+  dashboardRunsOrder: "idx_runs_started_id",
+  dashboardRunsStatusOrder: "idx_runs_status_started_id",
+  dashboardRunsAgentOrder: "idx_runs_agent_started_id",
+  watchdogOrphanActive: "idx_runs_task_status",
+  watchdogWorkerBurst: "idx_runs_worker_status_started",
+  traceErrorSpans: "idx_events_type_metadata_status_timestamp",
+} as const
+
+function seedRunsEventsQueryPlanFixtures(
+  db: TestDatabase,
+  prefix: string,
+  runCount = 360,
+  eventCount = 640
+): RunsEventsQueryPlanFixtures {
+  const now = new Date()
+  const nowIso = now.toISOString()
+  const primaryWorker = `${prefix}-codex-main`
+  const secondaryWorker = `${prefix}-claude-main`
+
+  const insertTask = db.db.prepare(
+    `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  const activeTaskIds: string[] = []
+  for (let i = 0; i < 24; i++) {
+    const id = fixtureId(`${prefix}-active-task-${i}`)
+    insertTask.run(
+      id,
+      `Active fixture task ${i}`,
+      `Active fixture task for runs/events query plan regression ${i}`,
+      "active",
+      FIXTURES.TASK_ROOT,
+      350 - i,
+      nowIso,
+      nowIso,
+      null,
+      "{}"
+    )
+    activeTaskIds.push(id)
+  }
+  const orphanActiveTaskId = activeTaskIds[0]!
+  const taskIdsWithRuns = activeTaskIds.slice(1)
+
+  const insertRun = db.db.prepare(
+    `INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  )
+
+  const runIds: string[] = []
+  for (let i = 0; i < runCount; i++) {
+    const startedAt = new Date(now.getTime() - i * 45_000).toISOString()
+    const status = i % 11 === 0
+      ? "failed"
+      : i % 17 === 0
+        ? "cancelled"
+        : i % 2 === 0
+          ? "running"
+          : "completed"
+    const worker = i % 3 === 0 ? primaryWorker : secondaryWorker
+    const runId = `run-${String(i).padStart(4, "0")}-${fixtureId(`${prefix}-run-${i}`).slice(3)}`
+    const taskId = taskIdsWithRuns[i % taskIdsWithRuns.length]!
+
+    insertRun.run(
+      runId,
+      taskId,
+      i % 2 === 0 ? "tx-implementer" : "tx-reviewer",
+      startedAt,
+      status,
+      20_000 + i,
+      JSON.stringify({ worker, batch: i % 5 })
+    )
+    runIds.push(runId)
+  }
+
+  const insertEvent = db.db.prepare(
+    `INSERT INTO events (timestamp, event_type, run_id, metadata, content, duration_ms)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  )
+
+  for (let i = 0; i < eventCount; i++) {
+    const timestamp = new Date(now.getTime() - i * 20_000).toISOString()
+    const isErrorSpan = i % 9 === 0
+    insertEvent.run(
+      timestamp,
+      i % 2 === 0 ? "span" : "metric",
+      runIds[i % runIds.length]!,
+      JSON.stringify({
+        status: isErrorSpan ? "error" : "ok",
+        error: isErrorSpan ? `fixture-error-${i}` : undefined,
+      }),
+      `fixture-event-${i}`,
+      i % 500
+    )
+  }
+
+  return {
+    orphanActiveTaskId,
+    primaryWorker,
+    traceCutoffIso: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
+  }
+}
+
+function explainRunsListQueryPlan(db: TestDatabase, options: RunsListQueryPlanOptions): string {
+  const conditions: string[] = []
+  const params: (string | number)[] = []
+
+  if (options.agent) {
+    conditions.push("agent = ?")
+    params.push(options.agent)
+  }
+
+  if (options.statuses?.length) {
+    conditions.push(`status IN (${options.statuses.map(() => "?").join(",")})`)
+    params.push(...options.statuses)
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+  const sql = `
+    EXPLAIN QUERY PLAN
+    SELECT id, task_id, agent, started_at, ended_at, status, exit_code, transcript_path, summary, error_message
+    FROM runs
+    ${whereClause}
+    ORDER BY started_at DESC, id ASC
+    LIMIT ?
+  `
+  params.push((options.limit ?? 20) + 1)
+
+  const rows = db.db.prepare(sql).all(...params) as Array<{ detail: string }>
+  return rows.map(row => row.detail).join(" | ")
+}
+
+function explainWatchdogOrphanActiveQueryPlan(db: TestDatabase): string {
+  const rows = db.db.prepare(`
+    EXPLAIN QUERY PLAN
+    SELECT t.id
+    FROM tasks t
+    WHERE t.status='active'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM runs r
+        WHERE r.task_id=t.id
+          AND r.status='running'
+      );
+  `).all() as Array<{ detail: string }>
+  return rows.map(row => row.detail).join(" | ")
+}
+
+function explainWatchdogWorkerBurstQueryPlan(db: TestDatabase, worker: string, windowMinutes: number): string {
+  const rows = db.db.prepare(`
+    EXPLAIN QUERY PLAN
+    SELECT COUNT(*)
+    FROM runs
+    WHERE status IN ('failed', 'cancelled')
+      AND started_at >= datetime('now', ?)
+      AND json_extract(metadata, '$.worker') = ?;
+  `).all(`-${windowMinutes} minutes`, worker) as Array<{ detail: string }>
+  return rows.map(row => row.detail).join(" | ")
+}
+
+function explainWatchdogWorkerRunningQueryPlan(db: TestDatabase, worker: string): string {
+  const rows = db.db.prepare(`
+    EXPLAIN QUERY PLAN
+    SELECT COUNT(*)
+    FROM runs
+    WHERE status = 'running'
+      AND json_extract(metadata, '$.worker') = ?;
+  `).all(worker) as Array<{ detail: string }>
+  return rows.map(row => row.detail).join(" | ")
+}
+
+function explainTraceErrorSpanQueryPlan(
+  db: TestDatabase,
+  cutoffIso: string,
+  limit = 20
+): string {
+  const rows = db.db.prepare(`
+    EXPLAIN QUERY PLAN
+    SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
+    FROM events
+    WHERE event_type = ?
+      AND json_extract(metadata, '$.status') = ?
+      AND timestamp >= ?
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `).all("span", "error", cutoffIso, limit) as Array<{ detail: string }>
+  return rows.map(row => row.detail).join(" | ")
+}
+
 describe("Dashboard API - GET /api/tasks", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
@@ -498,6 +890,112 @@ describe("Dashboard API - GET /api/tasks", () => {
       expect(Array.isArray(task.children)).toBe(true)
       expect(typeof task.isReady).toBe("boolean")
     }
+  })
+
+  it("uses one dependency snapshot scan for /api/tasks on perf-sensitive query paths", async () => {
+    const [seededBlockedId] = seedDependencySnapshotFixtures(db, "dashboard-tasks-snapshot")
+    const prepareSpy = vi.spyOn(db.db, "prepare")
+
+    try {
+      const res = await request(app, "/api/tasks?limit=100")
+      expect(res.status).toBe(200)
+      const data = await res.json()
+
+      const seededBlockedTask = data.tasks.find((task: TaskWithDeps) => task.id === seededBlockedId)
+      expect(seededBlockedTask).toBeDefined()
+      expect(seededBlockedTask?.blockedBy.length).toBe(1)
+      expect(seededBlockedTask?.blocks).toEqual([])
+      expect(seededBlockedTask?.children).toEqual([])
+      expect(seededBlockedTask?.isReady).toBe(false)
+
+      const snapshotScanCount = countPrepareCallsByQueryShape(
+        prepareSpy.mock.calls,
+        (sql) => sql === DEPENDENCY_SNAPSHOT_SQL
+      )
+      const dependencyTableQueryCount = countPrepareCallsByQueryShape(
+        prepareSpy.mock.calls,
+        (sql) => sql.includes("from task_dependencies")
+      )
+
+      expect(snapshotScanCount, "perf-sensitive path should build one dependency snapshot for /api/tasks").toBe(1)
+      expect(dependencyTableQueryCount, "query shape should avoid repeated task_dependencies scans for /api/tasks").toBe(1)
+    } finally {
+      prepareSpy.mockRestore()
+    }
+  })
+
+  it("uses task-order indexes for /api/tasks list query-plan variants without temp ORDER BY sort", () => {
+    const seeded = seedTaskOrderRegressionFixtures(db, "dashboard-query-plan")
+    const unfilteredCursorId = seeded.orderedAllIds[4]!
+    const statusCursorId = seeded.orderedPlanningIds[4]!
+
+    const unfilteredPlanDetails = explainTaskListQueryPlan(db, { limit: 20 })
+    expect(unfilteredPlanDetails).toContain("idx_tasks_score_id")
+    expect(unfilteredPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+    const statusPlanDetails = explainTaskListQueryPlan(db, { statuses: ["planning"], limit: 20 })
+    expect(statusPlanDetails).toContain("idx_tasks_status_score_id")
+    expect(statusPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+    const cursorPlanDetails = explainTaskListQueryPlan(db, {
+      cursor: {
+        score: seeded.scoreById.get(unfilteredCursorId)!,
+        id: unfilteredCursorId,
+      },
+      limit: 20,
+    })
+    expect(cursorPlanDetails).toContain("idx_tasks_score_id")
+    expect(cursorPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+    const statusCursorPlanDetails = explainTaskListQueryPlan(db, {
+      statuses: ["planning"],
+      cursor: {
+        score: seeded.scoreById.get(statusCursorId)!,
+        id: statusCursorId,
+      },
+      limit: 20,
+    })
+    expect(statusCursorPlanDetails).toContain("idx_tasks_status_score_id")
+    expect(statusCursorPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+  })
+
+  it("keeps cursor pagination stable for repeated scores using score:id ordering", async () => {
+    const seeded = seedTaskOrderRegressionFixtures(db, "dashboard-repeat-score-pagination")
+    const planningScores = seeded.orderedPlanningIds.map(id => seeded.scoreById.get(id)!)
+    expect(new Set(planningScores).size).toBeLessThan(planningScores.length)
+
+    const limit = 3
+    let cursor: string | null = null
+    const seenIds: string[] = []
+
+    do {
+      const path = cursor
+        ? `/api/tasks?status=planning&limit=${limit}&cursor=${cursor}`
+        : `/api/tasks?status=planning&limit=${limit}`
+
+      const res = await request(app, path)
+      expect(res.status).toBe(200)
+      const data = await res.json()
+
+      const pageTasks = data.tasks as TaskRow[]
+      const pageIds = pageTasks.map(task => task.id)
+      seenIds.push(...pageIds)
+
+      for (let i = 1; i < pageTasks.length; i++) {
+        const prev = pageTasks[i - 1]!
+        const curr = pageTasks[i]!
+        if (prev.score === curr.score) {
+          expect(prev.id.localeCompare(curr.id)).toBeLessThan(0)
+        } else {
+          expect(prev.score).toBeGreaterThan(curr.score)
+        }
+      }
+
+      cursor = data.nextCursor
+    } while (cursor)
+
+    expect(new Set(seenIds).size).toBe(seenIds.length)
+    expect(seenIds).toEqual(seeded.orderedPlanningIds)
   })
 
   it("returns tasks sorted by score descending", async () => {
@@ -688,6 +1186,43 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
     }
   })
 
+  it("uses one dependency snapshot scan for /api/tasks/ready and preserves TaskWithDeps fields", async () => {
+    seedDependencySnapshotFixtures(db, "dashboard-ready-snapshot")
+    const prepareSpy = vi.spyOn(db.db, "prepare")
+
+    try {
+      const res = await request(app, "/api/tasks/ready")
+      expect(res.status).toBe(200)
+      const data = await res.json()
+
+      for (const task of data.tasks as TaskWithDeps[]) {
+        expect(Array.isArray(task.blockedBy)).toBe(true)
+        expect(Array.isArray(task.blocks)).toBe(true)
+        expect(Array.isArray(task.children)).toBe(true)
+        expect(typeof task.isReady).toBe("boolean")
+      }
+
+      const jwtTask = data.tasks.find((task: TaskWithDeps) => task.id === FIXTURES.TASK_JWT)
+      expect(jwtTask).toBeDefined()
+      expect(jwtTask?.blocks).toContain(FIXTURES.TASK_BLOCKED)
+      expect(jwtTask?.isReady).toBe(true)
+
+      const snapshotScanCount = countPrepareCallsByQueryShape(
+        prepareSpy.mock.calls,
+        (sql) => sql === DEPENDENCY_SNAPSHOT_SQL
+      )
+      const dependencyTableQueryCount = countPrepareCallsByQueryShape(
+        prepareSpy.mock.calls,
+        (sql) => sql.includes("from task_dependencies")
+      )
+
+      expect(snapshotScanCount, "perf-sensitive path should build one dependency snapshot for /api/tasks/ready").toBe(1)
+      expect(dependencyTableQueryCount, "query shape should avoid repeated task_dependencies scans for /api/tasks/ready").toBe(1)
+    } finally {
+      prepareSpy.mockRestore()
+    }
+  })
+
   it("excludes tasks with open blockers", async () => {
     const res = await request(app, "/api/tasks/ready")
     const data = await res.json()
@@ -762,6 +1297,42 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
     expect(data.task).toHaveProperty("blocks")
     expect(data.task).toHaveProperty("children")
     expect(data.task).toHaveProperty("isReady")
+  })
+
+  it("uses one dependency snapshot scan for /api/tasks/:id and keeps dependency parity fields", async () => {
+    seedDependencySnapshotFixtures(db, "dashboard-show-snapshot")
+    const prepareSpy = vi.spyOn(db.db, "prepare")
+
+    try {
+      const res = await request(app, `/api/tasks/${FIXTURES.TASK_AUTH}`)
+      expect(res.status).toBe(200)
+      const data = await res.json()
+
+      expect(data.task.id).toBe(FIXTURES.TASK_AUTH)
+      expect(data.task.blockedBy).toEqual([])
+      expect(data.task.blocks).toEqual([])
+      expect(data.task.children).toContain(FIXTURES.TASK_BLOCKED)
+      expect(data.task.isReady).toBe(true)
+
+      const blockedChild = data.childTasks.find((task: TaskWithDeps) => task.id === FIXTURES.TASK_BLOCKED)
+      expect(blockedChild).toBeDefined()
+      expect(blockedChild?.blockedBy).toEqual(expect.arrayContaining([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN]))
+      expect(blockedChild?.isReady).toBe(false)
+
+      const snapshotScanCount = countPrepareCallsByQueryShape(
+        prepareSpy.mock.calls,
+        (sql) => sql === DEPENDENCY_SNAPSHOT_SQL
+      )
+      const dependencyTableQueryCount = countPrepareCallsByQueryShape(
+        prepareSpy.mock.calls,
+        (sql) => sql.includes("from task_dependencies")
+      )
+
+      expect(snapshotScanCount, "perf-sensitive path should build one dependency snapshot for /api/tasks/:id").toBe(1)
+      expect(dependencyTableQueryCount, "query shape should avoid repeated task_dependencies scans for /api/tasks/:id").toBe(1)
+    } finally {
+      prepareSpy.mockRestore()
+    }
   })
 
   it("returns 404 for nonexistent task", async () => {
@@ -949,6 +1520,40 @@ describe("Dashboard API - GET /api/runs", () => {
 
     expect(data.runs.length).toBe(1)
     expect(data.runs[0].status).toBe("completed")
+  })
+
+  it("uses runs/events hot-path indexes for dashboard, watchdog, and trace query shapes", () => {
+    const seeded = seedRunsEventsQueryPlanFixtures(db, "dashboard-runs-events-hot-paths")
+
+    const unfilteredPlanDetails = explainRunsListQueryPlan(db, { limit: 20 })
+    expect(unfilteredPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.dashboardRunsOrder)
+    expect(unfilteredPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+    const statusPlanDetails = explainRunsListQueryPlan(db, { statuses: ["running"], limit: 20 })
+    expect(statusPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.dashboardRunsStatusOrder)
+    expect(statusPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+    const agentPlanDetails = explainRunsListQueryPlan(db, { agent: "tx-implementer", limit: 20 })
+    expect(agentPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.dashboardRunsAgentOrder)
+    expect(agentPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+    const orphanActiveRunningCount = db.db.prepare(
+      "SELECT COUNT(*) as count FROM runs WHERE task_id = ? AND status = 'running'"
+    ).get(seeded.orphanActiveTaskId) as { count: number }
+    expect(orphanActiveRunningCount.count).toBe(0)
+
+    const watchdogOrphanPlanDetails = explainWatchdogOrphanActiveQueryPlan(db)
+    expect(watchdogOrphanPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.watchdogOrphanActive)
+
+    const watchdogWorkerBurstPlanDetails = explainWatchdogWorkerBurstQueryPlan(db, seeded.primaryWorker, 20)
+    expect(watchdogWorkerBurstPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.watchdogWorkerBurst)
+
+    const watchdogWorkerRunningPlanDetails = explainWatchdogWorkerRunningQueryPlan(db, seeded.primaryWorker)
+    expect(watchdogWorkerRunningPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.watchdogWorkerBurst)
+
+    const traceErrorSpanPlanDetails = explainTraceErrorSpanQueryPlan(db, seeded.traceCutoffIso, 20)
+    expect(traceErrorSpanPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.traceErrorSpans)
+    expect(traceErrorSpanPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
   })
 
   it("cursor-based pagination works", async () => {

@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "getting-started",
+    "watchdog-runbook",
     "agent-sdk",
     "headful",
     "---",

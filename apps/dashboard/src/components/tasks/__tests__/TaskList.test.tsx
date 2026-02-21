@@ -660,6 +660,62 @@ describe('TaskList', () => {
       expect(paginatedHandler).toHaveBeenCalledTimes(1)
       expect(readyHandler).not.toHaveBeenCalled()
     })
+
+    it('switches query paths without invoking the newly inactive endpoint', async () => {
+      const paginatedTasks = [
+        createTask({ id: 'tx-switch-paginated', title: 'Paginated before switch' }),
+      ]
+      const readyTasks = [
+        createTask({ id: 'tx-switch-ready', title: 'Ready after switch', status: 'ready' }),
+      ]
+
+      const paginatedHandler = vi.fn(() =>
+        HttpResponse.json({
+          tasks: paginatedTasks,
+          nextCursor: null,
+          hasMore: false,
+          total: 1,
+          summary: { total: 1, byStatus: { ready: 1 } },
+        } satisfies PaginatedTasksResponse)
+      )
+      const readyHandler = vi.fn(() =>
+        HttpResponse.json({
+          tasks: readyTasks,
+        } satisfies ReadyResponse)
+      )
+
+      server.use(
+        http.get('/api/tasks/ready', readyHandler),
+        http.get('/api/tasks', paginatedHandler)
+      )
+
+      const onSelectTask = vi.fn()
+      const queryClient = createTestQueryClient()
+      const { rerender } = render(
+        <QueryClientProvider client={queryClient}>
+          <TaskList onSelectTask={onSelectTask} />
+        </QueryClientProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Paginated before switch')).toBeInTheDocument()
+      })
+      expect(paginatedHandler).toHaveBeenCalledTimes(1)
+      expect(readyHandler).not.toHaveBeenCalled()
+
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <TaskList onSelectTask={onSelectTask} filters={{ status: ['ready'] }} />
+        </QueryClientProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Ready after switch')).toBeInTheDocument()
+      })
+
+      expect(readyHandler).toHaveBeenCalledTimes(1)
+      expect(paginatedHandler).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('error state', () => {

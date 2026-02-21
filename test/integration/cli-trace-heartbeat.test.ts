@@ -50,6 +50,17 @@ function insertRun(
   ).run(runId, taskId, startedAt)
 }
 
+function insertSpanEvents(db: Database, runId: string, timestamp: string, count: number): void {
+  const insertSpan = db.prepare(
+    `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
+     VALUES (?, 'span', ?, NULL, 'tx-implementer', NULL, ?, '{"status":"ok"}', ?)`
+  )
+
+  for (let i = 0; i < count; i++) {
+    insertSpan.run(timestamp, runId, `span-${i + 1}`, 5 + i)
+  }
+}
+
 describe("CLI trace heartbeat integration", () => {
   let tmpProjectDir: string
   let dbPath: string
@@ -143,51 +154,60 @@ describe("CLI trace heartbeat integration", () => {
     }
   })
 
-  it("filters trace list by hours cutoff in SQL while preserving span counts", () => {
-    const recentRunId = runFixtureId("trace-list-recent")
-    const oldRunId = runFixtureId("trace-list-old")
+  it("applies SQL cutoff semantics for trace list across hours and limits with stable ordering", () => {
+    const runNewest = runFixtureId("trace-list-newest")
+    const runRecent = runFixtureId("trace-list-recent")
+    const runNearOneHour = runFixtureId("trace-list-near-one-hour")
+    const runOld = runFixtureId("trace-list-old")
+    const runVeryOld = runFixtureId("trace-list-very-old")
     const now = Date.now()
-    const recentStartedAt = new Date(now - 30 * 60 * 1000).toISOString()
-    const oldStartedAt = new Date(now - 3 * 60 * 60 * 1000).toISOString()
+
+    const fixtureRows = [
+      { id: runNewest, startedAt: new Date(now - 5 * 60 * 1000).toISOString(), spanCount: 2 },
+      { id: runRecent, startedAt: new Date(now - 20 * 60 * 1000).toISOString(), spanCount: 1 },
+      { id: runNearOneHour, startedAt: new Date(now - 55 * 60 * 1000).toISOString(), spanCount: 3 },
+      { id: runOld, startedAt: new Date(now - 130 * 60 * 1000).toISOString(), spanCount: 4 },
+      { id: runVeryOld, startedAt: new Date(now - 260 * 60 * 1000).toISOString(), spanCount: 5 },
+    ]
 
     const db = new Database(dbPath)
     try {
-      insertRun(db, recentRunId, null, recentStartedAt)
-      insertRun(db, oldRunId, null, oldStartedAt)
-
-      db.prepare(
-        `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
-         VALUES (?, 'span', ?, NULL, 'tx-implementer', NULL, ?, '{"status":"ok"}', 12)`
-      ).run(recentStartedAt, recentRunId, "span-1")
-
-      db.prepare(
-        `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
-         VALUES (?, 'span', ?, NULL, 'tx-implementer', NULL, ?, '{"status":"ok"}', 8)`
-      ).run(recentStartedAt, recentRunId, "span-2")
-
-      db.prepare(
-        `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, tool_name, content, metadata, duration_ms)
-         VALUES (?, 'span', ?, NULL, 'tx-implementer', NULL, ?, '{"status":"ok"}', 5)`
-      ).run(oldStartedAt, oldRunId, "old-span")
+      for (const row of fixtureRows) {
+        insertRun(db, row.id, null, row.startedAt)
+        insertSpanEvents(db, row.id, row.startedAt, row.spanCount)
+      }
     } finally {
       db.close()
     }
 
-    const result = runTx([
-      "trace",
-      "list",
-      "--hours",
-      "1",
-      "--limit",
-      "5",
-      "--json",
-    ], dbPath, tmpProjectDir)
+    const cases = [
+      { hours: 1, limit: 10, expectedIds: [runNewest, runRecent, runNearOneHour] },
+      { hours: 1, limit: 2, expectedIds: [runNewest, runRecent] },
+      { hours: 3, limit: 10, expectedIds: [runNewest, runRecent, runNearOneHour, runOld] },
+      { hours: 6, limit: 3, expectedIds: [runNewest, runRecent, runNearOneHour] },
+      { hours: 6, limit: 10, expectedIds: [runNewest, runRecent, runNearOneHour, runOld, runVeryOld] },
+    ]
 
-    expect(result.status).toBe(0)
-    const rows = JSON.parse(result.stdout) as Array<{ id: string; spanCount: number }>
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.id).toBe(recentRunId)
-    expect(rows[0]?.spanCount).toBe(2)
+    for (const traceCase of cases) {
+      const result = runTx([
+        "trace",
+        "list",
+        "--hours",
+        String(traceCase.hours),
+        "--limit",
+        String(traceCase.limit),
+        "--json",
+      ], dbPath, tmpProjectDir)
+
+      expect(result.status).toBe(0)
+      const rows = JSON.parse(result.stdout) as Array<{ id: string; spanCount: number }>
+      expect(rows.map((row) => row.id)).toEqual(traceCase.expectedIds)
+
+      const expectedSpanCounts = traceCase.expectedIds.map((expectedId) =>
+        fixtureRows.find((row) => row.id === expectedId)?.spanCount ?? -1
+      )
+      expect(rows.map((row) => row.spanCount)).toEqual(expectedSpanCounts)
+    }
   })
 
   it("lists stalled runs via tx trace stalled", () => {

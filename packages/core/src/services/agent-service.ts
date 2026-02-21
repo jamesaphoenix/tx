@@ -11,6 +11,7 @@
 
 import { Context, Effect, Layer } from "effect"
 import { AgentError } from "../errors.js"
+import { normalizeClaudeDebugLogPath } from "../utils/claude-debug-log.js"
 
 // =============================================================================
 // Types
@@ -70,6 +71,7 @@ export const AgentServiceLive = Layer.effect(
     // Dynamic import of Claude Agent SDK
     const queryFn = yield* Effect.tryPromise({
       try: async () => {
+        normalizeClaudeDebugLogPath()
         // @ts-ignore - @anthropic-ai/claude-agent-sdk is an optional peer dependency
         const mod = await import("@anthropic-ai/claude-agent-sdk")
         return mod.query as (opts: { prompt: string; options?: unknown }) => AsyncIterable<unknown>
@@ -85,6 +87,7 @@ export const AgentServiceLive = Layer.effect(
       run: (config, onMessage) =>
         Effect.tryPromise({
           try: async () => {
+            normalizeClaudeDebugLogPath()
             let text = ""
             let structuredOutput: Record<string, unknown> | null = null
             let errorMessage: string | null = null

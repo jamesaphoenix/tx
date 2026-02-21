@@ -11,7 +11,7 @@
  * and values, preventing divergence between interface implementations.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, existsSync } from "fs"
 import { tmpdir } from "os"
@@ -51,6 +51,24 @@ import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
 const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
 const CLI_TIMEOUT = 10000
+const DEPENDENCY_SNAPSHOT_SQL = "select blocker_id, blocked_id from task_dependencies"
+
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim().toLowerCase()
+}
+
+function countPrepareCallsByQueryShape(
+  calls: ReadonlyArray<ReadonlyArray<unknown>>,
+  predicate: (normalizedSql: string) => boolean
+): number {
+  return calls.reduce((count, call) => {
+    const sql = call[0]
+    if (typeof sql !== "string") {
+      return count
+    }
+    return predicate(normalizeSql(sql)) ? count + 1 : count
+  }, 0)
+}
 
 // =============================================================================
 // Types
@@ -675,6 +693,35 @@ describe("Interface Parity", () => {
       assertTasksEqual("MCP vs API", mcpNorm, apiNorm)
       assertTasksEqual("CLI vs API", cliNorm, apiNorm)
     })
+
+    it("API /api/tasks/:id uses one dependency snapshot query shape", async () => {
+      const prepareSpy = vi.spyOn(db.db, "prepare")
+
+      try {
+        const apiResponse = await apiApp.request(`/api/tasks/${FIXTURES.TASK_BLOCKED}`)
+        expect(apiResponse.status).toBe(200)
+        const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
+
+        expect(apiData.task.blockedBy).toEqual(expect.arrayContaining([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN]))
+        expect(apiData.task.blocks).toEqual([])
+        expect(Array.isArray(apiData.task.children)).toBe(true)
+        expect(apiData.task.isReady).toBe(false)
+
+        const snapshotScanCount = countPrepareCallsByQueryShape(
+          prepareSpy.mock.calls,
+          (sql) => sql === DEPENDENCY_SNAPSHOT_SQL
+        )
+        const dependencyTableQueryCount = countPrepareCallsByQueryShape(
+          prepareSpy.mock.calls,
+          (sql) => sql.includes("from task_dependencies")
+        )
+
+        expect(snapshotScanCount, "perf-sensitive path should build one dependency snapshot for /api/tasks/:id").toBe(1)
+        expect(dependencyTableQueryCount, "query shape should avoid repeated task_dependencies scans for /api/tasks/:id").toBe(1)
+      } finally {
+        prepareSpy.mockRestore()
+      }
+    })
   })
 
   // ===========================================================================
@@ -753,6 +800,38 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("MCP vs API", mcpNorm, apiNorm)
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
     })
+
+    it("API /api/tasks/ready uses one dependency snapshot query shape", async () => {
+      const prepareSpy = vi.spyOn(db.db, "prepare")
+
+      try {
+        const apiResponse = await apiApp.request("/api/tasks/ready?limit=100")
+        expect(apiResponse.status).toBe(200)
+        const apiData = await apiResponse.json() as { tasks: ApiTaskWithDeps[] }
+
+        for (const task of apiData.tasks) {
+          expect(Array.isArray(task.blockedBy)).toBe(true)
+          expect(Array.isArray(task.blocks)).toBe(true)
+          expect(Array.isArray(task.children)).toBe(true)
+          expect(typeof task.isReady).toBe("boolean")
+          expect(task.isReady).toBe(true)
+        }
+
+        const snapshotScanCount = countPrepareCallsByQueryShape(
+          prepareSpy.mock.calls,
+          (sql) => sql === DEPENDENCY_SNAPSHOT_SQL
+        )
+        const dependencyTableQueryCount = countPrepareCallsByQueryShape(
+          prepareSpy.mock.calls,
+          (sql) => sql.includes("from task_dependencies")
+        )
+
+        expect(snapshotScanCount, "perf-sensitive path should build one dependency snapshot for /api/tasks/ready").toBe(1)
+        expect(dependencyTableQueryCount, "query shape should avoid repeated task_dependencies scans for /api/tasks/ready").toBe(1)
+      } finally {
+        prepareSpy.mockRestore()
+      }
+    })
   })
 
   // ===========================================================================
@@ -825,6 +904,37 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("CLI vs MCP", cliNorm, mcpNorm)
       assertTaskListsEqual("MCP vs API", mcpNorm, apiNorm)
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
+    })
+
+    it("API /api/tasks uses one dependency snapshot query shape", async () => {
+      const prepareSpy = vi.spyOn(db.db, "prepare")
+
+      try {
+        const apiResponse = await apiApp.request("/api/tasks?limit=100")
+        expect(apiResponse.status).toBe(200)
+        const apiData = await apiResponse.json() as { tasks: ApiTaskWithDeps[] }
+
+        const blockedTask = apiData.tasks.find(task => task.id === FIXTURES.TASK_BLOCKED)
+        expect(blockedTask).toBeDefined()
+        expect(blockedTask?.blockedBy).toEqual(expect.arrayContaining([FIXTURES.TASK_JWT, FIXTURES.TASK_LOGIN]))
+        expect(blockedTask?.blocks).toEqual([])
+        expect(Array.isArray(blockedTask?.children)).toBe(true)
+        expect(blockedTask?.isReady).toBe(false)
+
+        const snapshotScanCount = countPrepareCallsByQueryShape(
+          prepareSpy.mock.calls,
+          (sql) => sql === DEPENDENCY_SNAPSHOT_SQL
+        )
+        const dependencyTableQueryCount = countPrepareCallsByQueryShape(
+          prepareSpy.mock.calls,
+          (sql) => sql.includes("from task_dependencies")
+        )
+
+        expect(snapshotScanCount, "perf-sensitive path should build one dependency snapshot for /api/tasks").toBe(1)
+        expect(dependencyTableQueryCount, "query shape should avoid repeated task_dependencies scans for /api/tasks").toBe(1)
+      } finally {
+        prepareSpy.mockRestore()
+      }
     })
   })
 

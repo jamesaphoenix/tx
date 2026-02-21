@@ -14,6 +14,15 @@ function makeTestLayer(db: TestDatabase) {
   return RunRepositoryLive.pipe(Layer.provide(infra))
 }
 
+const runFixtureId = (name: string): RunId => `run-${fixtureId(`run-repo:${name}`).slice(3)}` as RunId
+
+function insertRunFixture(db: TestDatabase, runId: RunId, startedAt: string): void {
+  db.db.prepare(
+    `INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
+     VALUES (?, NULL, ?, ?, 'running', NULL, '{}')`
+  ).run(runId, `agent-${runId}`, startedAt)
+}
+
 describe("RunRepository CRUD", () => {
   let db: TestDatabase
   let layer: ReturnType<typeof makeTestLayer>
@@ -329,6 +338,63 @@ describe("RunRepository CRUD", () => {
       )
 
       expect(runs).toHaveLength(2)
+    })
+  })
+
+  describe("findRecentSince", () => {
+    it("filters by cutoff in SQL and keeps stable descending order with varying limits", async () => {
+      const now = Date.now()
+      const runNewest = runFixtureId("recent-5m")
+      const runRecent = runFixtureId("recent-25m")
+      const runNearCutoff = runFixtureId("recent-170m")
+      const runOld = runFixtureId("old-200m")
+      const runVeryOld = runFixtureId("old-260m")
+
+      insertRunFixture(db, runNewest, new Date(now - 5 * 60 * 1000).toISOString())
+      insertRunFixture(db, runRecent, new Date(now - 25 * 60 * 1000).toISOString())
+      insertRunFixture(db, runNearCutoff, new Date(now - 170 * 60 * 1000).toISOString())
+      insertRunFixture(db, runOld, new Date(now - 200 * 60 * 1000).toISOString())
+      insertRunFixture(db, runVeryOld, new Date(now - 260 * 60 * 1000).toISOString())
+
+      const cutoff = new Date(now - 3 * 60 * 60 * 1000) // 180 minutes
+
+      const wideWindowRuns = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RunRepository
+          return yield* repo.findRecentSince(cutoff, 10)
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(wideWindowRuns.map((run) => run.id)).toEqual([runNewest, runRecent, runNearCutoff])
+
+      const limitedRuns = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RunRepository
+          return yield* repo.findRecentSince(cutoff, 2)
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(limitedRuns.map((run) => run.id)).toEqual([runNewest, runRecent])
+    })
+
+    it("returns empty results when cutoff excludes all rows", async () => {
+      const now = Date.now()
+      const runOld = runFixtureId("all-old-200m")
+      const runVeryOld = runFixtureId("all-old-260m")
+
+      insertRunFixture(db, runOld, new Date(now - 200 * 60 * 1000).toISOString())
+      insertRunFixture(db, runVeryOld, new Date(now - 260 * 60 * 1000).toISOString())
+
+      const cutoff = new Date(now - 30 * 60 * 1000)
+
+      const runs = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RunRepository
+          return yield* repo.findRecentSince(cutoff, 5)
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(runs).toHaveLength(0)
     })
   })
 })

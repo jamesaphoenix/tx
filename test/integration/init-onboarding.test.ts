@@ -107,6 +107,29 @@ describe("tx init onboarding edge cases", () => {
     expect(envContent).toContain("WATCHDOG_CLAUDE_ENABLED=0")
   })
 
+  it("init --watchdog preserves existing watchdog files without overwrite", () => {
+    const sandbox = createSandbox()
+    mkdirSync(join(sandbox.dir, "scripts"), { recursive: true })
+    mkdirSync(join(sandbox.dir, ".tx"), { recursive: true })
+    writeFileSync(join(sandbox.dir, "scripts", "ralph-watchdog.sh"), "# sentinel-watchdog\n")
+    writeFileSync(join(sandbox.dir, ".tx", "watchdog.env"), "WATCHDOG_ENABLED=0\n")
+
+    const binDir = createMockRuntime(sandbox, "codex")
+    const result = runInit(
+      sandbox,
+      ["--watchdog", "--watchdog-runtime", "auto"],
+      { env: { PATH: `${binDir}:/usr/bin:/bin` } },
+    )
+
+    expect(result.status).toBe(0)
+    expect(readFileSync(join(sandbox.dir, "scripts", "ralph-watchdog.sh"), "utf-8")).toBe("# sentinel-watchdog\n")
+    expect(readFileSync(join(sandbox.dir, ".tx", "watchdog.env"), "utf-8")).toBe("WATCHDOG_ENABLED=0\n")
+
+    const output = `${result.stdout}\n${result.stderr}`
+    expect(output).toContain("scripts/ralph-watchdog.sh (exists)")
+    expect(output).toContain(".tx/watchdog.env (exists)")
+  })
+
   it("init --codex keeps watchdog onboarding default-off", () => {
     const sandbox = createSandbox()
     const result = runInit(sandbox, ["--codex"])

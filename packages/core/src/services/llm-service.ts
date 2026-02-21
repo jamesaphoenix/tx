@@ -13,6 +13,7 @@
 
 import { Context, Effect, Layer, Config, Option } from "effect"
 import { LlmUnavailableError } from "../errors.js"
+import { normalizeClaudeDebugLogPath } from "../utils/claude-debug-log.js"
 
 // =============================================================================
 // Types
@@ -137,6 +138,7 @@ export const LlmServiceAgentSdk = Layer.effect(
     // Dynamic import of Claude Agent SDK (optional peer dependency)
     const queryFn = yield* Effect.tryPromise({
       try: async () => {
+        normalizeClaudeDebugLogPath()
         // @ts-ignore - @anthropic-ai/claude-agent-sdk is an optional peer dependency
         const mod = await import("@anthropic-ai/claude-agent-sdk")
         return mod.query as (opts: { prompt: string; options?: unknown }) => AsyncIterable<unknown>
@@ -155,6 +157,7 @@ export const LlmServiceAgentSdk = Layer.effect(
 
           const text = yield* Effect.tryPromise({
             try: async () => {
+              normalizeClaudeDebugLogPath()
               let resultText = ""
               let assistantText = ""
               let errorMessage: string | null = null
@@ -345,6 +348,7 @@ export const LlmServiceAuto = Layer.unwrapEffect(
     // Priority 1: Try Agent SDK (no API key required)
     const agentSdkAvailable = yield* Effect.tryPromise({
       try: async () => {
+        normalizeClaudeDebugLogPath()
         // @ts-ignore - @anthropic-ai/claude-agent-sdk is an optional peer dependency
         await import("@anthropic-ai/claude-agent-sdk")
         return true

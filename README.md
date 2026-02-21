@@ -17,6 +17,14 @@ tx init --codex             # AGENTS.md + .codex/agents
 tx init --claude --codex    # scaffold both
 ```
 
+Watchdog onboarding (optional, default off):
+
+```bash
+tx init --watchdog                         # scaffold watchdog assets with runtime auto-detect
+tx init --watchdog --watchdog-runtime codex
+tx init --watchdog --watchdog-runtime both
+```
+
 ---
 
 ## The Problem
@@ -171,6 +179,30 @@ tx done $task
 **The flow is yours.** Serial, parallel, swarm, human-in-loop. Your call.
 
 ---
+
+## Watchdog (Opt-In)
+
+Use watchdog when you want detached, self-healing RALPH loops that can survive terminal closes and reconcile stale runs/tasks automatically.
+
+Use it for:
+- Long-running unattended execution
+- Automatic stalled-run reaping and orphan task reset
+- Background supervision through launchd/systemd
+
+Skip it for:
+- Short interactive sessions
+- One-off local runs you supervise manually
+
+Quick start:
+
+```bash
+tx init --watchdog --watchdog-runtime auto
+./scripts/watchdog-launcher.sh start
+./scripts/watchdog-launcher.sh status
+```
+
+Detailed rollout, detached service setup, rollback, and troubleshooting:
+- [Watchdog Runbook](apps/docs/content/docs/watchdog-runbook.mdx)
 
 ## Why tx?
 
