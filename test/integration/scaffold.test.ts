@@ -139,6 +139,11 @@ describe("scaffold", () => {
       // Verify it's executable (owner execute bit)
       const stat = statSync(ralphScript)
       expect(stat.mode & 0o100).toBeTruthy()
+
+      // Lock handling should be atomic and owner-safe.
+      const content = readFileSync(ralphScript, "utf-8")
+      expect(content).toContain("set -o noclobber")
+      expect(content).toContain("remove_owned_lock_file")
     })
 
     it("does not copy ralph script by default", () => {

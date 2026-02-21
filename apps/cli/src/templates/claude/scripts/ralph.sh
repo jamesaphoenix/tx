@@ -22,6 +22,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_FILE="$PROJECT_DIR/.tx/ralph.log"
 LOCK_FILE="$PROJECT_DIR/.tx/ralph.lock"
 DRY_RUN=false
+LOCK_OWNED=false
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -45,20 +46,92 @@ log() {
 }
 
 # Lock file to prevent multiple instances
-if [ -f "$LOCK_FILE" ]; then
-  PID=$(cat "$LOCK_FILE")
-  if kill -0 "$PID" 2>/dev/null; then
-    echo "RALPH already running (PID $PID). Exiting."
-    exit 1
-  else
-    rm "$LOCK_FILE"
+is_numeric_pid() {
+  local pid="$1"
+  [ -n "$pid" ] && [[ "$pid" =~ ^[0-9]+$ ]]
+}
+
+pid_is_live() {
+  local pid="$1"
+  is_numeric_pid "$pid" || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+read_pid_file() {
+  local file_path="$1"
+  local pid=""
+
+  if [ ! -f "$file_path" ]; then
+    echo ""
+    return
   fi
-fi
+
+  pid=$(cat "$file_path" 2>/dev/null | tr -d '[:space:]')
+  if is_numeric_pid "$pid"; then
+    echo "$pid"
+  else
+    echo ""
+  fi
+}
+
+acquire_main_lock() {
+  local attempts=0
+  local max_attempts=8
+
+  while [ "$attempts" -lt "$max_attempts" ]; do
+    if ( set -o noclobber; printf '%s\n' "$$" > "$LOCK_FILE" ) 2>/dev/null; then
+      LOCK_OWNED=true
+      return 0
+    fi
+
+    local lock_pid=""
+    lock_pid=$(read_pid_file "$LOCK_FILE")
+    if pid_is_live "$lock_pid"; then
+      echo "RALPH already running (PID $lock_pid). Exiting."
+      return 1
+    fi
+
+    # Race-safe stale cleanup: remove only if contents are still what we observed.
+    local latest_pid=""
+    latest_pid=$(read_pid_file "$LOCK_FILE")
+    if [ "$latest_pid" = "$lock_pid" ]; then
+      rm -f "$LOCK_FILE" 2>/dev/null || true
+    fi
+
+    attempts=$((attempts + 1))
+    sleep 0.02
+  done
+
+  local final_pid=""
+  final_pid=$(read_pid_file "$LOCK_FILE")
+  if pid_is_live "$final_pid"; then
+    echo "RALPH already running (PID $final_pid). Exiting."
+  else
+    echo "Unable to acquire RALPH lock after retries. Exiting."
+  fi
+  return 1
+}
+
+remove_owned_lock_file() {
+  local file_path="$1"
+  if [ ! -f "$file_path" ]; then
+    return 0
+  fi
+
+  local owner_pid=""
+  owner_pid=$(read_pid_file "$file_path")
+  if [ "$owner_pid" = "$$" ]; then
+    rm -f "$file_path"
+  fi
+}
 
 CURRENT_TASK_ID=""
 
 cleanup() {
-  rm -f "$LOCK_FILE"
+  if [ "$LOCK_OWNED" = true ]; then
+    remove_owned_lock_file "$LOCK_FILE"
+    LOCK_OWNED=false
+  fi
   if [ -n "${CURRENT_TASK_ID:-}" ]; then
     tx reset "$CURRENT_TASK_ID" 2>/dev/null || true
   fi
@@ -66,7 +139,7 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM HUP
-echo $$ > "$LOCK_FILE"
+acquire_main_lock || exit 1
 
 # Circuit breaker
 CONSECUTIVE_FAILURES=0
