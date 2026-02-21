@@ -38,22 +38,22 @@ interface TaskDependencySnapshot {
 const WORKABLE_TASK_STATUSES = new Set<string>(["backlog", "ready", "planning"])
 
 // Create test app with injected database
-function createTestApp(db: TestDatabase, txDir: string) {
+function createTestApp(
+  db: TestDatabase,
+  txDir: string,
+  transcriptRoots: ReadonlyArray<string> = [resolve(homedir(), ".claude")]
+) {
   const app = new Hono()
 
   // Path validation helper (mirrors server logic)
-  const claudeDir = resolve(homedir(), ".claude")
+  const resolvedTxDir = resolve(txDir)
+  const allowedTranscriptRoots = [resolvedTxDir, ...transcriptRoots.map(root => resolve(root))]
   const validateTranscriptPath = (filePath: string): string | null => {
     const resolved = resolve(filePath)
-    // Allow paths within the .tx directory
-    if (resolved.startsWith(txDir + "/") || resolved === txDir) {
-      return resolved
-    }
-    // Allow paths within ~/.claude directory (Claude Code transcripts)
-    if (resolved.startsWith(claudeDir + "/") || resolved === claudeDir) {
-      return resolved
-    }
-    return null
+    const isWithinAllowedRoot = allowedTranscriptRoots.some(root =>
+      resolved === root || resolved.startsWith(root + "/")
+    )
+    return isWithinAllowedRoot ? resolved : null
   }
 
   function pushToMapList(map: Map<string, string[]>, key: string, value: string): void {
@@ -1589,6 +1589,7 @@ describe("Dashboard API - GET /api/runs/:id", () => {
   let db: TestDatabase
   let app: Hono
   let testDir: string
+  let claudeFixtureDir: string
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1600,7 +1601,9 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     // Create a temporary test directory for transcript files
     testDir = resolve(tmpdir(), `tx-test-${Date.now()}`)
     mkdirSync(testDir, { recursive: true })
-    app = createTestApp(db, testDir)
+    claudeFixtureDir = resolve(testDir, ".claude")
+    mkdirSync(claudeFixtureDir, { recursive: true })
+    app = createTestApp(db, testDir, [claudeFixtureDir])
   })
 
   afterEach(async () => {
@@ -1733,11 +1736,8 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     expect(data.transcript).toBeNull()
   })
 
-  it("returns transcript content when path is within ~/.claude", async () => {
-    // Create a temporary file inside ~/.claude for testing
-    const claudeTestDir = resolve(homedir(), ".claude", "tx-test-" + Date.now())
-    mkdirSync(claudeTestDir, { recursive: true })
-    const transcriptPath = resolve(claudeTestDir, "transcript.jsonl")
+  it("returns transcript content when path is within configured transcript allowlist root", async () => {
+    const transcriptPath = resolve(claudeFixtureDir, "transcript.jsonl")
     writeFileSync(transcriptPath, JSON.stringify({type: "assistant", content: "hello"}))
 
     const now = new Date().toISOString()
@@ -1749,9 +1749,6 @@ describe("Dashboard API - GET /api/runs/:id", () => {
     const data = await res.json()
 
     expect(data.transcript).toBe(JSON.stringify({type: "assistant", content: "hello"}))
-
-    // Clean up
-    rmSync(claudeTestDir, { recursive: true })
   })
 })
 

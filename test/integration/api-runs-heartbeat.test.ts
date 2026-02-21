@@ -306,8 +306,10 @@ describe("API + SDK run heartbeat integration", () => {
 
     const stdoutPath = join(runLogsDir, `${runId}.stdout`)
     const outsideStderrPath = join(tmpProjectDir, "..", `${runId}.stderr`)
+    const stdoutPrefix = "trim-from-start\n"
+    const stdoutTail = "keep-tail-marker\n"
 
-    writeFileSync(stdoutPath, "x".repeat(250_000))
+    writeFileSync(stdoutPath, `${stdoutPrefix}${"x".repeat(250_000)}${stdoutTail}`)
 
     db.prepare(
       `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
@@ -318,6 +320,11 @@ describe("API + SDK run heartbeat integration", () => {
     expect(res.status).toBe(200)
 
     const payload = await res.json() as {
+      run: {
+        status: string
+        stdoutPath: string | null
+        stderrPath: string | null
+      }
       logs: {
         stdout: string | null
         stderr: string | null
@@ -326,30 +333,43 @@ describe("API + SDK run heartbeat integration", () => {
       }
     }
 
+    expect(payload.run.status).toBe("failed")
+    expect(payload.run.stdoutPath).toBe(stdoutPath)
+    expect(payload.run.stderrPath).toBe(outsideStderrPath)
     expect(payload.logs.stdout).not.toBeNull()
     expect(payload.logs.stdout?.length).toBe(200_000)
+    expect(payload.logs.stdout).not.toContain(stdoutPrefix)
+    expect(payload.logs.stdout?.endsWith(stdoutTail)).toBe(true)
     expect(payload.logs.stdoutTruncated).toBe(true)
     expect(payload.logs.stderr).toBeNull()
     expect(payload.logs.stderrTruncated).toBe(false)
   })
 
-  it("GET /api/runs/:id returns null log content when configured log file is missing", async () => {
+  it("GET /api/runs/:id returns safe empty messages/logs when transcript and log files are missing", async () => {
     const runId = runFixtureId("api-run-detail-missing-log")
     const now = new Date().toISOString()
     const runLogsDir = join(tmpProjectDir, ".tx", "runs")
     mkdirSync(runLogsDir, { recursive: true })
 
+    const missingTranscriptPath = join(runLogsDir, `${runId}.jsonl`)
     const missingStdoutPath = join(runLogsDir, `${runId}.stdout`)
+    const missingStderrPath = join(runLogsDir, `${runId}.stderr`)
 
     db.prepare(
       `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
-       VALUES (?, NULL, 'tx-implementer', ?, 'failed', NULL, NULL, ?, NULL, NULL, '{}')`
-    ).run(runId, now, missingStdoutPath)
+       VALUES (?, NULL, 'tx-implementer', ?, 'failed', NULL, ?, ?, ?, NULL, '{}')`
+    ).run(runId, now, missingTranscriptPath, missingStdoutPath, missingStderrPath)
 
     const res = await fetch(`${baseUrl}/api/runs/${runId}`)
     expect(res.status).toBe(200)
 
     const payload = await res.json() as {
+      run: {
+        transcriptPath: string | null
+        stdoutPath: string | null
+        stderrPath: string | null
+      }
+      messages: Array<{ role: string; content: unknown }>
       logs: {
         stdout: string | null
         stderr: string | null
@@ -358,6 +378,60 @@ describe("API + SDK run heartbeat integration", () => {
       }
     }
 
+    expect(payload.run.transcriptPath).toBe(missingTranscriptPath)
+    expect(payload.run.stdoutPath).toBe(missingStdoutPath)
+    expect(payload.run.stderrPath).toBe(missingStderrPath)
+    expect(payload.messages).toEqual([])
+    expect(payload.logs.stdout).toBeNull()
+    expect(payload.logs.stderr).toBeNull()
+    expect(payload.logs.stdoutTruncated).toBe(false)
+    expect(payload.logs.stderrTruncated).toBe(false)
+  })
+
+  it("GET /api/runs/:id treats unreadable transcript/stdout/stderr paths as empty without crashing", async () => {
+    const runId = runFixtureId("api-run-detail-unreadable-paths")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "runs")
+    mkdirSync(runLogsDir, { recursive: true })
+
+    const transcriptPath = join(runLogsDir, `${runId}.jsonl`)
+    const stdoutPath = join(runLogsDir, `${runId}.stdout`)
+    const stderrPath = join(runLogsDir, `${runId}.stderr`)
+
+    // Directories are readable but not valid file payloads, forcing EISDIR read failures.
+    mkdirSync(transcriptPath)
+    mkdirSync(stdoutPath)
+    mkdirSync(stderrPath)
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, stdout_path, stderr_path, context_injected, metadata)
+       VALUES (?, NULL, 'tx-implementer', ?, 'failed', NULL, ?, ?, ?, NULL, '{}')`
+    ).run(runId, now, transcriptPath, stdoutPath, stderrPath)
+
+    const res = await fetch(`${baseUrl}/api/runs/${runId}`)
+    expect(res.status).toBe(200)
+
+    const payload = await res.json() as {
+      run: {
+        status: string
+        transcriptPath: string | null
+        stdoutPath: string | null
+        stderrPath: string | null
+      }
+      messages: Array<{ role: string; content: unknown }>
+      logs: {
+        stdout: string | null
+        stderr: string | null
+        stdoutTruncated: boolean
+        stderrTruncated: boolean
+      }
+    }
+
+    expect(payload.run.status).toBe("failed")
+    expect(payload.run.transcriptPath).toBe(transcriptPath)
+    expect(payload.run.stdoutPath).toBe(stdoutPath)
+    expect(payload.run.stderrPath).toBe(stderrPath)
+    expect(payload.messages).toEqual([])
     expect(payload.logs.stdout).toBeNull()
     expect(payload.logs.stderr).toBeNull()
     expect(payload.logs.stdoutTruncated).toBe(false)
