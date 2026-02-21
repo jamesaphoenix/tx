@@ -77,13 +77,24 @@ export const cycle = (
       console.log()
     }
 
+    let firstObservedCycle: number | undefined
+    const displayCycle = (reportedCycle: number): number => {
+      if (firstObservedCycle === undefined) {
+        firstObservedCycle = reportedCycle
+      }
+      const localCycle = reportedCycle - firstObservedCycle + 1
+      return localCycle > 0 ? localCycle : reportedCycle
+    }
+
     const onProgress: ((event: CycleProgressEvent) => void) | undefined = jsonOutput
       ? undefined
       : (event) => {
           switch (event.type) {
-            case "cycle_start":
-              console.log(`=== Cycle ${event.cycle}/${event.totalCycles}: "${event.name}" ===`)
+            case "cycle_start": {
+              const cycle = displayCycle(event.cycle)
+              console.log(`=== Cycle ${cycle}/${event.totalCycles}: "${event.name}" ===`)
               break
+            }
             case "scan_complete":
               console.log(
                 `  Round ${event.round}: Found ${event.findings} findings in ${(event.durationMs / 1000).toFixed(1)}s`
@@ -104,8 +115,9 @@ export const cycle = (
               break
             case "cycle_complete": {
               const r = event.result
+              const cycle = displayCycle(r.cycle)
               console.log(
-                `\n  Cycle ${r.cycle} complete: ${r.rounds} rounds, ${r.totalNewIssues} new issues, final loss ${r.finalLoss}${r.converged ? " -- CONVERGED" : ""}`
+                `\n  Cycle ${cycle} complete: ${r.rounds} rounds, ${r.totalNewIssues} new issues, final loss ${r.finalLoss}${r.converged ? " -- CONVERGED" : ""}`
               )
               break
             }
