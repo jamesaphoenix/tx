@@ -198,6 +198,14 @@ describe("Migration system", () => {
       // Indexes from migration 25 (run heartbeat state)
       expect(indexNames).toContain("idx_run_heartbeat_check_at")
       expect(indexNames).toContain("idx_run_heartbeat_activity_at")
+
+      // Indexes from migration 27 (runs/events hot paths)
+      expect(indexNames).toContain("idx_runs_started_id")
+      expect(indexNames).toContain("idx_runs_status_started_id")
+      expect(indexNames).toContain("idx_runs_agent_started_id")
+      expect(indexNames).toContain("idx_runs_task_status")
+      expect(indexNames).toContain("idx_runs_worker_status_started")
+      expect(indexNames).toContain("idx_events_type_metadata_status_timestamp")
     })
 
     it("uses composite task-order indexes without temp B-tree for dashboard task list query shapes", () => {
@@ -239,6 +247,146 @@ describe("Migration system", () => {
 
       expect(filteredPlanDetails).toContain("idx_tasks_status_score_id")
       expect(filteredPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+    })
+
+    it("uses runs/events hot-path indexes for watchdog and trace query shapes", () => {
+      const db = new Database(":memory:")
+      db.run("PRAGMA foreign_keys = ON")
+      applyMigrations(db)
+
+      const insertTask = db.prepare(
+        "INSERT INTO tasks (id, title, status, score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      const now = new Date()
+      const nowIso = now.toISOString()
+
+      for (let i = 0; i < 120; i++) {
+        insertTask.run(
+          fixtureId(`migration-027-task-${i}`),
+          `Task ${i}`,
+          i % 3 === 0 ? "active" : "ready",
+          200 - (i % 11),
+          nowIso,
+          nowIso
+        )
+      }
+
+      const runIdFor = (i: number) => `run-${fixtureId(`migration-027-run-${i}`).slice(3)}`
+      const taskIdFor = (i: number) => fixtureId(`migration-027-task-${i % 80}`)
+
+      const insertRun = db.prepare(
+        "INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+
+      for (let i = 0; i < 420; i++) {
+        const startedAtIso = new Date(now.getTime() - i * 60_000).toISOString()
+        const status = i % 10 === 0
+          ? "failed"
+          : i % 15 === 0
+            ? "cancelled"
+            : i % 2 === 0
+              ? "running"
+              : "completed"
+        const worker = i % 3 === 0 ? "ralph-codex-live-main" : "ralph-claude-live-main"
+
+        insertRun.run(
+          runIdFor(i),
+          taskIdFor(i),
+          i % 2 === 0 ? "tx-implementer" : "tx-reviewer",
+          startedAtIso,
+          status,
+          10_000 + i,
+          JSON.stringify({ worker })
+        )
+      }
+
+      const insertEvent = db.prepare(
+        "INSERT INTO events (timestamp, event_type, run_id, metadata, content, duration_ms) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+
+      for (let i = 0; i < 700; i++) {
+        const timestampIso = new Date(now.getTime() - i * 30_000).toISOString()
+        const isError = i % 11 === 0
+        const metadata = JSON.stringify({
+          status: isError ? "error" : "ok",
+          error: isError ? `boom-${i}` : undefined
+        })
+
+        insertEvent.run(
+          timestampIso,
+          i % 2 === 0 ? "span" : "metric",
+          runIdFor(i % 420),
+          metadata,
+          `event-${i}`,
+          i % 400
+        )
+      }
+
+      const runsOrderPlan = db.prepare(
+        "EXPLAIN QUERY PLAN SELECT id FROM runs ORDER BY started_at DESC, id ASC LIMIT ?"
+      ).all(20) as Array<{ detail: string }>
+      const runsOrderDetails = runsOrderPlan.map(row => row.detail).join(" | ")
+      expect(runsOrderDetails).toContain("idx_runs_started_id")
+      expect(runsOrderDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+      const runsStatusPlan = db.prepare(
+        "EXPLAIN QUERY PLAN SELECT id FROM runs WHERE status = ? ORDER BY started_at DESC, id ASC LIMIT ?"
+      ).all("running", 20) as Array<{ detail: string }>
+      const runsStatusDetails = runsStatusPlan.map(row => row.detail).join(" | ")
+      expect(runsStatusDetails).toContain("idx_runs_status_started_id")
+      expect(runsStatusDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+      const runsAgentPlan = db.prepare(
+        "EXPLAIN QUERY PLAN SELECT id FROM runs WHERE agent = ? ORDER BY started_at DESC, id ASC LIMIT ?"
+      ).all("tx-implementer", 20) as Array<{ detail: string }>
+      const runsAgentDetails = runsAgentPlan.map(row => row.detail).join(" | ")
+      expect(runsAgentDetails).toContain("idx_runs_agent_started_id")
+      expect(runsAgentDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
+
+      const orphanTasksPlan = db.prepare(`
+        EXPLAIN QUERY PLAN
+        SELECT t.id
+        FROM tasks t
+        WHERE t.status = ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM runs r
+            WHERE r.task_id = t.id
+              AND r.status = ?
+          )
+      `).all("active", "running") as Array<{ detail: string }>
+      const orphanTasksDetails = orphanTasksPlan.map(row => row.detail).join(" | ")
+      expect(orphanTasksDetails).toContain("idx_runs_task_status")
+
+      const workerBurstPlan = db.prepare(`
+        EXPLAIN QUERY PLAN
+        SELECT COUNT(*)
+        FROM runs
+        WHERE status IN (?, ?)
+          AND started_at >= datetime('now', '-20 minutes')
+          AND json_extract(metadata, '$.worker') = ?
+      `).all("failed", "cancelled", "ralph-codex-live-main") as Array<{ detail: string }>
+      const workerBurstDetails = workerBurstPlan.map(row => row.detail).join(" | ")
+      expect(workerBurstDetails).toContain("idx_runs_worker_status_started")
+
+      const traceErrorSpanPlan = db.prepare(`
+        EXPLAIN QUERY PLAN
+        SELECT timestamp
+        FROM events
+        WHERE event_type = ?
+          AND json_extract(metadata, '$.status') = ?
+          AND timestamp >= ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `).all(
+        "span",
+        "error",
+        new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+        20
+      ) as Array<{ detail: string }>
+      const traceErrorSpanDetails = traceErrorSpanPlan.map(row => row.detail).join(" | ")
+      expect(traceErrorSpanDetails).toContain("idx_events_type_metadata_status_timestamp")
+      expect(traceErrorSpanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
     })
 
     it("is idempotent (running twice is safe)", () => {
