@@ -61,8 +61,29 @@ interface Transport {
   // Tasks
   listTasks(options: ListOptions): Promise<PaginatedResponse<SerializedTaskWithDeps>>
   getTask(id: string): Promise<SerializedTaskWithDeps>
-  createTask(data: { title: string; description?: string; parentId?: string; score?: number; metadata?: Record<string, unknown> }): Promise<SerializedTaskWithDeps>
-  updateTask(id: string, data: { title?: string; description?: string; status?: TaskStatus; parentId?: string | null; score?: number; metadata?: Record<string, unknown> }): Promise<SerializedTaskWithDeps>
+  createTask(data: {
+    title: string
+    description?: string
+    parentId?: string
+    score?: number
+    assigneeType?: "human" | "agent" | null
+    assigneeId?: string | null
+    assignedAt?: string | Date | null
+    assignedBy?: string | null
+    metadata?: Record<string, unknown>
+  }): Promise<SerializedTaskWithDeps>
+  updateTask(id: string, data: {
+    title?: string
+    description?: string
+    status?: TaskStatus
+    parentId?: string | null
+    score?: number
+    assigneeType?: "human" | "agent" | null
+    assigneeId?: string | null
+    assignedAt?: string | Date | null
+    assignedBy?: string | null
+    metadata?: Record<string, unknown>
+  }): Promise<SerializedTaskWithDeps>
   deleteTask(id: string, options?: { cascade?: boolean }): Promise<void>
   completeTask(id: string): Promise<CompleteResult>
   readyTasks(options: ReadyOptions): Promise<SerializedTaskWithDeps[]>
@@ -206,6 +227,10 @@ class HttpTransport implements Transport {
     description?: string
     parentId?: string
     score?: number
+    assigneeType?: "human" | "agent" | null
+    assigneeId?: string | null
+    assignedAt?: string | Date | null
+    assignedBy?: string | null
     metadata?: Record<string, unknown>
   }): Promise<SerializedTaskWithDeps> {
     return await this.request<SerializedTaskWithDeps>("POST", "/api/tasks", {
@@ -221,6 +246,10 @@ class HttpTransport implements Transport {
       status?: TaskStatus
       parentId?: string | null
       score?: number
+      assigneeType?: "human" | "agent" | null
+      assigneeId?: string | null
+      assignedAt?: string | Date | null
+      assignedBy?: string | null
       metadata?: Record<string, unknown>
     }
   ): Promise<SerializedTaskWithDeps> {
@@ -584,6 +613,13 @@ class DirectTransport implements Transport {
       createdAt: task.createdAt instanceof Date ? task.createdAt.toISOString() : task.createdAt,
       updatedAt: task.updatedAt instanceof Date ? task.updatedAt.toISOString() : task.updatedAt,
       completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : task.completedAt,
+      assigneeType: task.assigneeType ?? null,
+      assigneeId: task.assigneeId ?? null,
+      assignedAt:
+        task.assignedAt instanceof Date
+          ? task.assignedAt.toISOString()
+          : (task.assignedAt ?? null),
+      assignedBy: task.assignedBy ?? null,
       metadata: task.metadata,
       blockedBy: task.blockedBy,
       blocks: task.blocks,
@@ -754,6 +790,10 @@ class DirectTransport implements Transport {
     description?: string
     parentId?: string
     score?: number
+    assigneeType?: "human" | "agent" | null
+    assigneeId?: string | null
+    assignedAt?: string | Date | null
+    assignedBy?: string | null
     metadata?: Record<string, unknown>
   }): Promise<SerializedTaskWithDeps> {
     await this.ensureRuntime()
@@ -781,6 +821,10 @@ class DirectTransport implements Transport {
       status?: TaskStatus
       parentId?: string | null
       score?: number
+      assigneeType?: "human" | "agent" | null
+      assigneeId?: string | null
+      assignedAt?: string | Date | null
+      assignedBy?: string | null
       metadata?: Record<string, unknown>
     }
   ): Promise<SerializedTaskWithDeps> {
@@ -1496,6 +1540,10 @@ class TasksNamespace {
     description?: string
     parentId?: string
     score?: number
+    assigneeType?: "human" | "agent" | null
+    assigneeId?: string | null
+    assignedAt?: string | Date | null
+    assignedBy?: string | null
     metadata?: Record<string, unknown>
   }): Promise<SerializedTaskWithDeps> {
     return this.transport.createTask(data)
@@ -1531,6 +1579,10 @@ class TasksNamespace {
       status?: TaskStatus
       parentId?: string | null
       score?: number
+      assigneeType?: "human" | "agent" | null
+      assigneeId?: string | null
+      assignedAt?: string | Date | null
+      assignedBy?: string | null
       metadata?: Record<string, unknown>
     }
   ): Promise<SerializedTaskWithDeps> {

@@ -234,6 +234,10 @@ export interface SerializedTaskWithDeps {
   createdAt: string
   updatedAt: string
   completedAt: string | null
+  assigneeType: "human" | "agent" | null
+  assigneeId: string | null
+  assignedAt: string | null
+  assignedBy: string | null
   metadata: Record<string, unknown>
   blockedBy: string[]
   blocks: string[]

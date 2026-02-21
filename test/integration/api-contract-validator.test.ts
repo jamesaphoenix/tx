@@ -74,6 +74,10 @@ interface SerializedTask {
   readonly createdAt: string
   readonly updatedAt: string
   readonly completedAt: string | null
+  readonly assigneeType: "human" | "agent" | null
+  readonly assigneeId: string | null
+  readonly assignedAt: string | null
+  readonly assignedBy: string | null
   readonly metadata: Record<string, unknown>
   readonly blockedBy: readonly string[]
   readonly blocks: readonly string[]
@@ -126,6 +130,20 @@ function validateTaskContract(task: unknown, label: string): string[] {
   }
   if (t.completedAt !== null && typeof t.completedAt !== "string") {
     errors.push(`${label}: completedAt must be string or null (got ${typeof t.completedAt})`)
+  }
+  if (t.assigneeType !== null && t.assigneeType !== "human" && t.assigneeType !== "agent") {
+    errors.push(`${label}: assigneeType must be "human", "agent", or null`)
+  }
+  if (t.assigneeId !== null && typeof t.assigneeId !== "string") {
+    errors.push(`${label}: assigneeId must be string or null (got ${typeof t.assigneeId})`)
+  }
+  if (t.assignedBy !== null && typeof t.assignedBy !== "string") {
+    errors.push(`${label}: assignedBy must be string or null (got ${typeof t.assignedBy})`)
+  }
+  if (t.assignedAt !== null && typeof t.assignedAt !== "string") {
+    errors.push(`${label}: assignedAt must be string or null (got ${typeof t.assignedAt})`)
+  } else if (typeof t.assignedAt === "string" && isNaN(Date.parse(t.assignedAt))) {
+    errors.push(`${label}: assignedAt is not a valid ISO date string`)
   }
 
   // DOCTRINE RULE 1: blockedBy, blocks, children MUST be arrays
@@ -283,7 +301,8 @@ function normalizeForComparison(task: SerializedTask): SerializedTask {
     // Truncate dates to second precision to avoid millisecond differences
     createdAt: task.createdAt.slice(0, 19),
     updatedAt: task.updatedAt.slice(0, 19),
-    completedAt: task.completedAt ? task.completedAt.slice(0, 19) : null
+    completedAt: task.completedAt ? task.completedAt.slice(0, 19) : null,
+    assignedAt: task.assignedAt ? task.assignedAt.slice(0, 19) : null
   }
 }
 
@@ -298,6 +317,10 @@ const CONTRACT_FIELDS: (keyof SerializedTask)[] = [
   "createdAt",
   "updatedAt",
   "completedAt",
+  "assigneeType",
+  "assigneeId",
+  "assignedAt",
+  "assignedBy",
   "metadata",
   "blockedBy",
   "blocks",
@@ -379,6 +402,18 @@ describe("API Contract Validator", () => {
 
     insertDep.run(FIXTURES.TASK_JWT, FIXTURES.TASK_BLOCKED, now)
     insertDep.run(FIXTURES.TASK_LOGIN, FIXTURES.TASK_BLOCKED, now)
+
+    const assignmentFixtureTime = "2026-02-21T12:00:00.000Z"
+    db.db.prepare(
+      `UPDATE tasks
+       SET assignee_type = ?, assignee_id = ?, assigned_at = ?, assigned_by = ?
+       WHERE id = ?`
+    ).run("agent", "contract-worker", assignmentFixtureTime, "test:contract-seed", FIXTURES.TASK_JWT)
+    cliDb.prepare(
+      `UPDATE tasks
+       SET assignee_type = ?, assignee_id = ?, assigned_at = ?, assigned_by = ?
+       WHERE id = ?`
+    ).run("agent", "contract-worker", assignmentFixtureTime, "test:contract-seed", FIXTURES.TASK_JWT)
 
     cliDb.exec("COMMIT")
     cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -484,6 +519,16 @@ describe("API Contract Validator", () => {
 
       // SDK
       const sdkTask = await sdkClient.tasks.get(taskId)
+
+      expect(cliTask.assigneeType).toBe("agent")
+      expect(mcpTask.assigneeType).toBe("agent")
+      expect(sdkTask.assigneeType).toBe("agent")
+      expect(cliTask.assigneeId).toBe("contract-worker")
+      expect(mcpTask.assigneeId).toBe("contract-worker")
+      expect(sdkTask.assigneeId).toBe("contract-worker")
+      expect(cliTask.assignedBy).toBe("test:contract-seed")
+      expect(mcpTask.assignedBy).toBe("test:contract-seed")
+      expect(sdkTask.assignedBy).toBe("test:contract-seed")
 
       // Cross-validate
       assertTasksIdentical("CLI vs MCP", cliTask, mcpTask)
