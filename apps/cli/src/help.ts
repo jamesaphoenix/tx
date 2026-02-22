@@ -47,7 +47,7 @@ Messages:
   outbox:gc               Garbage collect old messages
 
 Docs:
-  doc <subcommand>        Manage docs (add, edit, show, list, render, lock, version, link, attach, patch, validate, drift)
+  doc <subcommand>        Manage docs (add, edit, show, list, render, lock, version, link, attach, patch, validate, drift, lint-ears)
   invariant <subcommand>  Manage invariants (list, show, record, sync)
 
 Cycle Scan:
@@ -1859,6 +1859,7 @@ Subcommands:
   patch <design> <patch>    Create a design patch doc
   validate                  Check all tasks are linked to docs
   drift <name>              Detect hash/link drift for a doc
+  lint-ears <target>        Validate PRD EARS requirements (doc name or YAML path)
 
 Run 'tx doc <subcommand> --help' for subcommand-specific help.
 Running 'tx doc' with no subcommand defaults to 'tx doc list'.
@@ -1871,7 +1872,8 @@ Examples:
   tx doc version auth-flow
   tx doc render
   tx doc attach tx-abc123 auth-flow
-  tx doc drift auth-flow`,
+  tx doc drift auth-flow
+  tx doc lint-ears auth-flow`,
 
   "doc add": `tx doc add - Create a new doc
 
@@ -2083,6 +2085,25 @@ Options:
 Examples:
   tx doc drift auth-flow
   tx doc drift auth-flow --json`,
+
+  "doc lint-ears": `tx doc lint-ears - Validate PRD EARS requirements
+
+Usage: tx doc lint-ears <doc-name-or-yaml-path> [--json]
+
+Validates the optional \`ears_requirements\` section in PRD YAML.
+Returns non-zero exit code when EARS entries are invalid.
+
+Arguments:
+  <doc-name-or-yaml-path>  Required. Doc name in tx DB or direct YAML file path
+
+Options:
+  --json    Output validation result as JSON
+  --help    Show this help
+
+Examples:
+  tx doc lint-ears PRD-031-ears-requirements
+  tx doc lint-ears .tx/docs/prd/PRD-031-ears-requirements.yml
+  tx doc lint-ears PRD-031-ears-requirements --json`,
 
   invariant: `tx invariant - Manage machine-checkable invariants
 

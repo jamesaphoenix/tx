@@ -10,6 +10,7 @@
 import { Layer } from "effect"
 import type { Database } from "bun:sqlite"
 import type { SqliteDatabase } from "@jamesaphoenix/tx-core"
+import { resetDatabaseTables } from "../database/reset-helpers.js"
 
 /**
  * Result of creating a shared test layer.
@@ -91,29 +92,7 @@ export const createSharedTestLayer = async () => {
    * Preserves schema but deletes all data.
    */
   const reset = async (): Promise<void> => {
-    // Get all user tables (exclude sqlite internals, migrations tracking, and FTS tables)
-    const tables = db
-      .prepare(
-        `
-        SELECT name FROM sqlite_master
-        WHERE type='table'
-          AND name NOT LIKE 'sqlite_%'
-          AND name != 'schema_version'
-          AND name NOT LIKE '%_fts'
-          AND name NOT LIKE '%_fts_%'
-          AND name NOT LIKE '%_config'
-      `
-      )
-      .all() as Array<{ name: string }>
-
-    // Disable foreign keys temporarily to allow deletion in any order
-    db.run("PRAGMA foreign_keys = OFF")
-    for (const { name } of tables) {
-      db.exec(`DELETE FROM "${name}"`)
-    }
-    // Reset auto-increment counters so IDs start from 1 in each test
-    db.exec("DELETE FROM sqlite_sequence")
-    db.run("PRAGMA foreign_keys = ON")
+    resetDatabaseTables(db)
   }
 
   /**

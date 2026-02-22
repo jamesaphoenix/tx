@@ -1,14 +1,22 @@
 /**
  * Doc commands: doc add, doc edit, doc show, doc list, doc render, doc lock,
- * doc version, doc link, doc attach, doc patch, doc validate, doc drift
+ * doc version, doc link, doc attach, doc patch, doc validate, doc drift,
+ * doc lint-ears
  */
 
 import { Effect } from "effect"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { execSync } from "node:child_process"
-import { DocService } from "@jamesaphoenix/tx-core"
+import {
+  DocService,
+  formatEarsValidationErrors,
+  readTxConfig,
+  validateEarsRequirements,
+} from "@jamesaphoenix/tx-core"
 import { DOC_KINDS } from "@jamesaphoenix/tx-types"
 import type { DocKind, DocLinkType, TaskDocLinkType } from "@jamesaphoenix/tx-types"
+import { parse as parseYaml } from "yaml"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"
@@ -35,6 +43,7 @@ export const doc = (pos: string[], flags: Flags) => {
     case "patch": return docPatch(rest, flags)
     case "validate": return docValidate(rest, flags)
     case "drift": return docDrift(rest, flags)
+    case "lint-ears": return docLintEars(rest, flags)
     default:
       return Effect.sync(() => {
         console.error(`Unknown doc subcommand: ${sub ?? "(none)"}`)
@@ -323,6 +332,157 @@ const docDrift = (pos: string[], flags: Flags) =>
     }
   })
 
+const docLintEars = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const target = pos[0]
+    const jsonMode = flag(flags, "json")
+    if (!target) {
+      console.error("Usage: tx doc lint-ears <doc-name-or-yaml-path> [--json]")
+      throw new CliExitError(1)
+    }
+
+    let yamlPath = target
+    let docName: string | null = null
+    if (!existsSync(yamlPath)) {
+      const svc = yield* DocService
+      const doc = yield* svc.get(target)
+      if (doc.kind !== "prd") {
+        const message = `Doc '${target}' is kind '${doc.kind}'. EARS validation is only supported for PRD docs.`
+        if (jsonMode) {
+          console.log(toJson({ valid: false, doc: target, errors: [{ field: "kind", message }] }))
+        } else {
+          console.error(message)
+        }
+        throw new CliExitError(1)
+      }
+      docName = doc.name
+      const config = readTxConfig()
+      yamlPath = resolve(config.docs.path, doc.filePath)
+    }
+
+    let parsed: unknown
+    try {
+      parsed = parseYaml(readFileSync(yamlPath, "utf8"))
+    } catch (error) {
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: false,
+            doc: docName ?? null,
+            path: yamlPath,
+            errors: [
+              {
+                field: "yaml",
+                message: `YAML parse error: ${String(error)}`,
+              },
+            ],
+          })
+        )
+      } else {
+        console.error(`YAML parse error in ${yamlPath}: ${String(error)}`)
+      }
+      throw new CliExitError(1)
+    }
+
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: false,
+            doc: docName ?? null,
+            path: yamlPath,
+            errors: [{ field: "yaml", message: "YAML root must be an object" }],
+          })
+        )
+      } else {
+        console.error(`YAML root must be an object: ${yamlPath}`)
+      }
+      throw new CliExitError(1)
+    }
+
+    const parsedRecord = parsed as Record<string, unknown>
+    const kind = typeof parsedRecord.kind === "string" ? parsedRecord.kind : null
+    if (kind && kind !== "prd") {
+      const message = `YAML kind '${kind}' is not 'prd'. EARS validation is only supported for PRD docs.`
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: false,
+            doc: docName ?? null,
+            path: yamlPath,
+            errors: [{ field: "kind", message }],
+          })
+        )
+      } else {
+        console.error(message)
+      }
+      throw new CliExitError(1)
+    }
+
+    const earsRequirements = parsedRecord.ears_requirements
+    if (earsRequirements === undefined) {
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: true,
+            doc: docName ?? null,
+            path: yamlPath,
+            count: 0,
+            errors: [],
+            message: "No ears_requirements section found",
+          })
+        )
+      } else {
+        console.log(`No ears_requirements section found in: ${yamlPath}`)
+      }
+      return
+    }
+
+    if (!Array.isArray(earsRequirements)) {
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: false,
+            doc: docName ?? null,
+            path: yamlPath,
+            errors: [
+              { field: "ears_requirements", message: "'ears_requirements' must be an array" },
+            ],
+          })
+        )
+      } else {
+        console.error("EARS validation failed: 'ears_requirements' must be an array")
+      }
+      throw new CliExitError(1)
+    }
+
+    const errors = validateEarsRequirements(earsRequirements)
+    if (jsonMode) {
+      console.log(
+        toJson({
+          valid: errors.length === 0,
+          doc: docName ?? null,
+          path: yamlPath,
+          count: earsRequirements.length,
+          errors,
+          errorSummary: errors.length > 0 ? formatEarsValidationErrors(errors) : null,
+        })
+      )
+    } else if (errors.length === 0) {
+      console.log(`EARS validation passed: ${yamlPath}`)
+    } else {
+      console.error(`EARS validation failed for ${yamlPath}:`)
+      for (const error of errors) {
+        const location = error.id ? `${error.id}` : `entry #${error.index + 1}`
+        console.error(`- ${location} (${error.field}) ${error.message}`)
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new CliExitError(1)
+    }
+  })
+
 /** Generate template YAML content for a doc kind. */
 function generateTemplate(kind: DocKind, name: string, title: string): string {
   switch (kind) {
@@ -379,6 +539,14 @@ function generateTemplate(kind: DocKind, name: string, title: string): string {
         ``,
         `requirements:`,
         `  - Requirement 1`,
+        ``,
+        `# Structured requirements using EARS notation (optional)`,
+        `# ears_requirements:`,
+        `#   - id: EARS-XXX-001`,
+        `#     pattern: ubiquitous`,
+        `#     system: the system`,
+        `#     response: do something`,
+        `#     priority: must`,
         ``,
         `acceptance_criteria:`,
         `  - Criterion 1`,

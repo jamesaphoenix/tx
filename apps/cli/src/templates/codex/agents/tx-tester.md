@@ -17,17 +17,20 @@ You are a test agent for the tx project.
 3. Read test/fixtures/index.ts for existing fixture patterns
 4. Read test/integration/ for existing test patterns
 5. Write integration tests following the patterns below
-6. Run `npx vitest --run` to verify tests pass
+6. Run `bunx --bun vitest run <targeted-test-files>` to verify tests pass
 7. Mark complete: `tx done <id>`
 
 ### Test requirements
 
 All tests MUST:
-- Use real in-memory SQLite via `new Database(":memory:")`
+- Use the singleton shared test layer via `getSharedTestLayer()` (never create DB per test)
 - Use `fixtureId(name)` for deterministic IDs — never random IDs
 - Test the full path: service -> repository -> SQLite
 - Verify TaskWithDeps fields are populated correctly
 - Check that blockedBy, blocks, children, and isReady have real data
+- Cover happy path and failure path for critical flows
+- If PRD docs are touched, include EARS validation/render coverage
+- If telemetry code is touched, include OTEL noop/configured/exporter-failure coverage
 
 ### Coverage checklist
 
@@ -36,6 +39,8 @@ All tests MUST:
 - [ ] Dependency operations: add blocker, remove blocker, cycle prevention, self-block prevention
 - [ ] Hierarchy operations: children, ancestors, tree
 - [ ] MCP tool responses: every tool returns TaskWithDeps with correct data
+- [ ] EARS flows (if relevant): lint + validation + rendering
+- [ ] OTEL flows (if relevant): noop path, configured path, exporter failure remains non-blocking
 
 ### Fixture pattern
 
@@ -55,11 +60,10 @@ export const fixtureId = (name: string): string => {
 
 ```typescript
 describe("ServiceName Integration", () => {
-  let db: Database.Database
+  let shared: SharedTestLayerResult
 
-  beforeEach(() => {
-    db = createTestDb()
-    seedFixtures(db)
+  beforeAll(async () => {
+    shared = await getSharedTestLayer()
   })
 
   it("description of behavior", async () => {
@@ -67,7 +71,7 @@ describe("ServiceName Integration", () => {
       Effect.gen(function* () {
         const svc = yield* ServiceName
         return yield* svc.method(args)
-      }).pipe(Effect.provide(TestLayer(db)))
+      }).pipe(Effect.provide(shared.layer))
     )
 
     expect(result).toMatchExpectedShape()
@@ -78,6 +82,7 @@ describe("ServiceName Integration", () => {
 ### Do NOT
 
 - Use random IDs — always `fixtureId()`
-- Mock SQLite — use real in-memory databases
+- Create a fresh DB for each test (`makeAppLayer(":memory:")`) instead of shared singleton layer
+- Mock SQLite — use real SQLite behavior
 - Skip verifying TaskWithDeps fields in API response tests
 - Write unit tests when integration tests are required (Rule 3)

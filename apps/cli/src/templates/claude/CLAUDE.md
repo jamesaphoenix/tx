@@ -30,6 +30,7 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx show <id>` | Show task details with dependencies |
 | `tx block <id> <blocker>` | Declare task dependencies |
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
+| `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
 
 ### Memory & Learnings
 
@@ -109,13 +110,31 @@ while true; do
 done
 ```
 
+## EARS-First Requirements
+
+- For new PRDs, prefer `ears_requirements` over plain `requirements`.
+- Use deterministic IDs in the form `EARS-<AREA>-NNN` (example: `EARS-API-001`).
+- Use valid patterns only: `ubiquitous`, `event_driven`, `state_driven`, `optional`, `unwanted`, `complex`.
+- Run `tx doc lint-ears <doc-name-or-yaml-path>` before implementation and before review.
+- Keep legacy `requirements` only for backward compatibility or migration.
+
+## Testing + OTEL Quality Bar
+
+- Treat integration tests as the default for behavior changes; unit tests alone are not enough.
+- Cover critical flows with happy path plus failure path assertions (timeouts, malformed input, partial failure, retries/idempotency where relevant).
+- Integration tests must use `getSharedTestLayer()` and `fixtureId(name)`. Never create a DB per test.
+- If telemetry-related code changes, test all three modes: no OTEL config (noop), OTEL configured, and exporter failure.
+- Telemetry failures must be caught/logged and never block core operations.
+
 ## Design Doc Testing Strategy Quality Bar
 
 For `docs/design/DD-*.md`, the `## Testing Strategy` section must be concrete and testable.
 
 - Include requirement-to-test traceability (every requirement maps to one or more tests).
+- When PRDs use EARS, map each `EARS-*` ID to one or more tests in the traceability matrix.
 - Include at least 8 numbered integration scenarios with setup, action, and assertions.
 - Include failure-path testing (timeouts, malformed input, partial failures, retries/idempotency where relevant).
+- Include OTEL/non-OTEL behavior assertions when observability paths are touched.
 - Name exact test files to add or update.
 - Use concrete expected outcomes (DB rows, API responses, emitted events/metrics, task state transitions).
 - Do not write vague bullets like "add tests" or "cover edge cases".
@@ -129,5 +148,7 @@ Write ONLY the "Testing Strategy" section for <DD-NNN>.
 2) Include Unit, Integration, Edge Cases, Failure Injection, Performance.
 3) Integration tests must use getSharedTestLayer() and fixtureId(name).
 4) Provide at least 8 numbered integration scenarios with Setup / Action / Assert.
-5) Use specific files, inputs, and expected outcomes; no vague statements.
+5) If the PRD uses EARS, include EARS requirement IDs in traceability rows.
+6) If telemetry is in scope, include noop/configured/exporter-failure assertions.
+7) Use specific files, inputs, and expected outcomes; no vague statements.
 ```

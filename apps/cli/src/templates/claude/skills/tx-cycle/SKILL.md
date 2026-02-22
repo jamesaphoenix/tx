@@ -16,7 +16,7 @@ Before running `tx cycle`, ask the user these questions to build the right comma
 ## Optional (with defaults)
 
 2. **Scan prompt** (`--scan-prompt`): What should agents look for?
-   - Default: "Find bugs, anti-patterns, missing error handling, security vulnerabilities, and untested code paths."
+   - Default: "Find bugs, anti-patterns, missing error handling, weak EARS requirement coverage, integration-test gaps in critical flows, OTEL non-blocking risks, and performance/infra issues."
 
 3. **Number of agents** (`--agents N`): How many parallel scan agents per round?
    - Default: 3

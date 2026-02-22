@@ -490,6 +490,7 @@ describe("Interface Parity", () => {
   let db: TestDatabase
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
   let apiApp: ReturnType<typeof createTestApiApp>
+  const fixtureTimestamp = "2026-01-01T00:00:00.000Z"
 
   beforeEach(async () => {
     // Create temp directory for CLI database
@@ -501,10 +502,10 @@ describe("Interface Parity", () => {
 
     // Create shared in-memory database for MCP/API
     db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
+    seedFixtures(db, fixtureTimestamp)
 
     // Seed CLI database with same fixtures
-    const now = new Date().toISOString()
+    const now = fixtureTimestamp
     const cliDb = new Database(dbPath)
 
     // Enable WAL mode for better concurrency

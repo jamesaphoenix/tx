@@ -691,7 +691,7 @@ describe("runWorker", () => {
         // Deliberately make lease shorter than renewal interval so first renewal fails.
         yield* orchestrator.start({
           workerPoolSize: 1,
-          heartbeatIntervalSeconds: 0.1,
+          heartbeatIntervalSeconds: 0.05,
           leaseDurationMinutes: 0.001
         })
 
@@ -712,7 +712,7 @@ describe("runWorker", () => {
         const workerFiber = yield* Effect.fork(
           runWorker({
             name: "renewal-shutdown-worker",
-            heartbeatIntervalSeconds: 0.1,
+            heartbeatIntervalSeconds: 0.05,
             execute: async (_task, ctx) => {
               executionCount += 1
               registeredWorkerId = ctx.workerId
@@ -723,16 +723,31 @@ describe("runWorker", () => {
                 return { success: false, error: "Unexpected second execution after renewal failure" }
               }
 
-              await new Promise((resolve) => setTimeout(resolve, 2200))
+              await new Promise((resolve) => setTimeout(resolve, 900))
               return { success: true }
             }
           })
         )
 
-        // Wait for renewal loop failure, execution completion, and worker shutdown.
-        yield* Effect.sleep("4 seconds")
+        // Poll until claim is released and worker is deregistered (or timeout).
+        let cleanupComplete = false
+        for (let i = 0; i < 80; i++) {
+          const claim = yield* claimSvc.getActiveClaim(taskId)
+          const workers = yield* workerSvc.list()
+          if (
+            executionCount >= 1 &&
+            registeredWorkerId.length > 0 &&
+            claim === null &&
+            workers.every((w) => w.id !== registeredWorkerId)
+          ) {
+            cleanupComplete = true
+            break
+          }
+          yield* Effect.sleep("100 millis")
+        }
+
         yield* Fiber.interrupt(workerFiber)
-        yield* Effect.sleep("200 millis")
+        expect(cleanupComplete).toBe(true)
 
         activeClaimAfterShutdown = yield* claimSvc.getActiveClaim(taskId)
         readyTaskIdsAfterShutdown = (yield* readySvc.getReady(10)).map(task => task.id)

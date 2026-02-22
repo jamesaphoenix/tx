@@ -30,6 +30,10 @@ import {
   renderDocToMarkdown,
   renderIndexToMarkdown,
 } from "../utils/doc-renderer.js"
+import {
+  formatEarsValidationErrors,
+  validateEarsRequirements,
+} from "../utils/ears-validator.js"
 import { readTxConfig } from "../utils/toml-config.js"
 import {
   DOC_KINDS,
@@ -97,7 +101,8 @@ const resolveMdPath = (
 /** Validate YAML content and return parsed object. */
 const validateYaml = (
   name: string,
-  content: string
+  content: string,
+  expectedKind?: DocKind
 ): Record<string, unknown> => {
   let parsed: unknown
   try {
@@ -114,7 +119,31 @@ const validateYaml = (
       reason: "YAML must be an object (not array or scalar)",
     })
   }
-  return parsed as Record<string, unknown>
+  const parsedObject = parsed as Record<string, unknown>
+  const yamlKind =
+    typeof parsedObject.kind === "string" && docKindStrings.includes(parsedObject.kind)
+      ? (parsedObject.kind as DocKind)
+      : null
+  const effectiveKind = expectedKind ?? yamlKind
+
+  if (effectiveKind === "prd" && parsedObject.ears_requirements !== undefined) {
+    if (!Array.isArray(parsedObject.ears_requirements)) {
+      throw new InvalidDocYamlError({
+        name,
+        reason: "EARS: 'ears_requirements' must be an array",
+      })
+    }
+    const errors = validateEarsRequirements(parsedObject.ears_requirements)
+    if (errors.length > 0) {
+      throw new InvalidDocYamlError({
+        name,
+        reason: `EARS: ${formatEarsValidationErrors(errors)}`,
+        earsErrors: errors,
+      })
+    }
+  }
+
+  return parsedObject
 }
 
 /** Validate doc kind from YAML. */
@@ -225,7 +254,7 @@ export const DocServiceLive = Layer.effect(
         throw new DocNotFoundError({ name: doc.name })
       }
       const yamlContent = readFileSync(yamlPath, "utf8")
-      const parsed = validateYaml(doc.name, yamlContent)
+      const parsed = validateYaml(doc.name, yamlContent, doc.kind)
       const md = renderDocToMarkdown(parsed, doc.kind)
       const mdPath = resolveMdPath(docsPath, doc.kind, doc.name)
       ensureDir(mdPath)
@@ -348,7 +377,7 @@ export const DocServiceLive = Layer.effect(
           return []
         }
         const yamlContent = readFileSync(yamlPath, "utf8")
-        const parsed = validateYaml(doc.name, yamlContent)
+        const parsed = validateYaml(doc.name, yamlContent, doc.kind)
         const invariantsRaw = parsed.invariants as unknown[] | undefined
 
         if (!Array.isArray(invariantsRaw) || invariantsRaw.length === 0) {
@@ -413,7 +442,7 @@ export const DocServiceLive = Layer.effect(
               })
             )
           }
-          const parsed = validateYaml(name, yamlContent)
+          const parsed = validateYaml(name, yamlContent, kind)
           validateKind(name, parsed, kind)
 
           const existing = yield* docRepo.findByName(name)
@@ -474,7 +503,7 @@ export const DocServiceLive = Layer.effect(
               new DocLockedError({ name, version: doc.version })
             )
           }
-          const parsed = validateYaml(name, yamlContent)
+          const parsed = validateYaml(name, yamlContent, doc.kind)
           validateKind(name, parsed, doc.kind)
 
           const hash = computeDocHash(yamlContent)

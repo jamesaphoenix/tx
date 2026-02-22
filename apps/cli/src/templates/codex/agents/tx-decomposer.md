@@ -58,7 +58,7 @@ Parent: Add tx ready command
 **MCP tool**:
 ```
 Parent: Add tx_ready MCP tool
-├── Subtask: Define tool schema (zod) [700]
+├── Subtask: Define tool schema (Effect Schema) [700]
 ├── Subtask: Implement tool handler (returns TaskWithDeps) [700] [blocked by schema]
 ├── Subtask: Write MCP integration test [600] [blocked by handler]
 └── Subtask: Add text content formatter [500] [blocked by handler]
@@ -69,7 +69,10 @@ Parent: Add tx_ready MCP tool
 - **Check for duplicates before creating tasks** - search existing tasks first
 - Every implementation task MUST have a corresponding test task
 - Test tasks MUST be blocked by their implementation task
+- For behavior changes, include both happy-path and failure-path integration test tasks
+- If docs/PRD work is in scope, include `ears_requirements` + `tx doc lint-ears` subtasks
+- If observability code is in scope, include OTEL noop/configured/exporter-failure verification tasks
 - If a subtask could be decomposed further, create it at the current level and let the planner handle it in a future iteration
-- Never create tasks that violate the 7 doctrine rules
+- Never create tasks that violate doctrine rules in AGENTS.md
 - Include `--description` with acceptance criteria when creating tasks
 - If existing work overlaps, use `tx block` to create dependencies rather than duplicating

@@ -54,8 +54,11 @@ export async function createTestDbAsync(): Promise<TestDatabase> {
  * Seed the database with fixture tasks.
  * Works with both raw Database or TestDatabase interfaces.
  */
-export function seedFixtures(db: Database | TestDatabase): void {
-  const now = new Date().toISOString()
+export function seedFixtures(
+  db: Database | TestDatabase,
+  timestamp: string = new Date().toISOString()
+): void {
+  const now = timestamp
 
   // Determine if we have a TestDatabase or raw Database
   const rawDb = "db" in db ? db.db : db

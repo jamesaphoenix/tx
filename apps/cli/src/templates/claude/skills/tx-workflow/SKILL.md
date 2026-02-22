@@ -15,14 +15,18 @@ description: Guide for working with tx task management. Use when picking up task
 
 1. Understand the task requirements from `tx show`
 2. Check for relevant learnings with `tx context <id>` or `tx recall <file-path>`
-3. Implement the changes
-4. Record anything you learned: `tx learning:add "what you discovered"`
+3. If PRD docs are in scope, prefer `ears_requirements` and validate with `tx doc lint-ears <doc-name-or-yaml-path>`
+4. Implement the changes
+5. Add or update integration tests for critical flows (happy path + failure path)
+6. If telemetry code changed, verify OTEL remains non-blocking (noop/configured/exporter-failure paths)
+7. Record anything you learned: `tx learning:add "what you discovered"`
 
 ## Completing a Task
 
-1. Run `tx done <id>` to mark the task complete
-2. This automatically unblocks any tasks that depended on this one
-3. Check `tx ready` to see if new tasks became available
+1. Run targeted tests for changed files before completion (`bunx --bun vitest run <paths>`)
+2. Run `tx done <id>` to mark the task complete
+3. This automatically unblocks any tasks that depended on this one
+4. Check `tx ready` to see if new tasks became available
 
 ## Creating Sub-tasks
 

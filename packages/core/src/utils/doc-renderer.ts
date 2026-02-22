@@ -3,7 +3,8 @@
  *
  * Deterministic output with stable section ordering per doc kind.
  * Free-text sections pass through as-is (already markdown).
- * Structured sections (invariants, failure_modes, edge_cases, work_breakdown)
+ * Structured sections (invariants, failure_modes, edge_cases, work_breakdown,
+ * ears_requirements)
  * accept either string or object forms and render deterministically.
  */
 import type { DocKind } from "@jamesaphoenix/tx-types"
@@ -94,6 +95,7 @@ const renderPrd = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "problem", "Problem")
   renderFreeTextSection(parsed, lines, "solution", "Solution")
   renderStringList(parsed.requirements as string[] | undefined, lines, "Requirements")
+  renderEarsRequirements(parsed.ears_requirements as unknown[] | undefined, lines)
   renderStringList(parsed.acceptance_criteria as string[] | undefined, lines, "Acceptance Criteria")
   renderStringList(parsed.out_of_scope as string[] | undefined, lines, "Out of Scope")
 }
@@ -271,6 +273,110 @@ const renderWorkBreakdown = (
     lines.push(`- ${taskPrefix}${description}`)
   }
   lines.push("")
+}
+
+const renderEarsRequirements = (
+  requirements: unknown[] | undefined,
+  lines: string[]
+): void => {
+  if (!Array.isArray(requirements) || requirements.length === 0) return
+
+  lines.push("## Structured Requirements (EARS)", "")
+  lines.push("| ID | Pattern | Requirement | Priority |")
+  lines.push("|-----|---------|-------------|----------|")
+
+  const detailSections: Array<{ id: string; rationale: string | null; testHint: string | null }> = []
+
+  for (const raw of requirements) {
+    const req = asRecord(raw)
+    const id = pickString(req, "id")
+    const pattern = pickString(req, "pattern")
+    const priority = pickString(req, "priority")
+    const requirementFromString =
+      typeof raw === "string" && raw.trim() ? raw.trim() : null
+    const requirement = requirementFromString ?? composeEarsSentence(raw)
+
+    lines.push(
+      `| ${markdownCell(id)} | ${markdownCell(pattern)} | ${markdownCell(requirement)} | ${markdownCell(priority)} |`
+    )
+
+    if (!req || !id) continue
+
+    const rationale = pickString(req, "rationale")
+    const testHint = pickString(req, "test_hint", "testHint")
+    if (rationale || testHint) {
+      detailSections.push({ id, rationale, testHint })
+    }
+  }
+  lines.push("")
+
+  for (const detail of detailSections) {
+    lines.push(`### ${detail.id}`)
+    if (detail.rationale) {
+      lines.push(`**Rationale**: ${detail.rationale}`)
+    }
+    if (detail.testHint) {
+      lines.push(`**Test hint**: ${detail.testHint}`)
+    }
+    lines.push("")
+  }
+}
+
+const ensureSentence = (text: string): string => {
+  const trimmed = text.trim()
+  if (!trimmed) return trimmed
+  if (/[.!?]$/.test(trimmed)) return trimmed
+  return `${trimmed}.`
+}
+
+export const composeEarsSentence = (raw: unknown): string | null => {
+  const req = asRecord(raw)
+  if (!req) {
+    return null
+  }
+
+  const pattern = pickString(req, "pattern")
+  const system = pickString(req, "system")
+  const response = pickString(req, "response")
+  const trigger = pickString(req, "trigger")
+  const state = pickString(req, "state")
+  const condition = pickString(req, "condition")
+  const feature = pickString(req, "feature")
+
+  if (!system || !response) return null
+
+  switch (pattern) {
+    case "event_driven":
+      return trigger
+        ? ensureSentence(`When ${trigger}, the ${system} shall ${response}`)
+        : ensureSentence(`The ${system} shall ${response}`)
+    case "state_driven":
+      return state
+        ? ensureSentence(`While ${state}, the ${system} shall ${response}`)
+        : ensureSentence(`The ${system} shall ${response}`)
+    case "unwanted":
+      return condition
+        ? ensureSentence(`If ${condition}, then the ${system} shall ${response}`)
+        : ensureSentence(`The ${system} shall ${response}`)
+    case "optional":
+      return feature
+        ? ensureSentence(`Where ${feature}, the ${system} shall ${response}`)
+        : ensureSentence(`The ${system} shall ${response}`)
+    case "complex": {
+      const clauses: string[] = []
+      if (trigger) clauses.push(`When ${trigger}`)
+      if (state) clauses.push(`while ${state}`)
+      if (condition) clauses.push(`if ${condition}`)
+      if (feature) clauses.push(`where ${feature}`)
+      if (clauses.length === 0) {
+        return ensureSentence(`The ${system} shall ${response}`)
+      }
+      return ensureSentence(`${clauses.join(", ")}, the ${system} shall ${response}`)
+    }
+    case "ubiquitous":
+    default:
+      return ensureSentence(`The ${system} shall ${response}`)
+  }
 }
 
 /**

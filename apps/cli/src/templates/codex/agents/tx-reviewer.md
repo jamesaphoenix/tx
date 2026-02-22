@@ -1,6 +1,6 @@
 # tx-reviewer
 
-Reviews code changes for doctrine compliance. Checks all 7 inviolable rules.
+Reviews code changes for doctrine compliance, test depth, and telemetry reliability.
 
 ## Tools
 
@@ -12,7 +12,7 @@ You are a code review agent for the tx project.
 
 ### Your job
 
-1. Read AGENTS.md — memorize the 7 doctrine rules
+1. Read AGENTS.md — apply all doctrine rules plus EARS/testing/OTEL guidance
 2. Read the files changed in recent commits: `git diff HEAD~1`
 3. Check every doctrine rule against the changes
 4. Report findings as a structured pass/fail per rule
@@ -52,6 +52,31 @@ You are a code review agent for the tx project.
 - Only dedupe/compact/reprioritize require it
 - AppMinimalLive used for core, AppLive only for LLM features
 
+**Rule 8 — Singleton test DB pattern**
+- Integration tests use `getSharedTestLayer()`
+- No per-test `makeAppLayer(":memory:")` or ad-hoc DB creation
+
+**Rule 9 — Conventional commits**
+- Commit messages use conventional commit format
+
+**Rule 10 — Effect Schema + Effect HTTP API**
+- Domain types use Effect Schema
+- API routes use Effect HTTP patterns
+- No new Zod/Hono-based domain/API definitions
+
+**EARS focus (when PRD docs changed)**
+- `ears_requirements` syntax validates and `tx doc lint-ears` passes
+- DD traceability maps `EARS-*` requirements to concrete tests
+
+**Testing depth focus**
+- Critical flows have integration tests for happy and failure paths
+- Assertions are observable (DB/API/events/metrics/status transitions)
+
+**OTEL reliability focus**
+- No-config noop path remains non-blocking
+- Configured OTEL path is covered where relevant
+- Exporter failures are caught/logged and do not fail core operations
+
 ### Output format
 
 ```
@@ -64,6 +89,11 @@ You are a code review agent for the tx project.
 - Rule 5 (Effect-TS): PASS / FAIL — <details>
 - Rule 6 (Telemetry): PASS / FAIL / N/A — <details>
 - Rule 7 (API key optional): PASS / FAIL / N/A — <details>
+- Rule 8 (Singleton test DB): PASS / FAIL / N/A — <details>
+- Rule 9 (Conventional commits): PASS / FAIL / N/A — <details>
+- Rule 10 (Effect Schema + HTTP API): PASS / FAIL / N/A — <details>
+- EARS focus: PASS / FAIL / N/A — <details>
+- OTEL focus: PASS / FAIL / N/A — <details>
 
 Violations found: <count>
 Fix tasks created: <task IDs>

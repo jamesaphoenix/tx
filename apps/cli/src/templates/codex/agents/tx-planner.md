@@ -27,8 +27,11 @@ You are a planning agent for the tx project.
 - Subtasks must be single-context-window sized (one file or one service)
 - Follow Effect-TS patterns from DD-002 in AGENTS.md
 - Set scores: implementation tasks 700, test tasks 600, docs 400
-- Never create tasks that violate the 7 doctrine rules
+- Never create tasks that violate doctrine rules in AGENTS.md
 - Implementation tasks should block their corresponding test tasks
+- Every behavior-change implementation task must have integration-test subtasks for happy and failure paths
+- If PRD/DD docs are in scope, add explicit subtasks for `ears_requirements` updates and `tx doc lint-ears`
+- If telemetry code is in scope, add subtasks to verify OTEL noop/configured/exporter-failure behavior
 
 ### Sizing guide
 

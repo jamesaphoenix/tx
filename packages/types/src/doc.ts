@@ -202,6 +202,48 @@ export type RecordInvariantCheckInput =
   typeof RecordInvariantCheckInputSchema.Type
 
 // =============================================================================
+// SCHEMAS & TYPES — EARS Requirements (PRD layer)
+// =============================================================================
+
+/** EARS requirement patterns. */
+export const EARS_PATTERNS = [
+  "ubiquitous",
+  "event_driven",
+  "state_driven",
+  "unwanted",
+  "optional",
+  "complex",
+] as const
+
+export const EarsPatternSchema = Schema.Literal(...EARS_PATTERNS)
+export type EarsPattern = typeof EarsPatternSchema.Type
+
+export const EarsPrioritySchema = Schema.Literal("must", "should", "could", "wont")
+export type EarsPriority = typeof EarsPrioritySchema.Type
+
+/** EARS requirement ID — EARS-<SYSTEM>-NNN. */
+export const EarsRequirementIdSchema = Schema.String.pipe(
+  Schema.pattern(/^EARS-[A-Z0-9]+-\d{3}$/),
+  Schema.brand("EarsRequirementId")
+)
+export type EarsRequirementId = typeof EarsRequirementIdSchema.Type
+
+export const EarsRequirementSchema = Schema.Struct({
+  id: EarsRequirementIdSchema,
+  pattern: EarsPatternSchema,
+  trigger: Schema.optional(Schema.String), // WHEN (event-driven)
+  state: Schema.optional(Schema.String), // WHILE (state-driven)
+  condition: Schema.optional(Schema.String), // IF (unwanted behavior)
+  feature: Schema.optional(Schema.String), // WHERE (optional feature)
+  system: Schema.String,
+  response: Schema.String,
+  rationale: Schema.optional(Schema.String),
+  test_hint: Schema.optional(Schema.String),
+  priority: Schema.optional(EarsPrioritySchema),
+})
+export type EarsRequirement = typeof EarsRequirementSchema.Type
+
+// =============================================================================
 // RUNTIME VALIDATORS
 // =============================================================================
 

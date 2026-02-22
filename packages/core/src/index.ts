@@ -423,7 +423,16 @@ export { parseLlmJson } from "./utils/llm-json.js"
 export { matchesGlob } from "./utils/glob.js"
 export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"
 export { computeDocHash } from "./utils/doc-hash.js"
-export { renderDocToMarkdown, renderIndexToMarkdown } from "./utils/doc-renderer.js"
+export {
+  renderDocToMarkdown,
+  renderIndexToMarkdown,
+  composeEarsSentence,
+} from "./utils/doc-renderer.js"
+export {
+  validateEarsRequirements,
+  formatEarsValidationErrors,
+  type EarsValidationError,
+} from "./utils/ears-validator.js"
 export {
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,

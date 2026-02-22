@@ -10,6 +10,7 @@
 import { Database } from "bun:sqlite"
 import { Context, Effect, Layer } from "effect"
 import { applyMigrations, type SqliteRunResult } from "@jamesaphoenix/tx-core"
+import { resetDatabaseTables } from "./reset-helpers.js"
 
 /**
  * Interface for test database operations.
@@ -86,28 +87,7 @@ export const createTestDatabase = (): Effect.Effect<TestDatabase, Error> =>
 
         reset: () =>
           Effect.sync(() => {
-            // Get all user tables (exclude sqlite internals, migrations tracking, and FTS tables)
-            // FTS5 shadow tables (*_fts, *_fts_data, *_fts_idx, etc.) cannot be modified directly
-            const tables = db
-              .prepare(
-                `
-              SELECT name FROM sqlite_master
-              WHERE type='table'
-                AND name NOT LIKE 'sqlite_%'
-                AND name != 'schema_version'
-                AND name NOT LIKE '%_fts'
-                AND name NOT LIKE '%_fts_%'
-                AND name NOT LIKE '%_config'
-            `
-              )
-              .all() as Array<{ name: string }>
-
-            // Disable foreign keys temporarily to allow deletion in any order
-            db.run("PRAGMA foreign_keys = OFF")
-            for (const { name } of tables) {
-              db.exec(`DELETE FROM "${name}"`)
-            }
-            db.run("PRAGMA foreign_keys = ON")
+            resetDatabaseTables(db)
           }),
 
         query: <T = unknown>(sql: string, params: unknown[] = []): T[] => {
@@ -209,27 +189,7 @@ export const wrapDbAsTestDatabase = (db: Database): TestDatabase => ({
 
   reset: () =>
     Effect.sync(() => {
-      // Get all user tables (exclude sqlite internals, migrations tracking, and FTS tables)
-      const tables = db
-        .prepare(
-          `
-          SELECT name FROM sqlite_master
-          WHERE type='table'
-            AND name NOT LIKE 'sqlite_%'
-            AND name != 'schema_version'
-            AND name NOT LIKE '%_fts'
-            AND name NOT LIKE '%_fts_%'
-            AND name NOT LIKE '%_config'
-        `
-        )
-        .all() as Array<{ name: string }>
-
-      // Disable foreign keys temporarily to allow deletion in any order
-      db.run("PRAGMA foreign_keys = OFF")
-      for (const { name } of tables) {
-        db.exec(`DELETE FROM "${name}"`)
-      }
-      db.run("PRAGMA foreign_keys = ON")
+      resetDatabaseTables(db)
     }),
 
   query: <T = unknown>(sql: string, params: unknown[] = []): T[] => {

@@ -7,7 +7,8 @@
  */
 
 import { Effect } from "effect"
-import { ClaimService } from "@jamesaphoenix/tx-core"
+import * as os from "node:os"
+import { ClaimService, WorkerRepository } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseIntOpt, parseTaskId } from "../utils/parse.js"
 
@@ -36,6 +37,25 @@ export const claim = (pos: string[], flags: Flags) =>
     const taskId = parseTaskId(rawTaskId)
 
     const leaseMinutes = parseIntOpt(flags, "lease", "lease")
+
+    // Ensure worker exists for FK integrity when claiming manually via CLI.
+    const workerRepo = yield* WorkerRepository
+    const existingWorker = yield* workerRepo.findById(workerId)
+    if (!existingWorker) {
+      const now = new Date()
+      yield* workerRepo.insert({
+        id: workerId,
+        name: workerId,
+        hostname: os.hostname(),
+        pid: process.pid,
+        status: "idle",
+        registeredAt: now,
+        lastHeartbeatAt: now,
+        currentTaskId: null,
+        capabilities: ["tx-cli"],
+        metadata: { source: "tx claim" },
+      })
+    }
 
     const svc = yield* ClaimService
     const claim = yield* svc.claim(taskId, workerId, leaseMinutes)

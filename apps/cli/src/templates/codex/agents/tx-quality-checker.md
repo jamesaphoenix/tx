@@ -10,6 +10,9 @@ Review code changes and identify issues that need attention. Focus on:
 - Effect-TS anti-patterns
 - Security issues
 - Performance concerns
+- Integration-test coverage gaps on critical flows
+- EARS quality for PRD documentation changes
+- OTEL non-blocking reliability for observability changes
 
 ## Checks to Perform
 
@@ -40,6 +43,21 @@ Review code changes and identify issues that need attention. Focus on:
 - [ ] No deeply nested conditionals (>3 levels)
 - [ ] DRY - no duplicated logic
 
+### 6. Integration Coverage Depth
+- [ ] Critical behavior changes have integration tests (not just unit tests)
+- [ ] Failure paths are tested (timeouts, malformed input, partial failure)
+- [ ] Integration tests use shared singleton DB patterns (`getSharedTestLayer()`)
+
+### 7. EARS Documentation Quality (when PRD docs changed)
+- [ ] `ears_requirements` entries use valid IDs and patterns
+- [ ] `tx doc lint-ears` is expected/passed for changed PRDs
+- [ ] DD traceability maps EARS IDs to tests
+
+### 8. OTEL Reliability
+- [ ] No-config OTEL path remains noop/non-blocking
+- [ ] Exporter failures are caught/logged and do not break core operations
+- [ ] Telemetry code does not add high-overhead hot-path work
+
 ## Output Format
 
 ```
@@ -59,6 +77,11 @@ Review code changes and identify issues that need attention. Focus on:
 - [STYLE] Long pipe chain in src/cli/commands.ts:120
   - Consider extracting to named function
 
+### Coverage/Observability Gaps
+- [TEST] Missing failure-path integration test for dependency cycle rejection
+- [OTEL] Missing exporter-failure assertion for telemetry writer
+- [EARS] PRD updated without `tx doc lint-ears` evidence
+
 ### Clean
 - No critical issues found ✓
 ```
@@ -71,3 +94,4 @@ Review code changes and identify issues that need attention. Focus on:
 4. Report findings
 5. Create tasks for critical issues: `tx add "Fix <issue>" --score 950`
 6. Create tasks for warnings: `tx add "Improve <area>" --score 600`
+7. Create test-gap tasks: `tx add "Add integration coverage for <critical flow>" --score 700`

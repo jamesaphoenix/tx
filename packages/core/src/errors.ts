@@ -1,4 +1,5 @@
 import { Data } from "effect"
+import type { EarsValidationError } from "./utils/ears-validator.js"
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
   readonly id: string
@@ -371,6 +372,7 @@ export class DocLockedError extends Data.TaggedError("DocLockedError")<{
 export class InvalidDocYamlError extends Data.TaggedError("InvalidDocYamlError")<{
   readonly name: string
   readonly reason: string
+  readonly earsErrors?: readonly EarsValidationError[]
 }> {
   get message() {
     return `Invalid YAML for doc '${this.name}': ${this.reason}`
