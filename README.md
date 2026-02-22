@@ -370,7 +370,7 @@ Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code
 - **[txdocs.dev](https://txdocs.dev)**: Documentation
 - **[CLAUDE.md](https://github.com/jamesaphoenix/tx/blob/main/CLAUDE.md)**: Doctrine and quick reference
 - **[AGENTS.md](https://github.com/jamesaphoenix/tx/blob/main/AGENTS.md)**: Codex onboarding and quick reference
-- **[docs/](https://github.com/jamesaphoenix/tx/tree/main/docs)**: PRDs and Design Docs
+- **[PRDs](https://txdocs.dev/docs/prd)** and **[Design Docs](https://txdocs.dev/docs/design)**: Product and architecture specs
 
 ---
 
