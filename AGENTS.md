@@ -580,6 +580,52 @@ node ./node_modules/.bin/tx add "My task"
 
 This ensures you're always testing the latest source code, not stale builds.
 
+### Release & npm Publish Runbook (Lessons Learned)
+
+Use this checklist for every release to avoid silent publish failures.
+
+#### Critical rules
+
+1. Publishing is driven by `.github/workflows/publish.yml` on `release.published` (plus manual `workflow_dispatch` fallback).
+2. Pushing a git tag alone does **not** publish to npm.
+3. If an automated release event does not trigger publish, manually dispatch `publish.yml`.
+4. For backfilled patch versions (`0.5.4`, `0.5.5`, etc.), each version must have:
+   - The correct git tag pointing at the intended commit
+   - A corresponding GitHub Release (`vX.Y.Z`)
+   - A successful `publish.yml` run
+5. Never assume publish succeeded: verify with both GitHub Actions and npm registry commands.
+
+#### Release verification commands
+
+```bash
+# 1) Confirm tags point to expected commits
+git rev-list -n 1 v0.5.4
+git rev-list -n 1 v0.5.5
+
+# 2) Confirm publish workflow runs and status
+gh run list --workflow publish.yml --limit 10
+gh run view <run-id>
+
+# 3) Manual fallback if release trigger is missed
+gh workflow run publish.yml --ref main
+# or for a specific version tag (if workflow_dispatch exists on that ref):
+gh workflow run publish.yml --ref v0.5.5
+
+# 4) Confirm npm is actually updated
+npm view @jamesaphoenix/tx version
+npm view @jamesaphoenix/tx versions --json
+npm view @jamesaphoenix/tx-cli version
+npm view @jamesaphoenix/tx-cli versions --json
+```
+
+#### If a tag points to the wrong commit
+
+1. Delete incorrect remote tag: `git push origin :refs/tags/vX.Y.Z`
+2. Re-point local tag: `git tag -f vX.Y.Z <correct-commit>`
+3. Push corrected tag: `git push origin vX.Y.Z --force`
+4. Recreate GitHub Release for that tag
+5. Re-run/verify `publish.yml`
+
 ---
 
 ## Bootstrapping: tx Builds tx

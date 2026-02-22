@@ -202,7 +202,7 @@ tx init --watchdog --watchdog-runtime auto
 ```
 
 Detailed rollout, detached service setup, rollback, and troubleshooting:
-- [Watchdog Runbook](apps/docs/content/docs/watchdog-runbook.mdx)
+- [Watchdog Runbook](https://txdocs.dev/docs/watchdog-runbook)
 
 ## Why tx?
 
@@ -368,9 +368,9 @@ Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code
 ## Documentation
 
 - **[txdocs.dev](https://txdocs.dev)**: Documentation
-- **[CLAUDE.md](CLAUDE.md)**: Doctrine and quick reference
-- **[AGENTS.md](AGENTS.md)**: Codex onboarding and quick reference
-- **[docs/](docs/)**: PRDs and Design Docs
+- **[CLAUDE.md](https://github.com/jamesaphoenix/tx/blob/main/CLAUDE.md)**: Doctrine and quick reference
+- **[AGENTS.md](https://github.com/jamesaphoenix/tx/blob/main/AGENTS.md)**: Codex onboarding and quick reference
+- **[docs/](https://github.com/jamesaphoenix/tx/tree/main/docs)**: PRDs and Design Docs
 
 ---
 
