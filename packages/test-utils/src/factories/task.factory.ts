@@ -6,6 +6,7 @@
 
 import type {
   Task,
+  TaskAssigneeType,
   TaskId,
   TaskStatus
 } from "@jamesaphoenix/tx-types"
@@ -34,6 +35,14 @@ export interface CreateTaskOptions {
   createdAt?: Date
   /** Completion timestamp (only if status is 'done') */
   completedAt?: Date | null
+  /** Task assignee type */
+  assigneeType?: TaskAssigneeType | null
+  /** Task assignee identifier */
+  assigneeId?: string | null
+  /** Task assigned timestamp */
+  assignedAt?: Date | null
+  /** Assignment source */
+  assignedBy?: string | null
 }
 
 /**
@@ -84,6 +93,10 @@ export class TaskFactory {
     const metadata = options.metadata ?? {}
     const createdAt = options.createdAt ?? now
     const completedAt = options.completedAt ?? (status === "done" ? now : null)
+    const assigneeType = options.assigneeType ?? null
+    const assigneeId = options.assigneeId ?? null
+    const assignedAt = options.assignedAt ?? null
+    const assignedBy = options.assignedBy ?? null
 
     this.db.run(
       `INSERT INTO tasks (id, title, description, status, parent_id, score, metadata, created_at, updated_at, completed_at)
@@ -112,7 +125,11 @@ export class TaskFactory {
       metadata,
       createdAt,
       updatedAt: now,
-      completedAt
+      completedAt,
+      assigneeType,
+      assigneeId,
+      assignedAt,
+      assignedBy
     }
   }
 

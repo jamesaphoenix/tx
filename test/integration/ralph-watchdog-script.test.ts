@@ -290,6 +290,7 @@ function cleanupHarness(h: Harness): void {
 }
 
 function createReconcileSchema(db: Database): void {
+  // eslint-disable-next-line tx/no-inline-sql -- test-only in-memory schema fixture
   db.exec(`
     CREATE TABLE tasks (
       id TEXT PRIMARY KEY,

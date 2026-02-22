@@ -68,7 +68,7 @@ export class AgentService extends Context.Tag("AgentService")<
  */
 export const AgentServiceLive = Layer.effect(
   AgentService,
-  Effect.gen(function* () {
+  Effect.sync(() => {
     type QueryFn = (opts: { prompt: string; options?: unknown }) => AsyncIterable<unknown>
 
     let cachedQueryFn: QueryFn | null = null

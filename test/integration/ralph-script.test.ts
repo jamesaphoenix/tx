@@ -266,6 +266,7 @@ async function terminateChild(proc: ChildProcessWithoutNullStreams): Promise<voi
 }
 
 function createReconcileSchema(db: Database): void {
+  // eslint-disable-next-line tx/no-inline-sql -- test-only in-memory schema fixture
   db.exec(`
     CREATE TABLE tasks (
       id TEXT PRIMARY KEY,
