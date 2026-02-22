@@ -67,33 +67,24 @@ describe("LlmService", () => {
   })
 })
 
-// Check if a real LLM backend is available
-const llmAvailable = await (async () => {
-  try {
-    prepareClaudeDebugLogPathForAgentSdk()
-    const completionWorked = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* LlmService
-        const available = yield* svc.isAvailable()
-        if (!available) {
-          return false
-        }
+const runLiveLlmTests = process.env.TX_RUN_LIVE_LLM_TESTS === "1"
 
-        const completion = yield* Effect.either(
-          svc.complete({
-            prompt: "Reply with exactly: ok",
-            maxTokens: 16,
-          })
-        )
-
-        return completion._tag === "Right"
-      }).pipe(Effect.provide(LlmServiceAuto))
-    )
-    return completionWorked
-  } catch {
-    return false
-  }
-})()
+// Real-backend tests are opt-in to keep CI and hooks deterministic.
+const llmAvailable = runLiveLlmTests
+  ? await (async () => {
+    try {
+      prepareClaudeDebugLogPathForAgentSdk()
+      return await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* LlmService
+          return yield* svc.isAvailable()
+        }).pipe(Effect.provide(LlmServiceAuto))
+      )
+    } catch {
+      return false
+    }
+  })()
+  : false
 
 afterAll(() => {
   restoreClaudeDebugLogPath()
