@@ -59,10 +59,6 @@ export function useCommands(commands: Command[]) {
     prevKeyRef.current = key
     setPageCommands(commands)
   }, [commands, setPageCommands])
-
-  useEffect(() => {
-    return () => setPageCommands([])
-  }, [setPageCommands])
 }
 
 export function useOverlayCommands(commands: Command[]) {
@@ -78,10 +74,6 @@ export function useOverlayCommands(commands: Command[]) {
     prevKeyRef.current = key
     setOverlayCommands(commands)
   }, [commands, setOverlayCommands])
-
-  useEffect(() => {
-    return () => setOverlayCommands([])
-  }, [setOverlayCommands])
 }
 
 export function useShortcutScope(scope: ManagedShortcutScope, enabled: boolean) {
@@ -114,7 +106,11 @@ function shortcutFromEvent(e: KeyboardEvent): string | null {
 function isTextInputElement(target: EventTarget | null): target is HTMLElement {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
-  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT"
+  if (target.tagName === "TEXTAREA") return true
+  if (target.tagName !== "INPUT") return false
+
+  const input = target as HTMLInputElement
+  return !["button", "submit", "reset", "checkbox", "radio", "file", "range", "color"].includes(input.type)
 }
 
 function isPaletteInputElement(target: EventTarget | null): target is HTMLElement {
@@ -171,17 +167,8 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      // CMD+K toggles assignment in task context when a command claims it.
+      // CMD+K toggles the command palette.
       if (shortcut === "⌘K") {
-        if (!isTextInput) {
-          const command = shortcutCommands.find((c) => c.shortcut === "⌘K")
-          if (command) {
-            e.preventDefault()
-            void command.action()
-            return
-          }
-        }
-
         e.preventDefault()
         setOpen((prev) => !prev)
         return

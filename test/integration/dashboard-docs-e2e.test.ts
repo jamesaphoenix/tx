@@ -99,7 +99,12 @@ describe.sequential("dashboard docs e2e", () => {
     proc.stdout?.on("data", (d: Buffer) => { output.value += d.toString() })
     proc.stderr?.on("data", (d: Buffer) => { output.value += d.toString() })
 
-    await waitForServers(output, apiPort)
+    const dashboardUrl = await waitForServers(output, apiPort)
+
+    const proxiedStatsRes = await fetch(`${dashboardUrl}/api/stats`)
+    expect(proxiedStatsRes.ok).toBe(true)
+    const proxiedStats = await proxiedStatsRes.json() as { tasks: number }
+    expect(typeof proxiedStats.tasks).toBe("number")
 
     const listRes = await fetch(`http://localhost:${apiPort}/api/docs`)
     expect(listRes.ok).toBe(true)

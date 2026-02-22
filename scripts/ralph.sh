@@ -884,7 +884,10 @@ detect_worker_table() {
   local table_exists
   table_exists=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workers';" \
-    2>/dev/null || echo "0")
+    2>/dev/null || true)
+  if ! [[ "$table_exists" =~ ^[0-9]+$ ]]; then
+    table_exists="0"
+  fi
 
   if [ "$table_exists" = "1" ]; then
     WORKER_TABLE_AVAILABLE=true

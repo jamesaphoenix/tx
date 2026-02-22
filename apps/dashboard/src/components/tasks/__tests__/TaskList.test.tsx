@@ -718,6 +718,166 @@ describe('TaskList', () => {
     })
   })
 
+  describe('client-side assignment + label filters', () => {
+    it('filters tasks by assignee type', async () => {
+      const tasks = [
+        createTask({ id: 'tx-human', title: 'Human task', assigneeType: 'human' }),
+        createTask({ id: 'tx-agent', title: 'Agent task', assigneeType: 'agent' }),
+        createTask({ id: 'tx-unassigned', title: 'Unassigned task', assigneeType: null }),
+      ]
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks,
+            nextCursor: null,
+            hasMore: false,
+            total: tasks.length,
+            summary: { total: tasks.length, byStatus: { ready: tasks.length } },
+          } satisfies PaginatedTasksResponse)
+        )
+      )
+
+      renderWithProviders(
+        <TaskList
+          onSelectTask={vi.fn()}
+          clientFilters={{ assigneeType: 'agent', labelIds: [] }}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Agent task')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Human task')).not.toBeInTheDocument()
+      expect(screen.queryByText('Unassigned task')).not.toBeInTheDocument()
+      expect(screen.getByText('1 matching of 3 loaded')).toBeInTheDocument()
+    })
+
+    it('filters tasks by selected labels using OR semantics', async () => {
+      const tasks = [
+        createTask({
+          id: 'tx-bug',
+          title: 'Bug task',
+          labels: [{ id: 1, name: 'bug', color: '#ef4444', createdAt: '', updatedAt: '' }],
+        }),
+        createTask({
+          id: 'tx-ops',
+          title: 'Ops task',
+          labels: [{ id: 2, name: 'ops', color: '#2563eb', createdAt: '', updatedAt: '' }],
+        }),
+        createTask({ id: 'tx-none', title: 'No label task', labels: [] }),
+      ]
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks,
+            nextCursor: null,
+            hasMore: false,
+            total: tasks.length,
+            summary: { total: tasks.length, byStatus: { ready: tasks.length } },
+          } satisfies PaginatedTasksResponse)
+        )
+      )
+
+      renderWithProviders(
+        <TaskList
+          onSelectTask={vi.fn()}
+          clientFilters={{ assigneeType: 'all', labelIds: [1, 2] }}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Bug task')).toBeInTheDocument()
+        expect(screen.getByText('Ops task')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('No label task')).not.toBeInTheDocument()
+      expect(screen.getByText('2 matching of 3 loaded')).toBeInTheDocument()
+    })
+
+    it('combines assignment and label filters', async () => {
+      const tasks = [
+        createTask({
+          id: 'tx-match',
+          title: 'Matching task',
+          assigneeType: 'human',
+          labels: [{ id: 9, name: 'priority', color: '#22c55e', createdAt: '', updatedAt: '' }],
+        }),
+        createTask({
+          id: 'tx-label-only',
+          title: 'Label-only match',
+          assigneeType: 'agent',
+          labels: [{ id: 9, name: 'priority', color: '#22c55e', createdAt: '', updatedAt: '' }],
+        }),
+        createTask({
+          id: 'tx-assignee-only',
+          title: 'Assignee-only match',
+          assigneeType: 'human',
+          labels: [{ id: 7, name: 'other', color: '#f59e0b', createdAt: '', updatedAt: '' }],
+        }),
+      ]
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks,
+            nextCursor: null,
+            hasMore: false,
+            total: tasks.length,
+            summary: { total: tasks.length, byStatus: { ready: tasks.length } },
+          } satisfies PaginatedTasksResponse)
+        )
+      )
+
+      renderWithProviders(
+        <TaskList
+          onSelectTask={vi.fn()}
+          clientFilters={{ assigneeType: 'human', labelIds: [9] }}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Matching task')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Label-only match')).not.toBeInTheDocument()
+      expect(screen.queryByText('Assignee-only match')).not.toBeInTheDocument()
+      expect(screen.getByText('1 matching of 3 loaded')).toBeInTheDocument()
+    })
+
+    it('shows a loaded-results empty message when client filters remove all tasks', async () => {
+      const tasks = [
+        createTask({ id: 'tx-a', title: 'Task A', assigneeType: 'human' }),
+        createTask({ id: 'tx-b', title: 'Task B', assigneeType: 'human' }),
+      ]
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks,
+            nextCursor: null,
+            hasMore: false,
+            total: tasks.length,
+            summary: { total: tasks.length, byStatus: { ready: tasks.length } },
+          } satisfies PaginatedTasksResponse)
+        )
+      )
+
+      renderWithProviders(
+        <TaskList
+          onSelectTask={vi.fn()}
+          clientFilters={{ assigneeType: 'agent', labelIds: [] }}
+        />
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('No tasks in the loaded results match the current assignment/label filters.')
+        ).toBeInTheDocument()
+      })
+      expect(screen.getByText('0 matching of 2 loaded')).toBeInTheDocument()
+    })
+  })
+
   describe('error state', () => {
     it('shows error when API fails', async () => {
       server.use(

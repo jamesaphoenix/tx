@@ -304,6 +304,21 @@ run_pid_is_owned_by_tx_runtime() {
   return 0
 }
 
+is_worker_managed_run() {
+  local runtime="$1"
+  local worker="$2"
+
+  case "$runtime" in
+    codex|claude|custom) return 0 ;;
+  esac
+
+  if [ -n "$worker" ]; then
+    return 0
+  fi
+
+  return 1
+}
+
 read_watchdog_pid_file() {
   local pid=""
 
@@ -602,16 +617,24 @@ ensure_loop() {
 reconcile_running_runs() {
   local rows=""
   rows=$(sqlite3 "$DB_PATH" \
-    "SELECT id, COALESCE(task_id,''), COALESCE(pid,0), CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER), COALESCE(json_extract(metadata, '$.runtime'), ''), COALESCE(json_extract(metadata, '$.worker'), '')
+    "SELECT id, COALESCE(task_id,''), COALESCE(pid,0), CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER), COALESCE(json_extract(metadata, '$.runtime'), ''), COALESCE(json_extract(metadata, '$.worker'), ''), COALESCE(agent, '')
      FROM runs
      WHERE status='running';" 2>/dev/null || echo "")
 
   [ -z "$rows" ] && return
 
-  while IFS='|' read -r run_id task_id pid age runtime worker; do
+  while IFS='|' read -r run_id task_id pid age runtime worker agent; do
     [ -z "$run_id" ] && continue
+    local managed_run=false
+    if is_worker_managed_run "$runtime" "$worker"; then
+      managed_run=true
+    fi
 
     if [ "$pid" -le 0 ]; then
+      if [ "$managed_run" != true ]; then
+        log "Skipping run=$run_id pid reconciliation (agent=${agent:-unknown} runtime=${runtime:-none} worker=${worker:-none})"
+        continue
+      fi
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: missing PID for running run' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
@@ -621,6 +644,10 @@ reconcile_running_runs() {
     fi
 
     if ! kill -0 "$pid" 2>/dev/null; then
+      if [ "$managed_run" != true ]; then
+        log "Skipping run=$run_id dead-pid reconciliation (agent=${agent:-unknown} pid=$pid runtime=${runtime:-none} worker=${worker:-none})"
+        continue
+      fi
       sqlite3 "$DB_PATH" \
         "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: process not alive' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
@@ -630,6 +657,10 @@ reconcile_running_runs() {
     fi
 
     if [ "$age" -gt "$RUN_STALE_SECONDS" ]; then
+      if [ "$managed_run" != true ]; then
+        log "Skipping stale-run pid kill for non-worker run=$run_id (agent=${agent:-unknown} age=${age}s)"
+        continue
+      fi
       if ! run_pid_is_owned_by_tx_runtime "$pid" "$runtime" "$worker"; then
         log "Stale run detected run=$run_id pid=$pid age=${age}s; ownership not confirmed, cancelling without kill"
         sqlite3 "$DB_PATH" \

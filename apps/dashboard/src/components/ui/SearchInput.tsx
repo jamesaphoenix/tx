@@ -6,6 +6,7 @@ interface SearchInputProps {
   onChange: (value: string) => void
   placeholder?: string
   debounceMs?: number
+  themeMode?: "light" | "dark"
 }
 
 export function SearchInput({
@@ -13,7 +14,9 @@ export function SearchInput({
   onChange,
   placeholder = "Search...",
   debounceMs = 300,
+  themeMode = "dark",
 }: SearchInputProps) {
+  const isDarkTheme = themeMode === "dark"
   const [localValue, setLocalValue] = useState(value)
   const debouncedValue = useDebounce(localValue, debounceMs)
   const hasMounted = useRef(false)
@@ -47,7 +50,7 @@ export function SearchInput({
     <div className="relative">
       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
         <svg
-          className="w-4 h-4 text-gray-500"
+          className={`h-4 w-4 ${isDarkTheme ? "text-gray-500" : "text-gray-400"}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -66,12 +69,18 @@ export function SearchInput({
         onChange={handleChange}
         data-native-select-all="true"
         placeholder={placeholder}
-        className="w-full pl-10 pr-10 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+        className={`w-full rounded-lg border py-2 pl-10 pr-10 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+          isDarkTheme
+            ? "border-gray-700 bg-gray-800 text-white placeholder-gray-500 focus:border-blue-500"
+            : "border-[#cbd5e1] bg-white text-[#0f172a] placeholder:text-[#64748b] focus:border-[#60a5fa]"
+        }`}
       />
       {localValue && (
         <button
           onClick={handleClear}
-          className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-300 transition-colors"
+          className={`absolute inset-y-0 right-0 flex items-center pr-3 transition-colors ${
+            isDarkTheme ? "text-gray-500 hover:text-gray-300" : "text-[#94a3b8] hover:text-[#64748b]"
+          }`}
           aria-label="Clear search"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -292,6 +292,36 @@ export const api = {
       },
       catch: (e) => new ApiError({ message: String(e) }),
     }),
+  updateLabel: (labelId: number, payload: { name?: string; color?: string }) =>
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetchWithFallback(
+          [`/api/labels/${labelId}`, `/api/task-labels/${labelId}`],
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        return res.json() as Promise<TaskLabel>
+      },
+      catch: (e) => new ApiError({ message: String(e) }),
+    }),
+  deleteLabel: (labelId: number) =>
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetchWithFallback(
+          [`/api/labels/${labelId}`, `/api/task-labels/${labelId}`],
+          {
+            method: "DELETE",
+          }
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        return res.json() as Promise<{ success: boolean; id: number }>
+      },
+      catch: (e) => new ApiError({ message: String(e) }),
+    }),
   assignTaskLabel: (taskId: string, payload: { labelId?: number; name?: string; color?: string }) =>
     Effect.tryPromise({
       try: async () => {
@@ -442,6 +472,10 @@ export const fetchers = {
   updateSettings: (payload: DashboardSettings) => Effect.runPromise(api.updateSettings(payload)),
   labels: () => Effect.runPromise(api.getLabels()),
   createLabel: (payload: { name: string; color?: string }) => Effect.runPromise(api.createLabel(payload)),
+  updateLabel: (labelId: number, payload: { name?: string; color?: string }) =>
+    Effect.runPromise(api.updateLabel(labelId, payload)),
+  deleteLabel: (labelId: number) =>
+    Effect.runPromise(api.deleteLabel(labelId)),
   assignTaskLabel: (taskId: string, payload: { labelId?: number; name?: string; color?: string }) =>
     Effect.runPromise(api.assignTaskLabel(taskId, payload)),
   unassignTaskLabel: (taskId: string, labelId: number) =>

@@ -308,6 +308,12 @@ interface IssueMapEntry {
   line: number
 }
 
+interface ScanAgentOutcome {
+  findings: Finding[]
+  failed: boolean
+  errorReason: string | null
+}
+
 // =============================================================================
 // Service Definition
 // =============================================================================
@@ -346,6 +352,28 @@ export const CycleScanServiceLive = Layer.effect(
         loss += LOSS_WEIGHTS[f.severity] ?? 1
       }
       return loss
+    }
+
+    const extractErrorReason = (error: unknown, fallback: string): string => {
+      if (error && typeof error === "object") {
+        const record = error as Record<string, unknown>
+        if (typeof record.reason === "string" && record.reason.trim().length > 0) {
+          return record.reason.trim()
+        }
+        if (typeof record.message === "string" && record.message.trim().length > 0) {
+          return record.message.trim()
+        }
+        if (typeof record.error === "string" && record.error.trim().length > 0) {
+          return record.error.trim()
+        }
+      }
+
+      const text = String(error)
+      if (text && text !== "[object Object]") {
+        return text
+      }
+
+      return fallback
     }
 
     const countBySeverity = (findings: readonly Finding[]): { high: number; medium: number; low: number } => {
@@ -585,7 +613,12 @@ export const CycleScanServiceLive = Layer.effect(
           })
           .pipe(
             Effect.mapError(
-              (e) => new CycleScanError({ phase: "scan", reason: e.reason, cause: e })
+              (e) =>
+                new CycleScanError({
+                  phase: "scan",
+                  reason: extractErrorReason(e, "Scan agent failed"),
+                  cause: e,
+                })
             )
           )
         // Try structured output first, then parse text
@@ -642,7 +675,12 @@ export const CycleScanServiceLive = Layer.effect(
           })
           .pipe(
             Effect.mapError(
-              (e) => new CycleScanError({ phase: "dedup", reason: e.reason, cause: e })
+              (e) =>
+                new CycleScanError({
+                  phase: "dedup",
+                  reason: extractErrorReason(e, "Dedup agent failed"),
+                  cause: e,
+                })
             )
           )
         const output = result.structuredOutput as DedupResult | null
@@ -683,7 +721,12 @@ export const CycleScanServiceLive = Layer.effect(
           })
           .pipe(
             Effect.mapError(
-              (e) => new CycleScanError({ phase: "fix", reason: e.reason, cause: e })
+              (e) =>
+                new CycleScanError({
+                  phase: "fix",
+                  reason: extractErrorReason(e, "Fix agent failed"),
+                  cause: e,
+                })
             )
           )
       })
@@ -769,25 +812,74 @@ export const CycleScanServiceLive = Layer.effect(
                 Effect.gen(function* () {
                   const scanRunId = dbCreateRun(`scan-agent-${i + 1}`)
                   dbUpdateRunMetadata(scanRunId, { type: "scan", cycle, round, cycleRunId })
-                  const findings = yield* runScanAgent(taskPrompt, scanPrompt, model, scanRunId).pipe(
+                  return yield* runScanAgent(taskPrompt, scanPrompt, model, scanRunId).pipe(
+                    Effect.map(
+                      (findings): ScanAgentOutcome => ({
+                        findings,
+                        failed: false,
+                        errorReason: null,
+                      })
+                    ),
                     Effect.tap(() => Effect.sync(() => dbFinalizeRun(scanRunId, { status: "completed" }))),
-                    Effect.tapError((error) =>
-                      Effect.sync(() =>
+                    Effect.catchAll((error) => {
+                      const reason = extractErrorReason(error, "Scan agent failed")
+                      return Effect.sync(() => {
                         dbFinalizeRun(
                           scanRunId,
-                          { status: "failed", errorMessage: error.reason },
-                          error.reason
+                          { status: "failed", errorMessage: reason },
+                          reason
                         )
-                      )
-                    ),
-                    Effect.catchAll(() => Effect.succeed([] as Finding[]))
+                        return {
+                          findings: [] as Finding[],
+                          failed: true,
+                          errorReason: reason,
+                        } satisfies ScanAgentOutcome
+                      })
+                    })
                   )
-                  return findings
                 })
               )
               const scanResults = yield* Effect.all(scanEffects, { concurrency: agentCount })
-              const allFindings = scanResults.flat()
+              const failedScans = scanResults.filter((result) => result.failed)
+              const allFindings = scanResults.flatMap((result) => result.findings)
               const scanDuration = Date.now() - scanStart
+
+              if (failedScans.length > 0) {
+                const reasonList = Array.from(
+                  new Set(
+                    failedScans
+                      .map((result) => result.errorReason)
+                      .filter((reason): reason is string => typeof reason === "string" && reason.length > 0)
+                  )
+                )
+                const reasonText = reasonList.length > 0 ? ` Reasons: ${reasonList.join(" | ")}` : ""
+                writeOrchestratorLog(
+                  cycleRunId,
+                  `Round ${round}: ${failedScans.length}/${agentCount} scan agent(s) failed.${reasonText}`
+                )
+              }
+
+              if (failedScans.length === agentCount) {
+                const reasonList = Array.from(
+                  new Set(
+                    failedScans
+                      .map((result) => result.errorReason)
+                      .filter((reason): reason is string => typeof reason === "string" && reason.length > 0)
+                  )
+                )
+                const reasonText = reasonList.length > 0 ? reasonList.join(" | ") : "No failure reason reported"
+                const fatalReason = `All ${agentCount} scan agents failed in cycle ${cycle} round ${round}: ${reasonText}`
+                writeOrchestratorLog(cycleRunId, fatalReason)
+                dbFinalizeRun(
+                  cycleRunId,
+                  {
+                    status: "failed",
+                    errorMessage: fatalReason,
+                  },
+                  fatalReason
+                )
+                return yield* Effect.fail(new CycleScanError({ phase: "scan", reason: fatalReason }))
+              }
 
               writeOrchestratorLog(
                 cycleRunId,
@@ -821,13 +913,14 @@ export const CycleScanServiceLive = Layer.effect(
               const dedupResult = yield* runDedupAgent(allFindings, issuesMap, model, dedupRunId).pipe(
                 Effect.tap(() => Effect.sync(() => dbFinalizeRun(dedupRunId, { status: "completed" }))),
                 Effect.tapError((error) =>
-                  Effect.sync(() =>
+                  Effect.sync(() => {
+                    const reason = extractErrorReason(error, "Dedup agent failed")
                     dbFinalizeRun(
                       dedupRunId,
-                      { status: "failed", errorMessage: error.reason },
-                      error.reason
+                      { status: "failed", errorMessage: reason },
+                      reason
                     )
-                  )
+                  })
                 ),
                 Effect.catchAll(() => Effect.succeed({ newIssues: allFindings, duplicates: [] } as DedupResult))
               )
@@ -906,13 +999,14 @@ export const CycleScanServiceLive = Layer.effect(
                 yield* runFixAgent(dedupResult.newIssues, model, fixRunId).pipe(
                   Effect.tap(() => Effect.sync(() => dbFinalizeRun(fixRunId, { status: "completed" }))),
                   Effect.tapError((error) =>
-                    Effect.sync(() =>
+                    Effect.sync(() => {
+                      const reason = extractErrorReason(error, "Fix agent failed")
                       dbFinalizeRun(
                         fixRunId,
-                        { status: "failed", errorMessage: error.reason },
-                        error.reason
+                        { status: "failed", errorMessage: reason },
+                        reason
                       )
-                    )
+                    })
                   ),
                   Effect.catchAll(() => Effect.void)
                 )

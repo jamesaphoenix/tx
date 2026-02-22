@@ -6,7 +6,8 @@ import {
   type ChatMessage,
   type Run,
   type PaginatedRunsResponse,
-  type TaskAssigneeType
+  type TaskAssigneeType,
+  type TaskLabel
 } from "./api/client"
 import { TasksPage } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
@@ -661,11 +662,13 @@ function SettingsPage({
   defaultTaskAssigmentType,
   isSaving,
   errorMessage,
+  onBack,
   onSave,
 }: {
   defaultTaskAssigmentType: TaskAssigneeType
   isSaving: boolean
   errorMessage: string | null
+  onBack: () => void
   onSave: (nextType: TaskAssigneeType) => void
 }) {
   const [draftType, setDraftType] = useState<TaskAssigneeType>(defaultTaskAssigmentType)
@@ -675,10 +678,134 @@ function SettingsPage({
   }, [defaultTaskAssigmentType])
 
   const hasChanges = draftType !== defaultTaskAssigmentType
+  const queryClient = useQueryClient()
+  const { data: labelsData, isLoading: isLoadingLabels } = useQuery({
+    queryKey: ["labels"],
+    queryFn: fetchers.labels,
+    staleTime: 5000,
+    retry: false,
+  })
+  const labels = labelsData?.labels ?? []
+  const [newLabelName, setNewLabelName] = useState("")
+  const [newLabelColor, setNewLabelColor] = useState("#3b82f6")
+  const [isCreatingLabel, setIsCreatingLabel] = useState(false)
+  const [editingLabelId, setEditingLabelId] = useState<number | null>(null)
+  const [editingLabelName, setEditingLabelName] = useState("")
+  const [editingLabelColor, setEditingLabelColor] = useState("#3b82f6")
+  const [labelBusyId, setLabelBusyId] = useState<number | null>(null)
+  const [pendingDeleteLabelId, setPendingDeleteLabelId] = useState<number | null>(null)
+  const [labelError, setLabelError] = useState<string | null>(null)
+
+  const invalidateLabelCaches = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["labels"] }),
+      queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+      queryClient.invalidateQueries({ queryKey: ["task"] }),
+    ])
+  }, [queryClient])
+
+  const beginEditLabel = useCallback((label: TaskLabel) => {
+    setEditingLabelId(label.id)
+    setEditingLabelName(label.name)
+    setEditingLabelColor(label.color)
+    setPendingDeleteLabelId(null)
+    setLabelError(null)
+  }, [])
+
+  const cancelEditLabel = useCallback(() => {
+    setEditingLabelId(null)
+    setEditingLabelName("")
+    setEditingLabelColor("#3b82f6")
+  }, [])
+
+  const handleCreateLabel = useCallback(async () => {
+    const normalizedName = newLabelName.trim()
+    if (!normalizedName) {
+      setLabelError("Label name is required")
+      return
+    }
+
+    setIsCreatingLabel(true)
+    setLabelError(null)
+    try {
+      await fetchers.createLabel({ name: normalizedName, color: newLabelColor })
+      setNewLabelName("")
+      setNewLabelColor("#3b82f6")
+      await invalidateLabelCaches()
+    } catch (error) {
+      setLabelError(error instanceof Error ? error.message : "Failed to create label")
+    } finally {
+      setIsCreatingLabel(false)
+    }
+  }, [newLabelName, newLabelColor, invalidateLabelCaches])
+
+  const handleSaveLabel = useCallback(async (labelId: number) => {
+    const normalizedName = editingLabelName.trim()
+    if (!normalizedName) {
+      setLabelError("Label name is required")
+      return
+    }
+
+    setLabelBusyId(labelId)
+    setLabelError(null)
+    try {
+      await fetchers.updateLabel(labelId, {
+        name: normalizedName,
+        color: editingLabelColor,
+      })
+      setEditingLabelId(null)
+      setEditingLabelName("")
+      setEditingLabelColor("#3b82f6")
+      await invalidateLabelCaches()
+    } catch (error) {
+      setLabelError(error instanceof Error ? error.message : "Failed to update label")
+    } finally {
+      setLabelBusyId(null)
+    }
+  }, [editingLabelName, editingLabelColor, invalidateLabelCaches])
+
+  const requestDeleteLabel = useCallback((labelId: number) => {
+    setPendingDeleteLabelId(labelId)
+    setLabelError(null)
+  }, [])
+
+  const cancelDeleteLabel = useCallback((labelId: number) => {
+    setPendingDeleteLabelId((current) => (current === labelId ? null : current))
+  }, [])
+
+  const handleDeleteLabel = useCallback(async (labelId: number) => {
+    setLabelBusyId(labelId)
+    setLabelError(null)
+    try {
+      await fetchers.deleteLabel(labelId)
+      if (editingLabelId === labelId) {
+        setEditingLabelId(null)
+      }
+      setPendingDeleteLabelId(null)
+      await invalidateLabelCaches()
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error)
+      if (rawMessage.includes("HTTP 404")) {
+        setLabelError("Delete labels endpoint not found. Restart `tx dashboard` and try again.")
+      } else {
+        setLabelError(error instanceof Error ? error.message : "Failed to delete label")
+      }
+    } finally {
+      setLabelBusyId(null)
+    }
+  }, [editingLabelId, invalidateLabelCaches])
 
   return (
-    <div className="mx-auto w-full max-w-2xl p-6">
-      <h2 className="text-xl font-semibold text-white">Settings</h2>
+    <div className="mx-auto w-full max-w-2xl p-6 pb-8">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-300 transition hover:bg-gray-700"
+        aria-label="Back to Tasks"
+      >
+        ← Back to Tasks
+      </button>
+      <h2 className="mt-3 text-xl font-semibold text-white">Settings</h2>
       <p className="mt-1 text-sm text-gray-400">
         Configure dashboard defaults for new task creation.
       </p>
@@ -731,6 +858,175 @@ function SettingsPage({
         {errorMessage && (
           <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
             {errorMessage}
+          </p>
+        )}
+      </section>
+
+      <section className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+        <h3 className="text-sm font-semibold text-gray-200">Task Labels</h3>
+        <p className="mt-1 text-xs text-gray-400">
+          Create, edit, and delete reusable task labels.
+        </p>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto]">
+          <input
+            aria-label="New label name"
+            type="text"
+            value={newLabelName}
+            onChange={(event) => setNewLabelName(event.target.value)}
+            placeholder="Label name"
+            className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
+          />
+          <label className="flex h-10 items-center justify-between rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-xs text-gray-300">
+            Color
+            <input
+              aria-label="New label color"
+              type="color"
+              value={newLabelColor}
+              onChange={(event) => setNewLabelColor(event.target.value)}
+              className="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
+            />
+          </label>
+          <button
+            type="button"
+            aria-label="Create label"
+            disabled={isCreatingLabel}
+            onClick={() => { void handleCreateLabel() }}
+            className="inline-flex h-10 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isCreatingLabel ? "Creating..." : "Create"}
+          </button>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-gray-700/80 bg-gray-900/20 p-2">
+          {!isLoadingLabels && labels.length > 0 && (
+            <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-gray-500">
+              <span>{labels.length} label{labels.length === 1 ? "" : "s"}</span>
+              <span>Scroll to manage all labels</span>
+            </div>
+          )}
+          <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+          {isLoadingLabels ? (
+            <p className="text-xs text-gray-400">Loading labels...</p>
+          ) : labels.length === 0 ? (
+            <p className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2 text-xs text-gray-500">
+              No labels yet.
+            </p>
+          ) : (
+            labels.map((label) => {
+              const isEditing = editingLabelId === label.id
+              const isBusy = labelBusyId === label.id
+              return (
+                <div
+                  key={label.id}
+                  className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2"
+                >
+                  {isEditing ? (
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto_auto]">
+                      <input
+                        aria-label={`Edit label name ${label.name}`}
+                        type="text"
+                        value={editingLabelName}
+                        onChange={(event) => setEditingLabelName(event.target.value)}
+                        className="rounded-md border border-gray-700 bg-gray-900/50 px-2.5 py-1.5 text-xs text-gray-100 outline-none transition focus:border-blue-500"
+                      />
+                      <label className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-900/50 px-2 py-1.5 text-[11px] text-gray-300">
+                        Color
+                        <input
+                          aria-label={`Edit label color ${label.name}`}
+                          type="color"
+                          value={editingLabelColor}
+                          onChange={(event) => setEditingLabelColor(event.target.value)}
+                          className="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        aria-label={`Save label ${label.name}`}
+                        disabled={isBusy}
+                        onClick={() => { void handleSaveLabel(label.id) }}
+                        className="rounded-md bg-blue-600 px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Cancel label edit ${label.name}`}
+                        onClick={cancelEditLabel}
+                        className="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-[11px] text-gray-300 transition hover:bg-gray-800"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="inline-flex min-w-0 items-center gap-2">
+                        <span
+                          className="h-3 w-3 flex-shrink-0 rounded-full border border-white/10"
+                          style={{ backgroundColor: label.color }}
+                          aria-hidden="true"
+                        />
+                        <span className="truncate text-sm text-gray-100">{label.name}</span>
+                        <span className="text-[10px] text-gray-500">#{label.id}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {pendingDeleteLabelId === label.id ? (
+                          <>
+                            <span className="text-[11px] text-red-300">Confirm delete?</span>
+                            <button
+                              type="button"
+                              aria-label={`Confirm delete label ${label.name}`}
+                              disabled={isBusy}
+                              onClick={() => { void handleDeleteLabel(label.id) }}
+                              className="rounded-md border border-red-500/70 bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-200 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isBusy ? "Deleting..." : "Confirm"}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Cancel delete label ${label.name}`}
+                              disabled={isBusy}
+                              onClick={() => cancelDeleteLabel(label.id)}
+                              className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              aria-label={`Edit label ${label.name}`}
+                              disabled={isBusy}
+                              onClick={() => beginEditLabel(label)}
+                              className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Delete label ${label.name}`}
+                              disabled={isBusy}
+                              onClick={() => requestDeleteLabel(label.id)}
+                              className="rounded-md border border-red-500/50 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          )}
+          </div>
+        </div>
+
+        {labelError && (
+          <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+            {labelError}
           </p>
         )}
       </section>
@@ -807,7 +1103,7 @@ function AppContent() {
     }
   }, [queryClient])
 
-  const { setAppCommands } = useCommandContext()
+  const { setAppCommands, setPageCommands, setOverlayCommands } = useCommandContext()
 
   const getLoadedRuns = useCallback((): Run[] => {
     const queries = queryClient.getQueriesData<{ pages: PaginatedRunsResponse[] }>({ queryKey: ["runs", "infinite"] })
@@ -959,6 +1255,17 @@ function AppContent() {
     setAppCommands(appCommands)
   }, [appCommands, setAppCommands])
 
+  useEffect(() => {
+    // Runs and settings tabs do not provide page-level commands.
+    if (activeTab === "runs" || activeTab === "settings") {
+      setPageCommands([])
+    }
+    // Task composer overlay commands should never leak across tabs.
+    if (activeTab !== "tasks") {
+      setOverlayCommands([])
+    }
+  }, [activeTab, setPageCommands, setOverlayCommands])
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-900 text-white">
       {/* Header */}
@@ -1040,7 +1347,7 @@ function AppContent() {
       )}
 
       {/* Main Content */}
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <main className={`flex min-h-0 flex-1 flex-col ${activeTab === "settings" ? "overflow-y-auto" : "overflow-hidden"}`}>
         {activeTab === "tasks" ? (
           <TasksPage
             themeMode={themeMode}
@@ -1093,6 +1400,7 @@ function AppContent() {
             defaultTaskAssigmentType={defaultTaskAssigmentType}
             isSaving={isSavingSettings}
             errorMessage={settingsSaveError}
+            onBack={() => setActiveTab("tasks")}
             onSave={(nextType) => {
               void saveDashboardDefaultAssigmentType(nextType)
             }}

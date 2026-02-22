@@ -147,6 +147,113 @@ describe('App', () => {
     })
   })
 
+  it('returns to tasks when clicking back from settings page', async () => {
+    renderWithProviders(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Tasks' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'New Task' })).toBeInTheDocument()
+    })
+  })
+
+  it('creates labels from the settings labels section', async () => {
+    const labels: Array<{ id: number; name: string; color: string; createdAt: string; updatedAt: string }> = []
+
+    server.use(
+      http.get('/api/labels', () => HttpResponse.json({ labels })),
+      http.post('/api/labels', async ({ request }) => {
+        const payload = await request.json() as { name?: string; color?: string }
+        const created = {
+          id: labels.length + 1,
+          name: payload.name ?? 'Unnamed',
+          color: payload.color ?? '#3b82f6',
+          createdAt: '',
+          updatedAt: '',
+        }
+        labels.push(created)
+        return HttpResponse.json(created, { status: 201 })
+      }),
+    )
+
+    renderWithProviders(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText('New label name'), {
+      target: { value: 'priority-high' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create label' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('priority-high')).toBeInTheDocument()
+    })
+  })
+
+  it('edits and deletes labels from settings', async () => {
+    let labels: Array<{ id: number; name: string; color: string; createdAt: string; updatedAt: string }> = [
+      { id: 1, name: 'bug', color: '#ef4444', createdAt: '', updatedAt: '' },
+    ]
+
+    server.use(
+      http.get('/api/labels', () => HttpResponse.json({ labels })),
+      http.patch('/api/labels/:labelId', async ({ params, request }) => {
+        const payload = await request.json() as { name?: string; color?: string }
+        const id = Number(params.labelId)
+        labels = labels.map((label) => label.id === id
+          ? {
+            ...label,
+            name: payload.name ?? label.name,
+            color: payload.color ?? label.color,
+          }
+          : label
+        )
+        const updated = labels.find((label) => label.id === id)
+        return HttpResponse.json(updated ?? { message: 'not found' }, { status: updated ? 200 : 404 })
+      }),
+      http.delete('/api/labels/:labelId', ({ params }) => {
+        const id = Number(params.labelId)
+        labels = labels.filter((label) => label.id !== id)
+        return HttpResponse.json({ success: true, id })
+      }),
+    )
+
+    renderWithProviders(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('bug')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit label bug' }))
+    fireEvent.change(screen.getByLabelText('Edit label name bug'), {
+      target: { value: 'backend-bug' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save label bug' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('backend-bug')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete label backend-bug' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete label backend-bug' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('backend-bug')).not.toBeInTheDocument()
+    })
+  })
+
   describe('run detail panel', () => {
     it('shows transcript/log waiting states for running runs', async () => {
       const runningRun = createRun({

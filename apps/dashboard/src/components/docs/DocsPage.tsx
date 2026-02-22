@@ -51,6 +51,7 @@ export function DocsPage() {
         group: "Actions",
         icon: "select",
         shortcut: "⌘A",
+        allowInInput: true,
         action: () => selectionActions.selectAllDocs(docs.map(d => d.name)),
       })
     }

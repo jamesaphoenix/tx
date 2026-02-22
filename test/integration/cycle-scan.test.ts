@@ -603,39 +603,38 @@ describe("CycleScanService — Scan Failure Handling", () => {
     testDb.db.close()
   })
 
-  it("gracefully handles scan agent failures (returns empty findings)", async () => {
-    // The service catches scan errors and returns [] — should converge with 0 issues
-    const results = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* CycleScanService
-        return yield* svc.runCycles({
-          taskPrompt: "Review code",
-          scanPrompt: "Find issues",
-          cycles: 1,
-          agents: 2,
-          maxRounds: 1,
-        })
-      }).pipe(Effect.provide(testDb.layer))
-    )
-
-    expect(results).toHaveLength(1)
-    expect(results[0].totalNewIssues).toBe(0)
-    expect(results[0].converged).toBe(true)
+  it("fails cycle when all scan agents fail", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CycleScanService
+          return yield* svc.runCycles({
+            taskPrompt: "Review code",
+            scanPrompt: "Find issues",
+            cycles: 1,
+            agents: 2,
+            maxRounds: 1,
+          })
+        }).pipe(Effect.provide(testDb.layer))
+      )
+    ).rejects.toThrow(/Cycle scan error \[scan\]: All 2 scan agents failed/)
   })
 
   it("records transcript-only capture metadata for failed scan runs", async () => {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* CycleScanService
-        return yield* svc.runCycles({
-          taskPrompt: "Review code",
-          scanPrompt: "Find issues",
-          cycles: 1,
-          agents: 1,
-          maxRounds: 1,
-        })
-      }).pipe(Effect.provide(testDb.layer))
-    )
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CycleScanService
+          return yield* svc.runCycles({
+            taskPrompt: "Review code",
+            scanPrompt: "Find issues",
+            cycles: 1,
+            agents: 1,
+            maxRounds: 1,
+          })
+        }).pipe(Effect.provide(testDb.layer))
+      )
+    ).rejects.toThrow(/Cycle scan error \[scan\]: All 1 scan agents failed/)
 
     const failedRun = testDb.db
       .prepare(
@@ -671,6 +670,19 @@ describe("CycleScanService — Scan Failure Handling", () => {
     expect(meta.logCapture?.failureReason).toContain("Mock scan failure")
     expect(meta.logCapture?.stdout?.state).toBe("not_reported")
     expect(meta.logCapture?.stderr?.state).toBe("not_reported")
+
+    const cycleRun = testDb.db
+      .prepare(
+        `SELECT status, error_message
+         FROM runs
+         WHERE agent = 'cycle-scanner'
+         ORDER BY started_at DESC
+         LIMIT 1`
+      )
+      .get() as { status: string; error_message: string | null }
+
+    expect(cycleRun.status).toBe("failed")
+    expect(cycleRun.error_message ?? "").toContain("All 1 scan agents failed")
   })
 })
 

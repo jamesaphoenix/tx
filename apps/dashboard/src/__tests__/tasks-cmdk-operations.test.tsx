@@ -119,6 +119,87 @@ describe("Task CMD+K operations", () => {
     )
   }
 
+  it("keeps selected-count commands scoped to the active task bucket", async () => {
+    const backlogTask = createTask({
+      id: "tx-backlog-selected",
+      title: "Backlog selected task",
+      status: "backlog",
+      isReady: true,
+    })
+    const doneTask = createTask({
+      id: "tx-done-visible",
+      title: "Done visible task",
+      status: "done",
+      isReady: true,
+    })
+    const allTasks = [backlogTask, doneTask]
+
+    server.use(
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 2, done: 1, ready: 1, learnings: 0, runsRunning: 0, runsTotal: 0 })),
+      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
+      http.get("*/api/settings", () => HttpResponse.json({ dashboard: { defaultTaskAssigmentType: "human" } })),
+      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
+      http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
+      http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
+      http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
+      http.get("*/api/labels", () => HttpResponse.json({ labels: [] })),
+      http.get("*/api/tasks/ready", () => HttpResponse.json({ tasks: [backlogTask] })),
+      http.get("*/api/tasks", ({ request }) => {
+        const statuses = new URL(request.url).searchParams.get("status")?.split(",") ?? []
+        const tasks = allTasks.filter((task) => statuses.length === 0 || statuses.includes(task.status))
+        return HttpResponse.json({
+          tasks,
+          nextCursor: null,
+          hasMore: false,
+          total: tasks.length,
+          summary: {
+            total: tasks.length,
+            byStatus: tasks.reduce<Record<string, number>>((acc, task) => {
+              acc[task.status] = (acc[task.status] ?? 0) + 1
+              return acc
+            }, {}),
+          },
+        } satisfies PaginatedTasksResponse)
+      }),
+    )
+
+    renderApp()
+
+    await waitFor(() => {
+      expect(screen.getByText("Backlog selected task")).toBeInTheDocument()
+    })
+
+    act(() => {
+      dispatchCmdA()
+    })
+
+    act(() => {
+      dispatchCmdShiftK()
+    })
+    await waitFor(() => {
+      expect(screen.getByText("Copy selected task IDs")).toBeInTheDocument()
+      expect(screen.queryAllByText("1 selected").length).toBeGreaterThan(0)
+    })
+
+    act(() => {
+      dispatchCmdShiftK()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    await waitFor(() => {
+      expect(screen.getByText("Done visible task")).toBeInTheDocument()
+      expect(screen.queryByText("Backlog selected task")).not.toBeInTheDocument()
+    })
+
+    act(() => {
+      dispatchCmdShiftK()
+    })
+    await waitFor(() => {
+      expect(screen.queryByText("Copy selected task IDs")).not.toBeInTheDocument()
+      expect(screen.queryAllByText("1 selected")).toHaveLength(0)
+    })
+  })
+
   it("executes all single-item CMD+K operations in task detail", async () => {
     const parentTask = createTask({
       id: "tx-parent-cmdk",
@@ -949,7 +1030,7 @@ describe("Task CMD+K operations", () => {
 
     await runCommand("Select all tasks")
     await waitFor(() => {
-      expect(selectionStore.state.taskIds.size).toBe(4)
+      expect(selectionStore.state.taskIds.size).toBe(2)
     })
 
     await runCommand("Set selected tasks to Done")
@@ -968,7 +1049,7 @@ describe("Task CMD+K operations", () => {
 
     await runCommand("Select all tasks")
     await waitFor(() => {
-      expect(selectionStore.state.taskIds.size).toBe(4)
+      expect(selectionStore.state.taskIds.size).toBe(3)
     })
 
     await runCommand("Delete selected tasks")
@@ -976,9 +1057,9 @@ describe("Task CMD+K operations", () => {
       expect(deletedTaskIds).toEqual(expect.arrayContaining([
         "tx-list-a",
         "tx-list-b",
-        "tx-list-active",
         "tx-list-done",
       ]))
+      expect(deletedTaskIds).not.toContain("tx-list-active")
       expect(screen.getByText("No tasks found")).toBeInTheDocument()
     })
   })

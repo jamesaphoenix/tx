@@ -19,23 +19,56 @@ const PROJECT_ROOT = resolve(__dirname, "../../../..")
 const API_SERVER_ENTRY = resolve(PROJECT_ROOT, "apps/dashboard/server/index.ts")
 const DASHBOARD_DIR = resolve(PROJECT_ROOT, "apps/dashboard")
 
-function killPort(port: number): void {
+function getPortPids(port: number): string[] {
   try {
     const raw = execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: "utf-8" }).trim()
-    if (raw) {
-      const pids = [...new Set(raw.split(/\s+/).filter(Boolean))]
-      const label = pids.length === 1 ? "PID" : "PIDs"
-      console.log(`Killing existing process on port ${port} (${label} ${pids.join(", ")})`)
-      for (const pid of pids) {
-        try {
-          execSync(`kill ${pid} 2>/dev/null`)
-        } catch {
-          // Ignore per-PID failures
-        }
-      }
-    }
+    if (!raw) return []
+    return [...new Set(raw.split(/\s+/).filter(Boolean))]
   } catch {
-    // No process on port — that's fine
+    return []
+  }
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+async function waitForPortToClear(port: number, timeoutMs: number): Promise<boolean> {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    if (getPortPids(port).length === 0) return true
+    await sleep(100)
+  }
+  return getPortPids(port).length === 0
+}
+
+function killPids(pids: string[], signal: "TERM" | "KILL"): void {
+  for (const pid of pids) {
+    try {
+      execSync(`kill -${signal} ${pid} 2>/dev/null`)
+    } catch {
+      // Ignore per-PID failures
+    }
+  }
+}
+
+async function killPort(port: number): Promise<void> {
+  const pids = getPortPids(port)
+  if (pids.length === 0) return
+
+  const label = pids.length === 1 ? "PID" : "PIDs"
+  console.log(`Killing existing process on port ${port} (${label} ${pids.join(", ")})`)
+  killPids(pids, "TERM")
+
+  if (await waitForPortToClear(port, 2000)) return
+
+  const remainingPids = getPortPids(port)
+  if (remainingPids.length > 0) {
+    const remainingLabel = remainingPids.length === 1 ? "PID" : "PIDs"
+    console.log(`Port ${port} is still occupied, forcing shutdown (${remainingLabel} ${remainingPids.join(", ")})`)
+    killPids(remainingPids, "KILL")
+  }
+
+  if (!(await waitForPortToClear(port, 3000))) {
+    throw new Error(`Failed to free port ${port}. Stop the process manually or run with --port.`)
   }
 }
 
@@ -66,7 +99,7 @@ function openBrowser(url: string): void {
 }
 
 export const dashboard = (_pos: string[], flags: Flags) =>
-  Effect.sync(() => {
+  Effect.promise(async () => {
     const apiPort = Number(opt(flags, "port")) || 3001
     const vitePort = 5173
     const noOpen = flag(flags, "no-open")
@@ -80,8 +113,8 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     console.log(`Database: ${dbPath}`)
 
     // Kill existing processes on our ports
-    killPort(apiPort)
-    killPort(vitePort)
+    await killPort(apiPort)
+    await killPort(vitePort)
 
     const runtime = process.argv[0]
 
@@ -98,6 +131,7 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     const viteProc = spawn(runtime, ["run", "dev"], {
       cwd: DASHBOARD_DIR,
       stdio: "pipe",
+      env: { ...process.env, TX_DASHBOARD_API_PORT: String(apiPort) },
       detached: false,
     })
 
@@ -105,6 +139,8 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     let dashboardUrl = `http://localhost:${vitePort}`
     let announced = false
     let openedUrl: string | null = null
+    let shuttingDown = false
+    let fallbackAnnounceTimer: ReturnType<typeof setTimeout> | undefined
 
     const announce = () => {
       if (announced) return
@@ -153,24 +189,52 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     viteProc.stdout?.on("data", onViteData("stdout"))
     viteProc.stderr?.on("data", onViteData("stderr"))
 
-    // Handle child exits
-    for (const child of children) {
-      child.on("error", (err) => console.error(`Process error: ${err.message}`))
-    }
-
     // Cleanup on exit
-    const cleanup = () => {
+    const cleanup = (exitCode: number) => {
+      if (shuttingDown) return
+      shuttingDown = true
+      if (fallbackAnnounceTimer) clearTimeout(fallbackAnnounceTimer)
       console.log("\nShutting down dashboard...")
       for (const child of children) {
-        child.kill()
+        if (!child.killed) child.kill("SIGTERM")
       }
+      setTimeout(() => {
+        for (const child of children) {
+          if (!child.killed) child.kill("SIGKILL")
+        }
+        process.exit(exitCode)
+      }, 300).unref()
     }
 
-    process.on("SIGINT", () => { cleanup(); process.exit(0) })
-    process.on("SIGTERM", () => { cleanup(); process.exit(0) })
+    const onUnexpectedExit = (name: string, code: number | null, signal: NodeJS.Signals | null) => {
+      if (shuttingDown) return
+      const detail = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`
+      console.error(`\n${name} exited unexpectedly (${detail}).`)
+      if (name === "API server") {
+        console.error("Dashboard API is unavailable, stopping the dashboard.")
+      }
+      cleanup(code === null || code === 0 ? 1 : code)
+    }
+
+    // Handle child exits
+    apiProc.on("error", (err) => {
+      if (shuttingDown) return
+      console.error(`API server process error: ${err.message}`)
+      cleanup(1)
+    })
+    viteProc.on("error", (err) => {
+      if (shuttingDown) return
+      console.error(`Vite process error: ${err.message}`)
+      cleanup(1)
+    })
+    apiProc.on("exit", (code, signal) => onUnexpectedExit("API server", code, signal))
+    viteProc.on("exit", (code, signal) => onUnexpectedExit("Vite dev server", code, signal))
+
+    process.on("SIGINT", () => cleanup(0))
+    process.on("SIGTERM", () => cleanup(0))
 
     // Fallback: announce even if we didn't parse Vite "Local" line yet.
-    setTimeout(() => {
-      announce()
+    fallbackAnnounceTimer = setTimeout(() => {
+      if (!shuttingDown) announce()
     }, 6000)
   })

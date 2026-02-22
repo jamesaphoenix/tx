@@ -298,6 +298,7 @@ function createReconcileSchema(db: Database): void {
     CREATE TABLE runs (
       id TEXT PRIMARY KEY,
       task_id TEXT,
+      agent TEXT,
       pid INTEGER,
       status TEXT NOT NULL,
       started_at TEXT NOT NULL,
@@ -539,7 +540,7 @@ describe("ralph-watchdog signal trap integration", () => {
 })
 
 describeIfSqlite3("ralph-watchdog reconcile integration", () => {
-  it("cancels running rows with missing pid, resets task, and expires active claims", () => {
+  it("cancels worker-managed running rows with missing pid, resets task, and expires active claims", () => {
     const harness = createHarness()
     harnesses.push(harness)
 
@@ -551,11 +552,15 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     const runId = `run-${fixtureId("watchdog-reconcile-run").slice(3)}`
     const workerId = fixtureId("watchdog-reconcile-worker")
     const now = new Date().toISOString()
+    const metadata = JSON.stringify({
+      runtime: "codex",
+      worker: "ralph-codex-live-main",
+    })
 
     db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
     db.prepare(
-      "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
-    ).run(runId, taskId, 0, "running", now, "{}")
+      "INSERT INTO runs (id, task_id, agent, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run(runId, taskId, "tx-implementer", 0, "running", now, metadata)
     insertActiveClaim(db, taskId, workerId)
     db.close()
 
@@ -597,11 +602,15 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     const runId = `run-${fixtureId("watchdog-dead-pid-run").slice(3)}`
     const workerId = fixtureId("watchdog-dead-pid-worker")
     const now = new Date().toISOString()
+    const metadata = JSON.stringify({
+      runtime: "codex",
+      worker: "ralph-codex-live-main",
+    })
 
     db.prepare("INSERT INTO tasks (id, status) VALUES (?, ?)").run(taskId, "backlog")
     db.prepare(
-      "INSERT INTO runs (id, task_id, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
-    ).run(runId, taskId, 999_999, "running", now, "{}")
+      "INSERT INTO runs (id, task_id, agent, pid, status, started_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run(runId, taskId, "tx-implementer", 999_999, "running", now, metadata)
     insertActiveClaim(db, taskId, workerId)
     db.close()
 
@@ -625,6 +634,40 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     const resetsLogPath = join(harness.stateDir, "resets.log")
     expect(existsSync(resetsLogPath)).toBe(true)
     expect(readFileSync(resetsLogPath, "utf-8")).toContain(taskId)
+  })
+
+  it("does not cancel non-worker running rows that do not report a pid", () => {
+    const harness = createHarness()
+    harnesses.push(harness)
+
+    const dbPath = join(harness.tmpDir, ".tx", "tasks.db")
+    const db = new Database(dbPath)
+    createReconcileSchema(db)
+
+    const runId = `run-${fixtureId("watchdog-scan-missing-pid").slice(3)}`
+    const now = new Date().toISOString()
+    const metadata = JSON.stringify({ type: "scan" })
+
+    db.prepare(
+      "INSERT INTO runs (id, task_id, agent, pid, status, started_at, metadata) VALUES (?, NULL, ?, ?, ?, ?, ?)"
+    ).run(runId, "scan-agent-1", 0, "running", now, metadata)
+    db.close()
+
+    const result = runWatchdogSweep(harness)
+    expect(result.status).toBe(0)
+
+    const checkDb = new Database(dbPath)
+    const row = checkDb
+      .query("SELECT status, error_message FROM runs WHERE id = ?")
+      .get(runId) as { status: string; error_message: string | null } | null
+    checkDb.close()
+
+    expect(row).not.toBeNull()
+    expect(row?.status).toBe("running")
+    expect(row?.error_message).toBeNull()
+
+    const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
+    expect(watchdogLog).toContain(`Skipping run=${runId} pid reconciliation`)
   })
 
   it("cancels stale running rows, resets task, and expires active claims", () => {

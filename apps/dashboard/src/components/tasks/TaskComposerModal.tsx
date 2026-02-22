@@ -315,7 +315,7 @@ export function TaskComposerModal({
         label: `Toggle assignment (${selectedAssigneeType === "human" ? "Human → Agent" : "Agent → Human"})`,
         group: "Composer",
         icon: "action",
-        shortcut: "⌘K",
+        shortcut: "⌘⇧A",
         action: toggleAssigneeType,
       },
       {

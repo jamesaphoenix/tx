@@ -384,6 +384,7 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
       <input
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
+        data-native-select-all="true"
         placeholder="Search docs by name or title..."
         className="mb-3 w-full bg-gray-900 border border-gray-700 text-xs text-gray-200 rounded px-2.5 py-1.5 placeholder:text-gray-500 focus:outline-none focus:border-blue-500"
       />

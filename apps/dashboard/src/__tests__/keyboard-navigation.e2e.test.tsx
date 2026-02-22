@@ -1067,6 +1067,98 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
       })
     })
 
+    it('clicking Tasks breadcrumb returns directly to list from nested task navigation', async () => {
+      const parentTask = createTask({
+        id: 'tx-parent-breadcrumb',
+        title: 'Parent breadcrumb task',
+        description: 'Parent breadcrumb description',
+        children: ['tx-child-breadcrumb'],
+      })
+
+      const childTask = createTask({
+        id: 'tx-child-breadcrumb',
+        title: 'Child breadcrumb task',
+        description: 'Child breadcrumb description',
+        parentId: 'tx-parent-breadcrumb',
+      })
+
+      const tasks = [parentTask, childTask]
+
+      server.use(
+        http.get('/api/tasks', () => {
+          return HttpResponse.json({
+            tasks,
+            nextCursor: null,
+            hasMore: false,
+            total: 2,
+            summary: { total: 2, byStatus: {} },
+          } satisfies PaginatedTasksResponse)
+        }),
+        http.get('/api/tasks/:id', ({ params }) => {
+          if (params.id === 'tx-parent-breadcrumb') {
+            return HttpResponse.json({
+              task: parentTask,
+              blockedByTasks: [],
+              blocksTasks: [],
+              childTasks: [childTask],
+            } satisfies TaskDetailResponse)
+          }
+          return HttpResponse.json({
+            task: childTask,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderApp()
+
+      await waitFor(() => {
+        const tasksTab = screen.getByRole('button', { name: /tasks/i })
+        fireEvent.click(tasksTab)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent breadcrumb task')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Parent breadcrumb task'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Children (1)')).toBeInTheDocument()
+      })
+
+      const childElements = screen.getAllByText('Child breadcrumb task')
+      const detailChildElement = childElements.find(el => el.tagName === 'H4')
+      expect(detailChildElement).toBeTruthy()
+
+      const childCardButton = detailChildElement?.closest('button')
+      expect(childCardButton).toBeTruthy()
+      if (childCardButton) {
+        fireEvent.click(childCardButton)
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText('Child breadcrumb description')).toBeInTheDocument()
+      })
+
+      const breadcrumbTasksButton = screen
+        .getAllByRole('button', { name: 'Tasks' })
+        .find((button) => button.className.includes('text-blue-300'))
+      expect(breadcrumbTasksButton).toBeTruthy()
+      if (breadcrumbTasksButton) {
+        fireEvent.click(breadcrumbTasksButton)
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent breadcrumb task')).toBeInTheDocument()
+        expect(screen.queryByText('Child breadcrumb description')).not.toBeInTheDocument()
+      })
+
+      expect(new URLSearchParams(window.location.search).get('taskId')).toBeNull()
+    })
+
     it('clicking parent link navigates to parent task', async () => {
       const parentTask = createTask({
         id: 'tx-parent1',

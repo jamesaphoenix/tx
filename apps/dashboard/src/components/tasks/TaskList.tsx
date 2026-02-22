@@ -7,9 +7,16 @@ import type { TaskWithDeps } from "../../api/client"
 import { LoadingSkeleton } from "../ui/LoadingSkeleton"
 import { EmptyState } from "../ui/EmptyState"
 import { TaskCard } from "./TaskCard"
+import {
+  buildTaskClientFilterPredicate,
+  hasActiveTaskClientFilters,
+  normalizeTaskClientFilters,
+  type TaskClientFilters,
+} from "./taskClientFilters"
 
 export interface TaskListProps {
   filters?: TaskFilters
+  clientFilters?: TaskClientFilters
   onSelectTask: (taskId: string) => void
   onEscape?: () => void
   selectedIds?: Set<string>
@@ -83,7 +90,14 @@ function buildNestedTaskEntries(tasks: TaskWithDeps[]): NestedTaskEntry[] {
   return nested
 }
 
-export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, onToggleSelect }: TaskListProps) {
+export function TaskList({
+  filters = {},
+  clientFilters,
+  onSelectTask,
+  onEscape,
+  selectedIds,
+  onToggleSelect,
+}: TaskListProps) {
   const statusMotionKey = useMemo(
     () => (filters.status?.length ? filters.status.join(",") : "all"),
     [filters.status]
@@ -129,8 +143,24 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
 
   // Pagination controls (only used for infinite scroll mode)
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = infiniteResult
+  const normalizedClientFilters = useMemo(
+    () => normalizeTaskClientFilters(clientFilters),
+    [clientFilters]
+  )
+  const clientFilterPredicate = useMemo(
+    () => buildTaskClientFilterPredicate(normalizedClientFilters),
+    [normalizedClientFilters]
+  )
+  const hasClientFilters = useMemo(
+    () => hasActiveTaskClientFilters(normalizedClientFilters),
+    [normalizedClientFilters]
+  )
+  const filteredTasks = useMemo(
+    () => tasks.filter(clientFilterPredicate),
+    [tasks, clientFilterPredicate]
+  )
 
-  const nestedTaskEntries = useMemo(() => buildNestedTaskEntries(tasks), [tasks])
+  const nestedTaskEntries = useMemo(() => buildNestedTaskEntries(filteredTasks), [filteredTasks])
 
   // Keyboard navigation
   const handleSelect = useCallback(
@@ -193,13 +223,15 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
         icon={<span>📋</span>}
         title="No tasks found"
         description={
-          filters.search || filters.status?.length
+          filters.search || filters.status?.length || hasClientFilters
             ? "Try adjusting your filters or search query"
             : "Create your first task with 'tx add'"
         }
       />
     )
   }
+
+  const hasFilteredResults = nestedTaskEntries.length > 0
 
   return (
     <div className={`space-y-2 ${isBucketAnimating ? "animate-bucket-swap" : ""}`}>
@@ -209,27 +241,35 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
           {useReadyEndpoint ? "Ready Tasks" : "Tasks"}
         </h2>
         <span className="text-sm text-gray-500">
-          {total} task{total !== 1 ? "s" : ""}
-          {!useReadyEndpoint && hasNextPage && " (scroll for more)"}
+          {hasClientFilters
+            ? `${filteredTasks.length} matching of ${tasks.length} loaded`
+            : `${total} task${total !== 1 ? "s" : ""}`}
+          {!useReadyEndpoint && hasNextPage && !hasClientFilters && " (scroll for more)"}
         </span>
       </div>
 
       {/* Task cards */}
-      <div className="space-y-2">
-        {nestedTaskEntries.map(({ task, depth }, index) => (
-          <TaskCard
-            key={`${statusMotionKey}-${task.id}`}
-            task={task}
-            nestingLevel={depth}
-            isFocused={index === focusedIndex}
-            showFocusRing={isKeyboardNavigating && index === focusedIndex}
-            isSelected={selectedIds?.has(task.id)}
-            onToggleSelect={onToggleSelect}
-            onClick={() => onSelectTask(task.id)}
-            entryIndex={index}
-          />
-        ))}
-      </div>
+      {hasFilteredResults ? (
+        <div className="space-y-2">
+          {nestedTaskEntries.map(({ task, depth }, index) => (
+            <TaskCard
+              key={`${statusMotionKey}-${task.id}`}
+              task={task}
+              nestingLevel={depth}
+              isFocused={index === focusedIndex}
+              showFocusRing={isKeyboardNavigating && index === focusedIndex}
+              isSelected={selectedIds?.has(task.id)}
+              onToggleSelect={onToggleSelect}
+              onClick={() => onSelectTask(task.id)}
+              entryIndex={index}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gray-700 bg-gray-900/60 px-3 py-4 text-sm text-gray-400">
+          No tasks in the loaded results match the current assignment/label filters.
+        </div>
+      )}
 
       {/* Sentinel element for infinite scroll (only in paginated mode) */}
       {!useReadyEndpoint && <div ref={sentinelRef} className="h-4" />}
@@ -238,7 +278,7 @@ export function TaskList({ filters = {}, onSelectTask, onEscape, selectedIds, on
       {!useReadyEndpoint && isFetchingNextPage && <LoadingSkeleton count={3} />}
 
       {/* End of list indicator */}
-      {(useReadyEndpoint || !hasNextPage) && tasks.length > 0 && (
+      {(useReadyEndpoint || !hasNextPage) && hasFilteredResults && (
         <div className="text-center text-sm text-gray-500 py-4">
           {useReadyEndpoint ? "All ready tasks shown" : "End of tasks"}
         </div>

@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-agent-sdk",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "TypeScript SDK for building custom agents with TX task management",
   "type": "module",
   "main": "./dist/index.js",

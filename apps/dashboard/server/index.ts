@@ -265,6 +265,11 @@ interface CreateLabelPayload {
   color?: string
 }
 
+interface UpdateLabelPayload {
+  name?: string
+  color?: string
+}
+
 interface AssignLabelPayload {
   labelId?: number
   name?: string
@@ -1168,6 +1173,100 @@ app.post("/api/labels", createLabelHandler)
 // Backward-compatible alias for older clients.
 app.post("/api/task-labels", createLabelHandler)
 
+const updateLabelHandler = async (c: Context) => {
+  try {
+    const db = getDb()
+    const labelIdRaw = c.req.param("labelId")
+    const labelId = parseInt(labelIdRaw, 10)
+    if (isNaN(labelId)) {
+      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
+    }
+
+    const existing = db.prepare(`
+      SELECT id, name, color, created_at, updated_at
+      FROM task_labels
+      WHERE id = ?
+      LIMIT 1
+    `).get(labelId) as TaskLabelRow | undefined
+    if (!existing) {
+      return c.json({ error: "Label not found" }, 404)
+    }
+
+    const payload = await c.req.json<UpdateLabelPayload>()
+    const nextName = payload.name !== undefined ? normalizeLabelName(payload.name) : existing.name
+    if (!nextName) {
+      return c.json({ error: "Label name is required" }, 400)
+    }
+    const nextColor = payload.color?.trim() || existing.color
+    if (!nextColor) {
+      return c.json({ error: "Label color is required" }, 400)
+    }
+
+    const duplicate = db.prepare(`
+      SELECT id
+      FROM task_labels
+      WHERE lower(name) = lower(?)
+        AND id != ?
+      LIMIT 1
+    `).get(nextName, labelId) as { id: number } | undefined
+    if (duplicate) {
+      return c.json({ error: `Label already exists: ${nextName}` }, 409)
+    }
+
+    const now = new Date().toISOString()
+    db.prepare(`
+      UPDATE task_labels
+      SET name = ?, color = ?, updated_at = ?
+      WHERE id = ?
+    `).run(nextName, nextColor, now, labelId)
+
+    const updated = db.prepare(`
+      SELECT id, name, color, created_at, updated_at
+      FROM task_labels
+      WHERE id = ?
+      LIMIT 1
+    `).get(labelId) as TaskLabelRow | undefined
+    if (!updated) {
+      return c.json({ error: "Failed to load updated label" }, 500)
+    }
+
+    return c.json(toTaskLabel(updated))
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+}
+
+// PATCH /api/labels/:labelId - update label metadata
+app.patch("/api/labels/:labelId", updateLabelHandler)
+// Backward-compatible alias for older clients.
+app.patch("/api/task-labels/:labelId", updateLabelHandler)
+
+const deleteLabelHandler = (c: Context) => {
+  try {
+    const db = getDb()
+    const labelIdRaw = c.req.param("labelId")
+    const labelId = parseInt(labelIdRaw, 10)
+    if (isNaN(labelId)) {
+      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
+    }
+
+    const existing = db.prepare("SELECT 1 FROM task_labels WHERE id = ?").get(labelId)
+    if (!existing) {
+      return c.json({ error: "Label not found" }, 404)
+    }
+
+    db.prepare("DELETE FROM task_labels WHERE id = ?").run(labelId)
+    return c.json({ success: true, id: labelId })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+}
+
+// DELETE /api/labels/:labelId - delete label globally
+app.delete("/api/labels/:labelId", deleteLabelHandler)
+// Backward-compatible alias for older clients.
+app.delete("/api/task-labels/:labelId", deleteLabelHandler)
+
 const assignLabelHandler = async (c: Context) => {
   try {
     const db = getDb()
@@ -2053,6 +2152,11 @@ app.get("/api/runs/:id", (c) => {
 })
 
 const port = Number(process.env.PORT ?? "3001")
-console.log(`Dashboard API running on http://localhost:${port}`)
-
-serve({ fetch: app.fetch, port })
+try {
+  serve({ fetch: app.fetch, port })
+  console.log(`Dashboard API running on http://localhost:${port}`)
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error)
+  console.error(`Failed to start dashboard API on port ${port}: ${message}`)
+  process.exit(1)
+}

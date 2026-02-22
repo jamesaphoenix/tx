@@ -1,12 +1,37 @@
 import { defineConfig } from "vitest/config"
+import { fileURLToPath } from "node:url"
+import { dirname, resolve } from "node:path"
 
 const EFFECT_INFO_LOG_RE = /^timestamp=\d{4}-\d{2}-\d{2}T.* level=INFO fiber=#\d+ message=/
+const ROOT_DIR = dirname(fileURLToPath(import.meta.url))
 
 // Run with: bunx --bun vitest run
 // The --bun flag ensures bun is the runtime so bun:sqlite is available in forked workers.
 export default defineConfig({
   resolve: {
     conditions: ["bun"],
+    alias: [
+      {
+        find: /^@jamesaphoenix\/tx-core\/services$/,
+        replacement: resolve(ROOT_DIR, "packages/core/src/services/index.ts"),
+      },
+      {
+        find: /^@jamesaphoenix\/tx-core$/,
+        replacement: resolve(ROOT_DIR, "packages/core/src/index.ts"),
+      },
+      {
+        find: /^@jamesaphoenix\/tx-test-utils$/,
+        replacement: resolve(ROOT_DIR, "packages/test-utils/src/index.ts"),
+      },
+      {
+        find: /^@jamesaphoenix\/tx-types$/,
+        replacement: resolve(ROOT_DIR, "packages/types/src/index.ts"),
+      },
+      {
+        find: /^@jamesaphoenix\/tx$/,
+        replacement: resolve(ROOT_DIR, "packages/tx/src/index.ts"),
+      },
+    ],
   },
   ssr: {
     external: ["bun:sqlite"],

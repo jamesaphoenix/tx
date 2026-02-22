@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const apiPort = Number(process.env.TX_DASHBOARD_API_PORT ?? '3001')
+
 export default defineConfig({
   plugins: [
     react(),
@@ -10,9 +12,9 @@ export default defineConfig({
     {
       name: 'api-proxy',
       configureServer(server) {
-        server.middlewares.use('/api', async (req, res, next) => {
+        server.middlewares.use('/api', async (req, res, _next) => {
           try {
-            const url = `http://127.0.0.1:3001/api${req.url}`
+            const url = `http://127.0.0.1:${apiPort}/api${req.url}`
             const response = await fetch(url, {
               method: req.method,
               headers: {

@@ -433,6 +433,115 @@ describe('Keyboard shortcuts', () => {
     })
   })
 
+  describe('CMD+A after tab transitions', () => {
+    it('selects all tasks after navigating Runs -> Tasks', async () => {
+      const tasks = [
+        createTask({ id: 'tx-runs-to-tasks-1', title: 'Runs to Tasks 1' }),
+        createTask({ id: 'tx-runs-to-tasks-2', title: 'Runs to Tasks 2' }),
+      ]
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks,
+            nextCursor: null,
+            hasMore: false,
+            total: tasks.length,
+            summary: { total: tasks.length, byStatus: { backlog: tasks.length } },
+          } satisfies PaginatedTasksResponse)
+        ),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+      })
+      await waitFor(() => {
+        expect(screen.getByText('No runs found')).toBeInTheDocument()
+      })
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Runs to Tasks 1')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('a', true)
+      })
+
+      await waitFor(() => {
+        expect(selectionStore.state.taskIds.has('tx-runs-to-tasks-1')).toBe(true)
+        expect(selectionStore.state.taskIds.has('tx-runs-to-tasks-2')).toBe(true)
+      })
+    })
+
+    it('selects all docs after navigating Runs -> Docs', async () => {
+      const docs = [
+        {
+          id: 1,
+          hash: 'hash-1',
+          kind: 'overview',
+          name: 'overview-root',
+          title: 'Overview Root',
+          version: 1,
+          status: 'changing',
+          filePath: '/tmp/overview.md',
+          parentDocId: null,
+          createdAt: '2026-02-22T10:00:00.000Z',
+          lockedAt: null,
+        },
+        {
+          id: 2,
+          hash: 'hash-2',
+          kind: 'prd',
+          name: 'PRD-001-testing',
+          title: 'PRD Testing',
+          version: 1,
+          status: 'changing',
+          filePath: '/tmp/prd.md',
+          parentDocId: null,
+          createdAt: '2026-02-22T10:00:00.000Z',
+          lockedAt: null,
+        },
+      ]
+
+      server.use(
+        http.get('/api/docs', () => HttpResponse.json({ docs })),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+      })
+      await waitFor(() => {
+        expect(screen.getByText('No runs found')).toBeInTheDocument()
+      })
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Docs' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('overview-root')).toBeInTheDocument()
+        expect(screen.getByText('PRD-001-testing')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('a', true)
+      })
+
+      await waitFor(() => {
+        expect(selectionStore.state.docNames.has('overview-root')).toBe(true)
+        expect(selectionStore.state.docNames.has('PRD-001-testing')).toBe(true)
+      })
+    })
+  })
+
   describe('CMD+C copies item data', () => {
     it('does not intercept CMD+C when text is selected', async () => {
       const writeText = vi.fn()
@@ -498,7 +607,167 @@ describe('Keyboard shortcuts', () => {
       })
     })
 
-    it('toggles assignment in task detail with CMD+K and keeps palette closed', async () => {
+    it('opens and closes command palette in task detail with CMD+K and CTRL+K', async () => {
+      const parentTask = createTask({
+        id: 'tx-parent-cmdk-detail',
+        title: 'Parent cmdk detail task',
+      })
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks: [parentTask],
+            nextCursor: null,
+            hasMore: false,
+            total: 1,
+            summary: { total: 1, byStatus: { backlog: 1 } },
+          } satisfies PaginatedTasksResponse)
+        ),
+        http.get('/api/tasks/:id', ({ params }) =>
+          HttpResponse.json({
+            task: createTask({ id: String(params.id), title: 'Parent cmdk detail task' }),
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          })
+        ),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent cmdk detail task')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Parent cmdk detail task'))
+      await waitFor(() => {
+        expect(screen.getByText('Properties')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('k', true)
+      })
+      expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
+
+      act(() => {
+        dispatchKeyCombo('k', true)
+      })
+      await waitFor(() => {
+        expect(screen.queryByPlaceholderText('Type a command...')).not.toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('k', false, true)
+      })
+      expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
+    })
+
+    it('opens command palette in task detail with CMD+Shift+K fallback', async () => {
+      const parentTask = createTask({ id: 'tx-parent-shift-k', title: 'Parent shift k task' })
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks: [parentTask],
+            nextCursor: null,
+            hasMore: false,
+            total: 1,
+            summary: { total: 1, byStatus: { backlog: 1 } },
+          } satisfies PaginatedTasksResponse)
+        ),
+        http.get('/api/tasks/:id', ({ params }) =>
+          HttpResponse.json({
+            task: createTask({ id: String(params.id), title: 'Parent shift k task' }),
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          })
+        ),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent shift k task')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Parent shift k task'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Properties')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('k', true, false, true)
+      })
+
+      expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
+    })
+
+    it('opens command palette in task detail with CTRL+K when child selection is active', async () => {
+      const parentTask = createTask({ id: 'tx-parent-ctrl-k', title: 'Parent ctrl k task' })
+      const childA = createTask({ id: 'tx-child-ctrl-k-a', title: 'Child ctrl k A', parentId: 'tx-parent-ctrl-k' })
+      const childB = createTask({ id: 'tx-child-ctrl-k-b', title: 'Child ctrl k B', parentId: 'tx-parent-ctrl-k' })
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks: [parentTask],
+            nextCursor: null,
+            hasMore: false,
+            total: 1,
+            summary: { total: 1, byStatus: { backlog: 1 } },
+          } satisfies PaginatedTasksResponse)
+        ),
+        http.get('/api/tasks/:id', ({ params }) =>
+          HttpResponse.json({
+            task: createTask({ id: String(params.id), title: 'Parent ctrl k task' }),
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [childA, childB],
+          })
+        ),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent ctrl k task')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Parent ctrl k task'))
+      await waitFor(() => {
+        expect(screen.getByText('Properties')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('a', true)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Delete selected (2)')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('k', false, true)
+      })
+
+      expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
+    })
+
+    it('toggles assignment in task detail with CMD+Shift+A', async () => {
       const parentTask = createTask({
         id: 'tx-parent-toggle',
         title: 'Parent toggle task',
@@ -554,59 +823,13 @@ describe('Keyboard shortcuts', () => {
       })
 
       act(() => {
-        dispatchKeyCombo('k', true)
+        dispatchKeyCombo('a', true, false, true)
       })
 
       await waitFor(() => {
         expect(patchPayloads.some((payload) => payload.assigneeType === 'agent')).toBe(true)
       })
       expect(screen.queryByPlaceholderText('Type a command...')).not.toBeInTheDocument()
-    })
-
-    it('opens command palette in task detail with CMD+Shift+K fallback', async () => {
-      const parentTask = createTask({ id: 'tx-parent-shift-k', title: 'Parent shift k task' })
-
-      server.use(
-        http.get('/api/tasks', () =>
-          HttpResponse.json({
-            tasks: [parentTask],
-            nextCursor: null,
-            hasMore: false,
-            total: 1,
-            summary: { total: 1, byStatus: { backlog: 1 } },
-          } satisfies PaginatedTasksResponse)
-        ),
-        http.get('/api/tasks/:id', ({ params }) =>
-          HttpResponse.json({
-            task: createTask({ id: String(params.id), title: 'Parent shift k task' }),
-            blockedByTasks: [],
-            blocksTasks: [],
-            childTasks: [],
-          })
-        ),
-      )
-
-      renderApp()
-
-      act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
-      })
-
-      await waitFor(() => {
-        expect(screen.getByText('Parent shift k task')).toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByText('Parent shift k task'))
-
-      await waitFor(() => {
-        expect(screen.getByText('Properties')).toBeInTheDocument()
-      })
-
-      act(() => {
-        dispatchKeyCombo('k', true, false, true)
-      })
-
-      expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
     })
   })
 
@@ -947,6 +1170,69 @@ describe('Keyboard shortcuts', () => {
       await waitFor(() => {
         expect(selectionStore.state.taskIds.size).toBe(0)
       })
+    })
+
+    it('clears selected child tasks before navigating away from task detail', async () => {
+      const parentTask = createTask({ id: 'tx-parent-esc', title: 'Parent esc task' })
+      const childA = createTask({ id: 'tx-child-esc-a', title: 'Child esc A', parentId: 'tx-parent-esc' })
+      const childB = createTask({ id: 'tx-child-esc-b', title: 'Child esc B', parentId: 'tx-parent-esc' })
+
+      server.use(
+        http.get('/api/tasks', () =>
+          HttpResponse.json({
+            tasks: [parentTask],
+            nextCursor: null,
+            hasMore: false,
+            total: 1,
+            summary: { total: 1, byStatus: { backlog: 1 } },
+          } satisfies PaginatedTasksResponse)
+        ),
+        http.get('/api/tasks/:id', ({ params }) =>
+          HttpResponse.json({
+            task: createTask({ id: String(params.id), title: 'Parent esc task' }),
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [childA, childB],
+          })
+        ),
+      )
+
+      renderApp()
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Parent esc task')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Parent esc task'))
+      await waitFor(() => {
+        expect(screen.getByText('Properties')).toBeInTheDocument()
+      })
+
+      act(() => {
+        dispatchKeyCombo('a', true)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Delete selected (2)')).toBeInTheDocument()
+      })
+
+      const beforeEscTaskId = new URLSearchParams(window.location.search).get('taskId')
+      expect(beforeEscTaskId).toBe('tx-parent-esc')
+
+      act(() => {
+        dispatchKeyCombo('Escape')
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByText('Delete selected (2)')).not.toBeInTheDocument()
+      })
+      expect(screen.getByText('Properties')).toBeInTheDocument()
+      const afterEscTaskId = new URLSearchParams(window.location.search).get('taskId')
+      expect(afterEscTaskId).toBe('tx-parent-esc')
     })
   })
 })
