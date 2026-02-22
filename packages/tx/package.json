@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Headless, local infra for AI agents - primitives for memory, tasks, and orchestration",
   "type": "module",
   "main": "./dist/index.js",
