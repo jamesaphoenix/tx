@@ -12,6 +12,30 @@ description: Docs-as-primitives — YAML-on-disk documentation management
 - **Rendered markdown** generated from YAML source
 - **Invariant extraction** from design docs for machine-checkable rules
 
+## EARS in tx PRDs
+
+tx now supports **EARS** (**Easy Approach to Requirements Syntax**) for PRD requirements through the optional `ears_requirements` block.
+
+Why this is now used:
+
+- Plain bullet requirements are easy to write but can be ambiguous.
+- EARS gives requirements a predictable structure that is easier to lint and review.
+- EARS IDs map cleanly to test cases in DD testing strategies (traceability).
+- tx can validate EARS early with `tx doc lint-ears` before implementation starts.
+
+EARS in tx uses these patterns:
+
+| Pattern | Meaning | Required extra field(s) |
+|------|---------|--------------------------|
+| `ubiquitous` | Always true behavior | none |
+| `event_driven` | Triggered by an event | `trigger` |
+| `state_driven` | Valid while a state holds | `state` |
+| `optional` | Conditional by feature/config | `feature` |
+| `unwanted` | Protective/exception behavior | `condition` |
+| `complex` | Combination of clauses | at least one of `trigger`/`state`/`feature`/`condition` |
+
+Use deterministic IDs: `EARS-<AREA>-NNN` (example: `EARS-AUTH-001`).
+
 ## Doc Kinds
 
 | Kind | Purpose |
@@ -38,7 +62,7 @@ changing → locked
 
 ```bash
 # Create a new doc
-tx doc add --kind prd --name auth-system --title "Authentication System"
+tx doc add prd auth-system --title "Authentication System"
 
 # Edit a doc (opens YAML in $EDITOR)
 tx doc edit auth-system
@@ -75,6 +99,10 @@ tx doc validate
 
 # Detect drift between YAML and DB
 tx doc drift auth-system
+
+# Validate EARS requirements for a PRD (by doc name or YAML file path)
+tx doc lint-ears auth-system
+tx doc lint-ears .tx/docs/prd/auth-system.yml
 ```
 
 </Tab>
@@ -246,6 +274,16 @@ requirements:
   - Login with JWT tokens
   - Password reset flow
 
+ears_requirements:
+  - id: EARS-AUTH-001
+    pattern: event_driven
+    trigger: a user submits valid credentials
+    system: authentication service
+    response: issue access and refresh tokens
+    priority: must
+    rationale: core login success path
+    test_hint: test/integration/auth-login.test.ts
+
 acceptance_criteria:
   - Users can register and log in
   - Tokens expire after 15 minutes
@@ -257,6 +295,8 @@ invariants:
     enforcement: integration_test
     test_ref: test/auth.test.ts
 ```
+
+`requirements` and `ears_requirements` can coexist. This keeps backwards compatibility while allowing structured, test-traceable requirements.
 
 ## Doc Graph
 

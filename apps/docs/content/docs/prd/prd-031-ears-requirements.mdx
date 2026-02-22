@@ -1,0 +1,111 @@
+---
+title: "PRD-031: EARS Structured Requirements"
+description: "Optional EARS-based structured requirements for PRDs with linting and traceability support"
+---
+
+**Status**: Draft  
+**Priority**: P1 (Should Have)  
+**Owner**: TBD  
+**Last Updated**: 2026-02-22
+
+---
+
+## Problem Statement
+
+PRD requirements in tx were commonly written as flat bullet lists. Those are readable, but they are hard to:
+
+- validate consistently,
+- interpret unambiguously across agents,
+- map directly to test coverage in design docs.
+
+We needed a structured format that keeps docs human-readable while making requirement quality enforceable.
+
+---
+
+## Solution
+
+Add optional **EARS** (**Easy Approach to Requirements Syntax**) support to PRD YAML via `ears_requirements`, while preserving backwards compatibility with existing `requirements`.
+
+The system now supports:
+
+- schema + rule validation for EARS entries,
+- deterministic markdown rendering for structured requirements,
+- CLI linting via `tx doc lint-ears`,
+- typed errors when EARS data is invalid.
+
+---
+
+## Why tx Uses EARS Now
+
+1. **Clarity**: turns ambiguous prose into pattern-based requirement statements.
+2. **Quality Gates**: invalid structured requirements fail early in doc validation/linting.
+3. **Test Traceability**: EARS IDs (`EARS-...`) are easy to map to integration tests in DD matrices.
+4. **Agent Reliability**: onboarding and execution prompts can reference requirement IDs consistently.
+5. **Safe Adoption**: legacy PRDs continue to work unchanged.
+
+---
+
+## Requirements
+
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| EARS-PRD-001 | ubiquitous | Renderer supports optional `ears_requirements` section in PRD YAML |
+| EARS-PRD-002 | event_driven | Invalid EARS entries are rejected with typed validation errors |
+| EARS-PRD-003 | state_driven | Structured EARS entries render deterministically in markdown |
+| EARS-PRD-004 | optional | Legacy `requirements` continue to render unchanged |
+| EARS-PRD-005 | event_driven | `tx doc lint-ears` returns non-zero on invalid EARS input |
+| EARS-PRD-006 | ubiquitous | PRDs without `ears_requirements` remain fully supported |
+
+---
+
+## EARS YAML Example
+
+```yaml
+kind: prd
+name: auth-system
+title: Authentication System
+status: changing
+
+requirements:
+  - User authentication must be available in CLI and API.
+
+ears_requirements:
+  - id: EARS-AUTH-001
+    pattern: event_driven
+    trigger: a user submits valid credentials
+    system: auth service
+    response: return access and refresh tokens
+    priority: must
+    rationale: primary login path
+    test_hint: test/integration/auth-login.test.ts
+```
+
+---
+
+## CLI Validation
+
+```bash
+# Validate by PRD doc name
+tx doc lint-ears auth-system
+
+# Validate by YAML file path
+tx doc lint-ears .tx/docs/prd/auth-system.yml
+
+# Machine-friendly output
+tx doc lint-ears auth-system --json
+```
+
+---
+
+## Out of Scope
+
+- Dedicated DB tables for EARS rows.
+- New MCP tools specifically for EARS linting.
+- Auto-generation of trace matrices from EARS IDs.
+
+---
+
+## Related Docs
+
+- [DD-031: EARS Requirements Integration](/docs/design/dd-031-ears-requirements)
+- [tx doc primitive](/docs/primitives/docs)

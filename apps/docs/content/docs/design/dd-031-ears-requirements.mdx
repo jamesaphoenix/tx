@@ -1,0 +1,58 @@
+---
+title: "DD-031: EARS Requirements Integration"
+description: "Design for validating and rendering structured EARS requirements in tx PRD docs"
+---
+
+**Implements**: [PRD-031](/docs/prd/prd-031-ears-requirements)
+
+---
+
+## Overview
+
+DD-031 adds optional EARS support to tx PRD docs without breaking existing YAML flows.
+
+Main integration points:
+
+- Effect Schema definitions for EARS entries in `@jamesaphoenix/tx-types`.
+- Validation utility in core (`validateEarsRequirements`).
+- PRD renderer support for `Structured Requirements (EARS)` sections.
+- Doc service validation hooks for PRD YAML updates.
+- CLI lint command: `tx doc lint-ears`.
+
+---
+
+## Why This Design
+
+The design keeps adoption low-risk:
+
+- `ears_requirements` is optional.
+- legacy `requirements` still render and validate.
+- structured entries are lintable and test-traceable.
+
+This enables teams to transition incrementally while improving requirement quality.
+
+---
+
+## Validation Rules
+
+EARS entries require:
+
+- deterministic ID format: `EARS-<AREA>-NNN`,
+- valid pattern values (`ubiquitous`, `event_driven`, `state_driven`, `optional`, `unwanted`, `complex`),
+- pattern-specific clause fields where required,
+- duplicate ID rejection.
+
+---
+
+## Testing Strategy Highlights
+
+- Unit coverage for validator and renderer behavior.
+- Integration coverage for create/update/render flows with valid and invalid EARS.
+- CLI coverage for `tx doc lint-ears` success/failure and JSON output modes.
+
+---
+
+## Related Docs
+
+- [PRD-031: EARS Structured Requirements](/docs/prd/prd-031-ears-requirements)
+- [tx doc primitive](/docs/primitives/docs)

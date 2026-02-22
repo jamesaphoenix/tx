@@ -19,6 +19,7 @@
     "dd-015-jsonl-daemon-promotion",
     "dd-016-graph-expansion-retrieval",
     "dd-017-invalidation-maintenance",
-    "dd-018-worker-orchestration"
+    "dd-018-worker-orchestration",
+    "dd-031-ears-requirements"
   ]
 }

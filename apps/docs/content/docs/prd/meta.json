@@ -20,6 +20,7 @@
     "prd-015-jsonl-daemon-promotion",
     "prd-016-graph-expansion-retrieval",
     "prd-017-invalidation-maintenance",
-    "prd-018-worker-orchestration"
+    "prd-018-worker-orchestration",
+    "prd-031-ears-requirements"
   ]
 }

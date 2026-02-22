@@ -60,6 +60,18 @@ Follow the docs in this order:
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL |
 
+## Structured Requirements (EARS)
+
+tx PRDs can now include optional **EARS** (**Easy Approach to Requirements Syntax**) via `ears_requirements`.
+
+Use it when you want requirements that are:
+
+- clearer and less ambiguous than plain bullets,
+- machine-validated before implementation (`tx doc lint-ears`),
+- easier to map to tests in DD traceability matrices.
+
+Start in [`tx doc`](/docs/primitives/docs) for syntax and examples.
+
 ## Your First Step
 
 Start with [Getting Started](/docs/getting-started), then continue in order through Primitives, Headful Experience, and Watchdog.

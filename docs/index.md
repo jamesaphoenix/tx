@@ -2,6 +2,20 @@
 
 A lean task management system for AI agents and humans, built with Effect-TS.
 
+## EARS Adoption
+
+tx now supports **EARS** (**Easy Approach to Requirements Syntax**) for PRD authoring via optional `ears_requirements`.
+
+Why this is used:
+
+- reduce ambiguity in requirement wording,
+- validate requirement structure before implementation (`tx doc lint-ears`),
+- improve requirement-to-test traceability in DD testing strategies.
+
+Reference docs:
+- [PRD-031](prd/PRD-031-ears-requirements.md)
+- [DD-031](design/DD-031-ears-requirements.md)
+
 ## Product Requirements Documents (PRDs)
 
 | PRD                                                   | Title                         | Status  |
