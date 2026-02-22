@@ -5,7 +5,18 @@ description: Opt-in watchdog onboarding, detached rollout, rollback, and failure
 
 Watchdog supervision is explicit opt-in. It is never enabled by default.
 
+This page is the final, advanced stage of the tx docs journey. Use it after you are already comfortable with [Primitives](/docs/primitives) and the [Headful Experience](/docs/headful).
+
 Use watchdog when you need detached, long-running RALPH loops with automatic health checks and stale-run recovery.
+
+## When to Enable Watchdog
+
+Enable watchdog only when all of the following are true:
+
+- Your normal loop (`tx ready`, `tx done`, `tx block`) is stable.
+- You need detached execution that survives terminal closes/logout.
+- You need automatic stalled-run and orphan-task recovery.
+- You are comfortable rolling back to manual operation if needed.
 
 ## Onboarding and Rollout
 
@@ -232,3 +243,13 @@ If status shows stale PID, remove PID files (see rollback/recovery sections) and
 ```bash
 ./scripts/watchdog-launcher.sh start
 ```
+
+## Exit Criteria
+
+If detached supervision introduces noise, disable it and return to manual loops. Watchdog is optional infrastructure, not a required mode.
+
+Rollback path:
+
+1. Follow the [Rollback](#rollback) section.
+2. Set `WATCHDOG_ENABLED=0`.
+3. Run your normal manual loop (`./scripts/ralph.sh`) until you are ready to re-enable watchdog.

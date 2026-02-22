@@ -5,11 +5,11 @@ description: Headless, Local Infra for AI Agents. Primitives, not frameworks.
 
 ## The Problem
 
-Your agents lose context between sessions. Tasks collide when multiple agents work in parallel. Learnings vanish into conversation history. You're rebuilding the same infrastructure every project.
+You open a new session and context is gone. Two agents pick the same task. A key decision disappears into chat history. You end up rebuilding the same infrastructure every project.
 
 ## The Solution
 
-Composable primitives that handle the hard parts. You keep control of the orchestration.
+tx handles persistence, dependencies, and memory primitives so you can stay focused on your orchestration logic.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -37,6 +37,15 @@ TanStack won by saying: "Here's headless table logic. Style it yourself."
 
 tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 
+## Your Journey
+
+Follow the docs in this order:
+
+1. **[Getting Started](/docs/getting-started)** -- install tx and run your first working loop.
+2. **[Primitives](/docs/primitives)** -- learn the core commands that power every interface.
+3. **[Headful Experience](/docs/headful)** -- use the dashboard and keyboard workflows.
+4. **[Watchdog Runbook](/docs/watchdog-runbook)** -- advanced, opt-in detached supervision.
+
 ## Core Primitives
 
 | Primitive | Purpose |
@@ -51,11 +60,13 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL |
 
-## Get Started
+## Your First Step
 
-Ready to dive in? Follow the [Getting Started guide](/docs/getting-started) to install tx and run your first task loop.
+Start with [Getting Started](/docs/getting-started), then continue in order through Primitives, Headful Experience, and Watchdog.
 
 ## Design Principles
+
+As you build, these principles keep you in control:
 
 - **No opinions on orchestration.** Serial, parallel, swarm, human-in-loop. Your call.
 - **Powerful defaults.** `tx ready` just works. So does dependency resolution.
@@ -64,6 +75,8 @@ Ready to dive in? Follow the [Getting Started guide](/docs/getting-started) to i
 - **Local-first.** SQLite + git. No server required. Works offline.
 
 ## Interfaces
+
+Choose the interface that fits how you want to operate:
 
 | Interface | Use Case |
 |-----------|----------|

@@ -3,11 +3,9 @@
   "pages": [
     "index",
     "getting-started",
-    "watchdog-runbook",
-    "agent-sdk",
+    "primitives",
     "headful",
-    "---",
-    "primitives"
+    "watchdog-runbook"
   ],
   "root": true
 }

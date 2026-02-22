@@ -31,7 +31,7 @@ export default async function Page(props: PageProps) {
   return (
     <DocsPage
       toc={data.toc}
-      footer={{ enabled: false }}
+      footer={{ enabled: true }}
       breadcrumb={{ enabled: false }}
     >
       <DocsBody>
