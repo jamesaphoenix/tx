@@ -24,6 +24,19 @@ const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => {
   setTimeout(resolveSleep, ms)
 })
 
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
+
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 function getFreePort(): Promise<number> {
   return new Promise((resolvePort, rejectPort) => {
     const server = createServer()
@@ -63,7 +76,7 @@ async function waitForHealth(baseUrl: string, proc: ChildProcessWithoutNullStrea
       throw new Error(`API server exited early with code ${proc.exitCode}`)
     }
     try {
-      const res = await fetch(`${baseUrl}/health`)
+      const res = await fetchWithTimeout(`${baseUrl}/health`, 1000)
       if (res.ok) return
     } catch {
       // keep polling until deadline

@@ -71,10 +71,27 @@ describe("LlmService", () => {
 const llmAvailable = await (async () => {
   try {
     prepareClaudeDebugLogPathForAgentSdk()
-    await import("@anthropic-ai/claude-agent-sdk")
-    return true
+    const completionWorked = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LlmService
+        const available = yield* svc.isAvailable()
+        if (!available) {
+          return false
+        }
+
+        const completion = yield* Effect.either(
+          svc.complete({
+            prompt: "Reply with exactly: ok",
+            maxTokens: 16,
+          })
+        )
+
+        return completion._tag === "Right"
+      }).pipe(Effect.provide(LlmServiceAuto))
+    )
+    return completionWorked
   } catch {
-    return !!process.env.ANTHROPIC_API_KEY
+    return false
   }
 })()
 

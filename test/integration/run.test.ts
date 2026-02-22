@@ -151,14 +151,15 @@ describe("RunRepository CRUD", () => {
       expect(found).toBeNull()
     })
 
-    it("handles invalid JSON in metadata column gracefully", async () => {
-      // Insert a run with invalid JSON metadata via raw SQL
+    it("handles non-object JSON in metadata column gracefully", async () => {
+      // Insert a run with valid but non-object JSON metadata via raw SQL.
+      // The mapper should fall back to {} when schema validation fails.
       const runId = "run-badjson" as RunId
       const now = new Date().toISOString()
       db.db.prepare(`
         INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-        VALUES (?, NULL, 'test-agent', ?, 'running', 'not valid json {{{')
-      `).run(runId, now)
+        VALUES (?, NULL, 'test-agent', ?, 'running', ?)
+      `).run(runId, now, "\"not-an-object\"")
 
       // Retrieve via findById - should not throw
       const found = await Effect.runPromise(

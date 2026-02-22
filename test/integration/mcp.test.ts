@@ -1892,11 +1892,18 @@ describe("MCP tx_done Tool", () => {
   })
 
   it("nowReady is empty when no tasks become unblocked", async () => {
-    // Complete ROOT which doesn't block anything
+    // Complete a standalone leaf task with no dependents.
+    const added = await callMcpToolParsed<"tx_add", TaskWithDeps>(
+      runtime,
+      "tx_add",
+      { title: "Standalone leaf task" }
+    )
+    expect(added.isError).toBe(false)
+
     const response = await callMcpToolParsed<"tx_done", { task: Record<string, unknown>; nowReady: Record<string, unknown>[] }>(
       runtime,
       "tx_done",
-      { id: FIXTURES.TASK_ROOT }
+      { id: added.data.id }
     )
 
     expect(response.isError).toBe(false)

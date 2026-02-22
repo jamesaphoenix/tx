@@ -7,8 +7,17 @@
 
 import { Effect } from "effect"
 import { readFile } from "node:fs/promises"
-import { existsSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import { resolve, sep } from "node:path"
+
+const normalizePathForComparison = (path: string): string => {
+  const resolved = resolve(path)
+  try {
+    return realpathSync(resolved)
+  } catch {
+    return resolved
+  }
+}
 
 /**
  * Check if a resolved path is under the project's .tx/runs/ directory.
@@ -16,8 +25,8 @@ import { resolve, sep } from "node:path"
  * bypasses where /.tx/runs/ appears elsewhere in the path.
  */
 export const isAllowedRunPath = (filePath: string): boolean => {
-  const resolved = resolve(filePath)
-  const runsDir = resolve(process.cwd(), ".tx", "runs")
+  const resolved = normalizePathForComparison(filePath)
+  const runsDir = normalizePathForComparison(resolve(process.cwd(), ".tx", "runs"))
   return resolved.startsWith(runsDir + sep)
 }
 
