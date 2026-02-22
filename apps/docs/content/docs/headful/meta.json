@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "tasks-and-subtasks",
+    "filters-and-settings",
     "command-palette",
     "docs-runs-cycles"
   ]
