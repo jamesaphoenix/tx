@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 
 const GA_ID = 'G-JPDS4Q62K4';
+const TX_AGENTKIT_DOCS_URL = 'https://agentkit.txdocs.dev/docs';
 
 export const metadata: Metadata = {
   title: {
@@ -39,12 +40,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <span className="mx-2 opacity-50">|</span>
             Full-stack starter with Effect, Temporal, Next.js &amp; Drizzle
             <a
-              href="https://github.com/jamesaphoenix/tx-agent-kit"
+              href={TX_AGENTKIT_DOCS_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="ml-2 inline-flex items-center gap-1 rounded-md bg-white/20 px-2 py-0.5 text-sm font-semibold backdrop-blur transition-colors hover:bg-white/30"
             >
-              View on GitHub
+              Visit tx-agentkit docs
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
               </svg>
