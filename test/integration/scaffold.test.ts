@@ -43,6 +43,8 @@ describe("scaffold", () => {
       const content = readFileSync(claudeMd, "utf-8")
       expect(content).toContain("tx ready")
       expect(content).toContain("tx done")
+      expect(content).toContain("tx group-context:set <id> <context>")
+      expect(content).toContain("inherit the same context")
       expect(content).toContain("Example Orchestration")
 
       // Skills created
@@ -65,6 +67,7 @@ describe("scaffold", () => {
       expect(content).toContain("# My Project")
       expect(content).toContain("Existing content.")
       expect(content).toContain("tx ready")
+      expect(content).toContain("tx group-context:set <id> <context>")
       expect(result.copied).toContain("CLAUDE.md (appended tx section)")
     })
 
