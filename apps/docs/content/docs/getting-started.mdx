@@ -211,6 +211,9 @@ const ready = await tx.tasks.ready({ limit: 5 })
 
 // Complete a task
 await tx.tasks.done(ready[0].id)
+
+// Attach shared context for a task group
+await tx.tasks.setGroupContext(task.id, "Shared auth rollout context")
 ```
 
 </Tab>
@@ -224,6 +227,8 @@ Once configured, your AI assistant has access to these tools:
 | `tx_ready` | List unblocked tasks |
 | `tx_done` | Complete a task |
 | `tx_block` | Add a dependency |
+| `tx_group_context_set` | Set task-group context |
+| `tx_group_context_clear` | Clear task-group context |
 | `tx_show` | View task details |
 | `tx_context` | Get relevant learnings |
 
@@ -399,6 +404,8 @@ tx done <id>                # Complete task
 tx block <id> <blocker>     # Add dependency
 tx tree <id>                # Show hierarchy
 tx show <id>                # View task details
+tx group-context:set <id> <context>   # Attach shared task-group context
+tx group-context:clear <id>           # Clear shared task-group context
 
 # Memory
 tx learning:add <content>   # Store learning

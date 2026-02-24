@@ -29,6 +29,8 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx add <title>` | Create a new task (`--parent`, `--score`, `--description`) |
 | `tx show <id>` | Show task details with dependencies |
 | `tx block <id> <blocker>` | Declare task dependencies |
+| `tx group-context:set <id> <context>` | Attach shared task-group context for related tasks |
+| `tx group-context:clear <id>` | Clear task-group context from a task |
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
 | `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
 
@@ -98,6 +100,8 @@ read -p "Approve? [y/n] " answer
 ```
 
 Do not bypass hooks in this workflow. Keep git verification enabled for commits and pushes.
+
+If related tasks share rollout/migration notes, set them once via `tx group-context:set <id> "<context>"` so descendants/ancestors inherit the same context.
 
 ### Fresh agent per task (prevents context pollution)
 

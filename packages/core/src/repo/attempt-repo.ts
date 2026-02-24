@@ -4,6 +4,22 @@ import { AttemptNotFoundError, DatabaseError, EntityFetchError } from "../errors
 import { rowToAttempt } from "../mappers/attempt.js"
 import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "@jamesaphoenix/tx-types"
 
+const MAX_SQL_VARIABLES = 900
+
+const chunkBySqlLimit = <T>(
+  values: readonly T[],
+  chunkSize: number = MAX_SQL_VARIABLES
+): ReadonlyArray<ReadonlyArray<T>> => {
+  if (values.length === 0) {
+    return []
+  }
+  const chunks: T[][] = []
+  for (let i = 0; i < values.length; i += chunkSize) {
+    chunks.push(values.slice(i, i + chunkSize) as T[])
+  }
+  return chunks
+}
+
 export class AttemptRepository extends Context.Tag("AttemptRepository")<
   AttemptRepository,
   {
@@ -127,15 +143,18 @@ export const AttemptRepositoryLive = Layer.effect(
             if (taskIds.length === 0) {
               return new Map<string, number>()
             }
-            const placeholders = taskIds.map(() => "?").join(", ")
-            const rows = db.prepare(
-              `SELECT task_id, COUNT(*) as cnt FROM attempts
-               WHERE task_id IN (${placeholders}) AND outcome = 'failed'
-               GROUP BY task_id`
-            ).all(...taskIds) as Array<{ task_id: string; cnt: number }>
+
             const result = new Map<string, number>()
-            for (const row of rows) {
-              result.set(row.task_id, row.cnt)
+            for (const chunk of chunkBySqlLimit(taskIds)) {
+              const placeholders = chunk.map(() => "?").join(", ")
+              const rows = db.prepare(
+                `SELECT task_id, COUNT(*) as cnt FROM attempts
+                 WHERE task_id IN (${placeholders}) AND outcome = 'failed'
+                 GROUP BY task_id`
+              ).all(...chunk) as Array<{ task_id: string; cnt: number }>
+              for (const row of rows) {
+                result.set(row.task_id, row.cnt)
+              }
             }
             return result
           },

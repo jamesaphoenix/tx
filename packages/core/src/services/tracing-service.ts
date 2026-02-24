@@ -142,7 +142,7 @@ export const TracingServiceLive = Layer.effect(
               `).run(runId ?? null, metricName, metadata, value)
             },
             catch: (e) => new DatabaseError({ cause: e })
-          })
+          }).pipe(Effect.ignore)
         }),
 
       withRunContext: (runId, effect) =>

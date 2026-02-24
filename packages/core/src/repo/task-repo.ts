@@ -5,6 +5,24 @@ import { rowToTask } from "../mappers/task.js"
 import type { Task, TaskId, TaskFilter, TaskRow } from "@jamesaphoenix/tx-types"
 import { escapeLikePattern } from "../utils/sql.js"
 
+export interface EffectiveGroupContext {
+  readonly sourceTaskId: TaskId
+  readonly context: string
+}
+
+const MAX_SQL_VARIABLES = 900
+
+const chunkBySqlLimit = <T>(values: readonly T[], chunkSize: number = MAX_SQL_VARIABLES): ReadonlyArray<ReadonlyArray<T>> => {
+  if (values.length === 0) {
+    return []
+  }
+  const chunks: T[][] = []
+  for (let i = 0; i < values.length; i += chunkSize) {
+    chunks.push(values.slice(i, i + chunkSize) as T[])
+  }
+  return chunks
+}
+
 export class TaskRepository extends Context.Tag("TaskRepository")<
   TaskRepository,
   {
@@ -16,9 +34,15 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
     readonly getChildIdsForMany: (ids: readonly string[]) => Effect.Effect<Map<string, readonly TaskId[]>, DatabaseError>
     readonly getAncestorChain: (id: string) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getDescendants: (id: string, maxDepth?: number) => Effect.Effect<readonly Task[], DatabaseError>
+    readonly getGroupContextForMany: (ids: readonly string[]) => Effect.Effect<Map<string, string>, DatabaseError>
+    readonly resolveEffectiveGroupContextForMany: (
+      ids: readonly string[]
+    ) => Effect.Effect<Map<string, EffectiveGroupContext>, DatabaseError>
     readonly insert: (task: Task) => Effect.Effect<void, DatabaseError>
     readonly update: (task: Task, expectedUpdatedAt?: Date) => Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError>
     readonly updateMany: (tasks: readonly Task[]) => Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError>
+    readonly setGroupContext: (taskId: string, context: string) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
+    readonly clearGroupContext: (taskId: string) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
     readonly remove: (id: string) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
     readonly count: (filter?: TaskFilter) => Effect.Effect<number, DatabaseError>
     /**
@@ -54,8 +78,12 @@ export const TaskRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             if (ids.length === 0) return []
-            const placeholders = ids.map(() => "?").join(",")
-            const rows = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
+            const rows: TaskRow[] = []
+            for (const chunk of chunkBySqlLimit(ids)) {
+              const placeholders = chunk.map(() => "?").join(",")
+              const chunkRows = db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...chunk) as TaskRow[]
+              rows.push(...chunkRows)
+            }
             return rows.map(rowToTask)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -148,21 +176,23 @@ export const TaskRepositoryLive = Layer.effect(
             const result = new Map<string, TaskId[]>()
             if (ids.length === 0) return result as Map<string, readonly TaskId[]>
 
-            const placeholders = ids.map(() => "?").join(",")
-            const rows = db.prepare(
-              `SELECT id, parent_id FROM tasks WHERE parent_id IN (${placeholders})`
-            ).all(...ids) as Array<{ id: string; parent_id: string }>
-
             // Initialize all requested IDs with empty arrays
             for (const id of ids) {
               result.set(id, [])
             }
 
-            // Group by parent_id - use push() for O(1) insertion instead of spread for O(n)
-            for (const row of rows) {
-              const existing = result.get(row.parent_id)
-              if (existing) {
-                existing.push(row.id as TaskId)
+            for (const chunk of chunkBySqlLimit(ids)) {
+              const placeholders = chunk.map(() => "?").join(",")
+              const rows = db.prepare(
+                `SELECT id, parent_id FROM tasks WHERE parent_id IN (${placeholders})`
+              ).all(...chunk) as Array<{ id: string; parent_id: string }>
+
+              // Group by parent_id - use push() for O(1) insertion instead of spread for O(n)
+              for (const row of rows) {
+                const existing = result.get(row.parent_id)
+                if (existing) {
+                  existing.push(row.id as TaskId)
+                }
               }
             }
 
@@ -208,6 +238,108 @@ export const TaskRepositoryLive = Layer.effect(
               SELECT * FROM descendants ORDER BY depth ASC
             `).all(id, maxDepth) as TaskRow[]
             return rows.map(rowToTask)
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      getGroupContextForMany: (ids) =>
+        Effect.try({
+          try: () => {
+            const result = new Map<string, string>()
+            if (ids.length === 0) return result
+
+            for (const chunk of chunkBySqlLimit(ids)) {
+              const placeholders = chunk.map(() => "?").join(",")
+              const rows = db.prepare(
+                `SELECT id, group_context
+                 FROM tasks
+                 WHERE id IN (${placeholders})
+                   AND group_context IS NOT NULL
+                   AND length(trim(group_context)) > 0`
+              ).all(...chunk) as Array<{ id: string; group_context: string | null }>
+
+              for (const row of rows) {
+                if (row.group_context != null) {
+                  result.set(row.id, row.group_context)
+                }
+              }
+            }
+            return result
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      resolveEffectiveGroupContextForMany: (ids) =>
+        Effect.try({
+          try: () => {
+            const result = new Map<string, EffectiveGroupContext>()
+            if (ids.length === 0) return result
+
+            for (const chunk of chunkBySqlLimit(ids)) {
+              const valuesClause = chunk.map(() => "(?)").join(", ")
+              const rows = db.prepare(
+                `WITH RECURSIVE
+                   targets(target_id) AS (
+                     VALUES ${valuesClause}
+                   ),
+                   ancestors(target_id, node_id, distance, path) AS (
+                     SELECT t.target_id, t.target_id, 0, ',' || t.target_id || ','
+                     FROM targets t
+                     UNION ALL
+                     SELECT a.target_id, parent.id, a.distance + 1, a.path || parent.id || ','
+                     FROM ancestors a
+                     JOIN tasks current ON current.id = a.node_id
+                     JOIN tasks parent ON parent.id = current.parent_id
+                     WHERE a.distance < 1000
+                       AND instr(a.path, ',' || parent.id || ',') = 0
+                   ),
+                   descendants(target_id, node_id, distance, path) AS (
+                     SELECT t.target_id, t.target_id, 0, ',' || t.target_id || ','
+                     FROM targets t
+                     UNION ALL
+                     SELECT d.target_id, child.id, d.distance + 1, d.path || child.id || ','
+                     FROM descendants d
+                     JOIN tasks child ON child.parent_id = d.node_id
+                     WHERE d.distance < 1000
+                       AND instr(d.path, ',' || child.id || ',') = 0
+                   ),
+                   lineage(target_id, node_id, distance) AS (
+                     SELECT target_id, node_id, distance FROM ancestors
+                     UNION
+                     SELECT target_id, node_id, distance FROM descendants
+                   ),
+                   ranked_sources AS (
+                     SELECT l.target_id,
+                            source.id AS source_id,
+                            source.group_context,
+                            ROW_NUMBER() OVER (
+                              PARTITION BY l.target_id
+                              ORDER BY l.distance ASC, source.updated_at DESC, source.id ASC
+                            ) AS rn
+                     FROM lineage l
+                     JOIN tasks source ON source.id = l.node_id
+                     WHERE source.group_context IS NOT NULL
+                       AND length(trim(source.group_context)) > 0
+                   )
+                 SELECT target_id, source_id, group_context
+                 FROM ranked_sources
+                 WHERE rn = 1
+                 ORDER BY target_id ASC`
+              ).all(...chunk) as Array<{
+                target_id: string
+                source_id: string
+                group_context: string
+              }>
+
+              for (const row of rows) {
+                result.set(row.target_id, {
+                  sourceTaskId: row.source_id as TaskId,
+                  context: row.group_context
+                })
+              }
+            }
+
+            return result
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -412,6 +544,40 @@ export const TaskRepositoryLive = Layer.effect(
                 actualUpdatedAt: errorInfo.actual
               }))
             }
+          }
+        }),
+
+      setGroupContext: (taskId, context) =>
+        Effect.gen(function* () {
+          const now = new Date().toISOString()
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                `UPDATE tasks
+                 SET group_context = ?, updated_at = ?
+                 WHERE id = ?`
+              ).run(context, now, taskId),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
+          }
+        }),
+
+      clearGroupContext: (taskId) =>
+        Effect.gen(function* () {
+          const now = new Date().toISOString()
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                `UPDATE tasks
+                 SET group_context = NULL, updated_at = ?
+                 WHERE id = ?`
+              ).run(now, taskId),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
           }
         }),
 

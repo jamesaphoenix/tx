@@ -202,6 +202,22 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
       }).pipe(Effect.mapError(mapCoreError))
     )
 
+    .handle("setTaskGroupContext", ({ path, payload }) =>
+      Effect.gen(function* () {
+        const taskService = yield* TaskService
+        const task = yield* taskService.setGroupContext(path.id as TaskId, payload.context)
+        return serializeTask(task)
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("clearTaskGroupContext", ({ path }) =>
+      Effect.gen(function* () {
+        const taskService = yield* TaskService
+        const task = yield* taskService.clearGroupContext(path.id as TaskId)
+        return serializeTask(task)
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
     .handle("getTaskTree", ({ path }) =>
       Effect.gen(function* () {
         const hierarchyService = yield* HierarchyService

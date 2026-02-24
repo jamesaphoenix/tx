@@ -72,6 +72,13 @@ const toolSchemas = {
   tx_unblock: Schema.Struct({
     taskId: Schema.String,
     blockerId: Schema.String
+  }),
+  tx_group_context_set: Schema.Struct({
+    taskId: Schema.String,
+    context: Schema.String
+  }),
+  tx_group_context_clear: Schema.Struct({
+    taskId: Schema.String
   })
 } as const
 
@@ -86,7 +93,9 @@ const REGISTERED_TOOLS = [
   "tx_done",
   "tx_delete",
   "tx_block",
-  "tx_unblock"
+  "tx_unblock",
+  "tx_group_context_set",
+  "tx_group_context_clear"
 ] as const
 
 // -----------------------------------------------------------------------------
@@ -107,7 +116,10 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   blockedBy: task.blockedBy,
   blocks: task.blocks,
   children: task.children,
-  isReady: task.isReady
+  isReady: task.isReady,
+  groupContext: task.groupContext,
+  effectiveGroupContext: task.effectiveGroupContext,
+  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId
 })
 
 // TaskWithDeps validation schema for serialized output
@@ -127,7 +139,10 @@ const TaskWithDepsOutputSchema = Schema.Struct({
   blockedBy: Schema.Array(Schema.String),
   blocks: Schema.Array(Schema.String),
   children: Schema.Array(Schema.String),
-  isReady: Schema.Boolean
+  isReady: Schema.Boolean,
+  groupContext: Schema.NullOr(Schema.String),
+  effectiveGroupContext: Schema.NullOr(Schema.String),
+  effectiveGroupContextSourceTaskId: Schema.NullOr(Schema.String)
 })
 
 // -----------------------------------------------------------------------------
@@ -150,6 +165,9 @@ function makeTestTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
+    groupContext: null,
+    effectiveGroupContext: null,
+    effectiveGroupContextSourceTaskId: null,
     ...overrides
   }
 }
@@ -188,6 +206,9 @@ describe("TaskWithDeps Schema Validation", () => {
     expect(serialized).toHaveProperty("blocks")
     expect(serialized).toHaveProperty("children")
     expect(serialized).toHaveProperty("isReady")
+    expect(serialized).toHaveProperty("groupContext")
+    expect(serialized).toHaveProperty("effectiveGroupContext")
+    expect(serialized).toHaveProperty("effectiveGroupContextSourceTaskId")
   })
 
   it("validates blockedBy is an array of task IDs", () => {
@@ -538,6 +559,33 @@ describe("Tool Input Schema Validation", () => {
       expect(result.success).toBe(true)
     })
   })
+
+  describe("tx_group_context_set", () => {
+    it("requires both taskId and context", () => {
+      expect(safeParse(toolSchemas.tx_group_context_set, {}).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_group_context_set, { taskId: "tx-1" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_group_context_set, { context: "ctx" }).success).toBe(false)
+    })
+
+    it("accepts valid taskId and context", () => {
+      const result = safeParse(toolSchemas.tx_group_context_set, {
+        taskId: "tx-12345678",
+        context: "Shared rollout context"
+      })
+      expect(result.success).toBe(true)
+    })
+  })
+
+  describe("tx_group_context_clear", () => {
+    it("requires taskId", () => {
+      expect(safeParse(toolSchemas.tx_group_context_clear, {}).success).toBe(false)
+    })
+
+    it("accepts valid taskId", () => {
+      const result = safeParse(toolSchemas.tx_group_context_clear, { taskId: "tx-12345678" })
+      expect(result.success).toBe(true)
+    })
+  })
 })
 
 // -----------------------------------------------------------------------------
@@ -579,6 +627,13 @@ describe("Tool Registration Verification", () => {
   it("has dependency management tools", () => {
     const depTools = ["tx_block", "tx_unblock"]
     for (const tool of depTools) {
+      expect(REGISTERED_TOOLS).toContain(tool)
+    }
+  })
+
+  it("has group-context tools", () => {
+    const contextTools = ["tx_group_context_set", "tx_group_context_clear"]
+    for (const tool of contextTools) {
       expect(REGISTERED_TOOLS).toContain(tool)
     }
   })

@@ -36,61 +36,104 @@ export const ReadyServiceLive = Layer.effect(
     return {
       getReady: (limit = 100) =>
         Effect.gen(function* () {
-          // 1. Single query: get all candidate tasks (excluding actively claimed)
-          // The excludeClaimed filter prevents the thundering herd problem where
-          // multiple workers all see the same tasks and race to claim them.
-          const candidates = yield* taskRepo.findAll({
-            status: ["backlog", "ready", "planning"],
-            excludeClaimed: true
-          })
-
-          if (candidates.length === 0) {
+          const safeLimit = Math.max(0, Math.floor(limit))
+          if (safeLimit === 0) {
             return [] as TaskWithDeps[]
           }
 
-          const candidateIds = candidates.map(t => t.id)
-
-          // 2-4. Batch queries: get all dependency info in 3 queries instead of 3*N
-          const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(candidateIds)
-          const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(candidateIds)
-          const childIdsMap = yield* taskRepo.getChildIdsForMany(candidateIds)
-
-          // 5. Single query: get all unique blocker tasks to check their status
-          const allBlockerIds = new Set<string>()
-          for (const blockerIds of blockerIdsMap.values()) {
-            for (const id of blockerIds) {
-              allBlockerIds.add(id)
-            }
-          }
-          const blockerTasks = allBlockerIds.size > 0
-            ? yield* taskRepo.findByIds([...allBlockerIds])
-            : []
-          const blockerStatusMap = new Map(blockerTasks.map(t => [t.id, t.status]))
-
-          // Process in memory (no more queries)
+          // Page through candidates ordered by score/id to avoid loading the
+          // entire backlog when only a small ready set is requested.
           const ready: TaskWithDeps[] = []
-          for (const task of candidates) {
-            const blockerIds = blockerIdsMap.get(task.id) ?? []
-            const blockingIds = blockingIdsMap.get(task.id) ?? []
-            const childIds = childIdsMap.get(task.id) ?? []
+          let cursor: { score: number; id: string } | undefined
 
-            // Check if all blockers are done
-            const allDone = blockerIds.length === 0 ||
-              blockerIds.every(id => blockerStatusMap.get(id) === "done")
+          while (ready.length < safeLimit) {
+            const remaining = safeLimit - ready.length
+            const pageSize = Math.min(Math.max(remaining * 4, 200), 1000)
 
-            if (allDone) {
-              ready.push({
-                ...task,
-                blockedBy: blockerIds as TaskId[],
-                blocks: blockingIds as TaskId[],
-                children: childIds as TaskId[],
-                isReady: true
-              })
+            const candidates = yield* taskRepo.findAll({
+              status: ["backlog", "ready", "planning"],
+              excludeClaimed: true,
+              cursor,
+              limit: pageSize
+            })
+
+            if (candidates.length === 0) {
+              break
+            }
+
+            const candidateIds = candidates.map(t => t.id)
+
+            // Batch dependency lookups for each page.
+            const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(candidateIds)
+            const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(candidateIds)
+            const childIdsMap = yield* taskRepo.getChildIdsForMany(candidateIds)
+
+            const allBlockerIds = new Set<string>()
+            for (const blockerIds of blockerIdsMap.values()) {
+              for (const id of blockerIds) {
+                allBlockerIds.add(id)
+              }
+            }
+
+            const blockerTasks = allBlockerIds.size > 0
+              ? yield* taskRepo.findByIds([...allBlockerIds])
+              : []
+            const blockerStatusMap = new Map(blockerTasks.map(t => [t.id, t.status]))
+
+            for (const task of candidates) {
+              const blockerIds = blockerIdsMap.get(task.id) ?? []
+              const blockingIds = blockingIdsMap.get(task.id) ?? []
+              const childIds = childIdsMap.get(task.id) ?? []
+
+              const allDone = blockerIds.length === 0 ||
+                blockerIds.every(id => blockerStatusMap.get(id) === "done")
+
+              if (allDone) {
+                ready.push({
+                  ...task,
+                  blockedBy: blockerIds as TaskId[],
+                  blocks: blockingIds as TaskId[],
+                  children: childIds as TaskId[],
+                  isReady: true,
+                  groupContext: null,
+                  effectiveGroupContext: null,
+                  effectiveGroupContextSourceTaskId: null
+                })
+              }
+            }
+
+            const lastCandidate = candidates[candidates.length - 1]
+            if (!lastCandidate) {
+              break
+            }
+            cursor = { score: lastCandidate.score, id: lastCandidate.id }
+
+            if (candidates.length < pageSize) {
+              break
             }
           }
 
           ready.sort((a, b) => b.score - a.score)
-          return ready.slice(0, limit)
+          const limited = ready.slice(0, safeLimit)
+          if (limited.length === 0) {
+            return limited
+          }
+
+          // Resolve context only for the final response set to avoid expensive
+          // graph traversal across the full candidate backlog.
+          const limitedIds = limited.map(task => task.id)
+          const directContextMap = yield* taskRepo.getGroupContextForMany(limitedIds)
+          const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany(limitedIds)
+
+          return limited.map((task) => {
+            const effective = effectiveContextMap.get(task.id)
+            return {
+              ...task,
+              groupContext: directContextMap.get(task.id) ?? null,
+              effectiveGroupContext: effective?.context ?? null,
+              effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
+            }
+          })
         }),
 
       isReady: (id) =>

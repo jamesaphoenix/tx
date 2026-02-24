@@ -104,6 +104,7 @@ Best for: non-TypeScript agents, distributed systems, web dashboards.
 | [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) | CLI, SDK, MCP, API | Available |
 | [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others | CLI, SDK, MCP, API | Available |
 | [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | CLI, SDK, MCP, API | Available |
+| [`tx group-context:*`](/docs/primitives/ready#task-group-context-inheritance) | Attach shared task-group context inherited by related tasks | CLI, SDK, MCP, API | Available |
 | [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | CLI, SDK, MCP, API | Available |
 | [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection | CLI, SDK, MCP, API | Available |
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge | CLI, SDK, MCP, API | Available |

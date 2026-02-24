@@ -18,7 +18,7 @@ import { join, resolve } from "path"
 import { fixtureId, createMigratedSqliteDatabase } from "@jamesaphoenix/tx-test-utils"
 import type { SqliteDatabase as _SqliteDatabase } from "@jamesaphoenix/tx-core"
 
-const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
+const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -84,7 +84,7 @@ interface ExecResult {
 
 function runTxArgs(args: string[], dbPath: string, env?: Record<string, string>): ExecResult {
   try {
-    const result = spawnSync("bun", [TX_BIN, ...args, "--db", dbPath], {
+    const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd(),

@@ -18,6 +18,11 @@ export class TaskService extends Context.Tag("TaskService")<
       input: UpdateTaskInput,
       options?: { actor?: "agent" | "human" }
     ) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
+    readonly setGroupContext: (
+      id: TaskId,
+      context: string
+    ) => Effect.Effect<TaskWithDeps, TaskNotFoundError | ValidationError | DatabaseError>
+    readonly clearGroupContext: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
     readonly remove: (id: TaskId, options?: { cascade?: boolean }) => Effect.Effect<void, TaskNotFoundError | HasChildrenError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
@@ -53,6 +58,7 @@ const isValidAssigneeType = (
  *  Bounded to avoid unbounded CTE recursion in SQLite while being deep enough
  *  for any realistic task hierarchy (display default is 10). */
 const CASCADE_MAX_DEPTH = 1000
+const GROUP_CONTEXT_MAX_CHARS = 20_000
 
 export const TaskServiceLive = Layer.effect(
   TaskService,
@@ -65,6 +71,8 @@ export const TaskServiceLive = Layer.effect(
         const blockerIds = yield* depRepo.getBlockerIds(task.id)
         const blockingIds = yield* depRepo.getBlockingIds(task.id)
         const childIds = yield* taskRepo.getChildIds(task.id)
+        const directContextMap = yield* taskRepo.getGroupContextForMany([task.id])
+        const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany([task.id])
 
         let isReady = ["backlog", "ready", "planning"].includes(task.status)
         if (isReady && blockerIds.length > 0) {
@@ -72,12 +80,17 @@ export const TaskServiceLive = Layer.effect(
           isReady = blockers.every(b => b.status === "done")
         }
 
+        const effective = effectiveContextMap.get(task.id)
+
         return {
           ...task,
           blockedBy: blockerIds as TaskId[],
           blocks: blockingIds as TaskId[],
           children: childIds as TaskId[],
-          isReady
+          isReady,
+          groupContext: directContextMap.get(task.id) ?? null,
+          effectiveGroupContext: effective?.context ?? null,
+          effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
         }
       })
 
@@ -92,6 +105,8 @@ export const TaskServiceLive = Layer.effect(
         const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(taskIds)
         const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(taskIds)
         const childIdsMap = yield* taskRepo.getChildIdsForMany(taskIds)
+        const directContextMap = yield* taskRepo.getGroupContextForMany(taskIds)
+        const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany(taskIds)
 
         // Collect all unique blocker IDs to fetch their status
         const allBlockerIds = new Set<TaskId>()
@@ -123,12 +138,17 @@ export const TaskServiceLive = Layer.effect(
             isReady = blockerIds.every(bid => blockerStatusMap.get(bid) === "done")
           }
 
+          const effective = effectiveContextMap.get(task.id)
+
           results.push({
             ...task,
             blockedBy: blockerIds as TaskId[],
             blocks: blockingIds as TaskId[],
             children: childIds as TaskId[],
-            isReady
+            isReady,
+            groupContext: directContextMap.get(task.id) ?? null,
+            effectiveGroupContext: effective?.context ?? null,
+            effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
           })
         }
 
@@ -426,6 +446,39 @@ export const TaskServiceLive = Layer.effect(
           }
 
           return updated
+        }),
+
+      setGroupContext: (id, context) =>
+        Effect.gen(function* () {
+          const sanitized = stripNullBytes(context)
+          const normalized = trimVisible(sanitized)
+          if (!hasVisibleContent(sanitized)) {
+            return yield* Effect.fail(new ValidationError({
+              reason: "Group context is required"
+            }))
+          }
+          if (normalized.length > GROUP_CONTEXT_MAX_CHARS) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Group context must be at most ${GROUP_CONTEXT_MAX_CHARS} characters`
+            }))
+          }
+
+          yield* taskRepo.setGroupContext(id, normalized)
+          const task = yield* taskRepo.findById(id)
+          if (!task) {
+            return yield* Effect.fail(new TaskNotFoundError({ id }))
+          }
+          return yield* enrichWithDeps(task)
+        }),
+
+      clearGroupContext: (id) =>
+        Effect.gen(function* () {
+          yield* taskRepo.clearGroupContext(id)
+          const task = yield* taskRepo.findById(id)
+          if (!task) {
+            return yield* Effect.fail(new TaskNotFoundError({ id }))
+          }
+          return yield* enrichWithDeps(task)
         }),
 
       forceStatus: (id, status) =>

@@ -7,6 +7,10 @@ import {
   TaskRepositoryLive,
   TaskRepository,
   DependencyRepositoryLive,
+  AttemptRepositoryLive,
+  AttemptRepository,
+  LearningRepositoryLive,
+  LearningRepository,
   TaskServiceLive,
   TaskService,
   DependencyServiceLive,
@@ -44,6 +48,16 @@ function makeTestLayer(db: Database) {
 function makeRepoLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   return TaskRepositoryLive.pipe(Layer.provide(infra))
+}
+
+function makeAttemptRepoLayer(db: Database) {
+  const infra = Layer.succeed(SqliteClient, db as any)
+  return AttemptRepositoryLive.pipe(Layer.provide(infra))
+}
+
+function makeLearningRepoLayer(db: Database) {
+  const infra = Layer.succeed(SqliteClient, db as any)
+  return LearningRepositoryLive.pipe(Layer.provide(infra))
 }
 
 describe("Schema constraints", () => {
@@ -434,6 +448,74 @@ describe("Task CRUD", () => {
 
     expect(tasks.length).toBe(1)
     expect(tasks[0].id).toBe(FIXTURES.TASK_DONE)
+  })
+
+  it("setGroupContext rejects invisible-only content", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        const created = yield* svc.create({ title: "Invisible context task", score: 300 })
+        return yield* svc.setGroupContext(created.id, "\u200B\u200C\u200D").pipe(Effect.either)
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect((result.left as any)._tag).toBe("ValidationError")
+      expect((result.left as any).reason).toContain("Group context is required")
+    }
+  })
+
+  it("setGroupContext strips null bytes before persisting", async () => {
+    const task = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        const created = yield* svc.create({ title: "Null-byte context task", score: 300 })
+        return yield* svc.setGroupContext(created.id, "alpha\u0000beta")
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(task.groupContext).toBe("alphabeta")
+    expect(task.effectiveGroupContext).toBe("alphabeta")
+    expect(task.effectiveGroupContextSourceTaskId).toBe(task.id)
+  })
+
+  it("listWithDeps handles more than 1000 tasks with context enrichment", async () => {
+    const db = shared.getDb()
+    const now = new Date().toISOString()
+    const totalTasks = 1200
+    const taskIds: string[] = []
+    const insert = db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+
+    for (let i = 0; i < totalTasks; i++) {
+      const id = fixtureId(`listwithdeps-bulk-${i}`)
+      taskIds.push(id)
+      insert.run(id, `Bulk task ${i}`, `Bulk description ${i}`, "backlog", null, 500, now, now, null, "{}")
+    }
+
+    const contextSourceId = taskIds[0]!
+    db.prepare("UPDATE tasks SET group_context = ?, updated_at = ? WHERE id = ?").run(
+      "bulk group context",
+      now,
+      contextSourceId
+    )
+
+    const tasksWithDeps = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* TaskService
+        return yield* svc.listWithDeps({ limit: totalTasks + 10 })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(tasksWithDeps).toHaveLength(totalTasks)
+    const contextSource = tasksWithDeps.find(task => task.id === contextSourceId)
+    expect(contextSource).toBeDefined()
+    expect(contextSource?.groupContext).toBe("bulk group context")
+    expect(contextSource?.effectiveGroupContext).toBe("bulk group context")
+    expect(contextSource?.effectiveGroupContextSourceTaskId).toBe(contextSourceId)
   })
 })
 
@@ -1763,5 +1845,131 @@ describe("Task Repository recoverTaskStatus (atomic TOCTOU fix)", () => {
     )
 
     expect(result).toBe(false)
+  })
+})
+
+describe("Repository SQL variable limits", () => {
+  let shared: SharedTestLayerResult
+  let attemptRepoLayer: Layer.Layer<AttemptRepository, never, never>
+  let learningRepoLayer: Layer.Layer<LearningRepository, never, never>
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    attemptRepoLayer = makeAttemptRepoLayer(shared.getDb())
+    learningRepoLayer = makeLearningRepoLayer(shared.getDb())
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await shared.close()
+  })
+
+  it("getFailedCountsForTasks handles more than 1000 task IDs", async () => {
+    const db = shared.getDb()
+    const now = "2026-01-01T00:00:00.000Z"
+    const taskCount = 1200
+    const taskIds: TaskId[] = []
+
+    const insertTask = db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    const insertAttempt = db.prepare(
+      `INSERT INTO attempts (task_id, approach, outcome, reason, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+
+    db.exec("BEGIN TRANSACTION")
+    try {
+      for (let i = 0; i < taskCount; i++) {
+        const id = fixtureId(`attempt-sql-limit-${i}`)
+        taskIds.push(id)
+        insertTask.run(
+          id,
+          `Task ${i}`,
+          "SQL variable limit test",
+          "backlog",
+          null,
+          500,
+          now,
+          now,
+          null,
+          "{}"
+        )
+        insertAttempt.run(id, "batch-query", "failed", null, now)
+      }
+      db.exec("COMMIT")
+    } catch (error) {
+      db.exec("ROLLBACK")
+      throw error
+    }
+
+    const failedCounts = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* AttemptRepository
+        return yield* repo.getFailedCountsForTasks(taskIds)
+      }).pipe(Effect.provide(attemptRepoLayer))
+    )
+
+    expect(failedCounts.size).toBe(taskCount)
+    expect(failedCounts.get(taskIds[0]!)).toBe(1)
+    expect(failedCounts.get(taskIds[taskCount - 1]!)).toBe(1)
+  })
+
+  it("incrementUsageMany handles more than 1000 learning IDs", async () => {
+    const db = shared.getDb()
+    const now = "2026-01-01T00:00:00.000Z"
+    const learningCount = 1200
+    const learningIds: number[] = []
+
+    const insertLearning = db.prepare(
+      `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+
+    db.exec("BEGIN TRANSACTION")
+    try {
+      for (let i = 0; i < learningCount; i++) {
+        const result = insertLearning.run(
+          `Learning ${i}`,
+          "manual",
+          null,
+          now,
+          JSON.stringify(["sql-limit", `item-${i}`]),
+          "testing"
+        )
+        learningIds.push(Number(result.lastInsertRowid))
+      }
+      db.exec("COMMIT")
+    } catch (error) {
+      db.exec("ROLLBACK")
+      throw error
+    }
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        yield* repo.incrementUsageMany(learningIds)
+      }).pipe(Effect.provide(learningRepoLayer))
+    )
+
+    const usageSummary = db.prepare(
+      `SELECT COUNT(*) as touched, COALESCE(SUM(usage_count), 0) as total
+       FROM learnings
+       WHERE usage_count > 0`
+    ).get() as { touched: number; total: number }
+
+    expect(usageSummary.touched).toBe(learningCount)
+    expect(usageSummary.total).toBe(learningCount)
+
+    const firstLearning = db.prepare(
+      "SELECT usage_count, last_used_at FROM learnings WHERE id = ?"
+    ).get(learningIds[0]) as { usage_count: number; last_used_at: string | null } | undefined
+
+    expect(firstLearning?.usage_count).toBe(1)
+    expect(firstLearning?.last_used_at).toBeTruthy()
   })
 })

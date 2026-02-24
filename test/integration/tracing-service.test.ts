@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import { Effect, Layer } from "effect"
 import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { fixtureId } from "../fixtures.js"
@@ -224,6 +224,28 @@ describe("TracingServiceLive Integration", () => {
       expect(events).toHaveLength(3)
       expect(events.map((e: any) => e.content)).toEqual(["metric.one", "metric.two", "metric.three"])
       expect(events.map((e: any) => e.duration_ms)).toEqual([10, 20, 30])
+    })
+
+    it("does not fail caller when metric persistence fails", async () => {
+      // Force metric insert failures by making prepare throw.
+      const prepareSpy = vi.spyOn(db.db, "prepare").mockImplementation(() => {
+        throw new Error("simulated metrics persistence failure")
+      })
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const tracing = yield* TracingService
+          yield* tracing.recordMetric("metric.should.not.fail", 1)
+          return "still-ok"
+        }).pipe(Effect.provide(layer), Effect.either)
+      )
+
+      expect(result._tag).toBe("Right")
+      if (result._tag === "Right") {
+        expect(result.right).toBe("still-ok")
+      }
+
+      prepareSpy.mockRestore()
     })
   })
 

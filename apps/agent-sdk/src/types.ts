@@ -243,6 +243,9 @@ export interface SerializedTaskWithDeps {
   blocks: string[]
   children: string[]
   isReady: boolean
+  groupContext: string | null
+  effectiveGroupContext: string | null
+  effectiveGroupContextSourceTaskId: string | null
 }
 
 /**

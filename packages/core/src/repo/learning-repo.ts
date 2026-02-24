@@ -5,6 +5,22 @@ import { rowToLearning, rowToLearningWithoutEmbedding, float32ArrayToBuffer } fr
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@jamesaphoenix/tx-types"
 
+const MAX_SQL_VARIABLES = 900
+
+const chunkBySqlLimit = <T>(
+  values: readonly T[],
+  chunkSize: number = MAX_SQL_VARIABLES
+): ReadonlyArray<ReadonlyArray<T>> => {
+  if (values.length === 0) {
+    return []
+  }
+  const chunks: T[][] = []
+  for (let i = 0; i < values.length; i += chunkSize) {
+    chunks.push(values.slice(i, i + chunkSize) as T[])
+  }
+  return chunks
+}
+
 /**
  * All learning columns EXCEPT embedding.
  * Used by queries where embedding data is discarded (BM25 search, listing, serialization).
@@ -257,10 +273,12 @@ export const LearningRepositoryLive = Layer.effect(
           try: () => {
             if (ids.length === 0) return
             const now = new Date().toISOString()
-            const placeholders = ids.map(() => "?").join(", ")
-            db.prepare(
-              `UPDATE learnings SET usage_count = usage_count + 1, last_used_at = ? WHERE id IN (${placeholders})`
-            ).run(now, ...ids)
+            for (const chunk of chunkBySqlLimit(ids)) {
+              const placeholders = chunk.map(() => "?").join(", ")
+              db.prepare(
+                `UPDATE learnings SET usage_count = usage_count + 1, last_used_at = ? WHERE id IN (${placeholders})`
+              ).run(now, ...chunk)
+            }
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

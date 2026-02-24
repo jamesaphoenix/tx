@@ -302,6 +302,50 @@ const handleUnblock = async (args: { taskId: string; blockerId: string }): Promi
   }
 }
 
+const handleGroupContextSet = async (args: { taskId: string; context: string }): Promise<McpToolResult> => {
+  try {
+    const taskId = assertTaskId(args.taskId)
+    const task = await runEffect(
+      Effect.gen(function* () {
+        const taskService = yield* TaskService
+        return yield* taskService.setGroupContext(taskId, args.context)
+      })
+    )
+    const serialized = serializeTask(task)
+    return {
+      content: [
+        { type: "text", text: `Updated task-group context for ${args.taskId}` },
+        { type: "text", text: JSON.stringify(serialized) }
+      ],
+      isError: false
+    }
+  } catch (error) {
+    return handleToolError("tx_group_context_set", args, error)
+  }
+}
+
+const handleGroupContextClear = async (args: { taskId: string }): Promise<McpToolResult> => {
+  try {
+    const taskId = assertTaskId(args.taskId)
+    const task = await runEffect(
+      Effect.gen(function* () {
+        const taskService = yield* TaskService
+        return yield* taskService.clearGroupContext(taskId)
+      })
+    )
+    const serialized = serializeTask(task)
+    return {
+      content: [
+        { type: "text", text: `Cleared task-group context for ${args.taskId}` },
+        { type: "text", text: JSON.stringify(serialized) }
+      ],
+      isError: false
+    }
+  } catch (error) {
+    return handleToolError("tx_group_context_clear", args, error)
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Tool Registration
 // -----------------------------------------------------------------------------
@@ -426,5 +470,28 @@ export const registerTaskTools = (server: McpServer): void => {
       blockerId: z.string().describe("Task ID to remove as a blocker")
     },
     handleUnblock as Parameters<typeof server.tool>[3]
+  )
+
+  // tx_group_context_set - Set direct task-group context on a task
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
+  server.tool(
+    "tx_group_context_set",
+    "Set direct task-group context on a task. The context is inherited by related ancestor/descendant tasks.",
+    {
+      taskId: z.string().describe("Task ID to set context on"),
+      context: z.string().max(20000).describe("Group context text")
+    },
+    handleGroupContextSet as Parameters<typeof server.tool>[3]
+  )
+
+  // tx_group_context_clear - Clear direct task-group context from a task
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
+  server.tool(
+    "tx_group_context_clear",
+    "Clear direct task-group context from a task and recompute effective inherited context.",
+    {
+      taskId: z.string().describe("Task ID to clear context from")
+    },
+    handleGroupContextClear as Parameters<typeof server.tool>[3]
   )
 }

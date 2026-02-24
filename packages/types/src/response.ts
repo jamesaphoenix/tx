@@ -62,6 +62,12 @@ export const TaskWithDepsSerializedSchema = Schema.Struct({
   children: Schema.Array(TaskIdSchema),
   /** Whether this task can be worked on (status is workable AND all blockers are done) */
   isReady: Schema.Boolean,
+  /** Task-group context explicitly set on this task (if any) */
+  groupContext: Schema.NullOr(Schema.String),
+  /** Effective inherited task-group context for this task (if any) */
+  effectiveGroupContext: Schema.NullOr(Schema.String),
+  /** Source task ID that provided effectiveGroupContext */
+  effectiveGroupContextSourceTaskId: Schema.NullOr(TaskIdSchema),
 })
 export type TaskWithDepsSerialized = typeof TaskWithDepsSerializedSchema.Type
 
@@ -195,6 +201,9 @@ export const serializeTask = (task: TaskWithDeps): TaskWithDepsSerialized => ({
   blocks: task.blocks,
   children: task.children,
   isReady: task.isReady,
+  groupContext: task.groupContext,
+  effectiveGroupContext: task.effectiveGroupContext,
+  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId,
 })
 
 /**

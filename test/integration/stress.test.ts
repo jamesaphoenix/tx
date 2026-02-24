@@ -45,7 +45,8 @@ import {
   EmbeddingServiceNoop,
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
-  RerankerServiceNoop
+  RerankerServiceNoop,
+  RetrieverServiceLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 
@@ -87,7 +88,7 @@ async function measurePerformance<T>(
 /**
  * Create test layer for task/dependency/hierarchy services
  */
-function makeTaskTestLayer(db: Database) {
+function makeTaskTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
     Layer.provide(infra)
@@ -106,7 +107,7 @@ function makeTaskTestLayer(db: Database) {
 /**
  * Create test layer for learning services
  */
-function makeLearningTestLayer(db: Database) {
+function makeLearningTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -115,6 +116,16 @@ function makeLearningTestLayer(db: Database) {
   ).pipe(
     Layer.provide(infra)
   )
+  const retrieverLayer = RetrieverServiceLive.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        repos,
+        EmbeddingServiceNoop,
+        QueryExpansionServiceNoop,
+        RerankerServiceNoop
+      )
+    )
+  )
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -122,7 +133,16 @@ function makeLearningTestLayer(db: Database) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, AutoSyncServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+    Layer.provide(
+      Layer.mergeAll(
+        repos,
+        EmbeddingServiceNoop,
+        AutoSyncServiceNoop,
+        QueryExpansionServiceNoop,
+        RerankerServiceNoop,
+        retrieverLayer
+      )
+    )
   )
   return services
 }
@@ -130,7 +150,7 @@ function makeLearningTestLayer(db: Database) {
 /**
  * Create test layer for sync services
  */
-function makeSyncTestLayer(db: Database) {
+function makeSyncTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -150,7 +170,7 @@ function makeSyncTestLayer(db: Database) {
     Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
   )
   const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.merge(infra, repos))
+    Layer.provide(Layer.mergeAll(infra, repos, baseServices))
   )
   return Layer.mergeAll(baseServices, syncService, repos)
 }
@@ -158,7 +178,7 @@ function makeSyncTestLayer(db: Database) {
 /**
  * Seed N tasks into the database directly (bypasses service for speed)
  */
-function seedBulkTasks(db: Database, count: number, prefix: string = "bulk"): TaskId[] {
+function seedBulkTasks(db: TestDatabase, count: number, prefix: string = "bulk"): TaskId[] {
   const now = new Date().toISOString()
   const insert = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
@@ -166,14 +186,13 @@ function seedBulkTasks(db: Database, count: number, prefix: string = "bulk"): Ta
   )
 
   const ids: TaskId[] = []
-  const transaction = db.transaction(() => {
+  db.transaction(() => {
     for (let i = 0; i < count; i++) {
       const id = stressFixtureId(prefix, i)
       insert.run(id, `Task ${i}`, `Description for task ${i}`, "backlog", null, 500 + i, now, now, null, "{}")
       ids.push(id)
     }
   })
-  transaction()
 
   return ids
 }
@@ -181,7 +200,7 @@ function seedBulkTasks(db: Database, count: number, prefix: string = "bulk"): Ta
 /**
  * Seed N learnings into the database directly
  */
-function seedBulkLearnings(db: Database, count: number): number[] {
+function seedBulkLearnings(db: TestDatabase, count: number): number[] {
   const now = new Date().toISOString()
   const insert = db.db.prepare(
     `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category)
@@ -190,7 +209,7 @@ function seedBulkLearnings(db: Database, count: number): number[] {
 
   const ids: number[] = []
   const categories = ["database", "api", "testing", "security", "performance"]
-  const transaction = db.transaction(() => {
+  db.transaction(() => {
     for (let i = 0; i < count; i++) {
       const category = categories[i % categories.length]
       const result = insert.run(
@@ -204,7 +223,6 @@ function seedBulkLearnings(db: Database, count: number): number[] {
       ids.push(Number(result.lastInsertRowid))
     }
   })
-  transaction()
 
   return ids
 }
@@ -212,7 +230,7 @@ function seedBulkLearnings(db: Database, count: number): number[] {
 /**
  * Create a deep hierarchy chain: task0 -> task1 -> task2 -> ... -> taskN
  */
-function seedDeepHierarchy(db: Database, depth: number): TaskId[] {
+function seedDeepHierarchy(db: TestDatabase, depth: number): TaskId[] {
   const now = new Date().toISOString()
   const insert = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
@@ -220,7 +238,7 @@ function seedDeepHierarchy(db: Database, depth: number): TaskId[] {
   )
 
   const ids: TaskId[] = []
-  const transaction = db.transaction(() => {
+  db.transaction(() => {
     for (let i = 0; i < depth; i++) {
       const id = stressFixtureId("deep", i)
       const parentId = i === 0 ? null : ids[i - 1]
@@ -228,7 +246,6 @@ function seedDeepHierarchy(db: Database, depth: number): TaskId[] {
       ids.push(id)
     }
   })
-  transaction()
 
   return ids
 }
@@ -236,7 +253,7 @@ function seedDeepHierarchy(db: Database, depth: number): TaskId[] {
 /**
  * Create a deep dependency chain: task0 blocks task1 blocks task2 blocks ... blocks taskN
  */
-function seedDeepDependencyChain(db: Database, depth: number): TaskId[] {
+function seedDeepDependencyChain(db: TestDatabase, depth: number): TaskId[] {
   const now = new Date().toISOString()
   const insertTask = db.db.prepare(
     `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
@@ -247,7 +264,7 @@ function seedDeepDependencyChain(db: Database, depth: number): TaskId[] {
   )
 
   const ids: TaskId[] = []
-  const transaction = db.transaction(() => {
+  db.transaction(() => {
     // Create all tasks first
     for (let i = 0; i < depth; i++) {
       const id = stressFixtureId("depchain", i)
@@ -260,7 +277,6 @@ function seedDeepDependencyChain(db: Database, depth: number): TaskId[] {
       insertDep.run(ids[i], ids[i + 1], now)
     }
   })
-  transaction()
 
   return ids
 }

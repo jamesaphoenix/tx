@@ -50,7 +50,8 @@ const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 // Get ready tasks
 const ready = await tx.tasks.ready({ limit: 5 })
 // Returns SerializedTaskWithDeps[] with:
-//   id, title, status, score, blockedBy, blocks, children, isReady
+//   id, title, status, score, blockedBy, blocks, children, isReady,
+//   groupContext, effectiveGroupContext, effectiveGroupContextSourceTaskId
 ```
 
 </Tab>
@@ -129,7 +130,10 @@ Ready tasks (sorted by score):
     "blockedBy": [],
     "blocks": ["tx-def456"],
     "children": [],
-    "isReady": true
+    "isReady": true,
+    "groupContext": null,
+    "effectiveGroupContext": "Shared auth rollout context",
+    "effectiveGroupContextSourceTaskId": "tx-root001"
   }
 ]
 ```
@@ -144,6 +148,41 @@ Every response includes full dependency information per [Rule 1](/docs/prd/prd-0
 | `blocks` | `TaskId[]` | Task IDs this task blocks |
 | `children` | `TaskId[]` | Direct child task IDs |
 | `isReady` | `boolean` | Whether this task can be worked on |
+| `groupContext` | `string \| null` | Direct task-group context set on this task |
+| `effectiveGroupContext` | `string \| null` | Inherited task-group context used for this task |
+| `effectiveGroupContextSourceTaskId` | `TaskId \| null` | Task ID that provided `effectiveGroupContext` |
+
+## Task-Group Context Inheritance
+
+`tx ready` includes inherited task-group context fields so agents can pick up shared context automatically.
+
+Set or clear direct context:
+
+```bash
+# CLI
+tx group-context:set tx-root001 "Shared auth rollout context"
+tx group-context:clear tx-root001
+```
+
+```typescript
+// SDK
+await tx.tasks.setGroupContext("tx-root001", "Shared auth rollout context")
+await tx.tasks.clearGroupContext("tx-root001")
+```
+
+```json
+// MCP
+{ "name": "tx_group_context_set", "arguments": { "taskId": "tx-root001", "context": "Shared auth rollout context" } }
+{ "name": "tx_group_context_clear", "arguments": { "taskId": "tx-root001" } }
+```
+
+```bash
+# REST API
+curl -X PUT http://localhost:3456/api/tasks/tx-root001/group-context \
+  -H "Content-Type: application/json" \
+  -d '{"context":"Shared auth rollout context"}'
+curl -X DELETE http://localhost:3456/api/tasks/tx-root001/group-context
+```
 
 ## Agent Loop Pattern
 

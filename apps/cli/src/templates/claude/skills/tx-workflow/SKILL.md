@@ -15,11 +15,12 @@ description: Guide for working with tx task management. Use when picking up task
 
 1. Understand the task requirements from `tx show`
 2. Check for relevant learnings with `tx context <id>` or `tx recall <file-path>`
-3. If PRD docs are in scope, prefer `ears_requirements` and validate with `tx doc lint-ears <doc-name-or-yaml-path>`
-4. Implement the changes
-5. Add or update integration tests for critical flows (happy path + failure path)
-6. If telemetry code changed, verify OTEL remains non-blocking (noop/configured/exporter-failure paths)
-7. Record anything you learned: `tx learning:add "what you discovered"`
+3. If related tasks share context, set it once with `tx group-context:set <id> "<shared context>"`
+4. If PRD docs are in scope, prefer `ears_requirements` and validate with `tx doc lint-ears <doc-name-or-yaml-path>`
+5. Implement the changes
+6. Add or update integration tests for critical flows (happy path + failure path)
+7. If telemetry code changed, verify OTEL remains non-blocking (noop/configured/exporter-failure paths)
+8. Record anything you learned: `tx learning:add "what you discovered"`
 
 ## Completing a Task
 

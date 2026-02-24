@@ -33,6 +33,7 @@ import { dashboard } from "./commands/dashboard.js"
 import { send, inbox, ack, ackAll, outboxPending, outboxGc } from "./commands/outbox.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
+import { groupContextSet, groupContextClear } from "./commands/group-context.js"
 import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
 import * as p from "@clack/prompts"
 
@@ -158,6 +159,8 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   context,
   learn,
   recall,
+  "group-context:set": groupContextSet,
+  "group-context:clear": groupContextClear,
 
   // Attempt commands
   try: tryAttempt,

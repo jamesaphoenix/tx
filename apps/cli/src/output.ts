@@ -27,6 +27,9 @@ export function formatTaskWithDeps(t: TaskWithDeps): string {
   ]
   if (t.description) lines.push(`  Description: ${t.description}`)
   if (t.parentId) lines.push(`  Parent: ${t.parentId}`)
+  lines.push(`  Group Context: ${t.groupContext ?? "(none)"}`)
+  lines.push(`  Effective Group Context: ${t.effectiveGroupContext ?? "(none)"}`)
+  lines.push(`  Effective Group Source: ${t.effectiveGroupContextSourceTaskId ?? "(none)"}`)
   lines.push(`  Blocked by: ${t.blockedBy.length > 0 ? t.blockedBy.join(", ") : "(none)"}`)
   lines.push(`  Blocks: ${t.blocks.length > 0 ? t.blocks.join(", ") : "(none)"}`)
   lines.push(`  Children: ${t.children.length > 0 ? t.children.join(", ") : "(none)"}`)
@@ -43,7 +46,8 @@ export function formatTaskLine(t: TaskWithDeps): string {
 
 export function formatReadyTaskLine(t: TaskWithDeps): string {
   const blocksInfo = t.blocks.length > 0 ? ` (unblocks ${t.blocks.length})` : ""
-  return `  ${t.id} [${t.score}] ${t.title}${blocksInfo}`
+  const contextInfo = t.effectiveGroupContext ? " [ctx]" : ""
+  return `  ${t.id} [${t.score}] ${t.title}${blocksInfo}${contextInfo}`
 }
 
 // --- Context formatter ---

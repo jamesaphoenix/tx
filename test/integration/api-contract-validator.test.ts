@@ -9,7 +9,7 @@
  *
  * These tests ensure:
  * 1. All interfaces serialize tasks identically (same JSON output)
- * 2. All TaskWithDeps fields are populated correctly (blockedBy, blocks, children, isReady)
+ * 2. All TaskWithDeps fields are populated correctly
  * 3. No interface returns bare Task without dependency info
  */
 
@@ -52,8 +52,9 @@ import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
 // Constants
 // =============================================================================
 
-const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
+const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = 10000
+const FIXTURE_TIMESTAMP = "2026-01-01T00:00:00.000Z"
 
 // =============================================================================
 // Common Serialized Type (for cross-interface comparison)
@@ -83,6 +84,9 @@ interface SerializedTask {
   readonly blocks: readonly string[]
   readonly children: readonly string[]
   readonly isReady: boolean
+  readonly groupContext: string | null
+  readonly effectiveGroupContext: string | null
+  readonly effectiveGroupContextSourceTaskId: string | null
 }
 
 // =============================================================================
@@ -160,6 +164,19 @@ function validateTaskContract(task: unknown, label: string): string[] {
     errors.push(`${label}: isReady MUST be a boolean (got ${typeof t.isReady}) - DOCTRINE VIOLATION`)
   }
 
+  // Group-context fields
+  if (t.groupContext !== null && typeof t.groupContext !== "string") {
+    errors.push(`${label}: groupContext must be string or null (got ${typeof t.groupContext})`)
+  }
+  if (t.effectiveGroupContext !== null && typeof t.effectiveGroupContext !== "string") {
+    errors.push(`${label}: effectiveGroupContext must be string or null (got ${typeof t.effectiveGroupContext})`)
+  }
+  if (t.effectiveGroupContextSourceTaskId !== null && typeof t.effectiveGroupContextSourceTaskId !== "string") {
+    errors.push(
+      `${label}: effectiveGroupContextSourceTaskId must be string or null (got ${typeof t.effectiveGroupContextSourceTaskId})`
+    )
+  }
+
   // metadata should be an object
   if (typeof t.metadata !== "object" || t.metadata === null || Array.isArray(t.metadata)) {
     errors.push(`${label}: metadata must be an object (got ${typeof t.metadata})`)
@@ -180,7 +197,7 @@ interface CliResult {
 
 function runCli(args: string[], dbPath: string): CliResult {
   try {
-    const result = spawnSync("bun", [TX_BIN, ...args, "--db", dbPath], {
+    const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd()
@@ -283,6 +300,31 @@ async function mcpListTasks(
   )
 }
 
+async function mcpSetGroupContext(
+  runtime: ManagedRuntime.ManagedRuntime<McpServices, unknown>,
+  id: string,
+  context: string
+): Promise<void> {
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      yield* taskService.setGroupContext(id as TaskId, context)
+    })
+  )
+}
+
+async function mcpClearGroupContext(
+  runtime: ManagedRuntime.ManagedRuntime<McpServices, unknown>,
+  id: string
+): Promise<void> {
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const taskService = yield* TaskService
+      yield* taskService.clearGroupContext(id as TaskId)
+    })
+  )
+}
+
 // =============================================================================
 // Normalization for Comparison
 // =============================================================================
@@ -325,7 +367,10 @@ const CONTRACT_FIELDS: (keyof SerializedTask)[] = [
   "blockedBy",
   "blocks",
   "children",
-  "isReady"
+  "isReady",
+  "groupContext",
+  "effectiveGroupContext",
+  "effectiveGroupContextSourceTaskId"
 ]
 
 /**
@@ -376,10 +421,10 @@ describe("API Contract Validator", () => {
 
     // Create shared in-memory database for MCP
     db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
+    seedFixtures(db, FIXTURE_TIMESTAMP)
 
     // Seed CLI database with same fixtures
-    const now = new Date().toISOString()
+    const now = FIXTURE_TIMESTAMP
     const cliDb = new Database(dbPath)
     cliDb.exec("PRAGMA journal_mode = WAL")
     cliDb.exec("PRAGMA busy_timeout = 5000")
@@ -607,6 +652,92 @@ describe("API Contract Validator", () => {
       assertTasksIdentical("CLI vs MCP", cliTask, mcpTask)
       assertTasksIdentical("MCP vs SDK", mcpTask, sdkTask)
     })
+
+    it("all interfaces resolve inherited group context identically", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const targetTaskId = FIXTURES.TASK_LOGIN
+      const contextText = "Shared auth rollout context"
+
+      const cliSet = runCli(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+
+      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
+
+      const cliResult = runCli(["show", targetTaskId, "--json"], dbPath)
+      expect(cliResult.status, `CLI show failed: ${cliResult.stderr}`).toBe(0)
+      const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
+
+      const mcpTask = await mcpGetTask(mcpRuntime, targetTaskId)
+      const sdkTask = await sdkClient.tasks.get(targetTaskId)
+
+      expect(cliTask.groupContext).toBeNull()
+      expect(mcpTask.groupContext).toBeNull()
+      expect(sdkTask.groupContext).toBeNull()
+
+      expect(cliTask.effectiveGroupContext).toBe(contextText)
+      expect(mcpTask.effectiveGroupContext).toBe(contextText)
+      expect(sdkTask.effectiveGroupContext).toBe(contextText)
+
+      expect(cliTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(sdkTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksIdentical("CLI vs MCP", cliTask, mcpTask)
+      assertTasksIdentical("MCP vs SDK", mcpTask, sdkTask)
+      assertTasksIdentical("CLI vs SDK", cliTask, sdkTask)
+    })
+
+    it("SDK set/clear group context stays in parity with CLI and MCP", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const targetTaskId = FIXTURES.TASK_LOGIN
+      const contextText = "SDK mutation parity context"
+
+      const sdkSet = await sdkClient.tasks.setGroupContext(sourceTaskId, contextText)
+      expect(sdkSet.groupContext).toBe(contextText)
+      expect(sdkSet.effectiveGroupContext).toBe(contextText)
+      expect(sdkSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
+
+      const cliAfterSet = runCli(["show", targetTaskId, "--json"], dbPath)
+      expect(cliAfterSet.status).toBe(0)
+      const cliTaskAfterSet = JSON.parse(cliAfterSet.stdout) as SerializedTask
+      const mcpTaskAfterSet = await mcpGetTask(mcpRuntime, targetTaskId)
+      const sdkTaskAfterSet = await sdkClient.tasks.get(targetTaskId)
+
+      expect(cliTaskAfterSet.effectiveGroupContext).toBe(contextText)
+      expect(mcpTaskAfterSet.effectiveGroupContext).toBe(contextText)
+      expect(sdkTaskAfterSet.effectiveGroupContext).toBe(contextText)
+      expect(cliTaskAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpTaskAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(sdkTaskAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksIdentical("after set CLI vs MCP", cliTaskAfterSet, mcpTaskAfterSet)
+      assertTasksIdentical("after set MCP vs SDK", mcpTaskAfterSet, sdkTaskAfterSet)
+
+      const sdkCleared = await sdkClient.tasks.clearGroupContext(sourceTaskId)
+      expect(sdkCleared.groupContext).toBeNull()
+      expect(sdkCleared.effectiveGroupContext).toBeNull()
+      expect(sdkCleared.effectiveGroupContextSourceTaskId).toBeNull()
+
+      await mcpClearGroupContext(mcpRuntime, sourceTaskId)
+
+      const cliAfterClear = runCli(["show", targetTaskId, "--json"], dbPath)
+      expect(cliAfterClear.status).toBe(0)
+      const cliTaskAfterClear = JSON.parse(cliAfterClear.stdout) as SerializedTask
+      const mcpTaskAfterClear = await mcpGetTask(mcpRuntime, targetTaskId)
+      const sdkTaskAfterClear = await sdkClient.tasks.get(targetTaskId)
+
+      expect(cliTaskAfterClear.effectiveGroupContext).toBeNull()
+      expect(mcpTaskAfterClear.effectiveGroupContext).toBeNull()
+      expect(sdkTaskAfterClear.effectiveGroupContext).toBeNull()
+      expect(cliTaskAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
+      expect(mcpTaskAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
+      expect(sdkTaskAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
+
+      assertTasksIdentical("after clear CLI vs MCP", cliTaskAfterClear, mcpTaskAfterClear)
+      assertTasksIdentical("after clear MCP vs SDK", mcpTaskAfterClear, sdkTaskAfterClear)
+    })
   })
 
   // ===========================================================================
@@ -670,6 +801,42 @@ describe("API Contract Validator", () => {
       expect(cliTasks.length).toBeLessThanOrEqual(limit)
       expect(mcpTasks.length).toBeLessThanOrEqual(limit)
       expect(sdkTasks.length).toBeLessThanOrEqual(limit)
+    })
+
+    it("all interfaces include inherited group context fields in ready results", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const readyTargetId = FIXTURES.TASK_LOGIN
+      const contextText = "Ready parity inherited context"
+
+      await sdkClient.tasks.setGroupContext(sourceTaskId, contextText)
+      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
+
+      const cliResult = runCli(["ready", "--json", "--limit", "100"], dbPath)
+      expect(cliResult.status).toBe(0)
+      const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
+      const mcpTasks = await mcpGetReady(mcpRuntime, 100)
+      const sdkTasks = await sdkClient.tasks.ready({ limit: 100 })
+
+      const cliTask = cliTasks.find(task => task.id === readyTargetId)
+      const mcpTask = mcpTasks.find(task => task.id === readyTargetId)
+      const sdkTask = sdkTasks.find(task => task.id === readyTargetId)
+
+      expect(cliTask).toBeDefined()
+      expect(mcpTask).toBeDefined()
+      expect(sdkTask).toBeDefined()
+
+      expect(cliTask?.groupContext).toBeNull()
+      expect(mcpTask?.groupContext).toBeNull()
+      expect(sdkTask?.groupContext).toBeNull()
+      expect(cliTask?.effectiveGroupContext).toBe(contextText)
+      expect(mcpTask?.effectiveGroupContext).toBe(contextText)
+      expect(sdkTask?.effectiveGroupContext).toBe(contextText)
+      expect(cliTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(sdkTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksIdentical("ready inherited CLI vs MCP", cliTask!, mcpTask!)
+      assertTasksIdentical("ready inherited MCP vs SDK", mcpTask!, sdkTask!)
     })
   })
 
@@ -735,6 +902,39 @@ describe("API Contract Validator", () => {
       // Same count after filtering
       expect(cliTasks.length).toBe(mcpTasks.length)
       expect(mcpTasks.length).toBe(sdkTasks.length)
+    })
+
+    it("all interfaces include inherited group context fields in list results", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const targetTaskId = FIXTURES.TASK_LOGIN
+      const contextText = "List parity inherited context"
+
+      await sdkClient.tasks.setGroupContext(sourceTaskId, contextText)
+      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
+
+      const cliResult = runCli(["list", "--json", "--limit", "100"], dbPath)
+      expect(cliResult.status).toBe(0)
+      const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
+      const mcpTasks = await mcpListTasks(mcpRuntime, { limit: 100 })
+      const sdkTasks = (await sdkClient.tasks.list({ limit: 100 })).items
+
+      const cliTask = cliTasks.find(task => task.id === targetTaskId)
+      const mcpTask = mcpTasks.find(task => task.id === targetTaskId)
+      const sdkTask = sdkTasks.find(task => task.id === targetTaskId)
+
+      expect(cliTask).toBeDefined()
+      expect(mcpTask).toBeDefined()
+      expect(sdkTask).toBeDefined()
+
+      expect(cliTask?.effectiveGroupContext).toBe(contextText)
+      expect(mcpTask?.effectiveGroupContext).toBe(contextText)
+      expect(sdkTask?.effectiveGroupContext).toBe(contextText)
+      expect(cliTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(sdkTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksIdentical("list inherited CLI vs MCP", cliTask!, mcpTask!)
+      assertTasksIdentical("list inherited MCP vs SDK", mcpTask!, sdkTask!)
     })
   })
 

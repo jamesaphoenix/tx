@@ -255,6 +255,10 @@ const BlockBody = Schema.Struct({
   blockerId: Schema.String.pipe(Schema.pattern(/^tx-[a-z0-9]{6,12}$/)),
 })
 
+const SetGroupContextBody = Schema.Struct({
+  context: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(20000)),
+})
+
 export const TasksGroup = HttpApiGroup.make("tasks")
   .add(
     HttpApiEndpoint.get("listTasks", "/api/tasks")
@@ -305,6 +309,15 @@ export const TasksGroup = HttpApiGroup.make("tasks")
   )
   .add(
     HttpApiEndpoint.del("unblockTask")`/api/tasks/${TaskIdParam}/block/${BlockerIdParam}`
+      .addSuccess(TaskWithDepsSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.put("setTaskGroupContext")`/api/tasks/${TaskIdParam}/group-context`
+      .setPayload(SetGroupContextBody)
+      .addSuccess(TaskWithDepsSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.del("clearTaskGroupContext")`/api/tasks/${TaskIdParam}/group-context`
       .addSuccess(TaskWithDepsSerializedSchema)
   )
   .add(

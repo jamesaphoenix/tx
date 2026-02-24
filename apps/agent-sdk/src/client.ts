@@ -84,6 +84,8 @@ interface Transport {
     assignedBy?: string | null
     metadata?: Record<string, unknown>
   }): Promise<SerializedTaskWithDeps>
+  setTaskGroupContext(id: string, context: string): Promise<SerializedTaskWithDeps>
+  clearTaskGroupContext(id: string): Promise<SerializedTaskWithDeps>
   deleteTask(id: string, options?: { cascade?: boolean }): Promise<void>
   completeTask(id: string): Promise<CompleteResult>
   readyTasks(options: ReadyOptions): Promise<SerializedTaskWithDeps[]>
@@ -257,6 +259,21 @@ class HttpTransport implements Transport {
       "PATCH",
       `/api/tasks/${id}`,
       { body: data }
+    )
+  }
+
+  async setTaskGroupContext(id: string, context: string): Promise<SerializedTaskWithDeps> {
+    return await this.request<SerializedTaskWithDeps>(
+      "PUT",
+      `/api/tasks/${id}/group-context`,
+      { body: { context } }
+    )
+  }
+
+  async clearTaskGroupContext(id: string): Promise<SerializedTaskWithDeps> {
+    return await this.request<SerializedTaskWithDeps>(
+      "DELETE",
+      `/api/tasks/${id}/group-context`
     )
   }
 
@@ -624,7 +641,10 @@ class DirectTransport implements Transport {
       blockedBy: task.blockedBy,
       blocks: task.blocks,
       children: task.children,
-      isReady: task.isReady
+      isReady: task.isReady,
+      groupContext: task.groupContext ?? null,
+      effectiveGroupContext: task.effectiveGroupContext ?? null,
+      effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId ?? null
     }
   }
 
@@ -839,6 +859,38 @@ class DirectTransport implements Transport {
         const taskService = yield* core.TaskService
         yield* taskService.update(id, data)
         return yield* taskService.getWithDeps(id)
+      })
+    )
+
+    return this.serializeTask(task)
+  }
+
+  async setTaskGroupContext(id: string, context: string): Promise<SerializedTaskWithDeps> {
+    await this.ensureRuntime()
+
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const task = await this.run(
+      Effect.gen(function* () {
+        const taskService = yield* core.TaskService
+        return yield* taskService.setGroupContext(id, context)
+      })
+    )
+
+    return this.serializeTask(task)
+  }
+
+  async clearTaskGroupContext(id: string): Promise<SerializedTaskWithDeps> {
+    await this.ensureRuntime()
+
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const task = await this.run(
+      Effect.gen(function* () {
+        const taskService = yield* core.TaskService
+        return yield* taskService.clearGroupContext(id)
       })
     )
 
@@ -1587,6 +1639,22 @@ class TasksNamespace {
     }
   ): Promise<SerializedTaskWithDeps> {
     return this.transport.updateTask(id, data)
+  }
+
+  /**
+   * Set direct task-group context on a task.
+   *
+   * Effective context is inherited by related ancestors and descendants.
+   */
+  async setGroupContext(id: string, context: string): Promise<SerializedTaskWithDeps> {
+    return this.transport.setTaskGroupContext(id, context)
+  }
+
+  /**
+   * Clear direct task-group context from a task.
+   */
+  async clearGroupContext(id: string): Promise<SerializedTaskWithDeps> {
+    return this.transport.clearTaskGroupContext(id)
   }
 
   /**

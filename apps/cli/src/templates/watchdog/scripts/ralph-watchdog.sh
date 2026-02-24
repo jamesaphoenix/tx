@@ -152,6 +152,20 @@ log() {
   echo "$msg" | tee -a "$LOG_FILE"
 }
 
+interruptible_sleep_seconds() {
+  local seconds="$1"
+  [ -z "$seconds" ] && return 0
+  if ! [[ "$seconds" =~ ^[0-9]+$ ]] || [ "$seconds" -le 0 ]; then
+    return 0
+  fi
+
+  # Keep sleep chunks small so INT/TERM traps can be handled promptly.
+  while [ "$seconds" -gt 0 ]; do
+    sleep 1
+    seconds=$((seconds - 1))
+  done
+}
+
 pid_is_live() {
   local pid="$1"
   if [ -z "$pid" ]; then
@@ -810,7 +824,7 @@ while true; do
     break
   fi
 
-  sleep "$POLL_SECONDS"
+  interruptible_sleep_seconds "$POLL_SECONDS"
 done
 
 log "Watchdog exiting"

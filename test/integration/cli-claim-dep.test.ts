@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
-const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
+const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = 10000
 
 interface ExecResult {
@@ -15,7 +15,7 @@ interface ExecResult {
 
 function runTx(args: string[], dbPath: string): ExecResult {
   try {
-    const result = spawnSync("bun", [TX_BIN, ...args, "--db", dbPath], {
+    const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd(),

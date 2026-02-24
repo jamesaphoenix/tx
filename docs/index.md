@@ -46,6 +46,7 @@ Reference docs:
 | [PRD-025](prd/PRD-025-task-assignment-settings.md)    | Assignment Defaults & Settings| Phase 2 |
 | [PRD-026](prd/PRD-026-watchdog-onboarding-contract.md)| Watchdog Onboarding Contract  | Phase 2 |
 | [PRD-031](prd/PRD-031-ears-requirements.md)           | EARS Structured Requirements  | Phase 2 |
+| [PRD-032](prd/PRD-032-task-group-context-inheritance.md) | Task Group Context Inheritance | Phase 2 |
 
 ## Design Documents (DDs)
 
@@ -77,6 +78,7 @@ Reference docs:
 | [DD-025](design/DD-025-task-assignment-settings.md)  | Assignment Defaults & Settings | PRD-025       |
 | [DD-026](design/DD-026-watchdog-onboarding-contract.md) | Watchdog Onboarding Contract | PRD-026       |
 | [DD-031](design/DD-031-ears-requirements.md)         | EARS Requirements Integration | PRD-031       |
+| [DD-032](design/DD-032-task-group-context-inheritance.md) | Task Group Context Inheritance | PRD-032    |
 
 ## Implementation Phases
 

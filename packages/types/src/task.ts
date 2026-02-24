@@ -108,6 +108,12 @@ export const TaskWithDepsSchema = Schema.Struct({
   children: Schema.Array(TaskIdSchema),
   /** Whether this task can be worked on (status is workable AND all blockers are done) */
   isReady: Schema.Boolean,
+  /** Task-group context explicitly set on this task (if any) */
+  groupContext: Schema.NullOr(Schema.String),
+  /** Effective inherited task-group context for this task (if any) */
+  effectiveGroupContext: Schema.NullOr(Schema.String),
+  /** Source task ID that provided effectiveGroupContext */
+  effectiveGroupContextSourceTaskId: Schema.NullOr(TaskIdSchema),
 })
 export type TaskWithDeps = typeof TaskWithDepsSchema.Type
 
@@ -256,6 +262,7 @@ export interface TaskRow {
   assignee_id?: string | null;
   assigned_at?: string | null;
   assigned_by?: string | null;
+  group_context?: string | null;
   metadata: string;
 }
 

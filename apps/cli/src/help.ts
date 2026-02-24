@@ -35,6 +35,8 @@ Memory:
   learning:helpful        Record learning helpfulness
   learning:embed          Compute embeddings for learnings
   context                 Get contextual learnings for a task
+  group-context:set       Set task-group context on a task
+  group-context:clear     Clear task-group context on a task
   learn                   Attach a learning to file/glob pattern
   recall                  Query learnings for a path
 
@@ -730,6 +732,43 @@ Examples:
   tx context tx-a1b2c3d4 --inject
   tx context tx-a1b2c3d4 --expand --depth 3
   tx context tx-a1b2c3d4 --retriever ./my-retriever.ts`,
+
+  "group-context:set": `tx group-context:set - Set task-group context on a task
+
+Usage: tx group-context:set <task-id> <context> [options]
+
+Sets task-group context on a task. The context is inherited by related
+ancestors and descendants when querying task payloads.
+
+Arguments:
+  <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
+  <context>  Required. Context text (quote for multi-word text)
+
+Options:
+  --json     Output as JSON
+  --help     Show this help
+
+Examples:
+  tx group-context:set tx-a1b2c3d4 "Shared auth rollout context"
+  tx group-context:set tx-a1b2c3d4 "Phase 2 migration notes" --json`,
+
+  "group-context:clear": `tx group-context:clear - Clear task-group context on a task
+
+Usage: tx group-context:clear <task-id> [options]
+
+Removes direct task-group context from a task. Effective inherited context
+is re-resolved from the remaining lineage context sources.
+
+Arguments:
+  <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
+
+Options:
+  --json     Output as JSON
+  --help     Show this help
+
+Examples:
+  tx group-context:clear tx-a1b2c3d4
+  tx group-context:clear tx-a1b2c3d4 --json`,
 
   learn: `tx learn - Attach a learning to a file path or glob pattern
 

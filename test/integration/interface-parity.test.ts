@@ -49,7 +49,7 @@ import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 // Constants
 // =============================================================================
 
-const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
+const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = 10000
 const DEPENDENCY_SNAPSHOT_SQL = "select blocker_id, blocked_id from task_dependencies"
 
@@ -89,6 +89,9 @@ interface NormalizedTask {
   blocks: string[]
   children: string[]
   isReady: boolean
+  groupContext: string | null
+  effectiveGroupContext: string | null
+  effectiveGroupContextSourceTaskId: string | null
 }
 
 interface CliExecResult {
@@ -103,7 +106,7 @@ interface CliExecResult {
 
 function runTxArgs(args: string[], dbPath: string): CliExecResult {
   try {
-    const result = spawnSync("bun", [TX_BIN, ...args, "--db", dbPath], {
+    const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd()
@@ -177,7 +180,10 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   blockedBy: task.blockedBy,
   blocks: task.blocks,
   children: task.children,
-  isReady: task.isReady
+  isReady: task.isReady,
+  groupContext: task.groupContext,
+  effectiveGroupContext: task.effectiveGroupContext,
+  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId
 })
 
 interface McpToolResponse {
@@ -280,6 +286,7 @@ interface TaskRow {
   created_at: string
   updated_at: string
   completed_at: string | null
+  group_context?: string | null
   metadata: string
 }
 
@@ -298,6 +305,9 @@ interface ApiTaskWithDeps {
   blocks: string[]
   children: string[]
   isReady: boolean
+  groupContext: string | null
+  effectiveGroupContext: string | null
+  effectiveGroupContextSourceTaskId: string | null
 }
 
 function createTestApiApp(db: Database) {
@@ -336,6 +346,84 @@ function createTestApiApp(db: Database) {
 
     const statusMap = new Map(allTasks.map(t => [t.id, t.status]))
     const workableStatuses = ["backlog", "ready", "planning"]
+    const taskIds = tasks.map((task) => task.id)
+
+    const directContextMap = new Map<string, string>()
+    if (taskIds.length > 0) {
+      const placeholders = taskIds.map(() => "?").join(",")
+      const directRows = db.db.prepare(
+        `SELECT id, group_context
+         FROM tasks
+         WHERE id IN (${placeholders})
+           AND group_context IS NOT NULL
+           AND length(trim(group_context)) > 0`
+      ).all(...taskIds) as Array<{ id: string; group_context: string }>
+
+      for (const row of directRows) {
+        directContextMap.set(row.id, row.group_context)
+      }
+    }
+
+    const effectiveContextMap = new Map<string, { sourceTaskId: string; context: string }>()
+    if (taskIds.length > 0) {
+      const valuesClause = taskIds.map(() => "(?)").join(", ")
+      const rows = db.db.prepare(
+        `WITH RECURSIVE
+           targets(target_id) AS (
+             VALUES ${valuesClause}
+           ),
+           ancestors(target_id, node_id, distance, path) AS (
+             SELECT t.target_id, t.target_id, 0, ',' || t.target_id || ','
+             FROM targets t
+             UNION ALL
+             SELECT a.target_id, parent.id, a.distance + 1, a.path || parent.id || ','
+             FROM ancestors a
+             JOIN tasks current ON current.id = a.node_id
+             JOIN tasks parent ON parent.id = current.parent_id
+             WHERE a.distance < 1000
+               AND instr(a.path, ',' || parent.id || ',') = 0
+           ),
+           descendants(target_id, node_id, distance, path) AS (
+             SELECT t.target_id, t.target_id, 0, ',' || t.target_id || ','
+             FROM targets t
+             UNION ALL
+             SELECT d.target_id, child.id, d.distance + 1, d.path || child.id || ','
+             FROM descendants d
+             JOIN tasks child ON child.parent_id = d.node_id
+             WHERE d.distance < 1000
+               AND instr(d.path, ',' || child.id || ',') = 0
+           ),
+           lineage(target_id, node_id, distance) AS (
+             SELECT target_id, node_id, distance FROM ancestors
+             UNION
+             SELECT target_id, node_id, distance FROM descendants
+           ),
+           ranked_sources AS (
+             SELECT l.target_id,
+                    source.id AS source_id,
+                    source.group_context,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY l.target_id
+                      ORDER BY l.distance ASC, source.updated_at DESC, source.id ASC
+                    ) AS rn
+             FROM lineage l
+             JOIN tasks source ON source.id = l.node_id
+             WHERE source.group_context IS NOT NULL
+               AND length(trim(source.group_context)) > 0
+           )
+         SELECT target_id, source_id, group_context
+         FROM ranked_sources
+         WHERE rn = 1
+         ORDER BY target_id ASC`
+      ).all(...taskIds) as Array<{ target_id: string; source_id: string; group_context: string }>
+
+      for (const row of rows) {
+        effectiveContextMap.set(row.target_id, {
+          sourceTaskId: row.source_id,
+          context: row.group_context
+        })
+      }
+    }
 
     return tasks.map(task => {
       const blockedBy = blockedByMap.get(task.id) ?? []
@@ -343,6 +431,7 @@ function createTestApiApp(db: Database) {
       const children = childrenMap.get(task.id) ?? []
       const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
       const isReady = workableStatuses.includes(task.status) && allBlockersDone
+      const effective = effectiveContextMap.get(task.id)
 
       return {
         id: task.id,
@@ -358,7 +447,10 @@ function createTestApiApp(db: Database) {
         blockedBy,
         blocks,
         children,
-        isReady
+        isReady,
+        groupContext: directContextMap.get(task.id) ?? null,
+        effectiveGroupContext: effective?.context ?? null,
+        effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
       }
     })
   }
@@ -374,6 +466,65 @@ function createTestApiApp(db: Database) {
       const ready = enriched.filter(t => t.isReady).slice(0, limit)
 
       return c.json({ tasks: ready })
+    } catch (e) {
+      return c.json({ error: String(e) }, 500)
+    }
+  })
+
+  // PUT /api/tasks/:id/group-context
+  app.put("/api/tasks/:id/group-context", async (c) => {
+    try {
+      const id = c.req.param("id")
+      const existing = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+      if (!existing) {
+        return c.json({ error: "Task not found" }, 404)
+      }
+
+      const payload = await c.req.json() as { context?: unknown }
+      const context = typeof payload.context === "string" ? payload.context.trim() : ""
+      if (context.length === 0 || context.length > 20000) {
+        return c.json({ error: "context must be 1-20000 characters" }, 400)
+      }
+
+      db.db.prepare("UPDATE tasks SET group_context = ?, updated_at = ? WHERE id = ?").run(
+        context,
+        new Date().toISOString(),
+        id
+      )
+
+      const updated = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+      if (!updated) {
+        return c.json({ error: "Task not found" }, 404)
+      }
+
+      const [enrichedTask] = enrichTasksWithDeps([updated])
+      return c.json(enrichedTask)
+    } catch (e) {
+      return c.json({ error: String(e) }, 500)
+    }
+  })
+
+  // DELETE /api/tasks/:id/group-context
+  app.delete("/api/tasks/:id/group-context", (c) => {
+    try {
+      const id = c.req.param("id")
+      const existing = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+      if (!existing) {
+        return c.json({ error: "Task not found" }, 404)
+      }
+
+      db.db.prepare("UPDATE tasks SET group_context = NULL, updated_at = ? WHERE id = ?").run(
+        new Date().toISOString(),
+        id
+      )
+
+      const updated = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
+      if (!updated) {
+        return c.json({ error: "Task not found" }, 404)
+      }
+
+      const [enrichedTask] = enrichTasksWithDeps([updated])
+      return c.json(enrichedTask)
     } catch (e) {
       return c.json({ error: String(e) }, 500)
     }
@@ -443,7 +594,10 @@ function normalizeTask(task: any): NormalizedTask {
     blockedBy: [...(task.blockedBy ?? [])].sort(),
     blocks: [...(task.blocks ?? [])].sort(),
     children: [...(task.children ?? [])].sort(),
-    isReady: task.isReady
+    isReady: task.isReady,
+    groupContext: task.groupContext ?? null,
+    effectiveGroupContext: task.effectiveGroupContext ?? null,
+    effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId ?? null
   }
 }
 
@@ -466,6 +620,11 @@ function assertTasksEqual(label: string, t1: NormalizedTask, t2: NormalizedTask)
   expect(t1.blocks, `${label}: blocks`).toEqual(t2.blocks)
   expect(t1.children, `${label}: children`).toEqual(t2.children)
   expect(t1.isReady, `${label}: isReady`).toBe(t2.isReady)
+  expect(t1.groupContext, `${label}: groupContext`).toBe(t2.groupContext)
+  expect(t1.effectiveGroupContext, `${label}: effectiveGroupContext`).toBe(t2.effectiveGroupContext)
+  expect(t1.effectiveGroupContextSourceTaskId, `${label}: effectiveGroupContextSourceTaskId`).toBe(
+    t2.effectiveGroupContextSourceTaskId
+  )
 }
 
 function assertTaskListsEqual(label: string, list1: NormalizedTask[], list2: NormalizedTask[]): void {
@@ -695,6 +854,312 @@ describe("Interface Parity", () => {
       assertTasksEqual("CLI vs API", cliNorm, apiNorm)
     })
 
+    it("returns equivalent inherited group context fields", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const targetTaskId = FIXTURES.TASK_LOGIN
+      const contextText = "Auth hierarchy rollout context"
+
+      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const taskService = yield* TaskService
+          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
+        })
+      )
+
+      const cliResult = runTxArgs(["show", targetTaskId, "--json"], dbPath)
+      expect(cliResult.status).toBe(0)
+      const cliTask = JSON.parse(cliResult.stdout)
+
+      const mcpResult = await callMcpShow(runtime, targetTaskId)
+      expect(mcpResult.isError).toBeFalsy()
+      const mcpTask = JSON.parse(mcpResult.content[1].text)
+
+      const apiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
+      expect(apiResponse.status).toBe(200)
+      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
+      const apiTask = apiData.task
+
+      const cliNorm = normalizeTask(cliTask)
+      const mcpNorm = normalizeTask(mcpTask)
+      const apiNorm = normalizeTask(apiTask)
+
+      expect(cliNorm.groupContext).toBeNull()
+      expect(mcpNorm.groupContext).toBeNull()
+      expect(apiNorm.groupContext).toBeNull()
+
+      expect(cliNorm.effectiveGroupContext).toBe(contextText)
+      expect(mcpNorm.effectiveGroupContext).toBe(contextText)
+      expect(apiNorm.effectiveGroupContext).toBe(contextText)
+
+      expect(cliNorm.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpNorm.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(apiNorm.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksEqual("CLI vs MCP", cliNorm, mcpNorm)
+      assertTasksEqual("MCP vs API", mcpNorm, apiNorm)
+      assertTasksEqual("CLI vs API", cliNorm, apiNorm)
+    })
+
+    it("does not leak context to sibling tasks across interfaces", async () => {
+      const sourceTaskId = FIXTURES.TASK_LOGIN
+      const siblingTaskId = FIXTURES.TASK_JWT
+      const ancestorTaskId = FIXTURES.TASK_AUTH
+      const contextText = "Login-only context"
+
+      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const taskService = yield* TaskService
+          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
+        })
+      )
+
+      const cliSibling = JSON.parse(runTxArgs(["show", siblingTaskId, "--json"], dbPath).stdout)
+      const mcpSiblingResult = await callMcpShow(runtime, siblingTaskId)
+      const mcpSibling = JSON.parse(mcpSiblingResult.content[1].text)
+      const apiSiblingResponse = await apiApp.request(`/api/tasks/${siblingTaskId}`)
+      const apiSiblingData = await apiSiblingResponse.json() as { task: ApiTaskWithDeps }
+
+      const cliSiblingNorm = normalizeTask(cliSibling)
+      const mcpSiblingNorm = normalizeTask(mcpSibling)
+      const apiSiblingNorm = normalizeTask(apiSiblingData.task)
+
+      expect(cliSiblingNorm.groupContext).toBeNull()
+      expect(mcpSiblingNorm.groupContext).toBeNull()
+      expect(apiSiblingNorm.groupContext).toBeNull()
+      expect(cliSiblingNorm.effectiveGroupContext).toBeNull()
+      expect(mcpSiblingNorm.effectiveGroupContext).toBeNull()
+      expect(apiSiblingNorm.effectiveGroupContext).toBeNull()
+      expect(cliSiblingNorm.effectiveGroupContextSourceTaskId).toBeNull()
+      expect(mcpSiblingNorm.effectiveGroupContextSourceTaskId).toBeNull()
+      expect(apiSiblingNorm.effectiveGroupContextSourceTaskId).toBeNull()
+
+      const cliAncestor = normalizeTask(JSON.parse(runTxArgs(["show", ancestorTaskId, "--json"], dbPath).stdout))
+      const mcpAncestor = normalizeTask(JSON.parse((await callMcpShow(runtime, ancestorTaskId)).content[1].text))
+      const apiAncestorResponse = await apiApp.request(`/api/tasks/${ancestorTaskId}`)
+      const apiAncestorData = await apiAncestorResponse.json() as { task: ApiTaskWithDeps }
+      const apiAncestor = normalizeTask(apiAncestorData.task)
+
+      expect(cliAncestor.effectiveGroupContext).toBe(contextText)
+      expect(mcpAncestor.effectiveGroupContext).toBe(contextText)
+      expect(apiAncestor.effectiveGroupContext).toBe(contextText)
+      expect(cliAncestor.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpAncestor.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(apiAncestor.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksEqual("sibling CLI vs MCP", cliSiblingNorm, mcpSiblingNorm)
+      assertTasksEqual("sibling MCP vs API", mcpSiblingNorm, apiSiblingNorm)
+    })
+
+    it("falls back to the next-best context source after clearing the current winner", async () => {
+      const sourceA = FIXTURES.TASK_LOGIN
+      const sourceB = FIXTURES.TASK_JWT
+      const targetTaskId = FIXTURES.TASK_AUTH
+      const contextA = "Fallback source A"
+      const contextB = "Fallback source B (newest)"
+
+      const cliSetA = runTxArgs(["group-context:set", sourceA, contextA, "--json"], dbPath)
+      expect(cliSetA.status, `CLI group-context:set A failed: ${cliSetA.stderr}`).toBe(0)
+      const cliSetB = runTxArgs(["group-context:set", sourceB, contextB, "--json"], dbPath)
+      expect(cliSetB.status, `CLI group-context:set B failed: ${cliSetB.stderr}`).toBe(0)
+
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const taskService = yield* TaskService
+          yield* taskService.setGroupContext(sourceA as TaskId, contextA)
+          yield* taskService.setGroupContext(sourceB as TaskId, contextB)
+        })
+      )
+
+      // Force deterministic recency ordering so sourceB is the current winner.
+      const olderUpdatedAt = "2026-01-01T00:00:01.000Z"
+      const newerUpdatedAt = "2026-01-01T00:00:02.000Z"
+      db.db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(olderUpdatedAt, sourceA)
+      db.db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(newerUpdatedAt, sourceB)
+      const cliDb = new Database(dbPath)
+      cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(olderUpdatedAt, sourceA)
+      cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(newerUpdatedAt, sourceB)
+      cliDb.close()
+
+      const beforeClearCli = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
+      const beforeClearMcp = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
+      const beforeClearApiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
+      const beforeClearApiData = await beforeClearApiResponse.json() as { task: ApiTaskWithDeps }
+      const beforeClearApi = normalizeTask(beforeClearApiData.task)
+
+      expect(beforeClearCli.effectiveGroupContext).toBe(contextB)
+      expect(beforeClearMcp.effectiveGroupContext).toBe(contextB)
+      expect(beforeClearApi.effectiveGroupContext).toBe(contextB)
+      expect(beforeClearCli.effectiveGroupContextSourceTaskId).toBe(sourceB)
+      expect(beforeClearMcp.effectiveGroupContextSourceTaskId).toBe(sourceB)
+      expect(beforeClearApi.effectiveGroupContextSourceTaskId).toBe(sourceB)
+
+      const cliClearWinner = runTxArgs(["group-context:clear", sourceB, "--json"], dbPath)
+      expect(cliClearWinner.status, `CLI group-context:clear winner failed: ${cliClearWinner.stderr}`).toBe(0)
+
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const taskService = yield* TaskService
+          yield* taskService.clearGroupContext(sourceB as TaskId)
+        })
+      )
+
+      const afterClearCli = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
+      const afterClearMcp = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
+      const afterClearApiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
+      const afterClearApiData = await afterClearApiResponse.json() as { task: ApiTaskWithDeps }
+      const afterClearApi = normalizeTask(afterClearApiData.task)
+
+      expect(afterClearCli.effectiveGroupContext).toBe(contextA)
+      expect(afterClearMcp.effectiveGroupContext).toBe(contextA)
+      expect(afterClearApi.effectiveGroupContext).toBe(contextA)
+      expect(afterClearCli.effectiveGroupContextSourceTaskId).toBe(sourceA)
+      expect(afterClearMcp.effectiveGroupContextSourceTaskId).toBe(sourceA)
+      expect(afterClearApi.effectiveGroupContextSourceTaskId).toBe(sourceA)
+
+      assertTasksEqual("fallback CLI vs MCP", afterClearCli, afterClearMcp)
+      assertTasksEqual("fallback MCP vs API", afterClearMcp, afterClearApi)
+    })
+
+    it("applies lexicographic tie-break when distance and updated_at are equal", async () => {
+      const sourceA = FIXTURES.TASK_LOGIN
+      const sourceB = FIXTURES.TASK_JWT
+      const targetTaskId = FIXTURES.TASK_AUTH
+      const contextA = "Lexicographic source A"
+      const contextB = "Lexicographic source B"
+      const tieUpdatedAt = "2026-01-01T00:00:01.000Z"
+
+      const cliSetA = runTxArgs(["group-context:set", sourceA, contextA, "--json"], dbPath)
+      expect(cliSetA.status, `CLI group-context:set A failed: ${cliSetA.stderr}`).toBe(0)
+      const cliSetB = runTxArgs(["group-context:set", sourceB, contextB, "--json"], dbPath)
+      expect(cliSetB.status, `CLI group-context:set B failed: ${cliSetB.stderr}`).toBe(0)
+
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const taskService = yield* TaskService
+          yield* taskService.setGroupContext(sourceA as TaskId, contextA)
+          yield* taskService.setGroupContext(sourceB as TaskId, contextB)
+        })
+      )
+
+      // Force equal timestamps in both interface backends so ID ordering decides.
+      db.db.prepare("UPDATE tasks SET updated_at = ? WHERE id IN (?, ?)").run(
+        tieUpdatedAt,
+        sourceA,
+        sourceB
+      )
+
+      const cliDb = new Database(dbPath)
+      cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id IN (?, ?)").run(
+        tieUpdatedAt,
+        sourceA,
+        sourceB
+      )
+      cliDb.close()
+
+      const expectedSource = [sourceA, sourceB].sort()[0]!
+      const expectedContext = expectedSource === sourceA ? contextA : contextB
+
+      const cliTask = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
+      const mcpTask = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
+      const apiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
+      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
+      const apiTask = normalizeTask(apiData.task)
+
+      expect(cliTask.effectiveGroupContextSourceTaskId).toBe(expectedSource)
+      expect(mcpTask.effectiveGroupContextSourceTaskId).toBe(expectedSource)
+      expect(apiTask.effectiveGroupContextSourceTaskId).toBe(expectedSource)
+      expect(cliTask.effectiveGroupContext).toBe(expectedContext)
+      expect(mcpTask.effectiveGroupContext).toBe(expectedContext)
+      expect(apiTask.effectiveGroupContext).toBe(expectedContext)
+
+      assertTasksEqual("lexicographic CLI vs MCP", cliTask, mcpTask)
+      assertTasksEqual("lexicographic MCP vs API", mcpTask, apiTask)
+    })
+
+    it("API set/clear group-context endpoints maintain parity with CLI and MCP reads", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const targetTaskId = FIXTURES.TASK_LOGIN
+      const contextText = "API endpoint parity context"
+
+      const setResponse = await apiApp.request(`/api/tasks/${sourceTaskId}/group-context`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ context: contextText })
+      })
+      expect(setResponse.status).toBe(200)
+      const setTask = normalizeTask(await setResponse.json() as ApiTaskWithDeps)
+      expect(setTask.groupContext).toBe(contextText)
+      expect(setTask.effectiveGroupContext).toBe(contextText)
+      expect(setTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+
+      const cliAfterSet = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
+      const mcpAfterSet = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
+      const apiAfterSetResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
+      const apiAfterSetData = await apiAfterSetResponse.json() as { task: ApiTaskWithDeps }
+      const apiAfterSet = normalizeTask(apiAfterSetData.task)
+
+      expect(cliAfterSet.effectiveGroupContext).toBe(contextText)
+      expect(mcpAfterSet.effectiveGroupContext).toBe(contextText)
+      expect(apiAfterSet.effectiveGroupContext).toBe(contextText)
+      expect(cliAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(apiAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksEqual("after API set CLI vs MCP", cliAfterSet, mcpAfterSet)
+      assertTasksEqual("after API set MCP vs API", mcpAfterSet, apiAfterSet)
+
+      const clearResponse = await apiApp.request(`/api/tasks/${sourceTaskId}/group-context`, {
+        method: "DELETE"
+      })
+      expect(clearResponse.status).toBe(200)
+      const clearedTask = normalizeTask(await clearResponse.json() as ApiTaskWithDeps)
+      expect(clearedTask.groupContext).toBeNull()
+      expect(clearedTask.effectiveGroupContext).toBeNull()
+      expect(clearedTask.effectiveGroupContextSourceTaskId).toBeNull()
+
+      const cliClear = runTxArgs(["group-context:clear", sourceTaskId, "--json"], dbPath)
+      expect(cliClear.status, `CLI group-context:clear failed: ${cliClear.stderr}`).toBe(0)
+
+      const cliAfterClear = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
+      const mcpAfterClear = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
+      const apiAfterClearResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
+      const apiAfterClearData = await apiAfterClearResponse.json() as { task: ApiTaskWithDeps }
+      const apiAfterClear = normalizeTask(apiAfterClearData.task)
+
+      expect(cliAfterClear.effectiveGroupContext).toBeNull()
+      expect(mcpAfterClear.effectiveGroupContext).toBeNull()
+      expect(apiAfterClear.effectiveGroupContext).toBeNull()
+      expect(cliAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
+      expect(mcpAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
+      expect(apiAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
+
+      assertTasksEqual("after API clear CLI vs MCP", cliAfterClear, mcpAfterClear)
+      assertTasksEqual("after API clear MCP vs API", mcpAfterClear, apiAfterClear)
+    })
+
+    it("API set group-context endpoint rejects oversized payloads", async () => {
+      const response = await apiApp.request(`/api/tasks/${FIXTURES.TASK_AUTH}/group-context`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ context: "x".repeat(20001) })
+      })
+
+      expect(response.status).toBe(400)
+    })
+
     it("API /api/tasks/:id uses one dependency snapshot query shape", async () => {
       const prepareSpy = vi.spyOn(db.db, "prepare")
 
@@ -802,6 +1267,49 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
     })
 
+    it("returns equivalent inherited group context fields in ready responses", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const targetTaskId = FIXTURES.TASK_LOGIN
+      const contextText = "Ready inherited context parity"
+
+      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const taskService = yield* TaskService
+          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
+        })
+      )
+
+      const cliTasks = (JSON.parse(runTxArgs(["ready", "--json", "--limit", "100"], dbPath).stdout) as unknown[]).map(normalizeTask)
+      const mcpTasks = (JSON.parse((await callMcpReady(runtime, 100)).content[1].text) as unknown[]).map(normalizeTask)
+      const apiReadyResponse = await apiApp.request("/api/tasks/ready?limit=100")
+      const apiReadyData = await apiReadyResponse.json() as { tasks: ApiTaskWithDeps[] }
+      const apiTasks = apiReadyData.tasks.map(normalizeTask)
+
+      const cliTarget = cliTasks.find(task => task.id === targetTaskId)
+      const mcpTarget = mcpTasks.find(task => task.id === targetTaskId)
+      const apiTarget = apiTasks.find(task => task.id === targetTaskId)
+
+      expect(cliTarget).toBeDefined()
+      expect(mcpTarget).toBeDefined()
+      expect(apiTarget).toBeDefined()
+
+      expect(cliTarget?.groupContext).toBeNull()
+      expect(mcpTarget?.groupContext).toBeNull()
+      expect(apiTarget?.groupContext).toBeNull()
+      expect(cliTarget?.effectiveGroupContext).toBe(contextText)
+      expect(mcpTarget?.effectiveGroupContext).toBe(contextText)
+      expect(apiTarget?.effectiveGroupContext).toBe(contextText)
+      expect(cliTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(apiTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksEqual("ready inherited CLI vs MCP", cliTarget!, mcpTarget!)
+      assertTasksEqual("ready inherited MCP vs API", mcpTarget!, apiTarget!)
+    })
+
     it("API /api/tasks/ready uses one dependency snapshot query shape", async () => {
       const prepareSpy = vi.spyOn(db.db, "prepare")
 
@@ -907,6 +1415,46 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
     })
 
+    it("returns equivalent inherited group context fields in list responses", async () => {
+      const sourceTaskId = FIXTURES.TASK_AUTH
+      const targetTaskId = FIXTURES.TASK_LOGIN
+      const contextText = "List inherited context parity"
+
+      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const taskService = yield* TaskService
+          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
+        })
+      )
+
+      const cliTasks = (JSON.parse(runTxArgs(["list", "--json", "--limit", "100"], dbPath).stdout) as unknown[]).map(normalizeTask)
+      const mcpTasks = (JSON.parse((await callMcpList(runtime, { limit: 100 })).content[1].text) as unknown[]).map(normalizeTask)
+      const apiListResponse = await apiApp.request("/api/tasks?limit=100")
+      const apiListData = await apiListResponse.json() as { tasks: ApiTaskWithDeps[] }
+      const apiTasks = apiListData.tasks.map(normalizeTask)
+
+      const cliTarget = cliTasks.find(task => task.id === targetTaskId)
+      const mcpTarget = mcpTasks.find(task => task.id === targetTaskId)
+      const apiTarget = apiTasks.find(task => task.id === targetTaskId)
+
+      expect(cliTarget).toBeDefined()
+      expect(mcpTarget).toBeDefined()
+      expect(apiTarget).toBeDefined()
+
+      expect(cliTarget?.effectiveGroupContext).toBe(contextText)
+      expect(mcpTarget?.effectiveGroupContext).toBe(contextText)
+      expect(apiTarget?.effectiveGroupContext).toBe(contextText)
+      expect(cliTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(mcpTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+      expect(apiTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
+
+      assertTasksEqual("list inherited CLI vs MCP", cliTarget!, mcpTarget!)
+      assertTasksEqual("list inherited MCP vs API", mcpTarget!, apiTarget!)
+    })
+
     it("API /api/tasks uses one dependency snapshot query shape", async () => {
       const prepareSpy = vi.spyOn(db.db, "prepare")
 
@@ -944,7 +1492,7 @@ describe("Interface Parity", () => {
   // ===========================================================================
 
   describe("TaskWithDeps field verification (Rule 1 compliance)", () => {
-    it("all interfaces include blockedBy, blocks, children, and isReady fields", async () => {
+    it("all interfaces include dependency and group-context fields", async () => {
       const taskId = FIXTURES.TASK_AUTH
 
       // CLI
@@ -971,6 +1519,15 @@ describe("Interface Parity", () => {
         expect(task.children, `${name}: children exists`).toBeDefined()
         expect(Array.isArray(task.children), `${name}: children is array`).toBe(true)
         expect(typeof task.isReady, `${name}: isReady is boolean`).toBe("boolean")
+        expect(task.groupContext === null || typeof task.groupContext === "string", `${name}: groupContext type`).toBe(true)
+        expect(
+          task.effectiveGroupContext === null || typeof task.effectiveGroupContext === "string",
+          `${name}: effectiveGroupContext type`
+        ).toBe(true)
+        expect(
+          task.effectiveGroupContextSourceTaskId === null || typeof task.effectiveGroupContextSourceTaskId === "string",
+          `${name}: effectiveGroupContextSourceTaskId type`
+        ).toBe(true)
       }
     })
 

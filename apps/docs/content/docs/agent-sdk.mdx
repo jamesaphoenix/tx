@@ -265,6 +265,8 @@ const task = await tx.tasks.get("tx-abc123")
 console.log(task.title, task.isReady)
 console.log(`Blocked by: ${task.blockedBy.join(", ")}`)
 console.log(`Blocks: ${task.blocks.join(", ")}`)
+console.log(`Direct group context: ${task.groupContext ?? "(none)"}`)
+console.log(`Effective group context: ${task.effectiveGroupContext ?? "(none)"}`)
 ```
 
 #### `tx.tasks.update(id, data)`
@@ -276,6 +278,22 @@ await tx.tasks.update("tx-abc123", {
   status: "active",
   score: 200,
 })
+```
+
+#### `tx.tasks.setGroupContext(id, context)`
+
+Set direct task-group context on a task. Related ancestors/descendants inherit it through `effectiveGroupContext`.
+
+```typescript
+await tx.tasks.setGroupContext("tx-root001", "Shared auth rollout context")
+```
+
+#### `tx.tasks.clearGroupContext(id)`
+
+Clear direct task-group context from a task.
+
+```typescript
+await tx.tasks.clearGroupContext("tx-root001")
 ```
 
 #### `tx.tasks.delete(id, options?)`

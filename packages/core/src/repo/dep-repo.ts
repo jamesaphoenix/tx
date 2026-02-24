@@ -7,6 +7,18 @@ import type { TaskId, TaskDependency, DependencyRow } from "@jamesaphoenix/tx-ty
 
 // Shared frozen empty array to avoid allocating new arrays for IDs with no dependencies
 const EMPTY_TASK_IDS: readonly TaskId[] = Object.freeze([])
+const MAX_SQL_VARIABLES = 900
+
+const chunkBySqlLimit = <T>(values: readonly T[], chunkSize: number = MAX_SQL_VARIABLES): ReadonlyArray<ReadonlyArray<T>> => {
+  if (values.length === 0) {
+    return []
+  }
+  const chunks: T[][] = []
+  for (let i = 0; i < values.length; i += chunkSize) {
+    chunks.push(values.slice(i, i + chunkSize) as T[])
+  }
+  return chunks
+}
 
 /**
  * Maximum recursion depth for dependency graph traversal.
@@ -116,19 +128,21 @@ export const DependencyRepositoryLive = Layer.effect(
             const result = new Map<string, readonly TaskId[]>()
             if (blockedIds.length === 0) return result
 
-            const placeholders = blockedIds.map(() => "?").join(",")
-            const rows = db.prepare(
-              `SELECT blocked_id, blocker_id FROM task_dependencies WHERE blocked_id IN (${placeholders})`
-            ).all(...blockedIds) as Array<{ blocked_id: string; blocker_id: string }>
-
             // Group rows by blocked_id in a temporary mutable map
             const grouped = new Map<string, TaskId[]>()
-            for (const row of rows) {
-              const existing = grouped.get(row.blocked_id)
-              if (existing) {
-                existing.push(row.blocker_id as TaskId)
-              } else {
-                grouped.set(row.blocked_id, [row.blocker_id as TaskId])
+            for (const chunk of chunkBySqlLimit(blockedIds)) {
+              const placeholders = chunk.map(() => "?").join(",")
+              const rows = db.prepare(
+                `SELECT blocked_id, blocker_id FROM task_dependencies WHERE blocked_id IN (${placeholders})`
+              ).all(...chunk) as Array<{ blocked_id: string; blocker_id: string }>
+
+              for (const row of rows) {
+                const existing = grouped.get(row.blocked_id)
+                if (existing) {
+                  existing.push(row.blocker_id as TaskId)
+                } else {
+                  grouped.set(row.blocked_id, [row.blocker_id as TaskId])
+                }
               }
             }
 
@@ -148,19 +162,21 @@ export const DependencyRepositoryLive = Layer.effect(
             const result = new Map<string, readonly TaskId[]>()
             if (blockerIds.length === 0) return result
 
-            const placeholders = blockerIds.map(() => "?").join(",")
-            const rows = db.prepare(
-              `SELECT blocker_id, blocked_id FROM task_dependencies WHERE blocker_id IN (${placeholders})`
-            ).all(...blockerIds) as Array<{ blocker_id: string; blocked_id: string }>
-
             // Group rows by blocker_id in a temporary mutable map
             const grouped = new Map<string, TaskId[]>()
-            for (const row of rows) {
-              const existing = grouped.get(row.blocker_id)
-              if (existing) {
-                existing.push(row.blocked_id as TaskId)
-              } else {
-                grouped.set(row.blocker_id, [row.blocked_id as TaskId])
+            for (const chunk of chunkBySqlLimit(blockerIds)) {
+              const placeholders = chunk.map(() => "?").join(",")
+              const rows = db.prepare(
+                `SELECT blocker_id, blocked_id FROM task_dependencies WHERE blocker_id IN (${placeholders})`
+              ).all(...chunk) as Array<{ blocker_id: string; blocked_id: string }>
+
+              for (const row of rows) {
+                const existing = grouped.get(row.blocker_id)
+                if (existing) {
+                  existing.push(row.blocked_id as TaskId)
+                } else {
+                  grouped.set(row.blocker_id, [row.blocked_id as TaskId])
+                }
               }
             }
 
@@ -233,10 +249,12 @@ export const DependencyRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             if (taskIds.length === 0) return
-            const placeholders = taskIds.map(() => "?").join(",")
-            db.prepare(
-              `DELETE FROM task_dependencies WHERE blocker_id IN (${placeholders}) OR blocked_id IN (${placeholders})`
-            ).run(...taskIds, ...taskIds)
+            for (const chunk of chunkBySqlLimit(taskIds, Math.floor(MAX_SQL_VARIABLES / 2))) {
+              const placeholders = chunk.map(() => "?").join(",")
+              db.prepare(
+                `DELETE FROM task_dependencies WHERE blocker_id IN (${placeholders}) OR blocked_id IN (${placeholders})`
+              ).run(...chunk, ...chunk)
+            }
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

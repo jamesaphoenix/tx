@@ -178,6 +178,13 @@ const toolSchemas = {
     taskId: z.string(),
     blockerId: z.string()
   }),
+  tx_group_context_set: z.object({
+    taskId: z.string(),
+    context: z.string()
+  }),
+  tx_group_context_clear: z.object({
+    taskId: z.string()
+  }),
   // Learning tools
   tx_context: z.object({
     taskId: z.string(),
@@ -255,7 +262,10 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   blockedBy: task.blockedBy,
   blocks: task.blocks,
   children: task.children,
-  isReady: task.isReady
+  isReady: task.isReady,
+  groupContext: task.groupContext,
+  effectiveGroupContext: task.effectiveGroupContext,
+  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId
 })
 
 /**
@@ -597,6 +607,48 @@ function createToolEffect(
           content: [
             { type: "text" as const, text: `Removed dependency: ${blockerId} no longer blocks ${taskId}` },
             { type: "text" as const, text: JSON.stringify({ success: true, task: serialized }) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
+
+    case "tx_group_context_set":
+      return Effect.gen(function* () {
+        const { taskId, context } = args as z.infer<typeof toolSchemas.tx_group_context_set>
+        const taskService = yield* TaskService
+        const task = yield* taskService.setGroupContext(taskId as TaskId, context)
+        const serialized = serializeTask(task)
+        return {
+          content: [
+            { type: "text" as const, text: `Updated task-group context for ${taskId}` },
+            { type: "text" as const, text: JSON.stringify(serialized) }
+          ]
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.succeed({
+            content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          })
+        )
+      )
+
+    case "tx_group_context_clear":
+      return Effect.gen(function* () {
+        const { taskId } = args as z.infer<typeof toolSchemas.tx_group_context_clear>
+        const taskService = yield* TaskService
+        const task = yield* taskService.clearGroupContext(taskId as TaskId)
+        const serialized = serializeTask(task)
+        return {
+          content: [
+            { type: "text" as const, text: `Cleared task-group context for ${taskId}` },
+            { type: "text" as const, text: JSON.stringify(serialized) }
           ]
         }
       }).pipe(
@@ -1112,12 +1164,18 @@ describe("MCP tx_ready Tool", () => {
       expect(task).toHaveProperty("blocks")
       expect(task).toHaveProperty("children")
       expect(task).toHaveProperty("isReady")
+      expect(task).toHaveProperty("groupContext")
+      expect(task).toHaveProperty("effectiveGroupContext")
+      expect(task).toHaveProperty("effectiveGroupContextSourceTaskId")
 
       // Verify types
       expect(Array.isArray(task.blockedBy)).toBe(true)
       expect(Array.isArray(task.blocks)).toBe(true)
       expect(Array.isArray(task.children)).toBe(true)
       expect(typeof task.isReady).toBe("boolean")
+      expect(task.groupContext === null || typeof task.groupContext === "string").toBe(true)
+      expect(task.effectiveGroupContext === null || typeof task.effectiveGroupContext === "string").toBe(true)
+      expect(task.effectiveGroupContextSourceTaskId === null || typeof task.effectiveGroupContextSourceTaskId === "string").toBe(true)
     }
   })
 
@@ -2246,6 +2304,96 @@ describe("MCP tx_unblock Tool", () => {
     const json = JSON.parse(response.content[1].text)
     expect(json.success).toBe(true)
     expect(json.task).toHaveProperty("blockedBy")
+  })
+})
+
+// -----------------------------------------------------------------------------
+// tx_group_context_* Tool Tests
+// -----------------------------------------------------------------------------
+
+describe("MCP tx_group_context tools", () => {
+  let shared: SharedTestLayerResult
+  let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
+
+  beforeAll(async () => {
+    shared = await createSharedTestLayer()
+    runtime = makeTestRuntime(shared.getDb())
+  })
+
+  beforeEach(async () => {
+    seedFixtures({ db: shared.getDb() } as any)
+  })
+
+  afterEach(async () => {
+    await shared.reset()
+  })
+
+  afterAll(async () => {
+    await runtime.dispose()
+    await shared.close()
+  })
+
+  it("tx_group_context_set stores direct context and returns enriched fields", async () => {
+    const context = "Shared auth rollout context"
+    const response = await callMcpToolParsed<"tx_group_context_set", Record<string, unknown>>(
+      runtime,
+      "tx_group_context_set",
+      { taskId: FIXTURES.TASK_AUTH, context }
+    )
+
+    expect(response.isError).toBe(false)
+    expect(response.data.id).toBe(FIXTURES.TASK_AUTH)
+    expect(response.data.groupContext).toBe(context)
+    expect(response.data.effectiveGroupContext).toBe(context)
+    expect(response.data.effectiveGroupContextSourceTaskId).toBe(FIXTURES.TASK_AUTH)
+  })
+
+  it("tx_group_context_set makes descendants inherit effective context", async () => {
+    const context = "Inherited auth migration context"
+    await callMcpToolParsed<"tx_group_context_set", Record<string, unknown>>(
+      runtime,
+      "tx_group_context_set",
+      { taskId: FIXTURES.TASK_AUTH, context }
+    )
+
+    const show = await callMcpToolParsed<"tx_show", Record<string, unknown>>(
+      runtime,
+      "tx_show",
+      { id: FIXTURES.TASK_LOGIN }
+    )
+
+    expect(show.isError).toBe(false)
+    expect(show.data.groupContext).toBeNull()
+    expect(show.data.effectiveGroupContext).toBe(context)
+    expect(show.data.effectiveGroupContextSourceTaskId).toBe(FIXTURES.TASK_AUTH)
+  })
+
+  it("tx_group_context_clear removes direct context and inherited effective context", async () => {
+    const context = "Temporary context"
+    await callMcpToolParsed<"tx_group_context_set", Record<string, unknown>>(
+      runtime,
+      "tx_group_context_set",
+      { taskId: FIXTURES.TASK_AUTH, context }
+    )
+
+    const cleared = await callMcpToolParsed<"tx_group_context_clear", Record<string, unknown>>(
+      runtime,
+      "tx_group_context_clear",
+      { taskId: FIXTURES.TASK_AUTH }
+    )
+    expect(cleared.isError).toBe(false)
+    expect(cleared.data.groupContext).toBeNull()
+    expect(cleared.data.effectiveGroupContext).toBeNull()
+    expect(cleared.data.effectiveGroupContextSourceTaskId).toBeNull()
+
+    const child = await callMcpToolParsed<"tx_show", Record<string, unknown>>(
+      runtime,
+      "tx_show",
+      { id: FIXTURES.TASK_LOGIN }
+    )
+    expect(child.isError).toBe(false)
+    expect(child.data.effectiveGroupContext).toBeNull()
+    expect(child.data.effectiveGroupContextSourceTaskId).toBeNull()
   })
 })
 

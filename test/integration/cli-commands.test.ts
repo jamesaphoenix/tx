@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 
-const TX_BIN = resolve(__dirname, "../../apps/cli/dist/cli.js")
+const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = 10000
 
 interface ExecResult {
@@ -31,7 +31,7 @@ interface ExecResult {
  */
 function runTxArgs(args: string[], dbPath: string): ExecResult {
   try {
-    const result = spawnSync("bun", [TX_BIN, ...args, "--db", dbPath], {
+    const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT,
       cwd: process.cwd()
@@ -1158,5 +1158,121 @@ describe("CLI sync claude command", () => {
 
     expect(backlog.status).toBe("pending")
     expect(active.status).toBe("in_progress")
+  })
+})
+
+// =============================================================================
+// tx group-context:* Command Tests
+// =============================================================================
+
+describe("CLI group-context commands", () => {
+  let tmpDir: string
+  let dbPath: string
+  let parentId: string
+  let childId: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-group-context-"))
+    dbPath = join(tmpDir, "test.db")
+    runTx("init", dbPath)
+
+    parentId = JSON.parse(runTxArgs(["add", "Parent task", "--json"], dbPath).stdout).id
+    childId = JSON.parse(runTxArgs(["add", "Child task", "--parent", parentId, "--json"], dbPath).stdout).id
+  })
+
+  afterEach(() => {
+    if (existsSync(tmpDir)) {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it("set stores direct context and show/ready expose inherited effective context", () => {
+    const context = "Shared auth rollout context"
+
+    const setResult = runTxArgs(["group-context:set", parentId, context, "--json"], dbPath)
+    expect(setResult.status).toBe(0)
+    const setTask = JSON.parse(setResult.stdout)
+    expect(setTask.groupContext).toBe(context)
+    expect(setTask.effectiveGroupContext).toBe(context)
+    expect(setTask.effectiveGroupContextSourceTaskId).toBe(parentId)
+
+    const showChild = runTxArgs(["show", childId, "--json"], dbPath)
+    expect(showChild.status).toBe(0)
+    const child = JSON.parse(showChild.stdout)
+    expect(child.groupContext).toBeNull()
+    expect(child.effectiveGroupContext).toBe(context)
+    expect(child.effectiveGroupContextSourceTaskId).toBe(parentId)
+
+    const ready = runTxArgs(["ready", "--json"], dbPath)
+    expect(ready.status).toBe(0)
+    const readyTasks = JSON.parse(ready.stdout) as Array<{
+      id: string
+      effectiveGroupContext: string | null
+      effectiveGroupContextSourceTaskId: string | null
+    }>
+    const readyChild = readyTasks.find(t => t.id === childId)
+    expect(readyChild).toBeDefined()
+    expect(readyChild?.effectiveGroupContext).toBe(context)
+    expect(readyChild?.effectiveGroupContextSourceTaskId).toBe(parentId)
+  })
+
+  it("clear removes direct and inherited effective context", () => {
+    const context = "Temporary group context"
+    const setResult = runTxArgs(["group-context:set", parentId, context], dbPath)
+    expect(setResult.status).toBe(0)
+
+    const clearResult = runTxArgs(["group-context:clear", parentId, "--json"], dbPath)
+    expect(clearResult.status).toBe(0)
+    const cleared = JSON.parse(clearResult.stdout)
+    expect(cleared.groupContext).toBeNull()
+    expect(cleared.effectiveGroupContext).toBeNull()
+    expect(cleared.effectiveGroupContextSourceTaskId).toBeNull()
+
+    const showChild = runTxArgs(["show", childId, "--json"], dbPath)
+    expect(showChild.status).toBe(0)
+    const child = JSON.parse(showChild.stdout)
+    expect(child.effectiveGroupContext).toBeNull()
+    expect(child.effectiveGroupContextSourceTaskId).toBeNull()
+  })
+
+  it("does not leak context across siblings while preserving ancestor/descendant inheritance", () => {
+    const siblingId = JSON.parse(runTxArgs(["add", "Sibling task", "--parent", parentId, "--json"], dbPath).stdout).id
+    const grandChildId = JSON.parse(runTxArgs(["add", "Grandchild task", "--parent", childId, "--json"], dbPath).stdout).id
+    const context = "Child-specific rollout context"
+
+    const setResult = runTxArgs(["group-context:set", childId, context, "--json"], dbPath)
+    expect(setResult.status).toBe(0)
+
+    const showParent = JSON.parse(runTxArgs(["show", parentId, "--json"], dbPath).stdout)
+    expect(showParent.effectiveGroupContext).toBe(context)
+    expect(showParent.effectiveGroupContextSourceTaskId).toBe(childId)
+
+    const showGrandChild = JSON.parse(runTxArgs(["show", grandChildId, "--json"], dbPath).stdout)
+    expect(showGrandChild.effectiveGroupContext).toBe(context)
+    expect(showGrandChild.effectiveGroupContextSourceTaskId).toBe(childId)
+
+    const showSibling = JSON.parse(runTxArgs(["show", siblingId, "--json"], dbPath).stdout)
+    expect(showSibling.groupContext).toBeNull()
+    expect(showSibling.effectiveGroupContext).toBeNull()
+    expect(showSibling.effectiveGroupContextSourceTaskId).toBeNull()
+  })
+
+  it("set shows usage error when arguments are missing", () => {
+    const result = runTxArgs(["group-context:set", parentId], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Usage: tx group-context:set")
+  })
+
+  it("clear shows usage error when task id is missing", () => {
+    const result = runTxArgs(["group-context:clear"], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Usage: tx group-context:clear")
+  })
+
+  it("rejects oversized group context payloads", () => {
+    const oversized = "x".repeat(20001)
+    const result = runTxArgs(["group-context:set", parentId, oversized], dbPath)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("at most 20000 characters")
   })
 })
