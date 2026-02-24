@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest"
-import { readFileSync, existsSync } from "fs"
+import { readFileSync, existsSync, rmSync } from "fs"
 import { join } from "path"
 import { execSync } from "child_process"
 
@@ -7,10 +7,17 @@ const DOCS_DIR = join(process.cwd(), "apps/docs")
 const NEXT_DIR = join(DOCS_DIR, ".next")
 
 describe("Docs Site Build", () => {
+  const hasExpectedBuildArtifacts = (): boolean =>
+    existsSync(join(NEXT_DIR, "build-manifest.json")) &&
+    existsSync(join(NEXT_DIR, "prerender-manifest.json"))
+
   beforeAll(() => {
-    // Ensure the docs site has been built
-    if (!existsSync(NEXT_DIR)) {
-      // Build the docs site if not already built
+    // Ensure the docs site has been built. A prior interrupted Next build can
+    // leave a partial .next directory; rebuild when expected manifests are missing.
+    if (!existsSync(NEXT_DIR) || !hasExpectedBuildArtifacts()) {
+      if (existsSync(NEXT_DIR)) {
+        rmSync(NEXT_DIR, { recursive: true, force: true })
+      }
       execSync("bun run build", { cwd: DOCS_DIR, stdio: "inherit" })
     }
   })

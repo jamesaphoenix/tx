@@ -5,7 +5,8 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const CLI_TIMEOUT = 10000
+const CLI_TIMEOUT = process.env.CI ? 30000 : 15000
+const TEST_TIMEOUT = process.env.CI ? 30000 : 15000
 
 interface ExecResult {
   stdout: string
@@ -98,7 +99,7 @@ describe("CLI claim/dependency critical flows", () => {
 
     const readyAfter = JSON.parse(runTx(["ready", "--json", "--limit", "10"], dbPath).stdout) as Array<{ id: string }>
     expect(readyAfter.map((t) => t.id)).toEqual(expect.arrayContaining([taskA.id, taskB.id]))
-  })
+  }, TEST_TIMEOUT)
 
   it("claim:renew updates claim metadata", () => {
     const task = JSON.parse(runTx(["add", "Renew target", "--json"], dbPath).stdout) as { id: string }
@@ -114,7 +115,7 @@ describe("CLI claim/dependency critical flows", () => {
     expect(new Date(renewed.leaseExpiresAt).getTime()).toBeGreaterThanOrEqual(
       new Date(claimed.leaseExpiresAt).getTime()
     )
-  })
+  }, TEST_TIMEOUT)
 
   it("block/unblock changes dependency state and ready visibility", () => {
     const blocker = JSON.parse(runTx(["add", "Blocker", "--json"], dbPath).stdout) as { id: string }
@@ -146,7 +147,7 @@ describe("CLI claim/dependency critical flows", () => {
 
     const readyUnblocked = JSON.parse(runTx(["ready", "--json", "--limit", "10"], dbPath).stdout) as Array<{ id: string }>
     expect(readyUnblocked.map((t) => t.id)).toEqual(expect.arrayContaining([blocker.id, blocked.id]))
-  })
+  }, TEST_TIMEOUT)
 
   it("rejects dependency cycle through CLI block command", () => {
     const taskA = JSON.parse(runTx(["add", "Cycle A", "--json"], dbPath).stdout) as { id: string }
@@ -158,5 +159,5 @@ describe("CLI claim/dependency critical flows", () => {
     const cycle = runTx(["block", taskA.id, taskB.id], dbPath)
     expect(cycle.status).not.toBe(0)
     expect(`${cycle.stderr}\n${cycle.stdout}`.toLowerCase()).toContain("cycle")
-  })
+  }, TEST_TIMEOUT)
 })

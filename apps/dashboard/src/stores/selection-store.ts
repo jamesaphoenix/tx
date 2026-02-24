@@ -17,12 +17,16 @@ export interface SelectionState {
   issueIds: Set<string>
 }
 
-export const selectionStore = new Store<SelectionState>({
+const createInitialSelectionState = (): SelectionState => ({
   taskIds: new Set(),
   runIds: new Set(),
   docNames: new Set(),
   issueIds: new Set(),
 })
+
+const initialSelectionState: SelectionState = createInitialSelectionState()
+
+export const selectionStore = new Store<SelectionState>(initialSelectionState)
 
 // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -68,10 +72,5 @@ export const selectionActions = {
 
   // Clear everything (e.g., on tab switch)
   clearAll: () =>
-    selectionStore.setState(() => ({
-      taskIds: new Set(),
-      runIds: new Set(),
-      docNames: new Set(),
-      issueIds: new Set(),
-    })),
+    selectionStore.setState(() => createInitialSelectionState()),
 }
