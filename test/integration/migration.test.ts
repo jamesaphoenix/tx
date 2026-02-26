@@ -82,6 +82,10 @@ describe("Migration system", () => {
       }
     })
 
+    it("MIGRATIONS is never shorter than EMBEDDED_MIGRATIONS (fallback guard)", () => {
+      expect(MIGRATIONS.length).toBeGreaterThanOrEqual(EMBEDDED_MIGRATIONS.length)
+    })
+
     it("each embedded migration SQL is byte-identical to filesystem SQL", () => {
       for (let i = 0; i < MIGRATIONS.length; i++) {
         expect(

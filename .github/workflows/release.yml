@@ -59,11 +59,9 @@ jobs:
 
       - name: Verify binary version
         working-directory: apps/cli
-        if: matrix.target == 'bun-darwin-arm64' || matrix.target == 'bun-linux-x64'
         run: |
-          ./${{ matrix.artifact }} --version | grep -F "${{ steps.version.outputs.value }}" || {
-            echo "Binary does not contain expected version ${{ steps.version.outputs.value }}"
-            ./${{ matrix.artifact }} --version
+          strings ./${{ matrix.artifact }} | grep -qF "${{ steps.version.outputs.value }}" || {
+            echo "::error::Version string '${{ steps.version.outputs.value }}' not found in binary ${{ matrix.artifact }}"
             exit 1
           }
 

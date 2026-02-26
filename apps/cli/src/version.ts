@@ -15,7 +15,11 @@ function getVersion(): string {
     return process.env.TX_CLI_VERSION
   }
 
-  // Development: read from package.json (lazy import to avoid module-level side effects)
+  // Development fallback: read from package.json.
+  // IMPORTANT: Uses require() instead of static import to prevent Bun's minifier
+  // from hoisting readFileSync to module scope (outside try-catch), which causes
+  // ENOENT crashes in compiled binaries where /$bunfs/ paths don't exist on disk.
+  // In compiled binaries, the --define check above returns before reaching this code.
   try {
     const { readFileSync } = require("node:fs") as typeof import("node:fs")
     const { resolve, dirname } = require("node:path") as typeof import("node:path")

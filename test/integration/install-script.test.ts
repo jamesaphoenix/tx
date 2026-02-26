@@ -72,4 +72,30 @@ describe("install.sh", () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toMatch(/\d+\.\d+\.\d+/)
   })
+
+  it("rejects TX_VERSION that does not match semver pattern", () => {
+    const result = spawnSync("sh", [INSTALL_SCRIPT], {
+      env: {
+        ...process.env,
+        TX_VERSION: "not-a-version",
+        TX_INSTALL_DIR: tmpDir,
+      },
+      timeout: 5_000,
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr.toString()).toContain("does not look like a valid version")
+  })
+
+  it("rejects TX_VERSION containing path traversal characters", () => {
+    const result = spawnSync("sh", [INSTALL_SCRIPT], {
+      env: {
+        ...process.env,
+        TX_VERSION: "1.0.0/../../etc",
+        TX_INSTALL_DIR: tmpDir,
+      },
+      timeout: 5_000,
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr.toString()).toContain("invalid characters")
+  })
 })
