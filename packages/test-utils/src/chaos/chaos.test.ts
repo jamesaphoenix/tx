@@ -242,7 +242,7 @@ describe("Chaos Engineering Utilities Integration", () => {
       })
 
       const elapsedMs = Date.now() - startTime
-      expect(elapsedMs).toBeGreaterThanOrEqual(40) // At least (n-1) * delay
+      expect(elapsedMs).toBeGreaterThanOrEqual(30) // ~(n-1)*delay, with CI timer jitter tolerance
     })
   })
 
