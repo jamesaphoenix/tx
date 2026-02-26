@@ -45,9 +45,15 @@ jobs:
       - name: Build packages
         run: bun run build
 
+      - name: Extract version from tag
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build binary
         working-directory: apps/cli
-        run: bun build ./src/cli.ts --compile --outfile ${{ matrix.artifact }} --target ${{ matrix.target }} --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
+        env:
+          TX_CLI_VERSION: ${{ steps.version.outputs.value }}
+        run: bun build ./src/cli.ts --compile --outfile ${{ matrix.artifact }} --target ${{ matrix.target }} --minify --define "process.env.TX_CLI_VERSION='$TX_CLI_VERSION'" --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

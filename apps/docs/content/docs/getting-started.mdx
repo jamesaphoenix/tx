@@ -17,20 +17,16 @@ Get up and running with tx in minutes. tx provides four interfaces -- pick which
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
-Install the CLI globally:
+Install the standalone binary (no runtime dependencies):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh
+```
+
+Or via npm (requires [Bun](https://bun.sh) runtime):
 
 ```bash
 npm install -g @jamesaphoenix/tx-cli
-```
-
-Or with your preferred package manager:
-
-```bash
-# pnpm
-pnpm add -g @jamesaphoenix/tx-cli
-
-# bun
-bun add -g @jamesaphoenix/tx-cli
 ```
 
 </Tab>
@@ -55,7 +51,7 @@ Add the MCP server to your Claude Desktop or IDE configuration:
 {
   "mcpServers": {
     "tx": {
-      "command": "npx",
+      "command": "bunx",
       "args": ["@jamesaphoenix/tx-mcp-server"]
     }
   }

@@ -5,7 +5,14 @@
 Memory, tasks, and orchestration. You own the loop.
 
 ```bash
+# Standalone binary (recommended — no runtime needed)
+curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh
+
+# Or via npm (requires bun)
 npm install -g @jamesaphoenix/tx-cli
+```
+
+```bash
 tx init
 ```
 
