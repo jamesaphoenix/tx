@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-cli",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "TX command line tool - task management for AI agents and humans",
   "type": "module",
   "main": "./dist/cli.js",
@@ -43,6 +43,11 @@
     "@modelcontextprotocol/sdk": {
       "optional": true
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jamesaphoenix/tx.git",
+    "directory": "apps/cli"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
