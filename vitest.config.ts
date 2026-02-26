@@ -51,6 +51,8 @@ export default defineConfig({
       "test/integration/cli-learning.test.ts",
       // npm binary distribution test: slow (npm pack + install), run explicitly
       "test/integration/cli-npm-binary.test.ts",
+      // install script test: requires network access to GitHub
+      "test/integration/install-script.test.ts",
     ],
     setupFiles: ["./vitest.setup.ts"],
     environment: "node",

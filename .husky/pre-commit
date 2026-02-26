@@ -57,7 +57,9 @@ if echo "$changed_files" | grep -q "^apps/cli/"; then
 fi
 
 # Check if root test files were changed directly (only files runnable by root vitest)
-for f in $(echo "$changed_files" | grep "\.test\.ts$" | grep -v "^packages/"); do
+# Skip files excluded from default vitest runs (slow/network-dependent)
+EXCLUDED_TESTS="daemon-cli|cli-graph|cli-test-cache|cli-learning|cli-npm-binary|install-script"
+for f in $(echo "$changed_files" | grep "\.test\.ts$" | grep -v "^packages/" | grep -Ev "$EXCLUDED_TESTS"); do
     if [ -f "$f" ]; then
         test_files="$test_files $f"
     fi
