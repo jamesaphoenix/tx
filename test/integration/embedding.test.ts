@@ -88,7 +88,7 @@ describe("EmbeddingServiceLive", () => {
     expect(result).toBe(true)
   })
 
-  it("dimensions returns 256 (embeddinggemma-300M)", async () => {
+  it("dimensions returns 768 for local embeddinggemma-300M", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* EmbeddingService
@@ -99,7 +99,34 @@ describe("EmbeddingServiceLive", () => {
       )
     )
 
-    expect(result).toBe(256)
+    expect(result).toBe(768)
+  })
+
+  it("returns a clear error when local model cannot be resolved", async () => {
+    const configProvider = ConfigProvider.fromMap(
+      new Map([
+        ["TX_LOCAL_EMBEDDING_MODEL_URI", "./missing-embedding-model.gguf"],
+        ["TX_LOCAL_EMBEDDING_DOWNLOAD", "0"],
+      ])
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* EmbeddingService
+        return yield* Effect.either(svc.embed("test text"))
+      }).pipe(
+        Effect.provide(EmbeddingServiceLive),
+        Effect.withConfigProvider(configProvider),
+        Effect.scoped
+      )
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("EmbeddingUnavailableError")
+      expect(result.left.reason).toContain("Failed to resolve local embedding model")
+      expect(result.left.reason).toContain("TX_LOCAL_EMBEDDING_DOWNLOAD=1")
+    }
   })
 
   // Note: We don't test actual embedding generation here since it requires
@@ -1365,7 +1392,7 @@ describe("Dimensions Property (All Implementations)", () => {
     expect(dims).toBe(0)
   })
 
-  it("EmbeddingServiceLive returns 256 dimensions (embeddinggemma-300M)", async () => {
+  it("EmbeddingServiceLive returns 768 dimensions (embeddinggemma-300M)", async () => {
     const dims = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* EmbeddingService
@@ -1376,7 +1403,7 @@ describe("Dimensions Property (All Implementations)", () => {
       )
     )
 
-    expect(dims).toBe(256)
+    expect(dims).toBe(768)
   })
 
   it("custom embedder returns configured dimensions", async () => {

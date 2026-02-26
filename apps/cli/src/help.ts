@@ -680,13 +680,20 @@ Options:
 Embedder Types:
   auto     Auto-detect based on available API keys and packages
   openai   Use OpenAI text-embedding-3-small (requires OPENAI_API_KEY)
-  local    Use local node-llama-cpp with embeddinggemma-300M
+  local    Use local node-llama-cpp with embeddinggemma-300M GGUF
   noop     Disable embeddings (for testing)
+
+Local Embedder Env:
+  TX_LOCAL_EMBEDDING_MODEL_URI   Model URI/path (default: embeddinggemma HF URI)
+  TX_LOCAL_EMBEDDING_MODEL_DIR   Optional local model cache directory
+  TX_LOCAL_EMBEDDING_DOWNLOAD    1/true to auto-download when model is missing
+  TX_LOCAL_EMBEDDING_DIMENSIONS  Expected local vector size (default: 768)
 
 Examples:
   TX_EMBEDDINGS=1 tx learning:embed                    # Embed with auto-detection
   TX_EMBEDDINGS=1 tx learning:embed --embedder openai  # Force OpenAI embedder
   TX_EMBEDDINGS=1 tx learning:embed --embedder local   # Force local embedder
+  TX_EMBEDDINGS=1 TX_LOCAL_EMBEDDING_DOWNLOAD=1 tx learning:embed --embedder local
   TX_EMBEDDINGS=1 tx learning:embed --all              # Re-embed all learnings
   tx learning:embed --status                           # Show embedding coverage
   tx learning:embed --status --embedder openai         # Show status with embedder info`,
@@ -2227,8 +2234,11 @@ Examples:
 
 Usage: tx invariant sync [--doc <name>] [--json]
 
-Syncs invariants from doc YAML files into the database. If a doc name
-is given, syncs only that doc's invariants. Otherwise syncs all docs.
+Syncs invariants from doc YAML files into the database. Sources include:
+- explicit \`invariants\` arrays on docs
+- PRD \`ears_requirements\` and \`requirements\`
+- design \`goals\`
+If a doc name is given, syncs only that doc's invariants. Otherwise syncs all docs.
 
 Options:
   --doc <name>  Sync invariants from a specific doc only

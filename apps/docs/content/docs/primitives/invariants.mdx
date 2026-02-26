@@ -168,7 +168,15 @@ invariants:
 
 ## Syncing Invariants
 
-Running `tx invariant sync` reads the `invariants` array from each doc's YAML and upserts them into the database. Invariants that are no longer present in the YAML are marked as `deprecated`.
+Running `tx invariant sync` reads invariant sources from each doc's YAML and upserts them into the database:
+
+- explicit `invariants` arrays,
+- PRD `ears_requirements` and legacy `requirements`,
+- design `goals`.
+
+For legacy docs that use block-scalar strings for `requirements` or `goals`, sync normalizes non-empty lines into invariant candidates.
+
+Invariants that are no longer present in YAML are marked as `deprecated`.
 
 ```bash
 # Sync all docs

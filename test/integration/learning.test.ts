@@ -4,6 +4,7 @@ import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-ut
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
+  EmbeddingService,
   TaskRepositoryLive,
   DependencyRepositoryLive,
   LearningRepositoryLive,
@@ -15,6 +16,7 @@ import {
   LearningServiceLive,
   LearningService,
   EmbeddingServiceNoop,
+  createEmbedderLayer,
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
@@ -22,6 +24,13 @@ import {
 } from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: TestDatabase) {
+  return makeTestLayerWithEmbedder(db, EmbeddingServiceNoop)
+}
+
+function makeTestLayerWithEmbedder(
+  db: TestDatabase,
+  embedderLayer: Layer.Layer<EmbeddingService, never, never>
+) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
@@ -33,7 +42,7 @@ function makeTestLayer(db: TestDatabase) {
 
   // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
   const retrieverLayer = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, embedderLayer, QueryExpansionServiceNoop, RerankerServiceNoop))
   )
 
   const services = Layer.mergeAll(
@@ -43,7 +52,7 @@ function makeTestLayer(db: TestDatabase) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, embedderLayer, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
   )
   return services
 }
@@ -790,5 +799,85 @@ describe("Learning embedAll Pagination", () => {
     expect(result.skipped).toBe(0)
     expect(result.total).toBe(2)
     expect(result.processed + result.failed).toBe(2)
+  })
+})
+
+describe("Learning embedAll oversized content chunking", () => {
+  let db: TestDatabase
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    seedFixtures(db)
+  })
+
+  it("chunks oversized learning content after context-size error and stores merged embedding", async () => {
+    const callLengths: number[] = []
+    const maxDirectLength = 1300
+
+    const layer = makeTestLayerWithEmbedder(
+      db,
+      createEmbedderLayer({
+        name: "chunking-test-embedder",
+        dimensions: 4,
+        embed: async (text) => {
+          callLengths.push(text.length)
+          if (text.length > maxDirectLength) {
+            throw new Error("Input is longer than the context size")
+          }
+          return new Float32Array([1, text.length / maxDirectLength, 0.5, 2])
+        },
+      })
+    )
+
+    const longContent = Array.from({ length: 3000 }, (_, i) => `token-${i % 31}`).join(" ")
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        yield* svc.create({ content: longContent })
+        const embedResult = yield* svc.embedAll()
+        const learning = yield* svc.get(1)
+        return { embedResult, learning }
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.embedResult.total).toBe(1)
+    expect(result.embedResult.processed).toBe(1)
+    expect(result.embedResult.failed).toBe(0)
+
+    expect(callLengths.length).toBeGreaterThan(1)
+    expect(callLengths.some((length) => length > maxDirectLength)).toBe(true)
+    expect(callLengths.some((length) => length <= maxDirectLength)).toBe(true)
+
+    expect(result.learning.embedding).not.toBeNull()
+    expect(result.learning.embedding?.length).toBe(4)
+  })
+
+  it("does not retry with chunks for non-context-size embedding failures", async () => {
+    let calls = 0
+    const layer = makeTestLayerWithEmbedder(
+      db,
+      createEmbedderLayer({
+        name: "non-context-error-embedder",
+        dimensions: 4,
+        embed: async () => {
+          calls += 1
+          throw new Error("provider temporarily unavailable")
+        },
+      })
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* LearningService
+        yield* svc.create({ content: "short learning" })
+        return yield* svc.embedAll()
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(result.total).toBe(1)
+    expect(result.processed).toBe(0)
+    expect(result.failed).toBe(1)
+    expect(calls).toBe(1)
   })
 })

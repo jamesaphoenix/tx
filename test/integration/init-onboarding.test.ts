@@ -14,10 +14,11 @@ const sandboxes: Sandbox[] = []
 
 function createSandbox(): Sandbox {
   const dir = mkdtempSync(join(tmpdir(), "tx-init-onboarding-"))
-  symlinkSync(resolve(REPO_ROOT, "apps"), join(dir, "apps"), "dir")
-  symlinkSync(resolve(REPO_ROOT, "packages"), join(dir, "packages"), "dir")
-  symlinkSync(resolve(REPO_ROOT, "migrations"), join(dir, "migrations"), "dir")
-  symlinkSync(resolve(REPO_ROOT, "node_modules"), join(dir, "node_modules"), "dir")
+  const linkType = process.platform === "win32" ? "junction" : "dir"
+  symlinkSync(resolve(REPO_ROOT, "apps"), join(dir, "apps"), linkType)
+  symlinkSync(resolve(REPO_ROOT, "packages"), join(dir, "packages"), linkType)
+  symlinkSync(resolve(REPO_ROOT, "migrations"), join(dir, "migrations"), linkType)
+  symlinkSync(resolve(REPO_ROOT, "node_modules"), join(dir, "node_modules"), linkType)
   const sandbox = { dir }
   sandboxes.push(sandbox)
   return sandbox
@@ -139,6 +140,18 @@ describe("tx init onboarding edge cases", () => {
     expect(result.status).toBe(0)
     expect(existsSync(join(sandbox.dir, "scripts", "watchdog-launcher.sh"))).toBe(false)
     expect(existsSync(join(sandbox.dir, ".tx", "watchdog.env"))).toBe(false)
+  })
+
+  it("init --codex is idempotent and does not duplicate tx section", () => {
+    const sandbox = createSandbox()
+    const first = runInit(sandbox, ["--codex"])
+    const second = runInit(sandbox, ["--codex"])
+    expect(first.status).toBe(0)
+    expect(second.status).toBe(0)
+
+    const agents = readFileSync(join(sandbox.dir, "AGENTS.md"), "utf-8")
+    const headingMatches = agents.match(/# tx [—-] Headless, Local Infra for AI Agents/g) ?? []
+    expect(headingMatches).toHaveLength(1)
   })
 
   it("fails with actionable error when explicit watchdog runtime is missing", () => {

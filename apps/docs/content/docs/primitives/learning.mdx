@@ -524,6 +524,22 @@ TX_EMBEDDINGS=1 tx learning:embed --all
 tx learning:embed --status
 ```
 
+**Local model configuration (optional):**
+
+```bash
+# Use a specific local GGUF file or model URI
+TX_LOCAL_EMBEDDING_MODEL_URI=/absolute/path/to/model.gguf
+
+# Optional model cache/download directory
+TX_LOCAL_EMBEDDING_MODEL_DIR=~/.node-llama-cpp/models
+
+# Auto-download model URI if missing
+TX_LOCAL_EMBEDDING_DOWNLOAD=1
+
+# Expected embedding dimensions for the local model
+TX_LOCAL_EMBEDDING_DIMENSIONS=768
+```
+
 </Tab>
 </Tabs>
 

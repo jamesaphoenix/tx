@@ -18,22 +18,45 @@ const SQLITE_SEQUENCE_EXISTS_SQL = `
   LIMIT 1
 `
 
+interface ResetMetadata {
+  tableNames: string[]
+  hasSqliteSequence: boolean
+}
+
+const resetMetadataCache = new WeakMap<Database, ResetMetadata>()
+
+const loadResetMetadata = (db: Database): ResetMetadata => {
+  const cached = resetMetadataCache.get(db)
+  if (cached) {
+    return cached
+  }
+
+  const tableRows = db.prepare(RESETTABLE_TABLES_SQL).all() as Array<{ name: string }>
+  const hasSqliteSequence = Boolean(
+    db.prepare(SQLITE_SEQUENCE_EXISTS_SQL).get() as { exists_flag: number } | undefined
+  )
+
+  const metadata: ResetMetadata = {
+    tableNames: tableRows.map((row) => row.name),
+    hasSqliteSequence,
+  }
+  resetMetadataCache.set(db, metadata)
+  return metadata
+}
+
 /**
  * Reset all mutable tables in a test database while preserving schema/migration metadata.
  *
  * Runs deletes in a single transaction to reduce WAL churn in large test suites.
  */
 export const resetDatabaseTables = (db: Database): void => {
-  const tables = db.prepare(RESETTABLE_TABLES_SQL).all() as Array<{ name: string }>
-  const hasSqliteSequence = Boolean(
-    db.prepare(SQLITE_SEQUENCE_EXISTS_SQL).get() as { exists_flag: number } | undefined
-  )
+  const { tableNames, hasSqliteSequence } = loadResetMetadata(db)
 
   db.run("PRAGMA foreign_keys = OFF")
   try {
     db.transaction(() => {
-      for (const { name } of tables) {
-        db.exec(`DELETE FROM "${name}"`)
+      for (const tableName of tableNames) {
+        db.exec(`DELETE FROM "${tableName}"`)
       }
       if (hasSqliteSequence) {
         db.exec("DELETE FROM sqlite_sequence")

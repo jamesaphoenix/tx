@@ -104,6 +104,20 @@ Do not bypass hooks in this workflow. Keep git verification enabled for commits 
 - Run `tx doc lint-ears <doc-name-or-yaml-path>` before implementation and before review.
 - Keep legacy `requirements` only for backward compatibility or migration.
 
+## Documentation Structure (4-Tier Convention)
+
+| Tier | Directory | Prefix | Focus |
+|------|-----------|--------|-------|
+| Requirements | `docs/requirements/` | `REQ-NNN` | Use-cases and behavior |
+| PRD | `docs/prd/` | `PRD-NNN` | Scope and acceptance criteria |
+| Design Doc | `docs/design/` | `DD-NNN` | Implementation design |
+| System Design | `docs/system-design/` | `SD-NNN` | Shared architecture constraints |
+
+- `tx doc` currently scaffolds `overview`, `prd`, and `design` docs; REQ/SD are manual markdown conventions.
+- Create docs for non-trivial features and plans; formalize behavior, scope, design, and SD when cross-cutting.
+- Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
+- Link docs as a chain: `REQ -> PRD -> DD`, and include `SD` when constraints span multiple features.
+
 ## Testing + OTEL Quality Bar
 
 - Treat integration tests as the default for behavior changes; unit tests alone are not enough.

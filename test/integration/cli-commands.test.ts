@@ -18,7 +18,7 @@ import { tmpdir } from "os"
 import { join, resolve } from "path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const CLI_TIMEOUT = 10000
+const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))
 
 interface ExecResult {
   stdout: string

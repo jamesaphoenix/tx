@@ -61,7 +61,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
   const TEST_TIMEOUT = 60000
 
   describe("Vector Dimensions and Value Ranges", () => {
-    it("embed returns Float32Array with 256 dimensions", async () => {
+    it("embed returns Float32Array with 768 dimensions", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* EmbeddingService
@@ -73,7 +73,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
       )
 
       expect(result).toBeInstanceOf(Float32Array)
-      expect(result.length).toBe(256)
+      expect(result.length).toBe(768)
     }, TEST_TIMEOUT)
 
     it("embedding values are within reasonable range [-1, 1]", async () => {
@@ -151,10 +151,10 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
 
       expect(results.length).toBe(texts.length)
 
-      // Verify each result is a valid 256-dimension Float32Array
+      // Verify each result is a valid 768-dimension Float32Array
       for (let i = 0; i < results.length; i++) {
         expect(results[i]).toBeInstanceOf(Float32Array)
-        expect(results[i]!.length).toBe(256)
+        expect(results[i]!.length).toBe(768)
       }
     }, TEST_TIMEOUT * 2) // Double timeout for batch
 
@@ -353,7 +353,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
       )
 
       expect(result).toBeInstanceOf(Float32Array)
-      expect(result.length).toBe(256)
+      expect(result.length).toBe(768)
     }, TEST_TIMEOUT)
 
     it("handles very long text input", async () => {
@@ -370,7 +370,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
       )
 
       expect(result).toBeInstanceOf(Float32Array)
-      expect(result.length).toBe(256)
+      expect(result.length).toBe(768)
     }, TEST_TIMEOUT)
 
     it("handles special characters", async () => {
@@ -387,7 +387,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
       )
 
       expect(result).toBeInstanceOf(Float32Array)
-      expect(result.length).toBe(256)
+      expect(result.length).toBe(768)
     }, TEST_TIMEOUT)
 
     it("handles whitespace-only input", async () => {
@@ -402,7 +402,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
       )
 
       expect(result).toBeInstanceOf(Float32Array)
-      expect(result.length).toBe(256)
+      expect(result.length).toBe(768)
     }, TEST_TIMEOUT)
   })
 })

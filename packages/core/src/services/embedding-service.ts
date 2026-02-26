@@ -20,6 +20,20 @@ interface Llama {
   loadModel(options: { modelPath: string }): Promise<LlamaModel>
 }
 
+interface ResolveModelFileOptions {
+  directory?: string
+  download?: "auto" | false
+  cli?: boolean
+}
+
+interface NodeLlamaCppModule {
+  getLlama(): Promise<unknown>
+  resolveModelFile?: (
+    uriOrPath: string,
+    options?: ResolveModelFileOptions
+  ) => Promise<string>
+}
+
 // Types for OpenAI SDK (imported dynamically)
 interface OpenAIEmbeddingResponse {
   data: Array<{
@@ -50,6 +64,10 @@ const OPENAI_MODEL_DIMENSIONS: Record<string, number> = {
   "text-embedding-3-large": 3072,
   "text-embedding-ada-002": 1536 // Legacy model
 }
+
+const DEFAULT_LOCAL_EMBEDDING_MODEL_URI =
+  "hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf"
+const DEFAULT_LOCAL_EMBEDDING_DIMENSIONS = 768
 
 // =============================================================================
 // Dimension Validation
@@ -178,6 +196,47 @@ export const EmbeddingServiceNoop = Layer.succeed(
 export const EmbeddingServiceLive = Layer.scoped(
   EmbeddingService,
   Effect.gen(function* () {
+    const localModelUri = yield* Config.string("TX_LOCAL_EMBEDDING_MODEL_URI").pipe(
+      Config.withDefault(DEFAULT_LOCAL_EMBEDDING_MODEL_URI),
+      Effect.mapError(() => new EmbeddingUnavailableError({
+        reason: "Failed to read TX_LOCAL_EMBEDDING_MODEL_URI config"
+      }))
+    )
+    const localModelDirectory = yield* Config.string("TX_LOCAL_EMBEDDING_MODEL_DIR").pipe(
+      Effect.option
+    )
+    const localModelDownloadRaw = yield* Config.string("TX_LOCAL_EMBEDDING_DOWNLOAD").pipe(
+      Config.withDefault("0"),
+      Effect.mapError(() => new EmbeddingUnavailableError({
+        reason: "Failed to read TX_LOCAL_EMBEDDING_DOWNLOAD config"
+      }))
+    )
+    const localDimensionsRaw = yield* Config.string("TX_LOCAL_EMBEDDING_DIMENSIONS").pipe(
+      Config.withDefault(String(DEFAULT_LOCAL_EMBEDDING_DIMENSIONS)),
+      Effect.mapError(() => new EmbeddingUnavailableError({
+        reason: "Failed to read TX_LOCAL_EMBEDDING_DIMENSIONS config"
+      }))
+    )
+    const localModelAutoDownload = ["1", "true", "yes", "on"].includes(
+      localModelDownloadRaw.trim().toLowerCase()
+    )
+    const localEmbeddingDimensions = Number.parseInt(
+      localDimensionsRaw.trim(),
+      10
+    )
+    if (
+      Number.isNaN(localEmbeddingDimensions) ||
+      localEmbeddingDimensions <= 0
+    ) {
+      return yield* Effect.fail(
+        new EmbeddingUnavailableError({
+          reason:
+            `Invalid TX_LOCAL_EMBEDDING_DIMENSIONS value "${localDimensionsRaw}". ` +
+            `Expected a positive integer (for embeddinggemma, use 768).`,
+        })
+      )
+    }
+
     // State for lazy-loaded context
     const stateRef = yield* Ref.make<{
       context: LlamaEmbeddingContext | null
@@ -202,7 +261,7 @@ export const EmbeddingServiceLive = Layer.scoped(
       const nodeLlamaCpp = yield* Effect.tryPromise({
         try: async () => {
           const mod = await import("node-llama-cpp")
-          return mod
+          return mod as NodeLlamaCppModule
         },
         catch: () => new EmbeddingUnavailableError({ reason: "node-llama-cpp not installed" })
       })
@@ -220,11 +279,36 @@ export const EmbeddingServiceLive = Layer.scoped(
       }
       const llama = llamaRaw
 
+      // Resolve local path from model URI/path before loading.
+      const modelPath = yield* Effect.tryPromise({
+        try: async () => {
+          if (typeof nodeLlamaCpp.resolveModelFile !== "function") {
+            return localModelUri
+          }
+
+          const resolveOptions: ResolveModelFileOptions = {
+            download: localModelAutoDownload ? "auto" : false,
+            cli: false,
+          }
+
+          if (Option.isSome(localModelDirectory)) {
+            resolveOptions.directory = localModelDirectory.value
+          }
+
+          return await nodeLlamaCpp.resolveModelFile(localModelUri, resolveOptions)
+        },
+        catch: (e) =>
+          new EmbeddingUnavailableError({
+            reason:
+              `Failed to resolve local embedding model from URI/path ` +
+              `"${localModelUri}": ${String(e)}. ` +
+              `Set TX_LOCAL_EMBEDDING_DOWNLOAD=1 to auto-download, or point TX_LOCAL_EMBEDDING_MODEL_URI to an existing .gguf file.`,
+          }),
+      })
+
       // Load model - uses HuggingFace model spec format
       const modelRaw = yield* Effect.tryPromise({
-        try: () => llama.loadModel({
-          modelPath: "hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf"
-        }),
+        try: () => llama.loadModel({ modelPath }),
         catch: (e) => new EmbeddingUnavailableError({ reason: `Failed to load model: ${String(e)}` })
       })
 
@@ -271,7 +355,10 @@ export const EmbeddingServiceLive = Layer.scoped(
             try: () => ctx.getEmbeddingFor(formatQuery(text)),
             catch: (e) => new EmbeddingUnavailableError({ reason: `Embedding failed: ${String(e)}` })
           })
-          return yield* validateEmbeddingDimensions(new Float32Array(result.vector), 256)
+          return yield* validateEmbeddingDimensions(
+            new Float32Array(result.vector),
+            localEmbeddingDimensions
+          )
         }),
 
       embedBatch: (texts) =>
@@ -284,7 +371,10 @@ export const EmbeddingServiceLive = Layer.scoped(
               catch: (e) => new EmbeddingUnavailableError({ reason: `Batch embedding failed: ${String(e)}` })
             })
             yield* Ref.update(stateRef, s => ({ ...s, lastActivity: Date.now() }))
-            const validated = yield* validateEmbeddingDimensions(new Float32Array(result.vector), 256)
+            const validated = yield* validateEmbeddingDimensions(
+              new Float32Array(result.vector),
+              localEmbeddingDimensions
+            )
             results.push(validated)
           }
           return results
@@ -292,7 +382,7 @@ export const EmbeddingServiceLive = Layer.scoped(
 
       isAvailable: () => Effect.succeed(true),
 
-      dimensions: 256
+      dimensions: localEmbeddingDimensions
     }
   })
 )

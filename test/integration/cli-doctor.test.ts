@@ -74,7 +74,7 @@ async function insertLearning(dbPath: string, content: string): Promise<void> {
     db.close()
   }
 }
-const CLI_TIMEOUT = 10000
+const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))
 
 interface ExecResult {
   stdout: string

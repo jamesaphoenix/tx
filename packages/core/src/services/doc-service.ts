@@ -14,7 +14,7 @@ import {
   unlinkSync,
 } from "node:fs"
 import { resolve, dirname, join } from "node:path"
-import { Context, Effect, Layer } from "effect"
+import { Cause, Context, Effect, Layer, Option } from "effect"
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import { DocRepository } from "../repo/doc-repo.js"
 import {
@@ -159,6 +159,165 @@ const validateKind = (
       reason: `YAML kind '${yamlKind}' does not match expected kind '${expectedKind}'`,
     })
   }
+}
+
+interface InvariantCandidate {
+  id: string
+  rule: string
+  enforcement: string
+  subsystem?: string | null
+  testRef?: string | null
+  lintRule?: string | null
+  promptRef?: string | null
+}
+
+const normalizeInvariantSegment = (value: string): string => {
+  const normalized = value
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-")
+  return normalized.length > 0 ? normalized : "DOC"
+}
+
+const collectStringList = (value: unknown): string[] => {
+  const normalize = (item: string): string | null => {
+    const stripped = item
+      .trim()
+      .replace(/^[-*]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      .trim()
+    return stripped.length > 0 ? stripped : null
+  }
+
+  if (Array.isArray(value)) {
+    const out: string[] = []
+    for (const item of value) {
+      if (typeof item !== "string") continue
+      const normalized = normalize(item)
+      if (!normalized) continue
+      out.push(normalized)
+    }
+    return out
+  }
+
+  if (typeof value === "string") {
+    const out: string[] = []
+    for (const line of value.split(/\r?\n/)) {
+      const normalized = normalize(line)
+      if (!normalized) continue
+      out.push(normalized)
+    }
+    return out
+  }
+
+  return []
+}
+
+const extractSubsystemFromEarsId = (id: string): string | undefined => {
+  const match = /^EARS-([A-Z0-9]+)-\d{3}$/.exec(id)
+  return match?.[1]?.toLowerCase()
+}
+
+const extractExplicitInvariants = (raw: unknown): InvariantCandidate[] => {
+  if (!Array.isArray(raw)) return []
+
+  const candidates: InvariantCandidate[] = []
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue
+    const inv = item as Record<string, unknown>
+    const id = typeof inv.id === "string" ? inv.id : null
+    const rule = typeof inv.rule === "string" ? inv.rule : null
+    const enforcement =
+      typeof inv.enforcement === "string" ? inv.enforcement : null
+
+    if (!id || !rule || !enforcement) continue
+    if (!enforcementStrings.includes(enforcement)) continue
+
+    candidates.push({
+      id,
+      rule,
+      enforcement,
+      subsystem:
+        typeof inv.subsystem === "string"
+          ? inv.subsystem
+          : inv.subsystem === null
+            ? null
+            : undefined,
+      testRef:
+        typeof inv.test_ref === "string" ? inv.test_ref : undefined,
+      lintRule:
+        typeof inv.lint_rule === "string" ? inv.lint_rule : undefined,
+      promptRef:
+        typeof inv.prompt_ref === "string" ? inv.prompt_ref : undefined,
+    })
+  }
+
+  return candidates
+}
+
+const deriveEarsInvariants = (
+  doc: Doc,
+  parsed: Record<string, unknown>
+): InvariantCandidate[] => {
+  if (doc.kind !== "prd") return []
+  const raw = parsed.ears_requirements
+  if (!Array.isArray(raw)) return []
+
+  const candidates: InvariantCandidate[] = []
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue
+    const req = item as Record<string, unknown>
+    const earsId = typeof req.id === "string" ? req.id : null
+    const system = typeof req.system === "string" ? req.system.trim() : ""
+    const response = typeof req.response === "string" ? req.response.trim() : ""
+    if (!earsId || !system || !response) continue
+
+    candidates.push({
+      id: `INV-${earsId}`,
+      rule: `${system} shall ${response}`,
+      enforcement: "integration_test",
+      subsystem: extractSubsystemFromEarsId(earsId),
+      testRef:
+        typeof req.test_hint === "string" ? req.test_hint : undefined,
+    })
+  }
+
+  return candidates
+}
+
+const derivePrdRequirementInvariants = (
+  doc: Doc,
+  parsed: Record<string, unknown>
+): InvariantCandidate[] => {
+  if (doc.kind !== "prd") return []
+  const requirements = collectStringList(parsed.requirements)
+  if (requirements.length === 0) return []
+
+  const docSegment = normalizeInvariantSegment(doc.name)
+  return requirements.map((rule, index) => ({
+    id: `INV-PRD-${docSegment}-REQ-${String(index + 1).padStart(3, "0")}`,
+    rule,
+    enforcement: "integration_test",
+    subsystem: "prd",
+  }))
+}
+
+const deriveDesignGoalInvariants = (
+  doc: Doc,
+  parsed: Record<string, unknown>
+): InvariantCandidate[] => {
+  if (doc.kind !== "design") return []
+  const goals = collectStringList(parsed.goals)
+  if (goals.length === 0) return []
+
+  const docSegment = normalizeInvariantSegment(doc.name)
+  return goals.map((rule, index) => ({
+    id: `INV-DESIGN-${docSegment}-GOAL-${String(index + 1).padStart(3, "0")}`,
+    rule,
+    enforcement: "integration_test",
+    subsystem: "design",
+  }))
 }
 
 export class DocService extends Context.Tag("DocService")<
@@ -378,47 +537,42 @@ export const DocServiceLive = Layer.effect(
         }
         const yamlContent = readFileSync(yamlPath, "utf8")
         const parsed = validateYaml(doc.name, yamlContent, doc.kind)
-        const invariantsRaw = parsed.invariants as unknown[] | undefined
+        const explicit = extractExplicitInvariants(parsed.invariants)
+        const derived = [
+          ...deriveEarsInvariants(doc, parsed),
+          ...derivePrdRequirementInvariants(doc, parsed),
+          ...deriveDesignGoalInvariants(doc, parsed),
+        ]
 
-        if (!Array.isArray(invariantsRaw) || invariantsRaw.length === 0) {
+        const candidates: InvariantCandidate[] = []
+        const seen = new Set<string>()
+        for (const candidate of [...explicit, ...derived]) {
+          if (seen.has(candidate.id)) continue
+          candidates.push(candidate)
+          seen.add(candidate.id)
+        }
+
+        if (candidates.length === 0) {
           yield* docRepo.deprecateInvariantsNotIn(doc.id, [])
           return []
         }
 
         const synced: Invariant[] = []
         const activeIds: string[] = []
-        for (const raw of invariantsRaw) {
-          if (typeof raw !== "object" || raw === null) continue
-          const inv = raw as Record<string, unknown>
-          const id = typeof inv.id === "string" ? inv.id : null
-          const rule = typeof inv.rule === "string" ? inv.rule : null
-          const enforcement =
-            typeof inv.enforcement === "string" ? inv.enforcement : null
-
-          if (!id || !rule || !enforcement) continue
-          if (!enforcementStrings.includes(enforcement)) continue
-
+        for (const candidate of candidates) {
           const input = {
-            id,
-            rule,
-            enforcement,
+            id: candidate.id,
+            rule: candidate.rule,
+            enforcement: candidate.enforcement,
             docId: doc.id,
-            subsystem:
-              typeof inv.subsystem === "string"
-                ? inv.subsystem
-                : inv.subsystem === null
-                  ? null
-                  : undefined,
-            testRef:
-              typeof inv.test_ref === "string" ? inv.test_ref : undefined,
-            lintRule:
-              typeof inv.lint_rule === "string" ? inv.lint_rule : undefined,
-            promptRef:
-              typeof inv.prompt_ref === "string" ? inv.prompt_ref : undefined,
+            subsystem: candidate.subsystem,
+            testRef: candidate.testRef,
+            lintRule: candidate.lintRule,
+            promptRef: candidate.promptRef,
           }
           const result = yield* docRepo.upsertInvariant(input)
           synced.push(result)
-          activeIds.push(id)
+          activeIds.push(candidate.id)
         }
 
         yield* docRepo.deprecateInvariantsNotIn(doc.id, activeIds)
@@ -812,7 +966,21 @@ export const DocServiceLive = Layer.effect(
           } else {
             const allDocs = yield* docRepo.findAll()
             for (const doc of allDocs) {
-              const result = yield* syncInvariantsForDoc(doc)
+              // Keep whole-repo sync resilient: one malformed YAML file should not
+              // prevent invariants from being refreshed for every other doc.
+              const result = yield* syncInvariantsForDoc(doc).pipe(
+                Effect.catchAllCause((cause) => {
+                  const defect = Cause.dieOption(cause)
+                  if (
+                    Option.isSome(defect) &&
+                    defect.value instanceof InvalidDocYamlError
+                  ) {
+                    return Effect.succeed([])
+                  }
+
+                  return Effect.failCause(cause)
+                })
+              )
               synced.push(...result)
             }
           }

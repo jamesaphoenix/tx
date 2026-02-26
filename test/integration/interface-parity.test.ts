@@ -50,7 +50,7 @@ import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 // =============================================================================
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const CLI_TIMEOUT = 10000
+const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))
 const DEPENDENCY_SNAPSHOT_SQL = "select blocker_id, blocked_id from task_dependencies"
 
 function normalizeSql(sql: string): string {

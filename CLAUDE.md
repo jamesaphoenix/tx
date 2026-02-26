@@ -676,37 +676,85 @@ Do not bypass hooks in this workflow. Commits and pushes must run with verificat
 
 ---
 
-## Development Process: PRD/DD First
+## Development Process: Documentation First (4-Tier)
 
 **All non-trivial features MUST have documentation before implementation.**
+
+### 4-Tier Documentation Model
+
+| Tier | Directory | Prefix | Focus |
+|------|-----------|--------|-------|
+| Requirements / Use Cases | `docs/requirements/` | `REQ-NNN` | Behavioral requirements and use-case flows |
+| Product Requirements Document | `docs/prd/` | `PRD-NNN` | Scope, success criteria, and rollout boundaries |
+| Design Document | `docs/design/` | `DD-NNN` | Technical implementation approach |
+| System Design | `docs/system-design/` | `SD-NNN` | Cross-cutting architecture constraints and patterns |
+
+`tx doc` currently scaffolds `overview`, `prd`, and `design` docs. REQ/SD are documentation conventions managed as markdown files.
 
 ### Why Documentation First?
 
 - **Prevents wasted effort** — catch design issues before writing code
-- **Creates reviewable artifacts** — PRDs and DDs can be reviewed independently
-- **Enables parallelism** — multiple agents can implement from the same spec
+- **Creates reviewable artifacts** — behavior, scope, implementation, and architecture are reviewed separately
+- **Enables parallelism** — multiple agents can implement from the same specification set
 - **Builds institutional knowledge** — docs persist beyond conversation context
 
 ### The Process
 
 ```
-1. Problem identified → Create PRD (what to build, why, acceptance criteria)
-2. PRD approved → Create DD (how to build, technical decisions, file changes)
-3. DD approved → Implementation (code follows the spec)
-4. Implementation complete → Update docs if design changed
+1. Problem identified → Create REQ (use-cases and behavioral requirements)
+2. REQ approved → Create PRD (scope, acceptance criteria, out-of-scope)
+3. PRD approved → Create DD (technical implementation plan)
+4. If cross-cutting architecture applies → Create or update SD
+5. DD (+ SD when needed) approved → Implementation (code follows the docs)
+6. Implementation complete → Update REQ/PRD/DD/SD if design changed
 ```
 
-### Plans MUST Become PRD + Design Doc
+### Plans MUST Become Docs (All 4 Tiers)
 
 When a plan is requested (via `/plan`, plan mode, or explicit request), the output
-MUST be split into a PRD and a Design Doc — not a single monolithic plan file.
+MUST be formalized into the appropriate documentation layers, not left as a standalone plan file.
 
-- The PRD captures **what** and **why** (requirements, acceptance criteria)
-- The DD captures **how** (architecture, file changes, testing strategy, open questions)
-- Optionally reference the source plan file: `plan.md`, `codex-plan.md`, or `.claude/plan.md`
-- Optionally reference relevant CLAUDE.md DOCTRINE rules in the DD's References section
+- REQ captures **behavior and use cases**
+- PRD captures **scope and acceptance criteria**
+- DD captures **implementation design**
+- SD captures **shared architecture constraints** (when cross-cutting)
+- Optionally reference source plan files: `plan.md`, `codex-plan.md`, or `.claude/plan.md`
+- Optionally reference relevant CLAUDE.md DOCTRINE rules in DD/SD References
 
-**Do NOT** leave plans as standalone `plan.md` files. They must be formalized into PRD + DD.
+**Do NOT** leave plans as standalone `plan.md` files.
+
+### REQ Structure (docs/requirements/REQ-NNN-*.md)
+
+```markdown
+# REQ-NNN: Feature Name
+
+## Overview
+One-sentence behavioral description.
+
+## Actors
+| Actor | Description |
+|-------|-------------|
+
+## Use Cases
+
+### UC-001: Title
+**Trigger**: ...
+**Preconditions**: ...
+**Flow**: 1. ... 2. ...
+**Postconditions**: ...
+**Exceptions**: ...
+
+## Functional Requirements
+| ID | Pattern | Requirement |
+|----|---------|-------------|
+| EARS-AREA-001 | ubiquitous | The system shall ... |
+
+## Non-Functional Requirements
+
+## Traceability
+- Scoped by: PRD-NNN
+- Designed in: DD-NNN
+```
 
 ### PRD Structure (docs/prd/PRD-NNN-*.md)
 
@@ -714,20 +762,22 @@ MUST be split into a PRD and a Design Doc — not a single monolithic plan file.
 # PRD-NNN: Feature Name
 
 ## Problem
-What's broken or missing?
+What is broken or missing?
 
 ## Solution
-High-level approach (not implementation details)
+High-level approach (not implementation details).
 
 ## Requirements
-- [ ] Requirement 1
-- [ ] Requirement 2
+-> REQ-NNN (detailed behavior)
+
+Summary checklist:
+- [ ] Capability 1
+- [ ] Capability 2
 
 ## Acceptance Criteria
-How do we know it's done?
+How do we know it is done?
 
 ## Out of Scope
-What this PRD explicitly does NOT cover
 ```
 
 ### DD Structure (docs/design/DD-NNN-*.md)
@@ -815,44 +865,76 @@ How existing data/users transition
 
 ## References (optional)
 - Plan file: `plan.md` or `codex-plan.md` (if originated from a planning session)
+- REQ: `docs/requirements/REQ-NNN-*.md` (when available)
+- SD: `docs/system-design/SD-NNN-*.md` (when relevant)
 - CLAUDE.md section: Link to relevant DOCTRINE rules
+```
+
+### SD Structure (docs/system-design/SD-NNN-*.md)
+
+```markdown
+# SD-NNN: Pattern Name
+
+## Overview
+What cross-cutting concern this describes.
+
+## Scope
+Which features/subsystems this applies to.
+
+## Constraints
+
+## Design
+Architecture, patterns, data flow, service boundaries.
+
+## Applies To
+| Document | Relationship |
+|----------|-------------|
+
+## Decision Log
+| Date | Decision | Rationale |
+|------|----------|-----------|
 ```
 
 ### Linking Convention
 
-- PRDs reference related DDs: `→ [DD-NNN](docs/design/DD-NNN-*.md)`
-- DDs reference their PRD: `→ [PRD-NNN](docs/prd/PRD-NNN-*.md)`
-- CLAUDE.md DOCTRINE rules link to both PRD and DD
-- Implementation PRs reference both documents
+- REQs reference scoped PRDs: `→ [PRD-NNN](docs/prd/PRD-NNN-*.md)`
+- PRDs reference REQ + DD: `→ [REQ-NNN](docs/requirements/REQ-NNN-*.md)`, `→ [DD-NNN](docs/design/DD-NNN-*.md)`
+- DDs reference PRD and relevant REQ/SD documents
+- SDs reference all applicable REQ/PRD/DD documents in `## Applies To`
+- CLAUDE.md DOCTRINE rules should link to relevant PRD/DD (and REQ/SD when applicable)
+- Implementation PRs should reference the full doc chain used for delivery
 
 ### When to Skip
 
-Skip PRD/DD for:
+Skip all docs for:
 - Bug fixes with obvious solutions
 - Typo corrections
 - Single-line changes
 - Test additions for existing features
 
-Create PRD/DD for:
-- New CLI commands
-- New services
-- Schema changes
-- Multi-file features
-- Anything touching the DOCTRINE rules
+Create docs per tier as needed:
+- Create **REQ** for new behavior, user-visible flows, or new requirement sets
+- Create **PRD** when scope/acceptance needs explicit review
+- Create **DD** for any non-trivial technical implementation
+- Create or update **SD** when decisions are cross-cutting, reusable, or constrain multiple features
+
+Existing PRDs are not retroactively migrated; apply the 4-tier model to new work and major revisions.
 
 ---
 
 ## For Detailed Information
 
-### Internal Design Docs (PRDs & DDs)
+### Internal Documentation (4 Tiers)
 
-- **PRDs** (what to build): [docs/prd/](docs/prd/)
-- **Design Docs** (how to build): [docs/design/](docs/design/)
+- **Requirements / Use Cases (REQs)**: [docs/requirements/](docs/requirements/)
+- **Product Requirements Docs (PRDs)**: [docs/prd/](docs/prd/)
+- **Design Docs (DDs)**: [docs/design/](docs/design/)
+- **System Design (SDs)**: [docs/system-design/](docs/system-design/)
 - **Full index**: [docs/index.md](docs/index.md)
 
 ### Published User Docs
 
 The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
-- **Source PRDs/DDs**: `docs/` directory — internal design artifacts, linked from CLAUDE.md
+- **Source REQ/PRD/DD/SD docs**: `docs/` directory — internal artifacts linked from CLAUDE.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
