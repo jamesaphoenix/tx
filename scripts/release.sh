@@ -23,10 +23,10 @@ cd ../..
 
 # Build and test
 echo "🔨 Building..."
-npm run build
+bun run build
 
 echo "🧪 Running tests..."
-npm test
+bun run test
 
 # Commit version bump
 echo "📦 Committing version bump..."

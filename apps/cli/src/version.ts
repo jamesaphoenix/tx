@@ -8,8 +8,8 @@
  * that can hoist `readFileSync` out of try-catch blocks.
  */
 
-// Basic semver pattern: digits.digits.digits with optional pre-release suffix
-const SEMVER_RE = /^\d+\.\d+\.\d+/
+// Strict semver pattern: digits.digits.digits with optional pre-release/build metadata
+const SEMVER_RE = /^\d+\.\d+\.\d+(-[a-zA-Z0-9._-]+)?(\+[a-zA-Z0-9._-]+)?$/
 
 function getVersion(): string {
   // Compile-time injected version (set by --define in release.yml)

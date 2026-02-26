@@ -40,7 +40,7 @@
   },
   "files": [
     "dist",
-    "!dist/__tests__",
+    "!dist/__tests__/**",
     "!dist/**/*.test.*"
   ],
   "scripts": {
