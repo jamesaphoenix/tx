@@ -119,7 +119,7 @@ describe("Build Outputs: @jamesaphoenix/tx-cli", () => {
 
   it("cli.js has shebang for executable", () => {
     const content = readFileSync(resolve(distPath, "cli.js"), "utf-8")
-    expect(content.startsWith("#!/usr/bin/env node")).toBe(true)
+    expect(content.startsWith("#!/usr/bin/env bun")).toBe(true)
   })
 
   it("has commands directory built", () => {
@@ -149,7 +149,7 @@ describe("Build Outputs: @jamesaphoenix/tx-mcp-server", () => {
 
   it("server.js has shebang for executable", () => {
     const content = readFileSync(resolve(distPath, "server.js"), "utf-8")
-    expect(content.startsWith("#!/usr/bin/env node")).toBe(true)
+    expect(content.startsWith("#!/usr/bin/env bun")).toBe(true)
   })
 
   it("has runtime.js for Effect runtime management", () => {
@@ -183,7 +183,7 @@ describe("Build Outputs: @jamesaphoenix/tx-api-server", () => {
 
   it("server.js has shebang for executable", () => {
     const content = readFileSync(resolve(distPath, "server.js"), "utf-8")
-    expect(content.startsWith("#!/usr/bin/env node")).toBe(true)
+    expect(content.startsWith("#!/usr/bin/env bun")).toBe(true)
   })
 
   it("has runtime.js for Effect runtime management", () => {

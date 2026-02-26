@@ -10,6 +10,9 @@ dist/
 coverage/
 .next/
 
+# Copied migrations (build artifact in packages/core)
+packages/core/migrations/
+
 # Generated config files (compiled from .ts)
 vitest.config.js
 vitest.config.js.map
@@ -29,6 +32,9 @@ apps/*/README.md
 .env.*.local
 .env.development
 .env.production
+
+# Backup files from strip-bun-exports script
+*.bak
 
 # OS files
 .DS_Store

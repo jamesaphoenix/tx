@@ -37,6 +37,11 @@ jobs:
       # Run package tests only (root tests are slower and tested in CI workflow)
       - run: bun run test:packages
 
+      # Strip "bun" export condition from packages before publishing.
+      # The "bun" condition points to src/*.ts which isn't in the npm tarball.
+      - name: Strip bun export conditions for npm
+        run: node scripts/strip-bun-exports.js
+
       # Publish in dependency order: types -> core -> test-utils -> tx -> tx-cli
       - name: Publish @jamesaphoenix/tx-types
         working-directory: packages/types
@@ -67,3 +72,8 @@ jobs:
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Restore original package.json files (clean git state)
+      - name: Restore bun export conditions
+        if: always()
+        run: node scripts/strip-bun-exports.js --restore

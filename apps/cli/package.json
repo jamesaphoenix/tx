@@ -34,7 +34,8 @@
     "@jamesaphoenix/tx-core": "*",
     "@jamesaphoenix/tx-test-utils": "*",
     "@jamesaphoenix/tx-types": "*",
-    "effect": "^3.19.15"
+    "effect": "^3.19.15",
+    "yaml": "^2.5.0"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3"

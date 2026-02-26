@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -35,16 +36,21 @@ export interface MigrationStatus {
 
 /**
  * Get the migrations directory path.
- * Looks for migrations/ relative to the package root.
+ * Checks two locations:
+ *   1. Package-local: ../../migrations relative to this file (works for npm installs
+ *      where migrations/ is copied into the package during build)
+ *   2. Monorepo root: ../../../../migrations (works in monorepo development)
  */
 const getMigrationsDir = (): string => {
-  // When running from source (src/services/migration-service.ts)
-  // or from dist (dist/services/migration-service.js),
-  // we need to go up to the package root and then into migrations/
   const currentDir = dirname(fileURLToPath(import.meta.url))
-  // Go up to packages/core, then up to monorepo root
-  const packageRoot = resolve(currentDir, "..", "..", "..", "..")
-  return join(packageRoot, "migrations")
+
+  // From src/services/ or dist/services/, up 2 levels = package root
+  const packageLocal = resolve(currentDir, "..", "..", "migrations")
+  if (existsSync(packageLocal)) return packageLocal
+
+  // Fallback: monorepo root (up 4 levels from packages/core/src/services/)
+  const monorepoRoot = resolve(currentDir, "..", "..", "..", "..", "migrations")
+  return monorepoRoot
 }
 
 /**

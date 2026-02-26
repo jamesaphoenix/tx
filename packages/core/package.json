@@ -39,10 +39,11 @@
   },
   "files": [
     "dist",
+    "migrations",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && cp -r ../../migrations ./migrations",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "bunx --bun vitest run --passWithNoTests"

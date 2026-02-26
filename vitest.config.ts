@@ -49,6 +49,8 @@ export default defineConfig({
       "test/integration/cli-test-cache.test.ts",
       // Timeout-prone due to retriever pipeline complexity in CI
       "test/integration/cli-learning.test.ts",
+      // npm binary distribution test: slow (npm pack + install), run explicitly
+      "test/integration/cli-npm-binary.test.ts",
     ],
     setupFiles: ["./vitest.setup.ts"],
     environment: "node",

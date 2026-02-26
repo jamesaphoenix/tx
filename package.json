@@ -50,6 +50,8 @@
     "check:quick": "./scripts/check.sh --quick",
     "check:ci": "./scripts/check-ci.sh",
     "validate": "bun run build && .claude/skills/test-quiet/scripts/run.sh && bun link",
+    "strip-bun-exports": "node scripts/strip-bun-exports.js",
+    "restore-bun-exports": "node scripts/strip-bun-exports.js --restore",
     "prepare": "husky"
   },
   "dependencies": {
