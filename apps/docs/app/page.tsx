@@ -76,6 +76,9 @@ export default function HomePage() {
             Primitives, not frameworks. Headless infrastructure for memory, tasks, and
             orchestration.
           </p>
+          <div className="mb-8 rounded-lg border border-fd-border bg-fd-muted/50 px-6 py-3">
+            <code className="text-sm">curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh</code>
+          </div>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
               href="/docs"
