@@ -169,7 +169,7 @@ export default function HomePage() {
             Get up and running with tx in your project.
           </p>
           <div className="rounded-lg border border-fd-border bg-fd-muted/50 p-4">
-            <code className="text-sm">npm install -g @jamesaphoenix/tx</code>
+            <code className="text-sm">curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh</code>
           </div>
           <Link
             href="/docs"

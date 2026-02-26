@@ -41,7 +41,7 @@ tx provides composable primitives for agent infrastructure — task management, 
 ## Quick Start
 
 ```bash
-npm install -g @jamesaphoenix/tx
+curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh
 cd your-project
 tx init
 tx add "My first task"

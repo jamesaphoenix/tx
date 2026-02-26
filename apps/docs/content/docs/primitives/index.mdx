@@ -30,10 +30,10 @@ Every tx primitive is available through multiple interfaces. Choose the one that
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP Tools", "REST API"]}>
 <Tab value="CLI">
 
-Install globally and use from any terminal or shell script:
+Install the standalone binary and use from any terminal or shell script:
 
 ```bash
-npm install -g @jamesaphoenix/tx
+curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh
 tx ready --limit 5
 ```
 
