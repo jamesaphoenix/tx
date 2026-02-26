@@ -61,18 +61,25 @@ jobs:
         working-directory: apps/cli
         env:
           TX_CLI_VERSION: ${{ steps.version.outputs.value }}
-        run: bun build ./src/cli.ts --compile --outfile ${{ matrix.artifact }} --target ${{ matrix.target }} --minify --define "process.env.TX_CLI_VERSION='$TX_CLI_VERSION'" --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
+          BUILD_ARTIFACT: ${{ matrix.artifact }}
+          BUILD_TARGET: ${{ matrix.target }}
+        run: bun build ./src/cli.ts --compile --outfile "$BUILD_ARTIFACT" --target "$BUILD_TARGET" --minify --define "process.env.TX_CLI_VERSION='$TX_CLI_VERSION'" --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
 
       - name: Verify binary version
         working-directory: apps/cli
+        env:
+          TX_CLI_VERSION: ${{ steps.version.outputs.value }}
+          BUILD_ARTIFACT: ${{ matrix.artifact }}
         run: |
-          strings ./${{ matrix.artifact }} | grep -qF "${{ steps.version.outputs.value }}" || {
-            echo "::error::Version string '${{ steps.version.outputs.value }}' not found in binary ${{ matrix.artifact }}"
+          strings "./$BUILD_ARTIFACT" | grep -qF "$TX_CLI_VERSION" || {
+            echo "::error::Version string '$TX_CLI_VERSION' not found in binary $BUILD_ARTIFACT"
             exit 1
           }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
+        env:
+          BUILD_ARTIFACT: ${{ matrix.artifact }}
         with:
           name: ${{ matrix.artifact }}
           path: apps/cli/${{ matrix.artifact }}

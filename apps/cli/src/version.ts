@@ -8,11 +8,15 @@
  * that can hoist `readFileSync` out of try-catch blocks.
  */
 
+// Basic semver pattern: digits.digits.digits with optional pre-release suffix
+const SEMVER_RE = /^\d+\.\d+\.\d+/
+
 function getVersion(): string {
   // Compile-time injected version (set by --define in release.yml)
   // In compiled binaries, bun replaces this with the literal string e.g. '0.5.9'
-  if (process.env.TX_CLI_VERSION && process.env.TX_CLI_VERSION !== "undefined" && process.env.TX_CLI_VERSION !== "") {
-    return process.env.TX_CLI_VERSION
+  const injected = process.env.TX_CLI_VERSION
+  if (injected && injected !== "undefined" && injected !== "" && SEMVER_RE.test(injected)) {
+    return injected
   }
 
   // Development fallback: read from package.json.

@@ -13,6 +13,12 @@ set -e
 REPO="jamesaphoenix/tx"
 
 main() {
+  # -- Check prerequisites --
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "Error: curl is required but not found. Install curl and try again." >&2
+    exit 1
+  fi
+
   # -- Detect platform --
   OS=$(uname -s | tr '[:upper:]' '[:lower:]')
   case "$OS" in
