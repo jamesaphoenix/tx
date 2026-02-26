@@ -11,7 +11,7 @@
 function getVersion(): string {
   // Compile-time injected version (set by --define in release.yml)
   // In compiled binaries, bun replaces this with the literal string e.g. '0.5.9'
-  if (process.env.TX_CLI_VERSION && process.env.TX_CLI_VERSION !== "undefined") {
+  if (process.env.TX_CLI_VERSION && process.env.TX_CLI_VERSION !== "undefined" && process.env.TX_CLI_VERSION !== "") {
     return process.env.TX_CLI_VERSION
   }
 
