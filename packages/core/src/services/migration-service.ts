@@ -7,6 +7,8 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { EMBEDDED_MIGRATIONS } from "../migrations-embedded.js"
 
+export { EMBEDDED_MIGRATIONS } from "../migrations-embedded.js"
+
 /**
  * Describes a single database migration.
  */
@@ -91,12 +93,17 @@ const loadMigrationsFromDir = async (): Promise<Migration[]> => {
     const parsed = parseMigrationFilename(filename)
     if (!parsed) continue
 
-    const sql = await readFile(join(migrationsDir, filename), "utf-8")
-    migrations.push({
-      version: parsed.version,
-      description: parsed.description,
-      sql
-    })
+    try {
+      const sql = await readFile(join(migrationsDir, filename), "utf-8")
+      migrations.push({
+        version: parsed.version,
+        description: parsed.description,
+        sql
+      })
+    } catch {
+      // Individual file unreadable — fall back to embedded set
+      return []
+    }
   }
 
   // Sort by version number
@@ -109,9 +116,14 @@ const loadMigrationsFromDir = async (): Promise<Migration[]> => {
  * All migrations loaded from the migrations/ directory.
  * Falls back to embedded migrations for compiled binaries where the
  * filesystem path is unavailable (/$bunfs/ virtual filesystem).
+ *
+ * Uses the embedded set when:
+ * - The migrations directory doesn't exist (compiled binary)
+ * - Any individual file is unreadable (partial/corrupt install)
+ * - Fewer migrations are on disk than embedded (incomplete install)
  */
 export const MIGRATIONS: readonly Migration[] = await loadMigrationsFromDir()
-  .then(m => m.length > 0 ? m : EMBEDDED_MIGRATIONS)
+  .then(m => m.length >= EMBEDDED_MIGRATIONS.length ? m : EMBEDDED_MIGRATIONS)
 
 /**
  * Get the latest migration version.

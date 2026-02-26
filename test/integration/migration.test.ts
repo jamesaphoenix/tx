@@ -8,7 +8,8 @@ import {
   MigrationService,
   MigrationServiceLive,
   MIGRATIONS,
-  getLatestVersion
+  getLatestVersion,
+  EMBEDDED_MIGRATIONS
 } from "@jamesaphoenix/tx-core"
 import { fixtureId } from "@jamesaphoenix/tx-test-utils"
 
@@ -65,6 +66,55 @@ describe("Migration system", () => {
       for (const m of MIGRATIONS) {
         expect(m.description).toBeTruthy()
         expect(m.sql).toBeTruthy()
+      }
+    })
+  })
+
+  describe("EMBEDDED_MIGRATIONS sync", () => {
+    it("has the same number of migrations as MIGRATIONS", () => {
+      expect(EMBEDDED_MIGRATIONS.length).toBe(MIGRATIONS.length)
+    })
+
+    it("each embedded migration matches filesystem version and description", () => {
+      for (let i = 0; i < MIGRATIONS.length; i++) {
+        expect(EMBEDDED_MIGRATIONS[i].version, `version mismatch at index ${i}`).toBe(MIGRATIONS[i].version)
+        expect(EMBEDDED_MIGRATIONS[i].description, `description mismatch at index ${i}`).toBe(MIGRATIONS[i].description)
+      }
+    })
+
+    it("each embedded migration SQL is byte-identical to filesystem SQL", () => {
+      for (let i = 0; i < MIGRATIONS.length; i++) {
+        expect(
+          EMBEDDED_MIGRATIONS[i].sql,
+          `SQL mismatch for migration ${MIGRATIONS[i].version} (${MIGRATIONS[i].description})`
+        ).toBe(MIGRATIONS[i].sql)
+      }
+    })
+
+    it("embedded migrations produce the same schema as filesystem migrations", () => {
+      const dbFromFs = new Database(":memory:")
+      dbFromFs.run("PRAGMA foreign_keys = ON")
+      for (const m of MIGRATIONS) {
+        dbFromFs.exec(m.sql)
+      }
+
+      const dbFromEmbedded = new Database(":memory:")
+      dbFromEmbedded.run("PRAGMA foreign_keys = ON")
+      for (const m of EMBEDDED_MIGRATIONS) {
+        dbFromEmbedded.exec(m.sql)
+      }
+
+      const fsTables = (dbFromFs.prepare(
+        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+      ).all() as Array<{ name: string; sql: string }>)
+
+      const embeddedTables = (dbFromEmbedded.prepare(
+        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+      ).all() as Array<{ name: string; sql: string }>)
+
+      expect(fsTables.map(t => t.name)).toEqual(embeddedTables.map(t => t.name))
+      for (let i = 0; i < fsTables.length; i++) {
+        expect(fsTables[i].sql, `table DDL mismatch: ${fsTables[i].name}`).toBe(embeddedTables[i].sql)
       }
     })
   })

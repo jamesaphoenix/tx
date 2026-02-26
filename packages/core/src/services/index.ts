@@ -57,6 +57,7 @@ export {
   MigrationService,
   MigrationServiceLive,
   MIGRATIONS,
+  EMBEDDED_MIGRATIONS,
   getLatestVersion,
   type Migration,
   type AppliedMigration,

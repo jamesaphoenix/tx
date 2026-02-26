@@ -6,6 +6,17 @@
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "package.json"],
       "outputs": ["dist/**"]
     },
+    "@jamesaphoenix/tx-core#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**/*.ts",
+        "tsconfig.json",
+        "package.json",
+        "../../migrations/**/*.sql",
+        "../../scripts/bundle-migrations.js"
+      ],
+      "outputs": ["dist/**", "migrations/**"]
+    },
     "@jamesaphoenix/tx-docs#build": {
       "dependsOn": ["^build"],
       "inputs": [

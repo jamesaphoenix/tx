@@ -1,23 +1,30 @@
 /**
- * CLI version — read from package.json at runtime so there's a single source of truth.
+ * CLI version — injected at compile time for binaries, read from package.json
+ * for development.
  *
- * In compiled binaries (`bun build --compile`), import.meta.url resolves to a
- * virtual /$bunfs/ path where package.json doesn't exist. We catch that and
- * fall back to the version that was inlined at compile time.
+ * In compiled binaries (`bun build --compile`), `--define` replaces
+ * `process.env.TX_CLI_VERSION` with a string literal at bundle time, so
+ * the filesystem read is never reached. This avoids Bun minifier bugs
+ * that can hoist `readFileSync` out of try-catch blocks.
  */
-import { readFileSync } from "node:fs"
-import { resolve, dirname } from "node:path"
-import { fileURLToPath } from "node:url"
 
 function getVersion(): string {
+  // Compile-time injected version (set by --define in release.yml)
+  // In compiled binaries, bun replaces this with the literal string e.g. '0.5.9'
+  if (process.env.TX_CLI_VERSION && process.env.TX_CLI_VERSION !== "undefined") {
+    return process.env.TX_CLI_VERSION
+  }
+
+  // Development: read from package.json (lazy import to avoid module-level side effects)
   try {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs")
+    const { resolve, dirname } = require("node:path") as typeof import("node:path")
+    const { fileURLToPath } = require("node:url") as typeof import("node:url")
     const __dir = dirname(fileURLToPath(import.meta.url))
     const pkg = JSON.parse(readFileSync(resolve(__dir, "../package.json"), "utf-8"))
     return pkg.version ?? "0.0.0"
   } catch {
-    // Compiled binary — package.json is not on disk.
-    // process.env.TX_CLI_VERSION can be injected at build time via --define.
-    return process.env.TX_CLI_VERSION ?? "0.0.0"
+    return "0.0.0"
   }
 }
 

@@ -48,6 +48,15 @@ main() {
     fi
   fi
 
+  # -- Validate version looks like semver --
+  case "$VERSION" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *)
+      echo "Error: extracted version '$VERSION' does not look like a valid version." >&2
+      exit 1
+      ;;
+  esac
+
   # -- Build download URL --
   ARTIFACT="tx-${OS}-${ARCH}"
   URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ARTIFACT}"

@@ -44,7 +44,7 @@
   ],
   "scripts": {
     "prebuild": "node ../../scripts/bundle-migrations.js",
-    "build": "tsc -b && rm -r ./migrations 2>/dev/null; cp -r ../../migrations ./migrations",
+    "build": "tsc -b && { rm -r ./migrations 2>/dev/null; cp -r ../../migrations ./migrations; }",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "bunx --bun vitest run --passWithNoTests"

@@ -15,7 +15,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/tx",
+    "!dist/tx-*",
+    "!dist/**/*.test.*"
   ],
   "scripts": {
     "build": "tsc -b",

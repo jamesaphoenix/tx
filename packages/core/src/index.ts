@@ -206,6 +206,7 @@ export {
   type LaunchdPlistOptions,
   type SystemdServiceOptions,
   MIGRATIONS,
+  EMBEDDED_MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
   type ExportResult,

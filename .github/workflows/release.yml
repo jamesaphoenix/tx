@@ -30,6 +30,8 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
 
       - name: Cache bun dependencies
         uses: actions/cache@v5
@@ -54,6 +56,16 @@ jobs:
         env:
           TX_CLI_VERSION: ${{ steps.version.outputs.value }}
         run: bun build ./src/cli.ts --compile --outfile ${{ matrix.artifact }} --target ${{ matrix.target }} --minify --define "process.env.TX_CLI_VERSION='$TX_CLI_VERSION'" --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
+
+      - name: Verify binary version
+        working-directory: apps/cli
+        if: matrix.target == 'bun-darwin-arm64' || matrix.target == 'bun-linux-x64'
+        run: |
+          ./${{ matrix.artifact }} --version | grep -F "${{ steps.version.outputs.value }}" || {
+            echo "Binary does not contain expected version ${{ steps.version.outputs.value }}"
+            ./${{ matrix.artifact }} --version
+            exit 1
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
