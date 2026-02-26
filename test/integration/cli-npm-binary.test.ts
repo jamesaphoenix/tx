@@ -40,8 +40,8 @@ describe("CLI npm binary distribution", () => {
   let tmpDir: string
 
   beforeAll(() => {
-    // Check for pre-built fixture dir from setup script
-    const prebuilt = process.env.TX_NPM_BINARY_DIR
+    // Check for pre-built fixture dir from setup script (TX_NPM_BINARY_DIR or legacy SETUP_DIR)
+    const prebuilt = process.env.TX_NPM_BINARY_DIR ?? process.env.SETUP_DIR
     if (prebuilt && existsSync(join(prebuilt, "node_modules"))) {
       tmpDir = prebuilt
       return
@@ -142,4 +142,75 @@ describe("CLI npm binary distribution", () => {
     expect(add.status).toBe(0)
     expect(add.stdout).toContain("test task")
   }, TIMEOUT)
+
+  it("full workflow: add → ready → block → done", () => {
+    const txBin = join(
+      tmpDir,
+      "node_modules/@jamesaphoenix/tx-cli/dist/cli.js"
+    )
+    const dbPath = join(tmpDir, "test-workflow.db")
+
+    // init
+    const init = spawnSync("bun", [txBin, "init", "--db", dbPath], {
+      encoding: "utf-8",
+      timeout: TIMEOUT,
+    })
+    expect(init.status).toBe(0)
+
+    // add two tasks
+    const add1 = spawnSync(
+      "bun",
+      [txBin, "add", "blocker task", "--db", dbPath, "--json"],
+      { encoding: "utf-8", timeout: TIMEOUT }
+    )
+    expect(add1.status).toBe(0)
+    const task1 = JSON.parse(add1.stdout)
+
+    const add2 = spawnSync(
+      "bun",
+      [txBin, "add", "blocked task", "--db", dbPath, "--json"],
+      { encoding: "utf-8", timeout: TIMEOUT }
+    )
+    expect(add2.status).toBe(0)
+    const task2 = JSON.parse(add2.stdout)
+
+    // block task2 on task1
+    const block = spawnSync(
+      "bun",
+      [txBin, "block", task2.id, task1.id, "--db", dbPath],
+      { encoding: "utf-8", timeout: TIMEOUT }
+    )
+    expect(block.status).toBe(0)
+
+    // ready should return task1 (task2 is blocked)
+    const ready = spawnSync(
+      "bun",
+      [txBin, "ready", "--db", dbPath, "--json"],
+      { encoding: "utf-8", timeout: TIMEOUT }
+    )
+    expect(ready.status).toBe(0)
+    const readyTasks = JSON.parse(ready.stdout)
+    const readyIds = readyTasks.map((t: { id: string }) => t.id)
+    expect(readyIds).toContain(task1.id)
+    expect(readyIds).not.toContain(task2.id)
+
+    // done task1
+    const done = spawnSync(
+      "bun",
+      [txBin, "done", task1.id, "--db", dbPath],
+      { encoding: "utf-8", timeout: TIMEOUT }
+    )
+    expect(done.status).toBe(0)
+
+    // now task2 should be ready
+    const ready2 = spawnSync(
+      "bun",
+      [txBin, "ready", "--db", dbPath, "--json"],
+      { encoding: "utf-8", timeout: TIMEOUT }
+    )
+    expect(ready2.status).toBe(0)
+    const readyTasks2 = JSON.parse(ready2.stdout)
+    const readyIds2 = readyTasks2.map((t: { id: string }) => t.id)
+    expect(readyIds2).toContain(task2.id)
+  }, TIMEOUT * 2)
 })

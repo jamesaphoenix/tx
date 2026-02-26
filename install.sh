@@ -40,6 +40,7 @@ main() {
   else
     VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
       | grep '"tag_name"' \
+      | head -1 \
       | sed 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/')
     if [ -z "$VERSION" ]; then
       echo "Error: could not determine latest version from GitHub. Set TX_VERSION to install a specific version." >&2
@@ -57,6 +58,7 @@ main() {
 
   # -- Download --
   TMPFILE=$(mktemp)
+  trap 'rm -f "$TMPFILE"' EXIT INT TERM
   echo "Downloading tx v${VERSION} (${OS}/${ARCH})..."
   HTTP_CODE=$(curl -fSL -w '%{http_code}' -o "$TMPFILE" "$URL" 2>/dev/null) || true
 

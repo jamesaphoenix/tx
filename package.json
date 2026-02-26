@@ -9,14 +9,14 @@
     "apps/*"
   ],
   "bin": {
-    "tx": "./apps/cli/dist/cli.js"
+    "tx": "apps/cli/dist/cli.js"
   },
   "files": [
     "migrations"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/jamesaphoenix/tx.git"
+    "url": "git+https://github.com/jamesaphoenix/tx.git"
   },
   "keywords": [
     "task-management",

@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
+import { EMBEDDED_MIGRATIONS } from "../migrations-embedded.js"
 
 /**
  * Describes a single database migration.
@@ -106,9 +107,11 @@ const loadMigrationsFromDir = async (): Promise<Migration[]> => {
 
 /**
  * All migrations loaded from the migrations/ directory.
- * Sorted by version number. Uses top-level await for non-blocking I/O.
+ * Falls back to embedded migrations for compiled binaries where the
+ * filesystem path is unavailable (/$bunfs/ virtual filesystem).
  */
 export const MIGRATIONS: readonly Migration[] = await loadMigrationsFromDir()
+  .then(m => m.length > 0 ? m : EMBEDDED_MIGRATIONS)
 
 /**
  * Get the latest migration version.

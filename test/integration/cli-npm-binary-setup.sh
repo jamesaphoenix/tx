@@ -9,9 +9,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-TMPDIR="${1:-$(mktemp -d /tmp/tx-npm-binary-XXXXXX)}"
+SETUP_DIR="${1:-$(mktemp -d /tmp/tx-npm-binary-XXXXXX)}"
 
-echo "$TMPDIR"
+echo "$SETUP_DIR"
+
+cleanup() {
+  cd "$ROOT"
+  node scripts/strip-bun-exports.js --restore >&2 2>/dev/null || true
+}
+trap cleanup EXIT
 
 cd "$ROOT"
 
@@ -20,13 +26,13 @@ node scripts/strip-bun-exports.js >&2
 
 # 2. Pack each package
 for pkg in packages/types packages/core packages/test-utils packages/tx apps/cli; do
-  (cd "$pkg" && npm pack --pack-destination "$TMPDIR" >/dev/null 2>&1)
+  (cd "$pkg" && npm pack --pack-destination "$SETUP_DIR" >/dev/null 2>&1)
 done
 
 # 3. Install all tarballs
-npm install --prefix "$TMPDIR" "$TMPDIR"/*.tgz >/dev/null 2>&1
+npm install --prefix "$SETUP_DIR" "$SETUP_DIR"/*.tgz >/dev/null 2>&1
 
-# 4. Restore
+# 4. Restore (also handled by trap)
 node scripts/strip-bun-exports.js --restore >&2
 
 echo "Setup complete" >&2
