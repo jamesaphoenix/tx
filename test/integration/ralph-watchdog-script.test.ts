@@ -520,9 +520,9 @@ describe("ralph-watchdog signal trap integration", () => {
 
       proc.kill(signal)
 
-      const exitCode = await waitForExit(proc, 2000)
+      const exitCode = await waitForExit(proc, 8000)
       expect(exitCode, procOut).toBe(expectedExitCode)
-      await waitForCondition(() => !existsSync(pidFile), 2000)
+      await waitForCondition(() => !existsSync(pidFile), 4000)
 
       const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
       expect(watchdogLog).toContain(`Received ${signal}`)

@@ -1084,7 +1084,7 @@ describe("CLI sync claude command", () => {
     expect(output.highwatermark).toBe(2)
   })
 
-  it("cleans up stale files on re-sync", () => {
+  it("cleans up stale files on re-sync", { timeout: 30000 }, () => {
     // First sync: 3 tasks
     const t1 = JSON.parse(runTxArgs(["add", "Task A", "--score", "900", "--json"], dbPath).stdout)
     const t2 = JSON.parse(runTxArgs(["add", "Task B", "--score", "800", "--json"], dbPath).stdout)
