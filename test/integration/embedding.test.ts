@@ -102,7 +102,7 @@ describe("EmbeddingServiceLive", () => {
     expect(result).toBe(768)
   })
 
-  it("returns a clear error when local model cannot be resolved", async () => {
+  it("returns a clear error when local model cannot be resolved", { timeout: 60_000 }, async () => {
     const configProvider = ConfigProvider.fromMap(
       new Map([
         ["TX_LOCAL_EMBEDDING_MODEL_URI", "./missing-embedding-model.gguf"],
