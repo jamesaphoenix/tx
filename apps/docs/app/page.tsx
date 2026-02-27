@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CopyCommand } from './copy-command';
 
 const features = [
   {
@@ -76,8 +77,8 @@ export default function HomePage() {
             Primitives, not frameworks. Headless infrastructure for memory, tasks, and
             orchestration.
           </p>
-          <div className="mb-8 rounded-lg border border-fd-border bg-fd-muted/50 px-6 py-3">
-            <code className="text-sm">curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh</code>
+          <div className="mb-8">
+            <CopyCommand command="curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh" />
           </div>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
@@ -171,9 +172,7 @@ export default function HomePage() {
           <p className="mb-8 text-fd-muted-foreground">
             Get up and running with tx in your project.
           </p>
-          <div className="rounded-lg border border-fd-border bg-fd-muted/50 p-4">
-            <code className="text-sm">curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh</code>
-          </div>
+          <CopyCommand command="curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh" />
           <Link
             href="/docs"
             className="mt-6 inline-flex items-center text-sm font-medium text-fd-primary hover:underline"
