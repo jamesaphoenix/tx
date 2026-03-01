@@ -60,7 +60,11 @@ export {
   AgentError,
   CycleScanError,
   // LLM errors
-  LlmUnavailableError
+  LlmUnavailableError,
+  // Memory errors
+  ZeroMagnitudeVectorError,
+  MemoryDocumentNotFoundError,
+  MemorySourceNotFoundError
 } from "./errors.js"
 
 // =============================================================================
@@ -127,7 +131,12 @@ export {
   MessageService,
   MessageServiceLive,
   type LlmCompletionRequest,
-  type LlmCompletionResult
+  type LlmCompletionResult,
+  MemoryService,
+  MemoryServiceLive,
+  MemoryRetrieverService,
+  MemoryRetrieverServiceNoop,
+  MemoryRetrieverServiceLive
 } from "./layer.js"
 
 // =============================================================================
@@ -330,7 +339,16 @@ export {
   MessageRepository,
   MessageRepositoryLive,
   DocRepository,
-  DocRepositoryLive
+  DocRepositoryLive,
+  MemoryDocumentRepository,
+  MemoryDocumentRepositoryLive,
+  MemoryLinkRepository,
+  MemoryLinkRepositoryLive,
+  MemoryPropertyRepository,
+  MemoryPropertyRepositoryLive,
+  MemorySourceRepository,
+  MemorySourceRepositoryLive,
+  type MemoryBM25Result
 } from "./repo/index.js"
 
 // =============================================================================
@@ -415,6 +433,16 @@ export {
   isValidInvariantEnforcement,
   isValidInvariantStatus,
 } from "./mappers/doc.js"
+
+export {
+  rowToMemoryDocument,
+  rowToMemoryDocumentWithoutEmbedding,
+  rowToMemoryLink,
+  rowToMemorySource,
+  rowToMemoryProperty,
+  isValidLinkType as isValidMemoryLinkType,
+  float32ArrayToBuffer as memoryFloat32ArrayToBuffer,
+} from "./mappers/memory.js"
 
 // =============================================================================
 // Utils

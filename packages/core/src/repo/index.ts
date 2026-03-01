@@ -19,3 +19,10 @@ export { OrchestratorStateRepository, OrchestratorStateRepositoryLive, type Orch
 export { CompactionRepository, CompactionRepositoryLive, type CompactionLogEntry, type CreateCompactionLogInput } from "./compaction-repo.js"
 export { MessageRepository, MessageRepositoryLive } from "./message-repo.js"
 export { DocRepository, DocRepositoryLive } from "./doc-repo.js"
+export {
+  MemoryDocumentRepository, MemoryDocumentRepositoryLive,
+  MemoryLinkRepository, MemoryLinkRepositoryLive,
+  MemoryPropertyRepository, MemoryPropertyRepositoryLive,
+  MemorySourceRepository, MemorySourceRepositoryLive,
+  type MemoryBM25Result,
+} from "./memory-repo.js"

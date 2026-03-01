@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { cosineSimilarity, EmbeddingDimensionMismatchError } from "@jamesaphoenix/tx-core"
+import { cosineSimilarity, EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "@jamesaphoenix/tx-core"
 
 describe("cosineSimilarity", () => {
   it("returns 1 for identical vectors", async () => {
@@ -32,20 +32,30 @@ describe("cosineSimilarity", () => {
     expect(result).toBeCloseTo(0, 5)
   })
 
-  it("returns 0 when one vector is all zeros", async () => {
+  it("fails with ZeroMagnitudeVectorError when one vector is all zeros", async () => {
     const a = new Float32Array([1, 2, 3])
     const b = new Float32Array([0, 0, 0])
 
-    const result = await Effect.runPromise(cosineSimilarity(a, b))
-    expect(result).toBe(0)
+    // Zero-magnitude vectors are invalid embeddings; cosineSimilarity fails gracefully
+    // so that the retriever excludes them rather than unfairly boosting their score
+    const result = await Effect.runPromise(Effect.either(cosineSimilarity(a, b)))
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("ZeroMagnitudeVectorError")
+      const error = result.left as ZeroMagnitudeVectorError
+      expect(error.dimensions).toBe(3)
+    }
   })
 
-  it("returns 0 when both vectors are all zeros", async () => {
+  it("fails with ZeroMagnitudeVectorError when both vectors are all zeros", async () => {
     const a = new Float32Array([0, 0, 0])
     const b = new Float32Array([0, 0, 0])
 
-    const result = await Effect.runPromise(cosineSimilarity(a, b))
-    expect(result).toBe(0)
+    const result = await Effect.runPromise(Effect.either(cosineSimilarity(a, b)))
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("ZeroMagnitudeVectorError")
+    }
   })
 
   it("correctly computes similarity for non-unit vectors", async () => {
@@ -116,13 +126,13 @@ describe("cosineSimilarity", () => {
       expect(result).toBeCloseTo(1, 5) // Same direction
     })
 
-    it("succeeds with empty vectors (0 dimensions)", async () => {
+    it("fails with empty vectors (0 dimensions, zero magnitude)", async () => {
       const a = new Float32Array([])
       const b = new Float32Array([])
 
-      // Empty vectors have 0 magnitude, should return 0
-      const result = await Effect.runPromise(cosineSimilarity(a, b))
-      expect(result).toBe(0)
+      // Empty vectors have 0 magnitude — treated as invalid embeddings
+      const result = await Effect.runPromise(Effect.either(cosineSimilarity(a, b)))
+      expect(result._tag).toBe("Left")
     })
 
     it("fails when comparing empty with non-empty vector", async () => {

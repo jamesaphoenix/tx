@@ -35,6 +35,7 @@ import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
 import { groupContextSet, groupContextClear } from "./commands/group-context.js"
 import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
+import { memory } from "./commands/memory.js"
 import * as p from "@clack/prompts"
 
 // --- Argv parsing helpers ---
@@ -51,7 +52,9 @@ function parseArgs(argv: string[]): { command: string; positional: string[]; fla
     const key = arg.startsWith("--") ? arg.slice(2) : arg.slice(1)
     const next = args[idx + 1]
     if (next && !next.startsWith(valueCheckPrefix)) {
-      flags[key] = next
+      // Accumulate repeated flags with comma (e.g., --prop a=1 --prop b=2 → "a=1,b=2")
+      const existing = flags[key]
+      flags[key] = typeof existing === "string" ? `${existing},${next}` : next
       return 2
     }
     flags[key] = true
@@ -215,6 +218,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   doc,
   invariant,
 
+  // Memory commands (filesystem-backed memory)
+  memory,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -283,6 +289,13 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
+  if (command === "memory" && positional[0]) {
+    const subcommandKey = `memory ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   // Check if we have a command with specific help
   if (command !== "help" && commandHelp[command]) {
     console.log(commandHelp[command])
@@ -327,6 +340,13 @@ if (command === "help") {
   }
   if (subcommand === "invariant" && positional[1]) {
     const subcommandKey = `invariant ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "memory" && positional[1]) {
+    const subcommandKey = `memory ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -403,6 +423,10 @@ const errorExitCodes: Record<string, number> = {
   DocLockedError: 1,
   InvalidDocYamlError: 1,
   InvariantNotFoundError: 2,
+  MemoryDocumentNotFoundError: 2,
+  MemorySourceNotFoundError: 2,
+  RetrievalError: 1,
+  EmbeddingDimensionMismatchError: 1,
 }
 
 const handled = runnable.pipe(

@@ -375,6 +375,36 @@ export {
   type InvariantCheckRow,
 } from "./doc.js"
 
+// Memory types & schemas (filesystem-backed memory system)
+export {
+  MEMORY_LINK_TYPES,
+  MemoryLinkTypeSchema,
+  MemoryDocumentIdSchema,
+  MemoryDocumentSchema,
+  MemoryDocumentWithScoreSchema,
+  MemoryLinkSchema,
+  MemorySourceSchema,
+  MemoryPropertySchema,
+  MemorySearchOptionsSchema,
+  MemoryIndexStatusSchema,
+  CreateMemoryDocumentInputSchema,
+  type MemoryLinkType,
+  type MemoryDocumentId,
+  type MemoryDocument,
+  type MemoryDocumentWithScore,
+  type MemoryLink,
+  type MemorySource,
+  type MemoryProperty,
+  type MemorySearchOptions,
+  type MemoryIndexStatus,
+  type CreateMemoryDocumentInput,
+  type MemoryDocumentRow,
+  type MemoryDocumentRowWithBM25,
+  type MemoryLinkRow,
+  type MemorySourceRow,
+  type MemoryPropertyRow,
+} from "./memory.js"
+
 // Response types & schemas (shared schemas for CLI, MCP, API, SDK)
 export {
   // Serialized entity schemas

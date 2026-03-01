@@ -283,3 +283,12 @@ export {
   DocService,
   DocServiceLive
 } from "./doc-service.js"
+export {
+  MemoryService,
+  MemoryServiceLive
+} from "./memory-service.js"
+export {
+  MemoryRetrieverService,
+  MemoryRetrieverServiceNoop,
+  MemoryRetrieverServiceLive
+} from "./memory-retriever-service.js"

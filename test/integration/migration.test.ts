@@ -189,6 +189,8 @@ describe("Migration system", () => {
         "task_labels", "task_label_assignments",
         // Migration 025 — run heartbeat state
         "run_heartbeat_state",
+        // Migration 029 — memory
+        "memory_documents", "memory_links", "memory_sources", "memory_properties",
       ]
 
       for (const table of expectedTables) {

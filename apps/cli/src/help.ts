@@ -28,7 +28,7 @@ Attempts:
   try <id> <approach>     Record an attempt on a task
   attempts <id>           List attempts for a task
 
-Memory:
+Learnings:
   learning:add            Add a learning
   learning:search         Search learnings
   learning:recent         List recent learnings
@@ -39,6 +39,19 @@ Memory:
   group-context:clear     Clear task-group context on a task
   learn                   Attach a learning to file/glob pattern
   recall                  Query learnings for a path
+
+Memory (filesystem-backed .md search):
+  memory source           Manage indexed directories (add, rm, list)
+  memory add              Create a new memory document (.md file)
+  memory index            Index all registered sources
+  memory search           Search memory documents (BM25/semantic/graph)
+  memory show             Display a memory document
+  memory tag/untag        Add or remove tags
+  memory set/unset/props  Manage key-value properties
+  memory links/backlinks  Show document connections
+  memory list             List indexed documents
+  memory link             Create explicit edge between documents
+  memory relate           Add to frontmatter.related
 
 Messages:
   send                    Send a message to a channel
@@ -2285,5 +2298,235 @@ Examples:
   tx cycle --task-prompt "Review core services"
   tx cycle --task-prompt "Review auth module" --scan-prompt "Find security issues"
   tx cycle --task-prompt "Audit API" --agents 5 --max-rounds 5 --fix
-  tx cycle --task-prompt prompt.md --dry-run --json`
+  tx cycle --task-prompt prompt.md --dry-run --json`,
+
+  // Memory commands
+
+  memory: `tx memory - Filesystem-backed memory with search over .md files
+
+Usage: tx memory <subcommand> [options]
+
+Subcommands:
+  source add <dir>        Register a directory for indexing
+  source rm <dir>         Unregister a directory
+  source list             List registered directories
+  add <title>             Create a new memory document (.md file)
+  tag <id> <tags...>      Add tags to document frontmatter
+  untag <id> <tags...>    Remove tags from frontmatter
+  relate <id> <target>    Add to frontmatter.related
+  set <id> <key> <value>  Set a key-value property
+  unset <id> <key>        Remove a property
+  props <id>              Show properties for a document
+  index                   Index all registered sources
+  search <query>          Search memory documents
+  show <id>               Display a document
+  links <id>              Show outgoing links
+  backlinks <id>          Show incoming links
+  list                    List all indexed documents
+  link <src> <target>     Create explicit edge
+
+Run 'tx memory <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx memory source add ./docs
+  tx memory index
+  tx memory search "authentication patterns"
+  tx memory add "JWT Best Practices" --tags auth,security
+  tx memory tag mem-a7f3bc12 production`,
+
+  "memory source": `tx memory source - Manage indexed directories
+
+Usage: tx memory source <add|rm|list> [options]
+
+Subcommands:
+  add <dir> [--label name]  Register a directory for indexing
+  rm <dir>                  Unregister and remove indexed docs
+  list                      Show registered directories
+
+Examples:
+  tx memory source add ./docs --label "Project docs"
+  tx memory source add ~/vault --label "Obsidian vault"
+  tx memory source list
+  tx memory source rm ./docs`,
+
+  "memory add": `tx memory add - Create a new memory document
+
+Usage: tx memory add <title> [options]
+
+Creates a .md file with optional frontmatter in the first registered source
+directory (or --dir).
+
+Arguments:
+  <title>                  Document title (used for filename + H1 heading)
+
+Options:
+  --content, -c <text>     Initial body content
+  --tags, -t <t1,t2>       Comma-separated frontmatter tags
+  --prop <k=v,k2=v2>       Comma-separated key=value properties
+  --dir, -d <path>         Target directory (default: first source)
+  --json                   Output as JSON
+
+Examples:
+  tx memory add "Auth Patterns"
+  tx memory add "JWT Guide" --content "Use RS256 for production" --tags auth,jwt
+  tx memory add "Meeting Notes" --dir ~/vault/meetings`,
+
+  "memory tag": `tx memory tag - Add tags to a memory document
+
+Usage: tx memory tag <id> <tag1> [tag2...] [--json]
+
+Adds tags to the document's frontmatter and re-indexes.
+
+Examples:
+  tx memory tag mem-a7f3bc12 security production
+  tx memory tag mem-a7f3bc12 reviewed --json`,
+
+  "memory untag": `tx memory untag - Remove tags from a memory document
+
+Usage: tx memory untag <id> <tag1> [tag2...] [--json]
+
+Removes tags from the document's frontmatter and re-indexes.
+
+Examples:
+  tx memory untag mem-a7f3bc12 draft`,
+
+  "memory index": `tx memory index - Index all registered source directories
+
+Usage: tx memory index [options]
+
+Scans all registered source directories for .md files and indexes them
+into the SQLite database for search.
+
+Options:
+  --incremental, -i   Only re-index changed files (hash comparison)
+  --status             Show index coverage report instead of indexing
+  --json               Output as JSON
+
+Examples:
+  tx memory index                    # Full reindex
+  tx memory index --incremental      # Only changed files
+  tx memory index --status           # Show coverage report`,
+
+  "memory search": `tx memory search - Search memory documents
+
+Usage: tx memory search <query> [options]
+
+Searches indexed memory documents using BM25 text search by default.
+Add --semantic for vector similarity and --expand for graph expansion.
+
+Arguments:
+  <query>                  Search query
+
+Options:
+  --semantic, -s           Enable vector similarity search
+  --expand, -e             Enable graph expansion via wikilinks
+  --tags, -t <t1,t2>       Filter by tags (comma-separated)
+  --prop <key=value>       Filter by property (key=value or key for existence)
+  --limit, -n <N>          Max results (default: 10)
+  --min-score <N>          Minimum relevance score (default: 0)
+  --json                   Output as JSON
+
+Examples:
+  tx memory search "authentication"
+  tx memory search "auth" --semantic --expand
+  tx memory search "auth" --tags security,jwt
+  tx memory search "deploy" --prop status=reviewed --limit 5`,
+
+  "memory show": `tx memory show - Display a memory document
+
+Usage: tx memory show <id> [--json]
+
+Shows full document content, metadata, and indexing status.
+
+Examples:
+  tx memory show mem-a7f3bc12
+  tx memory show mem-a7f3bc12 --json`,
+
+  "memory links": `tx memory links - Show outgoing links from a document
+
+Usage: tx memory links <id> [--json]
+
+Lists wikilinks, frontmatter.related, and explicit edges from the document.
+
+Examples:
+  tx memory links mem-a7f3bc12`,
+
+  "memory backlinks": `tx memory backlinks - Show incoming links to a document
+
+Usage: tx memory backlinks <id> [--json]
+
+Lists all documents that link to this document.
+
+Examples:
+  tx memory backlinks mem-a7f3bc12`,
+
+  "memory list": `tx memory list - List indexed memory documents
+
+Usage: tx memory list [options]
+
+Options:
+  --source <dir>       Filter by source directory
+  --tags, -t <t1,t2>   Filter by tags
+  --json               Output as JSON
+
+Examples:
+  tx memory list
+  tx memory list --source ./docs
+  tx memory list --tags auth,security --json`,
+
+  "memory link": `tx memory link - Create an explicit edge between documents
+
+Usage: tx memory link <source-id> <target-ref>
+
+Creates a programmatic link between two documents in the SQLite graph.
+Unlike wikilinks (parsed from markdown), explicit links are stored
+only in the database.
+
+Examples:
+  tx memory link mem-a7f3bc12 mem-b8e4cd56
+  tx memory link mem-a7f3bc12 "JWT Auth Patterns"`,
+
+  "memory set": `tx memory set - Set a key-value property on a document
+
+Usage: tx memory set <id> <key> <value>
+
+Sets a structured property on the document. Properties are written to
+both frontmatter (filesystem) and the database index.
+
+Reserved keys (tags, related, created) cannot be set via this command;
+use 'tx memory tag' or 'tx memory relate' instead.
+
+Examples:
+  tx memory set mem-a7f3bc12 status reviewed
+  tx memory set mem-a7f3bc12 confidence high`,
+
+  "memory unset": `tx memory unset - Remove a property from a document
+
+Usage: tx memory unset <id> <key>
+
+Removes a property from both frontmatter and the database.
+
+Examples:
+  tx memory unset mem-a7f3bc12 status`,
+
+  "memory props": `tx memory props - Show properties for a document
+
+Usage: tx memory props <id> [--json]
+
+Lists all key-value properties on a memory document.
+
+Examples:
+  tx memory props mem-a7f3bc12
+  tx memory props mem-a7f3bc12 --json`,
+
+  "memory relate": `tx memory relate - Add a related reference to a document
+
+Usage: tx memory relate <id> <target-ref>
+
+Adds a reference to frontmatter.related and re-indexes.
+Links are tracked in the graph for --expand search.
+
+Examples:
+  tx memory relate mem-a7f3bc12 "JWT Auth Patterns"
+  tx memory relate mem-a7f3bc12 mem-b8e4cd56`
 }

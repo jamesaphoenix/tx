@@ -480,7 +480,7 @@ tx tree <id>               # Show task subtree
 tx try <id> <approach>     # Record an attempt (--failed|--succeeded)
 tx attempts <id>           # List attempts
 
-# Memory & Learnings
+# Learnings
 tx learning:add <content>  # Add a learning
 tx learning:search <q>     # Search (BM25 + recency)
 tx learning:recent         # Recent learnings
@@ -489,6 +489,25 @@ tx learning:embed          # Compute vector embeddings
 tx context <task-id>       # Contextual learnings for a task
 tx learn <path> <note>     # Attach learning to file/glob
 tx recall [path]           # Query file learnings
+
+# Memory (filesystem-backed .md search)
+tx memory source add <dir> # Register directory for indexing
+tx memory source rm <dir>  # Unregister directory
+tx memory source list      # Show registered directories
+tx memory add <title>      # Create .md file (--content, --tags, --dir)
+tx memory index            # Index all sources (--incremental, --status)
+tx memory search <query>   # BM25 search (--semantic, --expand, --tags, --prop)
+tx memory show <id>        # Display document
+tx memory tag <id> <tags>  # Add tags to frontmatter
+tx memory untag <id> <t>   # Remove tags
+tx memory relate <id> <t>  # Add to frontmatter.related
+tx memory set <id> <k> <v> # Set property (writes frontmatter + DB)
+tx memory unset <id> <k>   # Remove property
+tx memory props <id>       # Show properties
+tx memory links <id>       # Outgoing wikilinks + edges
+tx memory backlinks <id>   # Incoming links
+tx memory list             # List documents (--source, --tags)
+tx memory link <src> <tgt> # Create explicit edge
 
 # Messages (Agent Outbox)
 tx send <channel> <msg>    # Send to channel

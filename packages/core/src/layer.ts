@@ -58,6 +58,9 @@ import { MessageRepositoryLive } from "./repo/message-repo.js"
 import { MessageServiceLive } from "./services/message-service.js"
 import { DocRepositoryLive } from "./repo/doc-repo.js"
 import { DocServiceLive } from "./services/doc-service.js"
+import { MemoryDocumentRepositoryLive, MemoryLinkRepositoryLive, MemoryPropertyRepositoryLive, MemorySourceRepositoryLive } from "./repo/memory-repo.js"
+import { MemoryServiceLive } from "./services/memory-service.js"
+import { MemoryRetrieverServiceLive } from "./services/memory-retriever-service.js"
 // AgentService + CycleScanService are NOT in the default layer.
 // They are provided by the cycle CLI command via Effect.provide overlay.
 // Re-exports below make them available from @jamesaphoenix/tx-core.
@@ -104,6 +107,12 @@ export { MessageService, MessageServiceLive } from "./services/message-service.j
 export { AgentService, AgentServiceLive, AgentServiceNoop } from "./services/agent-service.js"
 export { CycleScanService, CycleScanServiceLive } from "./services/cycle-scan-service.js"
 export { DocService, DocServiceLive } from "./services/doc-service.js"
+export { MemoryService, MemoryServiceLive } from "./services/memory-service.js"
+export {
+  MemoryRetrieverService,
+  MemoryRetrieverServiceNoop,
+  MemoryRetrieverServiceLive
+} from "./services/memory-retriever-service.js"
 export {
   RetrieverService,
   RetrieverServiceNoop,
@@ -235,7 +244,11 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     OrchestratorStateRepositoryLive,
     CompactionRepositoryLive,
     MessageRepositoryLive,
-    DocRepositoryLive
+    DocRepositoryLive,
+    MemoryDocumentRepositoryLive,
+    MemoryLinkRepositoryLive,
+    MemoryPropertyRepositoryLive,
+    MemorySourceRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -340,12 +353,20 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   // DocServiceLive needs DocRepository (from repos)
   const docService = DocServiceLive.pipe(Layer.provide(repos))
 
+  // MemoryServiceLive needs memory repos (from repos)
+  const memoryService = MemoryServiceLive.pipe(Layer.provide(repos))
+
+  // MemoryRetrieverServiceLive needs memory repos + optionally EmbeddingService
+  const memoryRetrieverService = MemoryRetrieverServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, embeddingService))
+  )
+
   // Merge all services
   const runHeartbeatService = RunHeartbeatServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -398,7 +419,11 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     OrchestratorStateRepositoryLive,
     CompactionRepositoryLive,
     MessageRepositoryLive,
-    DocRepositoryLive
+    DocRepositoryLive,
+    MemoryDocumentRepositoryLive,
+    MemoryLinkRepositoryLive,
+    MemoryPropertyRepositoryLive,
+    MemorySourceRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -483,12 +508,20 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   // DocServiceLive needs DocRepository (from repos)
   const docService = DocServiceLive.pipe(Layer.provide(repos))
 
+  // MemoryServiceLive needs memory repos (from repos)
+  const memoryService = MemoryServiceLive.pipe(Layer.provide(repos))
+
+  // MemoryRetrieverServiceLive gracefully degrades (BM25-only when no embeddings)
+  const memoryRetrieverService = MemoryRetrieverServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop))
+  )
+
   // Merge all services
   const runHeartbeatService = RunHeartbeatServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(

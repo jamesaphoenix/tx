@@ -15,7 +15,7 @@ import { Schema } from "effect"
 /**
  * Node types in the graph - entities that can be connected by edges.
  */
-export const NODE_TYPES = ["learning", "file", "task", "run"] as const;
+export const NODE_TYPES = ["learning", "file", "task", "run", "memory"] as const;
 
 /**
  * Edge types - strong ENUMs (fixed ontology, not pluggable).

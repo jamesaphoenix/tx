@@ -387,6 +387,32 @@ export class InvariantNotFoundError extends Data.TaggedError("InvariantNotFoundE
   }
 }
 
+// Memory error types
+
+export class ZeroMagnitudeVectorError extends Data.TaggedError("ZeroMagnitudeVectorError")<{
+  readonly dimensions: number
+}> {
+  get message() {
+    return `Zero-magnitude vector (${this.dimensions} dims): embedding may be corrupted or all-zeros`
+  }
+}
+
+export class MemoryDocumentNotFoundError extends Data.TaggedError("MemoryDocumentNotFoundError")<{
+  readonly id: string
+}> {
+  get message() {
+    return `Memory document not found: ${this.id}`
+  }
+}
+
+export class MemorySourceNotFoundError extends Data.TaggedError("MemorySourceNotFoundError")<{
+  readonly rootDir: string
+}> {
+  get message() {
+    return `Memory source not found: ${this.rootDir}`
+  }
+}
+
 // Agent/Cycle error types (PRD-023 cycle scan)
 
 export class LlmUnavailableError extends Data.TaggedError("LlmUnavailableError")<{
@@ -486,3 +512,5 @@ export type TaskError =
   | LlmUnavailableError
   | AgentError
   | CycleScanError
+  | MemoryDocumentNotFoundError
+  | MemorySourceNotFoundError

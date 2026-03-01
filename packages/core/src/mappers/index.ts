@@ -145,3 +145,14 @@ export {
   isValidInvariantEnforcement,
   isValidInvariantStatus,
 } from "./doc.js"
+
+// Memory mappers
+export {
+  rowToMemoryDocument,
+  rowToMemoryDocumentWithoutEmbedding,
+  rowToMemoryLink,
+  rowToMemorySource,
+  rowToMemoryProperty,
+  isValidLinkType as isValidMemoryLinkType,
+  float32ArrayToBuffer as memoryFloat32ArrayToBuffer,
+} from "./memory.js"
