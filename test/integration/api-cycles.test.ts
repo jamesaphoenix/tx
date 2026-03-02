@@ -20,7 +20,7 @@
 import { beforeEach, describe, it, expect } from "vitest"
 import { Effect } from "effect"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { SqliteClient, TaskService } from "@jamesaphoenix/tx-core"
+import { SqliteClient } from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Types (mirror the route handler types)
