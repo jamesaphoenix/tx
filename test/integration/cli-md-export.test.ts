@@ -21,7 +21,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync } from "fs"
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 
