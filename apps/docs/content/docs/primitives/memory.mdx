@@ -1,0 +1,1090 @@
+---
+title: tx memory
+description: Headless search over markdown directories — index, search, tag, and navigate your knowledge graph
+---
+
+## Purpose
+
+Memory provides filesystem-backed document search over markdown directories. Unlike [learnings](/docs/primitives/learning) (which are structured records stored in SQLite), memory indexes **your existing `.md` files** — project notes, design docs, meeting notes, wikis — and makes them searchable via BM25 keyword search, vector similarity, and graph expansion through wikilinks and frontmatter relationships.
+
+Documents are regular `.md` files with YAML frontmatter. tx indexes them; it does not own them. Your files stay where they are.
+
+## Commands
+
+### Source Management
+
+| Command | Description |
+|---------|-------------|
+| `tx memory source add <dir>` | Register a directory for indexing |
+| `tx memory source rm <dir>` | Unregister a directory |
+| `tx memory source list` | Show registered directories |
+
+### Document Management
+
+| Command | Description |
+|---------|-------------|
+| `tx memory add <title>` | Create a new `.md` file |
+| `tx memory show <id>` | Display a document |
+| `tx memory list` | List indexed documents |
+
+### Search & Indexing
+
+| Command | Description |
+|---------|-------------|
+| `tx memory search <query>` | Search documents (BM25, vector, graph) |
+| `tx memory index` | Index all registered sources |
+
+### Metadata
+
+| Command | Description |
+|---------|-------------|
+| `tx memory tag <id> <tags...>` | Add tags to frontmatter |
+| `tx memory untag <id> <tags...>` | Remove tags from frontmatter |
+| `tx memory set <id> <key> <value>` | Set a frontmatter property |
+| `tx memory unset <id> <key>` | Remove a frontmatter property |
+| `tx memory props <id>` | Show all properties |
+| `tx memory relate <id> <target>` | Add to `frontmatter.related` |
+
+### Graph Navigation
+
+| Command | Description |
+|---------|-------------|
+| `tx memory links <id>` | Outgoing wikilinks + explicit edges |
+| `tx memory backlinks <id>` | Incoming links |
+| `tx memory link <source-id> <target-ref>` | Create an explicit edge |
+
+---
+
+## Key Concepts
+
+### Memory IDs
+
+Every indexed document gets a deterministic ID in the format `mem-<12 hex chars>`, derived from `SHA256(relativePath + rootDir)`. The same file always produces the same ID.
+
+### Link Types
+
+Memory supports three types of links between documents:
+
+| Type | Source | Example |
+|------|--------|---------|
+| `wikilink` | `[[page-name]]` in document body | Auto-detected during indexing |
+| `frontmatter` | `related:` array in YAML frontmatter | Managed via `tx memory relate` |
+| `explicit` | `tx memory link` command | Manual graph edges |
+
+### Reserved Frontmatter Keys
+
+| Key | Managed By | Notes |
+|-----|-----------|-------|
+| `tags` | `tx memory tag` / `tx memory untag` | Array of string tags |
+| `related` | `tx memory relate` | Array of related document references |
+| `created` | Auto-set on creation | ISO 8601 timestamp |
+
+All other frontmatter keys are user-defined and can be managed via `tx memory set` / `tx memory unset`.
+
+---
+
+## Source Management
+
+### tx memory source add
+
+Register a directory of markdown files for indexing.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory source add <dir> [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--label <name>` | Human-readable label for this source |
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# Register a notes directory
+tx memory source add ~/notes
+
+# Register with a label
+tx memory source add ./docs --label "Project Docs"
+
+# Register and output JSON
+tx memory source add ~/wiki --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory source rm
+
+Unregister a directory. This removes the source from the index but does not delete any files.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory source rm <dir> [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# Remove a source
+tx memory source rm ~/old-notes
+
+# Remove with JSON output
+tx memory source rm ./archive --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory source list
+
+Show all registered source directories.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory source list [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# List all sources
+tx memory source list
+
+# JSON output
+tx memory source list --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+## Document Management
+
+### tx memory add
+
+Create a new `.md` file in a registered source directory.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory add <title> [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-c, --content <text>` | Initial document body content |
+| `-t, --tags <tags...>` | Tags to add to frontmatter |
+| `--prop <key=value>` | Set a frontmatter property (repeatable) |
+| `-d, --dir <path>` | Target source directory (defaults to first registered source) |
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# Create a simple document
+tx memory add "Meeting Notes 2024-01-15"
+
+# Create with content and tags
+tx memory add "Auth Architecture" \
+  -c "## Overview\nJWT-based authentication with refresh tokens." \
+  -t architecture auth
+
+# Create with properties and target directory
+tx memory add "Sprint Retro" \
+  --prop sprint=42 --prop team=backend \
+  -d ~/notes/retros
+
+# Create and output JSON
+tx memory add "API Design" -t api design --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory show
+
+Display a document's content and metadata.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory show <id> [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# Show a document
+tx memory show mem-a1b2c3d4e5f6
+
+# Show as JSON
+tx memory show mem-a1b2c3d4e5f6 --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory list
+
+List indexed documents with optional filtering.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory list [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--source <dir>` | Filter by source directory |
+| `-t, --tags <tags...>` | Filter by tags |
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# List all documents
+tx memory list
+
+# Filter by source
+tx memory list --source ~/notes
+
+# Filter by tags
+tx memory list -t architecture design
+
+# Combined filters with JSON
+tx memory list --source ./docs -t api --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+## Search & Indexing
+
+### tx memory search
+
+Search documents using BM25 keyword search, vector similarity, or a combination with graph expansion. This is the primary command for querying the memory graph.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory search <query> [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-s, --semantic` | Use vector similarity search (requires embeddings) |
+| `-e, --expand` | Expand results via wikilinks and `frontmatter.related` |
+| `-t, --tags <tags...>` | Filter by tags |
+| `--prop <key=value>` | Filter by frontmatter property (repeatable) |
+| `-n, --limit <n>` | Maximum results (default: 10) |
+| `--min-score <n>` | Minimum relevance score 0-1 |
+| `--json` | Output as JSON |
+
+**Search Modes:**
+
+| Mode | Flag | How it works |
+|------|------|-------------|
+| Keyword (BM25) | _(default)_ | Full-text search with term frequency scoring |
+| Semantic | `--semantic` | Cosine similarity on embedding vectors |
+| Expanded | `--expand` | Follow wikilinks and `related` edges from initial results |
+| Combined | `--semantic --expand` | RRF (Reciprocal Rank Fusion) across all signals |
+
+**Examples:**
+
+```bash
+# Basic keyword search
+tx memory search "authentication flow"
+
+# Semantic similarity search
+tx memory search "how does login work" --semantic
+
+# Keyword search with graph expansion
+tx memory search "database schema" --expand
+
+# Combined: keyword + semantic + graph expansion
+tx memory search "error handling patterns" --semantic --expand
+
+# Filter by tags and properties
+tx memory search "deployment" -t devops --prop env=production
+
+# Limit results and set minimum score
+tx memory search "react hooks" -n 5 --min-score 0.5
+
+# JSON output for scripting
+tx memory search "API design" --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+### Output
+
+```
+Search results for "authentication flow":
+
+  1. [0.92] auth-architecture.md
+     Tags: architecture, auth | Source: ~/notes
+     JWT-based authentication with refresh token rotation...
+
+  2. [0.78] login-flow.md
+     Tags: auth, frontend | Source: ~/notes
+     User enters credentials → API validates → issues token pair...
+
+  3. [0.61] security-review.md
+     Tags: security | Source: ~/docs
+     OAuth2 PKCE flow recommended for SPA clients...
+```
+
+---
+
+### tx memory index
+
+Index all registered source directories. Scans for `.md` files, parses frontmatter, extracts wikilinks, and updates the search index.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory index [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-i, --incremental` | Only re-index files that changed since last index (based on file hash) |
+| `--status` | Show indexing status (file counts, coverage) without re-indexing |
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# Full re-index
+tx memory index
+
+# Incremental index (skip unchanged files)
+tx memory index --incremental
+
+# Check indexing status
+tx memory index --status
+
+# Incremental with JSON output
+tx memory index -i --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+## Metadata
+
+### tx memory tag
+
+Add tags to a document's YAML frontmatter.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory tag <id> <tags...>
+```
+
+**Examples:**
+
+```bash
+# Add a single tag
+tx memory tag mem-a1b2c3d4e5f6 architecture
+
+# Add multiple tags
+tx memory tag mem-a1b2c3d4e5f6 backend api v2
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory untag
+
+Remove tags from a document's YAML frontmatter.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory untag <id> <tags...>
+```
+
+**Examples:**
+
+```bash
+# Remove a single tag
+tx memory untag mem-a1b2c3d4e5f6 draft
+
+# Remove multiple tags
+tx memory untag mem-a1b2c3d4e5f6 wip experimental
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory set
+
+Set a frontmatter property on a document. Writes to both the YAML frontmatter in the `.md` file and the database index.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory set <id> <key> <value>
+```
+
+**Examples:**
+
+```bash
+# Set a string property
+tx memory set mem-a1b2c3d4e5f6 status "reviewed"
+
+# Set a numeric property
+tx memory set mem-a1b2c3d4e5f6 priority 1
+
+# Set a custom property
+tx memory set mem-a1b2c3d4e5f6 owner "team-backend"
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory unset
+
+Remove a frontmatter property from a document.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory unset <id> <key>
+```
+
+**Examples:**
+
+```bash
+# Remove a property
+tx memory unset mem-a1b2c3d4e5f6 status
+
+# Remove a custom property
+tx memory unset mem-a1b2c3d4e5f6 owner
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory props
+
+Show all frontmatter properties for a document.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory props <id>
+```
+
+**Examples:**
+
+```bash
+tx memory props mem-a1b2c3d4e5f6
+```
+
+### Output
+
+```
+Properties for mem-a1b2c3d4e5f6 (auth-architecture.md):
+
+  tags:     architecture, auth
+  created:  2024-01-15T10:30:00Z
+  status:   reviewed
+  owner:    team-backend
+  related:  login-flow.md, token-refresh.md
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory relate
+
+Add a target document to a document's `frontmatter.related` array. This creates a `frontmatter` link type in the graph.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory relate <id> <target>
+```
+
+**Examples:**
+
+```bash
+# Relate two documents
+tx memory relate mem-a1b2c3d4e5f6 mem-f6e5d4c3b2a1
+
+# Relate by filename
+tx memory relate mem-a1b2c3d4e5f6 login-flow.md
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+## Graph Navigation
+
+### tx memory links
+
+Show outgoing links from a document, including wikilinks parsed from the body and explicit edges.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory links <id>
+```
+
+**Examples:**
+
+```bash
+tx memory links mem-a1b2c3d4e5f6
+```
+
+### Output
+
+```
+Outgoing links from auth-architecture.md:
+
+  [wikilink]    → login-flow.md
+  [wikilink]    → token-refresh.md
+  [frontmatter] → security-review.md
+  [explicit]    → oauth2-spec.md
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory backlinks
+
+Show incoming links to a document from other documents.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory backlinks <id>
+```
+
+**Examples:**
+
+```bash
+tx memory backlinks mem-a1b2c3d4e5f6
+```
+
+### Output
+
+```
+Incoming links to auth-architecture.md:
+
+  [wikilink]    ← api-design.md
+  [frontmatter] ← security-overview.md
+  [explicit]    ← onboarding-guide.md
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+### tx memory link
+
+Create an explicit edge between two documents. This is a manual graph connection that persists independently of document content.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx memory link <source-id> <target-ref>
+```
+
+**Examples:**
+
+```bash
+# Link by memory ID
+tx memory link mem-a1b2c3d4e5f6 mem-f6e5d4c3b2a1
+
+# Link by filename reference
+tx memory link mem-a1b2c3d4e5f6 deployment-guide.md
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+<Callout type="info">
+Memory is currently available via CLI only. SDK support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="MCP">
+
+<Callout type="info">
+Memory is currently available via CLI only. MCP support coming soon.
+</Callout>
+
+</Tab>
+<Tab value="REST API">
+
+<Callout type="info">
+Memory is currently available via CLI only. REST API support coming soon.
+</Callout>
+
+</Tab>
+</Tabs>
+
+---
+
+## Agent Workflow
+
+```bash
+#!/bin/bash
+# Agent uses memory to find relevant context before starting a task
+
+TASK=$(tx ready --json --limit 1 | jq -r '.[0].id')
+TITLE=$(tx show "$TASK" --json | jq -r '.title')
+
+# Search memory for relevant documents
+CONTEXT=$(tx memory search "$TITLE" --semantic --expand --json)
+
+# Feed context into the agent prompt
+claude --print "
+Task: $TASK — $TITLE
+Relevant docs: $CONTEXT
+Read CLAUDE.md, implement the task, then run tx done $TASK
+"
+
+# After completing the task, create a memory document with findings
+tx memory add "Implementation Notes: $TITLE" \
+  -c "## Approach\n...\n## Decisions\n..." \
+  -t implementation "$(echo "$TITLE" | tr ' ' '-')"
+```
+
+## Memory vs Learnings
+
+| Feature | `tx memory` | `tx learning` |
+|---------|------------|---------------|
+| Storage | Filesystem (`.md` files) | SQLite database |
+| Ownership | Your files, tx indexes them | tx owns the records |
+| Structure | YAML frontmatter + markdown body | Flat text with category |
+| Navigation | Graph (wikilinks, related, edges) | Flat list |
+| Search | BM25 + vector + graph expansion | BM25 + vector + recency |
+| Best for | Project docs, notes, wikis | Short insights, patterns, mistakes |
+
+Use **memory** for rich, structured documents with relationships. Use **learnings** for quick insights that should surface in `tx context`.
+
+## Related Commands
+
+- [`tx learning`](/docs/primitives/learning) - Record and search structured knowledge
+- [`tx context`](/docs/primitives/context) - Get learnings relevant to a task

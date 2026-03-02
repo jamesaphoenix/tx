@@ -115,10 +115,35 @@ This creates a `.tx/` directory:
 ```
 .tx/
 ├── tasks.db           # SQLite database (gitignored)
+├── config.toml        # Project configuration with annotated defaults
 ├── tasks.jsonl        # Git-tracked task history
 ├── learnings.jsonl    # Git-tracked learnings
 └── runs.jsonl         # Git-tracked run history
 ```
+
+### Configuration
+
+`tx init` generates `.tx/config.toml` with commented defaults for every setting. Edit it to customize behavior:
+
+```toml
+[docs]
+path = ".tx/docs"                          # Where tx doc files live
+
+[memory]
+default_dir = "docs"                       # Default dir for tx memory add
+
+[cycles]
+agents = 3                                 # Parallel scan agents per cycle
+model = "claude-opus-4-6"                  # LLM model for scan agents
+
+[dashboard]
+default_task_assigment_type = "human"      # Default assignee: "human" | "agent"
+
+[pins]
+target_files = "CLAUDE.md, AGENTS.md"      # Files that tx pin sync writes to
+```
+
+See the generated file for full documentation on each setting, or the relevant primitive docs linked in the comments.
 
 ## Watchdog Onboarding (Opt-In)
 
@@ -270,6 +295,32 @@ The server binds to `http://localhost:3456` by default. Available options:
 | `--db` | `TX_DB_PATH` | `.tx/tasks.db` | Path to SQLite database |
 | -- | `TX_API_KEY` | -- | API key for authentication (optional) |
 
+## Memory & File-Based Knowledge
+
+tx provides a headless search system for markdown files. Use it to index and retrieve knowledge from your codebase:
+
+```bash
+# Register a directory of markdown files
+tx memory source add ./docs
+
+# Index all markdown files in registered sources
+tx memory index
+
+# Search for knowledge by keyword or semantic similarity
+tx memory search "authentication"
+
+# Display a specific document
+tx memory show mem-abc123
+```
+
+The memory system is perfect for:
+- Storing design docs, architecture decisions, and runbooks
+- Indexing README files, guides, and inline documentation
+- Semantic search across your knowledge base
+- Automatic context injection for related tasks
+
+Memory and learnings are complementary: **learnings** capture task-specific insights; **memory** surfaces file-based knowledge across your entire project.
+
 ## Your First Agent Loop
 
 The simplest agent loop pulls tasks one at a time:
@@ -365,6 +416,7 @@ tx done $task
 your-project/
 ├── .tx/
 │   ├── tasks.db           # SQLite (gitignored)
+│   ├── config.toml        # Project configuration
 │   ├── tasks.jsonl        # Tasks (git-tracked)
 │   ├── learnings.jsonl    # Learnings (git-tracked)
 │   └── runs.jsonl         # Run history (git-tracked)
@@ -404,7 +456,10 @@ tx group-context:set <id> <context>   # Attach shared task-group context
 tx group-context:clear <id>           # Clear shared task-group context
 
 # Memory
-tx learning:add <content>   # Store learning
+tx memory source add <dir>  # Register markdown directory
+tx memory index             # Index all sources
+tx memory search <query>    # Search documents
+tx learning:add <content>   # Store task learning
 tx learning:search <query>  # Find learnings
 tx context <task-id>        # Get relevant context
 

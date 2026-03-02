@@ -10,7 +10,8 @@ import { CycleScanService } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { flag, opt, parseIntOpt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"
-import type { CycleProgressEvent } from "@jamesaphoenix/tx-types"
+import { AGENT_RUNTIMES } from "@jamesaphoenix/tx-types"
+import type { CycleProgressEvent, AgentRuntime } from "@jamesaphoenix/tx-types"
 
 /** Dispatch cycle command. */
 export const cycle = (
@@ -35,6 +36,7 @@ export const cycle = (
       console.error("  --max-rounds <N>           Max rounds per cycle (default: 10)")
       console.error("  --agents <N>               Parallel scan agents per round (default: 3)")
       console.error("  --model <model>            LLM model (default: claude-opus-4-6)")
+      console.error("  --runtime <runtime>        Agent runtime: claude, codex, auto (default: auto)")
       console.error("  --fix                      Enable fix agent between scan rounds")
       console.error("  --scan-only                Skip fix phase (explicit default)")
       console.error("  --dry-run                  Report only, no DB writes")
@@ -57,6 +59,12 @@ export const cycle = (
     const name = opt(flags, "name")
     const description = opt(flags, "description")
     const model = opt(flags, "model") ?? "claude-opus-4-6"
+    const runtimeRaw = opt(flags, "runtime") ?? "auto"
+    if (!(AGENT_RUNTIMES as readonly string[]).includes(runtimeRaw)) {
+      console.error(`Error: invalid --runtime "${runtimeRaw}". Must be one of: ${AGENT_RUNTIMES.join(", ")}`)
+      throw new CliExitError(1)
+    }
+    const runtime = runtimeRaw as AgentRuntime
     const doFix = flag(flags, "fix")
     const scanOnly = flag(flags, "scan-only")
     const dryRun = flag(flags, "dry-run")
@@ -73,7 +81,7 @@ export const cycle = (
       console.log(
         `  Cycles: ${cycles}, Max rounds: ${effectiveMaxRounds}${effectiveMaxRounds !== maxRounds ? ` (capped from ${maxRounds} — no fix agent)` : ""}, Agents: ${agents}`
       )
-      console.log(`  Model: ${model}, Fix: ${doFix}, Scan-only: ${scanOnly}, Dry-run: ${dryRun}`)
+      console.log(`  Model: ${model}, Runtime: ${runtime}, Fix: ${doFix}, Scan-only: ${scanOnly}, Dry-run: ${dryRun}`)
       console.log()
     }
 
@@ -134,6 +142,7 @@ export const cycle = (
         maxRounds,
         agents,
         model,
+        runtime,
         fix: doFix,
         scanOnly,
         dryRun,

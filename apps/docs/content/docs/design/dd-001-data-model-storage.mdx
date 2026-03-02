@@ -50,8 +50,10 @@ WAL mode is set once on database creation via `tx init` and persists across conn
 project/
 └── .tx/
     ├── tasks.db        # SQLite database
-    ├── config.json     # Optional configuration
-    └── exports/        # JSON exports (optional)
+    ├── config.toml     # Project configuration (created by tx init)
+    ├── tasks.jsonl     # Git-tracked task history
+    ├── learnings.jsonl # Git-tracked learnings
+    └── runs.jsonl      # Git-tracked run history
 ```
 
 The `.tx` directory:

@@ -48,7 +48,7 @@ Composable primitives that handle the hard parts. You keep control of the orches
 ├─────────────────────────────────────────────────────────┤
 │  tx primitives                                          │
 │                                                         │
-│   tx ready     tx done      tx context    tx learn      │
+│   tx ready     tx done      tx context    tx memory     │
 │   tx claim     tx block     tx sync       tx trace      │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -60,12 +60,36 @@ Composable primitives that handle the hard parts. You keep control of the orches
 
 ### Memory
 
-Learnings that persist and surface when relevant.
+Filesystem-backed knowledge that persists, links, and surfaces when relevant.
+
+```bash
+# Register a directory of markdown files
+tx memory source add ./docs
+
+# Index and search your knowledge
+tx memory index
+tx memory search "authentication patterns"
+tx memory search "auth" --semantic --expand   # BM25 + vector + graph
+
+# Create, tag, and link documents
+tx memory add "JWT Guide" --tags auth,security
+tx memory tag mem-a7f3bc12 reviewed
+tx memory link mem-a7f3bc12 mem-b8e4cd56
+
+# Navigate the knowledge graph
+tx memory links mem-a7f3bc12       # Outgoing wikilinks + edges
+tx memory backlinks mem-a7f3bc12   # What links to this?
+```
+
+Three search modes: BM25 keyword search, vector similarity (`--semantic`), and graph expansion (`--expand`) via wikilinks and `frontmatter.related`. Combined with RRF fusion for best results.
+
+### Learnings
+
+Structured insights that attach to tasks and file paths.
 
 ```bash
 # Store knowledge
 tx learning:add "Use bcrypt for passwords, not SHA256"
-tx learning:add "Redis cache invalidation has race conditions" -c database
 
 # Attach learnings to file paths
 tx learn "src/auth/*.ts" "Services must use Effect-TS patterns"
@@ -217,7 +241,7 @@ Detailed rollout, detached service setup, rollback, and troubleshooting:
 |---|---|---|---|
 | **Persistence** | Session-scoped | File grows forever | Git-native, branch-aware |
 | **Multi-agent** | Collisions | Manual coordination | Claim with lease expiry |
-| **Knowledge** | Lost each session | Static dump | Hybrid search, contextual retrieval |
+| **Knowledge** | Lost each session | Static dump | Filesystem memory, hybrid search, graph links |
 | **Orchestration** | None | None | Primitives for any pattern |
 
 ---
@@ -269,6 +293,25 @@ tx block <id> <blocker>     # Add dependency
 tx unblock <id> <blocker>   # Remove dependency
 tx children <id>            # List child tasks
 tx tree <id>                # Show hierarchy
+
+# Memory (filesystem-backed .md search)
+tx memory source add <dir>  # Register directory
+tx memory source rm <dir>   # Unregister directory
+tx memory source list       # Show registered directories
+tx memory add <title>       # Create .md file (--content, --tags, --dir)
+tx memory index             # Index all sources (--incremental, --status)
+tx memory search <query>    # BM25 search (--semantic, --expand, --tags, --prop)
+tx memory show <id>         # Display document
+tx memory tag <id> <tags>   # Add tags to frontmatter
+tx memory untag <id> <t>    # Remove tags
+tx memory relate <id> <t>   # Add to frontmatter.related
+tx memory set <id> <k> <v>  # Set property
+tx memory unset <id> <k>    # Remove property
+tx memory props <id>        # Show properties
+tx memory links <id>        # Outgoing wikilinks + edges
+tx memory backlinks <id>    # Incoming links
+tx memory list              # List documents (--source, --tags)
+tx memory link <src> <tgt>  # Create explicit edge
 
 # Context & Learnings
 tx learning:add <content>   # Store knowledge
