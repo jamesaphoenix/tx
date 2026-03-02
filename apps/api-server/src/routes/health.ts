@@ -53,7 +53,7 @@ export const HealthLive = HttpApiBuilder.group(TxApi, "health", (handlers) =>
             path: dbPath,
           },
         }
-      })
+      }).pipe(Effect.mapError(mapCoreError))
     )
 
     .handle("stats", () =>
@@ -126,6 +126,6 @@ export const HealthLive = HttpApiBuilder.group(TxApi, "health", (handlers) =>
             status: "started" | "completed" | "failed"
           }>,
         }
-      })
+      }).pipe(Effect.mapError(mapCoreError))
     )
 )

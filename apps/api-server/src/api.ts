@@ -16,12 +16,19 @@ import {
   RunSerializedSchema,
   MessageSerializedSchema,
   PinSerializedSchema,
+  MemoryDocumentSerializedSchema,
+  MemoryDocumentWithScoreSerializedSchema,
+  MemorySourceSchema,
+  MemoryLinkSchema,
+  MemoryPropertySchema,
+  MemoryIndexStatusSchema,
   TASK_STATUSES,
   LEARNING_SOURCE_TYPES,
   RUN_STATUSES,
   DOC_KINDS,
   DOC_STATUSES,
   DOC_LINK_TYPES,
+  INVARIANT_ENFORCEMENT_TYPES,
   DocGraphNodeSchema,
   DocGraphEdgeSchema,
 } from "@jamesaphoenix/tx-types"
@@ -89,8 +96,16 @@ export const mapCoreError = (
       case "RunNotFoundError":
       case "DocNotFoundError":
       case "InvariantNotFoundError":
+      case "ClaimNotFoundError":
+      case "ClaimIdNotFoundError":
+      case "MemoryDocumentNotFoundError":
+      case "MemorySourceNotFoundError":
         return new NotFound({ message })
       case "MessageAlreadyAckedError":
+        return new BadRequest({ message })
+      case "AlreadyClaimedError":
+      case "LeaseExpiredError":
+      case "MaxRenewalsExceededError":
         return new BadRequest({ message })
       case "ValidationError":
       case "CircularDependencyError":
@@ -99,7 +114,12 @@ export const mapCoreError = (
       case "DocLockedError":
         return new BadRequest({ message })
       case "EmbeddingUnavailableError":
+      case "RetrievalError":
         return new ServiceUnavailable({ message })
+      case "EmbeddingDimensionMismatchError":
+      case "ZeroMagnitudeVectorError":
+      case "DependencyNotFoundError":
+        return new BadRequest({ message })
       case "DatabaseError":
         // Don't expose raw SQLite error messages (may contain SQL, schema details)
         return new InternalError({ message: "Internal server error" })
@@ -260,6 +280,38 @@ const SetGroupContextBody = Schema.Struct({
   context: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(20000)),
 })
 
+// Claim schemas
+const ClaimBody = Schema.Struct({
+  workerId: Schema.String.pipe(Schema.minLength(1)),
+  leaseDurationMinutes: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+})
+
+const ReleaseClaimBody = Schema.Struct({
+  workerId: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const RenewClaimBody = Schema.Struct({
+  workerId: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const ClaimResponse = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  taskId: Schema.String,
+  workerId: Schema.String,
+  claimedAt: Schema.String,
+  leaseExpiresAt: Schema.String,
+  renewedCount: Schema.Number.pipe(Schema.int()),
+  status: Schema.String,
+})
+
+const ClaimNullableResponse = Schema.Struct({
+  claim: Schema.NullOr(ClaimResponse),
+})
+
+const ClaimReleaseResponse = Schema.Struct({
+  success: Schema.Boolean,
+})
+
 export const TasksGroup = HttpApiGroup.make("tasks")
   .add(
     HttpApiEndpoint.get("listTasks", "/api/tasks")
@@ -325,6 +377,25 @@ export const TasksGroup = HttpApiGroup.make("tasks")
     HttpApiEndpoint.get("getTaskTree")`/api/tasks/${TaskIdParam}/tree`
       .addSuccess(TaskTreeResponse)
   )
+  .add(
+    HttpApiEndpoint.post("claimTask")`/api/tasks/${TaskIdParam}/claim`
+      .setPayload(ClaimBody)
+      .addSuccess(ClaimResponse, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.del("releaseTaskClaim")`/api/tasks/${TaskIdParam}/claim`
+      .setPayload(ReleaseClaimBody)
+      .addSuccess(ClaimReleaseResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("renewTaskClaim")`/api/tasks/${TaskIdParam}/claim/renew`
+      .setPayload(RenewClaimBody)
+      .addSuccess(ClaimResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getTaskClaim")`/api/tasks/${TaskIdParam}/claim`
+      .addSuccess(ClaimNullableResponse)
+  )
 
 // =============================================================================
 // LEARNINGS GROUP
@@ -359,12 +430,20 @@ const HelpfulnessResponse = Schema.Struct({
   score: Schema.Number,
 })
 
+const GraphExpansionStatsResponse = Schema.Struct({
+  enabled: Schema.Boolean,
+  seedCount: Schema.Number.pipe(Schema.int()),
+  expandedCount: Schema.Number.pipe(Schema.int()),
+  maxDepthReached: Schema.Number.pipe(Schema.int()),
+})
+
 const ContextResponse = Schema.Struct({
   taskId: Schema.String,
   taskTitle: Schema.String,
   learnings: Schema.Array(LearningWithScoreSerializedSchema),
   searchQuery: Schema.String,
   searchDuration: Schema.Number,
+  graphExpansion: Schema.optional(GraphExpansionStatsResponse),
 })
 
 const FileLearningListResponse = Schema.Struct({
@@ -1017,6 +1096,247 @@ export const PinsGroup = HttpApiGroup.make("pins")
   )
 
 // =============================================================================
+// MEMORY GROUP
+// =============================================================================
+
+const MemoryDocIdParam = HttpApiSchema.param("id", Schema.String.pipe(
+  Schema.pattern(/^mem-[a-f0-9]{12}$/)
+))
+
+const PropKeyParam = HttpApiSchema.param("key", Schema.String.pipe(Schema.minLength(1)))
+
+const AddSourceBody = Schema.Struct({
+  dir: Schema.String.pipe(Schema.minLength(1)),
+  label: Schema.optional(Schema.String),
+})
+
+const RemoveSourceBody = Schema.Struct({
+  dir: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const SourceListResponse = Schema.Struct({
+  sources: Schema.Array(MemorySourceSchema),
+})
+
+const CreateMemoryDocBody = Schema.Struct({
+  title: Schema.String.pipe(Schema.minLength(1)),
+  content: Schema.optional(Schema.String),
+  tags: Schema.optional(Schema.Array(Schema.String)),
+  properties: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+  dir: Schema.optional(Schema.String),
+})
+
+const MemoryDocListResponse = Schema.Struct({
+  documents: Schema.Array(MemoryDocumentSerializedSchema),
+})
+
+const MemorySearchResponse = Schema.Struct({
+  results: Schema.Array(MemoryDocumentWithScoreSerializedSchema),
+})
+
+const IndexDocumentsBody = Schema.Struct({
+  incremental: Schema.optional(Schema.Boolean),
+})
+
+const IndexResultResponse = Schema.Struct({
+  indexed: Schema.Number.pipe(Schema.int()),
+  skipped: Schema.Number.pipe(Schema.int()),
+  removed: Schema.Number.pipe(Schema.int()),
+})
+
+const AddTagsBody = Schema.Struct({
+  tags: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+})
+
+const RemoveTagsBody = Schema.Struct({
+  tags: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+})
+
+const AddRelationBody = Schema.Struct({
+  target: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const SetPropertyBody = Schema.Struct({
+  value: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const PropertiesResponse = Schema.Struct({
+  properties: Schema.Array(MemoryPropertySchema),
+})
+
+const LinksResponse = Schema.Struct({
+  links: Schema.Array(MemoryLinkSchema),
+})
+
+const CreateLinkBody = Schema.Struct({
+  sourceId: Schema.String.pipe(Schema.pattern(/^mem-[a-f0-9]{12}$/)),
+  targetRef: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const SuccessResponse = Schema.Struct({
+  success: Schema.Boolean,
+})
+
+const MemoryDocListParams = Schema.Struct({
+  source: Schema.optional(Schema.String),
+  tags: Schema.optional(Schema.String),
+})
+
+const MemorySearchParams = Schema.Struct({
+  query: Schema.String.pipe(Schema.minLength(1)),
+  limit: Schema.optional(Schema.NumberFromString.pipe(Schema.int())),
+  minScore: Schema.optional(Schema.NumberFromString),
+  semantic: Schema.optional(Schema.String),
+  expand: Schema.optional(Schema.String),
+  tags: Schema.optional(Schema.String),
+  props: Schema.optional(Schema.String),
+})
+
+export const MemoryGroup = HttpApiGroup.make("memory")
+  .add(
+    HttpApiEndpoint.post("addSource", "/api/memory/sources")
+      .setPayload(AddSourceBody)
+      .addSuccess(MemorySourceSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.del("removeSource", "/api/memory/sources")
+      .setPayload(RemoveSourceBody)
+      .addSuccess(SuccessResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("listSources", "/api/memory/sources")
+      .addSuccess(SourceListResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("createMemoryDocument", "/api/memory/documents")
+      .setPayload(CreateMemoryDocBody)
+      .addSuccess(MemoryDocumentSerializedSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.get("getMemoryDocument")`/api/memory/documents/${MemoryDocIdParam}`
+      .addSuccess(MemoryDocumentSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.get("listMemoryDocuments", "/api/memory/documents")
+      .setUrlParams(MemoryDocListParams)
+      .addSuccess(MemoryDocListResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("searchMemoryDocuments", "/api/memory/search")
+      .setUrlParams(MemorySearchParams)
+      .addSuccess(MemorySearchResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("indexMemoryDocuments", "/api/memory/index")
+      .setPayload(IndexDocumentsBody)
+      .addSuccess(IndexResultResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getMemoryIndexStatus", "/api/memory/index/status")
+      .addSuccess(MemoryIndexStatusSchema)
+  )
+  .add(
+    HttpApiEndpoint.post("addMemoryTags")`/api/memory/documents/${MemoryDocIdParam}/tags`
+      .setPayload(AddTagsBody)
+      .addSuccess(MemoryDocumentSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.del("removeMemoryTags")`/api/memory/documents/${MemoryDocIdParam}/tags`
+      .setPayload(RemoveTagsBody)
+      .addSuccess(MemoryDocumentSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.post("addMemoryRelation")`/api/memory/documents/${MemoryDocIdParam}/relate`
+      .setPayload(AddRelationBody)
+      .addSuccess(MemoryDocumentSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.put("setMemoryProperty")`/api/memory/documents/${MemoryDocIdParam}/props/${PropKeyParam}`
+      .setPayload(SetPropertyBody)
+      .addSuccess(SuccessResponse)
+  )
+  .add(
+    HttpApiEndpoint.del("removeMemoryProperty")`/api/memory/documents/${MemoryDocIdParam}/props/${PropKeyParam}`
+      .addSuccess(SuccessResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getMemoryProperties")`/api/memory/documents/${MemoryDocIdParam}/props`
+      .addSuccess(PropertiesResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getMemoryLinks")`/api/memory/documents/${MemoryDocIdParam}/links`
+      .addSuccess(LinksResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getMemoryBacklinks")`/api/memory/documents/${MemoryDocIdParam}/backlinks`
+      .addSuccess(LinksResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("createMemoryLink", "/api/memory/links")
+      .setPayload(CreateLinkBody)
+      .addSuccess(SuccessResponse, { status: 201 })
+  )
+
+// =============================================================================
+// INVARIANTS GROUP
+// =============================================================================
+
+const InvariantIdParam = HttpApiSchema.param("id", Schema.String.pipe(Schema.minLength(1)))
+
+const InvariantSerializedSchema = Schema.Struct({
+  id: Schema.String,
+  rule: Schema.String,
+  enforcement: Schema.Literal(...INVARIANT_ENFORCEMENT_TYPES),
+  docId: Schema.Number.pipe(Schema.int()),
+  subsystem: Schema.NullOr(Schema.String),
+  status: Schema.String,
+  testRef: Schema.NullOr(Schema.String),
+  lintRule: Schema.NullOr(Schema.String),
+  promptRef: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+})
+
+const InvariantCheckSerializedSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  invariantId: Schema.String,
+  passed: Schema.Boolean,
+  details: Schema.NullOr(Schema.String),
+  durationMs: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  checkedAt: Schema.String,
+})
+
+const InvariantListResponse = Schema.Struct({
+  invariants: Schema.Array(InvariantSerializedSchema),
+})
+
+const InvariantListParams = Schema.Struct({
+  subsystem: Schema.optional(Schema.String),
+  enforcement: Schema.optional(Schema.String),
+})
+
+const RecordCheckBody = Schema.Struct({
+  passed: Schema.Boolean,
+  details: Schema.optional(Schema.String),
+  durationMs: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0))),
+})
+
+export const InvariantsGroup = HttpApiGroup.make("invariants")
+  .add(
+    HttpApiEndpoint.get("listInvariants", "/api/invariants")
+      .setUrlParams(InvariantListParams)
+      .addSuccess(InvariantListResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getInvariant")`/api/invariants/${InvariantIdParam}`
+      .addSuccess(InvariantSerializedSchema)
+  )
+  .add(
+    HttpApiEndpoint.post("recordInvariantCheck")`/api/invariants/${InvariantIdParam}/check`
+      .setPayload(RecordCheckBody)
+      .addSuccess(InvariantCheckSerializedSchema, { status: 201 })
+  )
+
+// =============================================================================
 // TOP-LEVEL API
 // =============================================================================
 
@@ -1035,4 +1355,6 @@ export class TxApi extends HttpApi.make("tx")
   .add(MessagesGroup)
   .add(CyclesGroup)
   .add(DocsGroup)
-  .add(PinsGroup) {}
+  .add(PinsGroup)
+  .add(MemoryGroup)
+  .add(InvariantsGroup) {}

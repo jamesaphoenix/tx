@@ -252,6 +252,12 @@ Once configured, your AI assistant has access to these tools:
 | `tx_group_context_clear` | Clear task-group context |
 | `tx_show` | View task details |
 | `tx_context` | Get relevant learnings |
+| `tx_memory_search` | Search memory documents |
+| `tx_memory_source_add` | Register directory for indexing |
+| `tx_memory_index` | Index all sources |
+| `tx_pin_set` | Set a persistent pin |
+| `tx_pin_get` | Get a pin by ID |
+| `tx_pin_list` | List all pins |
 
 Example prompt: *"Use tx_ready to find the highest priority task, then work on it and mark it done with tx_done."*
 
@@ -299,6 +305,9 @@ The server binds to `http://localhost:3456` by default. Available options:
 
 tx provides a headless search system for markdown files. Use it to index and retrieve knowledge from your codebase:
 
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
 ```bash
 # Register a directory of markdown files
 tx memory source add ./docs
@@ -312,6 +321,60 @@ tx memory search "authentication"
 # Display a specific document
 tx memory show mem-abc123
 ```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Register and index
+await tx.memorySourceAdd('./docs', 'Project Docs')
+await tx.memoryIndex()
+
+// Search
+const results = await tx.memorySearch({ query: 'authentication' })
+for (const doc of results) {
+  console.log(`[${doc.relevanceScore.toFixed(2)}] ${doc.title}`)
+}
+
+// Show a document
+const doc = await tx.memoryDocumentGet('mem-abc123def456')
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{ "tool": "tx_memory_source_add", "arguments": { "dir": "./docs" } }
+{ "tool": "tx_memory_index", "arguments": {} }
+{ "tool": "tx_memory_search", "arguments": { "query": "authentication" } }
+{ "tool": "tx_memory_show", "arguments": { "id": "mem-abc123def456" } }
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+# Register a source directory
+curl -X POST http://localhost:3456/api/memory/sources \
+  -H "Content-Type: application/json" \
+  -d '{"dir": "./docs"}'
+
+# Index all sources
+curl -X POST http://localhost:3456/api/memory/index
+
+# Search
+curl "http://localhost:3456/api/memory/search?query=authentication"
+
+# Show a document
+curl http://localhost:3456/api/memory/documents/mem-abc123def456
+```
+
+</Tab>
+</Tabs>
 
 The memory system is perfect for:
 - Storing design docs, architecture decisions, and runbooks

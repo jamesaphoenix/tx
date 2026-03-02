@@ -7,60 +7,24 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import z from "zod"
-import type { Learning, LearningWithScore, FileLearning, LearningSourceType } from "@jamesaphoenix/tx-types"
-import { LEARNING_SOURCE_TYPES, assertTaskId } from "@jamesaphoenix/tx-types"
+import type { LearningSourceType } from "@jamesaphoenix/tx-types"
+import {
+  LEARNING_SOURCE_TYPES,
+  assertTaskId,
+  serializeLearning,
+  serializeLearningWithScore,
+  serializeFileLearning,
+} from "@jamesaphoenix/tx-types"
+
+// Re-export canonical serializers for library consumers
+export { serializeLearning, serializeLearningWithScore, serializeFileLearning } from "@jamesaphoenix/tx-types"
 import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 
-// -----------------------------------------------------------------------------
-// Serialization
-// -----------------------------------------------------------------------------
-
-/**
- * Serialize a Learning for JSON output.
- * Converts Date objects to ISO strings.
- * Embeddings are omitted (null) to avoid serialization overhead —
- * Float32Array → Array.from() → JSON.stringify is expensive and
- * MCP consumers never need raw embedding vectors.
- */
-export const serializeLearning = (learning: Learning): Record<string, unknown> => ({
-  id: learning.id,
-  content: learning.content,
-  sourceType: learning.sourceType,
-  sourceRef: learning.sourceRef,
-  createdAt: learning.createdAt.toISOString(),
-  keywords: learning.keywords,
-  category: learning.category,
-  usageCount: learning.usageCount,
-  lastUsedAt: learning.lastUsedAt?.toISOString() ?? null,
-  outcomeScore: learning.outcomeScore,
-  embedding: null
-})
-
-/**
- * Serialize a LearningWithScore for JSON output.
- * Extends serializeLearning with score fields.
- */
-export const serializeLearningWithScore = (learning: LearningWithScore): Record<string, unknown> => ({
-  ...serializeLearning(learning),
-  relevanceScore: learning.relevanceScore,
-  bm25Score: learning.bm25Score,
-  vectorScore: learning.vectorScore,
-  recencyScore: learning.recencyScore
-})
-
-/**
- * Serialize a FileLearning for JSON output.
- */
-export const serializeFileLearning = (learning: FileLearning): Record<string, unknown> => ({
-  id: learning.id,
-  filePattern: learning.filePattern,
-  note: learning.note,
-  taskId: learning.taskId,
-  createdAt: learning.createdAt.toISOString()
-})
+// Serialization: uses canonical serializers from @jamesaphoenix/tx-types
+// (serializeLearning, serializeLearningWithScore, serializeFileLearning)
 
 // -----------------------------------------------------------------------------
 // Tool Handlers (extracted to avoid deep type inference)

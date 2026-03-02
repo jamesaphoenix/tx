@@ -96,6 +96,7 @@ export const LearningsLive = HttpApiBuilder.group(TxApi, "learnings", (handlers)
           learnings: result.learnings.map(serializeLearningWithScore),
           searchQuery: result.searchQuery,
           searchDuration: result.searchDuration,
+          ...(result.graphExpansion ? { graphExpansion: result.graphExpansion } : {}),
         }
       }).pipe(Effect.mapError(mapCoreError))
     )

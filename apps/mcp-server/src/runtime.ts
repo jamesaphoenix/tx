@@ -18,7 +18,11 @@ import {
   MessageService,
   DocService,
   RunHeartbeatService,
-  PinService
+  PinService,
+  ClaimService,
+  MemoryService,
+  MemoryRetrieverService,
+  SqliteClient,
 } from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
@@ -37,6 +41,10 @@ export type McpServices =
   | DocService
   | RunHeartbeatService
   | PinService
+  | ClaimService
+  | MemoryService
+  | MemoryRetrieverService
+  | SqliteClient
 
 // -----------------------------------------------------------------------------
 // Runtime State

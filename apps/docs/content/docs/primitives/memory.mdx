@@ -119,23 +119,60 @@ tx memory source add ~/wiki --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Register a directory
+const source = await tx.memorySourceAdd('/Users/me/notes')
+// Returns: { id, rootDir, label, createdAt }
+
+// Register with a label
+const docs = await tx.memorySourceAdd('./docs', 'Project Docs')
+console.log(`Registered: ${docs.rootDir} (${docs.label})`)
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_source_add",
+  "arguments": {
+    "dir": "/Users/me/notes",
+    "label": "Project Notes"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `dir` | Yes | Absolute path to directory to register |
+| `label` | No | Human-readable label for this source |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+POST /api/memory/sources
+Content-Type: application/json
+
+{
+  "dir": "/Users/me/notes",
+  "label": "Project Notes"
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/memory/sources \
+  -H "Content-Type: application/json" \
+  -d '{"dir": "/Users/me/notes", "label": "Project Notes"}'
+```
 
 </Tab>
 </Tabs>
@@ -172,23 +209,51 @@ tx memory source rm ./archive --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.memorySourceRemove('/Users/me/old-notes')
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_source_rm",
+  "arguments": {
+    "dir": "/Users/me/old-notes"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `dir` | Yes | Directory path to unregister |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+DELETE /api/memory/sources
+Content-Type: application/json
+
+{
+  "dir": "/Users/me/old-notes"
+}
+```
+
+### Example
+
+```bash
+curl -X DELETE http://localhost:3456/api/memory/sources \
+  -H "Content-Type: application/json" \
+  -d '{"dir": "/Users/me/old-notes"}'
+```
 
 </Tab>
 </Tabs>
@@ -225,23 +290,41 @@ tx memory source list --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const sources = await tx.memorySourceList()
+// Returns: Array<{ id, rootDir, label, createdAt }>
+
+for (const src of sources) {
+  console.log(`${src.rootDir} (${src.label ?? 'no label'})`)
+}
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_source_list",
+  "arguments": {}
+}
+```
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+GET /api/memory/sources
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/memory/sources
+```
 
 </Tab>
 </Tabs>
@@ -294,23 +377,71 @@ tx memory add "API Design" -t api design --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const doc = await tx.memoryDocumentCreate({
+  title: 'Auth Architecture',
+  content: '## Overview\nJWT-based authentication with refresh tokens.',
+  tags: ['architecture', 'auth'],
+  properties: { status: 'draft', sprint: '42' },
+  dir: '/Users/me/notes',
+})
+// Returns: { id, filePath, rootDir, title, content, tags, ... }
+
+console.log(`Created: ${doc.id} at ${doc.filePath}`)
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_add",
+  "arguments": {
+    "title": "Auth Architecture",
+    "content": "## Overview\nJWT-based authentication with refresh tokens.",
+    "tags": ["architecture", "auth"],
+    "properties": { "status": "draft" },
+    "dir": "/Users/me/notes"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `title` | Yes | Document title (used to generate filename) |
+| `content` | No | Initial body content |
+| `tags` | No | Frontmatter tags |
+| `properties` | No | Key-value properties for frontmatter |
+| `dir` | No | Target directory (default: first registered source) |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+POST /api/memory/documents
+Content-Type: application/json
+
+{
+  "title": "Auth Architecture",
+  "content": "## Overview\nJWT-based authentication with refresh tokens.",
+  "tags": ["architecture", "auth"],
+  "properties": { "status": "draft" }
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/memory/documents \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Auth Architecture", "tags": ["architecture", "auth"]}'
+```
 
 </Tab>
 </Tabs>
@@ -347,23 +478,48 @@ tx memory show mem-a1b2c3d4e5f6 --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const doc = await tx.memoryDocumentGet('mem-a1b2c3d4e5f6')
+// Returns: { id, filePath, rootDir, title, content, tags, frontmatter, ... }
+
+console.log(doc.title)
+console.log(doc.content)
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_show",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID (e.g. `mem-abc123def456`) |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+GET /api/memory/documents/:id
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6
+```
 
 </Tab>
 </Tabs>
@@ -408,23 +564,62 @@ tx memory list --source ./docs -t api --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// List all documents
+const docs = await tx.memoryDocumentList()
+
+// Filter by source and tags
+const filtered = await tx.memoryDocumentList({
+  source: '/Users/me/notes',
+  tags: ['architecture'],
+})
+// Returns: Array<{ id, filePath, rootDir, title, content, tags, ... }>
+
+for (const doc of filtered) {
+  console.log(`${doc.id}: ${doc.title}`)
+}
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_list",
+  "arguments": {
+    "source": "/Users/me/notes",
+    "tags": ["architecture"]
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `source` | No | Filter by source directory path |
+| `tags` | No | Filter by tags (documents must have all specified tags) |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+GET /api/memory/documents?source=/Users/me/notes&tags=architecture,auth
+```
+
+### Example
+
+```bash
+# List all documents
+curl http://localhost:3456/api/memory/documents
+
+# Filter by source and tags
+curl "http://localhost:3456/api/memory/documents?source=/Users/me/notes&tags=architecture"
+```
 
 </Tab>
 </Tabs>
@@ -493,23 +688,75 @@ tx memory search "API design" --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Basic keyword search
+const results = await tx.memorySearch({ query: 'authentication flow' })
+
+// Combined: semantic + graph expansion with filters
+const expanded = await tx.memorySearch({
+  query: 'error handling patterns',
+  semantic: true,
+  expand: true,
+  limit: 5,
+  minScore: 0.3,
+  tags: ['backend'],
+  props: { env: 'production' },
+})
+// Returns: Array<{ id, title, content, relevanceScore, bm25Score, vectorScore, ... }>
+
+for (const doc of expanded) {
+  console.log(`[${doc.relevanceScore.toFixed(2)}] ${doc.title}`)
+}
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_search",
+  "arguments": {
+    "query": "authentication flow",
+    "semantic": true,
+    "expand": true,
+    "limit": 5,
+    "tags": ["backend"]
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | Search query text |
+| `limit` | No | Maximum results (default: 100) |
+| `minScore` | No | Minimum relevance score 0-1 |
+| `semantic` | No | Enable vector similarity search |
+| `expand` | No | Enable graph expansion via wikilinks |
+| `tags` | No | Filter results by tags |
+| `props` | No | Filter by properties (format: `key=value` or `key`) |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+GET /api/memory/search?query=authentication+flow&semantic=true&expand=true&limit=5
+```
+
+### Example
+
+```bash
+# Basic keyword search
+curl "http://localhost:3456/api/memory/search?query=authentication+flow"
+
+# Combined search with filters
+curl "http://localhost:3456/api/memory/search?query=error+handling&semantic=true&expand=true&limit=5&tags=backend"
+```
 
 </Tab>
 </Tabs>
@@ -572,23 +819,78 @@ tx memory index -i --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Full re-index
+const result = await tx.memoryIndex()
+// Returns: { indexed, skipped, removed }
+
+console.log(`Indexed: ${result.indexed}, Skipped: ${result.skipped}`)
+
+// Incremental index (only changed files)
+const incremental = await tx.memoryIndex({ incremental: true })
+
+// Check indexing status
+const status = await tx.memoryIndexStatus()
+// Returns: { totalFiles, indexed, stale, embedded, links, sources }
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_index",
+  "arguments": {
+    "incremental": true
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `incremental` | No | If true, only re-index changed files |
+
+For index status, use:
+
+```json
+{
+  "tool": "tx_memory_index_status",
+  "arguments": {}
+}
+```
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+POST /api/memory/index
+Content-Type: application/json
+
+{
+  "incremental": true
+}
+```
+
+### Examples
+
+```bash
+# Full re-index
+curl -X POST http://localhost:3456/api/memory/index
+
+# Incremental index
+curl -X POST http://localhost:3456/api/memory/index \
+  -H "Content-Type: application/json" \
+  -d '{"incremental": true}'
+
+# Check indexing status
+curl http://localhost:3456/api/memory/index/status
+```
 
 </Tab>
 </Tabs>
@@ -621,23 +923,53 @@ tx memory tag mem-a1b2c3d4e5f6 backend api v2
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.memoryTagAdd('mem-a1b2c3d4e5f6', ['backend', 'api', 'v2'])
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_tag",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6",
+    "tags": ["backend", "api", "v2"]
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID |
+| `tags` | Yes | Tags to add |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+POST /api/memory/documents/:id/tags
+Content-Type: application/json
+
+{
+  "tags": ["backend", "api", "v2"]
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/tags \
+  -H "Content-Type: application/json" \
+  -d '{"tags": ["backend", "api", "v2"]}'
+```
 
 </Tab>
 </Tabs>
@@ -668,23 +1000,53 @@ tx memory untag mem-a1b2c3d4e5f6 wip experimental
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.memoryTagRemove('mem-a1b2c3d4e5f6', ['wip', 'experimental'])
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_untag",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6",
+    "tags": ["wip", "experimental"]
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID |
+| `tags` | Yes | Tags to remove |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+DELETE /api/memory/documents/:id/tags
+Content-Type: application/json
+
+{
+  "tags": ["wip", "experimental"]
+}
+```
+
+### Example
+
+```bash
+curl -X DELETE http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/tags \
+  -H "Content-Type: application/json" \
+  -d '{"tags": ["wip", "experimental"]}'
+```
 
 </Tab>
 </Tabs>
@@ -718,23 +1080,56 @@ tx memory set mem-a1b2c3d4e5f6 owner "team-backend"
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.memoryPropertySet('mem-a1b2c3d4e5f6', 'status', 'reviewed')
+await tx.memoryPropertySet('mem-a1b2c3d4e5f6', 'owner', 'team-backend')
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_set",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6",
+    "key": "status",
+    "value": "reviewed"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID |
+| `key` | Yes | Property key |
+| `value` | Yes | Property value |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+PUT /api/memory/documents/:id/props/:key
+Content-Type: application/json
+
+{
+  "value": "reviewed"
+}
+```
+
+### Example
+
+```bash
+curl -X PUT http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/props/status \
+  -H "Content-Type: application/json" \
+  -d '{"value": "reviewed"}'
+```
 
 </Tab>
 </Tabs>
@@ -765,23 +1160,46 @@ tx memory unset mem-a1b2c3d4e5f6 owner
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.memoryPropertyRemove('mem-a1b2c3d4e5f6', 'status')
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_unset",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6",
+    "key": "status"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID |
+| `key` | Yes | Property key to remove |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+DELETE /api/memory/documents/:id/props/:key
+```
+
+### Example
+
+```bash
+curl -X DELETE http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/props/status
+```
 
 </Tab>
 </Tabs>
@@ -820,23 +1238,49 @@ Properties for mem-a1b2c3d4e5f6 (auth-architecture.md):
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const props = await tx.memoryProperties('mem-a1b2c3d4e5f6')
+// Returns: Record<string, string>
+
+for (const [key, value] of Object.entries(props)) {
+  console.log(`${key}: ${value}`)
+}
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_props",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+GET /api/memory/documents/:id/props
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/props
+```
 
 </Tab>
 </Tabs>
@@ -867,23 +1311,56 @@ tx memory relate mem-a1b2c3d4e5f6 login-flow.md
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.memoryRelate('mem-a1b2c3d4e5f6', 'mem-f6e5d4c3b2a1')
+
+// Or relate by filename
+await tx.memoryRelate('mem-a1b2c3d4e5f6', 'login-flow.md')
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_relate",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6",
+    "target": "login-flow.md"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Source memory document ID |
+| `target` | Yes | Target reference (document ID, title, or filename) |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+POST /api/memory/documents/:id/relate
+Content-Type: application/json
+
+{
+  "target": "login-flow.md"
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/relate \
+  -H "Content-Type: application/json" \
+  -d '{"target": "login-flow.md"}'
+```
 
 </Tab>
 </Tabs>
@@ -923,23 +1400,49 @@ Outgoing links from auth-architecture.md:
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const links = await tx.memoryLinks('mem-a1b2c3d4e5f6')
+// Returns: Array<{ id, sourceDocId, targetDocId, targetRef, linkType, createdAt }>
+
+for (const link of links) {
+  console.log(`[${link.linkType}] → ${link.targetRef}`)
+}
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_links",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+GET /api/memory/documents/:id/links
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/links
+```
 
 </Tab>
 </Tabs>
@@ -976,23 +1479,49 @@ Incoming links to auth-architecture.md:
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const backlinks = await tx.memoryBacklinks('mem-a1b2c3d4e5f6')
+// Returns: Array<{ id, sourceDocId, targetDocId, targetRef, linkType, createdAt }>
+
+for (const link of backlinks) {
+  console.log(`[${link.linkType}] <- ${link.sourceDocId}`)
+}
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_backlinks",
+  "arguments": {
+    "id": "mem-a1b2c3d4e5f6"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Memory document ID |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+GET /api/memory/documents/:id/backlinks
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/memory/documents/mem-a1b2c3d4e5f6/backlinks
+```
 
 </Tab>
 </Tabs>
@@ -1023,23 +1552,57 @@ tx memory link mem-a1b2c3d4e5f6 deployment-guide.md
 </Tab>
 <Tab value="TypeScript SDK">
 
-<Callout type="info">
-Memory is currently available via CLI only. SDK support coming soon.
-</Callout>
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+await tx.memoryLinkCreate('mem-a1b2c3d4e5f6', 'mem-f6e5d4c3b2a1')
+
+// Or link by filename
+await tx.memoryLinkCreate('mem-a1b2c3d4e5f6', 'deployment-guide.md')
+```
 
 </Tab>
 <Tab value="MCP">
 
-<Callout type="info">
-Memory is currently available via CLI only. MCP support coming soon.
-</Callout>
+```json
+{
+  "tool": "tx_memory_link",
+  "arguments": {
+    "sourceId": "mem-a1b2c3d4e5f6",
+    "targetRef": "deployment-guide.md"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `sourceId` | Yes | Source memory document ID |
+| `targetRef` | Yes | Target reference (document ID, title, or filename) |
 
 </Tab>
 <Tab value="REST API">
 
-<Callout type="info">
-Memory is currently available via CLI only. REST API support coming soon.
-</Callout>
+```bash
+POST /api/memory/links
+Content-Type: application/json
+
+{
+  "sourceId": "mem-a1b2c3d4e5f6",
+  "targetRef": "deployment-guide.md"
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/memory/links \
+  -H "Content-Type: application/json" \
+  -d '{"sourceId": "mem-a1b2c3d4e5f6", "targetRef": "deployment-guide.md"}'
+```
 
 </Tab>
 </Tabs>

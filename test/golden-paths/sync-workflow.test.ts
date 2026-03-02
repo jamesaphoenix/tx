@@ -25,6 +25,10 @@ import {
   LearningRepositoryLive,
   FileLearningRepositoryLive,
   AttemptRepositoryLive,
+  PinRepositoryLive,
+  AnchorRepositoryLive,
+  EdgeRepositoryLive,
+  DocRepositoryLive,
   TaskServiceLive,
   TaskService,
   DependencyServiceLive,
@@ -49,7 +53,11 @@ function makeTestLayer(db: TestDatabase) {
     DependencyRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
-    AttemptRepositoryLive
+    AttemptRepositoryLive,
+    PinRepositoryLive,
+    AnchorRepositoryLive,
+    EdgeRepositoryLive,
+    DocRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )

@@ -21,6 +21,8 @@ import { MessagesLive } from "./routes/messages.js"
 import { CyclesLive } from "./routes/cycles.js"
 import { DocsLive } from "./routes/docs.js"
 import { PinsLive } from "./routes/pins.js"
+import { MemoryLive } from "./routes/memory.js"
+import { InvariantsLive } from "./routes/invariants.js"
 import { TxApi } from "./api.js"
 import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
@@ -43,6 +45,8 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(CyclesLive),
   Layer.provide(DocsLive),
   Layer.provide(PinsLive),
+  Layer.provide(MemoryLive),
+  Layer.provide(InvariantsLive),
 )
 
 // -----------------------------------------------------------------------------

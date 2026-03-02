@@ -391,6 +391,8 @@ export {
   MemorySearchOptionsSchema,
   MemoryIndexStatusSchema,
   CreateMemoryDocumentInputSchema,
+  MemoryDocumentSerializedSchema,
+  MemoryDocumentWithScoreSerializedSchema,
   type MemoryLinkType,
   type MemoryDocumentId,
   type MemoryDocument,
@@ -401,6 +403,8 @@ export {
   type MemorySearchOptions,
   type MemoryIndexStatus,
   type CreateMemoryDocumentInput,
+  type MemoryDocumentSerialized,
+  type MemoryDocumentWithScoreSerialized,
   type MemoryDocumentRow,
   type MemoryDocumentRowWithBM25,
   type MemoryLinkRow,
@@ -450,6 +454,9 @@ export {
   serializeMessage,
   InboxResponseSchema,
   type InboxResponse,
+  // Memory serialization functions
+  serializeMemoryDocument,
+  serializeMemoryDocumentWithScore,
   // Response envelope schemas
   ErrorResponseSchema,
   // Response envelopes

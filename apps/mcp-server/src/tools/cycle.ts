@@ -1,18 +1,21 @@
 /**
- * Cycle Route Handlers
+ * Cycle-related MCP Tools
  *
- * Provides endpoints for querying cycle scan data:
- * - List all cycle runs
- * - Get cycle detail with round metrics + issues
+ * Provides MCP tools for querying cycle scan data.
+ * Uses raw SQL via SqliteClient (same pattern as the REST cycle route).
  */
 
-import { HttpApiBuilder } from "@effect/platform"
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-
+import z from "zod"
 import { SqliteClient } from "@jamesaphoenix/tx-core"
-import { TxApi, NotFound, mapCoreError } from "../api.js"
+import { runEffect } from "../runtime.js"
+import { handleToolError, type McpToolResult } from "../response.js"
 
+// -----------------------------------------------------------------------------
 // Raw row types from SQLite
+// -----------------------------------------------------------------------------
+
 interface CycleRunRow {
   id: string
   agent: string
@@ -35,43 +38,12 @@ interface IssueRow {
 }
 
 // -----------------------------------------------------------------------------
-// Handler Layer
+// Tool Handlers
 // -----------------------------------------------------------------------------
 
-export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
-  handlers
-    .handle("deleteCycle", ({ path }) =>
-      Effect.gen(function* () {
-        const db = yield* SqliteClient
-
-        // Verify cycle exists and is a cycle-scanner run
-        const row = db
-          .prepare(`SELECT id, agent FROM runs WHERE id = ?`)
-          .get(path.id) as { id: string; agent: string } | undefined
-
-        if (!row) {
-          return yield* Effect.fail(new NotFound({ message: `Cycle not found: ${path.id}` }))
-        }
-
-        // Delete associated issues (tasks created by this cycle)
-        const deleteIssues = db
-          .prepare(`DELETE FROM tasks WHERE json_extract(metadata, '$.cycleId') = ?`)
-          .run(path.id)
-
-        // Delete associated events
-        db.prepare(`DELETE FROM events WHERE run_id = ?`).run(path.id)
-
-        // Delete the run itself
-        db.prepare(`DELETE FROM runs WHERE id = ?`).run(path.id)
-
-        return {
-          success: true,
-          id: path.id,
-          deletedIssues: deleteIssues.changes,
-        }
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-    .handle("listCycles", () =>
+const handleCycleList = async (): Promise<McpToolResult> => {
+  try {
+    const cycles = await runEffect(
       Effect.gen(function* () {
         const db = yield* SqliteClient
         const rows = db
@@ -83,7 +55,7 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
           )
           .all() as CycleRunRow[]
 
-        const cycles = rows.map((row) => {
+        return rows.map((row) => {
           const meta = JSON.parse(row.metadata || "{}") as Record<string, unknown>
           return {
             id: row.id,
@@ -100,11 +72,25 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
             converged: (meta.converged as boolean) ?? false,
           }
         })
-
-        return { cycles }
-      }).pipe(Effect.mapError(mapCoreError))
+      })
     )
-    .handle("getCycle", ({ path }) =>
+    return {
+      content: [
+        { type: "text", text: `${cycles.length} cycle run(s)` },
+        { type: "text", text: JSON.stringify({ cycles }) }
+      ],
+      isError: false
+    }
+  } catch (error) {
+    return handleToolError("tx_cycle_list", {}, error)
+  }
+}
+
+const handleCycleGet = async (args: {
+  id: string
+}): Promise<McpToolResult> => {
+  try {
+    const result = await runEffect(
       Effect.gen(function* () {
         const db = yield* SqliteClient
 
@@ -114,10 +100,10 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
             `SELECT id, agent, started_at, ended_at, status, summary, metadata
              FROM runs WHERE id = ?`
           )
-          .get(path.id) as CycleRunRow | undefined
+          .get(args.id) as CycleRunRow | undefined
 
         if (!runRow) {
-          return yield* Effect.fail(new NotFound({ message: `Cycle run not found: ${path.id}` }))
+          return null
         }
 
         const meta = JSON.parse(runRow.metadata || "{}") as Record<string, unknown>
@@ -143,7 +129,7 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
              WHERE run_id = ? AND event_type = 'metric' AND content = 'cycle.round.loss'
              ORDER BY timestamp ASC`
           )
-          .all(path.id) as EventRow[]
+          .all(args.id) as EventRow[]
 
         const roundMetrics = eventRows.map((row) => {
           const m = JSON.parse(row.metadata || "{}") as Record<string, unknown>
@@ -171,7 +157,7 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
                         WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3
                       END ASC`
           )
-          .all(path.id) as IssueRow[]
+          .all(args.id) as IssueRow[]
 
         const issues = issueRows.map((row) => {
           const m = JSON.parse(row.metadata || "{}") as Record<string, unknown>
@@ -189,27 +175,44 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
         })
 
         return { cycle, roundMetrics, issues }
-      }).pipe(Effect.mapError(mapCoreError))
+      })
     )
-    .handle("deleteIssues", ({ payload }) =>
-      Effect.gen(function* () {
-        const db = yield* SqliteClient
-        const { issueIds } = payload
+    if (!result) {
+      return {
+        content: [{ type: "text", text: `Cycle run not found: ${args.id}` }],
+        isError: true,
+      }
+    }
+    return {
+      content: [
+        { type: "text", text: `Cycle ${result.cycle.id}: ${result.roundMetrics.length} round(s), ${result.issues.length} issue(s)` },
+        { type: "text", text: JSON.stringify(result) }
+      ],
+      isError: false
+    }
+  } catch (error) {
+    return handleToolError("tx_cycle_get", args, error)
+  }
+}
 
-        if (issueIds.length === 0) {
-          return { success: true, deletedCount: 0 }
-        }
+// -----------------------------------------------------------------------------
+// Registration
+// -----------------------------------------------------------------------------
 
-        // Delete tasks by ID (issues are stored as tasks)
-        const placeholders = issueIds.map(() => "?").join(",")
-        const result = db
-          .prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`)
-          .run(...issueIds)
+export const registerCycleTools = (server: McpServer): void => {
+  server.tool(
+    "tx_cycle_list",
+    "List all cycle scan runs. Cycles are automated issue discovery runs performed by sub-agent swarms.",
+    {},
+    async () => handleCycleList()
+  )
 
-        return {
-          success: true,
-          deletedCount: result.changes,
-        }
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-)
+  server.tool(
+    "tx_cycle_get",
+    "Get detailed information about a specific cycle run, including round metrics and discovered issues.",
+    {
+      id: z.string().describe("Cycle run ID")
+    },
+    async (args) => handleCycleGet(args as { id: string })
+  )
+}

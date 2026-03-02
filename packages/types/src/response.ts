@@ -538,3 +538,46 @@ export const InboxResponseSchema = Schema.Struct({
   count: Schema.Number.pipe(Schema.int()),
 })
 export type InboxResponse = typeof InboxResponseSchema.Type
+
+// =============================================================================
+// MEMORY SERIALIZATION FUNCTIONS
+// =============================================================================
+
+import type { MemoryDocument, MemoryDocumentWithScore } from "./memory.js"
+import type { MemoryDocumentSerialized, MemoryDocumentWithScoreSerialized } from "./memory.js"
+
+/**
+ * Serialize a MemoryDocument for JSON output.
+ * Strips binary Float32Array embedding (always null in serialized form).
+ * Converts Date-like fields to ISO strings.
+ */
+export const serializeMemoryDocument = (doc: MemoryDocument): MemoryDocumentSerialized => ({
+  id: doc.id,
+  filePath: doc.filePath,
+  rootDir: doc.rootDir,
+  title: doc.title,
+  content: doc.content,
+  frontmatter: doc.frontmatter,
+  tags: doc.tags,
+  fileHash: doc.fileHash,
+  fileMtime: doc.fileMtime,
+  embedding: null, // Strip binary Float32Array
+  createdAt: typeof doc.createdAt === "string" ? doc.createdAt : (doc.createdAt as unknown as Date)?.toISOString?.() ?? String(doc.createdAt),
+  indexedAt: typeof doc.indexedAt === "string" ? doc.indexedAt : (doc.indexedAt as unknown as Date)?.toISOString?.() ?? String(doc.indexedAt),
+})
+
+/**
+ * Serialize a MemoryDocumentWithScore for JSON output.
+ * Extends serializeMemoryDocument with relevance scoring fields.
+ */
+export const serializeMemoryDocumentWithScore = (doc: MemoryDocumentWithScore): MemoryDocumentWithScoreSerialized => ({
+  ...serializeMemoryDocument(doc),
+  relevanceScore: doc.relevanceScore ?? 0,
+  recencyScore: doc.recencyScore ?? 0,
+  bm25Score: doc.bm25Score ?? 0,
+  vectorScore: doc.vectorScore ?? 0,
+  rrfScore: doc.rrfScore ?? 0,
+  bm25Rank: doc.bm25Rank ?? 0,
+  vectorRank: doc.vectorRank ?? 0,
+  ...(doc.expansionHops !== undefined ? { expansionHops: doc.expansionHops } : {}),
+})

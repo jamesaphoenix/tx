@@ -180,3 +180,38 @@ export interface MemoryPropertyRow {
   key: string
   value: string
 }
+
+// =============================================================================
+// SERIALIZED SCHEMAS (for JSON API responses)
+// =============================================================================
+
+/** Memory document serialized for JSON output (embedding stripped, dates as strings). */
+export const MemoryDocumentSerializedSchema = Schema.Struct({
+  id: MemoryDocumentIdSchema,
+  filePath: Schema.String,
+  rootDir: Schema.String,
+  title: Schema.String,
+  content: Schema.String,
+  frontmatter: Schema.NullOr(Schema.String),
+  tags: Schema.Array(Schema.String),
+  fileHash: Schema.String,
+  fileMtime: Schema.String,
+  embedding: Schema.NullOr(Schema.Unknown), // always null in serialized form
+  createdAt: Schema.String,
+  indexedAt: Schema.String,
+})
+export type MemoryDocumentSerialized = typeof MemoryDocumentSerializedSchema.Type
+
+/** Memory document with relevance scores serialized for JSON output. */
+export const MemoryDocumentWithScoreSerializedSchema = Schema.Struct({
+  ...MemoryDocumentSerializedSchema.fields,
+  relevanceScore: Schema.Number,
+  recencyScore: Schema.Number,
+  bm25Score: Schema.Number,
+  vectorScore: Schema.Number,
+  rrfScore: Schema.Number,
+  bm25Rank: Schema.Number.pipe(Schema.int()),
+  vectorRank: Schema.Number.pipe(Schema.int()),
+  expansionHops: Schema.optional(Schema.Number.pipe(Schema.int())),
+})
+export type MemoryDocumentWithScoreSerialized = typeof MemoryDocumentWithScoreSerializedSchema.Type

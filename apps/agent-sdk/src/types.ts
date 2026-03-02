@@ -262,6 +262,7 @@ export interface SerializedLearning {
   usageCount: number
   lastUsedAt: string | null
   outcomeScore: number | null
+  embedding: number[] | null
 }
 
 /**
@@ -276,6 +277,10 @@ export interface SerializedLearningWithScore extends SerializedLearning {
   bm25Rank: number
   vectorRank: number
   rerankerScore?: number
+  expansionHops?: number
+  expansionPath?: number[]
+  sourceEdge?: string | null
+  feedbackScore?: number
 }
 
 /**
@@ -419,4 +424,244 @@ export interface SerializedPin {
   content: string
   createdAt: string
   updatedAt: string
+}
+
+// =============================================================================
+// Memory Types (SDK-specific)
+// =============================================================================
+
+export interface SerializedMemoryDocument {
+  id: string
+  filePath: string
+  rootDir: string
+  title: string
+  content: string
+  frontmatter: string | null
+  tags: string[]
+  fileHash: string
+  fileMtime: string
+  embedding: null
+  createdAt: string
+  indexedAt: string
+}
+
+export interface SerializedMemoryDocumentWithScore extends SerializedMemoryDocument {
+  relevanceScore: number
+  recencyScore: number
+  bm25Score: number
+  vectorScore: number
+  rrfScore: number
+  bm25Rank: number
+  vectorRank: number
+  expansionHops?: number
+}
+
+export interface SerializedMemorySource {
+  id: number
+  rootDir: string
+  label: string | null
+  createdAt: string
+}
+
+export interface MemorySearchOptions {
+  query: string
+  limit?: number
+  minScore?: number
+  semantic?: boolean
+  expand?: boolean
+  tags?: string[]
+  props?: Record<string, string>
+}
+
+export interface CreateMemoryDocumentData {
+  title: string
+  content?: string
+  tags?: string[]
+  properties?: Record<string, string>
+  dir?: string
+}
+
+export interface MemoryIndexResult {
+  indexed: number
+  skipped: number
+  removed: number
+}
+
+export interface MemoryIndexStatus {
+  totalFiles: number
+  indexed: number
+  stale: number
+  embedded: number
+  links: number
+  sources: number
+}
+
+export interface SerializedMemoryLink {
+  id: number
+  sourceDocId: string
+  targetDocId: string | null
+  targetRef: string
+  linkType: string
+  createdAt: string
+}
+
+// =============================================================================
+// Sync Types (SDK-specific)
+// =============================================================================
+
+export interface SyncExportResult {
+  opCount: number
+  path: string
+}
+
+export interface SyncImportResult {
+  imported: number
+  skipped: number
+  conflicts: number
+}
+
+export interface SyncStatusResult {
+  dbTaskCount: number
+  jsonlOpCount: number
+  lastExport: string | null
+  lastImport: string | null
+  isDirty: boolean
+  autoSyncEnabled: boolean
+}
+
+export interface SyncCompactResult {
+  before: number
+  after: number
+}
+
+// =============================================================================
+// Doc Types (SDK-specific)
+// =============================================================================
+
+export interface SerializedDoc {
+  id: number
+  hash: string
+  kind: string
+  name: string
+  title: string
+  version: number
+  status: string
+  filePath: string
+  parentDocId: number | null
+  createdAt: string
+  lockedAt: string | null
+}
+
+export interface SerializedDocLink {
+  id: number
+  fromDocId: number
+  toDocId: number
+  linkType: string
+  createdAt: string
+}
+
+export interface DocGraphNode {
+  id: string
+  label: string
+  kind: "overview" | "prd" | "design" | "task"
+  status?: string
+}
+
+export interface DocGraphEdge {
+  source: string
+  target: string
+  type: string
+}
+
+export interface DocGraph {
+  nodes: DocGraphNode[]
+  edges: DocGraphEdge[]
+}
+
+// =============================================================================
+// Invariant Types (SDK-specific)
+// =============================================================================
+
+export interface SerializedInvariant {
+  id: string
+  rule: string
+  enforcement: string
+  docId: number
+  subsystem: string | null
+  status: string
+  testRef: string | null
+  lintRule: string | null
+  promptRef: string | null
+  createdAt: string
+}
+
+export interface SerializedInvariantCheck {
+  id: number
+  invariantId: string
+  passed: boolean
+  details: string | null
+  durationMs: number | null
+  checkedAt: string
+}
+
+// =============================================================================
+// Cycle Types (SDK-specific)
+// =============================================================================
+
+export interface SerializedCycleRun {
+  id: string
+  cycle: number
+  name: string
+  description: string
+  startedAt: string
+  endedAt: string | null
+  status: string
+  rounds: number
+  totalNewIssues: number
+  existingIssues: number
+  finalLoss: number
+  converged: boolean
+}
+
+export interface SerializedCycleDetail {
+  cycle: SerializedCycleRun
+  roundMetrics: SerializedRoundMetric[]
+  issues: SerializedCycleIssue[]
+}
+
+export interface SerializedRoundMetric {
+  cycle: number
+  round: number
+  loss: number
+  newIssues: number
+  existingIssues: number
+  duplicates: number
+  high: number
+  medium: number
+  low: number
+}
+
+export interface SerializedCycleIssue {
+  id: string
+  title: string
+  description: string
+  severity: string
+  issueType: string
+  file: string
+  line: number
+  cycle: number
+  round: number
+}
+
+// =============================================================================
+// Stats Types (SDK-specific)
+// =============================================================================
+
+export interface StatsResult {
+  tasks: number
+  done: number
+  ready: number
+  learnings: number
+  runsRunning?: number
+  runsTotal?: number
 }

@@ -46,7 +46,27 @@ import type {
   ReapStalledRunsOptions,
   SerializedStalledRun,
   SerializedReapedRun,
-  SerializedPin
+  SerializedPin,
+  SerializedMemoryDocument,
+  SerializedMemoryDocumentWithScore,
+  SerializedMemorySource,
+  MemorySearchOptions,
+  CreateMemoryDocumentData,
+  MemoryIndexResult,
+  MemoryIndexStatus,
+  SerializedMemoryLink,
+  SyncExportResult,
+  SyncImportResult,
+  SyncStatusResult,
+  SyncCompactResult,
+  SerializedDoc,
+  SerializedDocLink,
+  SerializedInvariant,
+  SerializedInvariantCheck,
+  SerializedCycleRun,
+  SerializedCycleDetail,
+  DocGraph,
+  StatsResult,
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
 
@@ -134,6 +154,59 @@ interface Transport {
   syncPins(): Promise<{ synced: string[] }>
   getPinTargets(): Promise<string[]>
   setPinTargets(files: string[]): Promise<string[]>
+
+  // Memory
+  memorySourceAdd(dir: string, label?: string): Promise<SerializedMemorySource>
+  memorySourceRemove(dir: string): Promise<void>
+  memorySourceList(): Promise<SerializedMemorySource[]>
+  memoryDocumentCreate(data: CreateMemoryDocumentData): Promise<SerializedMemoryDocument>
+  memoryDocumentGet(id: string): Promise<SerializedMemoryDocument>
+  memoryDocumentList(options?: { source?: string; tags?: string[] }): Promise<SerializedMemoryDocument[]>
+  memorySearch(options: MemorySearchOptions): Promise<SerializedMemoryDocumentWithScore[]>
+  memoryIndex(options?: { incremental?: boolean }): Promise<MemoryIndexResult>
+  memoryIndexStatus(): Promise<MemoryIndexStatus>
+  memoryTagAdd(id: string, tags: string[]): Promise<void>
+  memoryTagRemove(id: string, tags: string[]): Promise<void>
+  memoryRelate(id: string, target: string): Promise<void>
+  memoryPropertySet(id: string, key: string, value: string): Promise<void>
+  memoryPropertyRemove(id: string, key: string): Promise<void>
+  memoryProperties(id: string): Promise<Record<string, string>>
+  memoryLinks(id: string): Promise<SerializedMemoryLink[]>
+  memoryBacklinks(id: string): Promise<SerializedMemoryLink[]>
+  memoryLinkCreate(sourceId: string, targetRef: string): Promise<void>
+
+  // Sync
+  syncExport(path?: string): Promise<SyncExportResult>
+  syncImport(path?: string): Promise<SyncImportResult>
+  syncStatus(): Promise<SyncStatusResult>
+  syncCompact(path?: string): Promise<SyncCompactResult>
+
+  // Docs
+  docsList(options?: { kind?: string; status?: string }): Promise<SerializedDoc[]>
+  docsGet(name: string): Promise<SerializedDoc>
+  docsCreate(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc>
+  docsUpdate(name: string, yamlContent: string): Promise<SerializedDoc>
+  docsDelete(name: string): Promise<void>
+  docsLock(name: string): Promise<SerializedDoc>
+  docsLink(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink>
+  docsRender(name?: string): Promise<string[]>
+
+  // Invariants
+  invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]>
+  invariantsGet(id: string): Promise<SerializedInvariant>
+  invariantsRecord(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck>
+
+  // Cycles
+  cyclesList(): Promise<SerializedCycleRun[]>
+  cyclesGet(id: string): Promise<SerializedCycleDetail>
+  cyclesDelete(id: string): Promise<void>
+  cyclesDeleteIssues(issueIds: string[]): Promise<{ success: boolean; deletedCount: number }>
+
+  // Docs (additional)
+  docsGraph(): Promise<DocGraph>
+
+  // Stats
+  getStats(): Promise<StatsResult>
 }
 
 // =============================================================================
@@ -468,14 +541,11 @@ class HttpTransport implements Transport {
   }
 
   async getActiveClaim(taskId: string): Promise<SerializedClaim | null> {
-    try {
-      return await this.request<SerializedClaim>(
-        "GET",
-        `/api/tasks/${taskId}/claim`
-      )
-    } catch {
-      return null
-    }
+    const result = await this.request<{ claim: SerializedClaim | null }>(
+      "GET",
+      `/api/tasks/${taskId}/claim`
+    )
+    return result.claim
   }
 
   async runHeartbeat(runId: string, data: RunHeartbeatData = {}): Promise<RunHeartbeatResult> {
@@ -549,6 +619,198 @@ class HttpTransport implements Transport {
   async setPinTargets(files: string[]): Promise<string[]> {
     const result = await this.request<{ files: string[] }>("PUT", "/api/pins/targets", { body: { files } })
     return result.files
+  }
+
+  // Memory
+  async memorySourceAdd(dir: string, label?: string): Promise<SerializedMemorySource> {
+    return await this.request<SerializedMemorySource>("POST", "/api/memory/sources", { body: { dir, label } })
+  }
+
+  async memorySourceRemove(dir: string): Promise<void> {
+    await this.request("DELETE", "/api/memory/sources", { body: { dir } })
+  }
+
+  async memorySourceList(): Promise<SerializedMemorySource[]> {
+    const r = await this.request<{ sources: SerializedMemorySource[] }>("GET", "/api/memory/sources")
+    return r.sources
+  }
+
+  async memoryDocumentCreate(data: CreateMemoryDocumentData): Promise<SerializedMemoryDocument> {
+    return await this.request<SerializedMemoryDocument>("POST", "/api/memory/documents", { body: data })
+  }
+
+  async memoryDocumentGet(id: string): Promise<SerializedMemoryDocument> {
+    return await this.request<SerializedMemoryDocument>("GET", `/api/memory/documents/${id}`)
+  }
+
+  async memoryDocumentList(options?: { source?: string; tags?: string[] }): Promise<SerializedMemoryDocument[]> {
+    const params: Record<string, string | undefined> = {}
+    if (options?.source) params.source = options.source
+    if (options?.tags?.length) params.tags = options.tags.join(",")
+    const r = await this.request<{ documents: SerializedMemoryDocument[] }>("GET", "/api/memory/documents", { params })
+    return r.documents
+  }
+
+  async memorySearch(options: MemorySearchOptions): Promise<SerializedMemoryDocumentWithScore[]> {
+    const params: Record<string, string | number | boolean | undefined> = {
+      query: options.query,
+      limit: options.limit,
+      minScore: options.minScore,
+      semantic: options.semantic !== undefined ? String(options.semantic) : undefined,
+      expand: options.expand !== undefined ? String(options.expand) : undefined,
+      tags: options.tags?.join(","),
+      props: options.props ? Object.entries(options.props).map(([k, v]) => `${k}=${v}`).join(",") : undefined,
+    }
+    const r = await this.request<{ results: SerializedMemoryDocumentWithScore[] }>("GET", "/api/memory/search", { params })
+    return r.results
+  }
+
+  async memoryIndex(options?: { incremental?: boolean }): Promise<MemoryIndexResult> {
+    return await this.request<MemoryIndexResult>("POST", "/api/memory/index", { body: options ?? {} })
+  }
+
+  async memoryIndexStatus(): Promise<MemoryIndexStatus> {
+    return await this.request<MemoryIndexStatus>("GET", "/api/memory/index/status")
+  }
+
+  async memoryTagAdd(id: string, tags: string[]): Promise<void> {
+    await this.request("POST", `/api/memory/documents/${id}/tags`, { body: { tags } })
+  }
+
+  async memoryTagRemove(id: string, tags: string[]): Promise<void> {
+    await this.request("DELETE", `/api/memory/documents/${id}/tags`, { body: { tags } })
+  }
+
+  async memoryRelate(id: string, target: string): Promise<void> {
+    await this.request("POST", `/api/memory/documents/${id}/relate`, { body: { target } })
+  }
+
+  async memoryPropertySet(id: string, key: string, value: string): Promise<void> {
+    await this.request("PUT", `/api/memory/documents/${id}/props/${key}`, { body: { value } })
+  }
+
+  async memoryPropertyRemove(id: string, key: string): Promise<void> {
+    await this.request("DELETE", `/api/memory/documents/${id}/props/${key}`)
+  }
+
+  async memoryProperties(id: string): Promise<Record<string, string>> {
+    const r = await this.request<{ properties: Array<{ key: string; value: string }> }>("GET", `/api/memory/documents/${id}/props`)
+    const result: Record<string, string> = {}
+    for (const p of r.properties) result[p.key] = p.value
+    return result
+  }
+
+  async memoryLinks(id: string): Promise<SerializedMemoryLink[]> {
+    const r = await this.request<{ links: SerializedMemoryLink[] }>("GET", `/api/memory/documents/${id}/links`)
+    return r.links
+  }
+
+  async memoryBacklinks(id: string): Promise<SerializedMemoryLink[]> {
+    const r = await this.request<{ links: SerializedMemoryLink[] }>("GET", `/api/memory/documents/${id}/backlinks`)
+    return r.links
+  }
+
+  async memoryLinkCreate(sourceId: string, targetRef: string): Promise<void> {
+    await this.request("POST", "/api/memory/links", { body: { sourceId, targetRef } })
+  }
+
+  // Sync
+  async syncExport(path?: string): Promise<SyncExportResult> {
+    return await this.request<SyncExportResult>("POST", "/api/sync/export", { body: { path } })
+  }
+
+  async syncImport(path?: string): Promise<SyncImportResult> {
+    return await this.request<SyncImportResult>("POST", "/api/sync/import", { body: { path } })
+  }
+
+  async syncStatus(): Promise<SyncStatusResult> {
+    return await this.request<SyncStatusResult>("GET", "/api/sync/status")
+  }
+
+  async syncCompact(path?: string): Promise<SyncCompactResult> {
+    return await this.request<SyncCompactResult>("POST", "/api/sync/compact", { body: { path } })
+  }
+
+  // Docs
+  async docsList(options?: { kind?: string; status?: string }): Promise<SerializedDoc[]> {
+    const r = await this.request<{ docs: SerializedDoc[] }>("GET", "/api/docs", { params: options })
+    return r.docs
+  }
+
+  async docsGet(name: string): Promise<SerializedDoc> {
+    return await this.request<SerializedDoc>("GET", `/api/docs/${encodeURIComponent(name)}`)
+  }
+
+  async docsCreate(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> {
+    return await this.request<SerializedDoc>("POST", "/api/docs", { body: data })
+  }
+
+  async docsUpdate(name: string, yamlContent: string): Promise<SerializedDoc> {
+    return await this.request<SerializedDoc>("PATCH", `/api/docs/${encodeURIComponent(name)}`, { body: { yamlContent } })
+  }
+
+  async docsDelete(name: string): Promise<void> {
+    await this.request("DELETE", `/api/docs/${encodeURIComponent(name)}`)
+  }
+
+  async docsLock(name: string): Promise<SerializedDoc> {
+    return await this.request<SerializedDoc>("POST", `/api/docs/${encodeURIComponent(name)}/lock`)
+  }
+
+  async docsLink(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink> {
+    return await this.request<SerializedDocLink>("POST", "/api/docs/link", { body: { fromName, toName, linkType } })
+  }
+
+  async docsRender(name?: string): Promise<string[]> {
+    const params: Record<string, string | undefined> = {}
+    if (name) params.name = name
+    const r = await this.request<{ rendered: string[] }>("POST", "/api/docs/render", { body: { name } })
+    return r.rendered
+  }
+
+  // Invariants
+  async invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> {
+    const r = await this.request<{ invariants: SerializedInvariant[] }>("GET", "/api/invariants", { params: options })
+    return r.invariants
+  }
+
+  async invariantsGet(id: string): Promise<SerializedInvariant> {
+    return await this.request<SerializedInvariant>("GET", `/api/invariants/${encodeURIComponent(id)}`)
+  }
+
+  async invariantsRecord(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck> {
+    return await this.request<SerializedInvariantCheck>(
+      "POST",
+      `/api/invariants/${encodeURIComponent(id)}/check`,
+      { body: { passed, details, durationMs } }
+    )
+  }
+
+  // Cycles
+  async cyclesList(): Promise<SerializedCycleRun[]> {
+    const r = await this.request<{ cycles: SerializedCycleRun[] }>("GET", "/api/cycles")
+    return r.cycles
+  }
+
+  async cyclesGet(id: string): Promise<SerializedCycleDetail> {
+    return await this.request<SerializedCycleDetail>("GET", `/api/cycles/${encodeURIComponent(id)}`)
+  }
+
+  async cyclesDelete(id: string): Promise<void> {
+    await this.request("DELETE", `/api/cycles/${encodeURIComponent(id)}`)
+  }
+
+  async cyclesDeleteIssues(issueIds: string[]): Promise<{ success: boolean; deletedCount: number }> {
+    return await this.request<{ success: boolean; deletedCount: number }>("POST", "/api/cycles/issues/delete", { body: { issueIds } })
+  }
+
+  async docsGraph(): Promise<DocGraph> {
+    return await this.request<DocGraph>("GET", "/api/docs/graph")
+  }
+
+  // Stats
+  async getStats(): Promise<StatsResult> {
+    return await this.request<StatsResult>("GET", "/api/stats")
   }
 }
 
@@ -681,7 +943,7 @@ class DirectTransport implements Transport {
       score: task.score,
       createdAt: task.createdAt instanceof Date ? task.createdAt.toISOString() : task.createdAt,
       updatedAt: task.updatedAt instanceof Date ? task.updatedAt.toISOString() : task.updatedAt,
-      completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : task.completedAt,
+      completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : (task.completedAt ?? null),
       assigneeType: task.assigneeType ?? null,
       assigneeId: task.assigneeId ?? null,
       assignedAt:
@@ -711,12 +973,13 @@ class DirectTransport implements Transport {
       keywords: learning.keywords,
       category: learning.category,
       usageCount: learning.usageCount,
-      lastUsedAt: learning.lastUsedAt instanceof Date ? learning.lastUsedAt.toISOString() : learning.lastUsedAt,
-      outcomeScore: learning.outcomeScore
+      lastUsedAt: learning.lastUsedAt instanceof Date ? learning.lastUsedAt.toISOString() : (learning.lastUsedAt ?? null),
+      outcomeScore: learning.outcomeScore,
+      embedding: null,
     }
   }
 
-   
+
   private serializeLearningWithScore(learning: any): SerializedLearningWithScore {
     return {
       ...this.serializeLearning(learning),
@@ -727,7 +990,11 @@ class DirectTransport implements Transport {
       rrfScore: learning.rrfScore ?? 0,
       bm25Rank: learning.bm25Rank ?? 0,
       vectorRank: learning.vectorRank ?? 0,
-      rerankerScore: learning.rerankerScore
+      rerankerScore: learning.rerankerScore,
+      ...(learning.expansionHops !== undefined ? { expansionHops: learning.expansionHops } : {}),
+      ...(learning.expansionPath !== undefined ? { expansionPath: learning.expansionPath } : {}),
+      ...(learning.sourceEdge !== undefined ? { sourceEdge: learning.sourceEdge } : {}),
+      ...(learning.feedbackScore !== undefined ? { feedbackScore: learning.feedbackScore } : {}),
     }
   }
 
@@ -1270,8 +1537,8 @@ class DirectTransport implements Transport {
       id: claim.id,
       taskId: claim.taskId,
       workerId: claim.workerId,
-      claimedAt: claim.claimedAt instanceof Date ? claim.claimedAt.toISOString() : claim.claimedAt,
-      leaseExpiresAt: claim.leaseExpiresAt instanceof Date ? claim.leaseExpiresAt.toISOString() : claim.leaseExpiresAt,
+      claimedAt: claim.claimedAt instanceof Date ? claim.claimedAt.toISOString() : (claim.claimedAt ?? null),
+      leaseExpiresAt: claim.leaseExpiresAt instanceof Date ? claim.leaseExpiresAt.toISOString() : (claim.leaseExpiresAt ?? null),
       renewedCount: claim.renewedCount,
       status: claim.status,
     }
@@ -1650,6 +1917,853 @@ class DirectTransport implements Transport {
         yield* pinService.setTargetFiles(files)
         const result = yield* pinService.getTargetFiles()
         return [...result]
+      })
+    )
+  }
+
+  // Memory
+  private serializeMemoryDocument(doc: any): SerializedMemoryDocument {
+    return {
+      id: doc.id,
+      filePath: doc.filePath,
+      rootDir: doc.rootDir,
+      title: doc.title,
+      content: doc.content,
+      frontmatter: doc.frontmatter ?? null,
+      tags: doc.tags ?? [],
+      fileHash: doc.fileHash,
+      fileMtime: doc.fileMtime ?? "",
+      embedding: null,
+      createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
+      indexedAt: doc.indexedAt instanceof Date ? doc.indexedAt.toISOString() : doc.indexedAt,
+    }
+  }
+
+  private serializeMemoryDocumentWithScore(doc: any): SerializedMemoryDocumentWithScore {
+    return {
+      ...this.serializeMemoryDocument(doc),
+      relevanceScore: doc.relevanceScore ?? 0,
+      recencyScore: doc.recencyScore ?? 0,
+      bm25Score: doc.bm25Score ?? 0,
+      vectorScore: doc.vectorScore ?? 0,
+      rrfScore: doc.rrfScore ?? 0,
+      bm25Rank: doc.bm25Rank ?? 0,
+      vectorRank: doc.vectorRank ?? 0,
+      ...(doc.expansionHops !== undefined ? { expansionHops: doc.expansionHops } : {}),
+    }
+  }
+
+  private serializeMemoryLink(link: any): SerializedMemoryLink {
+    return {
+      id: link.id,
+      sourceDocId: link.sourceDocId,
+      targetDocId: link.targetDocId ?? null,
+      targetRef: link.targetRef,
+      linkType: link.linkType,
+      createdAt: link.createdAt instanceof Date ? link.createdAt.toISOString() : link.createdAt,
+    }
+  }
+
+  private serializeDoc(doc: any): SerializedDoc {
+    return {
+      id: doc.id,
+      hash: doc.hash,
+      kind: doc.kind,
+      name: doc.name,
+      title: doc.title,
+      version: doc.version,
+      status: doc.status,
+      filePath: doc.filePath,
+      parentDocId: doc.parentDocId ?? null,
+      createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
+      lockedAt: doc.lockedAt instanceof Date ? doc.lockedAt.toISOString() : doc.lockedAt ?? null,
+    }
+  }
+
+  private serializeInvariant(inv: any): SerializedInvariant {
+    return {
+      id: inv.id,
+      rule: inv.rule,
+      enforcement: inv.enforcement,
+      docId: inv.docId,
+      subsystem: inv.subsystem ?? null,
+      status: inv.status,
+      testRef: inv.testRef ?? null,
+      lintRule: inv.lintRule ?? null,
+      promptRef: inv.promptRef ?? null,
+      createdAt: inv.createdAt instanceof Date ? inv.createdAt.toISOString() : inv.createdAt,
+    }
+  }
+
+  async memorySourceAdd(dir: string, label?: string): Promise<SerializedMemorySource> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedMemorySource>(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        const source = yield* memoryService.addSource(dir, label)
+        return {
+          id: source.id,
+          rootDir: source.rootDir,
+          label: source.label ?? null,
+          createdAt: source.createdAt instanceof Date ? source.createdAt.toISOString() : source.createdAt,
+        }
+      })
+    )
+  }
+
+  async memorySourceRemove(dir: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        yield* memoryService.removeSource(dir)
+      })
+    )
+  }
+
+  async memorySourceList(): Promise<SerializedMemorySource[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const sources = await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        return yield* memoryService.listSources()
+      })
+    )
+
+    return (sources as any[]).map((s: any) => ({
+      id: s.id,
+      rootDir: s.rootDir,
+      label: s.label ?? null,
+      createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
+    }))
+  }
+
+  async memoryDocumentCreate(data: CreateMemoryDocumentData): Promise<SerializedMemoryDocument> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const doc = await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        return yield* memoryService.createDocument({
+          title: data.title,
+          content: data.content,
+          tags: data.tags,
+          properties: data.properties,
+          dir: data.dir,
+        })
+      })
+    )
+
+    return self.serializeMemoryDocument(doc)
+  }
+
+  async memoryDocumentGet(id: string): Promise<SerializedMemoryDocument> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const doc = await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        return yield* memoryService.getDocument(id)
+      })
+    )
+
+    return self.serializeMemoryDocument(doc)
+  }
+
+  async memoryDocumentList(options?: { source?: string; tags?: string[] }): Promise<SerializedMemoryDocument[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const docs = await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        return yield* memoryService.listDocuments(options)
+      })
+    )
+
+    return (docs as any[]).map((d: any) => self.serializeMemoryDocument(d))
+  }
+
+  async memorySearch(options: MemorySearchOptions): Promise<SerializedMemoryDocumentWithScore[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const results = await this.run(
+      Effect.gen(function* () {
+        const retriever = yield* core.MemoryRetrieverService
+        return yield* retriever.search(options.query, {
+          limit: options.limit,
+          minScore: options.minScore,
+          semantic: options.semantic,
+          expand: options.expand,
+          tags: options.tags,
+          props: options.props ? Object.entries(options.props).map(([k, v]) => `${k}=${v}`) : undefined,
+        })
+      })
+    )
+
+    return (results as any[]).map((r: any) => self.serializeMemoryDocumentWithScore(r))
+  }
+
+  async memoryIndex(options?: { incremental?: boolean }): Promise<MemoryIndexResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<MemoryIndexResult>(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        const result = yield* memoryService.index(options)
+        return {
+          indexed: result.indexed,
+          skipped: result.skipped,
+          removed: (result as any).removed ?? 0,
+        }
+      })
+    )
+  }
+
+  async memoryIndexStatus(): Promise<MemoryIndexStatus> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<MemoryIndexStatus>(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        const status = yield* memoryService.indexStatus()
+        return {
+          totalFiles: status.totalFiles,
+          indexed: status.indexed,
+          stale: status.stale,
+          embedded: status.embedded,
+          links: status.links,
+          sources: status.sources,
+        }
+      })
+    )
+  }
+
+  async memoryTagAdd(id: string, tags: string[]): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        yield* memoryService.updateFrontmatter(id, { addTags: tags })
+      })
+    )
+  }
+
+  async memoryTagRemove(id: string, tags: string[]): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        yield* memoryService.updateFrontmatter(id, { removeTags: tags })
+      })
+    )
+  }
+
+  async memoryRelate(id: string, target: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        yield* memoryService.updateFrontmatter(id, { addRelated: [target] })
+      })
+    )
+  }
+
+  async memoryPropertySet(id: string, key: string, value: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        yield* memoryService.setProperty(id, key, value)
+      })
+    )
+  }
+
+  async memoryPropertyRemove(id: string, key: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        yield* memoryService.removeProperty(id, key)
+      })
+    )
+  }
+
+  async memoryProperties(id: string): Promise<Record<string, string>> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<Record<string, string>>(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        const props = yield* memoryService.getProperties(id)
+        const result: Record<string, string> = {}
+        for (const p of props as any[]) {
+          result[p.key] = p.value
+        }
+        return result
+      })
+    )
+  }
+
+  async memoryLinks(id: string): Promise<SerializedMemoryLink[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const links = await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        return yield* memoryService.getLinks(id)
+      })
+    )
+
+    return (links as any[]).map((l: any) => self.serializeMemoryLink(l))
+  }
+
+  async memoryBacklinks(id: string): Promise<SerializedMemoryLink[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const links = await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        return yield* memoryService.getBacklinks(id)
+      })
+    )
+
+    return (links as any[]).map((l: any) => self.serializeMemoryLink(l))
+  }
+
+  async memoryLinkCreate(sourceId: string, targetRef: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const memoryService = yield* core.MemoryService
+        yield* memoryService.addLink(sourceId, targetRef)
+      })
+    )
+  }
+
+  // Sync
+  async syncExport(path?: string): Promise<SyncExportResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SyncExportResult>(
+      Effect.gen(function* () {
+        const syncService = yield* core.SyncService
+        const result = yield* syncService.export(path)
+        return {
+          opCount: result.opCount,
+          path: result.path,
+        }
+      })
+    )
+  }
+
+  async syncImport(path?: string): Promise<SyncImportResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SyncImportResult>(
+      Effect.gen(function* () {
+        const syncService = yield* core.SyncService
+        const result = yield* syncService.import(path)
+        return {
+          imported: result.imported,
+          skipped: result.skipped,
+          conflicts: result.conflicts,
+        }
+      })
+    )
+  }
+
+  async syncStatus(): Promise<SyncStatusResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SyncStatusResult>(
+      Effect.gen(function* () {
+        const syncService = yield* core.SyncService
+        const status = yield* syncService.status()
+        return {
+          dbTaskCount: status.dbTaskCount,
+          jsonlOpCount: status.jsonlOpCount,
+          lastExport: status.lastExport instanceof Date ? status.lastExport.toISOString() : status.lastExport ?? null,
+          lastImport: status.lastImport instanceof Date ? status.lastImport.toISOString() : status.lastImport ?? null,
+          isDirty: status.isDirty,
+          autoSyncEnabled: status.autoSyncEnabled,
+        }
+      })
+    )
+  }
+
+  async syncCompact(path?: string): Promise<SyncCompactResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SyncCompactResult>(
+      Effect.gen(function* () {
+        const syncService = yield* core.SyncService
+        const result = yield* syncService.compact(path)
+        return {
+          before: result.before,
+          after: result.after,
+        }
+      })
+    )
+  }
+
+  // Docs
+  async docsList(options?: { kind?: string; status?: string }): Promise<SerializedDoc[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const docs = await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.list(options)
+      })
+    )
+
+    return (docs as any[]).map((d: any) => self.serializeDoc(d))
+  }
+
+  async docsGet(name: string): Promise<SerializedDoc> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const doc = await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.get(name)
+      })
+    )
+
+    return self.serializeDoc(doc)
+  }
+
+  async docsCreate(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const doc = await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.create(data as any)
+      })
+    )
+
+    return self.serializeDoc(doc)
+  }
+
+  async docsUpdate(name: string, yamlContent: string): Promise<SerializedDoc> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const doc = await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.update(name, yamlContent)
+      })
+    )
+
+    return self.serializeDoc(doc)
+  }
+
+  async docsDelete(name: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        yield* docService.remove(name)
+      })
+    )
+  }
+
+  async docsLock(name: string): Promise<SerializedDoc> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const doc = await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.lock(name)
+      })
+    )
+
+    return self.serializeDoc(doc)
+  }
+
+  async docsLink(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedDocLink>(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        const link = yield* docService.linkDocs(fromName, toName, linkType as any)
+        return {
+          id: link.id,
+          fromDocId: link.fromDocId,
+          toDocId: link.toDocId,
+          linkType: link.linkType,
+          createdAt: link.createdAt instanceof Date ? link.createdAt.toISOString() : link.createdAt,
+        }
+      })
+    )
+  }
+
+  async docsRender(name?: string): Promise<string[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<string[]>(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.render(name)
+      })
+    )
+  }
+
+  // Invariants
+  async invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    const invariants = await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.listInvariants(options)
+      })
+    )
+
+    return (invariants as any[]).map((inv: any) => self.serializeInvariant(inv))
+  }
+
+  async invariantsGet(id: string): Promise<SerializedInvariant> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    // DocService doesn't have a direct getInvariant(id) method,
+    // so we list all and filter by id.
+    const invariants = await this.run(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        return yield* docService.listInvariants()
+      })
+    )
+
+    const found = (invariants as any[]).find((inv: any) => inv.id === id)
+    if (!found) {
+      throw new TxError(`Invariant not found: ${id}`, "NOT_FOUND", 404)
+    }
+
+    return self.serializeInvariant(found)
+  }
+
+  async invariantsRecord(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedInvariantCheck>(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        const check = yield* docService.recordInvariantCheck(id, passed, details ?? null, durationMs ?? null)
+        return {
+          id: check.id,
+          invariantId: check.invariantId,
+          passed: check.passed,
+          details: check.details ?? null,
+          durationMs: check.durationMs ?? null,
+          checkedAt: check.checkedAt instanceof Date ? check.checkedAt.toISOString() : check.checkedAt,
+        }
+      })
+    )
+  }
+
+  // Cycles
+  // Cycle data is stored in the runs table with metadata.type === "cycle".
+  // We query via raw SQL since there's no dedicated CycleRepository.
+  async cyclesList(): Promise<SerializedCycleRun[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedCycleRun[]>(
+      Effect.gen(function* () {
+        const db = yield* core.SqliteClient
+        const rows = db.prepare(
+          `SELECT r.id, r.started_at, r.ended_at, r.status, r.metadata
+           FROM runs r
+           WHERE r.agent = 'cycle-scanner'
+           ORDER BY r.started_at DESC`
+        ).all() as any[]
+
+        return rows.map((row: any) => {
+          const meta = typeof row.metadata === "string" ? JSON.parse(row.metadata) : (row.metadata ?? {})
+          return {
+            id: row.id,
+            cycle: meta.cycle ?? 0,
+            name: meta.name ?? "",
+            description: meta.description ?? "",
+            startedAt: row.started_at,
+            endedAt: row.ended_at ?? null,
+            status: row.status,
+            rounds: meta.rounds ?? 0,
+            totalNewIssues: meta.totalNewIssues ?? 0,
+            existingIssues: meta.existingIssues ?? 0,
+            finalLoss: meta.finalLoss ?? 0,
+            converged: meta.converged ?? false,
+          }
+        })
+      })
+    )
+  }
+
+  async cyclesGet(id: string): Promise<SerializedCycleDetail> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedCycleDetail>(
+      Effect.gen(function* () {
+        const db = yield* core.SqliteClient
+
+        // Get the cycle run
+        const row = db.prepare(
+          `SELECT r.id, r.started_at, r.ended_at, r.status, r.metadata
+           FROM runs r WHERE r.id = ?`
+        ).get(id) as any
+
+        if (!row) {
+          return yield* Effect.fail(new Error(`Cycle not found: ${id}`))
+        }
+
+        const meta = typeof row.metadata === "string" ? JSON.parse(row.metadata) : (row.metadata ?? {})
+        const cycle: SerializedCycleRun = {
+          id: row.id,
+          cycle: meta.cycle ?? 0,
+          name: meta.name ?? "",
+          description: meta.description ?? "",
+          startedAt: row.started_at,
+          endedAt: row.ended_at ?? null,
+          status: row.status,
+          rounds: meta.rounds ?? 0,
+          totalNewIssues: meta.totalNewIssues ?? 0,
+          existingIssues: meta.existingIssues ?? 0,
+          finalLoss: meta.finalLoss ?? 0,
+          converged: meta.converged ?? false,
+        }
+
+        // Get round metrics from events table (matches REST handler)
+        const metricRows = db.prepare(
+          `SELECT metadata FROM events
+           WHERE run_id = ? AND event_type = 'metric' AND content = 'cycle.round.loss'
+           ORDER BY timestamp ASC`
+        ).all(id) as any[]
+
+        const roundMetrics = metricRows.map((row: any) => {
+          const m = typeof row.metadata === "string" ? JSON.parse(row.metadata) : (row.metadata ?? {})
+          return {
+            cycle: m.cycle ?? 0,
+            round: m.round ?? 0,
+            loss: m.loss ?? 0,
+            newIssues: m.newIssues ?? 0,
+            existingIssues: m.existingIssues ?? 0,
+            duplicates: m.duplicates ?? 0,
+            high: m.high ?? 0,
+            medium: m.medium ?? 0,
+            low: m.low ?? 0,
+          }
+        })
+
+        // Get issues: tasks created by this cycle (matches REST handler)
+        const issueRows = db.prepare(
+          `SELECT id, title, description, metadata FROM tasks
+           WHERE json_extract(metadata, '$.foundByScan') = 1
+             AND json_extract(metadata, '$.cycleId') = ?
+           ORDER BY json_extract(metadata, '$.round') ASC,
+                    CASE json_extract(metadata, '$.severity')
+                      WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3
+                    END ASC`
+        ).all(id) as any[]
+
+        const issues = issueRows.map((ir: any) => {
+          const issueMeta = typeof ir.metadata === "string" ? JSON.parse(ir.metadata) : (ir.metadata ?? {})
+          return {
+            id: ir.id,
+            title: ir.title ?? "",
+            description: ir.description ?? "",
+            severity: issueMeta.severity ?? "low",
+            issueType: issueMeta.issueType ?? "",
+            file: issueMeta.file ?? "",
+            line: issueMeta.line ?? 0,
+            cycle: issueMeta.cycle ?? 0,
+            round: issueMeta.round ?? 0,
+          }
+        })
+
+        return { cycle, roundMetrics, issues }
+      })
+    )
+  }
+
+  async cyclesDelete(id: string): Promise<void> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    await this.run(
+      Effect.gen(function* () {
+        const db = yield* core.SqliteClient
+        // Delete associated issues (tasks created by this cycle)
+        db.prepare(`DELETE FROM tasks WHERE json_extract(metadata, '$.cycleId') = ?`).run(id)
+        // Delete associated events, then the run itself
+        db.prepare("DELETE FROM events WHERE run_id = ?").run(id)
+        db.prepare("DELETE FROM runs WHERE id = ?").run(id)
+      })
+    )
+  }
+
+  async cyclesDeleteIssues(issueIds: string[]): Promise<{ success: boolean; deletedCount: number }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<{ success: boolean; deletedCount: number }>(
+      Effect.gen(function* () {
+        const db = yield* core.SqliteClient
+        if (issueIds.length === 0) {
+          return { success: true, deletedCount: 0 }
+        }
+        const placeholders = issueIds.map(() => "?").join(",")
+        const result = db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...issueIds)
+        return { success: true, deletedCount: result.changes }
+      })
+    )
+  }
+
+  async docsGraph(): Promise<DocGraph> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<DocGraph>(
+      Effect.gen(function* () {
+        const docService = yield* core.DocService
+        const graph = yield* docService.getGraph()
+        return graph
+      })
+    )
+  }
+
+  // Stats
+  async getStats(): Promise<StatsResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<StatsResult>(
+      Effect.gen(function* () {
+        const taskService = yield* core.TaskService
+        const readyService = yield* core.ReadyService
+        const learningService = yield* core.LearningService
+        const sqliteClient = yield* core.SqliteClient
+
+        const allTasks = yield* taskService.count({})
+        const doneTasks = yield* taskService.count({ status: "done" })
+        const readyTasks = yield* readyService.getReady(1000)
+        const learningsCount = yield* learningService.count()
+
+        // Get run counts from DB directly (matches REST handler)
+        const db = sqliteClient
+        const runningRow = db.prepare(
+          `SELECT COUNT(*) as count FROM runs WHERE status = 'running'`
+        ).get() as { count: number } | undefined
+        const totalRow = db.prepare(
+          `SELECT COUNT(*) as count FROM runs`
+        ).get() as { count: number } | undefined
+
+        return {
+          tasks: allTasks,
+          done: doneTasks,
+          ready: (readyTasks as any[]).length,
+          learnings: learningsCount,
+          runsRunning: runningRow?.count ?? 0,
+          runsTotal: totalRow?.count ?? 0,
+        }
       })
     )
   }
@@ -2457,6 +3571,152 @@ class PinsNamespace {
 }
 
 // =============================================================================
+// Memory Namespace
+// =============================================================================
+
+/**
+ * Memory namespace for filesystem-backed .md document operations.
+ *
+ * @example
+ * ```typescript
+ * // Add a memory source
+ * await tx.memory.sourceAdd('/path/to/notes')
+ *
+ * // Index documents
+ * await tx.memory.index({ incremental: true })
+ *
+ * // Search
+ * const results = await tx.memory.search({ query: 'authentication patterns' })
+ * ```
+ */
+class MemoryNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async sourceAdd(dir: string, label?: string): Promise<SerializedMemorySource> { return this.transport.memorySourceAdd(dir, label) }
+  async sourceRemove(dir: string): Promise<void> { return this.transport.memorySourceRemove(dir) }
+  async sourceList(): Promise<SerializedMemorySource[]> { return this.transport.memorySourceList() }
+  async add(data: CreateMemoryDocumentData): Promise<SerializedMemoryDocument> { return this.transport.memoryDocumentCreate(data) }
+  async show(id: string): Promise<SerializedMemoryDocument> { return this.transport.memoryDocumentGet(id) }
+  async list(options?: { source?: string; tags?: string[] }): Promise<SerializedMemoryDocument[]> { return this.transport.memoryDocumentList(options) }
+  async search(options: MemorySearchOptions): Promise<SerializedMemoryDocumentWithScore[]> { return this.transport.memorySearch(options) }
+  async index(options?: { incremental?: boolean }): Promise<MemoryIndexResult> { return this.transport.memoryIndex(options) }
+  async indexStatus(): Promise<MemoryIndexStatus> { return this.transport.memoryIndexStatus() }
+  async tag(id: string, tags: string[]): Promise<void> { return this.transport.memoryTagAdd(id, tags) }
+  async untag(id: string, tags: string[]): Promise<void> { return this.transport.memoryTagRemove(id, tags) }
+  async relate(id: string, target: string): Promise<void> { return this.transport.memoryRelate(id, target) }
+  async set(id: string, key: string, value: string): Promise<void> { return this.transport.memoryPropertySet(id, key, value) }
+  async unset(id: string, key: string): Promise<void> { return this.transport.memoryPropertyRemove(id, key) }
+  async props(id: string): Promise<Record<string, string>> { return this.transport.memoryProperties(id) }
+  async links(id: string): Promise<SerializedMemoryLink[]> { return this.transport.memoryLinks(id) }
+  async backlinks(id: string): Promise<SerializedMemoryLink[]> { return this.transport.memoryBacklinks(id) }
+  async link(sourceId: string, targetRef: string): Promise<void> { return this.transport.memoryLinkCreate(sourceId, targetRef) }
+}
+
+// =============================================================================
+// Sync Namespace
+// =============================================================================
+
+/**
+ * Sync namespace for JSONL-based export/import operations.
+ *
+ * @example
+ * ```typescript
+ * // Export tasks to JSONL
+ * const { opCount, path } = await tx.sync.export()
+ *
+ * // Check sync status
+ * const status = await tx.sync.status()
+ * ```
+ */
+class SyncNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async export(path?: string): Promise<SyncExportResult> { return this.transport.syncExport(path) }
+  async import(path?: string): Promise<SyncImportResult> { return this.transport.syncImport(path) }
+  async status(): Promise<SyncStatusResult> { return this.transport.syncStatus() }
+  async compact(path?: string): Promise<SyncCompactResult> { return this.transport.syncCompact(path) }
+}
+
+// =============================================================================
+// Docs Namespace
+// =============================================================================
+
+/**
+ * Docs namespace for documentation-as-primitives operations.
+ *
+ * @example
+ * ```typescript
+ * // List all docs
+ * const docs = await tx.docs.list()
+ *
+ * // Create a doc
+ * const doc = await tx.docs.create({ kind: 'prd', name: 'my-feature', title: 'My Feature', yamlContent: '...' })
+ * ```
+ */
+class DocsNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async list(options?: { kind?: string; status?: string }): Promise<SerializedDoc[]> { return this.transport.docsList(options) }
+  async get(name: string): Promise<SerializedDoc> { return this.transport.docsGet(name) }
+  async create(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> { return this.transport.docsCreate(data) }
+  async update(name: string, yamlContent: string): Promise<SerializedDoc> { return this.transport.docsUpdate(name, yamlContent) }
+  async delete(name: string): Promise<void> { return this.transport.docsDelete(name) }
+  async lock(name: string): Promise<SerializedDoc> { return this.transport.docsLock(name) }
+  async link(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink> { return this.transport.docsLink(fromName, toName, linkType) }
+  async render(name?: string): Promise<string[]> { return this.transport.docsRender(name) }
+  async graph(): Promise<DocGraph> { return this.transport.docsGraph() }
+}
+
+// =============================================================================
+// Invariants Namespace
+// =============================================================================
+
+/**
+ * Invariants namespace for design-doc invariant tracking.
+ *
+ * @example
+ * ```typescript
+ * // List all invariants
+ * const invariants = await tx.invariants.list()
+ *
+ * // Record a check result
+ * await tx.invariants.record('INV-001', true, 'All assertions passed', 150)
+ * ```
+ */
+class InvariantsNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async list(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> { return this.transport.invariantsList(options) }
+  async get(id: string): Promise<SerializedInvariant> { return this.transport.invariantsGet(id) }
+  async record(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck> { return this.transport.invariantsRecord(id, passed, details, durationMs) }
+}
+
+// =============================================================================
+// Cycles Namespace
+// =============================================================================
+
+/**
+ * Cycles namespace for cycle-based issue discovery results.
+ *
+ * @example
+ * ```typescript
+ * // List past cycle runs
+ * const cycles = await tx.cycles.list()
+ *
+ * // Get cycle details
+ * const detail = await tx.cycles.get(cycles[0].id)
+ * ```
+ */
+class CyclesNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async list(): Promise<SerializedCycleRun[]> { return this.transport.cyclesList() }
+  async get(id: string): Promise<SerializedCycleDetail> { return this.transport.cyclesGet(id) }
+  async delete(id: string): Promise<void> { return this.transport.cyclesDelete(id) }
+  async deleteIssues(issueIds: string[]): Promise<{ success: boolean; deletedCount: number }> { return this.transport.cyclesDeleteIssues(issueIds) }
+}
+
+// =============================================================================
 // Main Client
 // =============================================================================
 
@@ -2539,6 +3799,31 @@ export class TxClient {
   public readonly pins: PinsNamespace
 
   /**
+   * Memory document operations (filesystem-backed .md search).
+   */
+  public readonly memory: MemoryNamespace
+
+  /**
+   * Sync operations (JSONL export/import).
+   */
+  public readonly sync: SyncNamespace
+
+  /**
+   * Documentation-as-primitives operations.
+   */
+  public readonly docs: DocsNamespace
+
+  /**
+   * Design-doc invariant tracking operations.
+   */
+  public readonly invariants: InvariantsNamespace
+
+  /**
+   * Cycle-based issue discovery results.
+   */
+  public readonly cycles: CyclesNamespace
+
+  /**
    * Create a new TxClient.
    *
    * @param config - Client configuration
@@ -2570,6 +3855,11 @@ export class TxClient {
     this.messages = new MessagesNamespace(this.transport)
     this.claims = new ClaimsNamespace(this.transport)
     this.pins = new PinsNamespace(this.transport)
+    this.memory = new MemoryNamespace(this.transport)
+    this.sync = new SyncNamespace(this.transport)
+    this.docs = new DocsNamespace(this.transport)
+    this.invariants = new InvariantsNamespace(this.transport)
+    this.cycles = new CyclesNamespace(this.transport)
   }
 
   /**
@@ -2597,6 +3887,20 @@ export class TxClient {
    */
   get configuration(): Readonly<TxClientConfig> {
     return { ...this.config }
+  }
+
+  /**
+   * Get queue statistics: task counts, ready count, and learnings count.
+   *
+   * @returns Stats with task, done, ready, and learnings counts
+   * @example
+   * ```typescript
+   * const stats = await tx.stats()
+   * console.log(`${stats.ready} tasks ready, ${stats.done}/${stats.tasks} done`)
+   * ```
+   */
+  async stats(): Promise<StatsResult> {
+    return this.transport.getStats()
   }
 
   /**

@@ -13,7 +13,7 @@ import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx-ty
 
 // Re-export for use in other modules
 export { serializeTask }
-import { TaskService, ReadyService, DependencyService } from "@jamesaphoenix/tx-core"
+import { TaskService, ReadyService, DependencyService, HierarchyService, LearningService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
@@ -346,6 +346,60 @@ const handleGroupContextClear = async (args: { taskId: string }): Promise<McpToo
   }
 }
 
+const handleTree = async (args: { id: string }): Promise<McpToolResult> => {
+  try {
+    const taskId = assertTaskId(args.id)
+    const tree = await runEffect(
+      Effect.gen(function* () {
+        const hierarchyService = yield* HierarchyService
+        return yield* hierarchyService.getTree(taskId)
+      })
+    )
+    return {
+      content: [
+        { type: "text", text: `Task tree for ${args.id}` },
+        { type: "text", text: JSON.stringify(tree) }
+      ],
+      isError: false
+    }
+  } catch (error) {
+    return handleToolError("tx_tree", args, error)
+  }
+}
+
+const handleStats = async (): Promise<McpToolResult> => {
+  try {
+    const stats = await runEffect(
+      Effect.gen(function* () {
+        const taskService = yield* TaskService
+        const readyService = yield* ReadyService
+        const learningService = yield* LearningService
+
+        const total = yield* taskService.count()
+        const done = yield* taskService.count({ status: "done" })
+        const readyTasks = yield* readyService.getReady(MCP_MAX_LIMIT)
+        const learnings = yield* learningService.count()
+
+        return {
+          tasks: total,
+          done,
+          ready: readyTasks.length,
+          learnings
+        }
+      })
+    )
+    return {
+      content: [
+        { type: "text", text: `Stats: ${stats.tasks} tasks (${stats.done} done, ${stats.ready} ready), ${stats.learnings} learnings` },
+        { type: "text", text: JSON.stringify(stats) }
+      ],
+      isError: false
+    }
+  } catch (error) {
+    return handleToolError("tx_stats", {}, error)
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Tool Registration
 // -----------------------------------------------------------------------------
@@ -493,5 +547,25 @@ export const registerTaskTools = (server: McpServer): void => {
       taskId: z.string().describe("Task ID to clear context from")
     },
     handleGroupContextClear as Parameters<typeof server.tool>[3]
+  )
+
+  // tx_tree - Show task subtree
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
+  server.tool(
+    "tx_tree",
+    "Show the full subtree of a task including all descendants. Returns a nested tree structure.",
+    {
+      id: z.string().describe("Root task ID to show tree for")
+    },
+    handleTree as Parameters<typeof server.tool>[3]
+  )
+
+  // tx_stats - Aggregate queue statistics
+  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
+  server.tool(
+    "tx_stats",
+    "Get aggregate queue statistics: total tasks, done, ready, and learnings count.",
+    {},
+    handleStats as Parameters<typeof server.tool>[3]
   )
 }

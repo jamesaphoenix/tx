@@ -19,6 +19,7 @@ import noHono from './rules/no-hono.js';
 import noZod from './rules/no-zod.js';
 import noPlainInterfaces from './rules/no-plain-interfaces.js';
 import noAsCastInRepos from './rules/no-as-cast-in-repos.js';
+import requireInterfaceCoverage from './rules/require-interface-coverage.js';
 
 const plugin = {
   meta: {
@@ -42,7 +43,8 @@ const plugin = {
     'no-hono': noHono,
     'no-zod': noZod,
     'no-plain-interfaces': noPlainInterfaces,
-    'no-as-cast-in-repos': noAsCastInRepos
+    'no-as-cast-in-repos': noAsCastInRepos,
+    'require-interface-coverage': requireInterfaceCoverage
   },
   // Flat config recommended configuration
   configs: {
