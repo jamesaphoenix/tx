@@ -191,6 +191,8 @@ describe("Migration system", () => {
         "run_heartbeat_state",
         // Migration 029 — memory
         "memory_documents", "memory_links", "memory_sources", "memory_properties",
+        // Migration 030 — context pins
+        "context_pins", "pin_config",
       ]
 
       for (const table of expectedTables) {

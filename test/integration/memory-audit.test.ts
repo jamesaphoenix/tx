@@ -3853,7 +3853,7 @@ tags: [test]
 
 Content`)
 
-      const result = await Effect.runPromise(
+      await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* MemoryService
           yield* svc.addSource(tempDir)
@@ -3863,9 +3863,6 @@ Content`)
           const docs = yield* svc.listDocuments()
           const doc = docs[0]!
           yield* svc.updateFrontmatter(doc.id, { addTags: ["extra"] })
-
-          // Read the file back and verify booleans are bare (not quoted)
-          return doc
         }).pipe(Effect.provide(shared.layer))
       )
 

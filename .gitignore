@@ -23,6 +23,9 @@ vitest.config.d.ts.map
 packages/*/README.md
 apps/*/README.md
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # Playwright MCP
 .playwright-mcp/
 

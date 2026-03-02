@@ -254,7 +254,7 @@ describe("CLI sync export command", () => {
 
   describe("basic success cases", () => {
     it("exports tasks to JSONL file", () => {
-      const result = runTxArgs(["sync", "export", "--path", jsonlPath], dbPath)
+      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("Exported")
       expect(result.stdout).toContain("operation(s)")
@@ -262,7 +262,7 @@ describe("CLI sync export command", () => {
     })
 
     it("creates valid JSONL format", () => {
-      runTxArgs(["sync", "export", "--path", jsonlPath], dbPath)
+      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
 
       const content = readFileSync(jsonlPath, "utf-8")
       const lines = content.trim().split("\n")
@@ -277,7 +277,7 @@ describe("CLI sync export command", () => {
     })
 
     it("exports with correct operation structure", () => {
-      runTxArgs(["sync", "export", "--path", jsonlPath], dbPath)
+      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
 
       const content = readFileSync(jsonlPath, "utf-8")
       const lines = content.trim().split("\n")
@@ -297,7 +297,7 @@ describe("CLI sync export command", () => {
     })
 
     it("exports specific task correctly", () => {
-      runTxArgs(["sync", "export", "--path", jsonlPath], dbPath)
+      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
 
       const content = readFileSync(jsonlPath, "utf-8")
       const lines = content.trim().split("\n")
@@ -311,7 +311,7 @@ describe("CLI sync export command", () => {
 
   describe("JSON output formatting", () => {
     it("outputs JSON with --json flag", () => {
-      const result = runTxArgs(["sync", "export", "--path", jsonlPath, "--json"], dbPath)
+      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -322,7 +322,7 @@ describe("CLI sync export command", () => {
     })
 
     it("JSON output reports correct operation count", () => {
-      const result = runTxArgs(["sync", "export", "--path", jsonlPath, "--json"], dbPath)
+      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -335,7 +335,7 @@ describe("CLI sync export command", () => {
       const emptyDbPath = join(tmpDir, "empty.db")
       runTx("init", emptyDbPath)
 
-      const result = runTxArgs(["sync", "export", "--path", jsonlPath, "--json"], emptyDbPath)
+      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath, "--json"], emptyDbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -397,7 +397,7 @@ describe("CLI sync import command", () => {
       ].join("\n")
       writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
 
-      const result = runTxArgs(["sync", "import", "--path", jsonlPath], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath], dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("imported=1")
 
@@ -422,7 +422,7 @@ describe("CLI sync import command", () => {
       ].join("\n")
       writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
 
-      const result = runTxArgs(["sync", "import", "--path", jsonlPath, "--json"], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -446,7 +446,7 @@ describe("CLI sync import command", () => {
       ].join("\n")
       writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
 
-      const result = runTxArgs(["sync", "import", "--path", jsonlPath], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath], dbPath)
       expect(result.status).toBe(0)
 
       // Verify dependency was created
@@ -462,7 +462,7 @@ describe("CLI sync import command", () => {
       runTxArgs(["add", "Original task", "--json"], dbPath)
 
       // Export to get the task ID and timestamp
-      runTxArgs(["sync", "export", "--path", jsonlPath], dbPath)
+      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
       const content = readFileSync(jsonlPath, "utf-8")
       const ops = content.trim().split("\n").map(l => JSON.parse(l))
       const taskOp = ops.find(op => op.data?.title === "Original task")
@@ -475,7 +475,7 @@ describe("CLI sync import command", () => {
       })
       writeFileSync(jsonlPath, newJsonl + "\n", "utf-8")
 
-      const result = runTxArgs(["sync", "import", "--path", jsonlPath, "--json"], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -498,13 +498,13 @@ describe("CLI sync import command", () => {
       writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
 
       // Import first with old timestamp
-      runTxArgs(["sync", "import", "--path", jsonlPath], dbPath)
+      runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath], dbPath)
 
       // Now update the task locally (which gives it a newer timestamp)
       runTxArgs(["update", "tx-confli01", "--title", "Local update"], dbPath)
 
       // Try to import again with the old timestamp
-      const result = runTxArgs(["sync", "import", "--path", jsonlPath, "--json"], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -519,7 +519,7 @@ describe("CLI sync import command", () => {
 
   describe("error handling", () => {
     it("returns zero counts for missing file", () => {
-      const result = runTxArgs(["sync", "import", "--path", "/nonexistent/file.jsonl", "--json"], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", "/nonexistent/file.jsonl", "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -531,7 +531,7 @@ describe("CLI sync import command", () => {
     it("returns zero counts for empty file", () => {
       writeFileSync(jsonlPath, "", "utf-8")
 
-      const result = runTxArgs(["sync", "import", "--path", jsonlPath, "--json"], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -548,7 +548,7 @@ describe("CLI sync import command", () => {
       })
       writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
 
-      const result = runTxArgs(["sync", "import", "--path", jsonlPath, "--json"], dbPath)
+      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
