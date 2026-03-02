@@ -24,11 +24,11 @@ violations=""
 # Detect concrete git commands that bypass hooks.
 # Require `--no-verify` / `-n` to be followed by another option or end-of-command
 # to avoid matching explanatory prose (for example: "git commit -n bypasses...").
-if matches=$(rg -n --glob '!**/node_modules/**' --glob '!**/.git/**' --glob '!scripts/enforce-no-verify.sh' 'git[[:space:]]+(commit|push|merge|rebase|cherry-pick)\b[^\n]*--no-verify([[:space:]]+-|$)' "${SEARCH_PATHS[@]}" 2>/dev/null); then
+if matches=$(rg -n --glob '!**/node_modules/**' --glob '!**/.git/**' --glob '!.claude/worktrees/**' --glob '!scripts/enforce-no-verify.sh' 'git[[:space:]]+(commit|push|merge|rebase|cherry-pick)\b[^\n]*--no-verify([[:space:]]+-|$)' "${SEARCH_PATHS[@]}" 2>/dev/null); then
   violations="${violations}${matches}"$'\n'
 fi
 
-if matches=$(rg -n --glob '!**/node_modules/**' --glob '!**/.git/**' --glob '!scripts/enforce-no-verify.sh' 'git[[:space:]]+commit\b[^\n]*[[:space:]]-n([[:space:]]+-|$)' "${SEARCH_PATHS[@]}" 2>/dev/null); then
+if matches=$(rg -n --glob '!**/node_modules/**' --glob '!**/.git/**' --glob '!.claude/worktrees/**' --glob '!scripts/enforce-no-verify.sh' 'git[[:space:]]+commit\b[^\n]*[[:space:]]-n([[:space:]]+-|$)' "${SEARCH_PATHS[@]}" 2>/dev/null); then
   violations="${violations}${matches}"$'\n'
 fi
 
