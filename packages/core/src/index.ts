@@ -136,7 +136,11 @@ export {
   MemoryServiceLive,
   MemoryRetrieverService,
   MemoryRetrieverServiceNoop,
-  MemoryRetrieverServiceLive
+  MemoryRetrieverServiceLive,
+  PinService,
+  PinServiceLive,
+  PinRepository,
+  PinRepositoryLive
 } from "./layer.js"
 
 // =============================================================================
@@ -224,6 +228,7 @@ export {
   type CompactResult,
   type ExportOptions,
   type ExportAllResult,
+  type EntityImportResult,
   type ImportAllResult,
   type Migration,
   type AppliedMigration,
@@ -465,6 +470,7 @@ export {
 export {
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
+  scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
   type DashboardDefaultTaskAssigmentType
 } from "./utils/toml-config.js"

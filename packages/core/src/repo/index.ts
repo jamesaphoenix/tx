@@ -26,3 +26,4 @@ export {
   MemorySourceRepository, MemorySourceRepositoryLive,
   type MemoryBM25Result,
 } from "./memory-repo.js"
+export { PinRepository, PinRepositoryLive } from "./pin-repo.js"

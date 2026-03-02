@@ -61,6 +61,14 @@ Messages:
   outbox:pending          Count pending messages on a channel
   outbox:gc               Garbage collect old messages
 
+Context Pins:
+  pin set <id> [content]  Create/update a context pin
+  pin get <id>            Show pin content
+  pin rm <id>             Remove a pin
+  pin list                List all pins
+  pin sync                Sync pins to target files
+  pin targets [files...]  Show/set target files
+
 Docs:
   doc <subcommand>        Manage docs (add, edit, show, list, render, lock, version, link, attach, patch, validate, drift, lint-ears)
   invariant <subcommand>  Manage invariants (list, show, record, sync)
@@ -88,6 +96,10 @@ Tools:
   validate                Run pre-flight database health checks
   doctor                  Run system diagnostics
   dashboard               Start API server + dashboard
+
+Utils:
+  utils claude-usage      Show Claude Code rate limit usage
+  utils codex-usage       Show Codex rate limit usage
 
 Global Options:
   --json                  Output as JSON
@@ -2528,5 +2540,166 @@ Links are tracked in the graph for --expand search.
 
 Examples:
   tx memory relate mem-a7f3bc12 "JWT Auth Patterns"
-  tx memory relate mem-a7f3bc12 mem-b8e4cd56`
+  tx memory relate mem-a7f3bc12 mem-b8e4cd56`,
+
+  // Pin commands (context pins for agent memory injection)
+  pin: `tx pin - Context pins for agent memory injection
+
+Usage: tx pin <subcommand> [options]
+
+Manage named content blocks ("pins") that are synchronized to agent context
+files (CLAUDE.md, AGENTS.md) as <tx-pin id="..."> XML-tagged sections.
+
+Subcommands:
+  set <id> [content]    Create or update a pin
+  get <id>              Show pin content
+  rm <id>               Remove a pin from DB and target files
+  list                  List all pins
+  sync                  Re-sync all pins to target files
+  targets [files...]    Show or set target files
+
+Options:
+  --json                Output as JSON
+  --file, -f <path>     Read content from file (for set)
+
+Examples:
+  tx pin set auth-patterns "Always use JWT with refresh tokens"
+  tx pin set coding-standards --file ./standards.md
+  echo "Use Effect-TS" | tx pin set effect-rules
+  tx pin get auth-patterns
+  tx pin list
+  tx pin targets CLAUDE.md AGENTS.md
+  tx pin sync
+  tx pin rm auth-patterns`,
+
+  "pin set": `tx pin set - Create or update a context pin
+
+Usage: tx pin set <id> [content] [--file <path>]
+
+Creates or updates a named content block. The pin is stored in the database
+and synchronized to all configured target files as a <tx-pin> XML block.
+
+Arguments:
+  <id>        Pin ID (kebab-case: lowercase, numbers, dots, hyphens, underscores)
+  [content]   Pin content (optional if using --file or stdin)
+
+Options:
+  --file, -f <path>   Read content from a file
+  --json              Output as JSON
+
+Content is read from: positional argument > --file > stdin (piped input).
+
+Examples:
+  tx pin set auth-patterns "Always use JWT"
+  tx pin set coding-standards --file ./standards.md
+  echo "Use Effect-TS for all services" | tx pin set effect-rules`,
+
+  "pin get": `tx pin get - Show a pin's content
+
+Usage: tx pin get <id> [--json]
+
+Examples:
+  tx pin get auth-patterns
+  tx pin get auth-patterns --json`,
+
+  "pin rm": `tx pin rm - Remove a context pin
+
+Usage: tx pin rm <id>
+
+Removes the pin from the database and all target files.
+Alias: tx pin remove
+
+Examples:
+  tx pin rm auth-patterns`,
+
+  "pin remove": `tx pin remove - Remove a context pin
+
+Usage: tx pin remove <id>
+
+Removes the pin from the database and all target files.
+Alias: tx pin rm
+
+Examples:
+  tx pin remove auth-patterns`,
+
+  "pin list": `tx pin list - List all context pins
+
+Usage: tx pin list [--json]
+
+Examples:
+  tx pin list
+  tx pin list --json`,
+
+  "pin sync": `tx pin sync - Re-sync all pins to target files
+
+Usage: tx pin sync [--json]
+
+Reads all pins from the database and writes them to each configured target file.
+Adds missing pins, updates changed pins, and removes stale pins from files.
+This operation is idempotent.
+
+Examples:
+  tx pin sync`,
+
+  "pin targets": `tx pin targets - Show or set target files
+
+Usage: tx pin targets [files...]
+
+With no arguments, shows current target files.
+With arguments, sets the target files list.
+
+Examples:
+  tx pin targets                       # Show current targets
+  tx pin targets CLAUDE.md             # Set single target
+  tx pin targets CLAUDE.md AGENTS.md   # Set multiple targets`,
+
+  // --- Utils commands ---
+
+  utils: `tx utils - Utility commands for external tool integration
+
+Usage: tx utils <subcommand> [options]
+
+Subcommands:
+  claude-usage    Show Claude Code rate limit usage (% remaining, reset times)
+  codex-usage     Show Codex rate limit usage (% remaining, reset times)
+
+Options:
+  --json          Output as JSON
+  --help          Show this help
+
+Run 'tx utils <subcommand> --help' for subcommand-specific help.`,
+
+  "utils claude-usage": `tx utils claude-usage - Show Claude Code usage
+
+Usage: tx utils claude-usage [--json]
+
+Reads OAuth credentials from ~/.claude/.credentials.json and queries
+the Anthropic usage API. Shows utilization percentages for 5-hour and
+7-day rate limit windows, with time until reset.
+
+Options:
+  --json          Output raw API response as JSON
+  --help          Show this help
+
+Examples:
+  tx utils claude-usage
+  tx utils claude-usage --json`,
+
+  "utils codex-usage": `tx utils codex-usage - Show Codex usage
+
+Usage: tx utils codex-usage [--json]
+
+Spawns codex app-server over stdio and queries rate limits via JSON-RPC.
+Shows utilization percentages for 5-hour and weekly windows, with time
+until reset and per-model breakdown.
+
+Requires: codex CLI installed (npm install -g codex@latest)
+
+Options:
+  --json          Output raw JSON-RPC response as JSON
+  --help          Show this help
+
+Examples:
+  tx utils codex-usage
+  tx utils codex-usage --json`,
 }

@@ -65,7 +65,8 @@ export type {
   StalledRunsOptions,
   ReapStalledRunsOptions,
   SerializedStalledRun,
-  SerializedReapedRun
+  SerializedReapedRun,
+  SerializedPin
 } from "./types.js"
 
 // Re-export common types from @tx/types for convenience

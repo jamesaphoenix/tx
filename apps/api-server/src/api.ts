@@ -15,6 +15,7 @@ import {
   FileLearningsSerializedSchema,
   RunSerializedSchema,
   MessageSerializedSchema,
+  PinSerializedSchema,
   TASK_STATUSES,
   LEARNING_SOURCE_TYPES,
   RUN_STATUSES,
@@ -949,6 +950,73 @@ export const DocsGroup = HttpApiGroup.make("docs")
   )
 
 // =============================================================================
+// PINS GROUP
+// =============================================================================
+
+const PinIdParam = HttpApiSchema.param("id", Schema.String.pipe(
+  Schema.pattern(/^(?!sync$|targets$)[a-z0-9][a-z0-9._-]*[a-z0-9]$/),
+  Schema.annotations({ description: "Pin ID (kebab-case, min 2 chars, not 'sync' or 'targets')" })
+))
+
+const SetPinBody = Schema.Struct({
+  content: Schema.String.pipe(Schema.minLength(1), Schema.annotations({ description: "Pin content (markdown)" })),
+})
+
+const PinListResponse = Schema.Struct({
+  pins: Schema.Array(PinSerializedSchema),
+})
+
+const PinSyncResponse = Schema.Struct({
+  synced: Schema.Array(Schema.String),
+})
+
+const PinTargetsResponse = Schema.Struct({
+  files: Schema.Array(Schema.String),
+})
+
+const SetPinTargetsBody = Schema.Struct({
+  files: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+})
+
+const PinDeleteResponse = Schema.Struct({
+  deleted: Schema.Boolean,
+})
+
+export const PinsGroup = HttpApiGroup.make("pins")
+  .add(
+    HttpApiEndpoint.post("setPin")`/api/pins/${PinIdParam}`
+      .setPayload(SetPinBody)
+      .addSuccess(PinSerializedSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.get("listPins", "/api/pins")
+      .addSuccess(PinListResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getPin")`/api/pins/${PinIdParam}`
+      .addSuccess(PinSerializedSchema)
+      .addError(NotFound)
+  )
+  .add(
+    HttpApiEndpoint.del("deletePin")`/api/pins/${PinIdParam}`
+      .addSuccess(PinDeleteResponse)
+      .addError(NotFound)
+  )
+  .add(
+    HttpApiEndpoint.post("syncPins", "/api/pins/sync")
+      .addSuccess(PinSyncResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getPinTargets", "/api/pins/targets")
+      .addSuccess(PinTargetsResponse)
+  )
+  .add(
+    HttpApiEndpoint.put("setPinTargets", "/api/pins/targets")
+      .setPayload(SetPinTargetsBody)
+      .addSuccess(PinTargetsResponse)
+  )
+
+// =============================================================================
 // TOP-LEVEL API
 // =============================================================================
 
@@ -966,4 +1034,5 @@ export class TxApi extends HttpApi.make("tx")
   .add(SyncGroup)
   .add(MessagesGroup)
   .add(CyclesGroup)
-  .add(DocsGroup) {}
+  .add(DocsGroup)
+  .add(PinsGroup) {}

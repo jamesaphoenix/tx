@@ -406,3 +406,17 @@ export interface SerializedClaim {
   renewedCount: number
   status: string
 }
+
+// =============================================================================
+// Pin Types
+// =============================================================================
+
+/**
+ * Serialized pin for JSON output (dates as ISO strings).
+ */
+export interface SerializedPin {
+  id: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}

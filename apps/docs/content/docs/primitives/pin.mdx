@@ -1,0 +1,673 @@
+---
+title: tx pin
+description: Persistent named content blocks synced to agent context files
+---
+
+## Purpose
+
+`tx pin` manages named content blocks ("pins") that are automatically synchronized to agent context files like `CLAUDE.md` or `AGENTS.md`. Each pin is stored in the database and rendered as an XML-tagged block in target files:
+
+```xml
+<tx-pin id="auth-patterns">
+## Authentication Patterns
+
+- Always use JWT with refresh tokens
+- Store tokens in httpOnly cookies
+</tx-pin>
+```
+
+Pins provide:
+
+- **Traceability**: Each block has a unique ID for programmatic find/update/remove
+- **Safety**: Content outside `<tx-pin>` tags is never touched
+- **Full CRUD**: Create, read, update, delete through any interface
+- **Auto-sync**: Changes propagate to all configured target files
+
+## Set a Pin
+
+Create or update a named pin. If the pin already exists, its content is replaced.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx pin set <id> [content] [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<id>` | Yes | Pin ID (kebab-case, e.g. `auth-patterns`) |
+| `[content]` | No | Inline content (if omitted, reads from `--file` or stdin) |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--file <path>` | Read content from a file |
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Set with inline content
+tx pin set auth-patterns "Always use JWT. Store in httpOnly cookies."
+
+# Set from a file
+tx pin set coding-standards --file ./standards.md
+
+# Set from stdin (pipe)
+echo "Use Effect-TS for all services" | tx pin set effect-rules
+
+# Multi-line inline
+tx pin set api-conventions "## API Conventions
+- All endpoints return JSON
+- Use Effect Schema for validation"
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const pin = await tx.pins.set('auth-patterns', 'Always use JWT with refresh tokens.')
+// Returns: { id, content, createdAt, updatedAt }
+
+console.log(`Pin "${pin.id}" set (${pin.content.length} chars)`)
+```
+
+> **Tip:** For Effect-based access, use `PinService` from `@jamesaphoenix/tx-core` directly.
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_pin_set",
+  "arguments": {
+    "id": "auth-patterns",
+    "content": "Always use JWT with refresh tokens."
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Pin ID (kebab-case) |
+| `content` | Yes | Markdown content for the pin |
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+POST /api/pins/:id
+Content-Type: application/json
+
+{
+  "content": "Always use JWT with refresh tokens."
+}
+```
+
+### Response (201)
+
+```json
+{
+  "id": "auth-patterns",
+  "content": "Always use JWT with refresh tokens.",
+  "createdAt": "2025-03-01T10:00:00.000Z",
+  "updatedAt": "2025-03-01T10:00:00.000Z"
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/pins/auth-patterns \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Always use JWT with refresh tokens."}'
+```
+
+</Tab>
+</Tabs>
+
+---
+
+## Get a Pin
+
+Read the content of a single pin by ID.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx pin get <id> [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<id>` | Yes | Pin ID to read |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON (includes metadata) |
+
+### Examples
+
+```bash
+# Print pin content
+tx pin get auth-patterns
+
+# JSON output with metadata
+tx pin get auth-patterns --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const pin = await tx.pins.get('auth-patterns')
+if (pin) {
+  console.log(pin.content)
+} else {
+  console.log('Pin not found')
+}
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_pin_get",
+  "arguments": {
+    "id": "auth-patterns"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+GET /api/pins/:id
+```
+
+### Response (200)
+
+```json
+{
+  "id": "auth-patterns",
+  "content": "Always use JWT with refresh tokens.",
+  "createdAt": "2025-03-01T10:00:00.000Z",
+  "updatedAt": "2025-03-01T10:00:00.000Z"
+}
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/pins/auth-patterns
+```
+
+</Tab>
+</Tabs>
+
+---
+
+## Remove a Pin
+
+Delete a pin from the database and remove its block from all target files.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx pin rm <id> [options]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<id>` | Yes | Pin ID to remove |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+tx pin rm auth-patterns
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const { deleted } = await tx.pins.remove('auth-patterns')
+console.log(deleted ? 'Removed' : 'Not found')
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_pin_rm",
+  "arguments": {
+    "id": "auth-patterns"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+DELETE /api/pins/:id
+```
+
+### Response (200)
+
+```json
+{
+  "deleted": true
+}
+```
+
+### Example
+
+```bash
+curl -X DELETE http://localhost:3456/api/pins/auth-patterns
+```
+
+</Tab>
+</Tabs>
+
+---
+
+## List All Pins
+
+List every pin in the database with a content preview.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx pin list [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# Human-readable list
+tx pin list
+
+# JSON output
+tx pin list --json
+```
+
+### Output
+
+```
+  auth-patterns  Always use JWT with refresh tokens. Store in httpOnly cookies.
+  api-conventions  ## API Conventions - All endpoints return JSON - Use Effe...
+
+2 pin(s)
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const pins = await tx.pins.list()
+for (const pin of pins) {
+  console.log(`${pin.id}: ${pin.content.slice(0, 60)}...`)
+}
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_pin_list",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+GET /api/pins
+```
+
+### Response (200)
+
+```json
+{
+  "pins": [
+    {
+      "id": "auth-patterns",
+      "content": "Always use JWT with refresh tokens.",
+      "createdAt": "2025-03-01T10:00:00.000Z",
+      "updatedAt": "2025-03-01T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Example
+
+```bash
+curl http://localhost:3456/api/pins
+```
+
+</Tab>
+</Tabs>
+
+---
+
+## Sync Pins to Files
+
+Re-synchronize all pins to target files. This is idempotent -- running it multiple times produces the same result. Sync adds missing pins, updates changed pins, and removes blocks for deleted pins.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx pin sync [options]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+tx pin sync
+# Output: Synced to: CLAUDE.md, AGENTS.md
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+const { synced } = await tx.pins.sync()
+console.log(`Synced to: ${synced.join(', ')}`)
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_pin_sync",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+POST /api/pins/sync
+```
+
+### Response (200)
+
+```json
+{
+  "synced": ["CLAUDE.md", "AGENTS.md"]
+}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:3456/api/pins/sync
+```
+
+</Tab>
+</Tabs>
+
+---
+
+## Configure Target Files
+
+View or set which files pins are synced to. By default, pins sync to `CLAUDE.md`.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# Show current targets
+tx pin targets
+
+# Set target files
+tx pin targets CLAUDE.md AGENTS.md
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `[files...]` | No | Target file paths. If omitted, shows current targets. |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### Examples
+
+```bash
+# View current targets
+tx pin targets
+# Output: Target files: CLAUDE.md
+
+# Set multiple targets
+tx pin targets CLAUDE.md AGENTS.md .cursor/rules/context.md
+
+# JSON output
+tx pin targets --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Get current targets
+const targets = await tx.pins.getTargets()
+console.log(targets) // ['CLAUDE.md']
+
+// Set targets
+const updated = await tx.pins.setTargets(['CLAUDE.md', 'AGENTS.md'])
+console.log(updated) // ['CLAUDE.md', 'AGENTS.md']
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "tool": "tx_pin_targets_get",
+  "arguments": {}
+}
+```
+
+```json
+{
+  "tool": "tx_pin_targets_set",
+  "arguments": {
+    "files": ["CLAUDE.md", "AGENTS.md"]
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+# Get targets
+GET /api/pins/targets
+
+# Set targets
+PUT /api/pins/targets
+Content-Type: application/json
+
+{
+  "files": ["CLAUDE.md", "AGENTS.md"]
+}
+```
+
+### Response (200)
+
+```json
+{
+  "files": ["CLAUDE.md", "AGENTS.md"]
+}
+```
+
+### Examples
+
+```bash
+# Get current targets
+curl http://localhost:3456/api/pins/targets
+
+# Set targets
+curl -X PUT http://localhost:3456/api/pins/targets \
+  -H "Content-Type: application/json" \
+  -d '{"files": ["CLAUDE.md", "AGENTS.md"]}'
+```
+
+</Tab>
+</Tabs>
+
+---
+
+## Pin Schema
+
+Every pin contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Kebab-case identifier (e.g. `auth-patterns`) |
+| `content` | `string` | Markdown content |
+| `createdAt` | `string` | ISO 8601 timestamp |
+| `updatedAt` | `string` | ISO 8601 timestamp (changes on content update) |
+
+### Pin ID Rules
+
+Pin IDs must match the pattern `^[a-z0-9][a-z0-9._-]*[a-z0-9]$`:
+
+- Starts and ends with a lowercase letter or digit
+- May contain lowercase letters, digits, dots, underscores, hyphens
+- Minimum 2 characters
+
+Valid: `auth-patterns`, `api.v2`, `my_rules`, `a1`
+Invalid: `-leading`, `trailing-`, `A`, `UPPER`
+
+---
+
+## Use Case: Persistent Agent Context
+
+### Auto-Updating CLAUDE.md Sections
+
+Agents can programmatically maintain sections of `CLAUDE.md` that persist across sessions:
+
+```bash
+# Agent discovers a pattern and pins it
+tx pin set db-conventions "## Database Conventions
+- Use WAL mode for SQLite
+- All migrations in migrations/ directory
+- Run tx migrate status to verify"
+
+# Later, agent updates the pin with new knowledge
+tx pin set db-conventions "## Database Conventions
+- Use WAL mode for SQLite
+- All migrations in migrations/ directory
+- Run tx migrate status to verify
+- Always use parameterized queries"
+
+# Pin auto-syncs to CLAUDE.md as:
+# <tx-pin id="db-conventions">
+# ## Database Conventions
+# ...
+# </tx-pin>
+```
+
+### Multi-File Context Distribution
+
+Sync the same pins to multiple context files for different tools:
+
+```bash
+# Configure targets for Claude, Cursor, and custom agents
+tx pin targets CLAUDE.md .cursor/rules/context.md AGENTS.md
+
+# All pins sync to all three files
+tx pin set test-rules "Always run tests with bunx --bun vitest"
+tx pin sync
+```
+
+### CI/CD Context Updates
+
+Update agent context as part of your build pipeline:
+
+```bash
+# In CI: update API schema pin after OpenAPI generation
+tx pin set api-schema --file ./generated/openapi-summary.md
+tx pin sync
+
+# Agents in future sessions see updated API schema
+```
+
+## Related Commands
+
+- [`tx context`](/docs/primitives/context) - Get relevant learnings for prompt injection
+- [`tx learning:*`](/docs/primitives/learning) - Record and search knowledge
+- [`tx sync`](/docs/primitives/sync) - Git-backed synchronization

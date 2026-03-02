@@ -35,7 +35,10 @@ import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
 import { groupContextSet, groupContextClear } from "./commands/group-context.js"
 import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
+import { scaffoldConfigToml } from "@jamesaphoenix/tx-core"
 import { memory } from "./commands/memory.js"
+import { pin } from "./commands/pin.js"
+import { utils } from "./commands/utils.js"
 import * as p from "@clack/prompts"
 
 // --- Argv parsing helpers ---
@@ -221,6 +224,12 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Memory commands (filesystem-backed memory)
   memory,
 
+  // Pin commands (context pins for agent memory injection)
+  pin,
+
+  // Utility commands (no DB required)
+  utils,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -232,6 +241,20 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       // Check for compound command help (e.g., tx help sync export)
       if (subcommand === "sync" && pos[1]) {
         const subcommandKey = `sync ${pos[1]}`
+        if (commandHelp[subcommandKey]) {
+          console.log(commandHelp[subcommandKey])
+          return
+        }
+      }
+      if (subcommand === "utils" && pos[1]) {
+        const subcommandKey = `utils ${pos[1]}`
+        if (commandHelp[subcommandKey]) {
+          console.log(commandHelp[subcommandKey])
+          return
+        }
+      }
+      if (subcommand === "pin" && pos[1]) {
+        const subcommandKey = `pin ${pos[1]}`
         if (commandHelp[subcommandKey]) {
           console.log(commandHelp[subcommandKey])
           return
@@ -296,6 +319,20 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
+  if (command === "utils" && positional[0]) {
+    const subcommandKey = `utils ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (command === "pin" && positional[0]) {
+    const subcommandKey = `pin ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   // Check if we have a command with specific help
   if (command !== "help" && commandHelp[command]) {
     console.log(commandHelp[command])
@@ -352,6 +389,20 @@ if (command === "help") {
       process.exit(0)
     }
   }
+  if (subcommand === "utils" && positional[1]) {
+    const subcommandKey = `utils ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "pin" && positional[1]) {
+    const subcommandKey = `pin ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   if (subcommand && commandHelp[subcommand]) {
     console.log(commandHelp[subcommand])
   } else {
@@ -389,6 +440,8 @@ if (command === "init") {
   if (!existsSync(gitignorePath)) {
     writeFileSync(gitignorePath, "tasks.db\ntasks.db-wal\ntasks.db-shm\n")
   }
+  // Scaffold default config.toml with annotated defaults (no-op if exists)
+  scaffoldConfigToml(process.cwd())
 }
 
 const layer = makeAppLayer(dbPath)

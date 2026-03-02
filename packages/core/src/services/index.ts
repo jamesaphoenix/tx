@@ -51,6 +51,7 @@ export {
   type CompactResult,
   type ExportOptions,
   type ExportAllResult,
+  type EntityImportResult,
   type ImportAllResult
 } from "./sync-service.js"
 export {

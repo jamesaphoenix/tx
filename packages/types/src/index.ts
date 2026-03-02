@@ -285,6 +285,8 @@ export {
 export {
   FINDING_SEVERITIES,
   LOSS_WEIGHTS,
+  AGENT_RUNTIMES,
+  AgentRuntimeSchema,
   FindingSeveritySchema,
   FindingSchema,
   DuplicateSchema,
@@ -292,6 +294,7 @@ export {
   CycleConfigSchema,
   RoundMetricsSchema,
   CycleResultSchema,
+  type AgentRuntime,
   type FindingSeverity,
   type Finding,
   type Duplicate,
@@ -404,6 +407,19 @@ export {
   type MemorySourceRow,
   type MemoryPropertyRow,
 } from "./memory.js"
+
+// Pin types & schemas (context pins for agent memory injection)
+export {
+  PinIdSchema,
+  PinSchema,
+  PinSerializedSchema,
+  serializePin,
+  type PinId,
+  type Pin,
+  type PinSerialized,
+  type PinRow,
+  type PinConfigRow,
+} from "./pin.js"
 
 // Response types & schemas (shared schemas for CLI, MCP, API, SDK)
 export {

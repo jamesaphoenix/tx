@@ -20,6 +20,7 @@ import { SyncLive } from "./routes/sync.js"
 import { MessagesLive } from "./routes/messages.js"
 import { CyclesLive } from "./routes/cycles.js"
 import { DocsLive } from "./routes/docs.js"
+import { PinsLive } from "./routes/pins.js"
 import { TxApi } from "./api.js"
 import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
@@ -41,6 +42,7 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(MessagesLive),
   Layer.provide(CyclesLive),
   Layer.provide(DocsLive),
+  Layer.provide(PinsLive),
 )
 
 // -----------------------------------------------------------------------------

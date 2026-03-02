@@ -20,6 +20,7 @@ import { registerMessageTools } from "./tools/message.js"
 import { registerDocTools } from "./tools/doc.js"
 import { registerInvariantTools } from "./tools/invariant.js"
 import { registerRunTools } from "./tools/run.js"
+import { registerPinTools } from "./tools/pin.js"
 import { formatErrorWithStack } from "./response.js"
 
 // Re-export for library consumers
@@ -34,6 +35,7 @@ export { registerMessageTools, serializeMessage } from "./tools/message.js"
 export { registerDocTools, serializeDoc, serializeDocLink } from "./tools/doc.js"
 export { registerInvariantTools } from "./tools/invariant.js"
 export { registerRunTools } from "./tools/run.js"
+export { registerPinTools } from "./tools/pin.js"
 
 // -----------------------------------------------------------------------------
 // Signal Handler State (prevents handler accumulation/memory leak)
@@ -79,6 +81,7 @@ export const createMcpServer = (): McpServer => {
   registerDocTools(server)
   registerInvariantTools(server)
   registerRunTools(server)
+  registerPinTools(server)
 
   return server
 }

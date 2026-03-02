@@ -17,7 +17,8 @@ import {
   SyncService,
   MessageService,
   DocService,
-  RunHeartbeatService
+  RunHeartbeatService,
+  PinService
 } from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
@@ -35,6 +36,7 @@ export type McpServices =
   | MessageService
   | DocService
   | RunHeartbeatService
+  | PinService
 
 // -----------------------------------------------------------------------------
 // Runtime State

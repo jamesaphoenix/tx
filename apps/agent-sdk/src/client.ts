@@ -45,7 +45,8 @@ import type {
   StalledRunsOptions,
   ReapStalledRunsOptions,
   SerializedStalledRun,
-  SerializedReapedRun
+  SerializedReapedRun,
+  SerializedPin
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
 
@@ -124,6 +125,15 @@ interface Transport {
   runHeartbeat(runId: string, data?: RunHeartbeatData): Promise<RunHeartbeatResult>
   listStalledRuns(options?: StalledRunsOptions): Promise<SerializedStalledRun[]>
   reapStalledRuns(options?: ReapStalledRunsOptions): Promise<SerializedReapedRun[]>
+
+  // Pins
+  setPin(id: string, content: string): Promise<SerializedPin>
+  getPin(id: string): Promise<SerializedPin | null>
+  listPins(): Promise<SerializedPin[]>
+  removePin(id: string): Promise<{ deleted: boolean }>
+  syncPins(): Promise<{ synced: string[] }>
+  getPinTargets(): Promise<string[]>
+  setPinTargets(files: string[]): Promise<string[]>
 }
 
 // =============================================================================
@@ -497,6 +507,48 @@ class HttpTransport implements Transport {
       { body: options }
     )
     return result.runs
+  }
+
+  // Pins
+  async setPin(id: string, content: string): Promise<SerializedPin> {
+    return await this.request<SerializedPin>("POST", `/api/pins/${id}`, { body: { content } })
+  }
+
+  async getPin(id: string): Promise<SerializedPin | null> {
+    try {
+      return await this.request<SerializedPin>("GET", `/api/pins/${id}`)
+    } catch (e) {
+      if (e instanceof TxError && e.statusCode === 404) return null
+      throw e
+    }
+  }
+
+  async listPins(): Promise<SerializedPin[]> {
+    const result = await this.request<{ pins: SerializedPin[] }>("GET", "/api/pins")
+    return result.pins
+  }
+
+  async removePin(id: string): Promise<{ deleted: boolean }> {
+    try {
+      return await this.request<{ deleted: boolean }>("DELETE", `/api/pins/${id}`)
+    } catch (e) {
+      if (e instanceof TxError && e.statusCode === 404) return { deleted: false }
+      throw e
+    }
+  }
+
+  async syncPins(): Promise<{ synced: string[] }> {
+    return await this.request<{ synced: string[] }>("POST", "/api/pins/sync")
+  }
+
+  async getPinTargets(): Promise<string[]> {
+    const result = await this.request<{ files: string[] }>("GET", "/api/pins/targets")
+    return result.files
+  }
+
+  async setPinTargets(files: string[]): Promise<string[]> {
+    const result = await this.request<{ files: string[] }>("PUT", "/api/pins/targets", { body: { files } })
+    return result.files
   }
 }
 
@@ -1486,6 +1538,122 @@ class DirectTransport implements Transport {
     )
   }
 
+  // Pins
+  async setPin(id: string, content: string): Promise<SerializedPin> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedPin>(
+      Effect.gen(function* () {
+        const pinService = yield* core.PinService
+        const pin = yield* pinService.set(id, content)
+        return {
+          id: pin.id,
+          content: pin.content,
+          createdAt: pin.createdAt instanceof Date ? pin.createdAt.toISOString() : pin.createdAt,
+          updatedAt: pin.updatedAt instanceof Date ? pin.updatedAt.toISOString() : pin.updatedAt,
+        }
+      })
+    )
+  }
+
+  async getPin(id: string): Promise<SerializedPin | null> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedPin | null>(
+      Effect.gen(function* () {
+        const pinService = yield* core.PinService
+        const pin = yield* pinService.get(id)
+        if (!pin) return null
+        return {
+          id: pin.id,
+          content: pin.content,
+          createdAt: pin.createdAt instanceof Date ? pin.createdAt.toISOString() : pin.createdAt,
+          updatedAt: pin.updatedAt instanceof Date ? pin.updatedAt.toISOString() : pin.updatedAt,
+        }
+      })
+    )
+  }
+
+  async listPins(): Promise<SerializedPin[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedPin[]>(
+      Effect.gen(function* () {
+        const pinService = yield* core.PinService
+        const pins = yield* pinService.list()
+        return (pins as any[]).map((p: any) => ({
+          id: p.id,
+          content: p.content,
+          createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
+          updatedAt: p.updatedAt instanceof Date ? p.updatedAt.toISOString() : p.updatedAt,
+        }))
+      })
+    )
+  }
+
+  async removePin(id: string): Promise<{ deleted: boolean }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<{ deleted: boolean }>(
+      Effect.gen(function* () {
+        const pinService = yield* core.PinService
+        const deleted = yield* pinService.remove(id)
+        return { deleted }
+      })
+    )
+  }
+
+  async syncPins(): Promise<{ synced: string[] }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<{ synced: string[] }>(
+      Effect.gen(function* () {
+        const pinService = yield* core.PinService
+        const result = yield* pinService.sync()
+        return { synced: [...result.synced] }
+      })
+    )
+  }
+
+  async getPinTargets(): Promise<string[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<string[]>(
+      Effect.gen(function* () {
+        const pinService = yield* core.PinService
+        const files = yield* pinService.getTargetFiles()
+        return [...files]
+      })
+    )
+  }
+
+  async setPinTargets(files: string[]): Promise<string[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<string[]>(
+      Effect.gen(function* () {
+        const pinService = yield* core.PinService
+        yield* pinService.setTargetFiles(files)
+        const result = yield* pinService.getTargetFiles()
+        return [...result]
+      })
+    )
+  }
+
   /**
    * Dispose of the runtime and release resources.
    * Only actually disposes when all clients using this dbPath have disposed.
@@ -2201,6 +2369,94 @@ class ClaimsNamespace {
 }
 
 // =============================================================================
+// Pins Namespace
+// =============================================================================
+
+/**
+ * Namespace for context pin operations.
+ *
+ * Pins are named content blocks that sync to target files (e.g. CLAUDE.md)
+ * as `<tx-pin id="...">` XML-tagged sections.
+ */
+class PinsNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  /**
+   * Create or update a context pin.
+   *
+   * @param id - Pin ID (kebab-case)
+   * @param content - Pin content (markdown)
+   * @returns The created/updated pin
+   * @example
+   * ```typescript
+   * const pin = await tx.pins.set('auth-patterns', '## Auth\n- Use JWT')
+   * ```
+   */
+  async set(id: string, content: string): Promise<SerializedPin> {
+    return this.transport.setPin(id, content)
+  }
+
+  /**
+   * Get a pin by ID.
+   *
+   * @param id - Pin ID
+   * @returns The pin, or null if not found
+   */
+  async get(id: string): Promise<SerializedPin | null> {
+    return this.transport.getPin(id)
+  }
+
+  /**
+   * List all pins.
+   *
+   * @returns Array of all pins
+   */
+  async list(): Promise<SerializedPin[]> {
+    return this.transport.listPins()
+  }
+
+  /**
+   * Remove a pin from the database and all target files.
+   *
+   * @param id - Pin ID to remove
+   * @returns Whether the pin existed and was deleted
+   */
+  async remove(id: string): Promise<{ deleted: boolean }> {
+    return this.transport.removePin(id)
+  }
+
+  /**
+   * Sync all pins to configured target files.
+   *
+   * Writes `<tx-pin>` blocks to each target file, creating files if needed.
+   *
+   * @returns List of synced file paths
+   */
+  async sync(): Promise<{ synced: string[] }> {
+    return this.transport.syncPins()
+  }
+
+  /**
+   * Get the list of target files pins sync to.
+   *
+   * @returns Array of file paths
+   */
+  async getTargets(): Promise<string[]> {
+    return this.transport.getPinTargets()
+  }
+
+  /**
+   * Set the target files pins sync to.
+   *
+   * @param files - Array of relative file paths
+   * @returns The updated list of target files
+   */
+  async setTargets(files: string[]): Promise<string[]> {
+    return this.transport.setPinTargets(files)
+  }
+}
+
+// =============================================================================
 // Main Client
 // =============================================================================
 
@@ -2278,6 +2534,11 @@ export class TxClient {
   public readonly claims: ClaimsNamespace
 
   /**
+   * Context pin operations.
+   */
+  public readonly pins: PinsNamespace
+
+  /**
    * Create a new TxClient.
    *
    * @param config - Client configuration
@@ -2308,6 +2569,7 @@ export class TxClient {
     this.runs = new RunsNamespace(this.transport)
     this.messages = new MessagesNamespace(this.transport)
     this.claims = new ClaimsNamespace(this.transport)
+    this.pins = new PinsNamespace(this.transport)
   }
 
   /**
