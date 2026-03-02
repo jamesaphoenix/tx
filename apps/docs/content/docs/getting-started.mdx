@@ -473,6 +473,20 @@ read
 tx done $task
 ```
 
+### File-Based
+
+Export tasks to a markdown file and let the agent read it directly — no CLI polling needed:
+
+```bash
+AGENT_CMD=${AGENT_CMD:-claude}  # or: codex
+while true; do
+  tx md-export                    # materialize ready tasks to .tx/tasks.md
+  "$AGENT_CMD" "Read .tx/tasks.md and complete the highest priority task. When done, run: tx done <id>"
+done
+```
+
+Options: `--watch` for auto-regeneration, `--include-context` to enrich with learnings, `--filter all` to include every status.
+
 ## Project Structure
 
 ```
@@ -515,6 +529,7 @@ tx done <id>                # Complete task
 tx block <id> <blocker>     # Add dependency
 tx tree <id>                # Show hierarchy
 tx show <id>                # View task details
+tx md-export               # Export tasks to markdown file
 tx group-context:set <id> <context>   # Attach shared task-group context
 tx group-context:clear <id>           # Clear shared task-group context
 
