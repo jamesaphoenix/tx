@@ -572,7 +572,10 @@ describe("AutoSyncService Entity Mutations", () => {
       Effect.gen(function* () {
         const autoSync = yield* AutoSyncService
         yield* autoSync.afterLearningMutation()
-        yield* Effect.sleep(Duration.millis(50))
+        // Poll until the background fiber fires (up to 500ms)
+        for (let i = 0; i < 50 && !exportCalled; i++) {
+          yield* Effect.sleep(Duration.millis(10))
+        }
       }).pipe(Effect.provide(layer))
     )
 
@@ -590,7 +593,10 @@ describe("AutoSyncService Entity Mutations", () => {
       Effect.gen(function* () {
         const autoSync = yield* AutoSyncService
         yield* autoSync.afterFileLearningMutation()
-        yield* Effect.sleep(Duration.millis(50))
+        // Poll until the background fiber fires (up to 500ms)
+        for (let i = 0; i < 50 && !exportCalled; i++) {
+          yield* Effect.sleep(Duration.millis(10))
+        }
       }).pipe(Effect.provide(layer))
     )
 
@@ -608,7 +614,9 @@ describe("AutoSyncService Entity Mutations", () => {
       Effect.gen(function* () {
         const autoSync = yield* AutoSyncService
         yield* autoSync.afterAttemptMutation()
-        yield* Effect.sleep(Duration.millis(50))
+        for (let i = 0; i < 50 && !exportCalled; i++) {
+          yield* Effect.sleep(Duration.millis(10))
+        }
       }).pipe(Effect.provide(layer))
     )
 
@@ -626,7 +634,9 @@ describe("AutoSyncService Entity Mutations", () => {
       Effect.gen(function* () {
         const autoSync = yield* AutoSyncService
         yield* autoSync.afterAnyMutation()
-        yield* Effect.sleep(Duration.millis(50))
+        for (let i = 0; i < 50 && !exportCalled; i++) {
+          yield* Effect.sleep(Duration.millis(10))
+        }
       }).pipe(Effect.provide(layer))
     )
 

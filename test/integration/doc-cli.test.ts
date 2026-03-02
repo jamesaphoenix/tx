@@ -138,8 +138,14 @@ describe("tx doc lifecycle coverage", () => {
     const render = runTx(["doc", "render"], tmpProjectDir)
     expect(render.status).toBe(0)
     expect(render.stdout).toContain("Rendered")
-    expect(existsSync(join(tmpProjectDir, ".tx", "docs", "index.md"))).toBe(true)
-    expect(existsSync(join(tmpProjectDir, ".tx", "docs", "index.yml"))).toBe(true)
+    // After subprocess exits, verify files exist (retry briefly for fs flush)
+    const indexMd = join(tmpProjectDir, ".tx", "docs", "index.md")
+    const indexYml = join(tmpProjectDir, ".tx", "docs", "index.yml")
+    for (let i = 0; i < 10 && (!existsSync(indexMd) || !existsSync(indexYml)); i++) {
+      spawnSync("sleep", ["0.05"])
+    }
+    expect(existsSync(indexMd)).toBe(true)
+    expect(existsSync(indexYml)).toBe(true)
   })
 
   it("validate reflects unlinked tasks and clears after attach", () => {

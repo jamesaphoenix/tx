@@ -984,6 +984,7 @@ describe("Interface Parity", () => {
       const cliDb = new Database(dbPath)
       cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(olderUpdatedAt, sourceA)
       cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(newerUpdatedAt, sourceB)
+      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
       cliDb.close()
 
       const beforeClearCli = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
@@ -1060,6 +1061,7 @@ describe("Interface Parity", () => {
         sourceA,
         sourceB
       )
+      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
       cliDb.close()
 
       const expectedSource = [sourceA, sourceB].sort()[0]!

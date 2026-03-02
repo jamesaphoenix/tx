@@ -20,6 +20,17 @@ import { join, resolve } from "path"
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))
 
+/**
+ * Force a WAL checkpoint on the database to ensure all writes from prior
+ * subprocesses are visible to subsequent subprocess readers.
+ */
+function walCheckpoint(dbPath: string): void {
+  const { Database } = require("bun:sqlite")
+  const db = new Database(dbPath)
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+  db.close()
+}
+
 interface ExecResult {
   stdout: string
   stderr: string
@@ -585,6 +596,7 @@ describe("CLI sync status command", () => {
 
     runTx("init", dbPath)
     runTxArgs(["add", "Test task"], dbPath)
+    walCheckpoint(dbPath)
   })
 
   afterEach(() => {
@@ -1145,6 +1157,7 @@ describe("CLI sync claude command", () => {
     runTxArgs(["add", "Backlog task", "--json"], dbPath)
     const t2 = JSON.parse(runTxArgs(["add", "Active task", "--json"], dbPath).stdout)
     runTxArgs(["update", t2.id, "--status", "active"], dbPath)
+    walCheckpoint(dbPath)
 
     runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
 

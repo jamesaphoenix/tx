@@ -380,7 +380,16 @@ describeIf("ralph.sh integration", () => {
     const result = h.run(["--runtime", "codex", "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
     expect(result.status).toBe(0)
 
-    const log = readFileSync(join(h.tmpDir, ".tx", "ralph.log"), "utf-8")
+    // Retry briefly in case log file is not yet flushed to disk
+    const logPath = join(h.tmpDir, ".tx", "ralph.log")
+    let log = ""
+    for (let i = 0; i < 10; i++) {
+      if (existsSync(logPath)) {
+        log = readFileSync(logPath, "utf-8")
+        if (log.includes("Runtime: codex (Codex)")) break
+      }
+      spawnSync("sleep", ["0.05"])
+    }
     expect(log).toContain("Runtime: codex (Codex)")
   })
 
@@ -391,7 +400,15 @@ describeIf("ralph.sh integration", () => {
     const result = h.run(["--runtime", "claude", "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
     expect(result.status).toBe(0)
 
-    const log = readFileSync(join(h.tmpDir, ".tx", "ralph.log"), "utf-8")
+    const logPath = join(h.tmpDir, ".tx", "ralph.log")
+    let log = ""
+    for (let i = 0; i < 10; i++) {
+      if (existsSync(logPath)) {
+        log = readFileSync(logPath, "utf-8")
+        if (log.includes("Runtime: claude (Claude)")) break
+      }
+      spawnSync("sleep", ["0.05"])
+    }
     expect(log).toContain("Runtime: claude (Claude)")
   })
 

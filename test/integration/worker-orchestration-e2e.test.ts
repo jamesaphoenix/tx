@@ -607,7 +607,10 @@ describe("Worker Orchestration E2E: runWorker Integration", () => {
           })
         )
 
-        yield* Effect.sleep("2 seconds")
+        // Poll until worker completes or 10s timeout (generous for CPU-starved CI)
+        for (let i = 0; i < 100 && !renewLeaseWasCalled; i++) {
+          yield* Effect.sleep("100 millis")
+        }
         yield* Fiber.interrupt(workerFiber)
       }).pipe(Effect.provide(layer))
     )

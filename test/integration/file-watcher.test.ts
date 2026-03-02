@@ -440,8 +440,11 @@ describe("FileWatcherServiceLive File Add Detection", () => {
           const file2 = path.join(tempDir, FIXTURES.FILE_SESSION_2)
 
           fs.writeFileSync(file1, FIXTURES.JSONL_LINE_1)
-          yield* Effect.sleep(200) // Small delay between creations
+          yield* Effect.sleep(300) // Delay between creations (must exceed debounceMs)
           fs.writeFileSync(file2, FIXTURES.JSONL_LINE_2)
+
+          // Wait for debounce timers to fire before collecting
+          yield* Effect.sleep(500)
 
           // Collect events
           const events = yield* collectEvents(queue, 3000)

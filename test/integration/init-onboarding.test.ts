@@ -145,11 +145,17 @@ describe("tx init onboarding edge cases", () => {
   it("init --codex is idempotent and does not duplicate tx section", () => {
     const sandbox = createSandbox()
     const first = runInit(sandbox, ["--codex"])
-    const second = runInit(sandbox, ["--codex"])
     expect(first.status).toBe(0)
+    // Verify first init wrote AGENTS.md before running second init
+    const agentsPath = join(sandbox.dir, "AGENTS.md")
+    expect(existsSync(agentsPath)).toBe(true)
+    const firstContent = readFileSync(agentsPath, "utf-8")
+    expect(firstContent).toContain("tx")
+
+    const second = runInit(sandbox, ["--codex"])
     expect(second.status).toBe(0)
 
-    const agents = readFileSync(join(sandbox.dir, "AGENTS.md"), "utf-8")
+    const agents = readFileSync(agentsPath, "utf-8")
     const headingMatches = agents.match(/# tx [—-] Headless, Local Infra for AI Agents/g) ?? []
     expect(headingMatches).toHaveLength(1)
   })

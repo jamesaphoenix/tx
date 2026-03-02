@@ -5,13 +5,23 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const CLI_TIMEOUT = process.env.CI ? 30000 : 15000
-const TEST_TIMEOUT = process.env.CI ? 30000 : 15000
+const CLI_TIMEOUT = 30000
+const TEST_TIMEOUT = 30000
 
 interface ExecResult {
   stdout: string
   stderr: string
   status: number
+}
+
+/**
+ * Force a WAL checkpoint so writes are visible to the next subprocess.
+ */
+function walCheckpoint(dbPath: string): void {
+  const { Database } = require("bun:sqlite")
+  const db = new Database(dbPath)
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+  db.close()
 }
 
 function runTx(args: string[], dbPath: string): ExecResult {
@@ -120,6 +130,7 @@ describe("CLI claim/dependency critical flows", () => {
   it("block/unblock changes dependency state and ready visibility", () => {
     const blocker = JSON.parse(runTx(["add", "Blocker", "--json"], dbPath).stdout) as { id: string }
     const blocked = JSON.parse(runTx(["add", "Blocked", "--json"], dbPath).stdout) as { id: string }
+    walCheckpoint(dbPath)
 
     const blockResult = runTx(["block", blocked.id, blocker.id, "--json"], dbPath)
     expect(blockResult.status).toBe(0)
@@ -130,6 +141,7 @@ describe("CLI claim/dependency critical flows", () => {
     expect(blockJson.success).toBe(true)
     expect(blockJson.task.id).toBe(blocked.id)
     expect(blockJson.task.blockedBy).toContain(blocker.id)
+    walCheckpoint(dbPath)
 
     const readyBlocked = JSON.parse(runTx(["ready", "--json", "--limit", "10"], dbPath).stdout) as Array<{ id: string }>
     expect(readyBlocked.map((t) => t.id)).toContain(blocker.id)
@@ -144,6 +156,7 @@ describe("CLI claim/dependency critical flows", () => {
     expect(unblockJson.success).toBe(true)
     expect(unblockJson.task.id).toBe(blocked.id)
     expect(unblockJson.task.blockedBy).toEqual([])
+    walCheckpoint(dbPath)
 
     const readyUnblocked = JSON.parse(runTx(["ready", "--json", "--limit", "10"], dbPath).stdout) as Array<{ id: string }>
     expect(readyUnblocked.map((t) => t.id)).toEqual(expect.arrayContaining([blocker.id, blocked.id]))

@@ -512,6 +512,10 @@ describe("CLI doc lint-ears", () => {
       "",
     ].join("\n")
     writeFileSync(yamlPath, earsYaml, "utf8")
+    // Force fsync to ensure data is on disk before subprocess reads it
+    const fd = require("fs").openSync(yamlPath, "r")
+    require("fs").fsyncSync(fd)
+    require("fs").closeSync(fd)
 
     const lint = runTx(["doc", "lint-ears", name, "--json"], tempProjectDir)
     expect(lint.status).toBe(0)
