@@ -120,6 +120,14 @@ read -p "Approve? [y/n] " && claude "Execute plan.md"
 tx done $task
 ```
 
+```bash
+# File-based: agent reads markdown, no CLI polling needed
+while true; do
+  tx md-export                    # materialize ready tasks to .tx/tasks.md
+  claude -p "Read .tx/tasks.md and complete the highest priority task. When done, run: tx done <id>"
+done
+```
+
 **You own your orchestration. tx owns the primitives.**
 
 **Frameworks lock you in. Libraries let you compose.**
@@ -469,6 +477,7 @@ tx update <id>             # Update task fields
 tx done <id>               # Mark complete
 tx reset <id>              # Reset to ready
 tx delete <id>             # Delete task
+tx md-export               # Export tasks to markdown file (--watch, --include-context)
 
 # Dependencies & Hierarchy
 tx block <id> <blocker>    # Add blocking dependency

@@ -38,6 +38,7 @@ import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMo
 import { scaffoldConfigToml } from "@jamesaphoenix/tx-core"
 import { memory } from "./commands/memory.js"
 import { pin } from "./commands/pin.js"
+import { mdExport } from "./commands/md-export.js"
 import { utils } from "./commands/utils.js"
 import * as p from "@clack/prompts"
 
@@ -226,6 +227,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   // Pin commands (context pins for agent memory injection)
   pin,
+
+  // Markdown export (file-based agent loops)
+  "md-export": mdExport,
 
   // Utility commands (no DB required)
   utils,

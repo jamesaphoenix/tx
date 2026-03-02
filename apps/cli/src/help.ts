@@ -17,6 +17,7 @@ Tasks:
   done <id>               Mark task complete
   reset <id>              Reset task to ready
   delete <id>             Delete task
+  md-export               Export tasks to markdown file
 
 Dependencies & Hierarchy:
   block <id> <blocker>    Add blocking dependency
@@ -294,6 +295,38 @@ Options:
 
 Examples:
   tx delete tx-a1b2c3d4`,
+
+  "md-export": `tx md-export - Export tasks to markdown file
+
+Usage: tx md-export [options]
+
+Materializes tasks into a markdown file for file-based agent loops.
+Agents read the file directly instead of calling tx ready.
+
+Options:
+  --path, -p <path>      Output file path (default: .tx/tasks.md)
+  --filter, -f <filter>  Task filter: ready (default), all (every status), or a status name
+  --include-context      Include relevant learnings per task
+  --include-done <n>     Include last N completed tasks (default: 5)
+  --watch, -w            Re-export on changes (poll mode)
+  --interval <seconds>   Poll interval for --watch (default: 5)
+  --json                 Output result metadata as JSON
+  --help                 Show this help
+
+Examples:
+  tx md-export                              # Export ready tasks to .tx/tasks.md
+  tx md-export --path tasks.md              # Custom output path
+  tx md-export --include-context            # Include learnings per task
+  tx md-export --filter all                 # Export all tasks
+  tx md-export --include-done 10            # Include last 10 completed tasks
+  tx md-export --watch                      # Watch and re-export on changes
+  tx md-export --watch --interval 10        # Poll every 10 seconds
+
+File-based agent loop:
+  while true; do
+    tx md-export
+    claude -p "Read .tx/tasks.md and complete the highest priority task. When done, run: tx done <id>"
+  done`,
 
   block: `tx block - Add blocking dependency
 

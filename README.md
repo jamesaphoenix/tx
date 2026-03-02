@@ -207,7 +207,16 @@ read -p "Approve? [y/n] " && "$AGENT_CMD" "Execute plan.md"
 tx done $task
 ```
 
-**The flow is yours.** Serial, parallel, swarm, human-in-loop. Your call.
+```bash
+# File-based: agent reads markdown, no CLI polling needed
+AGENT_CMD=${AGENT_CMD:-claude}  # or: codex
+while true; do
+  tx md-export                    # materialize ready tasks to .tx/tasks.md
+  "$AGENT_CMD" "Read .tx/tasks.md and complete the highest priority task. When done, run: tx done <id>"
+done
+```
+
+**The flow is yours.** Serial, parallel, swarm, human-in-loop, file-based. Your call.
 
 ---
 
@@ -289,6 +298,7 @@ tx update <id>              # Update task fields
 tx done <id>                # Complete task
 tx reset <id>               # Reset to backlog
 tx delete <id>              # Delete task
+tx md-export                # Export tasks to markdown file (.tx/tasks.md)
 tx block <id> <blocker>     # Add dependency
 tx unblock <id> <blocker>   # Remove dependency
 tx children <id>            # List child tasks
