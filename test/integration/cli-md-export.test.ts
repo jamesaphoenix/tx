@@ -280,7 +280,7 @@ describe("CLI md-export command", () => {
       expect(content).toMatch(new RegExp(`- \\[x\\] ${t2Id} — Done Task Two \\(${today}\\)`))
     })
 
-    it("limits completed tasks to specified count", () => {
+    it("limits completed tasks to specified count", { timeout: CLI_TIMEOUT }, () => {
       for (let i = 1; i <= 3; i++) {
         const t = runTxArgs(["add", `Completed ${i}`, "--json"], dbPath)
         walCheckpoint(dbPath)
