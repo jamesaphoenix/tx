@@ -140,7 +140,7 @@ export const ReadyServiceLive = Layer.effect(
         Effect.gen(function* () {
           const task = yield* taskRepo.findById(id)
           if (!task) return { _tag: "TaskNotFound" as const, id }
-          if (!["backlog", "ready", "planning"].includes(task.status)) {
+          if (!["backlog", "ready", "planning", "active"].includes(task.status)) {
             return { _tag: "WrongStatus" as const, id, status: task.status }
           }
 

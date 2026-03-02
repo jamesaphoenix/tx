@@ -6,7 +6,7 @@ import { RerankerService } from "./reranker-service.js"
 import { GraphExpansionService, type SeedLearning } from "./graph-expansion.js"
 import { FeedbackTrackerService } from "./feedback-tracker.js"
 import { DiversifierService } from "./diversifier-service.js"
-import { RetrievalError, DatabaseError, EmbeddingDimensionMismatchError } from "../errors.js"
+import { RetrievalError, DatabaseError, EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "../errors.js"
 import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@jamesaphoenix/tx-types"
 import { cosineSimilarity } from "../utils/math.js"
 
@@ -50,7 +50,7 @@ export class RetrieverService extends Context.Tag("RetrieverService")<
     readonly search: (
       query: string,
       options?: RetrievalOptions
-    ) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError | EmbeddingDimensionMismatchError>
+    ) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError | EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError>
     /** Check if retrieval functionality is available */
     readonly isAvailable: () => Effect.Effect<boolean>
   }
@@ -76,7 +76,7 @@ const calculateRecencyScore = (createdAt: Date): number => {
 const computeVectorRanking = (
   learnings: readonly Learning[],
   queryEmbedding: Float32Array | null
-): Effect.Effect<{ learning: Learning; score: number; rank: number }[], EmbeddingDimensionMismatchError> => {
+): Effect.Effect<{ learning: Learning; score: number; rank: number }[], EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError> => {
   if (!queryEmbedding) {
     return Effect.succeed([])
   }

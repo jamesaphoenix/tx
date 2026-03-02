@@ -914,3 +914,125 @@ describe("CycleScanService — Child Run Tracking", () => {
     }
   })
 })
+
+describe("CycleScanService — Runtime Threading", () => {
+  it("forwards runtime: 'codex' to AgentService.run options", async () => {
+    const capturedConfigs: AgentRunConfig[] = []
+    const capturingMock = Layer.succeed(AgentService, {
+      run: (config: AgentRunConfig, _onMessage?: AgentMessageCallback) => {
+        capturedConfigs.push(config)
+        const isScan = config.prompt.includes("## Your Mission")
+        if (isScan) {
+          return Effect.succeed({
+            text: JSON.stringify({ findings: [FINDING_LOW] }),
+            structuredOutput: { findings: [FINDING_LOW] },
+          } as AgentRunResult)
+        }
+        return Effect.succeed({ text: "", structuredOutput: null } as AgentRunResult)
+      },
+    })
+    const testDb = await setupTestDb(capturingMock)
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CycleScanService
+          return yield* svc.runCycles({
+            taskPrompt: "Review code",
+            scanPrompt: "Find issues",
+            cycles: 1,
+            agents: 1,
+            maxRounds: 1,
+            runtime: "codex",
+          })
+        }).pipe(Effect.provide(testDb.layer))
+      )
+
+      // The scan agent call should have runtime: "codex" in options
+      const scanConfig = capturedConfigs.find((c) => c.prompt.includes("## Your Mission"))
+      expect(scanConfig).toBeDefined()
+      expect(scanConfig!.options?.runtime).toBe("codex")
+    } finally {
+      testDb.db.close()
+    }
+  })
+
+  it("forwards runtime: 'claude' to AgentService.run options", async () => {
+    const capturedConfigs: AgentRunConfig[] = []
+    const capturingMock = Layer.succeed(AgentService, {
+      run: (config: AgentRunConfig, _onMessage?: AgentMessageCallback) => {
+        capturedConfigs.push(config)
+        const isScan = config.prompt.includes("## Your Mission")
+        if (isScan) {
+          return Effect.succeed({
+            text: JSON.stringify({ findings: [FINDING_LOW] }),
+            structuredOutput: { findings: [FINDING_LOW] },
+          } as AgentRunResult)
+        }
+        return Effect.succeed({ text: "", structuredOutput: null } as AgentRunResult)
+      },
+    })
+    const testDb = await setupTestDb(capturingMock)
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CycleScanService
+          return yield* svc.runCycles({
+            taskPrompt: "Review code",
+            scanPrompt: "Find issues",
+            cycles: 1,
+            agents: 1,
+            maxRounds: 1,
+            runtime: "claude",
+          })
+        }).pipe(Effect.provide(testDb.layer))
+      )
+
+      const scanConfig = capturedConfigs.find((c) => c.prompt.includes("## Your Mission"))
+      expect(scanConfig).toBeDefined()
+      expect(scanConfig!.options?.runtime).toBe("claude")
+    } finally {
+      testDb.db.close()
+    }
+  })
+
+  it("defaults to runtime: 'auto' when not specified", async () => {
+    const capturedConfigs: AgentRunConfig[] = []
+    const capturingMock = Layer.succeed(AgentService, {
+      run: (config: AgentRunConfig, _onMessage?: AgentMessageCallback) => {
+        capturedConfigs.push(config)
+        const isScan = config.prompt.includes("## Your Mission")
+        if (isScan) {
+          return Effect.succeed({
+            text: JSON.stringify({ findings: [FINDING_LOW] }),
+            structuredOutput: { findings: [FINDING_LOW] },
+          } as AgentRunResult)
+        }
+        return Effect.succeed({ text: "", structuredOutput: null } as AgentRunResult)
+      },
+    })
+    const testDb = await setupTestDb(capturingMock)
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* CycleScanService
+          return yield* svc.runCycles({
+            taskPrompt: "Review code",
+            scanPrompt: "Find issues",
+            cycles: 1,
+            agents: 1,
+            maxRounds: 1,
+          })
+        }).pipe(Effect.provide(testDb.layer))
+      )
+
+      const scanConfig = capturedConfigs.find((c) => c.prompt.includes("## Your Mission"))
+      expect(scanConfig).toBeDefined()
+      expect(scanConfig!.options?.runtime).toBe("auto")
+    } finally {
+      testDb.db.close()
+    }
+  })
+})

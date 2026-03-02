@@ -16,6 +16,15 @@ import { Schema } from "effect"
 
 export const FINDING_SEVERITIES = ["high", "medium", "low"] as const
 export const LOSS_WEIGHTS: Record<string, number> = { high: 3, medium: 2, low: 1 }
+export const AGENT_RUNTIMES = ["claude", "codex", "auto"] as const
+
+// =============================================================================
+// SCHEMAS & TYPES — Agent Runtime
+// =============================================================================
+
+/** Agent runtime backend for cycle execution. */
+export const AgentRuntimeSchema = Schema.Literal(...AGENT_RUNTIMES)
+export type AgentRuntime = typeof AgentRuntimeSchema.Type
 
 // =============================================================================
 // SCHEMAS & TYPES — Finding
@@ -69,6 +78,7 @@ export const CycleConfigSchema = Schema.Struct({
   maxRounds: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
   agents: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
   model: Schema.optional(Schema.String),
+  runtime: Schema.optional(AgentRuntimeSchema),
   fix: Schema.optional(Schema.Boolean),
   scanOnly: Schema.optional(Schema.Boolean),
   dryRun: Schema.optional(Schema.Boolean),

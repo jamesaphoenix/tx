@@ -9,19 +9,26 @@ export type DashboardDefaultTaskAssigmentType = "human" | "agent"
 
 export interface TxConfig {
   docs: { path: string }
+  memory: { defaultDir: string }
   cycles: { scanPrompt: string | null; agents: number; model: string }
   dashboard: { defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType }
+  pins: { targetFiles: string[] }
 }
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
 const DASHBOARD_SECTION = "dashboard"
 const DOCS_SECTION = "docs"
 const CYCLES_SECTION = "cycles"
+const PINS_SECTION = "pins"
+
+const MEMORY_SECTION = "memory"
 
 const DEFAULT_CONFIG: TxConfig = {
   docs: { path: ".tx/docs" },
+  memory: { defaultDir: "docs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: { defaultTaskAssigmentType: "human" },
+  pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"] },
 }
 
 const isDashboardDefaultTaskAssigmentType = (
@@ -55,9 +62,14 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       DASHBOARD_SECTION,
       DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY
     )
+    const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
+    const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
     return {
       docs: {
         path: docsPath ?? DEFAULT_CONFIG.docs.path,
+      },
+      memory: {
+        defaultDir: memoryDefaultDir ?? DEFAULT_CONFIG.memory.defaultDir,
       },
       cycles: {
         scanPrompt: cyclesScanPrompt ?? DEFAULT_CONFIG.cycles.scanPrompt,
@@ -68,6 +80,11 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       },
       dashboard: {
         defaultTaskAssigmentType: parseTaskAssigmentTypeOrDefault(defaultTaskAssigmentType),
+      },
+      pins: {
+        targetFiles: pinsTargetFiles
+          ? pinsTargetFiles.split(",").map(f => f.trim()).filter(Boolean)
+          : DEFAULT_CONFIG.pins.targetFiles,
       },
     }
   } catch {
@@ -85,7 +102,8 @@ export const writeDashboardDefaultTaskAssigmentType = (
 ): TxConfig => {
   const configDir = resolve(cwd, ".tx")
   const configPath = resolve(configDir, "config.toml")
-  const nextConfig = { ...readTxConfig(cwd), dashboard: { defaultTaskAssigmentType: value } }
+  const current = readTxConfig(cwd)
+  const nextConfig: TxConfig = { ...current, dashboard: { defaultTaskAssigmentType: value } }
 
   mkdirSync(dirname(configPath), { recursive: true })
   const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
@@ -193,4 +211,101 @@ function patchTomlKey(
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * The default config.toml content with comments and doc links.
+ * Written by `tx init` if config.toml does not exist.
+ */
+const DEFAULT_CONFIG_TOML = `# tx configuration
+# Full documentation: https://txdocs.dev/docs
+#
+# This file is created by \`tx init\` and lives at .tx/config.toml.
+# Edit any value below to override the default. Commented-out lines
+# show optional settings — uncomment them to enable.
+
+# ─── Docs ───────────────────────────────────────────────────────────
+# Structured documentation primitives for PRDs, design docs, and specs.
+# Commands: tx doc add, tx doc show, tx doc list, tx doc validate
+# Docs: https://txdocs.dev/docs/primitives/docs
+[docs]
+
+# Where tx stores YAML doc files on disk.
+# Relative to the project root.
+path = ".tx/docs"
+
+# ─── Memory ─────────────────────────────────────────────────────────
+# Filesystem-backed markdown search over your project's documentation.
+# Index directories with \`tx memory source add <dir>\`, then search
+# with \`tx memory search <query>\` (BM25) or \`--semantic\` (vector).
+# Docs: https://txdocs.dev/docs/primitives/learning
+[memory]
+
+# Default directory used by \`tx memory add\` when no source is registered.
+# If this directory isn't already a registered source, tx auto-registers
+# it so new documents survive future \`tx memory index\` runs.
+# Relative to the project root.
+default_dir = "docs"
+
+# ─── Cycles ─────────────────────────────────────────────────────────
+# Sub-agent swarm for automated issue discovery.
+# Run \`tx cycle\` to dispatch parallel scan agents that find issues,
+# then review results in the dashboard or via \`tx list\`.
+# Docs: https://txdocs.dev/docs/headful/docs-runs-cycles
+[cycles]
+
+# Optional prompt appended to each scan agent's system prompt.
+# Use this to focus scans on specific areas (e.g. security, performance).
+# scan_prompt = "Focus on security issues"
+
+# Number of parallel scan agents to dispatch per cycle run.
+# Higher values = faster scans but more API usage.
+agents = 3
+
+# LLM model used by cycle scan agents.
+# Must be a valid Anthropic model ID.
+model = "claude-opus-4-6"
+
+# ─── Dashboard ──────────────────────────────────────────────────────
+# Settings for the tx dashboard web UI (\`tx dashboard\`).
+# The dashboard provides a visual interface for task management,
+# doc browsing, run inspection, and cycle results.
+# Docs: https://txdocs.dev/docs/headful/filters-and-settings
+[dashboard]
+
+# Default assignee type when creating new tasks from the dashboard.
+# "human" = tasks are assigned to humans by default.
+# "agent" = tasks are assigned to agents by default.
+# Can be toggled per-task with Cmd+K in the dashboard.
+default_task_assigment_type = "human"
+
+# ─── Pins ───────────────────────────────────────────────────────────
+# Context pins — persistent named content blocks that are injected
+# into agent context files as <tx-pin id="...">...</tx-pin> XML sections.
+# This enables programmatic CRUD of agent memory across sessions.
+# Commands: tx pin set, tx pin get, tx pin rm, tx pin list, tx pin sync
+# Docs: https://txdocs.dev/docs/primitives/pin
+[pins]
+
+# Comma-separated list of files that \`tx pin sync\` writes pins into.
+# Paths are relative to the project root.
+# Both Claude Code (CLAUDE.md) and Codex (AGENTS.md) are synced by default
+# so all agents share the same persistent context.
+target_files = "CLAUDE.md, AGENTS.md"
+`
+
+/**
+ * Scaffold .tx/config.toml with annotated defaults.
+ * No-op if the file already exists (preserves user edits).
+ * Returns true if the file was created, false if it already existed.
+ */
+export const scaffoldConfigToml = (cwd: string = process.cwd()): boolean => {
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  if (existsSync(configPath)) {
+    return false
+  }
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(configPath, DEFAULT_CONFIG_TOML, "utf8")
+  return true
 }

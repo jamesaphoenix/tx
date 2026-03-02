@@ -1,18 +1,21 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import {
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
+  scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
 } from "../../packages/core/src/utils/toml-config"
 
 const tempDirs: string[] = []
 const DEFAULTS = {
   docs: { path: ".tx/docs" },
+  memory: { defaultDir: "docs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: { defaultTaskAssigmentType: "human" },
+  pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"] },
 } as const
 
 function makeTempDir(): string {
@@ -136,5 +139,120 @@ describe("toml-config", () => {
 
     const parsed = readTxConfig(cwd)
     expect(parsed.dashboard.defaultTaskAssigmentType).toBe("human")
+  })
+
+  it("parses memory default_dir from config", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, [
+      "[memory]",
+      'default_dir = "knowledge"',
+    ].join("\n"))
+
+    const parsed = readTxConfig(cwd)
+    expect(parsed.memory.defaultDir).toBe("knowledge")
+  })
+
+  it("defaults memory default_dir to docs when section is absent", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, [
+      "[docs]",
+      'path = ".tx/docs"',
+    ].join("\n"))
+
+    const parsed = readTxConfig(cwd)
+    expect(parsed.memory.defaultDir).toBe("docs")
+  })
+
+  it("parses pins target_files as comma-separated list", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, [
+      "[pins]",
+      'target_files = "CLAUDE.md, AGENTS.md"',
+    ].join("\n"))
+
+    const parsed = readTxConfig(cwd)
+    expect(parsed.pins.targetFiles).toEqual(["CLAUDE.md", "AGENTS.md"])
+  })
+
+  it("defaults pins target_files to CLAUDE.md and AGENTS.md when section is absent", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, [
+      "[docs]",
+      'path = ".tx/docs"',
+    ].join("\n"))
+
+    const parsed = readTxConfig(cwd)
+    expect(parsed.pins.targetFiles).toEqual(["CLAUDE.md", "AGENTS.md"])
+  })
+
+  it("parses single pin target file", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, [
+      "[pins]",
+      'target_files = "AGENTS.md"',
+    ].join("\n"))
+
+    const parsed = readTxConfig(cwd)
+    expect(parsed.pins.targetFiles).toEqual(["AGENTS.md"])
+  })
+})
+
+describe("scaffoldConfigToml", () => {
+  it("creates config.toml with annotated defaults", () => {
+    const cwd = makeTempDir()
+    mkdirSync(join(cwd, ".tx"), { recursive: true })
+
+    const created = scaffoldConfigToml(cwd)
+    expect(created).toBe(true)
+
+    const raw = readFileSync(join(cwd, ".tx", "config.toml"), "utf8")
+    // Check header
+    expect(raw).toContain("# tx configuration")
+    expect(raw).toContain("https://txdocs.dev/docs")
+    // Check all sections exist with doc links
+    expect(raw).toContain("[docs]")
+    expect(raw).toContain("https://txdocs.dev/docs/primitives/docs")
+    expect(raw).toContain("[memory]")
+    expect(raw).toContain("https://txdocs.dev/docs/primitives/learning")
+    expect(raw).toContain('default_dir = "docs"')
+    expect(raw).toContain('[cycles]')
+    expect(raw).toContain("https://txdocs.dev/docs/headful/docs-runs-cycles")
+    expect(raw).toContain("[dashboard]")
+    expect(raw).toContain("https://txdocs.dev/docs/headful/filters-and-settings")
+    expect(raw).toContain("[pins]")
+    expect(raw).toContain("https://txdocs.dev/docs/primitives/pin")
+    // Check defaults are set
+    expect(raw).toContain('path = ".tx/docs"')
+    expect(raw).toContain("agents = 3")
+    expect(raw).toContain('model = "claude-opus-4-6"')
+    expect(raw).toContain('default_task_assigment_type = "human"')
+    expect(raw).toContain('target_files = "CLAUDE.md, AGENTS.md"')
+  })
+
+  it("is a no-op when config.toml already exists", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, "# custom config\n[docs]\npath = \"custom\"\n")
+
+    const created = scaffoldConfigToml(cwd)
+    expect(created).toBe(false)
+
+    const raw = readFileSync(join(cwd, ".tx", "config.toml"), "utf8")
+    expect(raw).toContain("# custom config")
+    expect(raw).toContain('path = "custom"')
+  })
+
+  it("creates .tx directory if it does not exist", () => {
+    const cwd = makeTempDir()
+
+    scaffoldConfigToml(cwd)
+    expect(existsSync(join(cwd, ".tx", "config.toml"))).toBe(true)
+  })
+
+  it("produces a file that readTxConfig parses correctly", () => {
+    const cwd = makeTempDir()
+    scaffoldConfigToml(cwd)
+
+    const config = readTxConfig(cwd)
+    expect(config).toEqual(DEFAULTS)
   })
 })

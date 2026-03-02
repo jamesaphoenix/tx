@@ -74,7 +74,7 @@ export const TaskServiceLive = Layer.effect(
         const directContextMap = yield* taskRepo.getGroupContextForMany([task.id])
         const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany([task.id])
 
-        let isReady = ["backlog", "ready", "planning"].includes(task.status)
+        let isReady = ["backlog", "ready", "planning", "active"].includes(task.status)
         if (isReady && blockerIds.length > 0) {
           const blockers = yield* taskRepo.findByIds(blockerIds)
           isReady = blockers.every(b => b.status === "done")
@@ -133,7 +133,7 @@ export const TaskServiceLive = Layer.effect(
           const childIds = childIdsMap.get(task.id) ?? []
 
           // Compute isReady
-          let isReady = ["backlog", "ready", "planning"].includes(task.status)
+          let isReady = ["backlog", "ready", "planning", "active"].includes(task.status)
           if (isReady && blockerIds.length > 0) {
             isReady = blockerIds.every(bid => blockerStatusMap.get(bid) === "done")
           }

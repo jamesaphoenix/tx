@@ -4,6 +4,7 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
 import { RetrieverService } from "./retriever-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError, RetrievalError, EmbeddingDimensionMismatchError, EmbeddingUnavailableError } from "../errors.js"
+import type { ZeroMagnitudeVectorError } from "../errors.js"
 import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "@jamesaphoenix/tx-types"
 
 /** Strips null bytes (\0) which cause C API truncation, JSON issues, and terminal corruption. */
@@ -135,11 +136,11 @@ export class LearningService extends Context.Tag("LearningService")<
     readonly create: (input: CreateLearningInput) => Effect.Effect<Learning, ValidationError | DatabaseError>
     readonly get: (id: number) => Effect.Effect<Learning, LearningNotFoundError | DatabaseError>
     readonly remove: (id: number) => Effect.Effect<void, LearningNotFoundError | DatabaseError>
-    readonly search: (query: LearningQuery) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError | EmbeddingDimensionMismatchError>
+    readonly search: (query: LearningQuery) => Effect.Effect<readonly LearningWithScore[], RetrievalError | DatabaseError | EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError>
     readonly getRecent: (limit?: number) => Effect.Effect<readonly Learning[], DatabaseError>
     readonly recordUsage: (id: number) => Effect.Effect<void, LearningNotFoundError | DatabaseError>
     readonly updateOutcome: (id: number, score: number) => Effect.Effect<void, LearningNotFoundError | ValidationError | DatabaseError>
-    readonly getContextForTask: (taskId: string, options?: ContextOptions) => Effect.Effect<ContextResult, TaskNotFoundError | RetrievalError | DatabaseError | EmbeddingDimensionMismatchError>
+    readonly getContextForTask: (taskId: string, options?: ContextOptions) => Effect.Effect<ContextResult, TaskNotFoundError | RetrievalError | DatabaseError | EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError>
     readonly count: () => Effect.Effect<number, DatabaseError>
     readonly embedAll: (forceAll?: boolean) => Effect.Effect<EmbedResult, DatabaseError>
     readonly embeddingStatus: () => Effect.Effect<EmbedStatus, DatabaseError>

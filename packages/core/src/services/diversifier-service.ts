@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { LearningWithScore } from "@jamesaphoenix/tx-types"
 import { cosineSimilarity } from "../utils/math.js"
-import { EmbeddingDimensionMismatchError } from "../errors.js"
+import { EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "../errors.js"
 
 /**
  * DiversifierService provides Maximal Marginal Relevance (MMR) diversification
@@ -28,7 +28,7 @@ export class DiversifierService extends Context.Tag("DiversifierService")<
       candidates: readonly LearningWithScore[],
       limit: number,
       lambda?: number
-    ) => Effect.Effect<readonly LearningWithScore[], EmbeddingDimensionMismatchError>
+    ) => Effect.Effect<readonly LearningWithScore[], EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError>
   }
 >() {}
 
@@ -53,7 +53,7 @@ const CATEGORY_MAX_PER_TOP_N = 2
 const maxSimilarityToSelected = (
   candidate: LearningWithScore,
   selected: readonly LearningWithScore[]
-): Effect.Effect<number, EmbeddingDimensionMismatchError> => {
+): Effect.Effect<number, EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError> => {
   // No embedding means we can't compute similarity
   if (!candidate.embedding) {
     return Effect.succeed(0)
@@ -91,7 +91,7 @@ const mmrScore = (
   candidate: LearningWithScore,
   selected: readonly LearningWithScore[],
   lambda: number
-): Effect.Effect<number, EmbeddingDimensionMismatchError> => {
+): Effect.Effect<number, EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError> => {
   const relevance = candidate.relevanceScore
   return maxSimilarityToSelected(candidate, selected).pipe(
     Effect.map(maxSim => lambda * relevance - (1 - lambda) * maxSim)
@@ -149,7 +149,7 @@ const findBestCandidate = (
   selected: readonly LearningWithScore[],
   lambda: number,
   checkCategoryLimits: boolean
-): Effect.Effect<{ candidate: LearningWithScore; score: number } | null, EmbeddingDimensionMismatchError> =>
+): Effect.Effect<{ candidate: LearningWithScore; score: number } | null, EmbeddingDimensionMismatchError | ZeroMagnitudeVectorError> =>
   Effect.gen(function* () {
     let bestCandidate: LearningWithScore | null = null
     let bestScore = -Infinity

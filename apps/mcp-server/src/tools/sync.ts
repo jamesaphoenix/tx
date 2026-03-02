@@ -9,7 +9,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { resolve, sep } from "node:path"
 import z from "zod"
-import type { ExportResult, ImportResult, SyncStatus, CompactResult } from "@jamesaphoenix/tx-core"
+import type { ExportResult, ExportAllResult, ImportResult, ImportAllResult, EntityImportResult, SyncStatus, CompactResult } from "@jamesaphoenix/tx-core"
 import { SyncService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
@@ -61,7 +61,13 @@ export const serializeExportResult = (result: ExportResult): Record<string, unkn
 export const serializeImportResult = (result: ImportResult): Record<string, unknown> => ({
   imported: result.imported,
   skipped: result.skipped,
-  conflicts: result.conflicts
+  conflicts: result.conflicts,
+  dependencies: {
+    added: result.dependencies.added,
+    removed: result.dependencies.removed,
+    skipped: result.dependencies.skipped,
+    failures: result.dependencies.failures
+  }
 })
 
 /**
@@ -84,24 +90,69 @@ export const serializeCompactResult = (result: CompactResult): Record<string, un
   after: result.after
 })
 
+/**
+ * Serialize an ExportAllResult for JSON output.
+ */
+export const serializeExportAllResult = (result: ExportAllResult): Record<string, unknown> => ({
+  tasks: serializeExportResult(result.tasks),
+  learnings: result.learnings ? serializeExportResult(result.learnings) : undefined,
+  fileLearnings: result.fileLearnings ? serializeExportResult(result.fileLearnings) : undefined,
+  attempts: result.attempts ? serializeExportResult(result.attempts) : undefined,
+  pins: result.pins ? serializeExportResult(result.pins) : undefined,
+  anchors: result.anchors ? serializeExportResult(result.anchors) : undefined,
+  edges: result.edges ? serializeExportResult(result.edges) : undefined,
+  docs: result.docs ? serializeExportResult(result.docs) : undefined,
+  labels: result.labels ? serializeExportResult(result.labels) : undefined
+})
+
+/**
+ * Serialize an EntityImportResult for JSON output.
+ */
+const serializeEntityImportResult = (result: EntityImportResult): Record<string, unknown> => ({
+  imported: result.imported,
+  skipped: result.skipped
+})
+
+/**
+ * Serialize an ImportAllResult for JSON output.
+ */
+export const serializeImportAllResult = (result: ImportAllResult): Record<string, unknown> => ({
+  tasks: serializeImportResult(result.tasks),
+  learnings: result.learnings ? serializeEntityImportResult(result.learnings) : undefined,
+  fileLearnings: result.fileLearnings ? serializeEntityImportResult(result.fileLearnings) : undefined,
+  attempts: result.attempts ? serializeEntityImportResult(result.attempts) : undefined,
+  pins: result.pins ? serializeEntityImportResult(result.pins) : undefined,
+  anchors: result.anchors ? serializeEntityImportResult(result.anchors) : undefined,
+  edges: result.edges ? serializeEntityImportResult(result.edges) : undefined,
+  docs: result.docs ? serializeEntityImportResult(result.docs) : undefined,
+  labels: result.labels ? serializeEntityImportResult(result.labels) : undefined
+})
+
 // -----------------------------------------------------------------------------
 // Tool Handlers (extracted to avoid deep type inference issues with MCP SDK)
 // -----------------------------------------------------------------------------
 
 const handleExport = async (args: { path?: string }): Promise<McpToolResult> => {
   try {
-    const safePath = validateSyncPath(args.path)
     const result = await runEffect(
       Effect.gen(function* () {
         const syncService = yield* SyncService
-        return yield* syncService.export(safePath ?? undefined)
+        return yield* syncService.exportAll()
       })
     )
-    const serialized = serializeExportResult(result)
+    const lines: string[] = [`Tasks: ${result.tasks.opCount} op(s) → ${result.tasks.path}`]
+    if (result.learnings) lines.push(`Learnings: ${result.learnings.opCount} op(s) → ${result.learnings.path}`)
+    if (result.fileLearnings) lines.push(`File learnings: ${result.fileLearnings.opCount} op(s) → ${result.fileLearnings.path}`)
+    if (result.attempts) lines.push(`Attempts: ${result.attempts.opCount} op(s) → ${result.attempts.path}`)
+    if (result.pins) lines.push(`Pins: ${result.pins.opCount} op(s) → ${result.pins.path}`)
+    if (result.anchors) lines.push(`Anchors: ${result.anchors.opCount} op(s) → ${result.anchors.path}`)
+    if (result.edges) lines.push(`Edges: ${result.edges.opCount} op(s) → ${result.edges.path}`)
+    if (result.docs) lines.push(`Docs: ${result.docs.opCount} op(s) → ${result.docs.path}`)
+    if (result.labels) lines.push(`Labels: ${result.labels.opCount} op(s) → ${result.labels.path}`)
     return {
       content: [
-        { type: "text", text: `Exported ${result.opCount} operation(s) to ${result.path}` },
-        { type: "text", text: JSON.stringify(serialized) }
+        { type: "text", text: lines.join("\n") },
+        { type: "text", text: JSON.stringify(serializeExportAllResult(result)) }
       ],
       isError: false
     }
@@ -112,21 +163,27 @@ const handleExport = async (args: { path?: string }): Promise<McpToolResult> => 
 
 const handleImport = async (args: { path?: string }): Promise<McpToolResult> => {
   try {
-    const safePath = validateSyncPath(args.path)
     const result = await runEffect(
       Effect.gen(function* () {
         const syncService = yield* SyncService
-        return yield* syncService.import(safePath ?? undefined)
+        return yield* syncService.importAll()
       })
     )
-    const serialized = serializeImportResult(result)
-    const summary = result.conflicts > 0
-      ? `Imported ${result.imported}, skipped ${result.skipped}, ${result.conflicts} conflict(s)`
-      : `Imported ${result.imported}, skipped ${result.skipped}`
+    const lines: string[] = [
+      `Tasks: imported=${result.tasks.imported}, skipped=${result.tasks.skipped}, conflicts=${result.tasks.conflicts}`
+    ]
+    if (result.learnings) lines.push(`Learnings: imported=${result.learnings.imported}, skipped=${result.learnings.skipped}`)
+    if (result.fileLearnings) lines.push(`File learnings: imported=${result.fileLearnings.imported}, skipped=${result.fileLearnings.skipped}`)
+    if (result.attempts) lines.push(`Attempts: imported=${result.attempts.imported}, skipped=${result.attempts.skipped}`)
+    if (result.pins) lines.push(`Pins: imported=${result.pins.imported}, skipped=${result.pins.skipped}`)
+    if (result.anchors) lines.push(`Anchors: imported=${result.anchors.imported}, skipped=${result.anchors.skipped}`)
+    if (result.edges) lines.push(`Edges: imported=${result.edges.imported}, skipped=${result.edges.skipped}`)
+    if (result.docs) lines.push(`Docs: imported=${result.docs.imported}, skipped=${result.docs.skipped}`)
+    if (result.labels) lines.push(`Labels: imported=${result.labels.imported}, skipped=${result.labels.skipped}`)
     return {
       content: [
-        { type: "text", text: summary },
-        { type: "text", text: JSON.stringify(serialized) }
+        { type: "text", text: lines.join("\n") },
+        { type: "text", text: JSON.stringify(serializeImportAllResult(result)) }
       ],
       isError: false
     }

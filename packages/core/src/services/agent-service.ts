@@ -13,6 +13,7 @@ import { Context, Effect, Layer } from "effect"
 import { execFileSync, spawn } from "node:child_process"
 import { AgentError } from "../errors.js"
 import { normalizeClaudeDebugLogPath } from "../utils/claude-debug-log.js"
+import type { AgentRuntime } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
 // Types
@@ -25,6 +26,7 @@ export interface AgentRunConfig {
     readonly permissionMode?: string
     readonly allowDangerouslySkipPermissions?: boolean
     readonly model?: string
+    readonly runtime?: AgentRuntime
     readonly maxTurns?: number
     readonly persistSession?: boolean
     readonly outputFormat?: {
@@ -289,8 +291,25 @@ export const AgentServiceLive = Layer.effect(
         Effect.tryPromise({
           try: async () => {
             normalizeClaudeDebugLogPath()
+            const runtime = config.options?.runtime ?? "auto"
+
+            // Codex-only: skip SDK entirely
+            if (runtime === "codex") {
+              return await runWithCodexCli(config, onMessage)
+            }
+
             const queryFn = await loadClaudeQueryFn()
 
+            // Claude-only: fail if SDK unavailable
+            if (runtime === "claude" && !queryFn) {
+              return Promise.reject(
+                new Error(
+                  `Runtime "claude" requested but Claude Agent SDK is unavailable${queryImportError ? `: ${queryImportError}` : ""}`
+                )
+              )
+            }
+
+            // Auto: if SDK unavailable, fall back to Codex
             if (!queryFn) {
               return await runWithCodexCli(config, onMessage)
             }
@@ -350,7 +369,11 @@ export const AgentServiceLive = Layer.effect(
             if (errorMessage) {
               if (isAuthenticationFailure(errorMessage)) {
                 await terminateClaudeSdkChildren()
-                return await runWithCodexCli(config, onMessage)
+                // Only fall back to Codex if runtime is "auto"
+                if (runtime === "auto") {
+                  return await runWithCodexCli(config, onMessage)
+                }
+                return Promise.reject(new Error(`Agent SDK authentication failed: ${errorMessage}`))
               }
               return Promise.reject(new Error(`Agent SDK error: ${errorMessage}`))
             }

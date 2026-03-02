@@ -38,32 +38,70 @@ export const sync = (pos: string[], flags: Flags) =>
 
     if (subcommand === "export") {
       const path = opt(flags, "path")
+      const tasksOnly = flag(flags, "tasks-only")
 
-      // Export tasks
-      const result = yield* syncSvc.export(path)
-
-      if (flag(flags, "json")) {
-        console.log(toJson(result))
+      if (tasksOnly) {
+        // Export tasks only (backward compat)
+        const result = yield* syncSvc.export(path)
+        if (flag(flags, "json")) {
+          console.log(toJson(result))
+        } else {
+          console.log(`Exported ${result.opCount} operation(s) to ${result.path}`)
+        }
       } else {
-        console.log(`Exported ${result.opCount} operation(s) to ${result.path}`)
+        // Export all entity types
+        const result = yield* syncSvc.exportAll()
+        if (flag(flags, "json")) {
+          console.log(toJson(result))
+        } else {
+          console.log(`Tasks: ${result.tasks.opCount} op(s) → ${result.tasks.path}`)
+          if (result.learnings) console.log(`Learnings: ${result.learnings.opCount} op(s) → ${result.learnings.path}`)
+          if (result.fileLearnings) console.log(`File learnings: ${result.fileLearnings.opCount} op(s) → ${result.fileLearnings.path}`)
+          if (result.attempts) console.log(`Attempts: ${result.attempts.opCount} op(s) → ${result.attempts.path}`)
+          if (result.pins) console.log(`Pins: ${result.pins.opCount} op(s) → ${result.pins.path}`)
+          if (result.anchors) console.log(`Anchors: ${result.anchors.opCount} op(s) → ${result.anchors.path}`)
+          if (result.edges) console.log(`Edges: ${result.edges.opCount} op(s) → ${result.edges.path}`)
+          if (result.docs) console.log(`Docs: ${result.docs.opCount} op(s) → ${result.docs.path}`)
+          if (result.labels) console.log(`Labels: ${result.labels.opCount} op(s) → ${result.labels.path}`)
+        }
       }
     } else if (subcommand === "import") {
       const path = opt(flags, "path")
+      const tasksOnly = flag(flags, "tasks-only")
 
-      // Import tasks
-      const result = yield* syncSvc.import(path)
-
-      if (flag(flags, "json")) {
-        console.log(toJson(result))
-      } else {
-        console.log(`Tasks: imported=${result.imported}, skipped=${result.skipped}, conflicts=${result.conflicts}`)
-        const deps = result.dependencies
-        console.log(`Dependencies: added=${deps.added}, removed=${deps.removed}, skipped=${deps.skipped}, failures=${deps.failures.length}`)
-        if (deps.failures.length > 0) {
-          console.log(`\nDependency failures:`)
-          for (const f of deps.failures) {
-            console.log(`  ${f.blockerId} -> ${f.blockedId}: ${f.error}`)
+      if (tasksOnly) {
+        // Import tasks only (backward compat)
+        const result = yield* syncSvc.import(path)
+        if (flag(flags, "json")) {
+          console.log(toJson(result))
+        } else {
+          console.log(`Tasks: imported=${result.imported}, skipped=${result.skipped}, conflicts=${result.conflicts}`)
+          const deps = result.dependencies
+          console.log(`Dependencies: added=${deps.added}, removed=${deps.removed}, skipped=${deps.skipped}, failures=${deps.failures.length}`)
+          if (deps.failures.length > 0) {
+            console.log(`\nDependency failures:`)
+            for (const f of deps.failures) {
+              console.log(`  ${f.blockerId} -> ${f.blockedId}: ${f.error}`)
+            }
           }
+        }
+      } else {
+        // Import all entity types
+        const result = yield* syncSvc.importAll()
+        if (flag(flags, "json")) {
+          console.log(toJson(result))
+        } else {
+          console.log(`Tasks: imported=${result.tasks.imported}, skipped=${result.tasks.skipped}, conflicts=${result.tasks.conflicts}`)
+          const deps = result.tasks.dependencies
+          console.log(`Dependencies: added=${deps.added}, removed=${deps.removed}, skipped=${deps.skipped}, failures=${deps.failures.length}`)
+          if (result.learnings) console.log(`Learnings: imported=${result.learnings.imported}, skipped=${result.learnings.skipped}`)
+          if (result.fileLearnings) console.log(`File learnings: imported=${result.fileLearnings.imported}, skipped=${result.fileLearnings.skipped}`)
+          if (result.attempts) console.log(`Attempts: imported=${result.attempts.imported}, skipped=${result.attempts.skipped}`)
+          if (result.pins) console.log(`Pins: imported=${result.pins.imported}, skipped=${result.pins.skipped}`)
+          if (result.anchors) console.log(`Anchors: imported=${result.anchors.imported}, skipped=${result.anchors.skipped}`)
+          if (result.edges) console.log(`Edges: imported=${result.edges.imported}, skipped=${result.edges.skipped}`)
+          if (result.docs) console.log(`Docs: imported=${result.docs.imported}, skipped=${result.docs.skipped}`)
+          if (result.labels) console.log(`Labels: imported=${result.labels.imported}, skipped=${result.labels.skipped}`)
         }
       }
     } else if (subcommand === "status") {

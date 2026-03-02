@@ -2,7 +2,12 @@
 // See DD-009 for specification details.
 
 import { Schema } from "effect"
-import { TASK_STATUSES, TaskAssigneeTypeSchema } from "@jamesaphoenix/tx-types"
+import {
+  TASK_STATUSES, TaskAssigneeTypeSchema,
+  ANCHOR_TYPES, EDGE_TYPES, NODE_TYPES,
+  DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, TASK_DOC_LINK_TYPES,
+  INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES
+} from "@jamesaphoenix/tx-types"
 
 // Schema version - v=1 for all sync operations
 export const SyncVersion = Schema.Literal(1)
@@ -27,6 +32,8 @@ export const TaskDataSchema = Schema.Struct({
   status: TaskStatusSchema,
   score: Schema.Number.pipe(Schema.int()),
   parentId: Schema.NullOr(TaskIdSchema),
+  createdAt: Schema.optional(Schema.NullOr(Schema.String)),
+  completedAt: Schema.optional(Schema.NullOr(Schema.String)),
   assigneeType: Schema.optional(Schema.NullOr(TaskAssigneeTypeSchema)),
   assigneeId: Schema.optional(Schema.NullOr(Schema.String)),
   assignedAt: Schema.optional(Schema.NullOr(Schema.String)),
@@ -104,22 +111,26 @@ export const LearningDataSchema = Schema.Struct({
 })
 
 // Learning upsert operation
+// contentHash: SHA256(content + sourceType) for cross-machine dedup (integer IDs collide)
 const LearningUpsertOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("learning_upsert"),
   ts: IsoTimestamp,
   id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
   data: LearningDataSchema
 })
 export { LearningUpsertOpSchema as LearningUpsertOp }
 export type LearningUpsertOp = typeof LearningUpsertOpSchema.Type
 
 // Learning delete operation (tombstone)
+// contentHash used for cross-machine identity (integer IDs are machine-local)
 const LearningDeleteOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("learning_delete"),
   ts: IsoTimestamp,
-  id: Schema.Number.pipe(Schema.int())
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String
 })
 export { LearningDeleteOpSchema as LearningDeleteOp }
 export type LearningDeleteOp = typeof LearningDeleteOpSchema.Type
@@ -142,33 +153,37 @@ export const FileLearningDataSchema = Schema.Struct({
 })
 
 // File learning upsert operation
+// contentHash: SHA256(filePattern + note) for cross-machine dedup
 const FileLearningUpsertOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("file_learning_upsert"),
   ts: IsoTimestamp,
   id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
   data: FileLearningDataSchema
 })
 export { FileLearningUpsertOpSchema as FileLearningUpsertOp }
 export type FileLearningUpsertOp = typeof FileLearningUpsertOpSchema.Type
 
 // File learning delete operation (tombstone)
+// contentHash used for cross-machine identity
 const FileLearningDeleteOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("file_learning_delete"),
   ts: IsoTimestamp,
-  id: Schema.Number.pipe(Schema.int())
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String
 })
 export { FileLearningDeleteOpSchema as FileLearningDeleteOp }
 export type FileLearningDeleteOp = typeof FileLearningDeleteOpSchema.Type
 
 // Union of file learning sync operations
-const FileLearnningSyncOperationSchema = Schema.Union(
+const FileLearningSyncOperationSchema = Schema.Union(
   FileLearningUpsertOpSchema,
   FileLearningDeleteOpSchema
 )
-export { FileLearnningSyncOperationSchema as FileLearnningSyncOperation }
-export type FileLearnningSyncOperation = typeof FileLearnningSyncOperationSchema.Type
+export { FileLearningSyncOperationSchema as FileLearningSyncOperation }
+export type FileLearningSyncOperation = typeof FileLearningSyncOperationSchema.Type
 
 // ----- Attempt Sync Operations -----
 
@@ -184,11 +199,13 @@ export const AttemptDataSchema = Schema.Struct({
 })
 
 // Attempt upsert operation (attempts are immutable, no delete operation)
+// contentHash: SHA256(taskId + approach) for cross-machine dedup
 const AttemptUpsertOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("attempt_upsert"),
   ts: IsoTimestamp,
   id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
   data: AttemptDataSchema
 })
 export { AttemptUpsertOpSchema as AttemptUpsertOp }
@@ -200,6 +217,356 @@ const AttemptSyncOperationSchema = Schema.Union(
 )
 export { AttemptSyncOperationSchema as AttemptSyncOperation }
 export type AttemptSyncOperation = typeof AttemptSyncOperationSchema.Type
+
+// ----- Pin Sync Operations -----
+
+// Pin data embedded in upsert operations
+export const PinDataSchema = Schema.Struct({
+  content: Schema.String,
+})
+
+// Pin upsert operation
+// contentHash: SHA256(id) for cross-machine dedup (pin IDs are user-chosen text keys)
+const PinUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("pin_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.String,
+  contentHash: Schema.String,
+  data: PinDataSchema
+})
+export { PinUpsertOpSchema as PinUpsertOp }
+export type PinUpsertOp = typeof PinUpsertOpSchema.Type
+
+// Pin delete operation (tombstone)
+const PinDeleteOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("pin_delete"),
+  ts: IsoTimestamp,
+  id: Schema.String,
+  contentHash: Schema.String
+})
+export { PinDeleteOpSchema as PinDeleteOp }
+export type PinDeleteOp = typeof PinDeleteOpSchema.Type
+
+// Union of pin sync operations
+const PinSyncOperationSchema = Schema.Union(
+  PinUpsertOpSchema,
+  PinDeleteOpSchema
+)
+export { PinSyncOperationSchema as PinSyncOperation }
+export type PinSyncOperation = typeof PinSyncOperationSchema.Type
+
+// ----- Anchor Sync Operations -----
+
+// Anchor type schema
+export const AnchorTypeSchema = Schema.Literal(...ANCHOR_TYPES)
+
+// Anchor status schema
+export const AnchorStatusSchema = Schema.Literal("valid", "drifted", "invalid")
+
+// Anchor data embedded in upsert operations
+export const AnchorDataSchema = Schema.Struct({
+  learningContentHash: Schema.String,
+  anchorType: AnchorTypeSchema,
+  anchorValue: Schema.String,
+  filePath: Schema.String,
+  symbolFqname: Schema.NullOr(Schema.String),
+  lineStart: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  lineEnd: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  contentHash: Schema.NullOr(Schema.String),
+  contentPreview: Schema.NullOr(Schema.String),
+  status: AnchorStatusSchema,
+  pinned: Schema.Boolean
+})
+
+// Anchor upsert operation
+// contentHash (top-level): SHA256(learningContentHash + filePath + anchorType + anchorValue) for cross-machine dedup
+const AnchorUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("anchor_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
+  data: AnchorDataSchema
+})
+export { AnchorUpsertOpSchema as AnchorUpsertOp }
+export type AnchorUpsertOp = typeof AnchorUpsertOpSchema.Type
+
+// Anchor delete operation (tombstone)
+const AnchorDeleteOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("anchor_delete"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String
+})
+export { AnchorDeleteOpSchema as AnchorDeleteOp }
+export type AnchorDeleteOp = typeof AnchorDeleteOpSchema.Type
+
+// Union of anchor sync operations
+const AnchorSyncOperationSchema = Schema.Union(
+  AnchorUpsertOpSchema,
+  AnchorDeleteOpSchema
+)
+export { AnchorSyncOperationSchema as AnchorSyncOperation }
+export type AnchorSyncOperation = typeof AnchorSyncOperationSchema.Type
+
+// ----- Edge Sync Operations -----
+
+// Edge type schema
+export const SyncEdgeTypeSchema = Schema.Literal(...EDGE_TYPES)
+
+// Node type schema (for source/target)
+export const SyncNodeTypeSchema = Schema.Literal(...NODE_TYPES)
+
+// Edge data embedded in upsert operations
+export const EdgeDataSchema = Schema.Struct({
+  edgeType: SyncEdgeTypeSchema,
+  sourceType: SyncNodeTypeSchema,
+  sourceId: Schema.String,
+  targetType: SyncNodeTypeSchema,
+  targetId: Schema.String,
+  weight: Schema.Number,
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown })
+})
+
+// Edge upsert operation
+// contentHash: SHA256(edgeType + sourceType + sourceId + targetType + targetId) for cross-machine dedup
+const EdgeUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("edge_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
+  data: EdgeDataSchema
+})
+export { EdgeUpsertOpSchema as EdgeUpsertOp }
+export type EdgeUpsertOp = typeof EdgeUpsertOpSchema.Type
+
+// Edge delete operation (tombstone / invalidation)
+const EdgeDeleteOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("edge_delete"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String
+})
+export { EdgeDeleteOpSchema as EdgeDeleteOp }
+export type EdgeDeleteOp = typeof EdgeDeleteOpSchema.Type
+
+// Union of edge sync operations
+const EdgeSyncOperationSchema = Schema.Union(
+  EdgeUpsertOpSchema,
+  EdgeDeleteOpSchema
+)
+export { EdgeSyncOperationSchema as EdgeSyncOperation }
+export type EdgeSyncOperation = typeof EdgeSyncOperationSchema.Type
+
+// ----- Doc Sync Operations -----
+
+// Doc kind schema
+export const SyncDocKindSchema = Schema.Literal(...DOC_KINDS)
+// Doc status schema
+export const SyncDocStatusSchema = Schema.Literal(...DOC_STATUSES)
+
+// Doc data embedded in upsert operations
+export const DocDataSchema = Schema.Struct({
+  kind: SyncDocKindSchema,
+  name: Schema.String,
+  title: Schema.String,
+  version: Schema.Number.pipe(Schema.int()),
+  status: SyncDocStatusSchema,
+  filePath: Schema.String,
+  hash: Schema.String,
+  parentDocKey: Schema.NullOr(Schema.String),
+  lockedAt: Schema.NullOr(Schema.String),
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown })
+})
+
+// Doc upsert operation
+// contentHash: SHA256(kind + name + version) for cross-machine dedup
+const DocUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("doc_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
+  data: DocDataSchema
+})
+export { DocUpsertOpSchema as DocUpsertOp }
+export type DocUpsertOp = typeof DocUpsertOpSchema.Type
+
+// Doc delete operation (tombstone)
+const DocDeleteOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("doc_delete"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String
+})
+export { DocDeleteOpSchema as DocDeleteOp }
+export type DocDeleteOp = typeof DocDeleteOpSchema.Type
+
+// Union of doc sync operations
+const DocSyncOperationSchema = Schema.Union(
+  DocUpsertOpSchema,
+  DocDeleteOpSchema
+)
+export { DocSyncOperationSchema as DocSyncOperation }
+export type DocSyncOperation = typeof DocSyncOperationSchema.Type
+
+// ----- Doc Link Sync Operations -----
+
+// Doc link type schema
+export const SyncDocLinkTypeSchema = Schema.Literal(...DOC_LINK_TYPES)
+
+// Doc link data
+export const DocLinkDataSchema = Schema.Struct({
+  fromDocKey: Schema.String,
+  toDocKey: Schema.String,
+  linkType: SyncDocLinkTypeSchema
+})
+
+// Doc link upsert operation
+// contentHash: SHA256(fromDocKey + toDocKey) for cross-machine dedup
+const DocLinkUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("doc_link_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
+  data: DocLinkDataSchema
+})
+export { DocLinkUpsertOpSchema as DocLinkUpsertOp }
+export type DocLinkUpsertOp = typeof DocLinkUpsertOpSchema.Type
+
+// Union of doc link sync operations
+const DocLinkSyncOperationSchema = Schema.Union(
+  DocLinkUpsertOpSchema
+)
+export { DocLinkSyncOperationSchema as DocLinkSyncOperation }
+export type DocLinkSyncOperation = typeof DocLinkSyncOperationSchema.Type
+
+// ----- Task Doc Link Sync Operations -----
+
+// Task doc link type schema
+export const SyncTaskDocLinkTypeSchema = Schema.Literal(...TASK_DOC_LINK_TYPES)
+
+// Task doc link data
+export const TaskDocLinkDataSchema = Schema.Struct({
+  taskId: Schema.String,
+  docKey: Schema.String,
+  linkType: SyncTaskDocLinkTypeSchema
+})
+
+// Task doc link upsert operation
+// contentHash: SHA256(taskId + docKey) for cross-machine dedup
+const TaskDocLinkUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("task_doc_link_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
+  data: TaskDocLinkDataSchema
+})
+export { TaskDocLinkUpsertOpSchema as TaskDocLinkUpsertOp }
+export type TaskDocLinkUpsertOp = typeof TaskDocLinkUpsertOpSchema.Type
+
+// Union of task doc link sync operations
+const TaskDocLinkSyncOperationSchema = Schema.Union(
+  TaskDocLinkUpsertOpSchema
+)
+export { TaskDocLinkSyncOperationSchema as TaskDocLinkSyncOperation }
+export type TaskDocLinkSyncOperation = typeof TaskDocLinkSyncOperationSchema.Type
+
+// ----- Invariant Sync Operations -----
+
+// Invariant enforcement schema
+export const SyncInvariantEnforcementSchema = Schema.Literal(...INVARIANT_ENFORCEMENT_TYPES)
+// Invariant status schema
+export const SyncInvariantStatusSchema = Schema.Literal(...INVARIANT_STATUSES)
+
+// Invariant data embedded in upsert operations
+export const InvariantDataSchema = Schema.Struct({
+  id: Schema.String,
+  rule: Schema.String,
+  enforcement: SyncInvariantEnforcementSchema,
+  docKey: Schema.String,
+  subsystem: Schema.NullOr(Schema.String),
+  testRef: Schema.NullOr(Schema.String),
+  lintRule: Schema.NullOr(Schema.String),
+  promptRef: Schema.NullOr(Schema.String),
+  status: SyncInvariantStatusSchema,
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown })
+})
+
+// Invariant upsert operation
+// contentHash: SHA256(id) for cross-machine dedup (invariant IDs are globally unique INV-*)
+const InvariantUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("invariant_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.String,
+  contentHash: Schema.String,
+  data: InvariantDataSchema
+})
+export { InvariantUpsertOpSchema as InvariantUpsertOp }
+export type InvariantUpsertOp = typeof InvariantUpsertOpSchema.Type
+
+// Union of invariant sync operations
+const InvariantSyncOperationSchema = Schema.Union(
+  InvariantUpsertOpSchema
+)
+export { InvariantSyncOperationSchema as InvariantSyncOperation }
+export type InvariantSyncOperation = typeof InvariantSyncOperationSchema.Type
+
+// ----- Label Sync Operations -----
+
+// Label data embedded in upsert operations
+export const LabelDataSchema = Schema.Struct({
+  name: Schema.String,
+  color: Schema.String
+})
+
+// Label upsert operation
+// contentHash: SHA256(lower(name)) for cross-machine dedup (case-insensitive unique)
+const LabelUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("label_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.Number.pipe(Schema.int()),
+  contentHash: Schema.String,
+  data: LabelDataSchema
+})
+export { LabelUpsertOpSchema as LabelUpsertOp }
+export type LabelUpsertOp = typeof LabelUpsertOpSchema.Type
+
+// Label assignment data
+export const LabelAssignmentDataSchema = Schema.Struct({
+  taskId: Schema.String,
+  labelName: Schema.String
+})
+
+// Label assignment upsert operation
+// contentHash: SHA256(taskId + lower(labelName)) for cross-machine dedup
+const LabelAssignmentUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("label_assignment_upsert"),
+  ts: IsoTimestamp,
+  contentHash: Schema.String,
+  data: LabelAssignmentDataSchema
+})
+export { LabelAssignmentUpsertOpSchema as LabelAssignmentUpsertOp }
+export type LabelAssignmentUpsertOp = typeof LabelAssignmentUpsertOpSchema.Type
+
+// Union of label sync operations
+const LabelSyncOperationSchema = Schema.Union(
+  LabelUpsertOpSchema,
+  LabelAssignmentUpsertOpSchema
+)
+export { LabelSyncOperationSchema as LabelSyncOperation }
+export type LabelSyncOperation = typeof LabelSyncOperationSchema.Type
 
 // ----- Combined Sync Operations -----
 
@@ -217,7 +584,20 @@ const AnySyncOperationSchema = Schema.Union(
   LearningDeleteOpSchema,
   FileLearningUpsertOpSchema,
   FileLearningDeleteOpSchema,
-  AttemptUpsertOpSchema
+  AttemptUpsertOpSchema,
+  PinUpsertOpSchema,
+  PinDeleteOpSchema,
+  AnchorUpsertOpSchema,
+  AnchorDeleteOpSchema,
+  EdgeUpsertOpSchema,
+  EdgeDeleteOpSchema,
+  DocUpsertOpSchema,
+  DocDeleteOpSchema,
+  DocLinkUpsertOpSchema,
+  TaskDocLinkUpsertOpSchema,
+  InvariantUpsertOpSchema,
+  LabelUpsertOpSchema,
+  LabelAssignmentUpsertOpSchema
 )
 export { AnySyncOperationSchema as AnySyncOperation }
 export type AnySyncOperation = typeof AnySyncOperationSchema.Type

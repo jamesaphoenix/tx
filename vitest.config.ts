@@ -53,6 +53,8 @@ export default defineConfig({
       "test/integration/cli-npm-binary.test.ts",
       // install script test: requires network access to GitHub
       "test/integration/install-script.test.ts",
+      // utils usage tests: require real CLIs + network (run explicitly)
+      "test/integration/utils-usage.test.ts",
     ],
     setupFiles: ["./vitest.setup.ts"],
     environment: "node",

@@ -12,7 +12,7 @@ import { appendFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { randomBytes } from "node:crypto"
 import { readFileSync, existsSync, statSync } from "node:fs"
-import type { Finding, DedupResult, CycleConfig, CycleResult, CycleProgressEvent } from "@jamesaphoenix/tx-types"
+import type { Finding, DedupResult, CycleConfig, CycleResult, CycleProgressEvent, AgentRuntime } from "@jamesaphoenix/tx-types"
 import { LOSS_WEIGHTS } from "@jamesaphoenix/tx-types"
 import { CycleScanError } from "../errors.js"
 import { AgentService } from "./agent-service.js"
@@ -584,7 +584,7 @@ export const CycleScanServiceLive = Layer.effect(
     }
 
     // Agent dispatch helpers
-    const runScanAgent = (task: string, scan: string, agentModel: string, runId: string) =>
+    const runScanAgent = (task: string, scan: string, agentModel: string, agentRuntime: AgentRuntime, runId: string) =>
       Effect.gen(function* () {
         const prompt = composeScanPrompt(task, scan)
         const config = {
@@ -594,6 +594,7 @@ export const CycleScanServiceLive = Layer.effect(
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
             model: agentModel,
+            runtime: agentRuntime,
             maxTurns: 20,
             persistSession: false,
             outputFormat: { type: "json_schema", schema: FINDINGS_SCHEMA },
@@ -634,7 +635,7 @@ export const CycleScanServiceLive = Layer.effect(
         }
       })
 
-    const runDedupAgent = (findings: readonly Finding[], issuesMap: Map<string, IssueMapEntry>, agentModel: string, runId: string) =>
+    const runDedupAgent = (findings: readonly Finding[], issuesMap: Map<string, IssueMapEntry>, agentModel: string, agentRuntime: AgentRuntime, runId: string) =>
       Effect.gen(function* () {
         if (issuesMap.size === 0) {
           return { newIssues: findings, duplicates: [] } as DedupResult
@@ -656,6 +657,7 @@ export const CycleScanServiceLive = Layer.effect(
           options: {
             tools: [] as readonly string[],
             model: agentModel,
+            runtime: agentRuntime,
             maxTurns: 1,
             persistSession: false,
             outputFormat: { type: "json_schema", schema: DEDUP_SCHEMA },
@@ -694,7 +696,7 @@ export const CycleScanServiceLive = Layer.effect(
         }
       })
 
-    const runFixAgent = (issues: readonly Finding[], agentModel: string, runId: string) =>
+    const runFixAgent = (issues: readonly Finding[], agentModel: string, agentRuntime: AgentRuntime, runId: string) =>
       Effect.gen(function* () {
         const prompt = composeFixPrompt(issues)
         const config = {
@@ -703,6 +705,7 @@ export const CycleScanServiceLive = Layer.effect(
             tools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"] as readonly string[],
             permissionMode: "acceptEdits",
             model: agentModel,
+            runtime: agentRuntime,
             maxTurns: 50,
             persistSession: false,
           },
@@ -745,6 +748,7 @@ export const CycleScanServiceLive = Layer.effect(
           const maxRounds = config.maxRounds ?? 10
           const agentCount = config.agents ?? 3
           const model = config.model ?? "claude-opus-4-6"
+          const runtime = config.runtime ?? "auto"
           const scanOnly = config.scanOnly ?? false
           const dryRun = config.dryRun ?? false
           const doFix = (config.fix ?? false) && !scanOnly && !dryRun
@@ -773,7 +777,7 @@ export const CycleScanServiceLive = Layer.effect(
             dbUpdateRunMetadata(cycleRunId, { type: "cycle", cycle, name: cycleName, description: cycleDescription })
             writeOrchestratorLog(
               cycleRunId,
-              `Starting cycle ${cycle}/${cycleCount}: "${cycleName}" with ${agentCount} agents, model: ${model}`
+              `Starting cycle ${cycle}/${cycleCount}: "${cycleName}" with ${agentCount} agents, model: ${model}, runtime: ${runtime}`
             )
 
             // Load existing issues for this cycle
@@ -812,7 +816,7 @@ export const CycleScanServiceLive = Layer.effect(
                 Effect.gen(function* () {
                   const scanRunId = dbCreateRun(`scan-agent-${i + 1}`)
                   dbUpdateRunMetadata(scanRunId, { type: "scan", cycle, round, cycleRunId })
-                  return yield* runScanAgent(taskPrompt, scanPrompt, model, scanRunId).pipe(
+                  return yield* runScanAgent(taskPrompt, scanPrompt, model, runtime, scanRunId).pipe(
                     Effect.map(
                       (findings): ScanAgentOutcome => ({
                         findings,
@@ -910,7 +914,7 @@ export const CycleScanServiceLive = Layer.effect(
               // DEDUP PHASE
               const dedupRunId = dbCreateRun("dedup-agent")
               dbUpdateRunMetadata(dedupRunId, { type: "dedup", cycle, round, cycleRunId })
-              const dedupResult = yield* runDedupAgent(allFindings, issuesMap, model, dedupRunId).pipe(
+              const dedupResult = yield* runDedupAgent(allFindings, issuesMap, model, runtime, dedupRunId).pipe(
                 Effect.tap(() => Effect.sync(() => dbFinalizeRun(dedupRunId, { status: "completed" }))),
                 Effect.tapError((error) =>
                   Effect.sync(() => {
@@ -996,7 +1000,7 @@ export const CycleScanServiceLive = Layer.effect(
               if (doFix && dedupResult.newIssues.length > 0) {
                 const fixRunId = dbCreateRun("fix-agent")
                 dbUpdateRunMetadata(fixRunId, { type: "fix", cycle, round, cycleRunId })
-                yield* runFixAgent(dedupResult.newIssues, model, fixRunId).pipe(
+                yield* runFixAgent(dedupResult.newIssues, model, runtime, fixRunId).pipe(
                   Effect.tap(() => Effect.sync(() => dbFinalizeRun(fixRunId, { status: "completed" }))),
                   Effect.tapError((error) =>
                     Effect.sync(() => {
