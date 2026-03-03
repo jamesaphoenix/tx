@@ -22,13 +22,18 @@ import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 // Tool Handlers (extracted to avoid deep type inference issues with MCP SDK)
 // -----------------------------------------------------------------------------
 
-const handleReady = async (args: { limit?: number }): Promise<McpToolResult> => {
+const handleReady = async (args: { limit?: number; labels?: string; excludeLabels?: string }): Promise<McpToolResult> => {
   try {
     const effectiveLimit = normalizeLimit(args.limit)
+    const labels = args.labels ? args.labels.split(",").map(s => s.trim()).filter(Boolean) : undefined
+    const excludeLabels = args.excludeLabels ? args.excludeLabels.split(",").map(s => s.trim()).filter(Boolean) : undefined
     const tasks = await runEffect(
       Effect.gen(function* () {
         const ready = yield* ReadyService
-        return yield* ready.getReady(effectiveLimit)
+        return yield* ready.getReady(effectiveLimit, {
+          labels: labels?.length ? labels : undefined,
+          excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
+        })
       })
     )
     const serialized = tasks.map(serializeTask)
@@ -66,17 +71,21 @@ const handleShow = async (args: { id: string }): Promise<McpToolResult> => {
   }
 }
 
-const handleList = async (args: { status?: TaskStatus; parentId?: string; limit?: number }): Promise<McpToolResult> => {
+const handleList = async (args: { status?: TaskStatus; parentId?: string; limit?: number; labels?: string; excludeLabels?: string }): Promise<McpToolResult> => {
   try {
     const parentId = args.parentId != null ? assertTaskId(args.parentId) : undefined
     const effectiveLimit = normalizeLimit(args.limit)
+    const labels = args.labels ? args.labels.split(",").map(s => s.trim()).filter(Boolean) : undefined
+    const excludeLabels = args.excludeLabels ? args.excludeLabels.split(",").map(s => s.trim()).filter(Boolean) : undefined
     const tasks = await runEffect(
       Effect.gen(function* () {
         const taskService = yield* TaskService
         return yield* taskService.listWithDeps({
           status: args.status,
           parentId,
-          limit: effectiveLimit
+          limit: effectiveLimit,
+          labels: labels?.length ? labels : undefined,
+          excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
         })
       })
     )
@@ -412,8 +421,12 @@ export const registerTaskTools = (server: McpServer): void => {
   // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_ready",
-    "List tasks ready to be worked on (no incomplete blockers)",
-    { limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of tasks to return (default: 100, max: ${MCP_MAX_LIMIT})`) },
+    "List tasks ready to be worked on (no incomplete blockers). Supports label filtering.",
+    {
+      limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of tasks to return (default: 100, max: ${MCP_MAX_LIMIT})`),
+      labels: z.string().optional().describe("Comma-separated label names to include (e.g. 'phase:implement,sprint:w10')"),
+      excludeLabels: z.string().optional().describe("Comma-separated label names to exclude (e.g. 'needs-review')"),
+    },
     handleReady as Parameters<typeof server.tool>[3]
   )
 
@@ -430,11 +443,13 @@ export const registerTaskTools = (server: McpServer): void => {
   // @ts-expect-error - MCP SDK types cause deep type instantiation issues
   server.tool(
     "tx_list",
-    "List tasks with optional filters for status, parent, and limit",
+    "List tasks with optional filters for status, parent, labels, and limit",
     {
       status: z.enum(TASK_STATUSES).optional().describe(`Filter by status: ${TASK_STATUSES.join(", ")}`),
       parentId: z.string().optional().describe("Filter by parent task ID"),
-      limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of tasks to return (default: 100, max: ${MCP_MAX_LIMIT})`)
+      limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of tasks to return (default: 100, max: ${MCP_MAX_LIMIT})`),
+      labels: z.string().optional().describe("Comma-separated label names to include (e.g. 'phase:implement,sprint:w10')"),
+      excludeLabels: z.string().optional().describe("Comma-separated label names to exclude (e.g. 'needs-review')"),
     },
     handleList as Parameters<typeof server.tool>[3]
   )

@@ -42,7 +42,8 @@ import {
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
-  RetrieverServiceLive
+  RetrieverServiceLive,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 import { serializeTask } from "@jamesaphoenix/tx-types"
@@ -229,6 +230,7 @@ function createMcpRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpServic
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive
   ).pipe(

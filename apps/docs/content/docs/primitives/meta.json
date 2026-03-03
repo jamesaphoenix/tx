@@ -22,6 +22,11 @@
     "---Observability---",
     "traces",
     "docs",
-    "invariants"
+    "invariants",
+    "---Bounded Autonomy---",
+    "guard",
+    "verify",
+    "reflect",
+    "label"
   ]
 }

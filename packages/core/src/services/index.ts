@@ -293,3 +293,20 @@ export {
   MemoryRetrieverServiceNoop,
   MemoryRetrieverServiceLive
 } from "./memory-retriever-service.js"
+export {
+  GuardService,
+  GuardServiceLive,
+  type GuardCheckResult
+} from "./guard-service.js"
+export {
+  VerifyService,
+  VerifyServiceLive,
+  type VerifyResult
+} from "./verify-service.js"
+export {
+  ReflectService,
+  ReflectServiceLive,
+  type ReflectResult,
+  type ReflectSignal,
+  type StuckTask
+} from "./reflect-service.js"

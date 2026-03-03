@@ -6,6 +6,7 @@
 
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import { isValidTaskId } from "@jamesaphoenix/tx-types"
+import { CliExitError } from "../cli-exit.js"
 
 export type Flags = Record<string, string | boolean>
 
@@ -48,7 +49,12 @@ export function parseIntOpt(
   const parsed = parseInt(val, 10)
   if (!Number.isFinite(parsed)) {
     console.error(`Invalid value for --${flagName}: "${val}" is not a valid finite number`)
-    process.exit(1)
+    throw new CliExitError(1)
+  }
+  // Reject float values: parseInt("3.7") silently truncates to 3
+  if (String(parsed) !== val.trim()) {
+    console.error(`Invalid value for --${flagName}: "${val}" is not an integer`)
+    throw new CliExitError(1)
   }
   return parsed
 }
@@ -72,7 +78,7 @@ export function parseFloatOpt(
   const parsed = parseFloat(val)
   if (!Number.isFinite(parsed)) {
     console.error(`Invalid value for --${flagName}: "${val}" is not a valid finite number`)
-    process.exit(1)
+    throw new CliExitError(1)
   }
   return parsed
 }
@@ -80,13 +86,13 @@ export function parseFloatOpt(
 /**
  * Validate a task ID string matches the tx-[a-z0-9]{6,12} format.
  *
- * Exits with a clear error if the format is invalid, preventing confusing
+ * Throws CliExitError if the format is invalid, preventing confusing
  * "Task not found" errors from reaching the database layer.
  */
 export function parseTaskId(id: string): TaskId {
   if (!isValidTaskId(id)) {
     console.error(`Invalid task ID: "${id}". Expected format: tx-[a-z0-9]{6,12}`)
-    process.exit(1)
+    throw new CliExitError(1)
   }
   return id
 }

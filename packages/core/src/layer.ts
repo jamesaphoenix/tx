@@ -37,7 +37,7 @@ import { MigrationServiceLive } from "./services/migration-service.js"
 import { EmbeddingServiceNoop, EmbeddingServiceAuto } from "./services/embedding-service.js"
 import { QueryExpansionServiceNoop, QueryExpansionServiceAuto } from "./services/query-expansion-service.js"
 import { RerankerServiceNoop, RerankerServiceAuto } from "./services/reranker-service.js"
-import { LlmServiceAuto } from "./services/llm-service.js"
+import { LlmServiceAuto, LlmServiceNoop } from "./services/llm-service.js"
 import { RetrieverServiceLive } from "./services/retriever-service.js"
 import { GraphExpansionServiceLive } from "./services/graph-expansion.js"
 import { AnchorVerificationServiceLive } from "./services/anchor-verification.js"
@@ -63,6 +63,11 @@ import { MemoryServiceLive } from "./services/memory-service.js"
 import { MemoryRetrieverServiceLive } from "./services/memory-retriever-service.js"
 import { PinRepositoryLive } from "./repo/pin-repo.js"
 import { PinServiceLive } from "./services/pin-service.js"
+import { GuardRepositoryLive } from "./repo/guard-repo.js"
+import { LabelRepositoryLive } from "./repo/label-repo.js"
+import { GuardServiceLive } from "./services/guard-service.js"
+import { VerifyServiceLive } from "./services/verify-service.js"
+import { ReflectServiceLive } from "./services/reflect-service.js"
 // AgentService + CycleScanService are NOT in the default layer.
 // They are provided by the cycle CLI command via Effect.provide overlay.
 // Re-exports below make them available from @jamesaphoenix/tx-core.
@@ -219,6 +224,11 @@ export {
   type LlmCompletionRequest,
   type LlmCompletionResult
 } from "./services/llm-service.js"
+export { GuardService, GuardServiceLive, type GuardCheckResult } from "./services/guard-service.js"
+export { VerifyService, VerifyServiceLive, type VerifyResult } from "./services/verify-service.js"
+export { ReflectService, ReflectServiceLive, type ReflectResult, type ReflectSignal, type StuckTask } from "./services/reflect-service.js"
+export { GuardRepository, GuardRepositoryLive } from "./repo/guard-repo.js"
+export { LabelRepository, LabelRepositoryLive } from "./repo/label-repo.js"
 
 /**
  * Create the full application layer from an existing SqliteClient infra layer.
@@ -253,7 +263,9 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     MemoryLinkRepositoryLive,
     MemoryPropertyRepositoryLive,
     MemorySourceRepositoryLive,
-    PinRepositoryLive
+    PinRepositoryLive,
+    GuardRepositoryLive,
+    LabelRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -275,8 +287,17 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   // PinServiceLive needs PinRepository (from repos)
   const pinService = PinServiceLive.pipe(Layer.provide(repos))
 
+  // GuardServiceLive needs GuardRepository (from repos)
+  const guardService = GuardServiceLive.pipe(Layer.provide(repos))
+
+  // VerifyServiceLive needs TaskRepository (from repos)
+  const verifyService = VerifyServiceLive.pipe(Layer.provide(repos))
+
   // LlmService (auto-detects Agent SDK → Anthropic → Noop)
   const llmService = LlmServiceAuto
+
+  // ReflectServiceLive needs RunRepository, TaskRepository, AttemptRepository, GuardRepository, and LlmService
+  const reflectService = ReflectServiceLive.pipe(Layer.provide(Layer.merge(repos, llmService)))
 
   // EmbeddingService (auto-detects local node-llama-cpp)
   const embeddingService = EmbeddingServiceAuto
@@ -374,7 +395,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService, pinService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -432,7 +453,9 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     MemoryLinkRepositoryLive,
     MemoryPropertyRepositoryLive,
     MemorySourceRepositoryLive,
-    PinRepositoryLive
+    PinRepositoryLive,
+    GuardRepositoryLive,
+    LabelRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -528,12 +551,21 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   // PinServiceLive needs PinRepository (from repos)
   const pinService = PinServiceLive.pipe(Layer.provide(repos))
 
+  // GuardServiceLive needs GuardRepository (from repos)
+  const guardService = GuardServiceLive.pipe(Layer.provide(repos))
+
+  // VerifyServiceLive needs TaskRepository (from repos)
+  const verifyService = VerifyServiceLive.pipe(Layer.provide(repos))
+
+  // ReflectServiceLive needs RunRepository, TaskRepository, AttemptRepository, GuardRepository, and LlmService
+  const reflectService = ReflectServiceLive.pipe(Layer.provide(Layer.merge(repos, LlmServiceNoop)))
+
   // Merge all services
   const runHeartbeatService = RunHeartbeatServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService, pinService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(

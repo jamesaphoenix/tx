@@ -16,6 +16,9 @@ const DEFAULTS = {
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: { defaultTaskAssigmentType: "human" },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"] },
+  guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
+  verify: { timeout: 300, defaultSchema: null },
+  reflect: { provider: "auto", model: null, defaultSessions: 10, includeTranscripts: false },
 } as const
 
 function makeTempDir(): string {
@@ -227,6 +230,14 @@ describe("scaffoldConfigToml", () => {
     expect(raw).toContain('model = "claude-opus-4-6"')
     expect(raw).toContain('default_task_assigment_type = "human"')
     expect(raw).toContain('target_files = "CLAUDE.md, AGENTS.md"')
+    // Bounded autonomy sections
+    expect(raw).toContain("[guard]")
+    expect(raw).toContain('mode = "advisory"')
+    expect(raw).toContain("[verify]")
+    expect(raw).toContain("timeout = 300")
+    expect(raw).toContain("[reflect]")
+    expect(raw).toContain('provider = "auto"')
+    expect(raw).toContain("default_sessions = 10")
   })
 
   it("is a no-op when config.toml already exists", () => {

@@ -443,6 +443,39 @@ export class CycleScanError extends Data.TaggedError("CycleScanError")<{
   }
 }
 
+// Label error types
+
+export class LabelNotFoundError extends Data.TaggedError("LabelNotFoundError")<{
+  readonly name: string
+}> {
+  get message() {
+    return `Label not found: ${this.name}`
+  }
+}
+
+// Guard error types (bounded autonomy)
+
+export class GuardExceededError extends Data.TaggedError("GuardExceededError")<{
+  readonly scope: string
+  readonly metric: string
+  readonly current: number
+  readonly limit: number
+}> {
+  get message() {
+    return `Guard exceeded: ${this.metric} ${this.current}/${this.limit} (scope: ${this.scope})`
+  }
+}
+
+export class VerifyError extends Data.TaggedError("VerifyError")<{
+  readonly taskId: string
+  readonly reason: string
+  readonly cause?: unknown
+}> {
+  get message() {
+    return `Verify error for task ${this.taskId}: ${this.reason}`
+  }
+}
+
 // Message error types (PRD-024 agent outbox)
 
 export class MessageNotFoundError extends Data.TaggedError("MessageNotFoundError")<{
@@ -514,3 +547,6 @@ export type TaskError =
   | CycleScanError
   | MemoryDocumentNotFoundError
   | MemorySourceNotFoundError
+  | GuardExceededError
+  | VerifyError
+  | LabelNotFoundError

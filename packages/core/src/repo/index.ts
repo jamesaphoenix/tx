@@ -27,3 +27,5 @@ export {
   type MemoryBM25Result,
 } from "./memory-repo.js"
 export { PinRepository, PinRepositoryLive } from "./pin-repo.js"
+export { GuardRepository, GuardRepositoryLive, type Guard, type GuardRow } from "./guard-repo.js"
+export { LabelRepository, LabelRepositoryLive, type Label, type LabelRow } from "./label-repo.js"

@@ -20,7 +20,7 @@ export const isReadyResult = (result: ReadyCheckResult): boolean => result._tag 
 export class ReadyService extends Context.Tag("ReadyService")<
   ReadyService,
   {
-    readonly getReady: (limit?: number) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
+    readonly getReady: (limit?: number, options?: { labels?: string[]; excludeLabels?: string[] }) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
     readonly isReady: (id: TaskId) => Effect.Effect<ReadyCheckResult, DatabaseError>
     readonly getBlockers: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getBlocking: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
@@ -34,7 +34,7 @@ export const ReadyServiceLive = Layer.effect(
     const depRepo = yield* DependencyRepository
 
     return {
-      getReady: (limit = 100) =>
+      getReady: (limit = 100, options) =>
         Effect.gen(function* () {
           const safeLimit = Math.max(0, Math.floor(limit))
           if (safeLimit === 0) {
@@ -54,7 +54,9 @@ export const ReadyServiceLive = Layer.effect(
               status: ["backlog", "ready", "planning"],
               excludeClaimed: true,
               cursor,
-              limit: pageSize
+              limit: pageSize,
+              labels: options?.labels,
+              excludeLabels: options?.excludeLabels,
             })
 
             if (candidates.length === 0) {

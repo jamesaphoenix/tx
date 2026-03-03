@@ -85,6 +85,7 @@ export interface ClaudeOptions {
   claudeMd?: boolean
   workflowSkill?: boolean
   cycleSkill?: boolean
+  verifyBuildSkill?: boolean
   ralphScript?: boolean
 }
 
@@ -242,7 +243,7 @@ function renderWatchdogEnv(
  * Scaffold Claude Code integration into the current project.
  */
 export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): ScaffoldResult {
-  const opts = { claudeMd: true, workflowSkill: true, cycleSkill: true, ralphScript: false, ...options }
+  const opts = { claudeMd: true, workflowSkill: true, cycleSkill: true, verifyBuildSkill: true, ralphScript: false, ...options }
   const allCopied: string[] = []
   const allSkipped: string[] = []
   const templates = templatesDir()
@@ -252,6 +253,7 @@ export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): Sca
   const skillsToInclude: string[] = []
   if (opts.workflowSkill) skillsToInclude.push("tx-workflow")
   if (opts.cycleSkill) skillsToInclude.push("tx-cycle")
+  if (opts.verifyBuildSkill) skillsToInclude.push("verify-build")
 
   for (const skill of skillsToInclude) {
     const src = join(templates, "claude", "skills", skill)
@@ -420,6 +422,7 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
       claudeMd: true,
       workflowSkill: true,
       cycleSkill: !!wantsCycle,
+      verifyBuildSkill: true,
       ralphScript: !!wantsRalph,
     })
     results.push(result)

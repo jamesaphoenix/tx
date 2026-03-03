@@ -193,6 +193,8 @@ describe("Migration system", () => {
         "memory_documents", "memory_links", "memory_sources", "memory_properties",
         // Migration 030 — context pins
         "context_pins", "pin_config",
+        // Migration 031 — task guards (bounded autonomy)
+        "task_guards",
       ]
 
       for (const table of expectedTables) {

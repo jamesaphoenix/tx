@@ -22,6 +22,9 @@ import {
   ClaimService,
   MemoryService,
   MemoryRetrieverService,
+  GuardService,
+  VerifyService,
+  ReflectService,
   SqliteClient,
 } from "@jamesaphoenix/tx-core"
 
@@ -44,6 +47,9 @@ export type McpServices =
   | ClaimService
   | MemoryService
   | MemoryRetrieverService
+  | GuardService
+  | VerifyService
+  | ReflectService
   | SqliteClient
 
 // -----------------------------------------------------------------------------

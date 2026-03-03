@@ -1,0 +1,118 @@
+---
+title: tx label
+description: Organize tasks with labels for ready queue scoping
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
+
+## Purpose
+
+Labels let you organize tasks into phases, sprints, or categories. Use them with `tx ready --label` to scope the ready queue — work on discovery tasks without seeing implementation tasks.
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+
+<Tab value="CLI">
+
+```bash
+tx label add <name> [--color <hex>]
+tx label assign <task-id> <label>
+tx label unassign <task-id> <label>
+tx label list
+```
+
+```bash
+# Create labels for phases
+tx label add "phase:discovery"
+tx label add "phase:implement"
+tx label add "sprint:w10"
+
+# Assign labels to tasks
+tx label assign tx-abc123 "phase:discovery"
+tx label assign tx-def456 "phase:implement"
+
+# Scope the ready queue
+tx ready --label "phase:discovery"
+
+# Exclude labels
+tx ready --exclude-label "needs-review"
+
+# List all labels
+tx label list
+```
+
+</Tab>
+
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// Scope ready queue by label
+const discovery = await tx.tasks.ready({
+  labels: ['phase:discovery'],
+  limit: 5,
+})
+
+// Exclude labels
+const tasks = await tx.tasks.ready({
+  excludeLabels: ['needs-review'],
+})
+```
+
+> **Note:** Label management (add, assign, unassign, list) is currently CLI-only. The SDK supports label-based filtering via `tx.tasks.ready()`.
+
+</Tab>
+
+<Tab value="MCP">
+
+**Tool name:** `tx_ready`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `limit` | `number` | No | Maximum tasks to return |
+| `labels` | `string` | No | Comma-separated label names to include (e.g. `'phase:implement,sprint:w10'`) |
+| `excludeLabels` | `string` | No | Comma-separated label names to exclude (e.g. `'needs-review'`) |
+
+</Tab>
+
+<Tab value="REST API">
+
+```
+GET /api/tasks/ready?labels=phase:discovery&limit=5
+GET /api/tasks/ready?excludeLabels=needs-review
+```
+
+> **Note:** Label management (add, assign, unassign, list) is currently available via CLI only. The REST API supports label-based filtering on the ready and list endpoints.
+
+</Tab>
+
+</Tabs>
+
+## Phase Workflow
+
+```bash
+#!/bin/bash
+# Phase 1: Discovery
+tx guard set --max-pending 20
+
+while task=$(tx ready --label "phase:discovery" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  claude "Investigate $task. When done: tx done $task"
+done
+
+# Phase 2: Implementation
+while task=$(tx ready --label "phase:implement" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  claude "Implement $task. Verify with: tx verify run $task && tx done $task"
+done
+```
+
+## Related Commands
+
+- [`tx ready`](/docs/primitives/ready) — Get next workable task (with label filtering)
+- [`tx guard`](/docs/primitives/guard) — Set task creation limits per phase
+- [`tx reflect`](/docs/primitives/reflect) — Analyze session metrics

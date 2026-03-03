@@ -182,6 +182,10 @@ export const TaskFilterSchema = Schema.Struct({
   cursor: Schema.optional(TaskCursorSchema),
   /** Exclude tasks that have an active claim in task_claims (prevents thundering herd) */
   excludeClaimed: Schema.optional(Schema.Boolean),
+  /** Only include tasks with ALL of these labels (case-insensitive) */
+  labels: Schema.optional(Schema.Array(Schema.String)),
+  /** Exclude tasks with ANY of these labels (case-insensitive) */
+  excludeLabels: Schema.optional(Schema.Array(Schema.String)),
 })
 export type TaskFilter = typeof TaskFilterSchema.Type
 
@@ -263,6 +267,8 @@ export interface TaskRow {
   assigned_at?: string | null;
   assigned_by?: string | null;
   group_context?: string | null;
+  verify_cmd?: string | null;
+  verify_schema?: string | null;
   metadata: string;
 }
 

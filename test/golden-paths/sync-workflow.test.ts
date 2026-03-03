@@ -37,7 +37,8 @@ import {
   HierarchyServiceLive,
   SyncServiceLive,
   SyncService,
-  AutoSyncServiceNoop
+  AutoSyncServiceNoop,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
@@ -51,6 +52,7 @@ function makeTestLayer(db: TestDatabase) {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     AttemptRepositoryLive,

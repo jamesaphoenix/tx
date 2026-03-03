@@ -89,16 +89,23 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
           }
         }
 
+        const labels = urlParams.labels ? urlParams.labels.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined
+        const excludeLabels = urlParams.excludeLabels ? urlParams.excludeLabels.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined
+
         const filter = {
           status: statusFilter,
           search: urlParams.search,
           cursor: cursorObj,
           limit: limit + 1,
+          labels: labels?.length ? labels : undefined,
+          excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
         }
 
         const total = yield* taskService.count({
           status: statusFilter,
           search: urlParams.search,
+          labels: labels?.length ? labels : undefined,
+          excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
         })
 
         const tasks = yield* taskService.listWithDeps(filter)
@@ -120,7 +127,12 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
       Effect.gen(function* () {
         const readyService = yield* ReadyService
         const limit = urlParams.limit ?? 100
-        const tasks = yield* readyService.getReady(limit)
+        const labels = urlParams.labels ? urlParams.labels.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined
+        const excludeLabels = urlParams.excludeLabels ? urlParams.excludeLabels.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined
+        const tasks = yield* readyService.getReady(limit, {
+          labels: labels?.length ? labels : undefined,
+          excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
+        })
         return { tasks: tasks.map(serializeTask) }
       }).pipe(Effect.mapError(mapCoreError))
     )

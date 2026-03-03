@@ -20,7 +20,8 @@ import {
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
-  RetrieverServiceLive
+  RetrieverServiceLive,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: TestDatabase) {
@@ -35,6 +36,7 @@ function makeTestLayerWithEmbedder(
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive
   ).pipe(
     Layer.provide(infra)

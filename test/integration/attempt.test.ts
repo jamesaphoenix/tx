@@ -13,7 +13,8 @@ import {
   HierarchyServiceLive,
   AttemptServiceLive,
   AttemptService,
-  AutoSyncServiceNoop
+  AutoSyncServiceNoop,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: TestDatabase) {
@@ -21,6 +22,7 @@ function makeTestLayer(db: TestDatabase) {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     AttemptRepositoryLive
   ).pipe(
     Layer.provide(infra)

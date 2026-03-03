@@ -56,6 +56,14 @@ export class TaskRepository extends Context.Tag("TaskRepository")<
       taskId: string,
       expectedStatus: string
     ) => Effect.Effect<boolean, DatabaseError>
+    readonly updateVerifyCmd: (
+      taskId: string,
+      cmd: string | null,
+      schema: string | null
+    ) => Effect.Effect<void, DatabaseError | TaskNotFoundError>
+    readonly getVerifyCmd: (
+      taskId: string
+    ) => Effect.Effect<{ cmd: string | null; schema: string | null }, DatabaseError>
   }
 >() {}
 
@@ -134,6 +142,26 @@ export const TaskRepositoryLive = Layer.effect(
             // Uses idx_claims_active_task partial index for efficient lookup
             if (filter?.excludeClaimed) {
               conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active')")
+            }
+
+            // Label filters: include tasks with ALL specified labels
+            if (filter?.labels && filter.labels.length > 0) {
+              for (const label of filter.labels) {
+                conditions.push(
+                  `EXISTS (SELECT 1 FROM task_label_assignments tla JOIN task_labels tl ON tl.id = tla.label_id WHERE tla.task_id = tasks.id AND lower(tl.name) = lower(?))`
+                )
+                params.push(label)
+              }
+            }
+
+            // Exclude label filters: exclude tasks with ANY specified label
+            if (filter?.excludeLabels && filter.excludeLabels.length > 0) {
+              for (const label of filter.excludeLabels) {
+                conditions.push(
+                  `NOT EXISTS (SELECT 1 FROM task_label_assignments tla JOIN task_labels tl ON tl.id = tla.label_id WHERE tla.task_id = tasks.id AND lower(tl.name) = lower(?))`
+                )
+                params.push(label)
+              }
             }
 
             const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
@@ -647,6 +675,30 @@ export const TaskRepositoryLive = Layer.effect(
               params.push(searchPattern, searchPattern)
             }
 
+            // Exclude claimed tasks (same as findAll)
+            if (filter?.excludeClaimed) {
+              conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active')")
+            }
+
+            // Label filters (same as findAll)
+            if (filter?.labels && filter.labels.length > 0) {
+              for (const label of filter.labels) {
+                conditions.push(
+                  `EXISTS (SELECT 1 FROM task_label_assignments tla JOIN task_labels tl ON tl.id = tla.label_id WHERE tla.task_id = tasks.id AND lower(tl.name) = lower(?))`
+                )
+                params.push(label)
+              }
+            }
+
+            if (filter?.excludeLabels && filter.excludeLabels.length > 0) {
+              for (const label of filter.excludeLabels) {
+                conditions.push(
+                  `NOT EXISTS (SELECT 1 FROM task_label_assignments tla JOIN task_labels tl ON tl.id = tla.label_id WHERE tla.task_id = tasks.id AND lower(tl.name) = lower(?))`
+                )
+                params.push(label)
+              }
+            }
+
             // Note: cursor is intentionally not included in count - we want total matching records
 
             const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
@@ -654,7 +706,34 @@ export const TaskRepositoryLive = Layer.effect(
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
-        })
+        }),
+
+      updateVerifyCmd: (taskId, cmd, schema) =>
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () => db.prepare(
+              "UPDATE tasks SET verify_cmd = ?, verify_schema = ?, updated_at = ? WHERE id = ?"
+            ).run(cmd, schema, new Date().toISOString(), taskId),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            return yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
+          }
+        }),
+
+      getVerifyCmd: (taskId) =>
+        Effect.try({
+          try: () => {
+            const row = db.prepare(
+              "SELECT verify_cmd, verify_schema FROM tasks WHERE id = ?"
+            ).get(taskId) as { verify_cmd: string | null; verify_schema: string | null } | undefined
+            return {
+              cmd: row?.verify_cmd ?? null,
+              schema: row?.verify_schema ?? null,
+            }
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
     }
   })
 )

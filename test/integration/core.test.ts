@@ -22,6 +22,7 @@ import {
   ScoreServiceLive,
   ScoreService,
   AutoSyncServiceNoop,
+  GuardRepositoryLive,
   StaleDataError,
   HasChildrenError
 } from "@jamesaphoenix/tx-core"
@@ -30,7 +31,7 @@ import type { Database } from "bun:sqlite"
 
 function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
     Layer.provide(infra)
   )
   // Base services that only depend on repos and AutoSyncService

@@ -27,8 +27,23 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx add <title>` | Create a new task (`--parent`, `--score`, `--description`) |
 | `tx show <id>` | Show task details with dependencies |
 | `tx block <id> <blocker>` | Declare task dependencies |
+| `tx group-context:set <id> <context>` | Attach shared task-group context for related tasks |
+| `tx group-context:clear <id>` | Clear task-group context from a task |
 | `tx context <id>` | Get relevant learnings + history |
 | `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
+
+### Bounded Autonomy
+
+| Command | Purpose |
+|---------|---------|
+| `tx guard set` | Set task creation limits (`--max-pending`, `--max-children`, `--max-depth`, `--enforce`) |
+| `tx guard show` | Show current guard configuration |
+| `tx verify set <id> <cmd>` | Attach a shell verification command to a task |
+| `tx verify run <id>` | Run verification (exit 0 = pass) |
+| `tx label add <name>` | Create a label for scoping the ready queue |
+| `tx label assign <id> <name>` | Assign a label to a task |
+| `tx ready --label <name>` | Filter ready queue by label |
+| `tx reflect` | Session retrospective (throughput, signals, stuck tasks) |
 
 ### Memory & Learnings
 
@@ -53,6 +68,7 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 |---------|---------|
 | `tx claim <id> <worker>` | Claim a task with a lease |
 | `tx claim:release <id> <w>` | Release a claim |
+| `tx claim:renew <id> <w>` | Renew a lease |
 
 ### Sync
 
@@ -95,6 +111,8 @@ read -p "Approve? [y/n] " answer
 ```
 
 Do not bypass hooks in this workflow. Keep git verification enabled for commits and pushes.
+
+If related tasks share rollout/migration notes, set them once via `tx group-context:set <id> "<context>"` so descendants/ancestors inherit the same context.
 
 ## EARS-First Requirements
 

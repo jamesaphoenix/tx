@@ -1,0 +1,173 @@
+---
+title: tx verify
+description: Attach machine-checkable done criteria to tasks
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
+
+## Purpose
+
+`tx verify` attaches a shell command to a task that defines "done" in machine-checkable terms. Exit code 0 = pass, non-zero = fail.
+
+This replaces LLM-judged completion with objective verification: run tests, check types, validate output.
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+
+<Tab value="CLI">
+
+```bash
+tx verify set <id> <cmd> [--schema <path>]
+tx verify show <id>
+tx verify run <id> [--timeout <seconds>] [--json]
+tx verify clear <id>
+```
+
+```bash
+# Attach a test command
+tx verify set tx-abc123 "bunx --bun vitest run test/auth.test.ts"
+
+# Attach with structured output schema
+tx verify set tx-abc123 "bun run test:json" --schema verify-schema.json
+
+# Show what's attached
+tx verify show tx-abc123
+
+# Run verification
+tx verify run tx-abc123
+
+# Gate completion on verification
+tx verify run tx-abc123 && tx done tx-abc123
+
+# Clear verification
+tx verify clear tx-abc123
+```
+
+</Tab>
+
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// Attach verification command
+await tx.verify.set('tx-abc123', 'bun run test:auth')
+
+// Show what's attached
+const info = await tx.verify.show('tx-abc123')
+// { cmd: 'bun run test:auth', schema: null }
+
+// Run verification
+const result = await tx.verify.run('tx-abc123')
+// { taskId: 'tx-abc123', exitCode: 0, passed: true, stdout: '...', stderr: '', durationMs: 1234 }
+
+// Clear
+await tx.verify.clear('tx-abc123')
+```
+
+</Tab>
+
+<Tab value="MCP">
+
+**Tool name:** `tx_verify_set`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `taskId` | `string` | Yes | Task ID to attach verification to |
+| `cmd` | `string` | Yes | Shell command (exit 0 = pass) |
+| `schema` | `string` | No | Path to JSON Schema for output validation |
+
+**Other tools:** `tx_verify_show`, `tx_verify_run`, `tx_verify_clear`
+
+</Tab>
+
+<Tab value="REST API">
+
+```
+PUT    /api/tasks/:id/verify
+GET    /api/tasks/:id/verify
+POST   /api/tasks/:id/verify/run?timeout=300
+DELETE /api/tasks/:id/verify
+```
+
+**Example:**
+
+```bash
+# Attach verification
+curl -X PUT http://localhost:3001/api/tasks/tx-abc123/verify \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd": "bun run test:auth"}'
+
+# Run verification
+curl -X POST http://localhost:3001/api/tasks/tx-abc123/verify/run
+```
+
+</Tab>
+
+</Tabs>
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--schema <path>` | JSON Schema file for structured output validation |
+| `--timeout <seconds>` | Timeout for verification command (default: 300) |
+| `--json` | Output as JSON |
+
+## Verification Result
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `exitCode` | `number` | Process exit code |
+| `passed` | `boolean` | true if exit code is 0 |
+| `stdout` | `string` | Standard output |
+| `stderr` | `string` | Standard error |
+| `durationMs` | `number` | Execution time in milliseconds |
+| `schemaValid` | `boolean?` | Schema validation result (when schema is set) |
+| `output` | `object?` | Parsed JSON output (when schema is set) |
+
+## Custom Output Schema
+
+For structured verification beyond pass/fail:
+
+```json
+{
+  "type": "object",
+  "required": ["tests_passed", "tests_failed"],
+  "properties": {
+    "tests_passed": { "type": "number" },
+    "tests_failed": { "type": "number", "const": 0 },
+    "coverage": { "type": "number", "minimum": 80 }
+  }
+}
+```
+
+When a schema is set, `tx verify run` parses stdout as JSON and validates against the schema. If validation fails, `schemaValid` is `false` even if the exit code was 0.
+
+## Configuration
+
+```toml
+[verify]
+timeout = 300  # Default timeout in seconds
+```
+
+## Agent Loop Pattern
+
+```bash
+#!/bin/bash
+# Verify before marking done
+while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+
+  claude "Work on $task. When done, run: tx verify run $task && tx done $task"
+done
+```
+
+## Related Commands
+
+- [`tx done`](/docs/primitives/done) — Mark task as complete (pair with verify)
+- [`tx guard`](/docs/primitives/guard) — Set task creation limits
+- [`tx reflect`](/docs/primitives/reflect) — Analyze session metrics

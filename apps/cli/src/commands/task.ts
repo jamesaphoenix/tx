@@ -3,17 +3,18 @@
  */
 
 import { Effect } from "effect"
-import { TaskService, ReadyService, AttemptService } from "@jamesaphoenix/tx-core"
+import { TaskService, ReadyService, AttemptService, VerifyService } from "@jamesaphoenix/tx-core"
 import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx-types"
 import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"
+import { CliExitError } from "../cli-exit.js"
 
 export const add = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const title = pos[0]
     if (!title) {
       console.error("Usage: tx add <title> [--parent/-p <id>] [--score/-s <n>] [--description/-d <text>] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* TaskService
@@ -25,6 +26,13 @@ export const add = (pos: string[], flags: Flags) =>
       metadata: {}
     })
 
+    // Attach verify command if provided
+    const verifyCmd = opt(flags, "verify")
+    if (verifyCmd) {
+      const verifySvc = yield* VerifyService
+      yield* verifySvc.set(task.id, verifyCmd)
+    }
+
     if (flag(flags, "json")) {
       const full = yield* svc.getWithDeps(task.id)
       console.log(toJson(full))
@@ -33,6 +41,7 @@ export const add = (pos: string[], flags: Flags) =>
       console.log(`  Title: ${task.title}`)
       console.log(`  Score: ${task.score}`)
       if (task.parentId) console.log(`  Parent: ${task.parentId}`)
+      if (verifyCmd) console.log(`  Verify: ${verifyCmd}`)
     }
   })
 
@@ -49,13 +58,21 @@ export const list = (_pos: string[], flags: Flags) =>
         validatedStatuses = statusFilter.split(",").map(s => assertTaskStatus(s.trim()))
       } catch {
         console.error(`Invalid status filter. Valid statuses: ${TASK_STATUSES.join(", ")}`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
     }
 
+    // Label filtering
+    const labelStr = opt(flags, "label")
+    const excludeLabelStr = opt(flags, "exclude-label")
+    const labels = labelStr ? labelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
+    const excludeLabels = excludeLabelStr ? excludeLabelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
+
     const tasks = yield* svc.listWithDeps({
       status: validatedStatuses,
-      limit
+      limit,
+      labels: labels?.length ? labels : undefined,
+      excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
     })
 
     if (flag(flags, "json")) {
@@ -77,7 +94,17 @@ export const ready = (_pos: string[], flags: Flags) =>
     const svc = yield* ReadyService
     const attemptSvc = yield* AttemptService
     const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
-    const tasks = yield* svc.getReady(limit)
+
+    // Label filtering
+    const labelStr = opt(flags, "label")
+    const excludeLabelStr = opt(flags, "exclude-label")
+    const labels = labelStr ? labelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
+    const excludeLabels = excludeLabelStr ? excludeLabelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
+
+    const tasks = yield* svc.getReady(limit, {
+      labels: labels?.length ? labels : undefined,
+      excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
+    })
 
     // Get failed attempt counts for all tasks in a single query
     const taskIds = tasks.map(t => t.id)
@@ -109,7 +136,7 @@ export const show = (pos: string[], flags: Flags) =>
     const raw = pos[0]
     if (!raw) {
       console.error("Usage: tx show <id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 
@@ -146,7 +173,7 @@ export const update = (pos: string[], flags: Flags) =>
     const raw = pos[0]
     if (!raw) {
       console.error("Usage: tx update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 
@@ -176,7 +203,7 @@ export const done = (pos: string[], flags: Flags) =>
     const raw = pos[0]
     if (!raw) {
       console.error("Usage: tx done <id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 
@@ -212,7 +239,7 @@ export const deleteTask = (pos: string[], flags: Flags) =>
     const raw = pos[0]
     if (!raw) {
       console.error("Usage: tx delete <id> [--cascade] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
     const cascade = flag(flags, "cascade")
@@ -233,7 +260,7 @@ export const reset = (pos: string[], flags: Flags) =>
     const raw = pos[0]
     if (!raw) {
       console.error("Usage: tx reset <id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 

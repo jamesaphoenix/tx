@@ -39,7 +39,8 @@ import {
   HierarchyServiceLive,
   SyncServiceLive,
   SyncService,
-  AutoSyncServiceNoop
+  AutoSyncServiceNoop,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
@@ -51,6 +52,7 @@ function makeTestLayer(db: Database) {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     AttemptRepositoryLive,

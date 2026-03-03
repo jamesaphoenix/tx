@@ -41,7 +41,8 @@ import {
   AutoSyncServiceNoop,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
-  RetrieverServiceLive
+  RetrieverServiceLive,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
@@ -138,6 +139,7 @@ function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpTestSer
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive
   ).pipe(

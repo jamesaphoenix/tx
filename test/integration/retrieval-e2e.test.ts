@@ -29,6 +29,7 @@ import {
   EmbeddingService,
   EmbeddingServiceNoop,
   AutoSyncServiceNoop,
+  GuardRepositoryLive,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive,
@@ -207,6 +208,7 @@ function makeTestLayer(db: Database, useVectorSearch = true) {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive
   ).pipe(Layer.provide(infra))
 

@@ -52,6 +52,14 @@ describe("scaffold", () => {
       expect(content).toContain("docs/system-design/")
       expect(content).toContain("SD-NNN")
 
+      // Bounded Autonomy section
+      expect(content).toContain("Bounded Autonomy")
+      expect(content).toContain("tx guard set")
+      expect(content).toContain("tx verify set")
+      expect(content).toContain("tx label add")
+      expect(content).toContain("tx label assign")
+      expect(content).toContain("tx reflect")
+
       // Skills created
       const workflowSkill = join(testDir, ".claude", "skills", "tx-workflow", "SKILL.md")
       expect(existsSync(workflowSkill)).toBe(true)
@@ -60,6 +68,12 @@ describe("scaffold", () => {
       const cycleSkill = join(testDir, ".claude", "skills", "tx-cycle", "SKILL.md")
       expect(existsSync(cycleSkill)).toBe(true)
       expect(readFileSync(cycleSkill, "utf-8")).toContain("tx cycle")
+
+      // Verify-build skill created (bounded autonomy)
+      const verifyBuildSkill = join(testDir, ".claude", "skills", "verify-build", "SKILL.md")
+      expect(existsSync(verifyBuildSkill)).toBe(true)
+      expect(readFileSync(verifyBuildSkill, "utf-8")).toContain("tx verify run")
+      expect(readFileSync(verifyBuildSkill, "utf-8")).toContain("parent task")
     })
 
     it("appends to existing CLAUDE.md without tx section", () => {
@@ -126,6 +140,19 @@ describe("scaffold", () => {
       expect(result.copied.some(f => f.includes("tx-cycle"))).toBe(false)
     })
 
+    it("respects options to exclude verify-build skill", () => {
+      const result = scaffoldClaude(testDir, { verifyBuildSkill: false })
+
+      // Workflow skill should exist
+      const workflowSkill = join(testDir, ".claude", "skills", "tx-workflow", "SKILL.md")
+      expect(existsSync(workflowSkill)).toBe(true)
+
+      // Verify-build skill should NOT exist
+      const verifyBuildSkill = join(testDir, ".claude", "skills", "verify-build", "SKILL.md")
+      expect(existsSync(verifyBuildSkill)).toBe(false)
+      expect(result.copied.some(f => f.includes("verify-build"))).toBe(false)
+    })
+
     it("respects options to exclude CLAUDE.md", () => {
       const result = scaffoldClaude(testDir, { claudeMd: false })
 
@@ -176,11 +203,21 @@ describe("scaffold", () => {
       expect(content).toContain("tx ready")
       expect(content).toContain("tx done")
       expect(content).toContain("codex")
+      expect(content).toContain("tx group-context:set <id> <context>")
+      expect(content).toContain("inherit the same context")
       expect(content).toContain("Documentation Structure")
       expect(content).toContain("docs/requirements/")
       expect(content).toContain("REQ-NNN")
       expect(content).toContain("docs/system-design/")
       expect(content).toContain("SD-NNN")
+
+      // Bounded Autonomy section
+      expect(content).toContain("Bounded Autonomy")
+      expect(content).toContain("tx guard set")
+      expect(content).toContain("tx verify set")
+      expect(content).toContain("tx label add")
+      expect(content).toContain("tx label assign")
+      expect(content).toContain("tx reflect")
 
       const codexImplementer = join(testDir, ".codex", "agents", "tx-implementer.md")
       expect(existsSync(codexImplementer)).toBe(true)

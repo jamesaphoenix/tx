@@ -1,15 +1,17 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import { TaskNotFoundError, ValidationError, DatabaseError, StaleDataError, HasChildrenError } from "../errors.js"
+import { GuardRepository } from "../repo/guard-repo.js"
+import { TaskNotFoundError, ValidationError, DatabaseError, GuardExceededError, StaleDataError, HasChildrenError } from "../errors.js"
 import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
+import { readTxConfig } from "../utils/toml-config.js"
 import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput, TaskAssigneeType } from "@jamesaphoenix/tx-types"
 
 export class TaskService extends Context.Tag("TaskService")<
   TaskService,
   {
-    readonly create: (input: CreateTaskInput) => Effect.Effect<Task, ValidationError | DatabaseError>
+    readonly create: (input: CreateTaskInput) => Effect.Effect<Task, ValidationError | DatabaseError | GuardExceededError>
     readonly get: (id: TaskId) => Effect.Effect<Task, TaskNotFoundError | DatabaseError>
     readonly getWithDeps: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly getWithDepsBatch: (ids: readonly TaskId[]) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
@@ -60,11 +62,117 @@ const isValidAssigneeType = (
 const CASCADE_MAX_DEPTH = 1000
 const GROUP_CONTEXT_MAX_CHARS = 20_000
 
+/** Narrow shape used for guard limit checks — avoids leaking full Guard type from repo */
+interface EffectiveGuardLimits {
+  readonly maxPending: number | null
+  readonly maxChildren: number | null
+  readonly maxDepth: number | null
+  readonly enforce: boolean
+}
+
+/**
+ * Check guards before task creation. Returns advisory warnings (empty array if none).
+ * Advisory mode logs warnings to stderr and returns them for metadata injection;
+ * enforce mode fails with GuardExceededError.
+ */
+const checkGuards = (
+  guardRepo: Context.Tag.Service<typeof GuardRepository>,
+  config: ReturnType<typeof readTxConfig>,
+  parentId: string | null
+): Effect.Effect<string[], GuardExceededError | DatabaseError> =>
+  Effect.gen(function* () {
+    const warnings: string[] = []
+
+    // Defensive: if config.guard is undefined (malformed config), skip guard checks
+    if (!config?.guard) return warnings
+
+    // Resolve effective guard: DB row takes precedence, fall back to config defaults
+    const dbGuard = yield* guardRepo.findByScope("global")
+    const globalGuard: EffectiveGuardLimits | null = dbGuard
+      ? { maxPending: dbGuard.maxPending, maxChildren: dbGuard.maxChildren, maxDepth: dbGuard.maxDepth, enforce: dbGuard.enforce }
+      : (config.guard.maxPending !== null || config.guard.maxChildren !== null || config.guard.maxDepth !== null)
+        ? { maxPending: config.guard.maxPending, maxChildren: config.guard.maxChildren, maxDepth: config.guard.maxDepth, enforce: config.guard.mode === "enforce" }
+        : null
+    if (globalGuard) {
+      // DB row's enforce setting takes precedence; config only applies when no DB row exists
+      const enforce = globalGuard.enforce
+
+      // Check max_pending
+      if (globalGuard.maxPending !== null) {
+        const pending = yield* guardRepo.countPending()
+        if (pending >= globalGuard.maxPending) {
+          const msg = `${pending}/${globalGuard.maxPending} pending tasks (global limit)`
+          if (enforce) {
+            return yield* Effect.fail(new GuardExceededError({
+              scope: "global", metric: "max_pending", current: pending, limit: globalGuard.maxPending,
+            }))
+          }
+          console.error(`\u26A0 Guard warning: ${msg}`)
+          warnings.push(msg)
+        }
+      }
+
+      // Check max_depth (only relevant when creating under a parent)
+      if (globalGuard.maxDepth !== null && parentId) {
+        const depth = yield* guardRepo.getMaxDepth(parentId)
+        const newDepth = depth + 1
+        if (newDepth > globalGuard.maxDepth) {
+          const msg = `depth ${newDepth}/${globalGuard.maxDepth} (global limit)`
+          if (enforce) {
+            return yield* Effect.fail(new GuardExceededError({
+              scope: "global", metric: "max_depth", current: newDepth, limit: globalGuard.maxDepth,
+            }))
+          }
+          console.error(`\u26A0 Guard warning: ${msg}`)
+          warnings.push(msg)
+        }
+      }
+
+      // Check max_children (only relevant when creating under a parent)
+      if (globalGuard.maxChildren !== null && parentId) {
+        const children = yield* guardRepo.countChildrenOf(parentId)
+        if (children >= globalGuard.maxChildren) {
+          const msg = `${children}/${globalGuard.maxChildren} children of ${parentId} (global limit)`
+          if (enforce) {
+            return yield* Effect.fail(new GuardExceededError({
+              scope: "global", metric: "max_children", current: children, limit: globalGuard.maxChildren,
+            }))
+          }
+          console.error(`\u26A0 Guard warning: ${msg}`)
+          warnings.push(msg)
+        }
+      }
+    }
+
+    // Check parent-specific guard (independent of global guard)
+    if (parentId) {
+      const parentGuard = yield* guardRepo.findByScope(`parent:${parentId}`)
+      if (parentGuard?.maxChildren !== null && parentGuard?.maxChildren !== undefined) {
+        const children = yield* guardRepo.countChildrenOf(parentId)
+        const parentEnforce = parentGuard.enforce
+        if (children >= parentGuard.maxChildren) {
+          const msg = `${children}/${parentGuard.maxChildren} children of ${parentId} (parent scope)`
+          if (parentEnforce) {
+            return yield* Effect.fail(new GuardExceededError({
+              scope: `parent:${parentId}`, metric: "max_children", current: children, limit: parentGuard.maxChildren,
+            }))
+          }
+          console.error(`\u26A0 Guard warning: ${msg}`)
+          warnings.push(msg)
+        }
+      }
+    }
+
+    return warnings
+  })
+
 export const TaskServiceLive = Layer.effect(
   TaskService,
   Effect.gen(function* () {
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
+    const guardRepo = yield* GuardRepository
+    const config = readTxConfig()
 
     const enrichWithDeps = (task: Task): Effect.Effect<TaskWithDeps, DatabaseError> =>
       Effect.gen(function* () {
@@ -258,6 +366,9 @@ export const TaskServiceLive = Layer.effect(
             }
           }
 
+          // Guard check: enforce task creation limits, collect advisory warnings
+          const guardWarnings = yield* checkGuards(guardRepo, config, input.parentId ?? null)
+
           const assigneeType = input.assigneeType ?? null
           const assigneeId = assigneeType === null ? null : (input.assigneeId ?? null)
           const assignedAt = assigneeType === null ? null : (input.assignedAt ?? null)
@@ -278,7 +389,9 @@ export const TaskServiceLive = Layer.effect(
             assigneeId,
             assignedAt,
             assignedBy,
-            metadata: input.metadata ?? {}
+            metadata: guardWarnings.length > 0
+              ? { ...(input.metadata ?? {}), _guardWarnings: guardWarnings }
+              : input.metadata ?? {}
           })
 
           // Retry up to 3 times on ID collision (UNIQUE constraint)

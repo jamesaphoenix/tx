@@ -100,6 +100,7 @@ export const mapCoreError = (
       case "ClaimIdNotFoundError":
       case "MemoryDocumentNotFoundError":
       case "MemorySourceNotFoundError":
+      case "WorkerNotFoundError":
         return new NotFound({ message })
       case "MessageAlreadyAckedError":
         return new BadRequest({ message })
@@ -120,6 +121,25 @@ export const mapCoreError = (
       case "ZeroMagnitudeVectorError":
       case "DependencyNotFoundError":
         return new BadRequest({ message })
+      case "GuardExceededError":
+        return new BadRequest({ message })
+      case "VerifyError":
+        // "No verify command set" is a client precondition failure (400)
+        // Schema/filesystem/execution failures are server-side (500)
+        if (message.includes("No verify command set")) {
+          return new BadRequest({ message })
+        }
+        return new InternalError({ message: "Verify execution failed" })
+      case "LabelNotFoundError":
+        return new NotFound({ message })
+      case "StaleDataError":
+        return new BadRequest({ message })
+      case "LlmUnavailableError":
+        return new ServiceUnavailable({ message })
+      case "InvalidStatusError":
+      case "InvalidDateError":
+      case "EntityFetchError":
+      case "UnexpectedRowCountError":
       case "DatabaseError":
         // Don't expose raw SQLite error messages (may contain SQL, schema details)
         return new InternalError({ message: "Internal server error" })
@@ -320,6 +340,8 @@ export const TasksGroup = HttpApiGroup.make("tasks")
         limit: Schema.optional(Schema.NumberFromString.pipe(Schema.int())),
         status: Schema.optional(Schema.String),
         search: Schema.optional(Schema.String),
+        labels: Schema.optional(Schema.String),
+        excludeLabels: Schema.optional(Schema.String),
       }))
       .addSuccess(PaginatedTasksResponse)
   )
@@ -327,6 +349,8 @@ export const TasksGroup = HttpApiGroup.make("tasks")
     HttpApiEndpoint.get("readyTasks", "/api/tasks/ready")
       .setUrlParams(Schema.Struct({
         limit: Schema.optional(Schema.NumberFromString.pipe(Schema.int())),
+        labels: Schema.optional(Schema.String),
+        excludeLabels: Schema.optional(Schema.String),
       }))
       .addSuccess(ReadyTasksResponse)
   )
@@ -1337,6 +1361,168 @@ export const InvariantsGroup = HttpApiGroup.make("invariants")
   )
 
 // =============================================================================
+// GUARDS GROUP
+// =============================================================================
+
+const GuardSetBody = Schema.Struct({
+  scope: Schema.optional(Schema.String),
+  maxPending: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThan(0))),
+  maxChildren: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThan(0))),
+  maxDepth: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThan(0))),
+  enforce: Schema.optional(Schema.Boolean),
+})
+
+const GuardSerializedSchema = Schema.Struct({
+  id: Schema.Number,
+  scope: Schema.String,
+  maxPending: Schema.NullOr(Schema.Number),
+  maxChildren: Schema.NullOr(Schema.Number),
+  maxDepth: Schema.NullOr(Schema.Number),
+  enforce: Schema.Boolean,
+  createdAt: Schema.String,
+})
+
+const GuardListResponse = Schema.Struct({
+  guards: Schema.Array(GuardSerializedSchema),
+})
+
+const GuardCheckResponse = Schema.Struct({
+  passed: Schema.Boolean,
+  warnings: Schema.Array(Schema.String),
+})
+
+const GuardClearParams = Schema.Struct({
+  scope: Schema.optional(Schema.String),
+})
+
+export const GuardsGroup = HttpApiGroup.make("guards")
+  .add(
+    HttpApiEndpoint.post("setGuard", "/api/guards")
+      .setPayload(GuardSetBody)
+      .addSuccess(GuardSerializedSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.get("listGuards", "/api/guards")
+      .addSuccess(GuardListResponse)
+  )
+  .add(
+    HttpApiEndpoint.del("clearGuards", "/api/guards")
+      .setUrlParams(GuardClearParams)
+      .addSuccess(Schema.Struct({ cleared: Schema.Boolean }))
+  )
+  .add(
+    HttpApiEndpoint.get("checkGuard", "/api/guards/check")
+      .setUrlParams(Schema.Struct({
+        parentId: Schema.optional(Schema.String),
+      }))
+      .addSuccess(GuardCheckResponse)
+  )
+
+// =============================================================================
+// VERIFY GROUP
+// =============================================================================
+
+const VerifySetBody = Schema.Struct({
+  cmd: Schema.String.pipe(Schema.minLength(1)),
+  schema: Schema.optional(Schema.String),
+})
+
+const VerifyShowResponse = Schema.Struct({
+  cmd: Schema.NullOr(Schema.String),
+  schema: Schema.NullOr(Schema.String),
+})
+
+const VerifyRunResponse = Schema.Struct({
+  taskId: Schema.String,
+  exitCode: Schema.Number,
+  passed: Schema.Boolean,
+  stdout: Schema.String,
+  stderr: Schema.String,
+  durationMs: Schema.Number,
+  output: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+  schemaValid: Schema.optional(Schema.Boolean),
+})
+
+const VerifyRunParams = Schema.Struct({
+  timeout: Schema.optional(Schema.NumberFromString.pipe(Schema.int(), Schema.greaterThan(0))),
+})
+
+export const VerifyGroup = HttpApiGroup.make("verify")
+  .add(
+    HttpApiEndpoint.put("setVerify")`/api/tasks/${TaskIdParam}/verify`
+      .setPayload(VerifySetBody)
+      .addSuccess(Schema.Struct({ message: Schema.String }), { status: 200 })
+  )
+  .add(
+    HttpApiEndpoint.get("showVerify")`/api/tasks/${TaskIdParam}/verify`
+      .addSuccess(VerifyShowResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("runVerify")`/api/tasks/${TaskIdParam}/verify/run`
+      .setUrlParams(VerifyRunParams)
+      .addSuccess(VerifyRunResponse)
+  )
+  .add(
+    HttpApiEndpoint.del("clearVerify")`/api/tasks/${TaskIdParam}/verify`
+      .addSuccess(Schema.Struct({ message: Schema.String }))
+  )
+
+// =============================================================================
+// REFLECT GROUP
+// =============================================================================
+
+const ReflectSignalSchema = Schema.Struct({
+  type: Schema.String,
+  message: Schema.String,
+  severity: Schema.Literal("info", "warning", "critical"),
+})
+
+const StuckTaskSchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  failedAttempts: Schema.Number,
+  lastError: Schema.NullOr(Schema.String),
+})
+
+const ReflectResponse = Schema.Struct({
+  sessions: Schema.Struct({
+    total: Schema.Number,
+    completed: Schema.Number,
+    failed: Schema.Number,
+    timeout: Schema.Number,
+    avgDurationMinutes: Schema.Number,
+  }),
+  throughput: Schema.Struct({
+    created: Schema.Number,
+    completed: Schema.Number,
+    net: Schema.Number,
+    completionRate: Schema.Number,
+  }),
+  proliferation: Schema.Struct({
+    avgCreatedPerSession: Schema.Number,
+    maxCreatedPerSession: Schema.Number,
+    maxDepth: Schema.Number,
+    orphanChains: Schema.Number,
+  }),
+  stuckTasks: Schema.Array(StuckTaskSchema),
+  signals: Schema.Array(ReflectSignalSchema),
+  analysis: Schema.NullOr(Schema.String),
+})
+
+const ReflectParams = Schema.Struct({
+  sessions: Schema.optional(Schema.NumberFromString.pipe(Schema.int(), Schema.greaterThan(0))),
+  hours: Schema.optional(Schema.NumberFromString.pipe(Schema.greaterThan(0))),
+  analyze: Schema.optional(Schema.Literal("true", "false")),
+})
+
+export const ReflectGroup = HttpApiGroup.make("reflect")
+  .add(
+    HttpApiEndpoint.get("reflect", "/api/reflect")
+      .setUrlParams(ReflectParams)
+      .addSuccess(ReflectResponse)
+  )
+
+// =============================================================================
 // TOP-LEVEL API
 // =============================================================================
 
@@ -1357,4 +1543,7 @@ export class TxApi extends HttpApi.make("tx")
   .add(DocsGroup)
   .add(PinsGroup)
   .add(MemoryGroup)
-  .add(InvariantsGroup) {}
+  .add(InvariantsGroup)
+  .add(GuardsGroup)
+  .add(VerifyGroup)
+  .add(ReflectGroup) {}

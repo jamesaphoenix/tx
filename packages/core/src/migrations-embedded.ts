@@ -157,5 +157,15 @@ export const EMBEDDED_MIGRATIONS: readonly Migration[] = [
     "version": 30,
     "description": "context pins",
     "sql": "-- Version: 030\n-- Migration: Context pins — named content blocks for agent context files\n\n-- Context pins table (named markdown blocks synced to CLAUDE.md, AGENTS.md, etc.)\nCREATE TABLE IF NOT EXISTS context_pins (\n    id TEXT PRIMARY KEY,\n    content TEXT NOT NULL,\n    created_at TEXT NOT NULL DEFAULT (datetime('now')),\n    updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n);\n\nCREATE INDEX IF NOT EXISTS idx_pins_updated ON context_pins(updated_at DESC);\n\n-- Global config for pin target files (key-value store)\nCREATE TABLE IF NOT EXISTS pin_config (\n    key TEXT PRIMARY KEY,\n    value TEXT NOT NULL\n);\n\n-- Default: sync pins to CLAUDE.md only (user configures via `tx pin targets`)\nINSERT OR IGNORE INTO pin_config (key, value) VALUES ('target_files', '[\"CLAUDE.md\"]');\n\n-- Record this migration\nINSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (30, datetime('now'));\n"
+  },
+  {
+    "version": 31,
+    "description": "task guards",
+    "sql": "-- Version: 031\n-- Migration: Task creation guards — lightweight limits enforced at create time\n\nCREATE TABLE IF NOT EXISTS task_guards (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  scope TEXT NOT NULL UNIQUE,  -- 'global', 'parent:<task_id>'\n  max_pending INTEGER,         -- max non-done tasks at any time\n  max_children INTEGER,        -- max direct children per parent\n  max_depth INTEGER,           -- max hierarchy nesting depth\n  enforce INTEGER NOT NULL DEFAULT 0,  -- 0=advisory, 1=hard block\n  created_at TEXT NOT NULL DEFAULT (datetime('now'))\n);\n\n-- Record this migration\nINSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (31, datetime('now'));\n"
+  },
+  {
+    "version": 32,
+    "description": "verify cmd",
+    "sql": "-- Version: 032\n-- Migration: Verification commands — attach machine-checkable done criteria to tasks\n\nALTER TABLE tasks ADD COLUMN verify_cmd TEXT;\nALTER TABLE tasks ADD COLUMN verify_schema TEXT;\n\n-- Record this migration\nINSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (32, datetime('now'));\n"
   }
 ]

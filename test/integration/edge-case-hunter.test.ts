@@ -33,7 +33,8 @@ import {
   HierarchyService,
   ScoreServiceLive,
   ScoreService,
-  AutoSyncServiceNoop
+  AutoSyncServiceNoop,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import {
   raceWorkers,
@@ -49,7 +50,7 @@ import type { TaskId } from "@jamesaphoenix/tx-types"
 
 function makeTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
     Layer.provide(infra)
   )
   const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(

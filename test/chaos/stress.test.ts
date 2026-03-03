@@ -43,13 +43,15 @@ async function makeTestLayer() {
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive,
-    AutoSyncServiceNoop
+    AutoSyncServiceNoop,
+    GuardRepositoryLive
   } = await import("@jamesaphoenix/tx-core")
 
   const infra = SqliteClientLive(":memory:")
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     AttemptRepositoryLive

@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 
 export type DashboardDefaultTaskAssigmentType = "human" | "agent"
+export type GuardMode = "advisory" | "enforce"
 
 export interface TxConfig {
   docs: { path: string }
@@ -13,6 +14,9 @@ export interface TxConfig {
   cycles: { scanPrompt: string | null; agents: number; model: string }
   dashboard: { defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType }
   pins: { targetFiles: string[] }
+  guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
+  verify: { timeout: number; defaultSchema: string | null }
+  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }
 }
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
@@ -20,8 +24,13 @@ const DASHBOARD_SECTION = "dashboard"
 const DOCS_SECTION = "docs"
 const CYCLES_SECTION = "cycles"
 const PINS_SECTION = "pins"
-
 const MEMORY_SECTION = "memory"
+const GUARD_SECTION = "guard"
+const VERIFY_SECTION = "verify"
+const REFLECT_SECTION = "reflect"
+
+const isGuardMode = (v: string | null): v is GuardMode =>
+  v === "advisory" || v === "enforce"
 
 const DEFAULT_CONFIG: TxConfig = {
   docs: { path: ".tx/docs" },
@@ -29,6 +38,9 @@ const DEFAULT_CONFIG: TxConfig = {
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: { defaultTaskAssigmentType: "human" },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"] },
+  guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
+  verify: { timeout: 300, defaultSchema: null },
+  reflect: { provider: "auto", model: null, defaultSessions: 10, includeTranscripts: false },
 }
 
 const isDashboardDefaultTaskAssigmentType = (
@@ -64,6 +76,23 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     )
     const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
     const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
+
+    // Guard section
+    const guardMode = extractTomlValue(raw, GUARD_SECTION, "mode")
+    const guardMaxPending = extractTomlValue(raw, GUARD_SECTION, "max_pending")
+    const guardMaxChildren = extractTomlValue(raw, GUARD_SECTION, "max_children")
+    const guardMaxDepth = extractTomlValue(raw, GUARD_SECTION, "max_depth")
+
+    // Verify section
+    const verifyTimeout = extractTomlValue(raw, VERIFY_SECTION, "timeout")
+    const verifyDefaultSchema = extractTomlValue(raw, VERIFY_SECTION, "default_schema")
+
+    // Reflect section
+    const reflectProvider = extractTomlValue(raw, REFLECT_SECTION, "provider")
+    const reflectModel = extractTomlValue(raw, REFLECT_SECTION, "model")
+    const reflectDefaultSessions = extractTomlValue(raw, REFLECT_SECTION, "default_sessions")
+    const reflectIncludeTranscripts = extractTomlValue(raw, REFLECT_SECTION, "include_transcripts")
+
     return {
       docs: {
         path: docsPath ?? DEFAULT_CONFIG.docs.path,
@@ -85,6 +114,22 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
         targetFiles: pinsTargetFiles
           ? pinsTargetFiles.split(",").map(f => f.trim()).filter(Boolean)
           : DEFAULT_CONFIG.pins.targetFiles,
+      },
+      guard: {
+        mode: isGuardMode(guardMode) ? guardMode : DEFAULT_CONFIG.guard.mode,
+        maxPending: guardMaxPending ? parseInt(guardMaxPending, 10) : DEFAULT_CONFIG.guard.maxPending,
+        maxChildren: guardMaxChildren ? parseInt(guardMaxChildren, 10) : DEFAULT_CONFIG.guard.maxChildren,
+        maxDepth: guardMaxDepth ? parseInt(guardMaxDepth, 10) : DEFAULT_CONFIG.guard.maxDepth,
+      },
+      verify: {
+        timeout: verifyTimeout ? parseInt(verifyTimeout, 10) : DEFAULT_CONFIG.verify.timeout,
+        defaultSchema: verifyDefaultSchema ?? DEFAULT_CONFIG.verify.defaultSchema,
+      },
+      reflect: {
+        provider: reflectProvider ?? DEFAULT_CONFIG.reflect.provider,
+        model: reflectModel ?? DEFAULT_CONFIG.reflect.model,
+        defaultSessions: reflectDefaultSessions ? parseInt(reflectDefaultSessions, 10) : DEFAULT_CONFIG.reflect.defaultSessions,
+        includeTranscripts: reflectIncludeTranscripts === "true" ? true : DEFAULT_CONFIG.reflect.includeTranscripts,
       },
     }
   } catch {
@@ -292,6 +337,57 @@ default_task_assigment_type = "human"
 # Both Claude Code (CLAUDE.md) and Codex (AGENTS.md) are synced by default
 # so all agents share the same persistent context.
 target_files = "CLAUDE.md, AGENTS.md"
+
+# ─── Guard ─────────────────────────────────────────────────────────
+# Task creation guards — lightweight limits checked at \`tx add\` time.
+# Prevents unbounded task proliferation in agent loops.
+# Commands: tx guard set, tx guard show, tx guard clear
+[guard]
+
+# Guard mode: "advisory" (default) or "enforce"
+# Advisory: tasks are created with warning metadata, stderr warning printed
+# Enforce: tx add fails with GuardExceededError when limits are hit
+mode = "advisory"
+
+# Default limits (can be overridden per-scope via tx guard set)
+# max_pending = 50
+# max_children = 10
+# max_depth = 4
+
+# ─── Verify ────────────────────────────────────────────────────────
+# Machine-checkable done criteria attached to tasks.
+# Attach a shell command to a task; \`tx verify run <id>\` executes it.
+# Exit 0 = pass, non-zero = fail.
+# Commands: tx verify set, tx verify show, tx verify run, tx verify clear
+[verify]
+
+# Default timeout in seconds for verification commands.
+timeout = 300
+
+# Default JSON schema for structured verification output.
+# Leave commented for exit-code-only mode (default).
+# default_schema = "verify-schema.json"
+
+# ─── Reflect ───────────────────────────────────────────────────────
+# Macro-level session retrospective — look at recent sessions,
+# assess what is working, and surface machine-readable signals.
+# Commands: tx reflect
+[reflect]
+
+# LLM provider for \`tx reflect --analyze\`
+# "auto" = auto-detect from available env vars (default)
+# "claude" = uses ANTHROPIC_API_KEY
+# "codex" = uses OPENAI_API_KEY
+provider = "auto"
+
+# Model for analysis tier
+# model = "claude-opus-4-6"
+
+# Default number of sessions to analyze
+default_sessions = 10
+
+# Whether to include transcript parsing by default
+include_transcripts = false
 `
 
 /**

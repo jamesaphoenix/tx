@@ -91,6 +91,13 @@ export type {
   SerializedRoundMetric,
   SerializedCycleIssue,
   StatsResult,
+  SerializedGuard,
+  SerializedVerifyResult,
+  SerializedReflectResult,
+  SendMessageData,
+  InboxOptions,
+  GcOptions,
+  GcResult,
 } from "./types.js"
 
 // Re-export common types from @tx/types for convenience
@@ -107,6 +114,9 @@ export type {
   TaskId,
   Task,
   TaskWithDeps,
+  TaskTree,
+  TaskDependency,
+  TaskFilter,
   CreateTaskInput,
   UpdateTaskInput,
   LearningSourceType,
@@ -117,8 +127,20 @@ export type {
   ContextResult,
   FileLearning,
   CreateFileLearningInput,
+  MessageId,
+  Message,
+  SendMessageInput,
+  InboxFilter,
+  AttemptOutcome,
+  AttemptId,
+  Attempt,
+  CreateAttemptInput,
+  RunId,
+  RunStatus,
   Run,
-  CreateRunInput
+  CreateRunInput,
+  SerializedMessage,
+  SerializedClaim,
 } from "./types.js"
 
 // =============================================================================

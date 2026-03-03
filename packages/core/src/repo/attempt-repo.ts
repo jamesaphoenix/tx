@@ -104,7 +104,7 @@ export const AttemptRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db.prepare(
-              "SELECT * FROM attempts WHERE task_id = ? ORDER BY created_at DESC"
+              "SELECT * FROM attempts WHERE task_id = ? ORDER BY created_at DESC, id DESC"
             ).all(taskId) as AttemptRow[]
             return rows.map(rowToAttempt)
           },

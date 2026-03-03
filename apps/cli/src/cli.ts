@@ -40,6 +40,10 @@ import { memory } from "./commands/memory.js"
 import { pin } from "./commands/pin.js"
 import { mdExport } from "./commands/md-export.js"
 import { utils } from "./commands/utils.js"
+import { guard } from "./commands/guard.js"
+import { verify } from "./commands/verify.js"
+import { label } from "./commands/label.js"
+import { reflect } from "./commands/reflect.js"
 import * as p from "@clack/prompts"
 
 // --- Argv parsing helpers ---
@@ -234,6 +238,12 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Utility commands (no DB required)
   utils,
 
+  // Bounded autonomy primitives
+  guard,
+  verify,
+  label,
+  reflect,
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -259,6 +269,27 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       }
       if (subcommand === "pin" && pos[1]) {
         const subcommandKey = `pin ${pos[1]}`
+        if (commandHelp[subcommandKey]) {
+          console.log(commandHelp[subcommandKey])
+          return
+        }
+      }
+      if (subcommand === "guard" && pos[1]) {
+        const subcommandKey = `guard ${pos[1]}`
+        if (commandHelp[subcommandKey]) {
+          console.log(commandHelp[subcommandKey])
+          return
+        }
+      }
+      if (subcommand === "verify" && pos[1]) {
+        const subcommandKey = `verify ${pos[1]}`
+        if (commandHelp[subcommandKey]) {
+          console.log(commandHelp[subcommandKey])
+          return
+        }
+      }
+      if (subcommand === "label" && pos[1]) {
+        const subcommandKey = `label ${pos[1]}`
         if (commandHelp[subcommandKey]) {
           console.log(commandHelp[subcommandKey])
           return
@@ -337,6 +368,27 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
+  if (command === "guard" && positional[0]) {
+    const subcommandKey = `guard ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (command === "verify" && positional[0]) {
+    const subcommandKey = `verify ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (command === "label" && positional[0]) {
+    const subcommandKey = `label ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   // Check if we have a command with specific help
   if (command !== "help" && commandHelp[command]) {
     console.log(commandHelp[command])
@@ -402,6 +454,27 @@ if (command === "help") {
   }
   if (subcommand === "pin" && positional[1]) {
     const subcommandKey = `pin ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "guard" && positional[1]) {
+    const subcommandKey = `guard ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "verify" && positional[1]) {
+    const subcommandKey = `verify ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "label" && positional[1]) {
+    const subcommandKey = `label ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -484,6 +557,10 @@ const errorExitCodes: Record<string, number> = {
   MemorySourceNotFoundError: 2,
   RetrievalError: 1,
   EmbeddingDimensionMismatchError: 1,
+  GuardExceededError: 1,
+  VerifyError: 1,
+  LabelNotFoundError: 2,
+  HasChildrenError: 1,
 }
 
 const handled = runnable.pipe(
@@ -498,13 +575,6 @@ const handled = runnable.pipe(
         console.error("Hint: use --cascade to delete with all children, or delete/move children first.")
       }
       _exitCode = errorExitCodes[tag] ?? 1
-      return Effect.void
-    }
-
-    if (tag === "HasChildrenError") {
-      console.error(err.message ?? `Cannot delete task with children`)
-      console.error("Hint: use --cascade to delete with all children, or delete/move children first.")
-      _exitCode = 1
       return Effect.void
     }
 

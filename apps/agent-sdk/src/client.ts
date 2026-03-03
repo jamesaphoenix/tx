@@ -67,6 +67,9 @@ import type {
   SerializedCycleDetail,
   DocGraph,
   StatsResult,
+  SerializedGuard,
+  SerializedVerifyResult,
+  SerializedReflectResult,
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
 
@@ -204,6 +207,21 @@ interface Transport {
 
   // Docs (additional)
   docsGraph(): Promise<DocGraph>
+
+  // Guards
+  guardSet(options: { scope?: string; maxPending?: number; maxChildren?: number; maxDepth?: number; enforce?: boolean }): Promise<SerializedGuard>
+  guardShow(): Promise<SerializedGuard[]>
+  guardClear(scope?: string): Promise<{ cleared: boolean }>
+  guardCheck(parentId?: string): Promise<{ passed: boolean; warnings: string[] }>
+
+  // Verify
+  verifySet(taskId: string, cmd: string, schema?: string): Promise<{ message: string }>
+  verifyShow(taskId: string): Promise<{ cmd: string | null; schema: string | null }>
+  verifyRun(taskId: string, options?: { timeout?: number }): Promise<SerializedVerifyResult>
+  verifyClear(taskId: string): Promise<{ message: string }>
+
+  // Reflect
+  reflect(options?: { sessions?: number; hours?: number; analyze?: boolean }): Promise<SerializedReflectResult>
 
   // Stats
   getStats(): Promise<StatsResult>
@@ -373,7 +391,11 @@ class HttpTransport implements Transport {
     const result = await this.request<{ tasks: SerializedTaskWithDeps[] }>(
       "GET",
       "/api/tasks/ready",
-      { params: { limit: options.limit } }
+      { params: {
+        limit: options.limit,
+        labels: options.labels?.join(","),
+        excludeLabels: options.excludeLabels?.join(","),
+      } }
     )
     return result.tasks
   }
@@ -806,6 +828,42 @@ class HttpTransport implements Transport {
 
   async docsGraph(): Promise<DocGraph> {
     return await this.request<DocGraph>("GET", "/api/docs/graph")
+  }
+
+  // Guards
+  async guardSet(options: { scope?: string; maxPending?: number; maxChildren?: number; maxDepth?: number; enforce?: boolean }): Promise<SerializedGuard> {
+    return await this.request<SerializedGuard>("POST", "/api/guards", { body: options })
+  }
+  async guardShow(): Promise<SerializedGuard[]> {
+    const result = await this.request<{ guards: SerializedGuard[] }>("GET", "/api/guards")
+    return result.guards
+  }
+  async guardClear(scope?: string): Promise<{ cleared: boolean }> {
+    return await this.request<{ cleared: boolean }>("DELETE", "/api/guards", { params: { scope } })
+  }
+  async guardCheck(parentId?: string): Promise<{ passed: boolean; warnings: string[] }> {
+    return await this.request<{ passed: boolean; warnings: string[] }>("GET", "/api/guards/check", { params: { parentId } })
+  }
+
+  // Verify
+  async verifySet(taskId: string, cmd: string, schema?: string): Promise<{ message: string }> {
+    return await this.request<{ message: string }>("PUT", `/api/tasks/${taskId}/verify`, { body: { cmd, schema } })
+  }
+  async verifyShow(taskId: string): Promise<{ cmd: string | null; schema: string | null }> {
+    return await this.request<{ cmd: string | null; schema: string | null }>("GET", `/api/tasks/${taskId}/verify`)
+  }
+  async verifyRun(taskId: string, options?: { timeout?: number }): Promise<SerializedVerifyResult> {
+    return await this.request<SerializedVerifyResult>("POST", `/api/tasks/${taskId}/verify/run`, { params: { timeout: options?.timeout } })
+  }
+  async verifyClear(taskId: string): Promise<{ message: string }> {
+    return await this.request<{ message: string }>("DELETE", `/api/tasks/${taskId}/verify`)
+  }
+
+  // Reflect
+  async reflect(options?: { sessions?: number; hours?: number; analyze?: boolean }): Promise<SerializedReflectResult> {
+    return await this.request<SerializedReflectResult>("GET", "/api/reflect", {
+      params: { sessions: options?.sessions, hours: options?.hours, analyze: options?.analyze },
+    })
   }
 
   // Stats
@@ -1277,19 +1335,25 @@ class DirectTransport implements Transport {
 
   async readyTasks(options: ReadyOptions): Promise<SerializedTaskWithDeps[]> {
     await this.ensureRuntime()
-     
+
     const Effect = (this as any).Effect
-     
+
     const core = (this as any).core
+
+    const labels = options.labels?.length ? options.labels : undefined
+    const excludeLabels = options.excludeLabels?.length ? options.excludeLabels : undefined
 
     const tasks = await this.run(
       Effect.gen(function* () {
         const readyService = yield* core.ReadyService
-        return yield* readyService.getReady(options.limit ?? 100)
+        return yield* readyService.getReady(options.limit ?? 100, {
+          labels,
+          excludeLabels,
+        })
       })
     )
 
-     
+
     return (tasks as any[]).map(t => this.serializeTask(t))
   }
 
@@ -2729,6 +2793,151 @@ class DirectTransport implements Transport {
     )
   }
 
+  // Guards
+  async guardSet(options: { scope?: string; maxPending?: number; maxChildren?: number; maxDepth?: number; enforce?: boolean }): Promise<SerializedGuard> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<SerializedGuard>(
+      Effect.gen(function* () {
+        const svc = yield* core.GuardService
+        const guard = yield* svc.set(options)
+        return {
+          id: guard.id,
+          scope: guard.scope,
+          maxPending: guard.maxPending ?? null,
+          maxChildren: guard.maxChildren ?? null,
+          maxDepth: guard.maxDepth ?? null,
+          enforce: Boolean(guard.enforce),
+          createdAt: guard.createdAt instanceof Date ? guard.createdAt.toISOString() : String(guard.createdAt),
+        }
+      })
+    )
+  }
+  async guardShow(): Promise<SerializedGuard[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<SerializedGuard[]>(
+      Effect.gen(function* () {
+        const svc = yield* core.GuardService
+        const guards = yield* svc.show()
+        return guards.map((g: any) => ({
+          id: g.id,
+          scope: g.scope,
+          maxPending: g.maxPending ?? null,
+          maxChildren: g.maxChildren ?? null,
+          maxDepth: g.maxDepth ?? null,
+          enforce: Boolean(g.enforce),
+          createdAt: g.createdAt instanceof Date ? g.createdAt.toISOString() : String(g.createdAt ?? ""),
+        }))
+      })
+    )
+  }
+  async guardClear(scope?: string): Promise<{ cleared: boolean }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<{ cleared: boolean }>(
+      Effect.gen(function* () {
+        const svc = yield* core.GuardService
+        const cleared = yield* svc.clear(scope)
+        return { cleared }
+      })
+    )
+  }
+  async guardCheck(parentId?: string): Promise<{ passed: boolean; warnings: string[] }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<{ passed: boolean; warnings: string[] }>(
+      Effect.gen(function* () {
+        const svc = yield* core.GuardService
+        const result = yield* svc.check(parentId)
+        return { passed: result.passed, warnings: [...result.warnings] }
+      })
+    )
+  }
+
+  // Verify
+  async verifySet(taskId: string, cmd: string, schema?: string): Promise<{ message: string }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<{ message: string }>(
+      Effect.gen(function* () {
+        const svc = yield* core.VerifyService
+        yield* svc.set(taskId, cmd, schema)
+        return { message: `Verify command set for task ${taskId}` }
+      })
+    )
+  }
+  async verifyShow(taskId: string): Promise<{ cmd: string | null; schema: string | null }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<{ cmd: string | null; schema: string | null }>(
+      Effect.gen(function* () {
+        const svc = yield* core.VerifyService
+        return yield* svc.show(taskId)
+      })
+    )
+  }
+  async verifyRun(taskId: string, options?: { timeout?: number }): Promise<SerializedVerifyResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<SerializedVerifyResult>(
+      Effect.gen(function* () {
+        const svc = yield* core.VerifyService
+        const result = yield* svc.run(taskId, options)
+        return {
+          taskId: result.taskId,
+          exitCode: result.exitCode,
+          passed: result.passed,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          durationMs: result.durationMs,
+          output: result.output,
+          schemaValid: result.schemaValid,
+        }
+      })
+    )
+  }
+  async verifyClear(taskId: string): Promise<{ message: string }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<{ message: string }>(
+      Effect.gen(function* () {
+        const svc = yield* core.VerifyService
+        yield* svc.clear(taskId)
+        return { message: `Verify command cleared for task ${taskId}` }
+      })
+    )
+  }
+
+  // Reflect
+  async reflect(options?: { sessions?: number; hours?: number; analyze?: boolean }): Promise<SerializedReflectResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    return await this.run<SerializedReflectResult>(
+      Effect.gen(function* () {
+        const svc = yield* core.ReflectService
+        const result = yield* svc.reflect(options)
+        return {
+          sessions: result.sessions,
+          throughput: result.throughput,
+          proliferation: result.proliferation,
+          stuckTasks: [...result.stuckTasks],
+          signals: [...result.signals],
+          analysis: result.analysis,
+        }
+      })
+    )
+  }
+
   // Stats
   async getStats(): Promise<StatsResult> {
     await this.ensureRuntime()
@@ -2987,10 +3196,12 @@ class TasksNamespace {
    *
    * @param options - Query options
    * @param options.limit - Maximum number of tasks to return (default: 100)
+   * @param options.labels - Only include tasks with these labels
+   * @param options.excludeLabels - Exclude tasks with these labels
    * @returns Array of ready tasks with dependency information
    * @example
    * ```typescript
-   * const ready = await tx.tasks.ready({ limit: 5 })
+   * const ready = await tx.tasks.ready({ limit: 5, labels: ['phase:implement'] })
    * if (ready.length > 0) {
    *   console.log(`Next task: ${ready[0].title}`)
    * }
@@ -3717,6 +3928,56 @@ class CyclesNamespace {
 }
 
 // =============================================================================
+// Guards Namespace
+// =============================================================================
+
+class GuardsNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async set(options: { scope?: string; maxPending?: number; maxChildren?: number; maxDepth?: number; enforce?: boolean }): Promise<SerializedGuard> {
+    return this.transport.guardSet(options)
+  }
+  async show(): Promise<SerializedGuard[]> { return this.transport.guardShow() }
+  async clear(scope?: string): Promise<{ cleared: boolean }> { return this.transport.guardClear(scope) }
+  async check(options?: { parentId?: string }): Promise<{ passed: boolean; warnings: string[] }> {
+    return this.transport.guardCheck(options?.parentId)
+  }
+}
+
+// =============================================================================
+// Verify Namespace
+// =============================================================================
+
+class VerifyNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async set(taskId: string, cmd: string, schema?: string): Promise<{ message: string }> {
+    return this.transport.verifySet(taskId, cmd, schema)
+  }
+  async show(taskId: string): Promise<{ cmd: string | null; schema: string | null }> {
+    return this.transport.verifyShow(taskId)
+  }
+  async run(taskId: string, options?: { timeout?: number }): Promise<SerializedVerifyResult> {
+    return this.transport.verifyRun(taskId, options)
+  }
+  async clear(taskId: string): Promise<{ message: string }> {
+    return this.transport.verifyClear(taskId)
+  }
+}
+
+// =============================================================================
+// Reflect Namespace
+// =============================================================================
+
+class ReflectNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async run(options?: { sessions?: number; hours?: number; analyze?: boolean }): Promise<SerializedReflectResult> {
+    return this.transport.reflect(options)
+  }
+}
+
+// =============================================================================
 // Main Client
 // =============================================================================
 
@@ -3824,6 +4085,21 @@ export class TxClient {
   public readonly cycles: CyclesNamespace
 
   /**
+   * Guard operations for task creation limits.
+   */
+  public readonly guards: GuardsNamespace
+
+  /**
+   * Verify operations for machine-checkable done criteria.
+   */
+  public readonly verify: VerifyNamespace
+
+  /**
+   * Reflect operations for session retrospective.
+   */
+  public readonly reflect: ReflectNamespace
+
+  /**
    * Create a new TxClient.
    *
    * @param config - Client configuration
@@ -3860,6 +4136,9 @@ export class TxClient {
     this.docs = new DocsNamespace(this.transport)
     this.invariants = new InvariantsNamespace(this.transport)
     this.cycles = new CyclesNamespace(this.transport)
+    this.guards = new GuardsNamespace(this.transport)
+    this.verify = new VerifyNamespace(this.transport)
+    this.reflect = new ReflectNamespace(this.transport)
   }
 
   /**

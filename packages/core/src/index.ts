@@ -64,7 +64,12 @@ export {
   // Memory errors
   ZeroMagnitudeVectorError,
   MemoryDocumentNotFoundError,
-  MemorySourceNotFoundError
+  MemorySourceNotFoundError,
+  // Label errors
+  LabelNotFoundError,
+  // Guard/Verify errors
+  GuardExceededError,
+  VerifyError
 } from "./errors.js"
 
 // =============================================================================
@@ -140,7 +145,22 @@ export {
   PinService,
   PinServiceLive,
   PinRepository,
-  PinRepositoryLive
+  PinRepositoryLive,
+  GuardService,
+  GuardServiceLive,
+  type GuardCheckResult,
+  VerifyService,
+  VerifyServiceLive,
+  type VerifyResult,
+  ReflectService,
+  ReflectServiceLive,
+  type ReflectResult,
+  type ReflectSignal,
+  type StuckTask,
+  GuardRepository,
+  GuardRepositoryLive,
+  LabelRepository,
+  LabelRepositoryLive
 } from "./layer.js"
 
 // =============================================================================

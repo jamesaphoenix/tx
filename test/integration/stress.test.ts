@@ -44,6 +44,7 @@ import {
   EmbeddingService,
   EmbeddingServiceNoop,
   AutoSyncServiceNoop,
+  GuardRepositoryLive,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive
@@ -90,7 +91,7 @@ async function measurePerformance<T>(
  */
 function makeTaskTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
     Layer.provide(infra)
   )
   const services = Layer.mergeAll(
@@ -112,7 +113,8 @@ function makeLearningTestLayer(db: TestDatabase) {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
-    LearningRepositoryLive
+    LearningRepositoryLive,
+    GuardRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -157,7 +159,8 @@ function makeSyncTestLayer(db: TestDatabase) {
     DependencyRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
-    AttemptRepositoryLive
+    AttemptRepositoryLive,
+    GuardRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )

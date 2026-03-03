@@ -36,7 +36,8 @@ import {
   ClaimServiceLive,
   ClaimService,
   OrchestratorStateRepositoryLive,
-  AutoSyncServiceNoop
+  AutoSyncServiceNoop,
+  GuardRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import {
   crashAfter,
@@ -56,7 +57,7 @@ import type { TaskId } from "@jamesaphoenix/tx-types"
 // Create test layer for task services
 function makeTaskTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
     Layer.provide(infra)
   )
   const baseServices = Layer.mergeAll(
@@ -74,6 +75,7 @@ function makeWorkerTestLayer(db: TestDatabase) {
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     WorkerRepositoryLive,
     ClaimRepositoryLive,
     OrchestratorStateRepositoryLive

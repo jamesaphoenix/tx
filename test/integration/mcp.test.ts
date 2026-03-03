@@ -39,6 +39,7 @@ import {
   RetrieverServiceLive,
   RunHeartbeatService,
   RunHeartbeatServiceLive,
+  GuardRepositoryLive,
 } from "@jamesaphoenix/tx-core"
 import type { RunId, TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
@@ -88,6 +89,7 @@ export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<Mcp
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
+    GuardRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     RunRepositoryLive

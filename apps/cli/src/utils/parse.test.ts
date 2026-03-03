@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { opt, flag, parseIntOpt, parseFloatOpt, type Flags } from "./parse.js"
+import { CliExitError } from "../cli-exit.js"
 
 describe("opt", () => {
   it("returns string value for matching flag", () => {
@@ -51,11 +52,9 @@ describe("flag", () => {
 })
 
 describe("parseIntOpt", () => {
-  let mockExit: any
   let mockError: any
 
   beforeEach(() => {
-    mockExit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never)
     mockError = vi.spyOn(console, "error").mockImplementation(() => {})
   })
 
@@ -74,17 +73,15 @@ describe("parseIntOpt", () => {
     expect(parseIntOpt(flags, "limit", "limit", "n")).toBe(5)
   })
 
-  it("exits with error for non-numeric value", () => {
+  it("throws CliExitError for non-numeric value", () => {
     const flags: Flags = { limit: "abc" }
-    parseIntOpt(flags, "limit", "limit")
+    expect(() => parseIntOpt(flags, "limit", "limit")).toThrow(CliExitError)
     expect(mockError).toHaveBeenCalledWith('Invalid value for --limit: "abc" is not a valid finite number')
-    expect(mockExit).toHaveBeenCalledWith(1)
   })
 
-  it("exits with error for empty string value", () => {
+  it("throws CliExitError for empty string value", () => {
     const flags: Flags = { limit: "" }
-    parseIntOpt(flags, "limit", "limit")
-    expect(mockExit).toHaveBeenCalledWith(1)
+    expect(() => parseIntOpt(flags, "limit", "limit")).toThrow(CliExitError)
   })
 
   it("parses negative integers", () => {
@@ -97,9 +94,10 @@ describe("parseIntOpt", () => {
     expect(parseIntOpt(flags, "limit", "limit")).toBe(0)
   })
 
-  it("truncates floats to integer", () => {
+  it("rejects float values", () => {
     const flags: Flags = { limit: "3.7" }
-    expect(parseIntOpt(flags, "limit", "limit")).toBe(3)
+    expect(() => parseIntOpt(flags, "limit", "limit")).toThrow(CliExitError)
+    expect(mockError).toHaveBeenCalledWith('Invalid value for --limit: "3.7" is not an integer')
   })
 
   it("ignores boolean flags", () => {
@@ -109,11 +107,9 @@ describe("parseIntOpt", () => {
 })
 
 describe("parseFloatOpt", () => {
-  let mockExit: any
   let mockError: any
 
   beforeEach(() => {
-    mockExit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never)
     mockError = vi.spyOn(console, "error").mockImplementation(() => {})
   })
 
@@ -132,11 +128,10 @@ describe("parseFloatOpt", () => {
     expect(parseFloatOpt(flags, "min-score", "min-score")).toBe(3)
   })
 
-  it("exits with error for non-numeric value", () => {
+  it("throws CliExitError for non-numeric value", () => {
     const flags: Flags = { score: "high" }
-    parseFloatOpt(flags, "score", "score")
+    expect(() => parseFloatOpt(flags, "score", "score")).toThrow(CliExitError)
     expect(mockError).toHaveBeenCalledWith('Invalid value for --score: "high" is not a valid finite number')
-    expect(mockExit).toHaveBeenCalledWith(1)
   })
 
   it("parses negative floats", () => {
@@ -149,18 +144,16 @@ describe("parseFloatOpt", () => {
     expect(parseFloatOpt(flags, "score", "score")).toBe(0)
   })
 
-  it("exits with error for Infinity", () => {
+  it("throws CliExitError for Infinity", () => {
     const flags: Flags = { score: "Infinity" }
-    parseFloatOpt(flags, "score", "score")
+    expect(() => parseFloatOpt(flags, "score", "score")).toThrow(CliExitError)
     expect(mockError).toHaveBeenCalledWith('Invalid value for --score: "Infinity" is not a valid finite number')
-    expect(mockExit).toHaveBeenCalledWith(1)
   })
 
-  it("exits with error for -Infinity", () => {
+  it("throws CliExitError for -Infinity", () => {
     const flags: Flags = { score: "-Infinity" }
-    parseFloatOpt(flags, "score", "score")
+    expect(() => parseFloatOpt(flags, "score", "score")).toThrow(CliExitError)
     expect(mockError).toHaveBeenCalledWith('Invalid value for --score: "-Infinity" is not a valid finite number')
-    expect(mockExit).toHaveBeenCalledWith(1)
   })
 
   it("ignores boolean flags", () => {

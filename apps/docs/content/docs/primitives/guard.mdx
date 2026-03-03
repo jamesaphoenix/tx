@@ -1,0 +1,165 @@
+---
+title: tx guard
+description: Set task creation limits to prevent unbounded proliferation
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
+
+## Purpose
+
+`tx guard` sets limits on task creation to prevent unbounded proliferation. Guards are checked every time `tx add` creates a task.
+
+Guards support two modes:
+- **Advisory (default)**: Tasks are created with warnings. Agents see the warning and can self-correct.
+- **Enforce**: `tx add` fails with `GuardExceededError` when limits are exceeded.
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+
+<Tab value="CLI">
+
+```bash
+tx guard set [options]
+tx guard show [--json]
+tx guard clear [--scope <scope>]
+```
+
+```bash
+# Set global limits (advisory mode)
+tx guard set --max-pending 50 --max-children 10 --max-depth 4
+
+# Enable enforcement
+tx guard set --max-pending 30 --enforce
+
+# Scope limits to a parent task
+tx guard set --scope parent:tx-abc123 --max-children 5
+
+# Show current guards
+tx guard show
+
+# Clear all guards
+tx guard clear
+```
+
+</Tab>
+
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// Set guard limits
+await tx.guards.set({
+  maxPending: 50,
+  maxChildren: 10,
+  maxDepth: 4,
+  enforce: true,
+})
+
+// Show current guards
+const guards = await tx.guards.show()
+
+// Check if creation would be allowed
+const result = await tx.guards.check({ parentId: 'tx-abc123' })
+// { passed: true, warnings: [] }
+
+// Clear guards
+await tx.guards.clear()
+```
+
+</Tab>
+
+<Tab value="MCP">
+
+**Tool name:** `tx_guard_set`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `scope` | `string` | No | Guard scope: 'global' or 'parent:\<task-id\>' |
+| `maxPending` | `number` | No | Maximum non-done tasks |
+| `maxChildren` | `number` | No | Maximum children per parent |
+| `maxDepth` | `number` | No | Maximum hierarchy nesting depth |
+| `enforce` | `boolean` | No | true = hard block, false = advisory |
+
+**Other tools:** `tx_guard_show`, `tx_guard_clear`, `tx_guard_check`
+
+</Tab>
+
+<Tab value="REST API">
+
+```
+POST /api/guards
+GET  /api/guards
+GET  /api/guards/check?parentId=tx-abc123
+DELETE /api/guards?scope=global
+```
+
+**Example:**
+
+```bash
+# Set guard limits
+curl -X POST http://localhost:3001/api/guards \
+  -H 'Content-Type: application/json' \
+  -d '{"maxPending": 50, "maxChildren": 10, "enforce": true}'
+
+# Check if creation allowed
+curl http://localhost:3001/api/guards/check
+```
+
+</Tab>
+
+</Tabs>
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--max-pending <n>` | Maximum non-done tasks at any time |
+| `--max-children <n>` | Maximum direct children per parent |
+| `--max-depth <n>` | Maximum hierarchy nesting depth |
+| `--enforce` | Enable hard blocking (default: advisory) |
+| `--scope <scope>` | Guard scope: 'global' or 'parent:\<task-id\>' |
+| `--json` | Output as JSON |
+
+## Advisory vs Enforce Mode
+
+| Mode | Behavior |
+|------|----------|
+| Advisory (default) | Tasks are created. Warning metadata is added. Stderr shows warning. |
+| Enforce | `tx add` fails with `GuardExceededError`. Task is NOT created. |
+
+**Recommended workflow:** Deploy advisory first, observe patterns with `tx reflect`, then tighten limits and enable enforcement.
+
+## Configuration
+
+Guards can be configured in `.tx/config.toml`:
+
+```toml
+[guard]
+mode = "advisory"     # "advisory" or "enforce"
+# max_pending = 50
+# max_children = 10
+# max_depth = 4
+```
+
+## Agent Loop Pattern
+
+```bash
+#!/bin/bash
+# Set up guardrails before starting agent loop
+tx guard set --max-pending 30 --max-depth 3 --enforce
+
+while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  claude "Work on $task. Run tx done $task when complete."
+done
+```
+
+## Related Commands
+
+- [`tx reflect`](/docs/primitives/reflect) — Analyze session metrics to tune guard limits
+- [`tx ready`](/docs/primitives/ready) — Get next workable task
+- [`tx verify`](/docs/primitives/verify) — Attach machine-checkable done criteria

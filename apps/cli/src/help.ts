@@ -98,6 +98,27 @@ Tools:
   doctor                  Run system diagnostics
   dashboard               Start API server + dashboard
 
+Guards & Limits:
+  guard set               Set task creation guards (--max-pending, --max-children, --max-depth)
+  guard show              Show current guard configuration
+  guard clear             Clear guards
+
+Verification:
+  verify set <id> <cmd>   Attach a verify command to a task
+  verify show <id>        Show verify command for a task
+  verify run <id>         Run verification command
+  verify clear <id>       Clear verify command from a task
+
+Labels:
+  label add <name>        Create a label
+  label list              List all labels
+  label assign <id> <l>   Assign a label to a task
+  label unassign <id> <l> Remove a label from a task
+  label delete <name>     Delete a label
+
+Reflection:
+  reflect                 Session retrospective (throughput, signals, stuck tasks)
+
 Utils:
   utils claude-usage      Show Claude Code rate limit usage
   utils codex-usage       Show Codex rate limit usage
@@ -160,13 +181,15 @@ Options:
   --parent, -p <id>       Parent task ID (for subtasks)
   --score, -s <n>         Priority score 0-1000 (default: 500, higher = more important)
   --description, -d <text> Task description
+  --verify <cmd>          Attach a verify command at creation time
   --json                  Output as JSON
   --help                  Show this help
 
 Examples:
   tx add "Implement auth"
   tx add "Login page" --parent tx-a1b2c3d4 --score 600
-  tx add "Fix bug" -s 800 -d "Urgent fix for login"`,
+  tx add "Fix bug" -s 800 -d "Urgent fix for login"
+  tx add "Implement auth tests" --verify "bun run test:auth"`,
 
   list: `tx list - List tasks
 
@@ -176,15 +199,18 @@ Lists all tasks, optionally filtered by status. Shows task ID, status,
 score, title, and ready indicator (+).
 
 Options:
-  --status <s>     Filter by status (comma-separated: backlog,ready,active,done)
-  --limit, -n <n>  Maximum tasks to show
-  --json           Output as JSON
-  --help           Show this help
+  --status <s>               Filter by status (comma-separated: backlog,ready,active,done)
+  --limit, -n <n>            Maximum tasks to show
+  --label <name,...>         Filter to tasks with these labels (comma-separated)
+  --exclude-label <name,...> Exclude tasks with these labels (comma-separated)
+  --json                     Output as JSON
+  --help                     Show this help
 
 Examples:
   tx list                          # List all tasks
   tx list --status backlog,ready   # Only backlog and ready tasks
-  tx list -n 10 --json             # Top 10 as JSON`,
+  tx list -n 10 --json             # Top 10 as JSON
+  tx list --label "phase:implement"  # Tasks with specific label`,
 
   ready: `tx ready - List ready tasks
 
@@ -194,14 +220,18 @@ Lists tasks that are ready to work on (status is workable and all blockers
 are done). Sorted by score, highest first.
 
 Options:
-  --limit, -n <n>  Maximum tasks to show (default: 10)
-  --json           Output as JSON
-  --help           Show this help
+  --limit, -n <n>            Maximum tasks to show (default: 10)
+  --label <name,...>         Filter to tasks with these labels (comma-separated)
+  --exclude-label <name,...> Exclude tasks with these labels (comma-separated)
+  --json                     Output as JSON
+  --help                     Show this help
 
 Examples:
-  tx ready             # Top 10 ready tasks
-  tx ready -n 5        # Top 5 ready tasks
-  tx ready --json      # Output as JSON for scripting`,
+  tx ready                                # Top 10 ready tasks
+  tx ready -n 5                           # Top 5 ready tasks
+  tx ready --json                         # Output as JSON for scripting
+  tx ready --label "phase:implement"      # Only implementation-phase tasks
+  tx ready --exclude-label "needs-review" # Skip tasks needing review`,
 
   show: `tx show - Show task details
 
@@ -284,17 +314,20 @@ Examples:
 Usage: tx delete <id> [options]
 
 Permanently deletes a task. Also removes any dependencies involving
-this task.
+this task. If the task has children, use --cascade to delete the
+entire subtree.
 
 Arguments:
   <id>    Required. Task ID (e.g., tx-a1b2c3d4)
 
 Options:
-  --json  Output as JSON
-  --help  Show this help
+  --cascade  Delete task and all its descendants (entire subtree)
+  --json     Output as JSON
+  --help     Show this help
 
 Examples:
-  tx delete tx-a1b2c3d4`,
+  tx delete tx-a1b2c3d4
+  tx delete tx-a1b2c3d4 --cascade   # Delete task and all children`,
 
   "md-export": `tx md-export - Export tasks to markdown file
 
@@ -2735,4 +2768,251 @@ Options:
 Examples:
   tx utils codex-usage
   tx utils codex-usage --json`,
+
+  // --- Bounded Autonomy Primitives ---
+
+  guard: `tx guard - Task creation guards
+
+Usage: tx guard <subcommand> [options]
+
+Subcommands:
+  set       Set guard limits (--max-pending, --max-children, --max-depth)
+  show      Show current guard configuration
+  clear     Clear all guards or a specific scope
+
+Guards limit task creation to prevent unbounded proliferation. Advisory
+mode (default) prints warnings; enforce mode blocks task creation.
+
+Run 'tx guard <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx guard set --max-pending 50 --max-depth 4
+  tx guard set --max-pending 30 --enforce
+  tx guard set --scope parent:tx-abc123 --max-children 5
+  tx guard show --json
+  tx guard clear`,
+
+  "guard set": `tx guard set - Set task creation guards
+
+Usage: tx guard set [options]
+
+Options:
+  --max-pending <n>       Maximum non-done tasks globally (>= 1)
+  --max-children <n>      Maximum direct children per parent (>= 1)
+  --max-depth <n>         Maximum hierarchy nesting depth (>= 1)
+  --scope <scope>         Guard scope (default: "global", or "parent:<id>")
+  --enforce               Enable enforce mode (block task creation on violation)
+  --advisory              Enable advisory mode (warn but allow, default)
+  --json                  Output as JSON
+  --help                  Show this help
+
+At least one limit or mode flag is required.
+
+Examples:
+  tx guard set --max-pending 50
+  tx guard set --max-pending 30 --max-depth 3 --enforce
+  tx guard set --scope parent:tx-abc123 --max-children 5`,
+
+  "guard show": `tx guard show - Show current guard configuration
+
+Usage: tx guard show [--json]
+
+Displays all configured guards with their limits and mode.
+
+Options:
+  --json          Output as JSON
+  --help          Show this help`,
+
+  "guard clear": `tx guard clear - Clear guards
+
+Usage: tx guard clear [--scope <scope>] [--json]
+
+Removes all guards, or a specific scope if --scope is provided.
+
+Options:
+  --scope <scope>   Clear only this scope (e.g., "global", "parent:tx-abc123")
+  --json            Output as JSON
+  --help            Show this help`,
+
+  verify: `tx verify - Machine-checkable verification
+
+Usage: tx verify <subcommand> [options]
+
+Subcommands:
+  set <id> <cmd>   Attach a shell command to verify task completion
+  show <id>        Show the verify command for a task
+  run <id>         Execute the verify command and report pass/fail
+  clear <id>       Remove the verify command from a task
+
+Verification commands define machine-checkable "done" criteria. Exit code
+0 = pass, non-zero = fail.
+
+Run 'tx verify <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx verify set tx-abc123 "bun run test:unit"
+  tx verify run tx-abc123
+  tx verify run tx-abc123 --json
+  tx verify run tx-abc123 && tx done tx-abc123`,
+
+  "verify set": `tx verify set - Attach a verify command
+
+Usage: tx verify set <id> <command> [--schema <path>] [--json]
+
+Attaches a shell command that defines "done" for a task. The command
+should exit 0 for pass and non-zero for fail.
+
+Arguments:
+  <id>            Task ID
+  <command>       Shell command to run for verification
+
+Options:
+  --schema <path>   JSON Schema file for structured output validation
+  --json            Output as JSON
+  --help            Show this help
+
+Examples:
+  tx verify set tx-abc123 "bun run test:unit"
+  tx verify set tx-abc123 "bun run test:auth --json" --schema verify-schema.json`,
+
+  "verify show": `tx verify show - Show verify command
+
+Usage: tx verify show <id> [--json]
+
+Shows the verification command and optional schema for a task.
+
+Options:
+  --json          Output as JSON
+  --help          Show this help`,
+
+  "verify run": `tx verify run - Run verification
+
+Usage: tx verify run <id> [--timeout <seconds>] [--json]
+
+Executes the verify command attached to the task and reports pass/fail.
+Exit code 0 from the command = pass, non-zero = fail.
+
+Options:
+  --timeout <seconds>   Command timeout (default: 300)
+  --json                Output structured result as JSON
+  --help                Show this help
+
+Examples:
+  tx verify run tx-abc123
+  tx verify run tx-abc123 --timeout 60 --json`,
+
+  "verify clear": `tx verify clear - Remove verify command
+
+Usage: tx verify clear <id> [--json]
+
+Removes the verification command from a task.
+
+Options:
+  --json          Output as JSON
+  --help          Show this help`,
+
+  label: `tx label - Label management
+
+Usage: tx label <subcommand> [options]
+
+Subcommands:
+  add <name>             Create a new label
+  list                   List all labels
+  assign <id> <label>    Assign a label to a task
+  unassign <id> <label>  Remove a label from a task
+  delete <name>          Delete a label
+
+Labels enable phase-based scoping of the ready queue:
+  tx ready --label "phase:implement"
+  tx list --label "sprint:w10" --exclude-label "blocked"
+
+Run 'tx label <subcommand> --help' for subcommand-specific help.`,
+
+  "label add": `tx label add - Create a label
+
+Usage: tx label add <name> [--color <hex>] [--json]
+
+Options:
+  --color <hex>   Label color (e.g., "#3b82f6")
+  --json          Output as JSON
+  --help          Show this help
+
+Examples:
+  tx label add "phase:discovery"
+  tx label add "phase:implement" --color "#22c55e"`,
+
+  "label list": `tx label list - List all labels
+
+Usage: tx label list [--json]
+
+Options:
+  --json          Output as JSON
+  --help          Show this help`,
+
+  "label assign": `tx label assign - Assign a label to a task
+
+Usage: tx label assign <task-id> <label-name> [--json]
+
+The label must exist (create it first with 'tx label add').
+
+Options:
+  --json          Output as JSON
+  --help          Show this help
+
+Examples:
+  tx label assign tx-abc123 "phase:discovery"`,
+
+  "label unassign": `tx label unassign - Remove a label from a task
+
+Usage: tx label unassign <task-id> <label-name> [--json]
+
+Options:
+  --json          Output as JSON
+  --help          Show this help`,
+
+  "label delete": `tx label delete - Delete a label
+
+Usage: tx label delete <name> [--json]
+
+Alias: tx label remove
+
+Options:
+  --json          Output as JSON
+  --help          Show this help`,
+
+  "label remove": `tx label remove - Delete a label (alias for "tx label delete")
+
+Usage: tx label remove <name> [--json]
+
+Options:
+  --json          Output as JSON
+  --help          Show this help`,
+
+  reflect: `tx reflect - Session retrospective
+
+Usage: tx reflect [options]
+
+Aggregates session data, throughput, proliferation metrics, stuck tasks,
+and signals into a structured retrospective. Use this to assess what's
+working and tune your agent orchestration.
+
+Options:
+  --sessions <n>    Number of recent sessions to analyze (default: 10)
+  --hours <n>       Time window in hours (supports decimals, e.g., 0.5)
+  --analyze         Enable LLM analysis tier (requires ANTHROPIC_API_KEY)
+  --json            Output as JSON (machine-readable for orchestrators)
+  --help            Show this help
+
+Signals (machine-readable flags):
+  HIGH_PROLIFERATION   More tasks created than completed
+  STUCK_TASKS          Tasks with 3+ failed attempts
+  DEPTH_WARNING        Max depth exceeds guard limit
+  PENDING_HIGH         Pending tasks near guard limit
+
+Examples:
+  tx reflect                  # last 10 sessions
+  tx reflect --sessions 5     # last 5 sessions
+  tx reflect --hours 1        # last hour's activity
+  tx reflect --analyze        # with LLM analysis (requires ANTHROPIC_API_KEY)
+  tx reflect --json           # machine-readable for orchestrators`,
 }

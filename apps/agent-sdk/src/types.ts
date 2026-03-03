@@ -211,6 +211,8 @@ export interface ListOptions {
  */
 export interface ReadyOptions {
   limit?: number
+  labels?: string[]
+  excludeLabels?: string[]
 }
 
 /**
@@ -664,4 +666,71 @@ export interface StatsResult {
   learnings: number
   runsRunning?: number
   runsTotal?: number
+}
+
+// =============================================================================
+// Guard Types (SDK-specific)
+// =============================================================================
+
+export interface SerializedGuard {
+  id: number
+  scope: string
+  maxPending: number | null
+  maxChildren: number | null
+  maxDepth: number | null
+  enforce: boolean
+  createdAt: string
+}
+
+// =============================================================================
+// Verify Types (SDK-specific)
+// =============================================================================
+
+export interface SerializedVerifyResult {
+  taskId: string
+  exitCode: number
+  passed: boolean
+  stdout: string
+  stderr: string
+  durationMs: number
+  output?: Record<string, unknown>
+  schemaValid?: boolean
+}
+
+// =============================================================================
+// Reflect Types (SDK-specific)
+// =============================================================================
+
+export interface SerializedReflectResult {
+  sessions: {
+    total: number
+    completed: number
+    failed: number
+    timeout: number
+    avgDurationMinutes: number
+  }
+  throughput: {
+    created: number
+    completed: number
+    net: number
+    completionRate: number
+  }
+  proliferation: {
+    avgCreatedPerSession: number
+    maxCreatedPerSession: number
+    maxDepth: number
+    orphanChains: number
+  }
+  stuckTasks: Array<{
+    id: string
+    title: string
+    failedAttempts: number
+    lastError: string | null
+  }>
+  signals: Array<{
+    type: string
+    message: string
+    severity: "info" | "warning" | "critical"
+  }>
+  analysis: string | null
 }

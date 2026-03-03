@@ -34,6 +34,19 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
 | `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
 
+### Bounded Autonomy
+
+| Command | Purpose |
+|---------|---------|
+| `tx guard set` | Set task creation limits (`--max-pending`, `--max-children`, `--max-depth`, `--enforce`) |
+| `tx guard show` | Show current guard configuration |
+| `tx verify set <id> <cmd>` | Attach a shell verification command to a task |
+| `tx verify run <id>` | Run verification (exit 0 = pass) |
+| `tx label add <name>` | Create a label for scoping the ready queue |
+| `tx label assign <id> <name>` | Assign a label to a task |
+| `tx ready --label <name>` | Filter ready queue by label |
+| `tx reflect` | Session retrospective (throughput, signals, stuck tasks) |
+
 ### Memory & Learnings
 
 | Command | Purpose |
