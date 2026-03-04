@@ -125,6 +125,8 @@ if (ready.length > 0) {
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `limit` | `number` | `100` | Maximum number of tasks to return |
+| `labels` | `string[]` | - | Only include tasks with these labels |
+| `excludeLabels` | `string[]` | - | Exclude tasks with these labels |
 
 </Tab>
 <Tab value="CLI">
@@ -759,6 +761,142 @@ if (claim) {
 }
 ```
 
+### Guards
+
+#### `tx.guards.set(options)`
+
+Set task creation limits (bounded autonomy).
+
+```typescript
+await tx.guards.set({
+  maxPending: 50,
+  maxChildren: 10,
+  maxDepth: 4,
+  enforce: true,
+})
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `scope` | `string` | Guard scope: `'global'` (default) or `'parent:<task-id>'` |
+| `maxPending` | `number` | Maximum non-done tasks |
+| `maxChildren` | `number` | Maximum direct children per parent |
+| `maxDepth` | `number` | Maximum hierarchy nesting depth |
+| `enforce` | `boolean` | `true` = hard block, `false` = advisory warnings |
+
+#### `tx.guards.show()`
+
+List all configured guards.
+
+```typescript
+const guards = await tx.guards.show()
+for (const g of guards) {
+  console.log(`${g.scope}: maxPending=${g.maxPending}, enforce=${g.enforce}`)
+}
+```
+
+#### `tx.guards.check(options?)`
+
+Check if task creation would pass guard limits without actually creating a task.
+
+```typescript
+const result = await tx.guards.check({ parentId: 'tx-abc123' })
+if (!result.passed) {
+  console.log('Warnings:', result.warnings)
+}
+```
+
+#### `tx.guards.clear(scope?)`
+
+Clear guards. Omit scope to clear all.
+
+```typescript
+await tx.guards.clear()               // clear all
+await tx.guards.clear('global')       // clear global only
+await tx.guards.clear('parent:tx-abc123')  // clear specific parent scope
+```
+
+### Verify
+
+#### `tx.verify.set(taskId, cmd, schema?)`
+
+Attach a verification command to a task.
+
+```typescript
+await tx.verify.set('tx-abc123', 'bun run test:auth')
+
+// With structured output schema
+await tx.verify.set('tx-abc123', 'bun run test:json', 'verify-schema.json')
+```
+
+#### `tx.verify.show(taskId)`
+
+Show the verification command attached to a task.
+
+```typescript
+const info = await tx.verify.show('tx-abc123')
+// { cmd: 'bun run test:auth', schema: null }
+```
+
+#### `tx.verify.run(taskId, options?)`
+
+Run the verification command. Returns structured result with exit code, stdout, stderr, and timing.
+
+```typescript
+const result = await tx.verify.run('tx-abc123')
+// { taskId: 'tx-abc123', exitCode: 0, passed: true, stdout: '...', stderr: '', durationMs: 1234 }
+
+// With timeout
+const result = await tx.verify.run('tx-abc123', { timeout: 60 })
+```
+
+#### `tx.verify.clear(taskId)`
+
+Remove the verification command from a task.
+
+```typescript
+await tx.verify.clear('tx-abc123')
+```
+
+### Reflect
+
+#### `tx.reflect.run(options?)`
+
+Run a session retrospective. Returns structured metrics, signals, and optionally LLM analysis.
+
+```typescript
+// Data tier (no LLM, instant)
+const result = await tx.reflect.run({ sessions: 5 })
+console.log(result.throughput)    // { created: 20, completed: 8, net: 12, completionRate: 0.4 }
+console.log(result.signals)       // [{ type: 'HIGH_PROLIFERATION', ... }]
+console.log(result.stuckTasks)    // [{ id: 'tx-abc123', title: '...', attempts: 4 }]
+
+// With LLM analysis (requires ANTHROPIC_API_KEY)
+const analyzed = await tx.reflect.run({ sessions: 5, analyze: true })
+console.log(analyzed.analysis)    // "Proliferation driven by..."
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sessions` | `number` | `10` | Number of recent sessions to analyze |
+| `hours` | `number` | - | Time window in hours |
+| `analyze` | `boolean` | `false` | Enable LLM analysis |
+
+**Returns `SerializedReflectResult`:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `object` | Session counts (total, completed, failed, timeout, avgDurationMinutes) |
+| `throughput` | `object` | Task throughput (created, completed, net, completionRate) |
+| `proliferation` | `object` | Proliferation metrics (avgCreatedPerSession, maxCreatedPerSession, maxDepth, orphanChains) |
+| `stuckTasks` | `array` | Tasks with 3+ failed attempts |
+| `signals` | `array` | Machine-readable signals (type, message, severity) |
+| `analysis` | `string?` | LLM analysis (when `analyze: true`) |
+
 ## Error Handling
 
 The SDK uses `TxError` for all errors, with typed error codes:
@@ -897,3 +1035,7 @@ agentLoop()
 - [tx context](/docs/primitives/context) - Contextual learning retrieval
 - [tx send / tx inbox](/docs/primitives/inbox) - Agent-to-agent messaging
 - [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents
+- [tx guard](/docs/primitives/guard) - Task creation limits (bounded autonomy)
+- [tx verify](/docs/primitives/verify) - Machine-checkable done criteria
+- [tx label](/docs/primitives/label) - Ready queue scoping by phase
+- [tx reflect](/docs/primitives/reflect) - Session retrospective and signals

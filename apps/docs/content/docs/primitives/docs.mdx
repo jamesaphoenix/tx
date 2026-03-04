@@ -109,37 +109,41 @@ tx doc lint-ears .tx/docs/prd/auth-system.yml
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { DocService } from '@jamesaphoenix/tx-core'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// List all docs
+const docs = await tx.docs.list()
+
+// List PRDs only
+const prds = await tx.docs.list({ kind: 'prd' })
+
+// Get a doc by name
+const doc = await tx.docs.get('auth-system')
 
 // Create a doc
-const doc = yield* svc.create({
+const created = await tx.docs.create({
   kind: 'prd',
   name: 'auth-system',
   title: 'Authentication System',
   yamlContent: 'kind: prd\ntitle: Authentication System\n...',
 })
 
-// Get a doc
-const doc = yield* svc.get('auth-system')
-
 // Update YAML content
-const updated = yield* svc.update('auth-system', newYamlContent)
+const updated = await tx.docs.update('auth-system', newYamlContent)
 
-// Lock a doc
-const locked = yield* svc.lock('auth-system')
+// Lock a doc (makes it immutable)
+const locked = await tx.docs.lock('auth-system')
 
-// List docs with filters
-const prds = yield* svc.list({ kind: 'prd' })
+// Link two docs
+const link = await tx.docs.link('overview', 'auth-system')
 
 // Render to markdown
-const rendered = yield* svc.render('auth-system')
-
-// Link docs
-const link = yield* svc.linkDocs('overview', 'auth-system')
+const rendered = await tx.docs.render('auth-system')
 
 // Get the doc graph
-const graph = yield* svc.getDocGraph()
+const graph = await tx.docs.graph()
 ```
 
 </Tab>
@@ -154,13 +158,25 @@ const graph = yield* svc.getDocGraph()
 | `kind` | `string` | No | Filter by kind (overview, prd, design) |
 | `status` | `string` | No | Filter by status (changing, locked) |
 
-**Tool name:** `tx_doc_show`
+**Tool name:** `tx_doc_get`
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
 | `name` | `string` | Yes | Doc name |
+| `version` | `number` | No | Specific version to retrieve |
 
-**Tool name:** `tx_doc_add`
+**Example request:**
+
+```json
+{
+  "name": "tx_doc_get",
+  "arguments": {
+    "name": "auth-system"
+  }
+}
+```
+
+**Tool name:** `tx_doc_create`
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
@@ -182,6 +198,19 @@ const graph = yield* svc.getDocGraph()
 | `fromName` | `string` | Yes | Source doc name |
 | `toName` | `string` | Yes | Target doc name |
 | `linkType` | `string` | No | Link type (auto-inferred from kinds) |
+
+**Tool name:** `tx_doc_update`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Doc name to update |
+| `yamlContent` | `string` | Yes | New YAML content |
+
+**Tool name:** `tx_doc_render`
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | No | Doc name to render (omit for all) |
 
 </Tab>
 <Tab value="REST API">

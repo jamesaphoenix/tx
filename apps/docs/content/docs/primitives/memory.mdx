@@ -125,11 +125,11 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
 // Register a directory
-const source = await tx.memorySourceAdd('/Users/me/notes')
+const source = await tx.memory.sourceAdd('/Users/me/notes')
 // Returns: { id, rootDir, label, createdAt }
 
 // Register with a label
-const docs = await tx.memorySourceAdd('./docs', 'Project Docs')
+const docs = await tx.memory.sourceAdd('./docs', 'Project Docs')
 console.log(`Registered: ${docs.rootDir} (${docs.label})`)
 ```
 
@@ -214,7 +214,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-await tx.memorySourceRemove('/Users/me/old-notes')
+await tx.memory.sourceRemove('/Users/me/old-notes')
 ```
 
 </Tab>
@@ -295,7 +295,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-const sources = await tx.memorySourceList()
+const sources = await tx.memory.sourceList()
 // Returns: Array<{ id, rootDir, label, createdAt }>
 
 for (const src of sources) {
@@ -382,7 +382,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-const doc = await tx.memoryDocumentCreate({
+const doc = await tx.memory.add({
   title: 'Auth Architecture',
   content: '## Overview\nJWT-based authentication with refresh tokens.',
   tags: ['architecture', 'auth'],
@@ -483,7 +483,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-const doc = await tx.memoryDocumentGet('mem-a1b2c3d4e5f6')
+const doc = await tx.memory.show('mem-a1b2c3d4e5f6')
 // Returns: { id, filePath, rootDir, title, content, tags, frontmatter, ... }
 
 console.log(doc.title)
@@ -570,10 +570,10 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
 // List all documents
-const docs = await tx.memoryDocumentList()
+const docs = await tx.memory.list()
 
 // Filter by source and tags
-const filtered = await tx.memoryDocumentList({
+const filtered = await tx.memory.list({
   source: '/Users/me/notes',
   tags: ['architecture'],
 })
@@ -694,10 +694,10 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
 // Basic keyword search
-const results = await tx.memorySearch({ query: 'authentication flow' })
+const results = await tx.memory.search({ query: 'authentication flow' })
 
 // Combined: semantic + graph expansion with filters
-const expanded = await tx.memorySearch({
+const expanded = await tx.memory.search({
   query: 'error handling patterns',
   semantic: true,
   expand: true,
@@ -825,16 +825,16 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
 // Full re-index
-const result = await tx.memoryIndex()
+const result = await tx.memory.index()
 // Returns: { indexed, skipped, removed }
 
 console.log(`Indexed: ${result.indexed}, Skipped: ${result.skipped}`)
 
 // Incremental index (only changed files)
-const incremental = await tx.memoryIndex({ incremental: true })
+const incremental = await tx.memory.index({ incremental: true })
 
 // Check indexing status
-const status = await tx.memoryIndexStatus()
+const status = await tx.memory.indexStatus()
 // Returns: { totalFiles, indexed, stale, embedded, links, sources }
 ```
 
@@ -928,7 +928,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-await tx.memoryTagAdd('mem-a1b2c3d4e5f6', ['backend', 'api', 'v2'])
+await tx.memory.tag('mem-a1b2c3d4e5f6', ['backend', 'api', 'v2'])
 ```
 
 </Tab>
@@ -1005,7 +1005,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-await tx.memoryTagRemove('mem-a1b2c3d4e5f6', ['wip', 'experimental'])
+await tx.memory.untag('mem-a1b2c3d4e5f6', ['wip', 'experimental'])
 ```
 
 </Tab>
@@ -1085,8 +1085,8 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-await tx.memoryPropertySet('mem-a1b2c3d4e5f6', 'status', 'reviewed')
-await tx.memoryPropertySet('mem-a1b2c3d4e5f6', 'owner', 'team-backend')
+await tx.memory.set('mem-a1b2c3d4e5f6', 'status', 'reviewed')
+await tx.memory.set('mem-a1b2c3d4e5f6', 'owner', 'team-backend')
 ```
 
 </Tab>
@@ -1165,7 +1165,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-await tx.memoryPropertyRemove('mem-a1b2c3d4e5f6', 'status')
+await tx.memory.unset('mem-a1b2c3d4e5f6', 'status')
 ```
 
 </Tab>
@@ -1243,7 +1243,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-const props = await tx.memoryProperties('mem-a1b2c3d4e5f6')
+const props = await tx.memory.props('mem-a1b2c3d4e5f6')
 // Returns: Record<string, string>
 
 for (const [key, value] of Object.entries(props)) {
@@ -1316,10 +1316,10 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-await tx.memoryRelate('mem-a1b2c3d4e5f6', 'mem-f6e5d4c3b2a1')
+await tx.memory.relate('mem-a1b2c3d4e5f6', 'mem-f6e5d4c3b2a1')
 
 // Or relate by filename
-await tx.memoryRelate('mem-a1b2c3d4e5f6', 'login-flow.md')
+await tx.memory.relate('mem-a1b2c3d4e5f6', 'login-flow.md')
 ```
 
 </Tab>
@@ -1405,7 +1405,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-const links = await tx.memoryLinks('mem-a1b2c3d4e5f6')
+const links = await tx.memory.links('mem-a1b2c3d4e5f6')
 // Returns: Array<{ id, sourceDocId, targetDocId, targetRef, linkType, createdAt }>
 
 for (const link of links) {
@@ -1484,7 +1484,7 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-const backlinks = await tx.memoryBacklinks('mem-a1b2c3d4e5f6')
+const backlinks = await tx.memory.backlinks('mem-a1b2c3d4e5f6')
 // Returns: Array<{ id, sourceDocId, targetDocId, targetRef, linkType, createdAt }>
 
 for (const link of backlinks) {
@@ -1557,10 +1557,10 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-await tx.memoryLinkCreate('mem-a1b2c3d4e5f6', 'mem-f6e5d4c3b2a1')
+await tx.memory.link('mem-a1b2c3d4e5f6', 'mem-f6e5d4c3b2a1')
 
 // Or link by filename
-await tx.memoryLinkCreate('mem-a1b2c3d4e5f6', 'deployment-guide.md')
+await tx.memory.link('mem-a1b2c3d4e5f6', 'deployment-guide.md')
 ```
 
 </Tab>

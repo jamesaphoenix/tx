@@ -76,6 +76,19 @@ await tx.guards.clear()
 
 **Tool name:** `tx_guard_set`
 
+```json
+{
+  "name": "tx_guard_set",
+  "arguments": {
+    "scope": "global",
+    "maxPending": 50,
+    "maxChildren": 10,
+    "maxDepth": 4,
+    "enforce": true
+  }
+}
+```
+
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
 | `scope` | `string` | No | Guard scope: 'global' or 'parent:\<task-id\>' |
@@ -85,6 +98,15 @@ await tx.guards.clear()
 | `enforce` | `boolean` | No | true = hard block, false = advisory |
 
 **Other tools:** `tx_guard_show`, `tx_guard_clear`, `tx_guard_check`
+
+```json
+{
+  "name": "tx_guard_check",
+  "arguments": {
+    "parentId": "tx-abc123"
+  }
+}
+```
 
 </Tab>
 
@@ -101,12 +123,12 @@ DELETE /api/guards?scope=global
 
 ```bash
 # Set guard limits
-curl -X POST http://localhost:3001/api/guards \
+curl -X POST http://localhost:3456/api/guards \
   -H 'Content-Type: application/json' \
   -d '{"maxPending": 50, "maxChildren": 10, "enforce": true}'
 
 # Check if creation allowed
-curl http://localhost:3001/api/guards/check
+curl http://localhost:3456/api/guards/check
 ```
 
 </Tab>
@@ -163,3 +185,4 @@ done
 - [`tx reflect`](/docs/primitives/reflect) — Analyze session metrics to tune guard limits
 - [`tx ready`](/docs/primitives/ready) — Get next workable task
 - [`tx verify`](/docs/primitives/verify) — Attach machine-checkable done criteria
+- [`tx label`](/docs/primitives/label) — Scope ready queue by phase

@@ -66,27 +66,18 @@ Exported 42 operations to .tx/tasks.jsonl
 </Tab>
 <Tab value="TypeScript SDK">
 
-Sync operations are available through the Effect-based core API:
-
 ```typescript
-import { createTx, SyncService } from '@jamesaphoenix/tx'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = createTx()
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// Export
-await tx.run(
-  Effect.gen(function* () {
-    const sync = yield* SyncService
-    const result = yield* sync.exportToJsonl()
-    return result
-  })
-)
+// Export to default path (.tx/tasks.jsonl)
+const result = await tx.sync.export()
+console.log(`Exported ${result.opCount} operations to ${result.path}`)
 
-await tx.close()
+// Export to custom path
+const custom = await tx.sync.export('./backup/tasks.jsonl')
 ```
-
-For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
 <Tab value="MCP">
@@ -176,27 +167,18 @@ Import uses **timestamp-based merge**:
 </Tab>
 <Tab value="TypeScript SDK">
 
-Sync operations are available through the Effect-based core API:
-
 ```typescript
-import { createTx, SyncService } from '@jamesaphoenix/tx'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = createTx()
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// Import
-await tx.run(
-  Effect.gen(function* () {
-    const sync = yield* SyncService
-    const result = yield* sync.importFromJsonl()
-    return result
-  })
-)
+// Import from default path (.tx/tasks.jsonl)
+const result = await tx.sync.import()
+console.log(`Imported: ${result.imported}, Skipped: ${result.skipped}`)
 
-await tx.close()
+// Import from custom path
+const custom = await tx.sync.import('./backup/tasks.jsonl')
 ```
-
-For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
 <Tab value="MCP">
@@ -284,27 +266,18 @@ Sync status:
 </Tab>
 <Tab value="TypeScript SDK">
 
-Sync operations are available through the Effect-based core API:
-
 ```typescript
-import { createTx, SyncService } from '@jamesaphoenix/tx'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = createTx()
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
 // Get sync status
-await tx.run(
-  Effect.gen(function* () {
-    const sync = yield* SyncService
-    const status = yield* sync.status()
-    return status
-  })
-)
-
-await tx.close()
+const status = await tx.sync.status()
+console.log(`DB tasks: ${status.dbTaskCount}`)
+console.log(`JSONL ops: ${status.jsonlOpCount}`)
+console.log(`Dirty: ${status.isDirty}`)
+console.log(`Auto-sync: ${status.autoSyncEnabled}`)
 ```
-
-For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
 <Tab value="MCP">
@@ -389,33 +362,29 @@ When auto-sync is enabled, every task mutation automatically exports to JSONL.
 </Tab>
 <Tab value="TypeScript SDK">
 
-Sync operations are available through the Effect-based core API:
+Auto-sync is typically configured through the CLI. The current auto-sync state is available via the sync status:
 
 ```typescript
-import { createTx, AutoSyncService } from '@jamesaphoenix/tx'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = createTx()
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// Enable auto-sync
-await tx.run(
-  Effect.gen(function* () {
-    const autoSync = yield* AutoSyncService
-    yield* autoSync.enable()
-  })
-)
-
-await tx.close()
+// Check auto-sync state via status
+const status = await tx.sync.status()
+console.log(`Auto-sync enabled: ${status.autoSyncEnabled}`)
 ```
-
-For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
 <Tab value="MCP">
 
-Auto-sync is typically configured through the CLI. Use `tx sync auto --enable` or `tx sync auto --disable` to toggle.
+Auto-sync is typically configured through the CLI. The current auto-sync state is included in the `tx_sync_status` tool response:
 
-The current auto-sync state is included in the `tx_sync_status` tool response under the `autoSyncEnabled` field.
+```json
+{
+  "name": "tx_sync_status",
+  "arguments": {}
+}
+```
 
 </Tab>
 <Tab value="REST API">
@@ -469,27 +438,18 @@ Compacted .tx/tasks.jsonl:
 </Tab>
 <Tab value="TypeScript SDK">
 
-Sync operations are available through the Effect-based core API:
-
 ```typescript
-import { createTx, SyncService } from '@jamesaphoenix/tx'
-import { Effect } from 'effect'
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = createTx()
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// Compact
-await tx.run(
-  Effect.gen(function* () {
-    const sync = yield* SyncService
-    const result = yield* sync.compact()
-    return result
-  })
-)
+// Compact JSONL file
+const result = await tx.sync.compact()
+console.log(`Before: ${result.before}, After: ${result.after}`)
 
-await tx.close()
+// Compact a custom path
+const custom = await tx.sync.compact('./backup/tasks.jsonl')
 ```
-
-For most use cases, the CLI commands are recommended for sync operations.
 
 </Tab>
 <Tab value="MCP">

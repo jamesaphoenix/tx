@@ -228,101 +228,29 @@ export default [
       // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
       'tx/no-zod': 'warn',
 
-      // tx plugin rules - enforce interface coverage across CLI, MCP, API, SDK
-      'tx/require-interface-coverage': ['warn', {
-        services: {
-          tasks: {
-            cli: 'apps/cli/src/commands/task.ts',
-            mcp: 'apps/mcp-server/src/tools/task.ts',
-            api: 'apps/api-server/src/routes/tasks.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          learnings: {
-            cli: 'apps/cli/src/commands/learning.ts',
-            mcp: 'apps/mcp-server/src/tools/learning.ts',
-            api: 'apps/api-server/src/routes/learnings.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          memory: {
-            cli: 'apps/cli/src/commands/memory.ts',
-            mcp: 'apps/mcp-server/src/tools/memory.ts',
-            api: 'apps/api-server/src/routes/memory.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          messages: {
-            cli: 'apps/cli/src/commands/outbox.ts',
-            mcp: 'apps/mcp-server/src/tools/message.ts',
-            api: 'apps/api-server/src/routes/messages.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          claims: {
-            cli: 'apps/cli/src/commands/claim.ts',
-            mcp: 'apps/mcp-server/src/tools/claim.ts',
-            api: 'apps/api-server/src/routes/tasks.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          sync: {
-            cli: 'apps/cli/src/commands/sync.ts',
-            mcp: 'apps/mcp-server/src/tools/sync.ts',
-            api: 'apps/api-server/src/routes/sync.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          docs: {
-            cli: 'apps/cli/src/commands/doc.ts',
-            mcp: 'apps/mcp-server/src/tools/doc.ts',
-            api: 'apps/api-server/src/routes/docs.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          pins: {
-            cli: 'apps/cli/src/commands/pin.ts',
-            mcp: 'apps/mcp-server/src/tools/pin.ts',
-            api: 'apps/api-server/src/routes/pins.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          invariants: {
-            cli: 'apps/cli/src/commands/invariant.ts',
-            mcp: 'apps/mcp-server/src/tools/invariant.ts',
-            api: 'apps/api-server/src/routes/invariants.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          runs: {
-            cli: 'apps/cli/src/commands/trace.ts',
-            mcp: 'apps/mcp-server/src/tools/run.ts',
-            api: 'apps/api-server/src/routes/runs.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          cycles: {
-            cli: 'apps/cli/src/commands/cycle.ts',
-            mcp: 'apps/mcp-server/src/tools/cycle.ts',
-            api: 'apps/api-server/src/routes/cycles.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          stats: {
-            cli: 'apps/cli/src/commands/stats.ts',
-            mcp: 'apps/mcp-server/src/tools/task.ts',
-            api: 'apps/api-server/src/routes/health.ts',
-            sdk: 'apps/agent-sdk/src/client.ts',
-            required: ['cli', 'mcp', 'api', 'sdk']
-          },
-          // Intentionally CLI-only (no MCP/API/SDK required)
-          bulk: { cli: 'apps/cli/src/commands/bulk.ts', required: [] },
-          validate: { cli: 'apps/cli/src/commands/validate.ts', required: [] },
-          doctor: { cli: 'apps/cli/src/commands/doctor.ts', required: [] },
-          daemon: { cli: 'apps/cli/src/commands/daemon.ts', required: [] },
-          trace: { cli: 'apps/cli/src/commands/trace.ts', required: [] },
-          migrate: { cli: 'apps/cli/src/commands/migrate.ts', required: [] }
-        }
+      // tx plugin rules - enforce primitive implementation coverage (reads primitives-registry.json)
+      'tx/require-primitive-implementations': ['error', {
+        registryPath: 'primitives-registry.json',
+        docsDir: 'apps/docs/content/docs/primitives'
+      }],
+
+      // tx plugin rules - enforce primitive docs quality (all 4 tabs, no placeholders, correct SDK patterns)
+      'tx/require-primitive-docs': ['error', {
+        docsDir: 'apps/docs/content/docs/primitives',
+        requiredTabs: ['CLI', 'TypeScript SDK', 'MCP', 'REST API'],
+        bannedPatterns: [
+          'planned for future release',
+          'planned for a future release',
+          'not yet implemented',
+          'not yet available',
+          'coming soon',
+          'not yet exposed',
+          'currently CLI-only',
+          'currently available via CLI only',
+          'localhost:3001'
+        ],
+        bannedImports: ['@jamesaphoenix/tx-core'],
+        bannedFunctions: ['createTx']
       }]
     }
   },

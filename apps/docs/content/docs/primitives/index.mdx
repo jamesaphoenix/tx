@@ -19,6 +19,7 @@ tx is about **primitives, not frameworks**. We don't dictate how you orchestrate
 │                                                     │
 │   tx ready     tx done      tx context    tx learn  │
 │   tx claim     tx block     tx sync       tx trace  │
+│   tx guard     tx verify    tx label      tx reflect│
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
@@ -114,6 +115,15 @@ Best for: non-TypeScript agents, distributed systems, web dashboards.
 | [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation and EARS linting (`tx doc lint-ears`) | CLI, SDK, MCP, API | Available |
 | [`tx invariant *`](/docs/primitives/invariants) | Machine-checkable system rules with enforcement tracking | CLI, SDK, MCP, API | Available |
 | [`tx trace *`](/docs/primitives/traces) | Execution tracing and run observability | CLI, SDK, MCP, API | Available |
+
+### Bounded Autonomy
+
+| Primitive | Purpose | Interfaces | Status |
+|-----------|---------|------------|--------|
+| [`tx guard`](/docs/primitives/guard) | Set task creation limits to prevent unbounded proliferation | CLI, SDK, MCP, API | Available |
+| [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria to tasks | CLI, SDK, MCP, API | Available |
+| [`tx label`](/docs/primitives/label) | Organize tasks with labels for ready queue scoping | CLI, SDK, MCP, API | Available |
+| [`tx reflect`](/docs/primitives/reflect) | Session retrospective with structured signals | CLI, SDK, MCP, API | Available |
 
 ## Example Orchestration Patterns
 

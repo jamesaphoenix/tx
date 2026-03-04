@@ -34,7 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </Script>
       </head>
       <body className="flex min-h-screen flex-col">
-        <Banner id="tx-agent-kit-launch" variant="rainbow">
+        <Banner id="tx-agent-kit-launch" variant="rainbow" className="hidden sm:flex">
           <span className="font-medium">
             tx-agent-kit is now open source
             <span className="mx-2 opacity-50">|</span>

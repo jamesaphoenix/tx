@@ -258,6 +258,12 @@ Once configured, your AI assistant has access to these tools:
 | `tx_pin_set` | Set a persistent pin |
 | `tx_pin_get` | Get a pin by ID |
 | `tx_pin_list` | List all pins |
+| `tx_guard_set` | Set task creation limits |
+| `tx_guard_show` | Show current guards |
+| `tx_guard_check` | Check if creation would pass limits |
+| `tx_verify_set` | Attach verification command to task |
+| `tx_verify_run` | Run verification command |
+| `tx_reflect` | Session retrospective with signals |
 
 Example prompt: *"Use tx_ready to find the highest priority task, then work on it and mark it done with tx_done."*
 
@@ -266,15 +272,15 @@ Example prompt: *"Use tx_ready to find the highest priority task, then work on i
 
 ```bash
 # Create a task
-curl -X POST http://localhost:3456/tasks \
+curl -X POST http://localhost:3456/api/tasks \
   -H "Content-Type: application/json" \
   -d '{"title": "Implement auth"}'
 
 # List ready tasks
-curl http://localhost:3456/tasks/ready?limit=5
+curl http://localhost:3456/api/tasks/ready?limit=5
 
 # Complete a task
-curl -X POST http://localhost:3456/tasks/tx-abc123/done
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
 ```
 
 </Tab>
@@ -405,6 +411,31 @@ done
 echo "All tasks complete!"
 ```
 
+### With Bounded Autonomy
+
+Add guards, verification, and phase scoping for production loops:
+
+```bash
+#!/bin/bash
+# Set up guardrails
+tx guard set --max-pending 30 --max-depth 3 --enforce
+
+# Phase 1: Discovery (scoped by label)
+while task=$(tx ready --label "phase:discovery" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  claude "Investigate $task. When done: tx done $task"
+done
+
+# Phase 2: Implementation (with verification gates)
+while task=$(tx ready --label "phase:implement" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  claude "Implement $task. Verify with: tx verify run $task && tx done $task"
+done
+
+# Check session health
+tx reflect --json | jq '.signals'
+```
+
 ## Store and Retrieve Learnings
 
 As you work, capture knowledge that should persist:
@@ -509,14 +540,19 @@ your-project/
 You now have tx running. Keep moving in this order so each step builds on the last one:
 
 1. **[Primitives](/docs/primitives)** -- learn the core building blocks (`ready`, `done`, `block`, `context`, `sync`).
-2. **[Headful Experience](/docs/headful)** -- apply the same primitives visually with dashboard workflows.
-3. **[Watchdog Runbook](/docs/watchdog-runbook)** -- final, advanced step for detached supervision and recovery.
+2. **[Bounded Autonomy](/docs/primitives/guard)** -- prevent runaway agents with `guard`, `verify`, `label`, and `reflect`.
+3. **[Headful Experience](/docs/headful)** -- apply the same primitives visually with dashboard workflows.
+4. **[Watchdog Runbook](/docs/watchdog-runbook)** -- final, advanced step for detached supervision and recovery.
 
 Interface-specific deep dives:
 
 - **[Agent SDK](/docs/agent-sdk)** -- build your own TypeScript agents.
 - **[tx ready](/docs/primitives/ready)** -- readiness detection details.
 - **[tx context](/docs/primitives/context)** -- contextual learning retrieval.
+- **[tx guard](/docs/primitives/guard)** -- task creation limits.
+- **[tx verify](/docs/primitives/verify)** -- machine-checkable done criteria.
+- **[tx label](/docs/primitives/label)** -- ready queue scoping by phase.
+- **[tx reflect](/docs/primitives/reflect)** -- session retrospective and signals.
 - **[tx sync](/docs/primitives/sync)** -- git synchronization behavior.
 
 ## Quick Reference
@@ -540,6 +576,16 @@ tx memory search <query>    # Search documents
 tx learning:add <content>   # Store task learning
 tx learning:search <query>  # Find learnings
 tx context <task-id>        # Get relevant context
+
+# Bounded Autonomy
+tx guard set --max-pending 30       # Set task creation limits
+tx verify set <id> "bun test"       # Attach verification command
+tx verify run <id>                  # Run verification
+tx label add "phase:discovery"      # Create a label
+tx label assign <id> "phase:discovery"  # Assign label to task
+tx ready --label "phase:discovery"  # Scope ready queue by label
+tx reflect                          # Session retrospective
+tx reflect --analyze                # With LLM analysis
 
 # Sync
 tx sync export              # SQLite → JSONL

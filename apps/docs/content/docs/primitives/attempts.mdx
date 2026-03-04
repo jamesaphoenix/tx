@@ -49,59 +49,40 @@ tx try tx-abc123 "Refactored with Effect-TS" --succeeded --json
 </Tab>
 <Tab value="TypeScript SDK">
 
-```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+Attempt tracking is available through the CLI. Use shell execution from your TypeScript code:
 
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+```typescript
+import { execSync } from 'child_process'
 
 // Record a failed attempt
-// Note: The SDK uses the core AttemptService directly in direct mode.
-// HTTP mode attempt endpoints are planned for a future release.
+execSync('tx try tx-abc123 "Used regex parsing" --failed "Too many edge cases"')
 
-// Direct mode example (requires @jamesaphoenix/tx-core):
-import { AttemptService } from '@jamesaphoenix/tx-core'
-import { Effect } from 'effect'
+// Record a successful attempt
+execSync('tx try tx-abc123 "Switched to AST-based parser" --succeeded')
 
-const program = Effect.gen(function* () {
-  const attemptSvc = yield* AttemptService
-
-  // Record a failed attempt
-  const failed = yield* attemptSvc.create(
-    'tx-abc123',
-    'Used regex parsing',
-    'failed',
-    'Too many edge cases'
-  )
-
-  // Record a successful attempt
-  const succeeded = yield* attemptSvc.create(
-    'tx-abc123',
-    'Switched to AST-based parser',
-    'succeeded'
-  )
-
-  return { failed, succeeded }
-})
+// List attempts as JSON
+const output = execSync('tx attempts tx-abc123 --json', { encoding: 'utf-8' })
+const attempts = JSON.parse(output)
 ```
 
 </Tab>
 <Tab value="MCP">
 
-Attempt MCP tools are planned for a future release. Currently, use the CLI or TypeScript SDK to record attempts.
+Attempt tracking is available via the CLI. MCP-connected agents can invoke the CLI directly:
 
 ```bash
-# Use the CLI from within an MCP-connected agent
-tx try tx-abc123 "Approach description" --failed "reason"
+tx try tx-abc123 "Used regex parsing" --failed "Too many edge cases"
+tx try tx-abc123 "Switched to AST-based parser" --succeeded
 ```
 
 </Tab>
 <Tab value="REST API">
 
-REST API endpoints for attempts are planned for a future release. Currently, use the CLI or core service layer directly.
+Attempt tracking is available via the CLI:
 
 ```bash
-# Use the CLI
 tx try tx-abc123 "Used regex parsing" --failed "Too many edge cases"
+tx try tx-abc123 "Switched to AST-based parser" --succeeded
 ```
 
 </Tab>
@@ -149,33 +130,25 @@ tx attempts tx-abc123 --json
 </Tab>
 <Tab value="TypeScript SDK">
 
+Attempt listing is available through the CLI. Use shell execution from your TypeScript code:
+
 ```typescript
-import { AttemptService } from '@jamesaphoenix/tx-core'
-import { Effect } from 'effect'
+import { execSync } from 'child_process'
 
-const program = Effect.gen(function* () {
-  const attemptSvc = yield* AttemptService
+// List all attempts for a task
+const output = execSync('tx attempts tx-abc123 --json', { encoding: 'utf-8' })
+const attempts = JSON.parse(output)
 
-  // List all attempts for a task
-  const attempts = yield* attemptSvc.listForTask('tx-abc123')
-  // Returns: readonly Attempt[] (sorted by createdAt DESC)
-
-  // Get count of failed attempts
-  const failedCount = yield* attemptSvc.getFailedCount('tx-abc123')
-
-  // Get failed counts for multiple tasks at once
-  const failedCounts = yield* attemptSvc.getFailedCountsForTasks([
-    'tx-abc123',
-    'tx-def456'
-  ])
-  // Returns: Map<string, number>
-})
+for (const attempt of attempts) {
+  console.log(`${attempt.outcome}: ${attempt.approach}`)
+  if (attempt.reason) console.log(`  Reason: ${attempt.reason}`)
+}
 ```
 
 </Tab>
 <Tab value="MCP">
 
-Attempt MCP tools are planned for a future release. Use the CLI to list attempts:
+Attempt listing is available via the CLI. MCP-connected agents can invoke the CLI directly:
 
 ```bash
 tx attempts tx-abc123 --json
@@ -184,7 +157,7 @@ tx attempts tx-abc123 --json
 </Tab>
 <Tab value="REST API">
 
-REST API endpoints for attempts are planned for a future release. Use the CLI:
+Attempt listing is available via the CLI:
 
 ```bash
 tx attempts tx-abc123 --json

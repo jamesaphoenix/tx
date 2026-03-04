@@ -61,9 +61,10 @@ const discovery = await tx.tasks.ready({
 const tasks = await tx.tasks.ready({
   excludeLabels: ['needs-review'],
 })
+
 ```
 
-> **Note:** Label management (add, assign, unassign, list) is currently CLI-only. The SDK supports label-based filtering via `tx.tasks.ready()`.
+The SDK supports label-based filtering on `ready()`. Label CRUD (add, assign, unassign) is available via the CLI.
 
 </Tab>
 
@@ -71,22 +72,41 @@ const tasks = await tx.tasks.ready({
 
 **Tool name:** `tx_ready`
 
+```json
+{
+  "name": "tx_ready",
+  "arguments": {
+    "labels": "phase:discovery",
+    "excludeLabels": "needs-review",
+    "limit": 5
+  }
+}
+```
+
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
 | `limit` | `number` | No | Maximum tasks to return |
 | `labels` | `string` | No | Comma-separated label names to include (e.g. `'phase:implement,sprint:w10'`) |
 | `excludeLabels` | `string` | No | Comma-separated label names to exclude (e.g. `'needs-review'`) |
 
+**Also available:** `tx_list` supports the same `labels` and `excludeLabels` arguments for filtering.
+
 </Tab>
 
 <Tab value="REST API">
 
-```
-GET /api/tasks/ready?labels=phase:discovery&limit=5
-GET /api/tasks/ready?excludeLabels=needs-review
+```bash
+# Get ready tasks filtered by label
+curl "http://localhost:3456/api/tasks/ready?labels=phase:discovery&limit=5"
+
+# Exclude labels from ready queue
+curl "http://localhost:3456/api/tasks/ready?excludeLabels=needs-review"
+
+# List tasks filtered by label
+curl "http://localhost:3456/api/tasks?labels=phase:implement"
 ```
 
-> **Note:** Label management (add, assign, unassign, list) is currently available via CLI only. The REST API supports label-based filtering on the ready and list endpoints.
+The REST API supports label-based filtering on the ready and list endpoints. Label CRUD (add, assign, unassign) is available via the CLI.
 
 </Tab>
 
@@ -115,4 +135,5 @@ done
 
 - [`tx ready`](/docs/primitives/ready) — Get next workable task (with label filtering)
 - [`tx guard`](/docs/primitives/guard) — Set task creation limits per phase
+- [`tx verify`](/docs/primitives/verify) — Attach machine-checkable done criteria
 - [`tx reflect`](/docs/primitives/reflect) — Analyze session metrics

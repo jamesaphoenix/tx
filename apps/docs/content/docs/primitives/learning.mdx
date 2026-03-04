@@ -367,8 +367,7 @@ await tx.learnings.helpful(42)
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
 | `id` | `number` | Yes | Learning ID |
-| `taskId` | `string` | Yes | Task ID that used this learning |
-| `helpful` | `boolean` | Yes | Whether the learning was helpful |
+| `score` | `number` | No | Helpfulness score between 0 and 1 (default: 1.0) |
 
 **Example request:**
 
@@ -377,8 +376,7 @@ await tx.learnings.helpful(42)
   "name": "tx_learning_helpful",
   "arguments": {
     "id": 42,
-    "taskId": "tx-def456",
-    "helpful": true
+    "score": 1.0
   }
 }
 ```
@@ -400,8 +398,7 @@ POST /api/learnings/:id/helpful
 
 ```json
 {
-  "taskId": "tx-def456",
-  "helpful": true
+  "score": 1.0
 }
 ```
 
@@ -410,7 +407,7 @@ POST /api/learnings/:id/helpful
 ```bash
 curl -X POST http://localhost:3456/api/learnings/42/helpful \
   -H "Content-Type: application/json" \
-  -d '{"taskId": "tx-def456", "helpful": true}'
+  -d '{"score": 1.0}'
 ```
 
 </Tab>
@@ -444,21 +441,14 @@ console.log(learning.content)
 </Tab>
 <Tab value="MCP">
 
-**Tool name:** `tx_learning_get`
-
-**Arguments:**
-
-| Arg | Type | Required | Description |
-|-----|------|----------|-------------|
-| `id` | `number` | Yes | Learning ID |
-
-**Example request:**
+Individual learning retrieval is available via the REST API (`GET /api/learnings/:id`) or CLI (`tx learning:show`). Use `tx_learning_search` via MCP to find specific learnings.
 
 ```json
 {
-  "name": "tx_learning_get",
+  "name": "tx_learning_search",
   "arguments": {
-    "id": 42
+    "query": "",
+    "limit": 1
   }
 }
 ```
@@ -585,15 +575,15 @@ const notes = await tx.fileLearnings.recall('src/auth.ts')
 </Tab>
 <Tab value="MCP">
 
-**Tool name:** `tx_file_learning_list`
+**Tool name:** `tx_recall`
 
 **Arguments:**
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
-| `path` | `string` | No | File path to filter by |
+| `path` | `string` | No | File path to query learnings for |
 
-**Tool name:** `tx_file_learning_add`
+**Tool name:** `tx_learn`
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
@@ -605,7 +595,7 @@ const notes = await tx.fileLearnings.recall('src/auth.ts')
 
 ```json
 {
-  "name": "tx_file_learning_add",
+  "name": "tx_learn",
   "arguments": {
     "filePattern": "src/auth.ts",
     "note": "JWT tokens expire after 1 hour",

@@ -18,7 +18,8 @@ tx handles persistence, dependencies, and memory primitives so you can stay focu
 │  tx primitives                                          │
 │                                                         │
 │   tx ready     tx done      tx context    tx learn      │
-│   tx claim     tx block     tx handoff    tx sync       │
+│   tx claim     tx block     tx guard      tx sync       │
+│   tx verify    tx label     tx reflect    tx handoff    │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -58,6 +59,10 @@ Follow the docs in this order:
 | [`tx checkpoint`](/docs/primitives/checkpoint) | Save progress without completing |
 | [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection |
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge |
+| [`tx guard`](/docs/primitives/guard) | Set task creation limits (bounded autonomy) |
+| [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria |
+| [`tx label`](/docs/primitives/label) | Organize tasks with labels for phase scoping |
+| [`tx reflect`](/docs/primitives/reflect) | Session retrospective with actionable signals |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL |
 
 ## Structured Requirements (EARS)

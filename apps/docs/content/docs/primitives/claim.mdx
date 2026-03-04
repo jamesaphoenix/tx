@@ -59,8 +59,6 @@ const claim = await tx.claims.claim('tx-abc123', 'worker-1', 60)
 console.log(`Claimed until ${claim.leaseExpiresAt}`)
 ```
 
-> **Tip:** For Effect-based access, use `ClaimService` from `@jamesaphoenix/tx-core` directly.
-
 </Tab>
 <Tab value="MCP">
 
@@ -78,12 +76,19 @@ console.log(`Claimed until ${claim.leaseExpiresAt}`)
 </Tab>
 <Tab value="REST API">
 
-> **Note:** Claims are not yet exposed via REST API endpoints. Use the CLI or MCP interface for claim operations.
-
 ```bash
-# Claims REST API is planned but not yet available.
-# Use the CLI instead:
-tx claim tx-abc123 worker-1 --lease 60
+# Claim a task with a 60-minute lease
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/claim \
+  -H "Content-Type: application/json" \
+  -d '{"workerId": "worker-1", "leaseDurationMinutes": 60}'
+
+# Claim with default lease duration
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/claim \
+  -H "Content-Type: application/json" \
+  -d '{"workerId": "worker-1"}'
+
+# Get the active claim for a task
+curl http://localhost:3456/api/tasks/tx-abc123/claim
 ```
 
 </Tab>
@@ -147,10 +152,11 @@ await tx.claims.release('tx-abc123', 'worker-1')
 </Tab>
 <Tab value="REST API">
 
-> **Note:** Claims are not yet exposed via REST API. Use the CLI instead:
-
 ```bash
-tx claim:release tx-abc123 worker-1
+# Release a claim
+curl -X DELETE http://localhost:3456/api/tasks/tx-abc123/claim \
+  -H "Content-Type: application/json" \
+  -d '{"workerId": "worker-1"}'
 ```
 
 </Tab>
@@ -222,10 +228,11 @@ console.log(`Renewals: ${renewed.renewedCount}/10`)
 </Tab>
 <Tab value="REST API">
 
-> **Note:** Claims are not yet exposed via REST API. Use the CLI instead:
-
 ```bash
-tx claim:renew tx-abc123 worker-1
+# Renew a claim's lease
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/claim/renew \
+  -H "Content-Type: application/json" \
+  -d '{"workerId": "worker-1"}'
 ```
 
 </Tab>

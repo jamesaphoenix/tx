@@ -582,7 +582,13 @@ const { expired, acked } = await tx.messages.gc({ ackedOlderThanHours: 24 })
 </Tab>
 <Tab value="MCP">
 
-There is no dedicated MCP tool for garbage collection. Use the REST API or CLI.
+There is no dedicated MCP tool for garbage collection. Use the REST API or CLI:
+
+```json
+{
+  "note": "Use REST API endpoint POST /api/messages/gc or CLI: tx outbox:gc"
+}
+```
 
 </Tab>
 <Tab value="REST API">

@@ -60,20 +60,18 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-// List runs via the REST API
-const { runs, hasMore, nextCursor } = await tx.runs.list({
-  limit: 20,
-  status: 'failed'
-})
+// List runs via the REST API directly
+const res = await fetch('http://localhost:3456/api/runs?limit=20&status=failed')
+const { runs, hasMore, nextCursor } = await res.json()
 
-// Get a specific run with transcript messages
-const { run, messages } = await tx.runs.get('run-abc12345')
+// The SDK exposes heartbeat, stalled, and reap operations
+const stalled = await tx.runs.stalled({ transcriptIdleSeconds: 300 })
 ```
 
 </Tab>
 <Tab value="MCP">
 
-Trace MCP tools are planned for a future release. Use the CLI to inspect traces:
+Run listing is available via CLI. The MCP server exposes heartbeat, stalled, and reap tools (see below).
 
 ```bash
 tx trace list --json
@@ -277,8 +275,9 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
-// Get run details with parsed transcript messages
-const { run, messages } = await tx.runs.get('run-abc12345')
+// Get run details via REST API directly
+const res = await fetch('http://localhost:3456/api/runs/run-abc12345')
+const { run, messages } = await res.json()
 
 // messages includes tool_use, tool_result, text, and thinking entries
 for (const msg of messages) {
@@ -291,7 +290,7 @@ for (const msg of messages) {
 </Tab>
 <Tab value="MCP">
 
-Trace MCP tools are planned for a future release. Use the CLI:
+Run detail inspection is available via CLI. The MCP server exposes heartbeat, stalled, and reap tools.
 
 ```bash
 tx trace show run-abc12345 --full --json
@@ -366,12 +365,9 @@ tx trace transcript run-abc12345 | jq 'select(.type == "assistant")'
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
-
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
-
-// Transcript messages are included in the run detail response
-const { run, messages } = await tx.runs.get('run-abc12345')
+// Transcript messages are included in the run detail REST response
+const res = await fetch('http://localhost:3456/api/runs/run-abc12345')
+const { run, messages } = await res.json()
 ```
 
 </Tab>
@@ -513,12 +509,9 @@ Aggregates errors from three sources:
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
-
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
-
-// List failed runs
-const { runs } = await tx.runs.list({ status: 'failed', limit: 10 })
+// List failed runs via REST API
+const res = await fetch('http://localhost:3456/api/runs?status=failed&limit=10')
+const { runs } = await res.json()
 ```
 
 </Tab>
@@ -550,7 +543,7 @@ The `TracingService` provides programmatic tracing within Effect-TS service code
 Wraps an Effect with a named span that records duration and status to the events table:
 
 ```typescript
-import { TracingService } from '@jamesaphoenix/tx-core'
+import { TracingService } from '@jamesaphoenix/tx'
 import { Effect } from 'effect'
 
 const program = Effect.gen(function* () {
@@ -608,7 +601,7 @@ const program = Effect.gen(function* () {
 When tracing is disabled, `TracingServiceNoop` is used. It passes effects through unchanged with zero overhead:
 
 ```typescript
-import { TracingServiceNoop } from '@jamesaphoenix/tx-core'
+import { TracingServiceNoop } from '@jamesaphoenix/tx'
 
 // Zero-overhead: withSpan returns the effect unchanged
 // recordMetric returns Effect.void

@@ -74,6 +74,17 @@ await tx.verify.clear('tx-abc123')
 
 **Tool name:** `tx_verify_set`
 
+```json
+{
+  "name": "tx_verify_set",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "cmd": "bunx --bun vitest run test/auth.test.ts",
+    "schema": "verify-schema.json"
+  }
+}
+```
+
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
 | `taskId` | `string` | Yes | Task ID to attach verification to |
@@ -81,6 +92,16 @@ await tx.verify.clear('tx-abc123')
 | `schema` | `string` | No | Path to JSON Schema for output validation |
 
 **Other tools:** `tx_verify_show`, `tx_verify_run`, `tx_verify_clear`
+
+```json
+{
+  "name": "tx_verify_run",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "timeout": 300
+  }
+}
+```
 
 </Tab>
 
@@ -97,12 +118,12 @@ DELETE /api/tasks/:id/verify
 
 ```bash
 # Attach verification
-curl -X PUT http://localhost:3001/api/tasks/tx-abc123/verify \
+curl -X PUT http://localhost:3456/api/tasks/tx-abc123/verify \
   -H 'Content-Type: application/json' \
   -d '{"cmd": "bun run test:auth"}'
 
 # Run verification
-curl -X POST http://localhost:3001/api/tasks/tx-abc123/verify/run
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/verify/run
 ```
 
 </Tab>
@@ -170,4 +191,5 @@ done
 
 - [`tx done`](/docs/primitives/done) — Mark task as complete (pair with verify)
 - [`tx guard`](/docs/primitives/guard) — Set task creation limits
+- [`tx label`](/docs/primitives/label) — Scope ready queue by phase
 - [`tx reflect`](/docs/primitives/reflect) — Analyze session metrics

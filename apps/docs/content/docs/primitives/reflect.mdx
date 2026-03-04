@@ -69,6 +69,17 @@ const result = await tx.reflect.run({ sessions: 5 })
 
 **Tool name:** `tx_reflect`
 
+```json
+{
+  "name": "tx_reflect",
+  "arguments": {
+    "sessions": 5,
+    "hours": 2,
+    "analyze": true
+  }
+}
+```
+
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
 | `sessions` | `number` | No | Number of recent sessions (default: 10) |
@@ -86,7 +97,7 @@ GET /api/reflect?sessions=5&hours=2&analyze=true
 **Example:**
 
 ```bash
-curl http://localhost:3001/api/reflect?sessions=5
+curl http://localhost:3456/api/reflect?sessions=5
 ```
 
 </Tab>
@@ -139,4 +150,5 @@ The `--analyze` flag requires `ANTHROPIC_API_KEY` to be set. Without it, only th
 
 - [`tx guard`](/docs/primitives/guard) — Set task creation limits (tune with reflect signals)
 - [`tx verify`](/docs/primitives/verify) — Attach machine-checkable done criteria
+- [`tx label`](/docs/primitives/label) — Scope ready queue by phase
 - [`tx compact`](/docs/primitives/sync) — Archive completed tasks
