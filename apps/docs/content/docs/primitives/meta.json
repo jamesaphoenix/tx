@@ -13,6 +13,11 @@
     "context",
     "learning",
     "pin",
+    "---Bounded Autonomy---",
+    "guard",
+    "verify",
+    "reflect",
+    "label",
     "---Coordination---",
     "sync",
     "inbox",
@@ -22,11 +27,6 @@
     "---Observability---",
     "traces",
     "docs",
-    "invariants",
-    "---Bounded Autonomy---",
-    "guard",
-    "verify",
-    "reflect",
-    "label"
+    "invariants"
   ]
 }
