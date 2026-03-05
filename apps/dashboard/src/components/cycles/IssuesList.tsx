@@ -72,7 +72,7 @@ export function IssuesList({ issues, selectedIds, onSelectionChange, filter, onF
   // Clear selection when issues change
   useEffect(() => {
     onSelectionChange(new Set())
-  }, [issues]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [issues, onSelectionChange])
 
   if (issues.length === 0) {
     return (

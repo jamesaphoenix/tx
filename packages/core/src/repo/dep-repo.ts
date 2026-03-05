@@ -4,6 +4,7 @@ import { DatabaseError, DependencyNotFoundError, UnexpectedRowCountError } from 
 import { rowToDependency } from "../mappers/task.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { TaskId, TaskDependency, DependencyRow } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 // Shared frozen empty array to avoid allocating new arrays for IDs with no dependencies
 const EMPTY_TASK_IDS: readonly TaskId[] = Object.freeze([])
@@ -15,7 +16,7 @@ const chunkBySqlLimit = <T>(values: readonly T[], chunkSize: number = MAX_SQL_VA
   }
   const chunks: T[][] = []
   for (let i = 0; i < values.length; i += chunkSize) {
-    chunks.push(values.slice(i, i + chunkSize) as T[])
+    chunks.push(coerceDbResult<T[]>(values.slice(i, i + chunkSize)))
   }
   return chunks
 }
@@ -67,23 +68,41 @@ export const DependencyRepositoryLive = Layer.effect(
   DependencyRepository,
   Effect.gen(function* () {
     const db = yield* SqliteClient
+    const runImmediateTransaction = <T>(body: () => T): { ok: true; value: T } | { ok: false; error: unknown } => {
+      db.exec("BEGIN IMMEDIATE")
+      try {
+        const value = body()
+        db.exec("COMMIT")
+        return { ok: true, value }
+      } catch (error) {
+        try {
+          db.exec("ROLLBACK")
+        } catch {
+          // no-op
+        }
+        return { ok: false, error }
+      }
+    }
 
     return {
       insert: (blockerId, blockedId) =>
-        Effect.try({
-          try: () => {
-            const result = db.prepare(
-              "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
-            ).run(blockerId, blockedId, new Date().toISOString())
-            if (result.changes !== 1) {
-              throw new UnexpectedRowCountError({
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
+              ).run(blockerId, blockedId, new Date().toISOString()),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes !== 1) {
+            return yield* Effect.fail(new DatabaseError({
+              cause: new UnexpectedRowCountError({
                 operation: "dependency insert",
                 expected: 1,
                 actual: result.changes
               })
-            }
-          },
-          catch: (cause) => new DatabaseError({ cause })
+            }))
+          }
         }),
 
       remove: (blockerId, blockedId) =>
@@ -103,10 +122,10 @@ export const DependencyRepositoryLive = Layer.effect(
       getBlockerIds: (blockedId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<Array<{ blocker_id: string }>>(db.prepare(
               "SELECT blocker_id FROM task_dependencies WHERE blocked_id = ?"
-            ).all(blockedId) as Array<{ blocker_id: string }>
-            return rows.map(r => r.blocker_id as TaskId)
+            ).all(blockedId))
+            return rows.map(r => coerceDbResult<TaskId>(r.blocker_id))
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -114,10 +133,10 @@ export const DependencyRepositoryLive = Layer.effect(
       getBlockingIds: (blockerId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<Array<{ blocked_id: string }>>(db.prepare(
               "SELECT blocked_id FROM task_dependencies WHERE blocker_id = ?"
-            ).all(blockerId) as Array<{ blocked_id: string }>
-            return rows.map(r => r.blocked_id as TaskId)
+            ).all(blockerId))
+            return rows.map(r => coerceDbResult<TaskId>(r.blocked_id))
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -132,16 +151,16 @@ export const DependencyRepositoryLive = Layer.effect(
             const grouped = new Map<string, TaskId[]>()
             for (const chunk of chunkBySqlLimit(blockedIds)) {
               const placeholders = chunk.map(() => "?").join(",")
-              const rows = db.prepare(
+              const rows = coerceDbResult<Array<{ blocked_id: string; blocker_id: string }>>(db.prepare(
                 `SELECT blocked_id, blocker_id FROM task_dependencies WHERE blocked_id IN (${placeholders})`
-              ).all(...chunk) as Array<{ blocked_id: string; blocker_id: string }>
+              ).all(...chunk))
 
               for (const row of rows) {
                 const existing = grouped.get(row.blocked_id)
                 if (existing) {
-                  existing.push(row.blocker_id as TaskId)
+                  existing.push(coerceDbResult<TaskId>(row.blocker_id))
                 } else {
-                  grouped.set(row.blocked_id, [row.blocker_id as TaskId])
+                  grouped.set(row.blocked_id, [coerceDbResult<TaskId>(row.blocker_id)])
                 }
               }
             }
@@ -166,16 +185,16 @@ export const DependencyRepositoryLive = Layer.effect(
             const grouped = new Map<string, TaskId[]>()
             for (const chunk of chunkBySqlLimit(blockerIds)) {
               const placeholders = chunk.map(() => "?").join(",")
-              const rows = db.prepare(
+              const rows = coerceDbResult<Array<{ blocker_id: string; blocked_id: string }>>(db.prepare(
                 `SELECT blocker_id, blocked_id FROM task_dependencies WHERE blocker_id IN (${placeholders})`
-              ).all(...chunk) as Array<{ blocker_id: string; blocked_id: string }>
+              ).all(...chunk))
 
               for (const row of rows) {
                 const existing = grouped.get(row.blocker_id)
                 if (existing) {
-                  existing.push(row.blocked_id as TaskId)
+                  existing.push(coerceDbResult<TaskId>(row.blocked_id))
                 } else {
-                  grouped.set(row.blocker_id, [row.blocked_id as TaskId])
+                  grouped.set(row.blocker_id, [coerceDbResult<TaskId>(row.blocked_id)])
                 }
               }
             }
@@ -203,7 +222,7 @@ export const DependencyRepositoryLive = Layer.effect(
           // depth tracking prevents unbounded recursion on deep chains
           const result = yield* Effect.try({
             try: () =>
-              db.prepare(`
+              coerceDbResult<{ found: number | null; max_depth: number | null } | undefined>(db.prepare(`
                 WITH RECURSIVE reachable(id, depth) AS (
                   -- Base case: direct blockers of fromId (depth 1)
                   SELECT blocker_id, 1 FROM task_dependencies WHERE blocked_id = ?
@@ -218,7 +237,7 @@ export const DependencyRepositoryLive = Layer.effect(
                   MAX(CASE WHEN id = ? THEN 1 ELSE 0 END) AS found,
                   MAX(depth) AS max_depth
                 FROM reachable
-              `).get(fromId, MAX_DEPENDENCY_DEPTH, toId) as { found: number | null; max_depth: number | null } | undefined,
+              `).get(fromId, MAX_DEPENDENCY_DEPTH, toId)),
             catch: (cause) => new DatabaseError({ cause })
           })
 
@@ -237,9 +256,9 @@ export const DependencyRepositoryLive = Layer.effect(
       getAll: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<DependencyRow[]>(db.prepare(
               "SELECT blocker_id, blocked_id, created_at FROM task_dependencies LIMIT ?"
-            ).all(limit ?? DEFAULT_QUERY_LIMIT) as DependencyRow[]
+            ).all(limit ?? DEFAULT_QUERY_LIMIT))
             return rows.map(rowToDependency)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -261,88 +280,77 @@ export const DependencyRepositoryLive = Layer.effect(
 
       insertWithCycleCheck: (blockerId, blockedId) =>
         Effect.gen(function* () {
-          const txResult = yield* Effect.try({
-            try: () => {
-              // BEGIN IMMEDIATE acquires write lock immediately, preventing other writers
-              // from modifying the dependency graph until we commit/rollback
-              db.exec("BEGIN IMMEDIATE")
-              try {
-                // Special case: same ID always indicates a cycle
-                if (blockerId === blockedId) {
-                  db.exec("ROLLBACK")
-                  return { _tag: "wouldCycle", depthLimitHit: false } as const
-                }
+          type CycleCheckTxResult =
+            | { readonly status: "inserted" | "wouldCycle" | "alreadyExists"; readonly depthLimitHit: boolean }
+            | { readonly status: "failed"; readonly depthLimitHit: boolean; readonly error: UnexpectedRowCountError }
 
-                // Check if dependency already exists (idempotent)
-                const existing = db.prepare(
-                  "SELECT 1 FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ? LIMIT 1"
-                ).get(blockerId, blockedId)
+          const txResult = runImmediateTransaction((): CycleCheckTxResult => {
+            if (blockerId === blockedId) {
+              return { status: "wouldCycle", depthLimitHit: false }
+            }
 
-                if (existing != null) {
-                  db.exec("ROLLBACK")
-                  return { _tag: "alreadyExists", depthLimitHit: false } as const
-                }
+            const existing = db.prepare(
+              "SELECT 1 FROM task_dependencies WHERE blocker_id = ? AND blocked_id = ? LIMIT 1"
+            ).get(blockerId, blockedId)
 
-                // Check if adding this dependency would create a cycle
-                // Uses depth-limited recursive CTE to detect if blockedId can already reach blockerId
-                const cycleCheck = db.prepare(`
-                  WITH RECURSIVE reachable(id, depth) AS (
-                    SELECT blocker_id, 1 FROM task_dependencies WHERE blocked_id = ?
-                    UNION
-                    SELECT d.blocker_id, r.depth + 1
-                    FROM task_dependencies d
-                    JOIN reachable r ON d.blocked_id = r.id
-                    WHERE r.depth < ?
-                  )
-                  SELECT
-                    MAX(CASE WHEN id = ? THEN 1 ELSE 0 END) AS found,
-                    MAX(depth) AS max_depth
-                  FROM reachable
-                `).get(blockerId, MAX_DEPENDENCY_DEPTH, blockedId) as { found: number | null; max_depth: number | null } | undefined
+            if (existing != null) {
+              return { status: "alreadyExists", depthLimitHit: false }
+            }
 
-                const depthLimitHit = cycleCheck?.max_depth != null && cycleCheck.max_depth >= MAX_DEPENDENCY_DEPTH
+            const cycleCheck = coerceDbResult<{ found: number | null; max_depth: number | null } | undefined>(db.prepare(`
+              WITH RECURSIVE reachable(id, depth) AS (
+                SELECT blocker_id, 1 FROM task_dependencies WHERE blocked_id = ?
+                UNION
+                SELECT d.blocker_id, r.depth + 1
+                FROM task_dependencies d
+                JOIN reachable r ON d.blocked_id = r.id
+                WHERE r.depth < ?
+              )
+              SELECT
+                MAX(CASE WHEN id = ? THEN 1 ELSE 0 END) AS found,
+                MAX(depth) AS max_depth
+              FROM reachable
+            `).get(blockerId, MAX_DEPENDENCY_DEPTH, blockedId))
 
-                if (cycleCheck?.found === 1) {
-                  db.exec("ROLLBACK")
-                  return { _tag: "wouldCycle", depthLimitHit } as const
-                }
+            const depthLimitHit = cycleCheck?.max_depth != null && cycleCheck.max_depth >= MAX_DEPENDENCY_DEPTH
 
-                // No cycle detected - safe to insert
-                const result = db.prepare(
-                  "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
-                ).run(blockerId, blockedId, new Date().toISOString())
+            if (cycleCheck?.found === 1) {
+              return { status: "wouldCycle", depthLimitHit }
+            }
 
-                if (result.changes !== 1) {
-                  db.exec("ROLLBACK")
-                  throw new UnexpectedRowCountError({
-                    operation: "dependency insert (with cycle check)",
-                    expected: 1,
-                    actual: result.changes
-                  })
-                }
+            const result = db.prepare(
+              "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
+            ).run(blockerId, blockedId, new Date().toISOString())
 
-                db.exec("COMMIT")
-                return { _tag: "inserted", depthLimitHit } as const
-              } catch (e) {
-                // Ensure rollback on any error
-                try {
-                  db.exec("ROLLBACK")
-                } catch {
-                  // Ignore rollback errors (transaction may already be rolled back)
-                }
-                throw e
+            if (result.changes !== 1) {
+              return {
+                status: "failed",
+                depthLimitHit,
+                error: new UnexpectedRowCountError({
+                  operation: "dependency insert (with cycle check)",
+                  expected: 1,
+                  actual: result.changes
+                })
               }
-            },
-            catch: (cause) => new DatabaseError({ cause })
-          })
+            }
 
-          if (txResult.depthLimitHit) {
+            return { status: "inserted", depthLimitHit }
+          })
+          if (!txResult.ok) {
+            return yield* Effect.fail(new DatabaseError({ cause: txResult.error }))
+          }
+
+          if (txResult.value.status === "failed") {
+            return yield* Effect.fail(new DatabaseError({ cause: txResult.value.error }))
+          }
+
+          if (txResult.value.depthLimitHit) {
             yield* Effect.logWarning(
               `Dependency depth limit (${MAX_DEPENDENCY_DEPTH}) reached during cycle check for ${blockerId} → ${blockedId}. Insert proceeded but deeper cycles may exist.`
             )
           }
 
-          return { _tag: txResult._tag } as InsertWithCycleCheckResult
+          return coerceDbResult<InsertWithCycleCheckResult>({ _tag: txResult.value.status })
         })
     }
   })

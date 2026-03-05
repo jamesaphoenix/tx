@@ -5,10 +5,9 @@ import { EdgeService } from "./edge-service.js"
 /**
  * Input for recording which learnings were used in a run.
  */
-export interface LearningUsageFeedback {
+export type LearningUsageFeedback = {
   readonly id: number
-  readonly helpful: boolean
-}
+  readonly helpful: boolean};
 
 /**
  * FeedbackTrackerService tracks which learnings were helpful in agent runs

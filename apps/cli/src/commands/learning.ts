@@ -174,6 +174,7 @@ const loadCustomRetriever = (retrieverPath: string) =>
     const moduleUrl = pathToFileURL(absolutePath).href
     const retrieverModule = yield* Effect.tryPromise({
       try: async () => {
+        // eslint-disable-next-line no-restricted-syntax -- plugin path is user-provided at runtime
         const mod = await import(moduleUrl)
         return mod.default as Layer.Layer<RetrieverService>
       },

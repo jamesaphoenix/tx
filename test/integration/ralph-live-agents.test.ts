@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { spawnSync, type SpawnSyncReturns } from "child_process"
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync, symlinkSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync, symlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { Database } from "bun:sqlite"
 
 const RUN_LIVE = process.env.TX_RUN_LIVE_AGENT_TESTS === "1"
@@ -251,14 +251,14 @@ function verifyDbAndCleanup(
 ): void {
   const db = new Database(join(sandbox.dir, ".tx", "tasks.db"))
 
-  const taskRow = db.query<{ status: string; completed_at: string | null }>(
+  const taskRow = db.query<{ status: string; completed_at: string | null }, [string]>(
     "SELECT status, completed_at FROM tasks WHERE id = ? LIMIT 1"
   ).get(sandbox.taskId)
   expect(taskRow).toBeDefined()
   expect(taskRow?.status).toBe("done")
   expect(taskRow?.completed_at).toBeTruthy()
 
-  const runRows = db.query<RunRow>(
+  const runRows = db.query<RunRow, [string]>(
     "SELECT status, task_id, exit_code, ended_at, metadata FROM runs WHERE task_id = ? ORDER BY started_at DESC"
   ).all(sandbox.taskId)
   expect(runRows.length).toBeGreaterThan(0)
@@ -275,7 +275,7 @@ function verifyDbAndCleanup(
   expect(metadata.runtime).toBe(runtime)
   expect(expectedWorkers).toContain(String(metadata.worker ?? ""))
 
-  const claimRows = db.query<ClaimRow>(
+  const claimRows = db.query<ClaimRow, [string]>(
     "SELECT worker_id, status FROM task_claims WHERE task_id = ? ORDER BY id DESC"
   ).all(sandbox.taskId)
   expect(claimRows.length).toBeGreaterThan(0)

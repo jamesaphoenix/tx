@@ -10,6 +10,7 @@ import type {
   FileProgressRow,
   UpsertFileProgressInput
 } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class DeduplicationRepository extends Context.Tag("DeduplicationRepository")<
   DeduplicationRepository,
@@ -92,9 +93,9 @@ export const DeduplicationRepositoryLive = Layer.effect(
 
             // Use batch query with placeholders
             const placeholders = contentHashes.map(() => "?").join(",")
-            const rows = db.prepare(
+            const rows = coerceDbResult<Array<{ content_hash: string }>>(db.prepare(
               `SELECT content_hash FROM processed_hashes WHERE content_hash IN (${placeholders})`
-            ).all(...contentHashes) as Array<{ content_hash: string }>
+            ).all(...contentHashes))
 
             return new Set(rows.map(r => r.content_hash))
           },
@@ -102,27 +103,34 @@ export const DeduplicationRepositoryLive = Layer.effect(
         }),
 
       insertHash: (input) =>
-        Effect.try({
-          try: () => {
-            db.prepare(`
-              INSERT INTO processed_hashes (content_hash, source_file, source_line)
-              VALUES (?, ?, ?)
-            `).run(input.contentHash, input.sourceFile, input.sourceLine)
+        Effect.gen(function* () {
+          yield* Effect.try({
+            try: () => {
+              db.prepare(`
+                INSERT INTO processed_hashes (content_hash, source_file, source_line)
+                VALUES (?, ?, ?)
+              `).run(input.contentHash, input.sourceFile, input.sourceLine)
+            },
+            catch: (cause) => new DatabaseError({ cause })
+          })
 
-            const row = db.prepare(
+          const row = yield* Effect.try({
+            try: () => coerceDbResult<ProcessedHashRow | undefined>(db.prepare(
               "SELECT * FROM processed_hashes WHERE content_hash = ?"
-            ).get(input.contentHash) as ProcessedHashRow | undefined
-            if (!row) {
-              throw new EntityFetchError({
+            ).get(input.contentHash)),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (!row) {
+            return yield* Effect.fail(new DatabaseError({
+              cause: new EntityFetchError({
                 entity: "processed_hash",
                 id: input.contentHash,
                 operation: "insert"
               })
-            }
+            }))
+          }
 
-            return rowToProcessedHash(row)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+          return rowToProcessedHash(row)
         }),
 
       tryInsertHash: (input) =>
@@ -142,39 +150,47 @@ export const DeduplicationRepositoryLive = Layer.effect(
         }),
 
       insertHashes: (inputs) =>
-        Effect.try({
-          try: () => {
-            if (inputs.length === 0) return 0
+        Effect.gen(function* () {
+          if (inputs.length === 0) return 0
 
-            const stmt = db.prepare(`
-              INSERT OR IGNORE INTO processed_hashes (content_hash, source_file, source_line)
-              VALUES (?, ?, ?)
-            `)
+          const stmt = db.prepare(`
+            INSERT OR IGNORE INTO processed_hashes (content_hash, source_file, source_line)
+            VALUES (?, ?, ?)
+          `)
 
-            // Use a transaction for atomicity and performance
+          const runBatchInsert = (batch: readonly CreateProcessedHashInput[]): { ok: true; inserted: number } | { ok: false; error: unknown } => {
             db.exec("BEGIN IMMEDIATE")
             try {
               let inserted = 0
-              for (const input of inputs) {
+              for (const input of batch) {
                 const result = stmt.run(input.contentHash, input.sourceFile, input.sourceLine)
                 if (result.changes > 0) inserted++
               }
               db.exec("COMMIT")
-              return inserted
-            } catch (e) {
-              db.exec("ROLLBACK")
-              throw e
+              return { ok: true, inserted }
+            } catch (error) {
+              try {
+                db.exec("ROLLBACK")
+              } catch {
+                // no-op
+              }
+              return { ok: false, error }
             }
-          },
-          catch: (cause) => new DatabaseError({ cause })
+          }
+
+          const result = runBatchInsert(inputs)
+          if (!result.ok) {
+            return yield* Effect.fail(new DatabaseError({ cause: result.error }))
+          }
+          return result.inserted
         }),
 
       findByHash: (contentHash) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<ProcessedHashRow | undefined>(db.prepare(
               "SELECT * FROM processed_hashes WHERE content_hash = ?"
-            ).get(contentHash) as ProcessedHashRow | undefined
+            ).get(contentHash))
 
             return row ? rowToProcessedHash(row) : null
           },
@@ -184,9 +200,9 @@ export const DeduplicationRepositoryLive = Layer.effect(
       countHashes: () =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<{ count: number }>(db.prepare(
               "SELECT COUNT(*) as count FROM processed_hashes"
-            ).get() as { count: number }
+            ).get())
             return row.count
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -195,9 +211,9 @@ export const DeduplicationRepositoryLive = Layer.effect(
       getHashesForFile: (filePath) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<ProcessedHashRow[]>(db.prepare(
               "SELECT * FROM processed_hashes WHERE source_file = ? ORDER BY source_line"
-            ).all(filePath) as ProcessedHashRow[]
+            ).all(filePath))
             return rows.map(rowToProcessedHash)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -219,9 +235,9 @@ export const DeduplicationRepositoryLive = Layer.effect(
       getFileProgress: (filePath) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<FileProgressRow | undefined>(db.prepare(
               "SELECT * FROM file_progress WHERE file_path = ?"
-            ).get(filePath) as FileProgressRow | undefined
+            ).get(filePath))
 
             return row ? rowToFileProgress(row) : null
           },
@@ -229,39 +245,46 @@ export const DeduplicationRepositoryLive = Layer.effect(
         }),
 
       upsertFileProgress: (input) =>
-        Effect.try({
-          try: () => {
-            db.prepare(`
-              INSERT INTO file_progress (file_path, last_line_processed, last_byte_offset, file_size, file_checksum, last_processed_at)
-              VALUES (?, ?, ?, ?, ?, datetime('now'))
-              ON CONFLICT(file_path) DO UPDATE SET
-                last_line_processed = excluded.last_line_processed,
-                last_byte_offset = excluded.last_byte_offset,
-                file_size = excluded.file_size,
-                file_checksum = excluded.file_checksum,
-                last_processed_at = datetime('now')
-            `).run(
-              input.filePath,
-              input.lastLineProcessed,
-              input.lastByteOffset,
-              input.fileSize ?? null,
-              input.fileChecksum ?? null
-            )
+        Effect.gen(function* () {
+          yield* Effect.try({
+            try: () => {
+              db.prepare(`
+                INSERT INTO file_progress (file_path, last_line_processed, last_byte_offset, file_size, file_checksum, last_processed_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(file_path) DO UPDATE SET
+                  last_line_processed = excluded.last_line_processed,
+                  last_byte_offset = excluded.last_byte_offset,
+                  file_size = excluded.file_size,
+                  file_checksum = excluded.file_checksum,
+                  last_processed_at = datetime('now')
+              `).run(
+                input.filePath,
+                input.lastLineProcessed,
+                input.lastByteOffset,
+                input.fileSize ?? null,
+                input.fileChecksum ?? null
+              )
+            },
+            catch: (cause) => new DatabaseError({ cause })
+          })
 
-            const row = db.prepare(
+          const row = yield* Effect.try({
+            try: () => coerceDbResult<FileProgressRow | undefined>(db.prepare(
               "SELECT * FROM file_progress WHERE file_path = ?"
-            ).get(input.filePath) as FileProgressRow | undefined
-            if (!row) {
-              throw new EntityFetchError({
+            ).get(input.filePath)),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (!row) {
+            return yield* Effect.fail(new DatabaseError({
+              cause: new EntityFetchError({
                 entity: "file_progress",
                 id: input.filePath,
                 operation: "insert"
               })
-            }
+            }))
+          }
 
-            return rowToFileProgress(row)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+          return rowToFileProgress(row)
         }),
 
       deleteFileProgress: (filePath) =>
@@ -276,9 +299,9 @@ export const DeduplicationRepositoryLive = Layer.effect(
       getAllFileProgress: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<FileProgressRow[]>(db.prepare(
               "SELECT * FROM file_progress ORDER BY last_processed_at DESC"
-            ).all() as FileProgressRow[]
+            ).all())
             return rows.map(rowToFileProgress)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -287,9 +310,9 @@ export const DeduplicationRepositoryLive = Layer.effect(
       countFiles: () =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<{ count: number }>(db.prepare(
               "SELECT COUNT(*) as count FROM file_progress"
-            ).get() as { count: number }
+            ).get())
             return row.count
           },
           catch: (cause) => new DatabaseError({ cause })

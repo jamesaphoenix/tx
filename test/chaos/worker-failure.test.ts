@@ -333,6 +333,10 @@ describe("Chaos: Worker Service Operations", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
         yield* taskRepo.insert({
@@ -345,6 +349,10 @@ describe("Chaos: Worker Service Operations", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
         yield* workerRepo.insert({
@@ -488,6 +496,10 @@ describe("Chaos: Lease Renewal Failure", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -551,6 +563,10 @@ describe("Chaos: Lease Renewal Failure", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 

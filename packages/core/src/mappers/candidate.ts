@@ -16,6 +16,7 @@ import {
 } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export types and constants from @tx/types for convenience
 export type { CandidateRow } from "@jamesaphoenix/tx-types"
@@ -91,7 +92,7 @@ export const rowToCandidate = (row: CandidateRow): LearningCandidate => {
     id: row.id,
     content: row.content,
     confidence: row.confidence,
-    category: row.category as CandidateCategory | null,
+    category: coerceDbResult<CandidateCategory | null>(row.category),
     sourceFile: row.source_file,
     sourceRunId: row.source_run_id,
     sourceTaskId: row.source_task_id,

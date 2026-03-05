@@ -12,9 +12,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))

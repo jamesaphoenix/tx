@@ -13,6 +13,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { Effect, Layer, Duration } from "effect"
 import { Database } from "bun:sqlite"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures } from "../fixtures.js"
@@ -20,14 +23,55 @@ import {
   SqliteClient,
   TaskRepositoryLive,
   DependencyRepositoryLive,
+  GuardRepositoryLive,
   LearningRepositoryLive,
   FileLearningRepositoryLive,
   AttemptRepositoryLive,
+  PinRepositoryLive,
+  AnchorRepositoryLive,
+  EdgeRepositoryLive,
+  DocRepositoryLive,
+  TaskServiceLive,
+  StreamServiceLive,
+  SyncServiceLive,
   SyncService,
   AutoSyncServiceLive,
   AutoSyncService,
   DatabaseError
 } from "@jamesaphoenix/tx-core"
+
+type SyncServiceStub = Parameters<typeof SyncService.of>[0]
+
+const MOCK_STREAM_ID = "01H00000000000000000000000"
+const MOCK_STREAM_PATH = ".tx/streams/mock/events-2026-03-05.jsonl"
+const EMPTY_DEPENDENCY_IMPORT_RESULT = { added: 0, removed: 0, skipped: 0, failures: [] as const }
+const EMPTY_SYNC_EXPORT_RESULT = { eventCount: 0, opCount: 0, streamId: MOCK_STREAM_ID, path: MOCK_STREAM_PATH }
+const EMPTY_SYNC_IMPORT_RESULT = {
+  importedEvents: 0,
+  appliedEvents: 0,
+  streamCount: 0,
+  imported: 0,
+  skipped: 0,
+  conflicts: 0,
+  dependencies: EMPTY_DEPENDENCY_IMPORT_RESULT
+}
+
+const makeBaseSyncServiceStub = (): SyncServiceStub => ({
+  export: () => Effect.succeed(EMPTY_SYNC_EXPORT_RESULT),
+  status: () => Effect.succeed({ dbTaskCount: 0, eventOpCount: 0, lastExport: null, lastImport: null, isDirty: false, autoSyncEnabled: false }),
+  enableAutoSync: () => Effect.void,
+  disableAutoSync: () => Effect.void,
+  isAutoSyncEnabled: () => Effect.succeed(false),
+  import: () => Effect.succeed(EMPTY_SYNC_IMPORT_RESULT),
+  hydrate: () => Effect.succeed({ importedEvents: 0, appliedEvents: 0, streamCount: 0, rebuilt: true }),
+  compact: () => Effect.succeed({ before: 0, after: 0, path: ".tx/tasks.jsonl" }),
+  stream: () => Effect.succeed({ streamId: MOCK_STREAM_ID, nextSeq: 1, lastSeq: 0, eventsDir: ".tx/streams/mock", configPath: ".tx/stream.json", knownStreams: [] })
+})
+
+const makeSyncServiceStub = (overrides: Partial<SyncServiceStub> = {}): SyncServiceStub => ({
+  ...makeBaseSyncServiceStub(),
+  ...overrides,
+})
 
 // -----------------------------------------------------------------------------
 // Test Layer Factory
@@ -56,8 +100,8 @@ function makeMockSyncServiceLayer(
   // Mock SyncService
   const mockSyncService = Layer.succeed(
     SyncService,
-    SyncService.of({
-      export: (_path?: string) =>
+    SyncService.of(makeSyncServiceStub({
+      export: () =>
         Effect.gen(function* () {
           options.onExportCalled?.()
 
@@ -69,17 +113,9 @@ function makeMockSyncServiceLayer(
             return yield* Effect.fail(new DatabaseError({ cause: new Error("Mock export failure") }))
           }
 
-          return { opCount: 0, path: _path ?? ".tx/tasks.jsonl" }
+          return EMPTY_SYNC_EXPORT_RESULT
         }),
-      import: () => Effect.succeed({ imported: 0, skipped: 0, conflicts: 0, dependencies: { added: 0, removed: 0, skipped: 0, failures: [] } }),
-      status: () => Effect.succeed({ dbTaskCount: 0, jsonlOpCount: 0, lastExport: null, lastImport: null, isDirty: false, autoSyncEnabled: false }),
-      enableAutoSync: () => Effect.void,
-      disableAutoSync: () => Effect.void,
-      isAutoSyncEnabled: () => Effect.succeed(false),
-      compact: () => Effect.succeed({ before: 0, after: 0 }),
-      setLastExport: () => Effect.void,
-      setLastImport: () => Effect.void
-    })
+    }))
   )
 
   // Build AutoSyncService with mock SyncService
@@ -110,6 +146,37 @@ function disableAutoSyncInDb(db: TestDatabase): void {
   db.db.prepare(
     "INSERT OR REPLACE INTO sync_config (key, value, updated_at) VALUES ('auto_sync', 'false', datetime('now'))"
   ).run()
+}
+
+/**
+ * Build a real (no-mock) layer for AutoSyncService + SyncService integration tests.
+ */
+function makeRealAutoSyncLayer(db: TestDatabase) {
+  const infra = Layer.succeed(SqliteClient, db.db as Database)
+
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    GuardRepositoryLive,
+    LearningRepositoryLive,
+    FileLearningRepositoryLive,
+    AttemptRepositoryLive,
+    PinRepositoryLive,
+    AnchorRepositoryLive,
+    EdgeRepositoryLive,
+    DocRepositoryLive,
+  ).pipe(Layer.provide(infra))
+
+  const taskServiceForSync = TaskServiceLive.pipe(Layer.provide(repos))
+  const streamService = StreamServiceLive.pipe(Layer.provide(infra))
+  const syncService = SyncServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(infra, repos, taskServiceForSync, streamService))
+  )
+  const autoSyncService = AutoSyncServiceLive.pipe(
+    Layer.provide(Layer.merge(infra, syncService))
+  )
+
+  return Layer.mergeAll(infra, repos, taskServiceForSync, streamService, syncService, autoSyncService)
 }
 
 // -----------------------------------------------------------------------------
@@ -230,24 +297,16 @@ describe("AutoSyncService Concurrent Exports", () => {
     const infra = Layer.succeed(SqliteClient, db.db as Database)
     const mockSyncService = Layer.succeed(
       SyncService,
-      SyncService.of({
-        export: (_path?: string) =>
+      SyncService.of(makeSyncServiceStub({
+        export: () =>
           Effect.gen(function* () {
             // Simulate async work — this is the yield point where interruption occurs
             yield* Effect.sleep(Duration.millis(50))
             // Only reached if fiber was NOT interrupted
             exportCompletedCount++
-            return { opCount: 0, path: _path ?? ".tx/tasks.jsonl" }
+            return EMPTY_SYNC_EXPORT_RESULT
           }),
-        import: () => Effect.succeed({ imported: 0, skipped: 0, conflicts: 0, dependencies: { added: 0, removed: 0, skipped: 0, failures: [] } }),
-        status: () => Effect.succeed({ dbTaskCount: 0, jsonlOpCount: 0, lastExport: null, lastImport: null, isDirty: false, autoSyncEnabled: false }),
-        enableAutoSync: () => Effect.void,
-        disableAutoSync: () => Effect.void,
-        isAutoSyncEnabled: () => Effect.succeed(false),
-        compact: () => Effect.succeed({ before: 0, after: 0 }),
-        setLastExport: () => Effect.void,
-        setLastImport: () => Effect.void
-      })
+      }))
     )
     const autoSyncService = AutoSyncServiceLive.pipe(
       Layer.provide(Layer.mergeAll(mockSyncService, infra))
@@ -292,8 +351,8 @@ describe("AutoSyncService Concurrent Exports", () => {
 
     const mockSyncService = Layer.succeed(
       SyncService,
-      SyncService.of({
-        export: (_path?: string) =>
+      SyncService.of(makeSyncServiceStub({
+        export: () =>
           Effect.gen(function* () {
             const idx = callIndex++
             yield* Effect.sleep(Duration.millis(10))
@@ -304,17 +363,9 @@ describe("AutoSyncService Concurrent Exports", () => {
             }
 
             successCount++
-            return { opCount: 0, path: _path ?? ".tx/tasks.jsonl" }
+            return EMPTY_SYNC_EXPORT_RESULT
           }),
-        import: () => Effect.succeed({ imported: 0, skipped: 0, conflicts: 0, dependencies: { added: 0, removed: 0, skipped: 0, failures: [] } }),
-        status: () => Effect.succeed({ dbTaskCount: 0, jsonlOpCount: 0, lastExport: null, lastImport: null, isDirty: false, autoSyncEnabled: false }),
-        enableAutoSync: () => Effect.void,
-        disableAutoSync: () => Effect.void,
-        isAutoSyncEnabled: () => Effect.succeed(false),
-        compact: () => Effect.succeed({ before: 0, after: 0 }),
-        setLastExport: () => Effect.void,
-        setLastImport: () => Effect.void
-      })
+      }))
     )
 
     const autoSyncService = AutoSyncServiceLive.pipe(
@@ -510,17 +561,7 @@ describe("AutoSyncService Config Changes", () => {
 
     const mockSyncService = Layer.succeed(
       SyncService,
-      SyncService.of({
-        export: () => Effect.succeed({ opCount: 0, path: ".tx/tasks.jsonl" }),
-        import: () => Effect.succeed({ imported: 0, skipped: 0, conflicts: 0, dependencies: { added: 0, removed: 0, skipped: 0, failures: [] } }),
-        status: () => Effect.succeed({ dbTaskCount: 0, jsonlOpCount: 0, lastExport: null, lastImport: null, isDirty: false, autoSyncEnabled: false }),
-        enableAutoSync: () => Effect.void,
-        disableAutoSync: () => Effect.void,
-        isAutoSyncEnabled: () => Effect.succeed(false),
-        compact: () => Effect.succeed({ before: 0, after: 0 }),
-        setLastExport: () => Effect.void,
-        setLastImport: () => Effect.void
-      })
+      SyncService.of(makeSyncServiceStub())
     )
 
     const autoSyncService = AutoSyncServiceLive.pipe(
@@ -707,22 +748,14 @@ describe("AutoSyncService Performance", () => {
 
     const mockSyncService = Layer.succeed(
       SyncService,
-      SyncService.of({
-        export: (_path?: string) =>
+      SyncService.of(makeSyncServiceStub({
+        export: () =>
           Effect.gen(function* () {
             yield* Effect.sleep(Duration.millis(100))
             exportCompletedAt = Date.now() - startTime
-            return { opCount: 0, path: _path ?? ".tx/tasks.jsonl" }
+            return EMPTY_SYNC_EXPORT_RESULT
           }),
-        import: () => Effect.succeed({ imported: 0, skipped: 0, conflicts: 0, dependencies: { added: 0, removed: 0, skipped: 0, failures: [] } }),
-        status: () => Effect.succeed({ dbTaskCount: 0, jsonlOpCount: 0, lastExport: null, lastImport: null, isDirty: false, autoSyncEnabled: false }),
-        enableAutoSync: () => Effect.void,
-        disableAutoSync: () => Effect.void,
-        isAutoSyncEnabled: () => Effect.succeed(false),
-        compact: () => Effect.succeed({ before: 0, after: 0 }),
-        setLastExport: () => Effect.void,
-        setLastImport: () => Effect.void
-      })
+      }))
     )
 
     const autoSyncService = AutoSyncServiceLive.pipe(
@@ -757,5 +790,130 @@ describe("AutoSyncService Performance", () => {
     // (only the last export runs due to deduplication)
     expect(exportCompletedAt).toBeGreaterThan(0)
     expect(exportCompletedAt).toBeGreaterThan(mutationCompleteTimes[2])
+  })
+})
+
+// -----------------------------------------------------------------------------
+// No-Mock Integration Tests
+// -----------------------------------------------------------------------------
+
+describe("AutoSyncService Real Integration (No Mocks)", () => {
+  let db: TestDatabase
+  let originalCwd: string
+  let tempProjectDir: string
+
+  const insertTask = (id: string, title: string) => {
+    const now = new Date().toISOString()
+    db.db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, title, "", "backlog", null, 100, now, now, null, "{}")
+  }
+
+  const updateTaskStatus = (id: string, status: string) => {
+    db.db
+      .prepare("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?")
+      .run(status, new Date().toISOString(), id)
+  }
+
+  beforeEach(async () => {
+    db = await Effect.runPromise(createTestDatabase())
+    originalCwd = process.cwd()
+    tempProjectDir = mkdtempSync(join(tmpdir(), "tx-auto-sync-real-"))
+    process.chdir(tempProjectDir)
+  })
+
+  afterEach(async () => {
+    process.chdir(originalCwd)
+    if (existsSync(tempProjectDir)) {
+      rmSync(tempProjectDir, { recursive: true, force: true })
+    }
+    await Effect.runPromise(db.close())
+  })
+
+  it("exports real stream events from afterTaskMutation when auto-sync is enabled", async () => {
+    const layer = makeRealAutoSyncLayer(db)
+    enableAutoSyncInDb(db)
+    insertTask("tx-asr001", "auto-sync enabled")
+
+    const eventCount = await Effect.runPromise(
+      Effect.gen(function* () {
+        const autoSync = yield* AutoSyncService
+        const sqlite = yield* SqliteClient
+
+        yield* autoSync.afterTaskMutation()
+
+        for (let attempt = 0; attempt < 25; attempt++) {
+          const row = sqlite.prepare("SELECT COUNT(*) AS c FROM sync_events").get() as { c: number }
+          if (row.c > 0) {
+            return row.c
+          }
+          yield* Effect.sleep(Duration.millis(20))
+        }
+
+        return 0
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(eventCount).toBeGreaterThan(0)
+    expect(existsSync(join(tempProjectDir, ".tx", "stream.json"))).toBe(true)
+  })
+
+  it("does not export events when auto-sync is disabled", async () => {
+    const layer = makeRealAutoSyncLayer(db)
+    disableAutoSyncInDb(db)
+    insertTask("tx-asr002", "auto-sync disabled")
+
+    const eventCount = await Effect.runPromise(
+      Effect.gen(function* () {
+        const autoSync = yield* AutoSyncService
+        const sqlite = yield* SqliteClient
+
+        yield* autoSync.afterTaskMutation()
+        yield* Effect.sleep(Duration.millis(150))
+
+        const row = sqlite.prepare("SELECT COUNT(*) AS c FROM sync_events").get() as { c: number }
+        return row.c
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(eventCount).toBe(0)
+    expect(existsSync(join(tempProjectDir, ".tx", "stream.json"))).toBe(false)
+  })
+
+  it("preserves final task state after rapid real mutations and hydrate replay", async () => {
+    const layer = makeRealAutoSyncLayer(db)
+    enableAutoSyncInDb(db)
+    insertTask("tx-asr003", "rapid real mutations")
+
+    const restoredStatus = await Effect.runPromise(
+      Effect.gen(function* () {
+        const autoSync = yield* AutoSyncService
+        const sqlite = yield* SqliteClient
+        const syncService = yield* SyncService
+
+        for (const status of ["ready", "active", "review", "done"]) {
+          updateTaskStatus("tx-asr003", status)
+          yield* autoSync.afterTaskMutation()
+        }
+
+        // Wait for background auto-sync export to complete.
+        for (let attempt = 0; attempt < 30; attempt++) {
+          const row = sqlite.prepare("SELECT COUNT(*) AS c FROM sync_events").get() as { c: number }
+          if (row.c > 0) {
+            break
+          }
+          yield* Effect.sleep(Duration.millis(20))
+        }
+
+        sqlite.prepare("DELETE FROM tasks WHERE id = ?").run("tx-asr003")
+        yield* syncService.hydrate()
+
+        const restored = sqlite.prepare("SELECT status FROM tasks WHERE id = ?").get("tx-asr003") as { status?: string } | undefined
+        return restored?.status ?? null
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(restoredStatus).toBe("done")
   })
 })

@@ -966,3 +966,7 @@ The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
 - **Source REQ/PRD/DD/SD docs**: `docs/` directory — internal artifacts linked from CLAUDE.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
+
+<tx-pin id="gate.docs-to-build">
+{"approved":false,"phaseFrom":null,"phaseTo":null,"required":true,"approvedBy":null,"approvedAt":null,"revokedBy":null,"revokedAt":null,"revokeReason":null,"note":null,"taskId":null,"createdAt":"2026-03-05T20:16:32.675Z"}
+</tx-pin>

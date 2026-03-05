@@ -2,10 +2,12 @@ import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { GuardRepository } from "../repo/guard-repo.js"
+import { PinRepository } from "../repo/pin-repo.js"
 import { TaskNotFoundError, ValidationError, DatabaseError, GuardExceededError, StaleDataError, HasChildrenError } from "../errors.js"
 import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
 import { readTxConfig } from "../utils/toml-config.js"
+import { CASCADE_MAX_DEPTH, autoCompleteParent, checkGuards, enrichWithDeps, enrichWithDepsBatch, listGateTaskLinks } from "./task-service/internals.js"
 import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput, TaskAssigneeType } from "@jamesaphoenix/tx-types"
 
 export class TaskService extends Context.Tag("TaskService")<
@@ -56,115 +58,7 @@ const isValidAssigneeType = (
 ): assigneeType is TaskAssigneeType | null =>
   assigneeType === undefined || assigneeType === null || assigneeType === "human" || assigneeType === "agent"
 
-/** Max recursion depth for destructive operations that must find ALL descendants.
- *  Bounded to avoid unbounded CTE recursion in SQLite while being deep enough
- *  for any realistic task hierarchy (display default is 10). */
-const CASCADE_MAX_DEPTH = 1000
 const GROUP_CONTEXT_MAX_CHARS = 20_000
-
-/** Narrow shape used for guard limit checks — avoids leaking full Guard type from repo */
-interface EffectiveGuardLimits {
-  readonly maxPending: number | null
-  readonly maxChildren: number | null
-  readonly maxDepth: number | null
-  readonly enforce: boolean
-}
-
-/**
- * Check guards before task creation. Returns advisory warnings (empty array if none).
- * Advisory mode logs warnings to stderr and returns them for metadata injection;
- * enforce mode fails with GuardExceededError.
- */
-const checkGuards = (
-  guardRepo: Context.Tag.Service<typeof GuardRepository>,
-  config: ReturnType<typeof readTxConfig>,
-  parentId: string | null
-): Effect.Effect<string[], GuardExceededError | DatabaseError> =>
-  Effect.gen(function* () {
-    const warnings: string[] = []
-
-    // Defensive: if config.guard is undefined (malformed config), skip guard checks
-    if (!config?.guard) return warnings
-
-    // Resolve effective guard: DB row takes precedence, fall back to config defaults
-    const dbGuard = yield* guardRepo.findByScope("global")
-    const globalGuard: EffectiveGuardLimits | null = dbGuard
-      ? { maxPending: dbGuard.maxPending, maxChildren: dbGuard.maxChildren, maxDepth: dbGuard.maxDepth, enforce: dbGuard.enforce }
-      : (config.guard.maxPending !== null || config.guard.maxChildren !== null || config.guard.maxDepth !== null)
-        ? { maxPending: config.guard.maxPending, maxChildren: config.guard.maxChildren, maxDepth: config.guard.maxDepth, enforce: config.guard.mode === "enforce" }
-        : null
-    if (globalGuard) {
-      // DB row's enforce setting takes precedence; config only applies when no DB row exists
-      const enforce = globalGuard.enforce
-
-      // Check max_pending
-      if (globalGuard.maxPending !== null) {
-        const pending = yield* guardRepo.countPending()
-        if (pending >= globalGuard.maxPending) {
-          const msg = `${pending}/${globalGuard.maxPending} pending tasks (global limit)`
-          if (enforce) {
-            return yield* Effect.fail(new GuardExceededError({
-              scope: "global", metric: "max_pending", current: pending, limit: globalGuard.maxPending,
-            }))
-          }
-          console.error(`\u26A0 Guard warning: ${msg}`)
-          warnings.push(msg)
-        }
-      }
-
-      // Check max_depth (only relevant when creating under a parent)
-      if (globalGuard.maxDepth !== null && parentId) {
-        const depth = yield* guardRepo.getMaxDepth(parentId)
-        const newDepth = depth + 1
-        if (newDepth > globalGuard.maxDepth) {
-          const msg = `depth ${newDepth}/${globalGuard.maxDepth} (global limit)`
-          if (enforce) {
-            return yield* Effect.fail(new GuardExceededError({
-              scope: "global", metric: "max_depth", current: newDepth, limit: globalGuard.maxDepth,
-            }))
-          }
-          console.error(`\u26A0 Guard warning: ${msg}`)
-          warnings.push(msg)
-        }
-      }
-
-      // Check max_children (only relevant when creating under a parent)
-      if (globalGuard.maxChildren !== null && parentId) {
-        const children = yield* guardRepo.countChildrenOf(parentId)
-        if (children >= globalGuard.maxChildren) {
-          const msg = `${children}/${globalGuard.maxChildren} children of ${parentId} (global limit)`
-          if (enforce) {
-            return yield* Effect.fail(new GuardExceededError({
-              scope: "global", metric: "max_children", current: children, limit: globalGuard.maxChildren,
-            }))
-          }
-          console.error(`\u26A0 Guard warning: ${msg}`)
-          warnings.push(msg)
-        }
-      }
-    }
-
-    // Check parent-specific guard (independent of global guard)
-    if (parentId) {
-      const parentGuard = yield* guardRepo.findByScope(`parent:${parentId}`)
-      if (parentGuard?.maxChildren !== null && parentGuard?.maxChildren !== undefined) {
-        const children = yield* guardRepo.countChildrenOf(parentId)
-        const parentEnforce = parentGuard.enforce
-        if (children >= parentGuard.maxChildren) {
-          const msg = `${children}/${parentGuard.maxChildren} children of ${parentId} (parent scope)`
-          if (parentEnforce) {
-            return yield* Effect.fail(new GuardExceededError({
-              scope: `parent:${parentId}`, metric: "max_children", current: children, limit: parentGuard.maxChildren,
-            }))
-          }
-          console.error(`\u26A0 Guard warning: ${msg}`)
-          warnings.push(msg)
-        }
-      }
-    }
-
-    return warnings
-  })
 
 export const TaskServiceLive = Layer.effect(
   TaskService,
@@ -172,170 +66,8 @@ export const TaskServiceLive = Layer.effect(
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
     const guardRepo = yield* GuardRepository
+    const pinRepo = yield* PinRepository
     const config = readTxConfig()
-
-    const enrichWithDeps = (task: Task): Effect.Effect<TaskWithDeps, DatabaseError> =>
-      Effect.gen(function* () {
-        const blockerIds = yield* depRepo.getBlockerIds(task.id)
-        const blockingIds = yield* depRepo.getBlockingIds(task.id)
-        const childIds = yield* taskRepo.getChildIds(task.id)
-        const directContextMap = yield* taskRepo.getGroupContextForMany([task.id])
-        const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany([task.id])
-
-        let isReady = ["backlog", "ready", "planning", "active"].includes(task.status)
-        if (isReady && blockerIds.length > 0) {
-          const blockers = yield* taskRepo.findByIds(blockerIds)
-          isReady = blockers.every(b => b.status === "done")
-        }
-
-        const effective = effectiveContextMap.get(task.id)
-
-        return {
-          ...task,
-          blockedBy: blockerIds as TaskId[],
-          blocks: blockingIds as TaskId[],
-          children: childIds as TaskId[],
-          isReady,
-          groupContext: directContextMap.get(task.id) ?? null,
-          effectiveGroupContext: effective?.context ?? null,
-          effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
-        }
-      })
-
-    // Batch version of enrichWithDeps - avoids N+1 queries
-    const enrichWithDepsBatch = (tasks: readonly Task[]): Effect.Effect<readonly TaskWithDeps[], DatabaseError> =>
-      Effect.gen(function* () {
-        if (tasks.length === 0) return []
-
-        const taskIds = tasks.map(t => t.id)
-
-        // Batch fetch all dependency info (3 queries total instead of 3N)
-        const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(taskIds)
-        const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(taskIds)
-        const childIdsMap = yield* taskRepo.getChildIdsForMany(taskIds)
-        const directContextMap = yield* taskRepo.getGroupContextForMany(taskIds)
-        const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany(taskIds)
-
-        // Collect all unique blocker IDs to fetch their status
-        const allBlockerIds = new Set<TaskId>()
-        for (const blockerIds of blockerIdsMap.values()) {
-          for (const id of blockerIds) {
-            allBlockerIds.add(id)
-          }
-        }
-
-        // Fetch all blocker tasks to check their status (1 query instead of N)
-        const blockerTasks = allBlockerIds.size > 0
-          ? yield* taskRepo.findByIds([...allBlockerIds])
-          : []
-        const blockerStatusMap = new Map<string, string>()
-        for (const t of blockerTasks) {
-          blockerStatusMap.set(t.id, t.status)
-        }
-
-        // Build TaskWithDeps for each task
-        const results: TaskWithDeps[] = []
-        for (const task of tasks) {
-          const blockerIds = blockerIdsMap.get(task.id) ?? []
-          const blockingIds = blockingIdsMap.get(task.id) ?? []
-          const childIds = childIdsMap.get(task.id) ?? []
-
-          // Compute isReady
-          let isReady = ["backlog", "ready", "planning", "active"].includes(task.status)
-          if (isReady && blockerIds.length > 0) {
-            isReady = blockerIds.every(bid => blockerStatusMap.get(bid) === "done")
-          }
-
-          const effective = effectiveContextMap.get(task.id)
-
-          results.push({
-            ...task,
-            blockedBy: blockerIds as TaskId[],
-            blocks: blockingIds as TaskId[],
-            children: childIds as TaskId[],
-            isReady,
-            groupContext: directContextMap.get(task.id) ?? null,
-            effectiveGroupContext: effective?.context ?? null,
-            effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
-          })
-        }
-
-        return results
-      })
-
-    // Auto-complete parent task when all children are done
-    // Optimized to use batch queries instead of N+1 recursive queries
-    // Old implementation: 3-4 queries per hierarchy level (40+ for deep trees)
-    // New implementation: 3 queries total + 1 batch update
-    const autoCompleteParent = (parentId: TaskId, now: Date): Effect.Effect<void, DatabaseError | TaskNotFoundError | StaleDataError> =>
-      Effect.gen(function* () {
-        // 1. Get all ancestors in one query (recursive CTE)
-        const ancestors = yield* taskRepo.getAncestorChain(parentId)
-        if (ancestors.length === 0) return
-
-        // Filter out already-done ancestors (nothing to auto-complete)
-        const pendingAncestors = ancestors.filter(a => a.status !== "done")
-        if (pendingAncestors.length === 0) return
-
-        // 2. Batch get all children for all pending ancestors (1 query)
-        const ancestorIds = pendingAncestors.map(a => a.id)
-        const childIdsMap = yield* taskRepo.getChildIdsForMany(ancestorIds)
-
-        // 3. Collect all unique child IDs and batch fetch them (1 query)
-        const allChildIds = new Set<string>()
-        for (const childIds of childIdsMap.values()) {
-          for (const id of childIds) {
-            allChildIds.add(id)
-          }
-        }
-
-        const childTasks = allChildIds.size > 0
-          ? yield* taskRepo.findByIds([...allChildIds])
-          : []
-
-        // Build status map for quick lookups
-        const childStatusMap = new Map<string, string>()
-        for (const child of childTasks) {
-          childStatusMap.set(child.id, child.status)
-        }
-
-        // 4. Process ancestors in order (parent -> grandparent -> ...)
-        // Track which ones should be auto-completed
-        const toComplete: Task[] = []
-        const nowCompletedIds = new Set<string>()
-
-        for (const ancestor of pendingAncestors) {
-          const childIds = childIdsMap.get(ancestor.id) ?? []
-          if (childIds.length === 0) continue
-
-          // Check if all children are done
-          // Include children we're about to mark as done in this pass
-          const allChildrenDone = childIds.every(childId => {
-            if (nowCompletedIds.has(childId)) return true
-            return childStatusMap.get(childId) === "done"
-          })
-
-          if (allChildrenDone) {
-            // Mark for completion
-            toComplete.push({
-              ...ancestor,
-              status: "done",
-              updatedAt: now,
-              completedAt: now
-            })
-            // Track so parent levels can see this ancestor is now done
-            nowCompletedIds.add(ancestor.id)
-          } else {
-            // If this ancestor can't be completed, neither can its ancestors
-            break
-          }
-        }
-
-        // 5. Batch update all auto-completed ancestors (1 transaction)
-        if (toComplete.length > 0) {
-          yield* taskRepo.updateMany(toComplete)
-        }
-      })
 
     return {
       create: (input) =>
@@ -429,14 +161,14 @@ export const TaskServiceLive = Layer.effect(
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-          return yield* enrichWithDeps(task)
+          return yield* enrichWithDeps({ taskRepo, depRepo }, task)
         }),
 
       getWithDepsBatch: (ids) =>
         Effect.gen(function* () {
           if (ids.length === 0) return []
           const tasks = yield* taskRepo.findByIds(ids)
-          return yield* enrichWithDepsBatch(tasks)
+          return yield* enrichWithDepsBatch({ taskRepo, depRepo }, tasks)
         }),
 
       update: (id, input, options) =>
@@ -501,6 +233,14 @@ export const TaskServiceLive = Layer.effect(
           const now = new Date()
           const actor = options?.actor ?? "agent"
           const isDone = input.status === "done" && existing.status !== "done"
+          const shouldBlockAgentDoneForPinnedTasks =
+            isDone &&
+            actor === "agent" &&
+            config.pins.blockAgentDoneWhenTaskIdPresent
+          const linkedGatePins = shouldBlockAgentDoneForPinnedTasks
+            ? yield* listGateTaskLinks(pinRepo)
+            : new Map<TaskId, readonly string[]>()
+
           if (isDone && actor === "agent") {
             const childIds = yield* taskRepo.getChildIds(id)
             if (childIds.length > 0) {
@@ -514,6 +254,15 @@ export const TaskServiceLive = Layer.effect(
                   reason: `Agent cannot mark parent task ${id} done while children are incomplete: ${incompleteChildIds.join(", ")}`
                 }))
               }
+            }
+          }
+
+          if (shouldBlockAgentDoneForPinnedTasks) {
+            const blockingGateIds = linkedGatePins.get(id)
+            if (blockingGateIds && blockingGateIds.length > 0) {
+              return yield* Effect.fail(new ValidationError({
+                reason: `Agent cannot mark task ${id} done because it is linked by gate pin(s): ${blockingGateIds.join(", ")}`
+              }))
             }
           }
 
@@ -555,7 +304,11 @@ export const TaskServiceLive = Layer.effect(
 
           // Auto-complete parent if all children are done
           if (isDone && updated.parentId) {
-            yield* autoCompleteParent(updated.parentId, now)
+            yield* autoCompleteParent(taskRepo, updated.parentId, now, {
+              blockedTaskIds: shouldBlockAgentDoneForPinnedTasks
+                ? new Set(linkedGatePins.keys())
+                : undefined
+            })
           }
 
           return updated
@@ -581,7 +334,7 @@ export const TaskServiceLive = Layer.effect(
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-          return yield* enrichWithDeps(task)
+          return yield* enrichWithDeps({ taskRepo, depRepo }, task)
         }),
 
       clearGroupContext: (id) =>
@@ -591,7 +344,7 @@ export const TaskServiceLive = Layer.effect(
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-          return yield* enrichWithDeps(task)
+          return yield* enrichWithDeps({ taskRepo, depRepo }, task)
         }),
 
       forceStatus: (id, status) =>
@@ -661,7 +414,7 @@ export const TaskServiceLive = Layer.effect(
       listWithDeps: (filter) =>
         Effect.gen(function* () {
           const tasks = yield* taskRepo.findAll(filter)
-          return yield* enrichWithDepsBatch(tasks)
+          return yield* enrichWithDepsBatch({ taskRepo, depRepo }, tasks)
         }),
 
       count: (filter) => taskRepo.count(filter)

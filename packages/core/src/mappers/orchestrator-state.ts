@@ -5,6 +5,7 @@
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import type { OrchestratorState, OrchestratorStatus } from "../schemas/worker.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Database row type for orchestrator_state table.
@@ -31,7 +32,7 @@ export const ORCHESTRATOR_STATUSES = ["stopped", "starting", "running", "stoppin
  * Check if a string is a valid OrchestratorStatus.
  */
 export const isValidOrchestratorStatus = (s: string): s is OrchestratorStatus => {
-  return (ORCHESTRATOR_STATUSES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(ORCHESTRATOR_STATUSES)).includes(s)
 }
 
 /**

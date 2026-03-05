@@ -63,6 +63,20 @@
     "sdk": "apps/agent-sdk/src/client.ts",
     "required": ["cli", "mcp", "api", "sdk"]
   },
+  "gate": {
+    "cli": "apps/cli/src/commands/gate.ts",
+    "mcp": "apps/mcp-server/src/tools/pin.ts",
+    "api": "apps/api-server/src/routes/pins.ts",
+    "sdk": "apps/agent-sdk/src/client.ts",
+    "required": ["cli", "mcp", "api", "sdk"]
+  },
+  "spec-trace": {
+    "cli": "apps/cli/src/commands/spec.ts",
+    "mcp": "apps/mcp-server/src/tools/spec-trace.ts",
+    "api": "apps/api-server/src/routes/spec-trace.ts",
+    "sdk": "apps/agent-sdk/src/client.ts",
+    "required": ["cli", "mcp", "api", "sdk"]
+  },
   "inbox": {
     "cli": "apps/cli/src/commands/outbox.ts",
     "mcp": "apps/mcp-server/src/tools/message.ts",

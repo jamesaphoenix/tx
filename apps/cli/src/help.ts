@@ -73,13 +73,16 @@ Context Pins:
 Docs:
   doc <subcommand>        Manage docs (add, edit, show, list, render, lock, version, link, attach, patch, validate, drift, lint-ears)
   invariant <subcommand>  Manage invariants (list, show, record, sync)
+  spec <subcommand>       Spec traceability (discover, link, unlink, tests, gaps, fci, matrix, run, batch, complete, status)
 
 Cycle Scan:
   cycle                   Run cycle-based issue discovery with sub-agent swarms
 
 Sync & Data:
-  sync export             Export tasks to JSONL file
-  sync import             Import tasks from JSONL file
+  sync export             Export stream events
+  sync import             Import stream events
+  sync stream             Show stream identity
+  sync hydrate            Rebuild state from stream events
   sync status             Show sync status
   sync claude             Sync tasks to Claude Code team directory
   compact                 Compact completed tasks and export learnings
@@ -102,6 +105,10 @@ Guards & Limits:
   guard set               Set task creation guards (--max-pending, --max-children, --max-depth)
   guard show              Show current guard configuration
   guard clear             Clear guards
+  gate create <name>      Create a HITL phase gate (stored as gate.<name> pin)
+  gate check <name>       Exit 0 if approved, 1 if not approved
+  gate approve <name>     Approve a gate
+  gate revoke <name>      Revoke a gate
 
 Verification:
   verify set <id> <cmd>   Attach a verify command to a task
@@ -266,6 +273,7 @@ Options:
   --score <n>           New score (0-1000)
   --description, -d <text>  New description
   --parent, -p <id>     New parent task ID
+  --human               Treat completion-style updates as human initiated
   --json                Output as JSON
   --help                Show this help
 
@@ -284,11 +292,13 @@ Arguments:
   <id>    Required. Task ID (e.g., tx-a1b2c3d4)
 
 Options:
+  --human  Treat completion as human initiated
   --json  Output as JSON (includes task and newly unblocked task IDs)
   --help  Show this help
 
 Examples:
   tx done tx-a1b2c3d4
+  tx done tx-a1b2c3d4 --human
   tx done tx-a1b2c3d4 --json`,
 
   reset: `tx reset - Reset task to ready status
@@ -492,60 +502,72 @@ Examples:
   tx mcp-server
   tx mcp-server --db ~/project/.tx/tasks.db`,
 
-  sync: `tx sync - Manage JSONL sync and platform integrations
+  sync: `tx sync - Manage stream-based sync and platform integrations
 
 Usage: tx sync <subcommand> [options]
 
 Subcommands:
-  export    Export all tasks and dependencies to JSONL file
-  import    Import tasks from JSONL file (timestamp-based merge)
+  export    Export stream events
+  import    Import stream events incrementally
   status    Show sync status and whether database has unexported changes
+  stream    Show current stream ID and sequence info
+  hydrate   Rebuild materialized state from all stream events
   auto      Enable or disable automatic sync on mutations
-  compact   Compact JSONL file by deduplicating operations
   claude    Write tasks to Claude Code team task directory
   codex     Write tasks to Codex (coming soon)
 
 Run 'tx sync <subcommand> --help' for subcommand-specific help.
 
 Examples:
-  tx sync export               # Export to .tx/tasks.jsonl
-  tx sync import               # Import from .tx/tasks.jsonl
+  tx sync export               # Export events to .tx/streams/<stream>/events-YYYY-MM-DD.jsonl
+  tx sync import               # Import events from .tx/streams
+  tx sync stream               # Show stream identity
+  tx sync hydrate              # Full rebuild from events
   tx sync status               # Show sync status
   tx sync auto --enable        # Enable auto-sync
-  tx sync compact              # Compact JSONL file
   tx sync claude --team my-team  # Push tasks to Claude Code team`,
 
-  "sync export": `tx sync export - Export tasks to JSONL
+  "sync export": `tx sync export - Export stream events
 
 Usage: tx sync export [options]
 
-Exports tasks and dependencies from the database to JSONL files.
-The files can be committed to git for sharing across machines.
+Exports current DB state as append-only events to:
+.tx/streams/<stream_id>/events-YYYY-MM-DD.jsonl
 
 Options:
-  --path <p>        Output file path for tasks (default: .tx/tasks.jsonl)
   --json            Output result as JSON
   --help            Show this help
 
 Examples:
-  tx sync export                    # Export tasks only
+  tx sync export                    # Export stream events
   tx sync export --json             # Export as JSON`,
 
-  "sync import": `tx sync import - Import tasks from JSONL
+  "sync import": `tx sync import - Import from stream events
 
 Usage: tx sync import [options]
 
-Imports tasks from JSONL files into the database. Uses timestamp-based
-conflict resolution: newer records win. Safe to run multiple times.
+Imports events incrementally from .tx/streams/*/events-*.jsonl.
 
 Options:
-  --path <p>        Input file path for tasks (default: .tx/tasks.jsonl)
   --json            Output result as JSON
   --help            Show this help
 
 Examples:
-  tx sync import                    # Import tasks only
+  tx sync import                    # Import stream events
   tx sync import --json             # Import as JSON`,
+
+  "sync stream": `tx sync stream - Show stream identity and sequence state
+
+Usage: tx sync stream [--json]
+
+Shows local stream ID, current sequence, and stream directory path.`,
+
+  "sync hydrate": `tx sync hydrate - Full rebuild from stream event logs
+
+Usage: tx sync hydrate [--json]
+
+Clears materialized task state tables and rebuilds them by replaying all
+events from .tx/streams/*/events-*.jsonl.`,
 
   "sync status": `tx sync status - Show sync status
 
@@ -553,7 +575,7 @@ Usage: tx sync status [--json]
 
 Shows the current sync status including:
 - Number of tasks in database
-- Number of operations in JSONL file
+- Number of events in stream logs
 - Whether database has unexported changes (dirty)
 - Auto-sync enabled status
 
@@ -569,9 +591,9 @@ Examples:
 
 Usage: tx sync auto [--enable | --disable] [--json]
 
-Controls whether mutations automatically trigger JSONL export.
+Controls whether mutations automatically trigger stream event export.
 When auto-sync is enabled, any task create/update/delete will
-automatically export to the JSONL file.
+automatically export to local stream event logs.
 
 Options:
   --enable   Enable auto-sync
@@ -623,26 +645,6 @@ Writes tasks to OpenAI Codex's task format. Not yet implemented.
 
 Options:
   --help  Show this help`,
-
-  "sync compact": `tx sync compact - Compact JSONL file
-
-Usage: tx sync compact [--path <path>] [--json]
-
-Compacts the JSONL file by:
-- Keeping only the latest state for each entity
-- Removing deleted tasks (tombstones)
-- Removing removed dependencies
-
-This reduces file size and improves import performance.
-
-Options:
-  --path <p>  JSONL file path (default: .tx/tasks.jsonl)
-  --json      Output as JSON
-  --help      Show this help
-
-Examples:
-  tx sync compact                       # Compact default file
-  tx sync compact --path ~/shared.jsonl # Compact specific file`,
 
   migrate: `tx migrate - Manage database schema migrations
 
@@ -973,6 +975,7 @@ Arguments:
   <anchor-id>  Required. Anchor ID (number)
 
 Options:
+  --human  Treat bulk completion as human initiated
   --json   Output as JSON
   --help   Show this help
 
@@ -2341,6 +2344,148 @@ Examples:
   tx invariant sync --doc auth-flow  # Sync specific doc
   tx invariant sync --json`,
 
+  spec: `tx spec - Spec-to-test traceability primitives
+
+Usage: tx spec <subcommand> [options]
+
+Subcommands:
+  discover                     Discover invariant/test mappings from source + manifest
+  link <inv-id> <file> [name]  Manually link invariant to test
+  unlink <inv-id> <test-id>    Remove invariant/test link
+  tests <inv-id>               List tests linked to an invariant
+  gaps                         List uncovered invariants
+  fci                          Compute Feature Completion Index
+  matrix                       Show full traceability matrix
+  run <test-id>                Record pass/fail run result for mapped test id
+  batch                        Import batch run results from stdin JSON
+  complete                     Record human sign-off (HARDEN -> COMPLETE)
+  status                       Quick phase + FCI + gaps summary
+
+Run 'tx spec <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx spec discover
+  tx spec gaps --doc PRD-033-spec-test-traceability
+  tx spec fci --doc PRD-033-spec-test-traceability
+  tx spec run test/core.test.ts::"ready returns unblocked" --passed
+  vitest run --reporter=json | tx spec batch --from vitest
+  tx spec complete --doc PRD-033-spec-test-traceability --by james`,
+
+  "spec discover": `tx spec discover - Scan and upsert invariant/test mappings
+
+Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--json]
+
+Runs invariant sync first, then scans configured test patterns for [INV-*], _INV_*, and @spec annotations.
+Also imports .tx/spec-tests.yml manifest mappings.
+
+Options:
+  --doc <name>                 Sync/discover with doc focus
+  --patterns, -p <csv>         Override pattern list for this run
+  --json                       Output as JSON`,
+
+  "spec link": `tx spec link - Manually link an invariant to a test
+
+Usage: tx spec link <inv-id> <file> [name] [--framework <name>] [--json]
+
+Creates or updates a manual mapping in spec_tests.
+
+Examples:
+  tx spec link INV-EARS-FL-001 test/integration/core.test.ts "ready detection returns unblocked tasks"
+  tx spec link INV-EARS-FL-001 tests/test_ready.py test_ready_inv --framework pytest`,
+
+  "spec unlink": `tx spec unlink - Remove an invariant/test mapping
+
+Usage: tx spec unlink <inv-id> <test-id> [--json]
+
+Examples:
+  tx spec unlink INV-EARS-FL-001 test/integration/core.test.ts::ready detection returns unblocked tasks`,
+
+  "spec tests": `tx spec tests - List tests linked to an invariant
+
+Usage: tx spec tests <inv-id> [--json]
+
+Examples:
+  tx spec tests INV-EARS-FL-001
+  tx spec tests INV-EARS-FL-001 --json`,
+
+  "spec gaps": `tx spec gaps - List uncovered invariants (no linked tests)
+
+Usage: tx spec gaps [--doc <name>] [--sub <name>] [--json]
+
+Examples:
+  tx spec gaps
+  tx spec gaps --doc PRD-033-spec-test-traceability
+  tx spec gaps --sub core`,
+
+  "spec fci": `tx spec fci - Compute Feature Completion Index
+
+Usage: tx spec fci [--doc <name>] [--sub <name>] [--json]
+
+Returns:
+  total, covered, uncovered, passing, failing, untested, fci, phase
+
+Phase logic:
+  BUILD    fci < 100
+  HARDEN   fci = 100 and no sign-off
+  COMPLETE fci = 100 and signed off
+
+Options:
+  --doc <name>                 Scope by doc
+  --sub, --subsystem <name>    Scope by subsystem
+  --json                       Output as JSON`,
+
+  "spec batch": `tx spec batch - Import test run results from stdin
+
+Usage: tx spec batch [--from generic|vitest|pytest|go] [--json]
+
+Input must be piped via stdin. Generic format:
+  [{"testId":"file::name", "passed":true, "durationMs":12, "details":"..."}]
+
+Examples:
+  echo '[{"testId":"test/a.test.ts::works","passed":true}]' | tx spec batch
+  vitest run --reporter=json | tx spec batch --from vitest
+  pytest --json-report | tx spec batch --from pytest
+  go test -json ./... | tx spec batch --from go`,
+
+  "spec matrix": `tx spec matrix - Full invariant-to-test traceability matrix
+
+Usage: tx spec matrix [--doc <name>] [--sub <name>] [--json]
+
+Examples:
+  tx spec matrix
+  tx spec matrix --doc PRD-033-spec-test-traceability --json`,
+
+  "spec run": `tx spec run - Record a pass/fail run result for a canonical test ID
+
+Usage: tx spec run <test-id> --passed|--failed [--duration <ms>] [--details <text>] [--json]
+
+Exactly one of --passed or --failed must be provided.
+
+Examples:
+  tx spec run test/integration/core.test.ts::ready detection returns unblocked tasks --passed
+  tx spec run tests/test_ready.py::test_ready_inv --failed --details "assertion failed"`,
+
+  "spec complete": `tx spec complete - Record human completion sign-off
+
+Usage: tx spec complete [--doc <name> | --sub <name>] --by <human> [--notes <text>] [--json]
+
+Records sign-off only when phase is HARDEN (FCI must be 100).
+Rejects requests while phase is BUILD.
+
+Options:
+  --doc <name>                 Scope by doc
+  --sub, --subsystem <name>    Scope by subsystem
+  --by <human>                 Required human identifier
+  --notes <text>               Optional sign-off notes
+  --json                       Output as JSON`,
+
+  "spec status": `tx spec status - Quick phase summary
+
+Usage: tx spec status [--doc <name>] [--sub <name>] [--json]
+
+Returns:
+  phase, fci, gaps, total`,
+
   cycle: `tx cycle - Cycle-based issue discovery with sub-agent swarms
 
 Usage: tx cycle --task-prompt <text|file> [options]
@@ -2833,6 +2978,63 @@ Options:
   --scope <scope>   Clear only this scope (e.g., "global", "parent:tx-abc123")
   --json            Output as JSON
   --help            Show this help`,
+
+  gate: `tx gate - Human-in-the-loop phase gates (pin wrapper)
+
+Usage: tx gate <subcommand> [options]
+
+Subcommands:
+  create <name>              Create gate.<name> with default state
+  approve <name> --by <who>  Approve the gate
+  revoke <name> --by <who>   Revoke the gate
+  check <name>               Exit 0 if approved, 1 otherwise
+  status <name>              Show full gate state
+  list                       List all gate.* pins
+  rm <name>                  Remove gate pin
+
+Run 'tx gate <subcommand> --help' for subcommand-specific help.`,
+
+  "gate create": `tx gate create - Create a phase gate
+
+Usage: tx gate create <name> [--phase-from <phase>] [--phase-to <phase>] [--task-id <id>] [--force] [--json]
+
+Examples:
+  tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+  tx gate create docs-to-build --task-id tx-a1b2c3d4`,
+
+  "gate approve": `tx gate approve - Approve a phase gate
+
+Usage: tx gate approve <name> --by <approver> [--note <text>] [--json]
+
+Examples:
+  tx gate approve docs-to-build --by james`,
+
+  "gate revoke": `tx gate revoke - Revoke a phase gate
+
+Usage: tx gate revoke <name> --by <approver> [--reason <text>] [--json]
+
+Examples:
+  tx gate revoke docs-to-build --by james --reason "needs more review"`,
+
+  "gate check": `tx gate check - Check gate approval state
+
+Usage: tx gate check <name> [--json]
+
+Exit codes:
+  0  Gate approved
+  1  Gate missing or not approved`,
+
+  "gate status": `tx gate status - Show gate state
+
+Usage: tx gate status <name> [--json]`,
+
+  "gate list": `tx gate list - List all gates
+
+Usage: tx gate list [--json]`,
+
+  "gate rm": `tx gate rm - Remove a gate
+
+Usage: tx gate rm <name> [--json]`,
 
   verify: `tx verify - Machine-checkable verification
 

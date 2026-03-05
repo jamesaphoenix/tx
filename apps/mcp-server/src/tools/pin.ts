@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { PinService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
@@ -183,7 +183,7 @@ const handlePinTargetsSet = async (args: {
 // -----------------------------------------------------------------------------
 
 export const registerPinTools = (server: McpServer): void => {
-  server.tool(
+  registerEffectTool(server,
     "tx_pin_set",
     "Create or update a context pin. Pins are named content blocks that sync to agent context files (CLAUDE.md, AGENTS.md) as <tx-pin> XML tags.",
     {
@@ -193,7 +193,7 @@ export const registerPinTools = (server: McpServer): void => {
     async (args) => handlePinSet(args as { id: string; content: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_pin_get",
     "Read a context pin by ID.",
     {
@@ -202,7 +202,7 @@ export const registerPinTools = (server: McpServer): void => {
     async (args) => handlePinGet(args as { id: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_pin_rm",
     "Remove a context pin from the database and all target files.",
     {
@@ -211,28 +211,28 @@ export const registerPinTools = (server: McpServer): void => {
     async (args) => handlePinRm(args as { id: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_pin_list",
     "List all context pins.",
     {},
     async () => handlePinList()
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_pin_sync",
     "Re-sync all context pins to target files. Adds missing, updates changed, removes stale pins.",
     {},
     async () => handlePinSync()
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_pin_targets_get",
     "Get the list of target files that pins sync to (e.g. CLAUDE.md, AGENTS.md).",
     {},
     async () => handlePinTargetsGet()
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_pin_targets_set",
     "Set the target files that pins sync to. Replaces the current list.",
     {

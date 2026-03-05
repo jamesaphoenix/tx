@@ -22,7 +22,7 @@ REQ docs are maintained as markdown convention files under `docs/requirements/` 
 
 | REQ | Title | Status |
 |-----|-------|--------|
-| _TBD_ | Add first REQ document | Planned |
+| [REQ-033](requirements/REQ-033-spec-test-traceability.md) | Spec-to-Test Traceability | Draft |
 
 ## Product Requirements Documents (PRDs)
 
@@ -55,6 +55,7 @@ REQ docs are maintained as markdown convention files under `docs/requirements/` 
 | [PRD-026](prd/PRD-026-watchdog-onboarding-contract.md)| Watchdog Onboarding Contract  | Phase 2 |
 | [PRD-031](prd/PRD-031-ears-requirements.md)           | EARS Structured Requirements  | Phase 2 |
 | [PRD-032](prd/PRD-032-task-group-context-inheritance.md) | Task Group Context Inheritance | Phase 2 |
+| [PRD-033](prd/PRD-033-spec-test-traceability.md)      | Spec-to-Test Traceability Primitives | Phase 2 |
 
 ## Design Documents (DDs)
 
@@ -87,6 +88,7 @@ REQ docs are maintained as markdown convention files under `docs/requirements/` 
 | [DD-026](design/DD-026-watchdog-onboarding-contract.md) | Watchdog Onboarding Contract | PRD-026       |
 | [DD-031](design/DD-031-ears-requirements.md)         | EARS Requirements Integration | PRD-031       |
 | [DD-032](design/DD-032-task-group-context-inheritance.md) | Task Group Context Inheritance | PRD-032    |
+| [DD-033](design/DD-033-spec-test-traceability.md)    | Spec-to-Test Traceability Primitives | PRD-033 |
 
 ## System Design Documents (SDs)
 
@@ -94,7 +96,7 @@ SD docs are maintained as markdown convention files under `docs/system-design/` 
 
 | SD | Title | Applies To |
 |----|-------|------------|
-| _TBD_ | Add first SD document | Planned |
+| [SD-003](system-design/SD-003-spec-traceability-architecture.md) | Spec Traceability Architecture | PRD-033 / DD-033 |
 
 ## Implementation Phases
 
@@ -108,7 +110,7 @@ SD docs are maintained as markdown convention files under `docs/system-design/` 
 ### Phase 2 (v0.2.0) - Integrations
 
 - MCP server with full dependency info
-- JSONL git-backed sync
+- Stream event-log sync (git-backed JSONL shards)
 - JSON/JSONL export
 - Agent SDK integration
 - **Contextual learnings system** (BM25 + vector search)
@@ -132,7 +134,7 @@ SD docs are maintained as markdown convention files under `docs/system-design/` 
 | Decision  | Choice                               | Reference |
 | --------- | ------------------------------------ | --------- |
 | Storage   | SQLite via better-sqlite3 (WAL mode) | DD-001    |
-| Sync      | JSONL git-backed (bidirectional)     | DD-009    |
+| Sync      | Stream event logs (git-backed)       | DD-009    |
 | Framework | Effect-TS                            | DD-002    |
 | CLI       | @effect/cli                          | DD-003    |
 | MCP       | @modelcontextprotocol/sdk            | DD-005    |

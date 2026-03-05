@@ -1,5 +1,5 @@
 /**
- * @fileoverview Integration tests for require-primitive-implementations and require-primitive-docs.
+ * @fileoverview Integration tests for primitive documentation coverage rules.
  *
  * These tests run against REAL project files — no mocks.
  * They verify that:
@@ -8,7 +8,8 @@
  * 3. Every MDX file has all 4 interface tabs with code blocks
  * 4. No MDX file contains banned patterns or imports
  * 5. MCP tool names in docs match actual registered tools
- * 6. Port numbers are consistent (no localhost:3001)
+ * 6. llms.txt links every documented primitive page
+ * 7. Port numbers are consistent (no localhost:3001)
  */
 
 import { describe, it, expect } from "vitest"
@@ -21,14 +22,16 @@ const projectRoot = path.resolve(__dirname, "../..")
 const docsDir = path.join(projectRoot, "apps/docs/content/docs/primitives")
 const registryPath = path.join(projectRoot, "primitives-registry.json")
 const mcpToolsDir = path.join(projectRoot, "apps/mcp-server/src/tools")
+const llmsPath = path.join(projectRoot, "apps/docs/public/llms.txt")
 
 // Load real project data
 const registry = JSON.parse(fs.readFileSync(registryPath, "utf-8"))
-const { $comment, ...primitives } = registry
+const { $comment: _comment, ...primitives } = registry
 
 const mdxFiles = fs.readdirSync(docsDir)
   .filter((f) => f.endsWith(".mdx") && f !== "index.mdx")
 const mdxNames = mdxFiles.map((f) => f.replace(/\.mdx$/, ""))
+const llmsContent = fs.readFileSync(llmsPath, "utf-8")
 
 // Banned patterns matching eslint.config.js
 const BANNED_PATTERNS = [
@@ -218,6 +221,23 @@ describe("port consistency across all primitive docs", () => {
 })
 
 // =============================================================================
+// llms.txt Coverage
+// =============================================================================
+
+describe("llms.txt primitive coverage", () => {
+  it("includes every documented primitive URL", () => {
+    const missing = mdxNames.filter(
+      (primitive) => !llmsContent.includes(`https://tx-docs.vercel.app/docs/primitives/${primitive}`)
+    )
+
+    expect(
+      missing,
+      `Primitive pages missing from apps/docs/public/llms.txt:\n${missing.join("\n")}`
+    ).toHaveLength(0)
+  })
+})
+
+// =============================================================================
 // MCP Tool Name Validation (Real Files)
 // =============================================================================
 
@@ -225,13 +245,19 @@ describe("MCP tool names in docs match registered tools", () => {
   // Collect all registered tool names from MCP server
   const mcpToolFiles = fs.readdirSync(mcpToolsDir).filter((f) => f.endsWith(".ts"))
   const registeredTools = new Set()
+  const toolRegistrationPatterns = [
+    /server\.tool\(\s*"([^"]+)"/g,
+    /registerEffectTool\(\s*server\s*,\s*"([^"]+)"/g,
+    /\.registerTool\(\s*"([^"]+)"/g,
+  ]
 
   for (const file of mcpToolFiles) {
     const content = fs.readFileSync(path.join(mcpToolsDir, file), "utf-8")
-    const toolRegex = /server\.tool\(\s*"([^"]+)"/g
-    let match
-    while ((match = toolRegex.exec(content)) !== null) {
-      registeredTools.add(match[1])
+    for (const pattern of toolRegistrationPatterns) {
+      let match
+      while ((match = pattern.exec(content)) !== null) {
+        registeredTools.add(match[1])
+      }
     }
   }
 
@@ -621,5 +647,9 @@ describe("ESLint rule configuration consistency", () => {
 
   it("require-primitive-implementations rule is configured as error", () => {
     expect(eslintConfig).toContain("'tx/require-primitive-implementations': ['error'")
+  })
+
+  it("require-llms-primitive-coverage rule is configured as error", () => {
+    expect(eslintConfig).toContain("'tx/require-llms-primitive-coverage': ['error'")
   })
 })

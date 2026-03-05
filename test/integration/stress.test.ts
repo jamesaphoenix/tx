@@ -15,7 +15,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { existsSync, unlinkSync, mkdirSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Database } from "bun:sqlite"
@@ -30,6 +30,10 @@ import {
   LearningRepositoryLive,
   FileLearningRepositoryLive,
   AttemptRepositoryLive,
+  PinRepositoryLive,
+  AnchorRepositoryLive,
+  EdgeRepositoryLive,
+  DocRepositoryLive,
   TaskServiceLive,
   TaskService,
   DependencyServiceLive,
@@ -40,6 +44,7 @@ import {
   LearningServiceLive,
   LearningService,
   SyncServiceLive,
+  StreamServiceLive,
   SyncService,
   EmbeddingService,
   EmbeddingServiceNoop,
@@ -91,7 +96,12 @@ async function measurePerformance<T>(
  */
 function makeTaskTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    GuardRepositoryLive,
+    PinRepositoryLive
+  ).pipe(
     Layer.provide(infra)
   )
   const services = Layer.mergeAll(
@@ -114,7 +124,8 @@ function makeLearningTestLayer(db: TestDatabase) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     LearningRepositoryLive,
-    GuardRepositoryLive
+    GuardRepositoryLive,
+    PinRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -146,7 +157,7 @@ function makeLearningTestLayer(db: TestDatabase) {
       )
     )
   )
-  return services
+  return Layer.mergeAll(services, repos)
 }
 
 /**
@@ -160,6 +171,10 @@ function makeSyncTestLayer(db: TestDatabase) {
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     AttemptRepositoryLive,
+    PinRepositoryLive,
+    AnchorRepositoryLive,
+    EdgeRepositoryLive,
+    DocRepositoryLive,
     GuardRepositoryLive
   ).pipe(
     Layer.provide(infra)
@@ -173,7 +188,7 @@ function makeSyncTestLayer(db: TestDatabase) {
     Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
   )
   const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(infra, repos, baseServices))
+    Layer.provide(Layer.mergeAll(infra, repos, baseServices, StreamServiceLive.pipe(Layer.provide(infra))))
   )
   return Layer.mergeAll(baseServices, syncService, repos)
 }
@@ -282,23 +297,6 @@ function seedDeepDependencyChain(db: TestDatabase, depth: number): TaskId[] {
   })
 
   return ids
-}
-
-/**
- * Create temp file path for sync tests
- */
-function createTempJsonlPath(): string {
-  const tempDir = join(tmpdir(), "tx-stress-test")
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true })
-  }
-  return join(tempDir, `tasks-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`)
-}
-
-function cleanupTempFile(path: string): void {
-  if (existsSync(path)) {
-    unlinkSync(path)
-  }
 }
 
 // =============================================================================
@@ -456,16 +454,20 @@ describe.skipIf(SKIP_STRESS)("Stress: BM25 Search with 10,000+ learnings", () =>
 describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () => {
   let db: TestDatabase
   let layer: ReturnType<typeof makeSyncTestLayer>
-  let tempPath: string
+  let originalCwd: string
+  let tempProjectDir: string
 
   beforeEach(async () => {
     db = await Effect.runPromise(createTestDatabase())
     layer = makeSyncTestLayer(db)
-    tempPath = createTempJsonlPath()
+    originalCwd = process.cwd()
+    tempProjectDir = mkdtempSync(join(tmpdir(), "tx-stress-sync-"))
+    process.chdir(tempProjectDir)
   })
 
   afterEach(() => {
-    cleanupTempFile(tempPath)
+    process.chdir(originalCwd)
+    rmSync(tempProjectDir, { recursive: true, force: true })
   })
 
   it("exports 5000 tasks within threshold", async () => {
@@ -475,19 +477,19 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
       Effect.runPromise(
         Effect.gen(function* () {
           const sync = yield* SyncService
-          return yield* sync.export(tempPath)
+          return yield* sync.export()
         }).pipe(Effect.provide(layer))
       )
     )
 
     console.log(`Export 5000 tasks: ${durationMs.toFixed(2)}ms, memory delta: ${memoryDeltaMb.toFixed(2)}MB`)
 
-    expect(result.opCount).toBe(5000)
+    expect(result.eventCount).toBe(5000)
     expect(durationMs).toBeLessThan(THRESHOLDS.SYNC_EXPORT_5K)
 
-    // Verify file was written
-    expect(existsSync(tempPath)).toBe(true)
-    const lines = readFileSync(tempPath, "utf-8").trim().split("\n")
+    // Verify event file was written
+    expect(existsSync(result.path)).toBe(true)
+    const lines = readFileSync(result.path, "utf-8").trim().split("\n")
     expect(lines).toHaveLength(5000)
   })
 
@@ -500,7 +502,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
     await Effect.runPromise(
       Effect.gen(function* () {
         const sync = yield* SyncService
-        yield* sync.export(tempPath)
+        yield* sync.export()
       }).pipe(Effect.provide(sourceLayer))
     )
 
@@ -509,14 +511,14 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
       Effect.runPromise(
         Effect.gen(function* () {
           const sync = yield* SyncService
-          return yield* sync.import(tempPath)
+          return yield* sync.import()
         }).pipe(Effect.provide(layer))
       )
     )
 
     console.log(`Import 5000 tasks: ${durationMs.toFixed(2)}ms, memory delta: ${memoryDeltaMb.toFixed(2)}MB`)
 
-    expect(result.imported).toBe(5000)
+    expect(result.importedEvents).toBe(5000)
     expect(durationMs).toBeLessThan(THRESHOLDS.SYNC_IMPORT_5K)
 
     // Verify tasks were imported
@@ -546,14 +548,14 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
       Effect.runPromise(
         Effect.gen(function* () {
           const sync = yield* SyncService
-          return yield* sync.export(tempPath)
+          return yield* sync.export()
         }).pipe(Effect.provide(layer))
       )
     )
 
     console.log(`Export 1000 tasks + 99 deps: ${durationMs.toFixed(2)}ms`)
 
-    expect(result.opCount).toBe(1099) // 1000 tasks + 99 deps
+    expect(result.eventCount).toBe(1099) // 1000 tasks + 99 deps
   })
 })
 
@@ -722,7 +724,8 @@ describe.skipIf(SKIP_STRESS)("Stress: Batch Embedding Generation", () => {
       embed: (_text: string) => Effect.succeed(new Float32Array(256).fill(0.1)),
       embedBatch: (texts: readonly string[]) =>
         Effect.succeed(texts.map(() => new Float32Array(256).fill(0.1))),
-      isAvailable: () => Effect.succeed(true)
+      isAvailable: () => Effect.succeed(true),
+      dimensions: 256
     })
 
     const { result, durationMs, memoryDeltaMb } = await measurePerformance(async () =>
@@ -751,7 +754,8 @@ describe.skipIf(SKIP_STRESS)("Stress: Batch Embedding Generation", () => {
       embed: (_text: string) => Effect.succeed(new Float32Array(256).fill(0.1)),
       embedBatch: (textsInput: readonly string[]) =>
         Effect.succeed(textsInput.map(() => new Float32Array(256).fill(0.1))),
-      isAvailable: () => Effect.succeed(true)
+      isAvailable: () => Effect.succeed(true),
+      dimensions: 256
     })
 
     const { result, durationMs } = await measurePerformance(async () =>

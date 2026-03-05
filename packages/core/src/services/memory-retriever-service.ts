@@ -129,15 +129,14 @@ const rrfScore = (k: number, ...ranks: number[]): number => {
 }
 
 /** Intermediate RRF computation result */
-interface MemoryRRFCandidate {
+type MemoryRRFCandidate = {
   document: MemoryDocument
   bm25Score: number
   bm25Rank: number
   vectorScore: number
   vectorRank: number
   rrfScore: number
-  recencyScore: number
-}
+  recencyScore: number};
 
 /**
  * Combine BM25 and vector results using RRF.

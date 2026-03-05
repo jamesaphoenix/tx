@@ -8,7 +8,7 @@ const validPrioritySet = new Set<string>(EARS_PRIORITIES)
 
 type EarsPattern = (typeof EARS_PATTERNS)[number]
 
-export interface EarsValidationError {
+export type EarsValidationError = {
   readonly index: number
   readonly id: string | null
   readonly field: string
@@ -18,8 +18,7 @@ export interface EarsValidationError {
     | "invalid_format"
     | "duplicate_id"
     | "invalid_value"
-  readonly message: string
-}
+  readonly message: string};
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {

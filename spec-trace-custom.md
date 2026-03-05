@@ -1,0 +1,367 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e4]:
+      - text: tx-agent-kit is now open source|Full-stack starter with Effect, Temporal, Next.js & Drizzle
+      - link "Visit tx-agentkit docs" [ref=e5] [cursor=pointer]:
+        - /url: https://agentkit.txdocs.dev/docs
+        - text: Visit tx-agentkit docs
+        - img [ref=e6]
+    - button "Close Banner" [ref=e8]:
+      - img [ref=e9]
+  - generic [ref=e12]:
+    - complementary [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - link "tx" [ref=e16] [cursor=pointer]:
+            - /url: /
+          - button "Collapse Sidebar" [ref=e17]:
+            - img [ref=e18]
+        - button "Search ⌘ K" [ref=e20]:
+          - img [ref=e21]
+          - text: Search
+          - generic [ref=e24]:
+            - generic [ref=e25]: ⌘
+            - generic [ref=e26]: K
+      - generic [ref=e29]:
+        - link "llms.txt" [ref=e30] [cursor=pointer]:
+          - /url: /llms.txt
+          - img [ref=e31]
+          - text: llms.txt
+        - link "GitHub" [ref=e35] [cursor=pointer]:
+          - /url: https://github.com/jamesaphoenix/tx
+          - img [ref=e36]
+          - text: GitHub
+        - link "tx" [ref=e40] [cursor=pointer]:
+          - /url: /docs
+        - link "Getting Started" [ref=e41] [cursor=pointer]:
+          - /url: /docs/getting-started
+        - generic [ref=e42]:
+          - button "Primitives" [expanded] [ref=e43]:
+            - text: Primitives
+            - img [ref=e44]
+          - generic [ref=e46]:
+            - link "Primitives" [ref=e47] [cursor=pointer]:
+              - /url: /docs/primitives
+            - paragraph [ref=e48]: Task Management
+            - link "tx ready" [ref=e49] [cursor=pointer]:
+              - /url: /docs/primitives/ready
+            - link "tx done" [ref=e50] [cursor=pointer]:
+              - /url: /docs/primitives/done
+            - link "tx block" [ref=e51] [cursor=pointer]:
+              - /url: /docs/primitives/block
+            - link "tx claim" [ref=e52] [cursor=pointer]:
+              - /url: /docs/primitives/claim
+            - paragraph [ref=e53]: Memory & Context
+            - link "tx memory" [ref=e54] [cursor=pointer]:
+              - /url: /docs/primitives/memory
+            - link "tx context" [ref=e55] [cursor=pointer]:
+              - /url: /docs/primitives/context
+            - link "tx learning" [ref=e56] [cursor=pointer]:
+              - /url: /docs/primitives/learning
+            - link "tx pin" [ref=e57] [cursor=pointer]:
+              - /url: /docs/primitives/pin
+            - paragraph [ref=e58]: Bounded Autonomy
+            - link "tx gate" [ref=e59] [cursor=pointer]:
+              - /url: /docs/primitives/gate
+            - link "tx guard" [ref=e60] [cursor=pointer]:
+              - /url: /docs/primitives/guard
+            - link "tx verify" [ref=e61] [cursor=pointer]:
+              - /url: /docs/primitives/verify
+            - link "tx reflect" [ref=e62] [cursor=pointer]:
+              - /url: /docs/primitives/reflect
+            - link "tx label" [ref=e63] [cursor=pointer]:
+              - /url: /docs/primitives/label
+            - paragraph [ref=e64]: Coordination
+            - link "tx sync" [ref=e65] [cursor=pointer]:
+              - /url: /docs/primitives/sync
+            - link "tx send / tx inbox" [ref=e66] [cursor=pointer]:
+              - /url: /docs/primitives/inbox
+            - link "tx try / tx attempts" [ref=e67] [cursor=pointer]:
+              - /url: /docs/primitives/attempts
+            - link "tx handoff" [ref=e68] [cursor=pointer]:
+              - /url: /docs/primitives/handoff
+            - link "tx checkpoint" [ref=e69] [cursor=pointer]:
+              - /url: /docs/primitives/checkpoint
+            - paragraph [ref=e70]: Observability
+            - link "tx trace" [ref=e71] [cursor=pointer]:
+              - /url: /docs/primitives/traces
+            - link "tx doc" [ref=e72] [cursor=pointer]:
+              - /url: /docs/primitives/docs
+            - link "tx invariant" [ref=e73] [cursor=pointer]:
+              - /url: /docs/primitives/invariants
+            - link "tx spec" [ref=e74] [cursor=pointer]:
+              - /url: /docs/primitives/spec-trace
+        - button "Headful Experience" [ref=e76]:
+          - text: Headful Experience
+          - img [ref=e77]
+        - link "Watchdog Runbook" [ref=e79] [cursor=pointer]:
+          - /url: /docs/watchdog-runbook
+      - button "Toggle Theme" [ref=e82]:
+        - img [ref=e83]
+        - img [ref=e89]
+    - generic:
+      - button "Collapse Sidebar":
+        - img
+      - button "Open Search":
+        - img
+    - article [ref=e91]:
+      - generic [ref=e92]:
+        - heading "tx spec" [level=1] [ref=e93]
+        - paragraph [ref=e94]: Spec-to-test traceability with multi-language discovery and FCI phase scoring
+        - heading "Purpose" [level=2] [ref=e95]:
+          - link "Purpose" [ref=e96] [cursor=pointer]:
+            - /url: "#purpose"
+          - img [ref=e97]
+        - paragraph [ref=e100]:
+          - code [ref=e101]: tx spec
+          - text: "bridges docs and tests:"
+        - list [ref=e102]:
+          - listitem [ref=e103]:
+            - text: Sync invariants from tx docs (
+            - code [ref=e104]: tx invariant sync
+            - text: behavior)
+          - listitem [ref=e105]:
+            - text: Discover test mappings across languages from source annotations and
+            - code [ref=e106]: .tx/spec-tests.yml
+          - listitem [ref=e107]: Record test outcomes
+          - listitem [ref=e108]:
+            - text: Compute Feature Completion Index (FCI) and phase (
+            - code [ref=e109]: BUILD -> HARDEN -> COMPLETE
+            - text: )
+        - paragraph [ref=e110]: This is primitive infrastructure, not a test runner. You keep your existing framework and CI.
+        - heading "At A Glance" [level=2] [ref=e111]:
+          - link "At A Glance" [ref=e112] [cursor=pointer]:
+            - /url: "#at-a-glance"
+          - img [ref=e113]
+        - figure "Specs become invariants, discovery builds mappings from tags or manifest entries, and recorded outcomes drive FCI and phase." [ref=e116]:
+          - paragraph [ref=e118]: Spec Pipeline
+          - generic [ref=e120]:
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - paragraph [ref=e123]: Source
+                - paragraph [ref=e124]: Docs and invariants
+                - generic [ref=e125]:
+                  - generic [ref=e126]: tx docs
+                  - generic [ref=e127]: tx invariant sync
+              - generic [ref=e128]:
+                - paragraph [ref=e129]: Discovery
+                - paragraph [ref=e130]: Test sources
+                - generic [ref=e131]:
+                  - generic [ref=e132]: tags
+                  - generic [ref=e133]: .tx/spec-tests.yml
+            - generic [ref=e137]: ↓
+            - generic [ref=e138]:
+              - paragraph [ref=e139]: Mapping
+              - paragraph [ref=e140]: Traceability mappings
+              - generic [ref=e141]:
+                - generic [ref=e142]: discover
+                - generic [ref=e143]: link
+                - generic [ref=e144]: canonical IDs
+            - generic [ref=e148]: ↓
+            - generic [ref=e149]:
+              - paragraph [ref=e150]: Execution
+              - paragraph [ref=e151]: Recorded outcomes
+              - generic [ref=e152]:
+                - generic [ref=e153]: tx spec run
+                - generic [ref=e154]: tx spec batch
+            - generic [ref=e158]: ↓
+            - generic [ref=e159]:
+              - paragraph [ref=e160]: Scoring
+              - paragraph [ref=e161]: FCI and phase
+              - generic [ref=e162]:
+                - generic [ref=e163]: BUILD
+                - generic [ref=e164]: HARDEN
+                - generic [ref=e165]: COMPLETE
+          - generic [ref=e166]: Specs become invariants, discovery builds mappings from tags or manifest entries, and recorded outcomes drive FCI and phase.
+        - figure "BUILD is automatic while any active invariant is failing. HARDEN starts at 100% FCI. COMPLETE still requires a human sign-off." [ref=e167]:
+          - paragraph [ref=e169]: FCI Gate
+          - generic [ref=e170]:
+            - generic [ref=e171]:
+              - generic [ref=e172]:
+                - paragraph [ref=e173]: BUILD
+                - paragraph [ref=e174]: FCI < 100
+              - paragraph [ref=e177]: FCI reaches 100
+              - generic [ref=e178]:
+                - paragraph [ref=e179]: HARDEN
+                - paragraph [ref=e180]: FCI = 100
+              - paragraph [ref=e183]: tx spec complete
+              - generic [ref=e184]:
+                - paragraph [ref=e185]: COMPLETE
+                - paragraph [ref=e186]: human sign-off
+            - generic [ref=e187]: If any failing outcome is recorded after HARDEN, the phase drops back to BUILD.
+          - generic [ref=e188]: BUILD is automatic while any active invariant is failing. HARDEN starts at 100% FCI. COMPLETE still requires a human sign-off.
+        - heading "Canonical Test ID" [level=2] [ref=e189]:
+          - link "Canonical Test ID" [ref=e190] [cursor=pointer]:
+            - /url: "#canonical-test-id"
+          - img [ref=e191]
+        - paragraph [ref=e194]: "Every mapped test uses:"
+        - figure [ref=e195]:
+          - button "Copy Text" [ref=e197]:
+            - img [ref=e198]
+          - region [ref=e201]:
+            - code [ref=e203]:
+              - generic [ref=e204]: "{relative_file}::{test_name}"
+        - paragraph [ref=e205]: "Example:"
+        - figure [ref=e206]:
+          - button "Copy Text" [ref=e208]:
+            - img [ref=e209]
+          - region [ref=e212]:
+            - code [ref=e214]:
+              - generic [ref=e215]: test/integration/core.test.ts::ready detection returns unblocked tasks
+        - heading "Multi-Language Discovery" [level=2] [ref=e216]:
+          - link "Multi-Language Discovery" [ref=e217] [cursor=pointer]:
+            - /url: "#multi-language-discovery"
+          - img [ref=e218]
+        - paragraph [ref=e221]: Discovery is regex-based on raw text files. No AST parsing.
+        - paragraph [ref=e222]: "Supported annotation conventions:"
+        - list [ref=e223]:
+          - listitem [ref=e224]:
+            - text: "Tag in test names:"
+            - code [ref=e225]: "[INV-EARS-FL-001]"
+          - listitem [ref=e226]:
+            - text: "Underscore tags in function names:"
+            - code [ref=e227]: _INV_EARS_FL_001
+          - listitem [ref=e228]:
+            - text: "Comment annotations:"
+            - code [ref=e229]: "@spec INV-EARS-FL-001"
+          - listitem [ref=e230]:
+            - text: "Manifest mappings:"
+            - code [ref=e231]: .tx/spec-tests.yml
+        - paragraph [ref=e232]:
+          - text: Default scan patterns include common JS/TS, Python, Go, Rust, Java, Ruby, and C/C++ conventions. Override via
+          - code [ref=e233]: .tx/config.toml
+          - code [ref=e234]: "[spec].test_patterns"
+          - text: .
+        - heading "CLI" [level=2] [ref=e235]:
+          - link "CLI" [ref=e236] [cursor=pointer]:
+            - /url: "#cli"
+          - img [ref=e237]
+        - figure [ref=e240]:
+          - button "Copy Text" [ref=e242]:
+            - img [ref=e243]
+          - region [ref=e246]:
+            - code [ref=e248]:
+              - generic [ref=e249]: "# Discovery + mapping"
+              - generic [ref=e250]: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>]
+              - generic [ref=e251]: tx spec link <inv-id> <file> [name] [--framework <name>]
+              - generic [ref=e252]: tx spec unlink <inv-id> <test-id>
+              - generic [ref=e253]: tx spec tests <inv-id>
+              - generic [ref=e254]: tx spec gaps [--doc <name>] [--sub <name>]
+              - generic [ref=e255]: tx spec matrix [--doc <name>] [--sub <name>]
+              - generic [ref=e257]: "# Scoring + lifecycle"
+              - generic [ref=e258]: tx spec fci [--doc <name>] [--sub <name>]
+              - generic [ref=e259]: tx spec status [--doc <name>] [--sub <name>]
+              - generic [ref=e260]: tx spec complete [--doc <name> | --sub <name>] --by <human> [--notes <text>]
+              - generic [ref=e262]: "# Run ingestion"
+              - generic [ref=e263]: tx spec run <test-id> --passed|--failed [--duration <ms>] [--details <text>]
+              - generic [ref=e264]: "tx spec batch [--from generic|vitest|pytest|go|junit] # reads stdin"
+        - paragraph [ref=e265]: "Notes:"
+        - list [ref=e266]:
+          - listitem [ref=e267]:
+            - code [ref=e268]: tx spec run
+            - text: requires exactly one of
+            - code [ref=e269]: "--passed"
+            - text: or
+            - code [ref=e270]: "--failed"
+            - text: .
+          - listitem [ref=e271]:
+            - code [ref=e272]: tx spec complete
+            - text: requires
+            - code [ref=e273]: "--by"
+            - text: and only succeeds from
+            - code [ref=e274]: HARDEN
+            - text: .
+        - heading "Interfaces" [level=2] [ref=e275]:
+          - link "Interfaces" [ref=e276] [cursor=pointer]:
+            - /url: "#interfaces"
+          - img [ref=e277]
+        - generic [ref=e280]:
+          - tablist [ref=e281]:
+            - tab "CLI" [selected] [ref=e282]
+            - tab "TypeScript SDK" [ref=e283]
+            - tab "MCP" [ref=e284]
+            - tab "REST API" [ref=e285]
+          - tabpanel "CLI" [ref=e286]:
+            - figure [ref=e287]:
+              - button "Copy Text" [ref=e289]:
+                - img [ref=e290]
+              - region [ref=e293]:
+                - code [ref=e295]:
+                  - generic [ref=e296]: tx spec discover --doc PRD-033-spec-test-traceability
+                  - generic [ref=e297]: tx spec fci --doc PRD-033-spec-test-traceability
+                  - generic [ref=e298]: tx spec status --doc PRD-033-spec-test-traceability
+                  - generic [ref=e299]: vitest run --reporter=json | tx spec batch --from vitest
+                  - generic [ref=e300]: tx spec complete --doc PRD-033-spec-test-traceability --by james
+        - heading "FCI and Phases" [level=2] [ref=e301]:
+          - link "FCI and Phases" [ref=e302] [cursor=pointer]:
+            - /url: "#fci-and-phases"
+          - img [ref=e303]
+        - paragraph [ref=e306]:
+          - code [ref=e307]: FCI = passing_invariants / total_active_invariants * 100
+        - list [ref=e308]:
+          - listitem [ref=e309]:
+            - code [ref=e310]: BUILD
+            - text: ": FCI < 100"
+          - listitem [ref=e311]:
+            - code [ref=e312]: HARDEN
+            - text: ": FCI = 100 (auto)"
+          - listitem [ref=e313]:
+            - code [ref=e314]: COMPLETE
+            - text: ": human sign-off ("
+            - code [ref=e315]: tx spec complete
+            - text: )
+        - paragraph [ref=e316]: Use this as a readiness primitive for moving from implementation to hardening and release review.
+        - heading "Related Primitives" [level=2] [ref=e317]:
+          - link "Related Primitives" [ref=e318] [cursor=pointer]:
+            - /url: "#related-primitives"
+          - img [ref=e319]
+        - list [ref=e322]:
+          - listitem [ref=e323]:
+            - link "tx doc" [ref=e324] [cursor=pointer]:
+              - /url: /docs/primitives/docs
+              - code [ref=e325]: tx doc
+          - listitem [ref=e326]:
+            - link "tx invariant" [ref=e327] [cursor=pointer]:
+              - /url: /docs/primitives/invariants
+              - code [ref=e328]: tx invariant
+          - listitem [ref=e329]:
+            - link "tx verify" [ref=e330] [cursor=pointer]:
+              - /url: /docs/primitives/verify
+              - code [ref=e331]: tx verify
+      - generic [ref=e332]:
+        - link "tx invariant Machine-checkable rules extracted from design docs" [ref=e333] [cursor=pointer]:
+          - /url: /docs/primitives/invariants
+          - generic [ref=e334]:
+            - img [ref=e335]
+            - paragraph [ref=e337]: tx invariant
+          - paragraph [ref=e338]: Machine-checkable rules extracted from design docs
+        - link "Headful Experience Dashboard UX for tasks, docs, runs, and cycles" [ref=e339] [cursor=pointer]:
+          - /url: /docs/headful
+          - generic [ref=e340]:
+            - img [ref=e341]
+            - paragraph [ref=e343]: Headful Experience
+          - paragraph [ref=e344]: Dashboard UX for tasks, docs, runs, and cycles
+    - generic [ref=e345]:
+      - heading "On this page" [level=3] [ref=e346]:
+        - img [ref=e347]
+        - text: On this page
+      - generic [ref=e349]:
+        - link "Purpose" [ref=e350] [cursor=pointer]:
+          - /url: "#purpose"
+        - link "At A Glance" [ref=e351] [cursor=pointer]:
+          - /url: "#at-a-glance"
+        - link "Canonical Test ID" [ref=e352] [cursor=pointer]:
+          - /url: "#canonical-test-id"
+        - link "Multi-Language Discovery" [ref=e353] [cursor=pointer]:
+          - /url: "#multi-language-discovery"
+        - link "CLI" [ref=e354] [cursor=pointer]:
+          - /url: "#cli"
+        - link "Interfaces" [ref=e355] [cursor=pointer]:
+          - /url: "#interfaces"
+        - link "FCI and Phases" [ref=e356] [cursor=pointer]:
+          - /url: "#fci-and-phases"
+        - link "Related Primitives" [ref=e357] [cursor=pointer]:
+          - /url: "#related-primitives"
+  - button "Open Next.js Dev Tools" [ref=e363] [cursor=pointer]:
+    - img [ref=e364]
+  - alert [ref=e367]

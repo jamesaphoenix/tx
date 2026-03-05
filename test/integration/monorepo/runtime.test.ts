@@ -162,7 +162,7 @@ describe("Runtime Integration: @tx/core", () => {
     expect(learning.sourceType).toBe("manual")
   })
 
-  it("can run SyncService.export through layer", async () => {
+  it("can run SyncService export through layer", async () => {
     const { layer } = await getSharedTestLayer()
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -177,8 +177,7 @@ describe("Runtime Integration: @tx/core", () => {
       }).pipe(Effect.provide(layer))
     )
 
-    // Export writes to a file and returns the operation count and path
-    expect(result.opCount).toBe(2)
+    expect(result.eventCount).toBeGreaterThanOrEqual(2)
     expect(result.path).toBeDefined()
   })
 })

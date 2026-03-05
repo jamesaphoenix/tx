@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from "vitest"
 import { Hono } from "hono"
 import { createSharedTestLayer, wrapDbAsTestDatabase, type SharedTestLayerResult, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { isPathWithin } from "@jamesaphoenix/tx-core"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
-import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs"
-import { resolve } from "path"
-import { homedir } from "os"
-import { tmpdir } from "os"
+import { writeFileSync, readFileSync, mkdirSync, rmSync, existsSync, symlinkSync } from "node:fs"
+import { resolve } from "node:path"
+import { homedir } from "node:os"
+import { tmpdir } from "node:os"
 
 // Types matching the server
 interface TaskRow {
@@ -50,8 +51,8 @@ function createTestApp(
   const allowedTranscriptRoots = [resolvedTxDir, ...transcriptRoots.map(root => resolve(root))]
   const validateTranscriptPath = (filePath: string): string | null => {
     const resolved = resolve(filePath)
-    const isWithinAllowedRoot = allowedTranscriptRoots.some(root =>
-      resolved === root || resolved.startsWith(root + "/")
+    const isWithinAllowedRoot = allowedTranscriptRoots.some((root) =>
+      isPathWithin(root, resolved, { useRealpath: true })
     )
     return isWithinAllowedRoot ? resolved : null
   }
@@ -382,8 +383,7 @@ function createTestApp(
       if (run.transcript_path) {
         const validatedPath = validateTranscriptPath(run.transcript_path)
         if (validatedPath && existsSync(validatedPath)) {
-          const { readFileSync } = require("fs")
-          transcript = readFileSync(validatedPath, "utf-8")
+              transcript = readFileSync(validatedPath, "utf-8")
         }
       }
 
@@ -1706,6 +1706,27 @@ describe("Dashboard API - GET /api/runs/:id", () => {
 
     // Clean up
     rmSync(outsidePath)
+  })
+
+  it("returns null transcript when path is a symlink escaping an allowed root", async () => {
+    const outsidePath = resolve(tmpdir(), `outside-secret-${Date.now()}.txt`)
+    writeFileSync(outsidePath, "outside secret content")
+
+    const symlinkPath = resolve(testDir, "transcript-symlink.json")
+    symlinkSync(outsidePath, symlinkPath)
+
+    const now = new Date().toISOString()
+    db.db.prepare(`
+      INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("run-secur03", null, "agent-1", now, "completed", symlinkPath, "{}")
+
+    const res = await request(app, "/api/runs/run-secur03")
+    const data = await res.json()
+    expect(data.transcript).toBeNull()
+
+    rmSync(symlinkPath, { force: true })
+    rmSync(outsidePath, { force: true })
   })
 
   it("returns null transcript when file doesn't exist", async () => {

@@ -192,7 +192,6 @@ export const mdExport = (_pos: string[], flags: Flags) =>
       process.on("SIGINT", cleanup)
       process.on("SIGTERM", cleanup)
 
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         yield* Effect.sleep(Duration.seconds(interval))
         yield* exportAndHash()

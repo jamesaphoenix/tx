@@ -8,7 +8,8 @@
 import { Effect } from "effect"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { existsSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
+import { isPathWithin, normalizePathSeparators } from "@jamesaphoenix/tx-core"
 
 // Types for Claude transcript entries
 interface TranscriptUserMessage {
@@ -61,6 +62,16 @@ export interface ChatMessage {
   timestamp?: string
 }
 
+const findNearestTxRoot = (filePath: string): string | null => {
+  let current = resolve(filePath)
+  while (true) {
+    const parent = dirname(current)
+    if (parent === current) return null
+    if (basename(parent) === ".tx") return parent
+    current = parent
+  }
+}
+
 /**
  * Validate that a transcript path is under an allowed directory.
  * Prevents arbitrary file reads via path traversal.
@@ -77,10 +88,16 @@ export const isAllowedTranscriptPath = (filePath: string): boolean => {
   const claudeDir = resolve(join(homeDir, ".claude"))
 
   // Allow paths under ~/.claude/
-  if (resolved.startsWith(claudeDir + "/")) return true
+  if (isPathWithin(claudeDir, resolved, { useRealpath: true })) return true
 
-  // Allow paths under any .tx/ directory
-  if (resolved.includes("/.tx/")) return true
+  // Allow paths under a real .tx directory, but reject symlink escapes.
+  const segments = normalizePathSeparators(resolved).split("/").filter(Boolean)
+  if (segments.includes(".tx")) {
+    const txRoot = findNearestTxRoot(resolved)
+    if (txRoot && isPathWithin(txRoot, resolved, { useRealpath: true })) {
+      return true
+    }
+  }
 
   return false
 }

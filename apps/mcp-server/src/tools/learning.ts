@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import type { LearningSourceType } from "@jamesaphoenix/tx-types"
 import {
   LEARNING_SOURCE_TYPES,
@@ -210,8 +210,7 @@ const handleLearningHelpful = async (args: { id: number; score?: number }): Prom
  */
 export const registerLearningTools = (server: McpServer): void => {
   // tx_learn - Attach a learning to a file path or glob pattern
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_learn",
     "Attach a learning/note to a file path or glob pattern. Agents can query this when working on files.",
     {
@@ -219,36 +218,33 @@ export const registerLearningTools = (server: McpServer): void => {
       note: z.string().max(10000).describe("The learning/note to attach (max 10000 chars)"),
       taskId: z.string().max(500).optional().describe("Optional task ID to associate with (max 500 chars)")
     },
-    handleLearn as Parameters<typeof server.tool>[3]
+    handleLearn
   )
 
   // tx_recall - Query file learnings by path
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_recall",
     "Query file-specific learnings. If path is provided, returns learnings matching that path. Otherwise returns all file learnings.",
     {
       path: z.string().max(500).optional().describe("Optional file path to match against stored patterns (max 500 chars)"),
       limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of learnings to return (default: 100, max: ${MCP_MAX_LIMIT})`)
     },
-    handleRecall as Parameters<typeof server.tool>[3]
+    handleRecall
   )
 
   // tx_context - Get contextual learnings for a task
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_context",
     "Get contextual learnings relevant to a task. Searches learnings using the task's title and description, returns scored results with BM25, recency, and relevance scores.",
     {
       taskId: z.string().max(500).describe("Task ID to get context for (max 500 chars)"),
       maxTokens: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of learnings to return (default: 10, max: ${MCP_MAX_LIMIT})`)
     },
-    handleContext as Parameters<typeof server.tool>[3]
+    handleContext
   )
 
   // tx_learning_add - Add a new learning to the knowledge base
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_learning_add",
     "Add a new learning to the contextual learnings knowledge base. Learnings can be retrieved later based on relevance to tasks.",
     {
@@ -258,12 +254,11 @@ export const registerLearningTools = (server: McpServer): void => {
       category: z.string().max(200).optional().describe("Optional category for organizing learnings (max 200 chars)"),
       keywords: z.array(z.string().max(200)).max(50).optional().describe("Optional keywords for improved search (max 50 keywords, each max 200 chars)")
     },
-    handleLearningAdd as Parameters<typeof server.tool>[3]
+    handleLearningAdd
   )
 
   // tx_learning_search - Search learnings with BM25 scoring
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_learning_search",
     "Search learnings using BM25 text search. Returns scored results with relevance, BM25, and recency scores.",
     {
@@ -272,18 +267,17 @@ export const registerLearningTools = (server: McpServer): void => {
       minScore: z.number().min(0).max(1).optional().describe("Minimum relevance score filter (0-1)"),
       category: z.string().max(200).optional().describe("Filter by category (max 200 chars)")
     },
-    handleLearningSearch as Parameters<typeof server.tool>[3]
+    handleLearningSearch
   )
 
   // tx_learning_helpful - Record helpfulness score for a learning
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_learning_helpful",
     "Record helpfulness/outcome score for a learning. Use this to provide feedback on whether a learning was useful.",
     {
       id: z.number().int().positive().describe("Learning ID to update"),
       score: z.number().min(0).max(1).optional().describe("Helpfulness score between 0 and 1 (default: 1.0)")
     },
-    handleLearningHelpful as Parameters<typeof server.tool>[3]
+    handleLearningHelpful
   )
 }

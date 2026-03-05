@@ -38,6 +38,7 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 
 | Command | Purpose |
 |---------|---------|
+| `tx gate create <name>` | Create a human approval gate for phase transitions |
 | `tx guard set` | Set task creation limits (`--max-pending`, `--max-children`, `--max-depth`, `--enforce`) |
 | `tx guard show` | Show current guard configuration |
 | `tx verify set <id> <cmd>` | Attach a shell verification command to a task |
@@ -51,10 +52,12 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 
 | Command | Purpose |
 |---------|---------|
+| `tx memory search --query <text>` | Search filesystem memory docs |
 | `tx learning:add <content>` | Record knowledge for future agents |
 | `tx learning:search <q>` | Search learnings (BM25 + recency) |
 | `tx learn <path> <note>` | Attach a learning to a file path or glob |
 | `tx recall [path]` | Query file-specific learnings by path |
+| `tx pin set <id> <content>` | Persist a context pin (shared with agents) |
 
 ### Messaging (Agent Outbox)
 
@@ -71,6 +74,15 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx claim <id> <worker>` | Claim a task with a lease |
 | `tx claim:release <id> <w>` | Release a claim |
 | `tx claim:renew <id> <w>` | Renew a lease |
+
+### Inspection & Specs
+
+| Command | Purpose |
+|---------|---------|
+| `tx attempts <id>` | Review recorded attempts for a task |
+| `tx trace list` | Inspect recent run traces |
+| `tx invariant list` | Inspect invariant registry and status |
+| `tx spec status` | Inspect requirement/spec/test traceability status |
 
 ### Sync & Data
 

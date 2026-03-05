@@ -34,11 +34,12 @@ const parseMetadata = (metadataJson: string | null): Record<string, unknown> => 
   try {
     parsed = JSON.parse(metadataJson)
   } catch (error: unknown) {
-    if (!(error instanceof SyntaxError)) throw error
+    const message = error instanceof Error ? error.message : String(error)
+    const reasonTag = error instanceof SyntaxError ? "SyntaxError" : "ParseError"
     console.warn(
-      `[tx] Corrupted metadata JSON (SyntaxError): ${error.message}. Raw value preserved for recovery.`
+      `[tx] Corrupted metadata JSON (${reasonTag}): ${message}. Raw value preserved for recovery.`
     )
-    return { _corruptedRaw: metadataJson, _corruptionError: `SyntaxError: ${error.message}` }
+    return { _corruptedRaw: metadataJson, _corruptionError: `${reasonTag}: ${message}` }
   }
 
   try {

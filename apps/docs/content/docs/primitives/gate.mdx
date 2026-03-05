@@ -1,0 +1,521 @@
+---
+title: tx gate
+description: Human-in-the-loop phase gates for orchestration transitions
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps'
+import { Accordions, Accordion } from 'fumadocs-ui/components/accordion'
+import { Mermaid } from '@/components/mermaid'
+
+## Purpose
+
+`tx gate` adds explicit human approval checkpoints between phases (for example, `docs_harden -> feature_build`).
+
+A gate is stored as a pin with ID `gate.<name>` and JSON state content.
+
+<Callout type="info" title="Best Practice">
+Use `--task-id` to link the gate to a real human review task. The gate approval controls phase progression. The linked task records the review checkpoint in the task graph and prevents an agent from silently closing it when the default pin protection is enabled.
+</Callout>
+
+## Gate State
+
+```json
+{
+  "approved": false,
+  "phaseFrom": "docs_harden",
+  "phaseTo": "feature_build",
+  "taskId": null,
+  "required": true,
+  "approvedBy": null,
+  "approvedAt": null,
+  "revokedBy": null,
+  "revokedAt": null,
+  "revokeReason": null,
+  "note": null,
+  "createdAt": "2026-03-05T13:44:09.821Z"
+}
+```
+
+## Control Plane At A Glance
+
+<Cards>
+  <Card
+    title="Gate approval"
+    description="Controls whether the next phase may start. This is what tx gate check reads."
+  />
+  <Card
+    title="Linked review task"
+    description="Makes the review visible in the queue, dashboard, and task graph. Agents should not close it."
+  />
+  <Card
+    title="Human actor signal"
+    description="Humans close the linked task with tx done --human or x-tx-actor: human. Agent paths stay blocked."
+  />
+</Cards>
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx gate create <name> [--phase-from <phase>] [--phase-to <phase>] [--task-id <id>] [--force] [--json]
+tx gate approve <name> --by <approver> [--note <text>] [--json]
+tx gate revoke <name> --by <approver> [--reason <text>] [--json]
+tx gate check <name> [--json]
+tx gate status <name> [--json]
+tx gate list [--json]
+tx gate rm <name> [--json]
+```
+
+```bash
+# Create gate
+tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+
+# Link a gate to a task so agents cannot mark it done
+tx gate create docs-to-build --task-id tx-a1b2c3d4
+
+# Approve gate
+tx gate approve docs-to-build --by james --note "spec + tests reviewed"
+
+# Block until approved (exit 0 if approved, 1 otherwise)
+tx gate check docs-to-build
+
+# Revoke gate
+tx gate revoke docs-to-build --by james --reason "missing migration plan"
+
+# Inspect and cleanup
+tx gate status docs-to-build
+tx gate list
+tx gate rm docs-to-build
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+There is no dedicated `tx.gates` namespace yet. Use `tx.pins` with `gate.<name>` IDs.
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+const gateId = (name: string) => `gate.${name}`
+
+const createState = {
+  approved: false,
+  phaseFrom: 'docs_harden',
+  phaseTo: 'feature_build',
+  required: true,
+  approvedBy: null,
+  approvedAt: null,
+  revokedBy: null,
+  revokedAt: null,
+  revokeReason: null,
+  note: null,
+  createdAt: new Date().toISOString(),
+}
+
+// create/update
+await tx.pins.set(gateId('docs-to-build'), JSON.stringify(createState))
+
+// read/check
+const pin = await tx.pins.get(gateId('docs-to-build'))
+const state = pin ? JSON.parse(pin.content) : null
+if (!state?.approved) throw new Error('Gate not approved')
+
+// approve
+await tx.pins.set(gateId('docs-to-build'), JSON.stringify({
+  ...state,
+  approved: true,
+  approvedBy: 'james',
+  approvedAt: new Date().toISOString(),
+  revokedBy: null,
+  revokedAt: null,
+  revokeReason: null,
+}))
+
+// list gates
+const gates = (await tx.pins.list()).filter((p) => p.id.startsWith('gate.'))
+
+// remove
+await tx.pins.remove(gateId('docs-to-build'))
+```
+
+</Tab>
+<Tab value="MCP">
+
+There are no gate-specific MCP tools yet. Use pin tools with IDs prefixed by `gate.`.
+
+```text
+tx_pin_set
+tx_pin_get
+tx_pin_list
+tx_pin_rm
+```
+
+</Tab>
+<Tab value="REST API">
+
+There are no gate-specific endpoints yet. Use pin endpoints with IDs prefixed by `gate.`.
+
+```text
+POST   /api/pins/{id}
+GET    /api/pins/{id}
+GET    /api/pins
+DELETE /api/pins/{id}
+```
+
+```bash
+# Create gate pin
+GATE_STATE=$(jq -nc '{
+  approved: false,
+  phaseFrom: "docs_harden",
+  phaseTo: "feature_build",
+  required: true,
+  approvedBy: null,
+  approvedAt: null,
+  revokedBy: null,
+  revokedAt: null,
+  revokeReason: null,
+  note: null,
+  createdAt: "2026-03-05T13:44:09.821Z"
+}')
+
+curl -X POST http://localhost:3456/api/pins/gate.docs-to-build \
+  -H "Content-Type: application/json" \
+  -d "$(jq -nc --arg content \"$GATE_STATE\" '{content: $content}')"
+
+# Read gate pin
+curl http://localhost:3456/api/pins/gate.docs-to-build
+
+# List all pins (filter gate.* client-side)
+curl http://localhost:3456/api/pins
+
+# Remove gate pin
+curl -X DELETE http://localhost:3456/api/pins/gate.docs-to-build
+```
+
+</Tab>
+</Tabs>
+
+## Guard vs Gate
+
+| Primitive | What it controls |
+|-----------|------------------|
+| [`tx guard`](/docs/primitives/guard) | Task creation limits (quantity/depth constraints) |
+| `tx gate` | Human approval for phase transitions |
+
+## Agent Loop Pattern
+
+```bash
+# Require explicit approval between phases
+tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+
+while task=$(tx ready --label "phase:docs_harden" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  codex "Complete $task and run tx done $task"
+done
+
+# Human approval checkpoint
+tx gate check docs-to-build
+
+while task=$(tx ready --label "phase:feature_build" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  codex "Implement $task and run tx done $task"
+done
+```
+
+## Recommended Pattern: Link The Gate To A Human Review Task
+
+The strongest pattern is to make the gate visible in the task graph.
+
+1. Create a real review task for the phase boundary.
+2. Store that task ID on the gate with `--task-id`.
+3. Let agents finish the implementation phase.
+4. Require a human to approve the gate and complete the linked review task via the human path.
+5. Start the next phase only after `tx gate check` passes.
+
+This gives you three useful properties:
+
+- The review work is visible in `tx list`, `tx show`, and the dashboard.
+- The linked task cannot be accidentally completed by an agent while the default pin protection is enabled.
+- Your orchestration loop has an explicit, auditable human checkpoint.
+
+Important:
+
+- `tx gate approve` is what makes `tx gate check` pass.
+- Completing the linked review task is separate. It records the review work in the task graph and ensures that an agent cannot silently close that checkpoint for you.
+
+## Sequence Diagrams
+
+<Mermaid
+  title="Happy Path"
+  caption="Agent finishes the phase. Human approves the gate and closes the linked review task."
+  actorIcons={{ Setup: "human", Human: "human", Agent: "robot" }}
+  chart={`sequenceDiagram
+    autonumber
+    actor Setup as Setup
+    participant TX as tx
+    actor Agent
+    actor Human
+
+    Setup->>TX: create human review task
+    TX-->>Setup: REVIEW_TASK
+    Setup->>TX: create gate with taskId=REVIEW_TASK
+
+    loop docs_harden phase
+      Agent->>TX: request next ready task
+      TX-->>Agent: phase task
+      Agent->>TX: complete normal phase task
+      TX-->>Agent: task completed
+    end
+
+    Human->>TX: inspect REVIEW_TASK and gate state
+    Human->>TX: approve gate
+    Human->>TX: complete REVIEW_TASK with human actor
+    Human->>TX: run gate check
+    TX-->>Human: approved
+
+    Agent->>TX: request next ready feature_build task
+    TX-->>Agent: next-phase task
+  `}
+/>
+
+<Mermaid
+  title="Agent Attempt Fails"
+  caption="The linked review task stays human-owned, so agent completion is rejected."
+  actorIcons={{ Human: "human", Agent: "robot" }}
+  chart={`sequenceDiagram
+    autonumber
+    actor Agent
+    participant TX as tx
+    participant Policy as gate policy
+    actor Human
+
+    Agent->>TX: complete REVIEW_TASK
+    Note over Agent,TX: CLI and REST default to agent.
+    TX->>Policy: linked taskId and protection enabled?
+    Policy-->>TX: yes, block agent completion
+    TX-->>Agent: validation error
+
+    Human->>TX: approve gate
+    Human->>TX: complete REVIEW_TASK with --human or x-tx-actor: human
+    TX-->>Human: task completed
+  `}
+/>
+
+<Callout type="warn" title="Two Separate Levers">
+`tx gate approve` and human completion of the linked task are intentionally separate.
+
+- Approve the gate to let the next phase start.
+- Complete the linked task as a human to close the visible review checkpoint in the task graph.
+</Callout>
+
+## Sequence: Agent Phase To Human Review To Next Phase
+
+<Steps>
+  <Step>
+    ### Human creates the review checkpoint
+
+    Create a normal task for the phase boundary and put its ID on the gate.
+
+    ```bash
+    REVIEW_TASK=$(tx add "Human review: docs_harden -> feature_build" --json | jq -r '.id')
+    tx gate create docs-to-build \
+      --phase-from docs_harden \
+      --phase-to feature_build \
+      --task-id "$REVIEW_TASK"
+    ```
+  </Step>
+  <Step>
+    ### Agents finish the implementation phase
+
+    Agents complete normal work tasks, but they do not complete the linked review task.
+
+    ```bash
+    while task=$(tx ready --label "phase:docs_harden" --json --limit 1 | jq -r '.[0].id // empty'); do
+      [ -z "$task" ] && break
+      codex "Complete $task. Do not complete $REVIEW_TASK."
+    done
+    ```
+  </Step>
+  <Step>
+    ### Human reviews and approves
+
+    The human checks the review task, inspects the gate state, then approves the phase boundary.
+
+    ```bash
+    tx show "$REVIEW_TASK"
+    tx gate status docs-to-build
+    tx gate approve docs-to-build --by james --note "Docs phase reviewed and approved"
+    ```
+  </Step>
+  <Step>
+    ### Human closes the linked review task
+
+    This is intentionally a human action. It keeps the review visible and prevents agent-driven completion.
+
+    ```bash
+    tx done "$REVIEW_TASK" --human
+    ```
+  </Step>
+  <Step>
+    ### Next phase starts only after the gate passes
+
+    ```bash
+    tx gate check docs-to-build
+    ```
+  </Step>
+</Steps>
+
+## Human Review Loop (CLI)
+
+```bash
+# 1. Create the human review task and capture its ID
+REVIEW_TASK=$(tx add "Human review: docs_harden -> feature_build" --json | jq -r '.id')
+
+# 2. Link the gate to that review task
+tx gate create docs-to-build \
+  --phase-from docs_harden \
+  --phase-to feature_build \
+  --task-id "$REVIEW_TASK"
+
+# 3. Agents work the current phase
+while task=$(tx ready --label "phase:docs_harden" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  codex "Complete $task. If you finish it successfully, run tx done $task. Do not complete $REVIEW_TASK."
+done
+
+# 4. Human reviews the phase boundary task
+tx show "$REVIEW_TASK"
+tx gate status docs-to-build
+tx gate approve docs-to-build --by james --note "Docs phase reviewed and approved"
+tx done "$REVIEW_TASK" --human
+
+# 5. Only now allow the next phase to proceed
+tx gate check docs-to-build
+
+while task=$(tx ready --label "phase:feature_build" --json --limit 1 | jq -r '.[0].id // empty'); do
+  [ -z "$task" ] && break
+  codex "Implement $task and run tx done $task"
+done
+```
+
+## Human Review Loop (REST + Agent Worker)
+
+Use this when your workers talk to the API server over HTTP instead of the local CLI.
+
+```bash
+# Human creates a review task
+REVIEW_TASK=$(curl -s -X POST http://localhost:3456/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Human review: docs_harden -> feature_build"}' | jq -r '.id')
+
+# Human or setup script creates the linked gate pin
+GATE_STATE=$(jq -nc --arg taskId "$REVIEW_TASK" '{
+  approved: false,
+  phaseFrom: "docs_harden",
+  phaseTo: "feature_build",
+  taskId: $taskId,
+  required: true,
+  approvedBy: null,
+  approvedAt: null,
+  revokedBy: null,
+  revokedAt: null,
+  revokeReason: null,
+  note: null,
+  createdAt: "2026-03-05T13:44:09.821Z"
+}')
+
+curl -X POST http://localhost:3456/api/pins/gate.docs-to-build \
+  -H "Content-Type: application/json" \
+  -d "$(jq -nc --arg content "$GATE_STATE" '{content: $content}')"
+
+# Agent tries to complete the linked task -> rejected because API defaults to agent
+curl -X POST "http://localhost:3456/api/tasks/$REVIEW_TASK/done"
+
+# Human operator approves and completes through the human path
+tx gate approve docs-to-build --by james --note "Reviewed in dashboard"
+curl -X POST "http://localhost:3456/api/tasks/$REVIEW_TASK/done" \
+  -H "x-tx-actor: human"
+```
+
+## What The Agent Should Do
+
+When a gate has a linked `taskId`, the agent loop should treat that task as a human-owned checkpoint.
+
+- The agent may surface the review task to a human with `tx show <task-id>`.
+- The agent may poll `tx gate check <name>` and stop when it exits non-zero.
+- The agent must not try to force completion of the linked task.
+- The human should be the one who approves the gate and completes the linked review task.
+
+Think of the two actions this way:
+
+- Gate approval controls whether the next phase may start.
+- Human completion of the linked task controls who is allowed to close the review checkpoint in the task graph.
+
+If you want a simple contract to embed in prompts, use this:
+
+```text
+If a gate pin contains taskId, treat that task as human-owned. Never mark it done yourself. Wait for tx gate check <name> to pass, or ask the human to review and complete the linked task via tx done <id> --human.
+```
+
+## Failure Modes And Recovery
+
+<Accordions type="multiple">
+  <Accordion title="Agent tries to mark the linked review task done">
+    The completion is rejected when the task is linked by a gate pin and `[pins].block_agent_done_when_task_id_present = true`.
+
+    Recovery:
+
+    - Leave the task assigned to the human checkpoint flow.
+    - Ask the human to approve the gate.
+    - Ask the human to complete the linked task with `tx done <id> --human` or `x-tx-actor: human`.
+  </Accordion>
+  <Accordion title="Human approves the gate but forgets to complete the linked task">
+    `tx gate check` will pass, because approval controls the phase transition. The review task will still remain open in the task graph.
+
+    Recovery:
+
+    - Complete the linked task with `tx done <id> --human`.
+    - Treat the linked task as your audit trail for the review step.
+  </Accordion>
+  <Accordion title="Human completes the review task but forgets to approve the gate">
+    The task graph will show the review as done, but `tx gate check` will still fail because the gate itself is not approved.
+
+    Recovery:
+
+    - Run `tx gate approve <name> --by <person>`.
+    - Re-run `tx gate check <name>`.
+  </Accordion>
+</Accordions>
+
+## Related Commands
+
+- [`tx guard`](/docs/primitives/guard) - Bound task proliferation
+- [`tx verify`](/docs/primitives/verify) - Attach executable done criteria
+- [`tx label`](/docs/primitives/label) - Scope queues by phase
+- [`tx pin`](/docs/primitives/pin) - Underlying storage primitive for gates
+
+## Linked Tasks
+
+Gate pins can optionally store a `taskId`. When `[pins].block_agent_done_when_task_id_present = true`
+in `.tx/config.toml` (default), agent-driven completion is blocked for that task until a human
+finishes it via a human actor path such as the API or `tx done <id> --human`.
+
+```toml
+[pins]
+block_agent_done_when_task_id_present = true
+```
+
+Completion is actor-aware:
+
+- REST task update and completion requests default to `agent`. Direct human-operated REST clients must send `x-tx-actor: human`.
+- The dashboard already sends `x-tx-actor: human`.
+- CLI task completion defaults to `agent`. Use `tx done <id> --human` when a human is intentionally closing the linked task.
+
+If you omit the human actor signal on a linked task, tx treats the completion as agent-driven and rejects it while this config is enabled.

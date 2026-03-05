@@ -1,15 +1,18 @@
 import { Context, Effect, Layer } from "effect"
 import { Database } from "bun:sqlite"
-import { mkdirSync, existsSync } from "fs"
-import { dirname } from "path"
+import { mkdirSync, existsSync } from "node:fs"
+import { dirname } from "node:path"
 import { MIGRATIONS } from "./services/migration-service.js"
 import { DatabaseError } from "./errors.js"
+
+const ANCHOR_SCHEMA_REPAIR_DESCRIPTION = "anchor schema repair"
+const ANCHOR_SCHEMA_REQUIRED_TABLES = ["learning_anchors", "learning_edges", "invalidation_log"] as const
 
 /**
  * Result type for SQL statement run operations.
  * Compatible with bun:sqlite's return type.
  */
-export interface SqliteRunResult {
+export type SqliteRunResult = {
   lastInsertRowid: number | bigint
   changes: number
 }
@@ -18,7 +21,7 @@ export interface SqliteRunResult {
  * Minimal interface for SQL statement objects.
  * Describes what we need from bun:sqlite's Statement type.
  */
-export interface SqliteStatement<TResult = unknown> {
+export type SqliteStatement<TResult = unknown> = {
   run(...params: unknown[]): SqliteRunResult
   get(...params: unknown[]): TResult | null
   all(...params: unknown[]): TResult[]
@@ -29,7 +32,7 @@ export interface SqliteStatement<TResult = unknown> {
  * Describes what we need from bun:sqlite's Database type.
  * This allows declaration generation without exposing private types.
  */
-export interface SqliteDatabase {
+export type SqliteDatabase = {
   prepare<T = unknown>(sql: string): SqliteStatement<T>
   run(sql: string, ...params: unknown[]): SqliteRunResult
   exec(sql: string): void
@@ -55,6 +58,12 @@ export const getSchemaVersion = (db: Database): number => {
   }
 }
 
+const findMissingTables = (db: Database, expectedTables: readonly string[]): string[] => {
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+  const existing = new Set(rows.map((row) => row.name))
+  return expectedTables.filter((table) => !existing.has(table))
+}
+
 /**
  * Apply all pending migrations to the database.
  * Uses the centralized MIGRATIONS from migration-service.ts.
@@ -74,6 +83,26 @@ export const applyMigrations = (db: Database): void => {
         db.exec("COMMIT")
       } catch (e) {
         db.exec("ROLLBACK")
+        // eslint-disable-next-line tx/no-throw-in-services -- migration bootstrap must surface DB failures to caller
+        throw e
+      }
+    }
+  }
+
+  // Safety net: if a drifted local DB reports a high schema_version but is missing
+  // anchor-related tables, re-run the idempotent repair migration.
+  const missingAnchorTables = findMissingTables(db, ANCHOR_SCHEMA_REQUIRED_TABLES)
+  if (missingAnchorTables.length > 0) {
+    const repairMigration = MIGRATIONS.find((migration) => migration.description === ANCHOR_SCHEMA_REPAIR_DESCRIPTION)
+    if (repairMigration) {
+      db.exec("BEGIN IMMEDIATE")
+      try {
+        db.exec(repairMigration.sql)
+        db.exec(`INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (${repairMigration.version}, datetime('now'))`)
+        db.exec("COMMIT")
+      } catch (e) {
+        db.exec("ROLLBACK")
+        // eslint-disable-next-line tx/no-throw-in-services -- repair bootstrap must surface DB failures to caller
         throw e
       }
     }

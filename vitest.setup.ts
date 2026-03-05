@@ -13,6 +13,12 @@
 import { beforeAll, afterEach, afterAll } from "vitest"
 import { getSharedTestLayer, resetTestDb, closeTestDb } from "@jamesaphoenix/tx-test-utils"
 
+// CLI-heavy integration suites run many subprocesses in parallel.
+// Use a conservative default timeout unless explicitly overridden.
+if (!process.env.CLI_TEST_TIMEOUT) {
+  process.env.CLI_TEST_TIMEOUT = process.env.CI ? "120000" : "90000"
+}
+
 // Initialize singleton DB before any tests run
 beforeAll(async () => {
   await getSharedTestLayer()

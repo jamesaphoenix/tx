@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest"
-import { readFileSync, existsSync, rmSync } from "fs"
-import { join } from "path"
+import { readFileSync, existsSync, rmSync } from "node:fs"
+import { join } from "node:path"
 import { execSync } from "child_process"
 
 const DOCS_DIR = join(process.cwd(), "apps/docs")

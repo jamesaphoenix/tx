@@ -53,7 +53,12 @@
       "outputs": []
     },
     "lint": {
+      "dependsOn": ["//#lint:root"],
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", ".eslintrc.*"],
+      "outputs": []
+    },
+    "//#lint:root": {
+      "inputs": ["eslint.config.js", "eslint-plugin-tx/**/*.js"],
       "outputs": []
     },
     "test": {

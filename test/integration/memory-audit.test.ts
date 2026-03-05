@@ -1800,7 +1800,7 @@ describe("Memory Audit P0 Tests", () => {
       ].join("\n"))
 
       const result = await Effect.runPromise(
-        Effect.gen(function* () {
+        (Effect.gen(function* () {
           const svc = yield* MemoryService
           yield* svc.addSource(tempDir)
           yield* svc.index()
@@ -1811,7 +1811,11 @@ describe("Memory Audit P0 Tests", () => {
           const backlinks = yield* svc.getBacklinks(doc.id)
 
           return { docId: doc.id, links, backlinks }
-        }).pipe(Effect.provide(shared.layer) as never)
+        }).pipe(Effect.provide(shared.layer))) as Effect.Effect<{
+          readonly docId: string
+          readonly links: readonly { readonly targetDocId: string | null }[]
+          readonly backlinks: readonly { readonly sourceDocId: string }[]
+        }, unknown, never>
       )
 
       // The wikilink [[Architecture]] should NOT resolve to itself
@@ -1840,7 +1844,7 @@ describe("Memory Audit P0 Tests", () => {
       writeMd(tempDir, "linker.md", "# Linker\nSee [[Getting Started]] for details.")
 
       const result = await Effect.runPromise(
-        Effect.gen(function* () {
+        (Effect.gen(function* () {
           const svc = yield* MemoryService
           yield* svc.addSource(tempDir)
           yield* svc.index()
@@ -1851,7 +1855,10 @@ describe("Memory Audit P0 Tests", () => {
           const links = yield* svc.getLinks(linker.id)
           const resolved = links.find((l: { targetRef: string }) => l.targetRef === "Getting Started")
           return { targetDocId: resolved?.targetDocId, candidateIds: candidates.map((c: { id: string }) => c.id) }
-        }).pipe(Effect.provide(shared.layer) as never)
+        }).pipe(Effect.provide(shared.layer))) as Effect.Effect<{
+          readonly targetDocId: string | null | undefined
+          readonly candidateIds: readonly string[]
+        }, unknown, never>
       )
 
       // Must resolve to one of the two valid candidates (not null, not linker itself)
@@ -1869,7 +1876,7 @@ describe("Memory Audit P0 Tests", () => {
       writeMd(tempDir, "target.md", "# Target\nThe target document.")
 
       const result = await Effect.runPromise(
-        Effect.gen(function* () {
+        (Effect.gen(function* () {
           const svc = yield* MemoryService
           yield* svc.addSource(tempDir)
           yield* svc.index()
@@ -1885,7 +1892,10 @@ describe("Memory Audit P0 Tests", () => {
           const explicit = links.find((l: { linkType: string }) => l.linkType === "explicit")
 
           return { explicit, targetId: target.id }
-        }).pipe(Effect.provide(shared.layer) as never)
+        }).pipe(Effect.provide(shared.layer))) as Effect.Effect<{
+          readonly explicit: { readonly targetDocId: string | null } | undefined
+          readonly targetId: string
+        }, unknown, never>
       )
 
       // The explicit link should already be resolved to the target document
@@ -1903,7 +1913,7 @@ describe("Memory Audit P0 Tests", () => {
       writeMd(tempDir, "b.md", "# Page B\nThe target.")
 
       const result = await Effect.runPromise(
-        Effect.gen(function* () {
+        (Effect.gen(function* () {
           const svc = yield* MemoryService
           yield* svc.addSource(tempDir)
           yield* svc.index()
@@ -1926,7 +1936,10 @@ describe("Memory Audit P0 Tests", () => {
             resolvedBefore: resolvedBefore?.targetDocId,
             resolvedAfter: linkAfter?.targetDocId,
           }
-        }).pipe(Effect.provide(shared.layer) as never)
+        }).pipe(Effect.provide(shared.layer))) as Effect.Effect<{
+          readonly resolvedBefore: string | null | undefined
+          readonly resolvedAfter: string | null | undefined
+        }, unknown, never>
       )
 
       expect(result.resolvedBefore).toBeDefined()
@@ -5029,7 +5042,7 @@ Content`)
           yield* svc.index()
 
           const refreshed = yield* svc.getDocument(doc.id)
-          return refreshed.tags.sort()
+          return [...refreshed.tags].sort()
         }).pipe(Effect.provide(shared.layer))
       )
 

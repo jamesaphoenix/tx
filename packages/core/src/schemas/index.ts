@@ -25,7 +25,6 @@ export {
   AttemptDataSchema,
   AttemptUpsertOp,
   AttemptSyncOperation,
-  SyncOperation,
   AnySyncOperation
 } from "./sync.js"
 
@@ -43,9 +42,25 @@ export type {
   FileLearningSyncOperation as FileLearningSyncOperationType,
   AttemptUpsertOp as AttemptUpsertOpType,
   AttemptSyncOperation as AttemptSyncOperationType,
-  SyncOperation as SyncOperationType,
   AnySyncOperation as AnySyncOperationType
 } from "./sync.js"
+
+export {
+  SyncEventVersionSchema,
+  UlidSchema,
+  StreamIdSchema,
+  EventIdSchema,
+  SyncEventTypeSchema,
+  SyncEventEnvelopeSchema,
+  SyncEventEnvelopeSchema as SyncEventEnvelope,
+  StreamConfigSchema
+} from "./sync-events.js"
+
+export type {
+  SyncEventEnvelope as SyncEventEnvelopeType,
+  StreamConfig as StreamConfigType,
+  SyncEventType as SyncEventTypeType
+} from "./sync-events.js"
 
 // Worker orchestration schemas
 export {

@@ -5,6 +5,7 @@
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import type { Worker, WorkerStatus } from "../schemas/worker.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Database row type for workers table.
@@ -31,7 +32,7 @@ export const WORKER_STATUSES = ["starting", "idle", "busy", "stopping", "dead"] 
  * Check if a string is a valid WorkerStatus.
  */
 export const isValidWorkerStatus = (s: string): s is WorkerStatus => {
-  return (WORKER_STATUSES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(WORKER_STATUSES)).includes(s)
 }
 
 /**

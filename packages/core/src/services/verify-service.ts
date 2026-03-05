@@ -7,7 +7,7 @@ import { TaskNotFoundError, VerifyError, type DatabaseError } from "../errors.js
 import { readTxConfig } from "../utils/toml-config.js"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 
-export interface VerifyResult {
+export type VerifyResult = {
   readonly taskId: string
   readonly exitCode: number
   readonly passed: boolean
@@ -15,8 +15,7 @@ export interface VerifyResult {
   readonly stderr: string
   readonly durationMs: number
   readonly output?: Record<string, unknown>
-  readonly schemaValid?: boolean
-}
+  readonly schemaValid?: boolean};
 
 export class VerifyService extends Context.Tag("VerifyService")<
   VerifyService,

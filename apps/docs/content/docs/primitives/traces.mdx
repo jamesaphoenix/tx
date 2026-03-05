@@ -15,6 +15,40 @@ import { Tab, Tabs } from "fumadocs-ui/components/tabs"
 
 Traces help answer "why did this run fail?" by correlating internal service timing with agent tool calls.
 
+## At A Glance
+
+<Mermaid
+  title="Failure Triage"
+  caption="A run leaves breadcrumbs in files and events. `tx trace` pulls them back together during debugging."
+  chart={`sequenceDiagram
+    autonumber
+    participant Agent
+    participant TX as tx
+    participant Files as transcript/stderr
+    participant Events as spans/events
+    participant Operator
+
+    Agent->>Files: append transcript + stderr
+    Agent->>TX: heartbeat samples
+    TX->>Events: write spans + errors
+    Operator->>TX: tx trace list / show
+    Operator->>Files: tx trace transcript / stderr
+    Operator->>TX: tx trace stalled / errors
+  `}
+/>
+
+<Mermaid
+  title="Stall Detection"
+  caption="Heartbeat and transcript growth determine whether a run is healthy, stalled, or ready to reap."
+  chart={`flowchart LR
+    Heartbeat[Heartbeat samples] --> Idle{Idle past threshold?}
+    Transcript[Transcript growth] --> Idle
+    Idle -->|No| Healthy[Run continues]
+    Idle -->|Yes| Stalled[tx trace stalled]
+    Stalled --> Reap[tx trace stalled --reap]
+  `}
+/>
+
 ## List Recent Runs
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
@@ -668,4 +702,4 @@ The adapter is selected automatically based on the agent type stored in the run 
 - [`tx ready`](/docs/primitives/ready) -- List tasks available to work on
 - [`tx done`](/docs/primitives/done) -- Complete a task (ends the logical work unit)
 - [`tx attempts`](/docs/primitives/attempts) -- Record what approaches were tried
-- [`tx sync`](/docs/primitives/sync) -- Export run data to git-friendly JSONL
+- [`tx sync`](/docs/primitives/sync) -- Export and import append-only stream events

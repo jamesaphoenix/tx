@@ -4,6 +4,7 @@ import { DatabaseError, EntityFetchError, FileLearningNotFoundError } from "../e
 import { rowToFileLearning, matchesPattern } from "../mappers/file-learning.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class FileLearningRepository extends Context.Tag("FileLearningRepository")<
   FileLearningRepository,
@@ -37,11 +38,11 @@ export const FileLearningRepositoryLive = Layer.effect(
               now
             )
             // Fetch the inserted row
-            const row = db.prepare("SELECT * FROM file_learnings WHERE id = ?").get(result.lastInsertRowid) as FileLearningRow | undefined
+            const row = coerceDbResult<FileLearningRow | undefined>(db.prepare("SELECT * FROM file_learnings WHERE id = ?").get(result.lastInsertRowid))
             if (!row) {
               throw new EntityFetchError({
                 entity: "file_learning",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -53,7 +54,7 @@ export const FileLearningRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM file_learnings WHERE id = ?").get(id) as FileLearningRow | undefined
+            const row = coerceDbResult<FileLearningRow | undefined>(db.prepare("SELECT * FROM file_learnings WHERE id = ?").get(id))
             return row ? rowToFileLearning(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -62,9 +63,9 @@ export const FileLearningRepositoryLive = Layer.effect(
       findAll: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<FileLearningRow[]>(db.prepare(
               `SELECT * FROM file_learnings ORDER BY created_at DESC LIMIT ?`
-            ).all(limit ?? DEFAULT_QUERY_LIMIT) as FileLearningRow[]
+            ).all(limit ?? DEFAULT_QUERY_LIMIT))
             return rows.map(rowToFileLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -74,9 +75,9 @@ export const FileLearningRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             // Get all file learnings and filter by pattern matching
-            const rows = db.prepare(
+            const rows = coerceDbResult<FileLearningRow[]>(db.prepare(
               `SELECT * FROM file_learnings ORDER BY created_at DESC`
-            ).all() as FileLearningRow[]
+            ).all())
 
             return rows
               .filter(row => matchesPattern(row.file_pattern, path))
@@ -99,7 +100,7 @@ export const FileLearningRepositoryLive = Layer.effect(
       count: () =>
         Effect.try({
           try: () => {
-            const result = db.prepare("SELECT COUNT(*) as cnt FROM file_learnings").get() as { cnt: number }
+            const result = coerceDbResult<{ cnt: number }>(db.prepare("SELECT COUNT(*) as cnt FROM file_learnings").get())
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })

@@ -31,9 +31,8 @@ const LEASE_RENEWAL_MULTIPLIER = 10
 /**
  * Internal shutdown state shared between signal handlers and worker loop.
  */
-interface ShutdownState {
-  shutdownRequested: boolean
-}
+type ShutdownState = {
+  shutdownRequested: boolean};
 
 /**
  * Run a headless worker that executes tasks using user-provided hooks.

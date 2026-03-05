@@ -22,7 +22,8 @@ import {
   isReadyResult,
   HierarchyServiceLive,
   AutoSyncServiceNoop,
-  GuardRepositoryLive
+  GuardRepositoryLive,
+  PinRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
@@ -33,7 +34,8 @@ import { seedFixtures, FIXTURES } from "../fixtures.js"
 
 function makeTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
+  PinRepositoryLive).pipe(
     Layer.provide(infra)
   )
   const services = Layer.mergeAll(

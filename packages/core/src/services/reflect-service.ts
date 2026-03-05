@@ -7,20 +7,18 @@ import { DatabaseError } from "../errors.js"
 import { LlmService } from "./llm-service.js"
 import type { Run, TaskId } from "@jamesaphoenix/tx-types"
 
-export interface ReflectSignal {
+export type ReflectSignal = {
   readonly type: string
   readonly message: string
-  readonly severity: "info" | "warning" | "critical"
-}
+  readonly severity: "info" | "warning" | "critical"};
 
-export interface StuckTask {
+export type StuckTask = {
   readonly id: string
   readonly title: string
   readonly failedAttempts: number
-  readonly lastError: string | null
-}
+  readonly lastError: string | null};
 
-export interface ReflectResult {
+export type ReflectResult = {
   readonly sessions: {
     readonly total: number
     readonly completed: number
@@ -42,8 +40,7 @@ export interface ReflectResult {
   }
   readonly stuckTasks: readonly StuckTask[]
   readonly signals: readonly ReflectSignal[]
-  readonly analysis: string | null
-}
+  readonly analysis: string | null};
 
 export class ReflectService extends Context.Tag("ReflectService")<
   ReflectService,

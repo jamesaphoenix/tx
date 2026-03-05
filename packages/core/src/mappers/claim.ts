@@ -5,6 +5,7 @@
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import type { TaskClaim, ClaimStatus } from "../schemas/worker.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Database row type for task_claims table.
@@ -28,7 +29,7 @@ export const CLAIM_STATUSES = ["active", "released", "expired", "completed"] as 
  * Check if a string is a valid ClaimStatus.
  */
 export const isValidClaimStatus = (s: string): s is ClaimStatus => {
-  return (CLAIM_STATUSES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(CLAIM_STATUSES)).includes(s)
 }
 
 /**

@@ -15,12 +15,15 @@ When a task is completed, any tasks that were waiting on it may become unblocked
 <Tab value="CLI">
 
 ```bash
-tx done <id> [options]
+tx done <id> [--human] [options]
 ```
 
 ```bash
 # Mark a task as complete
 tx done tx-abc123
+
+# Mark a task as complete as a human caller
+tx done tx-abc123 --human
 
 # Complete a task and get JSON response
 tx done tx-abc123 --json
@@ -77,7 +80,13 @@ POST /api/tasks/:id/done
 **Example:**
 
 ```bash
-curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
+# Agent caller (default if header is omitted)
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done \
+  -H "x-tx-actor: agent"
+
+# Human-operated REST client
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done \
+  -H "x-tx-actor: human"
 ```
 
 </Tab>
@@ -93,8 +102,37 @@ curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
 
 | Option | Description |
 |--------|-------------|
+| `--human` | Mark the completion as human-initiated instead of agent-initiated |
 | `--json` | Output as JSON (includes task and newly unblocked task IDs) |
 | `--help` | Show help |
+
+## Actor Semantics
+
+Task completion is actor-aware.
+
+- CLI defaults to `agent`. Pass `--human` when a person is completing the task from the terminal.
+- REST API completion requests default to `agent`. Direct human-operated clients must send `x-tx-actor: human`.
+- The dashboard already sends `x-tx-actor: human` for task update and completion requests.
+- The TypeScript SDK HTTP client sends `x-tx-actor: agent`.
+
+This matters when completion rules depend on whether the caller is an agent or a human.
+
+## Gate-Linked Tasks
+
+Gate pins can optionally link to a task by storing `taskId`. When `.tx/config.toml` keeps the default:
+
+```toml
+[pins]
+block_agent_done_when_task_id_present = true
+```
+
+agent-driven completion of that linked task is blocked.
+
+Use one of these human paths to finish the task:
+
+- CLI: `tx done <id> --human`
+- REST API: `POST /api/tasks/:id/done` with `x-tx-actor: human`
+- Dashboard: no extra work; the dashboard already sends the human actor header
 
 ## Output
 

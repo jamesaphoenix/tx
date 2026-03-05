@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { GuardService } from "@jamesaphoenix/tx-core"
 import { assertTaskId } from "@jamesaphoenix/tx-types"
 import { runEffect } from "../runtime.js"
@@ -145,7 +145,7 @@ const handleGuardCheck = async (args: {
 // -----------------------------------------------------------------------------
 
 export const registerGuardTools = (server: McpServer): void => {
-  server.tool(
+  registerEffectTool(server,
     "tx_guard_set",
     "Set task creation limits (bounded autonomy). Limits can be global or scoped to a parent task. Advisory mode (default) emits warnings; enforce mode blocks task creation.",
     {
@@ -158,14 +158,14 @@ export const registerGuardTools = (server: McpServer): void => {
     async (args) => handleGuardSet(args as { scope?: string; maxPending?: number; maxChildren?: number; maxDepth?: number; enforce?: boolean })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_guard_show",
     "Show all configured task creation guards. Returns guard limits for all scopes.",
     {},
     async (args) => handleGuardShow(args as Record<string, unknown>)
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_guard_clear",
     "Clear task creation guards. Clears all guards by default, or a specific scope.",
     {
@@ -174,7 +174,7 @@ export const registerGuardTools = (server: McpServer): void => {
     async (args) => handleGuardClear(args as { scope?: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_guard_check",
     "Check if task creation would pass guard limits. Returns pass/fail status and any warnings without actually creating a task.",
     {

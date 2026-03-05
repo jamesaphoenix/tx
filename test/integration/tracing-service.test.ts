@@ -24,14 +24,14 @@ const FIXTURE_RUN_ID_2 = fixtureId("tracing-run-2")
  * Create a run record in the database.
  * Required because events.run_id has a foreign key constraint to runs(id).
  */
-function createRunRecord(db: Database, runId: string): void {
+function createRunRecord(db: TestDatabase, runId: string): void {
   db.db.prepare(`
     INSERT INTO runs (id, agent, started_at, status)
     VALUES (?, 'test-agent', datetime('now'), 'running')
   `).run(runId)
 }
 
-function makeTracingLayer(db: Database) {
+function makeTracingLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
   return TracingServiceLive.pipe(Layer.provide(infra))
 }

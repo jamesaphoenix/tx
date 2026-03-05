@@ -15,9 +15,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, existsSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
+import { mkdtempSync, rmSync, existsSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 
@@ -43,7 +43,8 @@ import {
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive,
-  GuardRepositoryLive
+  GuardRepositoryLive,
+  PinRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 import { serializeTask } from "@jamesaphoenix/tx-types"
@@ -224,13 +225,14 @@ function runCli(args: string[], dbPath: string): CliResult {
 
 type McpServices = TaskService | ReadyService | DependencyService
 
-function createMcpRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpServices, unknown> {
+function createMcpRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpServices, unknown> {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
 
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
+  PinRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive
   ).pipe(

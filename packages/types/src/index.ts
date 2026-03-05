@@ -378,6 +378,46 @@ export {
   type InvariantCheckRow,
 } from "./doc.js"
 
+// Spec traceability types & schemas
+export {
+  SPEC_DISCOVERY_METHODS,
+  SPEC_SCOPE_TYPES,
+  SPEC_PHASES,
+  SpecDiscoveryMethodSchema,
+  SpecScopeTypeSchema,
+  SpecPhaseSchema,
+  SpecTestIdSchema,
+  SpecTestSchema,
+  SpecTestRunSchema,
+  SpecSignoffSchema,
+  SpecScopeFilterSchema,
+  DiscoverResultSchema,
+  FciResultSchema,
+  SpecTestLatestRunSchema,
+  TraceabilityMatrixTestSchema,
+  TraceabilityMatrixEntrySchema,
+  TraceabilityMatrixSchema,
+  BatchRunInputSchema,
+  type SpecDiscoveryMethod,
+  type SpecScopeType,
+  type SpecPhase,
+  type SpecTestId,
+  type SpecTest,
+  type SpecTestRun,
+  type SpecSignoff,
+  type SpecScopeFilter,
+  type DiscoverResult,
+  type FciResult,
+  type SpecTestLatestRun,
+  type TraceabilityMatrixTest,
+  type TraceabilityMatrixEntry,
+  type TraceabilityMatrix,
+  type BatchRunInput,
+  type SpecTestRow,
+  type SpecTestRunRow,
+  type SpecSignoffRow,
+} from "./spec-trace.js"
+
 // Memory types & schemas (filesystem-backed memory system)
 export {
   MEMORY_LINK_TYPES,

@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import type { Doc, DocLink, DocKind, DocStatus, DocLinkType } from "@jamesaphoenix/tx-types"
 import { DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, assertDocKind, assertDocStatus, assertDocLinkType } from "@jamesaphoenix/tx-types"
 import { DocService } from "@jamesaphoenix/tx-core"
@@ -244,7 +244,7 @@ const handleDocRender = async (args: { name?: string }): Promise<McpToolResult> 
  */
 export const registerDocTools = (server: McpServer): void => {
   // tx_doc_list - List docs with optional kind/status filter
-  server.tool(
+  registerEffectTool(server,
     "tx_doc_list",
     "List docs with optional filters for kind and status",
     {
@@ -256,7 +256,7 @@ export const registerDocTools = (server: McpServer): void => {
   )
 
   // tx_doc_get - Get a doc by name
-  server.tool(
+  registerEffectTool(server,
     "tx_doc_get",
     "Get detailed information about a doc by name, optionally at a specific version",
     {
@@ -267,7 +267,7 @@ export const registerDocTools = (server: McpServer): void => {
   )
 
   // tx_doc_create - Create a new doc
-  server.tool(
+  registerEffectTool(server,
     "tx_doc_create",
     "Create a new doc with YAML content. Writes YAML to .tx/docs/ and stores metadata in DB.",
     {
@@ -280,7 +280,7 @@ export const registerDocTools = (server: McpServer): void => {
   )
 
   // tx_doc_update - Update doc YAML content
-  server.tool(
+  registerEffectTool(server,
     "tx_doc_update",
     "Update a doc's YAML content. Fails if the doc is locked.",
     {
@@ -291,7 +291,7 @@ export const registerDocTools = (server: McpServer): void => {
   )
 
   // tx_doc_lock - Lock a doc (make immutable)
-  server.tool(
+  registerEffectTool(server,
     "tx_doc_lock",
     "Lock a doc to make it immutable. Locked docs cannot be updated.",
     {
@@ -301,7 +301,7 @@ export const registerDocTools = (server: McpServer): void => {
   )
 
   // tx_doc_link - Link two docs
-  server.tool(
+  registerEffectTool(server,
     "tx_doc_link",
     "Create a directed link between two docs. Link type is auto-inferred from doc kinds if not provided.",
     {
@@ -313,7 +313,7 @@ export const registerDocTools = (server: McpServer): void => {
   )
 
   // tx_doc_render - Render doc(s) to markdown
-  server.tool(
+  registerEffectTool(server,
     "tx_doc_render",
     "Render doc YAML to markdown. Renders a single doc if name is provided, otherwise renders all docs.",
     {

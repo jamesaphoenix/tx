@@ -33,6 +33,7 @@ import { dashboard } from "./commands/dashboard.js"
 import { send, inbox, ack, ackAll, outboxPending, outboxGc } from "./commands/outbox.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
+import { spec } from "./commands/spec.js"
 import { groupContextSet, groupContextClear } from "./commands/group-context.js"
 import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
 import { scaffoldConfigToml } from "@jamesaphoenix/tx-core"
@@ -44,6 +45,7 @@ import { guard } from "./commands/guard.js"
 import { verify } from "./commands/verify.js"
 import { label } from "./commands/label.js"
 import { reflect } from "./commands/reflect.js"
+import { gate } from "./commands/gate.js"
 import * as p from "@clack/prompts"
 
 // --- Argv parsing helpers ---
@@ -122,7 +124,8 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       const forceWatchdog = flag(initFlags, "watchdog")
 
       if (initFlags["watchdog-runtime"] !== undefined && !forceWatchdog) {
-        throw new Error("--watchdog-runtime requires --watchdog.")
+        console.error("--watchdog-runtime requires --watchdog.")
+        return yield* Effect.fail(new CliExitError(1))
       }
       const watchdogRuntimeMode = parseWatchdogRuntimeMode(initFlags["watchdog-runtime"])
 
@@ -225,6 +228,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Doc commands (DD-023 docs-as-primitives)
   doc,
   invariant,
+  spec,
 
   // Memory commands (filesystem-backed memory)
   memory,
@@ -240,6 +244,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   // Bounded autonomy primitives
   guard,
+  gate,
   verify,
   label,
   reflect,
@@ -281,6 +286,13 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
           return
         }
       }
+      if (subcommand === "gate" && pos[1]) {
+        const subcommandKey = `gate ${pos[1]}`
+        if (commandHelp[subcommandKey]) {
+          console.log(commandHelp[subcommandKey])
+          return
+        }
+      }
       if (subcommand === "verify" && pos[1]) {
         const subcommandKey = `verify ${pos[1]}`
         if (commandHelp[subcommandKey]) {
@@ -290,6 +302,13 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       }
       if (subcommand === "label" && pos[1]) {
         const subcommandKey = `label ${pos[1]}`
+        if (commandHelp[subcommandKey]) {
+          console.log(commandHelp[subcommandKey])
+          return
+        }
+      }
+      if (subcommand === "spec" && pos[1]) {
+        const subcommandKey = `spec ${pos[1]}`
         if (commandHelp[subcommandKey]) {
           console.log(commandHelp[subcommandKey])
           return
@@ -347,6 +366,13 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
       process.exit(0)
     }
   }
+  if (command === "spec" && positional[0]) {
+    const subcommandKey = `spec ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   if (command === "memory" && positional[0]) {
     const subcommandKey = `memory ${positional[0]}`
     if (commandHelp[subcommandKey]) {
@@ -370,6 +396,13 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
   }
   if (command === "guard" && positional[0]) {
     const subcommandKey = `guard ${positional[0]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (command === "gate" && positional[0]) {
+    const subcommandKey = `gate ${positional[0]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -438,6 +471,13 @@ if (command === "help") {
       process.exit(0)
     }
   }
+  if (subcommand === "spec" && positional[1]) {
+    const subcommandKey = `spec ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
   if (subcommand === "memory" && positional[1]) {
     const subcommandKey = `memory ${positional[1]}`
     if (commandHelp[subcommandKey]) {
@@ -461,6 +501,13 @@ if (command === "help") {
   }
   if (subcommand === "guard" && positional[1]) {
     const subcommandKey = `guard ${positional[1]}`
+    if (commandHelp[subcommandKey]) {
+      console.log(commandHelp[subcommandKey])
+      process.exit(0)
+    }
+  }
+  if (subcommand === "gate" && positional[1]) {
+    const subcommandKey = `gate ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -566,6 +613,11 @@ const errorExitCodes: Record<string, number> = {
 const handled = runnable.pipe(
   // Handle expected Effect errors (from Effect.fail in services)
   Effect.catchAll((error: unknown) => {
+    if (error instanceof CliExitError) {
+      _exitCode = error.code
+      return Effect.void
+    }
+
     const err = error as { _tag?: string; message?: string }
     const tag = err._tag ?? ""
 

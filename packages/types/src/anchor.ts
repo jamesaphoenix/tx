@@ -127,7 +127,7 @@ export type InvalidationLog = typeof InvalidationLogSchema.Type
  * Anchor with freshness information for lazy verification.
  * Returned by getWithVerification - includes whether anchor was fresh or verified.
  */
-export interface AnchorWithFreshness {
+export type AnchorWithFreshness = {
   readonly anchor: Anchor;
   /** True if anchor was still within TTL, false if verification was needed */
   readonly isFresh: boolean;

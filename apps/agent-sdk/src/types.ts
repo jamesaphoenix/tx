@@ -512,28 +512,44 @@ export interface SerializedMemoryLink {
 // =============================================================================
 
 export interface SyncExportResult {
-  opCount: number
+  eventCount: number
+  streamId: string
   path: string
 }
 
 export interface SyncImportResult {
-  imported: number
-  skipped: number
-  conflicts: number
+  importedEvents: number
+  appliedEvents: number
+  streamCount: number
 }
 
 export interface SyncStatusResult {
   dbTaskCount: number
-  jsonlOpCount: number
+  eventOpCount: number
   lastExport: string | null
   lastImport: string | null
   isDirty: boolean
   autoSyncEnabled: boolean
 }
 
-export interface SyncCompactResult {
-  before: number
-  after: number
+export interface SyncStreamInfoResult {
+  streamId: string
+  nextSeq: number
+  lastSeq: number
+  eventsDir: string
+  configPath: string
+  knownStreams: Array<{
+    streamId: string
+    lastSeq: number
+    lastEventAt: string | null
+  }>
+}
+
+export interface SyncHydrateResult {
+  importedEvents: number
+  appliedEvents: number
+  streamCount: number
+  rebuilt: boolean
 }
 
 // =============================================================================

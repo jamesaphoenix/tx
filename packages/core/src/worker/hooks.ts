@@ -13,32 +13,30 @@ import type { Task } from "@jamesaphoenix/tx-types"
 /**
  * Result from executing a task.
  */
-export interface ExecutionResult {
+export type ExecutionResult = {
   /** Whether the execution succeeded */
   readonly success: boolean
   /** Optional output from the execution */
   readonly output?: string
   /** Error message if execution failed */
-  readonly error?: string
-}
+  readonly error?: string};
 
 /**
  * IO capture paths for run tracking.
  */
-export interface IOCapture {
+export type IOCapture = {
   /** Path to transcript file */
   readonly transcriptPath?: string
   /** Path to stderr capture file */
   readonly stderrPath?: string
   /** Path to stdout capture file */
-  readonly stdoutPath?: string
-}
+  readonly stdoutPath?: string};
 
 /**
  * Context provided to the execute hook by tx.
  * Contains tx primitives and mutable state.
  */
-export interface WorkerContext {
+export type WorkerContext = {
   /** ID of the worker processing this task */
   readonly workerId: string
   /** Unique ID for this run/execution */
@@ -48,8 +46,7 @@ export interface WorkerContext {
   /** Log a message (associated with this worker/run) */
   readonly log: (message: string) => void
   /** Mutable state that persists across calls within a single task execution */
-  readonly state: Record<string, unknown>
-}
+  readonly state: Record<string, unknown>};
 
 /**
  * Worker hooks interface.
@@ -57,7 +54,7 @@ export interface WorkerContext {
  *
  * @template TContext - Custom context type merged with WorkerContext
  */
-export interface WorkerHooks<TContext = object> {
+export type WorkerHooks<TContext = object> = {
   /**
    * Execute the work - YOUR logic lives here.
    * Called for each task claimed by the worker.
@@ -79,8 +76,7 @@ export interface WorkerHooks<TContext = object> {
    * @param task - The task being executed
    * @returns IOCapture with paths for transcript/stderr/stdout
    */
-  readonly captureIO?: (runId: string, task: Task) => IOCapture
-}
+  readonly captureIO?: (runId: string, task: Task) => IOCapture};
 
 /**
  * Configuration for runWorker().
@@ -88,7 +84,7 @@ export interface WorkerHooks<TContext = object> {
  *
  * @template TContext - Custom context type merged with WorkerContext
  */
-export interface WorkerConfig<TContext = object> {
+export type WorkerConfig<TContext = object> = {
   /** Optional worker name. Defaults to auto-generated name. */
   readonly name?: string
   /** Heartbeat interval in seconds. Should match orchestrator config. Default: 30 */
@@ -107,5 +103,4 @@ export interface WorkerConfig<TContext = object> {
    * Optional IO capture hook.
    * Called before execute to determine where to store run output.
    */
-  readonly captureIO?: WorkerHooks<TContext>["captureIO"]
-}
+  readonly captureIO?: WorkerHooks<TContext>["captureIO"]};

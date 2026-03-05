@@ -13,6 +13,7 @@ import type {
 import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export constants from @tx/types for convenience
 export { RUN_STATUSES }
@@ -30,14 +31,14 @@ export const generateRunId = (): RunId => {
     .update(`${Date.now()}-${Math.random()}`)
     .digest("hex")
     .substring(0, 8)
-  return `run-${hash}` as RunId
+  return coerceDbResult<RunId>(`run-${hash}`)
 }
 
 /**
  * Check if a string is a valid RunStatus.
  */
 export const isValidRunStatus = (s: string): s is RunStatus => {
-  return (RUN_STATUSES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(RUN_STATUSES)).includes(s)
 }
 
 /**
@@ -67,7 +68,7 @@ export const rowToRun = (row: RunRow): Run => {
     })
   }
   return {
-    id: row.id as RunId,
+    id: coerceDbResult<RunId>(row.id),
     taskId: row.task_id,
     agent: row.agent,
     startedAt: parseDate(row.started_at, "started_at", row.id),

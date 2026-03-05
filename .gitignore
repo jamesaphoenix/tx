@@ -1,6 +1,19 @@
 node_modules/
 dist/
-.tx/
+.tx/*
+!.tx/streams/
+!.tx/streams/**
+!.tx/*.jsonl
+.tx/tasks.db
+.tx/tasks.db-wal
+.tx/tasks.db-shm
+.tx/stream.json
+.tx/archive/
+.tx/runs/
+.tx/logs/
+# Git-tracked:
+# .tx/streams/
+# .tx/*.jsonl
 *.db
 *.db-wal
 *.db-shm

@@ -22,6 +22,7 @@ export {
   LearningsGroup,
   RunsGroup,
   SyncGroup,
+  SpecGroup,
 } from "./api.js"
 
 // Server layer factory
@@ -33,3 +34,4 @@ export { HealthLive } from "./routes/health.js"
 export { LearningsLive } from "./routes/learnings.js"
 export { RunsLive } from "./routes/runs.js"
 export { SyncLive } from "./routes/sync.js"
+export { SpecTraceLive } from "./routes/spec-trace.js"

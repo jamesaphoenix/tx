@@ -40,6 +40,7 @@ import {
   RunHeartbeatService,
   RunHeartbeatServiceLive,
   GuardRepositoryLive,
+  PinRepositoryLive,
 } from "@jamesaphoenix/tx-core"
 import type { RunId, TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
@@ -90,6 +91,7 @@ export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<Mcp
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
+    PinRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     RunRepositoryLive

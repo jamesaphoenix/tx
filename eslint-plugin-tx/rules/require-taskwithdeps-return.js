@@ -110,6 +110,55 @@ function isZodSchemaCall(node) {
 }
 
 /**
+ * Check whether an expression references an identifier somewhere in its object/callee chain.
+ * @param {import('estree').Node | null | undefined} node
+ * @param {string} identifier
+ * @returns {boolean}
+ */
+function expressionReferencesIdentifier(node, identifier) {
+  if (!node) return false;
+
+  if (node.type === 'Identifier') {
+    return node.name === identifier;
+  }
+
+  if (node.type === 'MemberExpression') {
+    return expressionReferencesIdentifier(node.object, identifier);
+  }
+
+  if (node.type === 'CallExpression') {
+    return expressionReferencesIdentifier(node.callee, identifier);
+  }
+
+  return false;
+}
+
+/**
+ * Check if a value looks like an Effect Schema call (Schema.String, Schema.Struct(...), etc.)
+ * @param {import('estree').Node} node
+ * @returns {boolean}
+ */
+function isEffectSchemaCall(node) {
+  if (!node) return false;
+
+  if (node.type === 'CallExpression') {
+    if (expressionReferencesIdentifier(node.callee, 'Schema')) {
+      return true;
+    }
+
+    if (node.callee.type === 'MemberExpression' && node.callee.object.type === 'CallExpression') {
+      return isEffectSchemaCall(node.callee.object);
+    }
+  }
+
+  if (node.type === 'MemberExpression') {
+    return expressionReferencesIdentifier(node, 'Schema');
+  }
+
+  return false;
+}
+
+/**
  * Check if an object expression is missing TaskWithDeps required properties
  * @param {import('estree').ObjectExpression} node
  * @returns {string[]} Array of missing property names
@@ -118,15 +167,15 @@ function getMissingDepsProperties(node) {
   if (node.type !== 'ObjectExpression') return [];
 
   const presentProps = new Set();
-  let hasZodSchema = false;
+  let hasSchemaDefinition = false;
 
   for (const prop of node.properties) {
     if (prop.type === 'Property' && prop.key.type === 'Identifier') {
       presentProps.add(prop.key.name);
 
       // Check if any property value is a Zod schema (indicates this is a schema definition, not a Task)
-      if (isZodSchemaCall(prop.value)) {
-        hasZodSchema = true;
+      if (isZodSchemaCall(prop.value) || isEffectSchemaCall(prop.value)) {
+        hasSchemaDefinition = true;
       }
     }
     if (prop.type === 'SpreadElement') {
@@ -137,11 +186,21 @@ function getMissingDepsProperties(node) {
   }
 
   // If this object contains Zod schema calls, it's a schema definition, not a Task
-  if (hasZodSchema) return [];
+  if (hasSchemaDefinition) return [];
 
-  // Check if it looks like a Task object (must have 'id', 'title', AND 'status')
-  // This is more strict to avoid false positives with partial objects
-  const looksLikeTask = presentProps.has('id') && presentProps.has('title') && presentProps.has('status');
+  // Check if it looks like a Task object:
+  // - must have core trio: id/title/status
+  // - must also include at least one task-specific field that docs/other entities
+  //   usually do not include (reduces false positives in API/MCP serializers)
+  const hasCoreTaskShape = presentProps.has('id') && presentProps.has('title') && presentProps.has('status');
+  const hasTaskSpecificField = (
+    presentProps.has('description') ||
+    presentProps.has('score') ||
+    presentProps.has('parentId') ||
+    presentProps.has('completedAt') ||
+    presentProps.has('updatedAt')
+  );
+  const looksLikeTask = hasCoreTaskShape && hasTaskSpecificField;
   if (!looksLikeTask) return [];
 
   // Find which required deps properties are missing

@@ -15,6 +15,41 @@ Key properties:
 - **TTL support**: Messages can auto-expire after a configurable duration
 - **Correlation IDs**: Request/reply patterns via `correlationId` matching
 
+## At A Glance
+
+<Mermaid
+  title="Read Without Consume"
+  caption="Inbox reads are pure. Multiple consumers can see the same pending message until someone explicitly acknowledges it."
+  chart={`sequenceDiagram
+    autonumber
+    participant Planner
+    participant TX as tx
+    participant A as Agent A
+    participant B as Agent B
+
+    Planner->>TX: tx send team "review this"
+    A->>TX: tx inbox team --after 0
+    TX-->>A: pending message
+    B->>TX: tx inbox team --after 0
+    TX-->>B: same pending message
+    A->>TX: tx ack 42
+  `}
+/>
+
+<Mermaid
+  title="Message State"
+  caption="Only send, ack, TTL expiry, and garbage collection change message state. Reads just move the consumer cursor."
+  chart={`stateDiagram-v2
+    [*] --> Pending: tx send
+    Pending --> Pending: tx inbox / cursor read
+    Pending --> Acked: tx ack / tx ack:all
+    Pending --> Expired: TTL elapsed
+    Acked --> GC: outbox GC
+    Expired --> GC: outbox GC
+    GC --> [*]
+  `}
+/>
+
 ## Send a Message
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>

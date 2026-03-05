@@ -10,6 +10,7 @@ import type {
   CandidateFilter,
   CandidateStatus
 } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class CandidateRepository extends Context.Tag("CandidateRepository")<
   CandidateRepository,
@@ -45,13 +46,13 @@ export const CandidateRepositoryLive = Layer.effect(
               input.sourceTaskId ?? null,
               now
             )
-            const row = db.prepare(
+            const row = coerceDbResult<CandidateRow | undefined>(db.prepare(
               "SELECT * FROM learning_candidates WHERE id = ?"
-            ).get(result.lastInsertRowid) as CandidateRow | undefined
+            ).get(result.lastInsertRowid))
             if (!row) {
               throw new EntityFetchError({
                 entity: "learning_candidate",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -63,9 +64,9 @@ export const CandidateRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<CandidateRow | undefined>(db.prepare(
               "SELECT * FROM learning_candidates WHERE id = ?"
-            ).get(id) as CandidateRow | undefined
+            ).get(id))
             return row ? rowToCandidate(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -140,7 +141,7 @@ export const CandidateRepositoryLive = Layer.effect(
               }
             }
 
-            const rows = db.prepare(sql).all(...values) as CandidateRow[]
+            const rows = coerceDbResult<CandidateRow[]>(db.prepare(sql).all(...values))
             return rows.map(rowToCandidate)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -175,9 +176,9 @@ export const CandidateRepositoryLive = Layer.effect(
 
             if (updates.length === 0) {
               // No updates, just return the current row
-              const row = db.prepare(
+              const row = coerceDbResult<CandidateRow | undefined>(db.prepare(
                 "SELECT * FROM learning_candidates WHERE id = ?"
-              ).get(id) as CandidateRow | undefined
+              ).get(id))
               return row ? rowToCandidate(row) : null
             }
 
@@ -190,9 +191,9 @@ export const CandidateRepositoryLive = Layer.effect(
               return null
             }
 
-            const row = db.prepare(
+            const row = coerceDbResult<CandidateRow | undefined>(db.prepare(
               "SELECT * FROM learning_candidates WHERE id = ?"
-            ).get(id) as CandidateRow | undefined
+            ).get(id))
             if (!row) {
               throw new EntityFetchError({
                 entity: "learning_candidate",
@@ -216,9 +217,9 @@ export const CandidateRepositoryLive = Layer.effect(
               return null
             }
 
-            const row = db.prepare(
+            const row = coerceDbResult<CandidateRow | undefined>(db.prepare(
               "SELECT * FROM learning_candidates WHERE id = ?"
-            ).get(id) as CandidateRow | undefined
+            ).get(id))
             if (!row) {
               throw new EntityFetchError({
                 entity: "learning_candidate",

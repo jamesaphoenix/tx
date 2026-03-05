@@ -10,14 +10,13 @@ export { LlmUnavailableError as QueryExpansionUnavailableError }
 /**
  * Result of query expansion.
  */
-export interface QueryExpansionResult {
+export type QueryExpansionResult = {
   /** Original query */
   readonly original: string
   /** Expanded queries (includes original plus alternatives) */
   readonly expanded: readonly string[]
   /** Whether expansion was performed (false if using noop) */
-  readonly wasExpanded: boolean
-}
+  readonly wasExpanded: boolean};
 
 /** Maximum number of expanded queries (excluding original) to prevent unbounded generation */
 export const MAX_EXPANSION_QUERIES = 5

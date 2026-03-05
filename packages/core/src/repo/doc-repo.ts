@@ -15,14 +15,15 @@ import {
   rowToInvariantCheck,
 } from "../mappers/doc.js"
 import type {
-  Doc,
-  DocLink,
-  TaskDocLink,
-  Invariant,
-  InvariantCheck,
+  DocFilter,
+  DocInsertInput,
+  DocRepositoryService,
+  DocUpdateInput,
+  InvariantFilter,
+  InvariantUpsertInput,
+} from "./doc-repo.types.js"
+import type {
   DocId,
-  DocKind,
-  DocStatus,
   DocLinkType,
   TaskDocLinkType,
   DocRow,
@@ -31,72 +32,6 @@ import type {
   InvariantRow,
   InvariantCheckRow,
 } from "@jamesaphoenix/tx-types"
-
-interface DocInsertInput {
-  hash: string
-  kind: DocKind
-  name: string
-  title: string
-  version: number
-  filePath: string
-  parentDocId: DocId | null
-  metadata?: string
-}
-
-interface DocUpdateInput {
-  hash?: string
-  title?: string
-  status?: DocStatus
-  lockedAt?: string
-  metadata?: string
-}
-
-interface DocFilter {
-  kind?: string
-  status?: string
-}
-
-interface InvariantFilter {
-  docId?: number
-  subsystem?: string
-  enforcement?: string
-}
-
-interface InvariantUpsertInput {
-  id: string
-  rule: string
-  enforcement: string
-  docId: DocId
-  subsystem?: string | null
-  testRef?: string | null
-  lintRule?: string | null
-  promptRef?: string | null
-}
-
-export interface DocRepositoryService {
-  insert: (input: DocInsertInput) => Effect.Effect<Doc, DatabaseError>
-  findById: (id: DocId) => Effect.Effect<Doc | null, DatabaseError>
-  findByName: (name: string, version?: number) => Effect.Effect<Doc | null, DatabaseError>
-  findAll: (filter?: DocFilter) => Effect.Effect<Doc[], DatabaseError>
-  update: (id: DocId, input: DocUpdateInput) => Effect.Effect<void, DatabaseError>
-  lock: (id: DocId, lockedAt: string) => Effect.Effect<void, DatabaseError>
-  remove: (id: DocId) => Effect.Effect<void, DatabaseError>
-  createLink: (fromDocId: DocId, toDocId: DocId, linkType: DocLinkType) => Effect.Effect<DocLink, DatabaseError>
-  getLinksFrom: (docId: DocId) => Effect.Effect<DocLink[], DatabaseError>
-  getLinksTo: (docId: DocId) => Effect.Effect<DocLink[], DatabaseError>
-  getAllLinks: () => Effect.Effect<DocLink[], DatabaseError>
-  createTaskLink: (taskId: string, docId: DocId, linkType: TaskDocLinkType) => Effect.Effect<TaskDocLink, DatabaseError>
-  getTaskLinksForDoc: (docId: DocId) => Effect.Effect<TaskDocLink[], DatabaseError>
-  getDocForTask: (taskId: string) => Effect.Effect<Doc | null, DatabaseError>
-  getUnlinkedTaskIds: () => Effect.Effect<string[], DatabaseError>
-  upsertInvariant: (input: InvariantUpsertInput) => Effect.Effect<Invariant, DatabaseError>
-  findInvariantById: (id: string) => Effect.Effect<Invariant | null, DatabaseError>
-  findInvariants: (filter?: InvariantFilter) => Effect.Effect<Invariant[], DatabaseError>
-  deprecateInvariantsNotIn: (docId: DocId, activeIds: string[]) => Effect.Effect<void, DatabaseError>
-  insertInvariantCheck: (invariantId: string, passed: boolean, details: string | null, durationMs: number | null) => Effect.Effect<InvariantCheck, DatabaseError>
-  getInvariantChecks: (invariantId: string, limit?: number) => Effect.Effect<InvariantCheck[], DatabaseError>
-  countInvariantsByDoc: (docId: DocId) => Effect.Effect<number, DatabaseError>
-}
 
 export class DocRepository extends Context.Tag("DocRepository")<
   DocRepository,
@@ -130,12 +65,12 @@ export const DocRepositoryLive = Layer.effect(
                 input.metadata ?? "{}"
               )
             const row = db
-              .prepare("SELECT * FROM docs WHERE id = ?")
-              .get(result.lastInsertRowid) as DocRow | undefined
+              .prepare<DocRow>("SELECT * FROM docs WHERE id = ?")
+              .get(result.lastInsertRowid)
             if (!row) {
               throw new EntityFetchError({
                 entity: "doc",
-                id: result.lastInsertRowid as number,
+                id: Number(result.lastInsertRowid),
                 operation: "insert",
               })
             }
@@ -148,8 +83,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const row = db
-              .prepare("SELECT * FROM docs WHERE id = ?")
-              .get(id) as DocRow | undefined
+              .prepare<DocRow>("SELECT * FROM docs WHERE id = ?")
+              .get(id)
             return row ? rowToDoc(row) : null
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -160,16 +95,16 @@ export const DocRepositoryLive = Layer.effect(
           try: () => {
             const row =
               version !== undefined
-                ? (db
-                    .prepare(
+                ? db
+                    .prepare<DocRow>(
                       "SELECT * FROM docs WHERE name = ? AND version = ?"
                     )
-                    .get(name, version) as DocRow | undefined)
-                : (db
-                    .prepare(
+                    .get(name, version)
+                : db
+                    .prepare<DocRow>(
                       "SELECT * FROM docs WHERE name = ? ORDER BY version DESC LIMIT 1"
                     )
-                    .get(name) as DocRow | undefined)
+                    .get(name)
             return row ? rowToDoc(row) : null
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -193,7 +128,7 @@ export const DocRepositoryLive = Layer.effect(
               sql += " WHERE " + conditions.join(" AND ")
             }
             sql += " ORDER BY kind, name, version"
-            const rows = db.prepare(sql).all(...params) as DocRow[]
+            const rows = db.prepare<DocRow>(sql).all(...params)
             return rows.map(rowToDoc)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -266,12 +201,12 @@ export const DocRepositoryLive = Layer.effect(
               )
               .run(fromDocId, toDocId, linkType, now)
             const row = db
-              .prepare("SELECT * FROM doc_links WHERE id = ?")
-              .get(result.lastInsertRowid) as DocLinkRow | undefined
+              .prepare<DocLinkRow>("SELECT * FROM doc_links WHERE id = ?")
+              .get(result.lastInsertRowid)
             if (!row) {
               throw new EntityFetchError({
                 entity: "doc_link",
-                id: result.lastInsertRowid as number,
+                id: Number(result.lastInsertRowid),
                 operation: "insert",
               })
             }
@@ -284,8 +219,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db
-              .prepare("SELECT * FROM doc_links WHERE from_doc_id = ?")
-              .all(docId) as DocLinkRow[]
+              .prepare<DocLinkRow>("SELECT * FROM doc_links WHERE from_doc_id = ?")
+              .all(docId)
             return rows.map(rowToDocLink)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -295,8 +230,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db
-              .prepare("SELECT * FROM doc_links WHERE to_doc_id = ?")
-              .all(docId) as DocLinkRow[]
+              .prepare<DocLinkRow>("SELECT * FROM doc_links WHERE to_doc_id = ?")
+              .all(docId)
             return rows.map(rowToDocLink)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -306,8 +241,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db
-              .prepare("SELECT * FROM doc_links ORDER BY created_at")
-              .all() as DocLinkRow[]
+              .prepare<DocLinkRow>("SELECT * FROM doc_links ORDER BY created_at")
+              .all()
             return rows.map(rowToDocLink)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -328,12 +263,12 @@ export const DocRepositoryLive = Layer.effect(
               )
               .run(taskId, docId, linkType, now)
             const row = db
-              .prepare("SELECT * FROM task_doc_links WHERE id = ?")
-              .get(result.lastInsertRowid) as TaskDocLinkRow | undefined
+              .prepare<TaskDocLinkRow>("SELECT * FROM task_doc_links WHERE id = ?")
+              .get(result.lastInsertRowid)
             if (!row) {
               throw new EntityFetchError({
                 entity: "task_doc_link",
-                id: result.lastInsertRowid as number,
+                id: Number(result.lastInsertRowid),
                 operation: "insert",
               })
             }
@@ -346,8 +281,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db
-              .prepare("SELECT * FROM task_doc_links WHERE doc_id = ?")
-              .all(docId) as TaskDocLinkRow[]
+              .prepare<TaskDocLinkRow>("SELECT * FROM task_doc_links WHERE doc_id = ?")
+              .all(docId)
             return rows.map(rowToTaskDocLink)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -357,13 +292,13 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const row = db
-              .prepare(
+              .prepare<DocRow>(
                 `SELECT d.* FROM docs d
                JOIN task_doc_links tdl ON tdl.doc_id = d.id
                WHERE tdl.task_id = ?
                ORDER BY d.version DESC LIMIT 1`
               )
-              .get(taskId) as DocRow | undefined
+              .get(taskId)
             return row ? rowToDoc(row) : null
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -373,13 +308,13 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db
-              .prepare(
+              .prepare<{ id: string }>(
                 `SELECT t.id FROM tasks t
                LEFT JOIN task_doc_links tdl ON tdl.task_id = t.id
                WHERE tdl.id IS NULL
                ORDER BY t.id`
               )
-              .all() as Array<{ id: string }>
+              .all()
             return rows.map((r) => r.id)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -414,8 +349,8 @@ export const DocRepositoryLive = Layer.effect(
               now
             )
             const row = db
-              .prepare("SELECT * FROM invariants WHERE id = ?")
-              .get(input.id) as InvariantRow | undefined
+              .prepare<InvariantRow>("SELECT * FROM invariants WHERE id = ?")
+              .get(input.id)
             if (!row) {
               throw new EntityFetchError({
                 entity: "invariant",
@@ -432,8 +367,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const row = db
-              .prepare("SELECT * FROM invariants WHERE id = ?")
-              .get(id) as InvariantRow | undefined
+              .prepare<InvariantRow>("SELECT * FROM invariants WHERE id = ?")
+              .get(id)
             return row ? rowToInvariant(row) : null
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -461,7 +396,7 @@ export const DocRepositoryLive = Layer.effect(
               sql += " WHERE " + conditions.join(" AND ")
             }
             sql += " ORDER BY id"
-            const rows = db.prepare(sql).all(...params) as InvariantRow[]
+            const rows = db.prepare<InvariantRow>(sql).all(...params)
             return rows.map(rowToInvariant)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -500,12 +435,12 @@ export const DocRepositoryLive = Layer.effect(
               )
               .run(invariantId, passed ? 1 : 0, details, now, durationMs)
             const row = db
-              .prepare("SELECT * FROM invariant_checks WHERE id = ?")
-              .get(result.lastInsertRowid) as InvariantCheckRow | undefined
+              .prepare<InvariantCheckRow>("SELECT * FROM invariant_checks WHERE id = ?")
+              .get(result.lastInsertRowid)
             if (!row) {
               throw new EntityFetchError({
                 entity: "invariant_check",
-                id: result.lastInsertRowid as number,
+                id: Number(result.lastInsertRowid),
                 operation: "insert",
               })
             }
@@ -518,10 +453,10 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db
-              .prepare(
+              .prepare<InvariantCheckRow>(
                 "SELECT * FROM invariant_checks WHERE invariant_id = ? ORDER BY checked_at DESC LIMIT ?"
               )
-              .all(invariantId, limit) as InvariantCheckRow[]
+              .all(invariantId, limit)
             return rows.map(rowToInvariantCheck)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -531,10 +466,11 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const result = db
-              .prepare(
+              .prepare<{ cnt: number }>(
                 "SELECT COUNT(*) as cnt FROM invariants WHERE doc_id = ? AND status = 'active'"
               )
-              .get(docId) as { cnt: number }
+              .get(docId)
+            if (!result) return 0
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause }),

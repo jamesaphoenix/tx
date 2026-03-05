@@ -5,9 +5,8 @@ import { DatabaseError } from "../errors.js"
 /**
  * Options for creating a span.
  */
-export interface SpanOptions {
-  readonly attributes?: Record<string, string | number | boolean>
-}
+export type SpanOptions = {
+  readonly attributes?: Record<string, string | number | boolean>};
 
 /**
  * TracingService provides operational tracing for debugging RALPH run failures.

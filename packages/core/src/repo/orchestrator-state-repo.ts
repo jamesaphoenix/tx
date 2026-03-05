@@ -3,6 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToOrchestratorState, type OrchestratorStateRow } from "../mappers/orchestrator-state.js"
 import type { OrchestratorState } from "../schemas/worker.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Partial update type for OrchestratorState (all fields optional).
@@ -77,9 +78,9 @@ export const OrchestratorStateRepositoryLive = Layer.effect(
             // Ensure singleton exists before querying
             ensureSingletonExists()
 
-            const row = db.prepare(
+            const row = coerceDbResult<OrchestratorStateRow | undefined>(db.prepare(
               "SELECT * FROM orchestrator_state WHERE id = 1"
-            ).get() as OrchestratorStateRow | undefined
+            ).get())
             if (!row) {
               throw new EntityFetchError({
                 entity: "orchestrator_state",

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnSyncReturns } from "node:child_process"
+import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process"
 import {
   chmodSync,
   copyFileSync,
@@ -13,14 +13,14 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { fixtureId } from "../fixtures"
+import { fixtureId } from "../fixtures.js"
 
 interface Harness {
   tmpDir: string
   stateDir: string
   runLauncher: (args: string[], extraEnv?: Record<string, string>) => SpawnSyncReturns<string>
   runWatchdog: (args: string[], extraEnv?: Record<string, string>) => SpawnSyncReturns<string>
-  runWatchdogAsync: (args: string[], extraEnv?: Record<string, string>) => ChildProcessWithoutNullStreams
+  runWatchdogAsync: (args: string[], extraEnv?: Record<string, string>) => ReturnType<typeof spawn>
 }
 
 const LAUNCHER_TEMPLATE = resolve(__dirname, "../../apps/cli/src/templates/watchdog/scripts/watchdog-launcher.sh")
@@ -171,7 +171,7 @@ echo "0"
     scriptPath: string,
     args: string[],
     extraEnv?: Record<string, string>,
-  ): ChildProcessWithoutNullStreams =>
+  ): ReturnType<typeof spawn> =>
     spawn("/bin/bash", [scriptPath, ...args], {
       cwd: tmpDir,
       stdio: "pipe",
@@ -211,7 +211,7 @@ async function waitForCondition(
   throw new Error(`Timed out after ${timeoutMs}ms`)
 }
 
-async function waitForExit(proc: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<number | null> {
+async function waitForExit(proc: ReturnType<typeof spawn>, timeoutMs: number): Promise<number | null> {
   if (proc.exitCode !== null) {
     return proc.exitCode
   }
@@ -262,7 +262,7 @@ function terminatePid(pid: number): void {
   }
 }
 
-async function terminateChild(proc: ChildProcessWithoutNullStreams): Promise<void> {
+async function terminateChild(proc: ReturnType<typeof spawn>): Promise<void> {
   if (proc.exitCode !== null) {
     return
   }
@@ -433,10 +433,10 @@ describe("ralph-watchdog singleton lock integration", () => {
 
     let proc1Out = ""
     let proc2Out = ""
-    proc1.stdout.on("data", (chunk) => { proc1Out += chunk.toString() })
-    proc1.stderr.on("data", (chunk) => { proc1Out += chunk.toString() })
-    proc2.stdout.on("data", (chunk) => { proc2Out += chunk.toString() })
-    proc2.stderr.on("data", (chunk) => { proc2Out += chunk.toString() })
+    proc1.stdout?.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc1.stderr?.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc2.stdout?.on("data", (chunk) => { proc2Out += chunk.toString() })
+    proc2.stderr?.on("data", (chunk) => { proc2Out += chunk.toString() })
 
     try {
       await waitForCondition(() => proc1.exitCode !== null || proc2.exitCode !== null, 8000)
@@ -505,8 +505,8 @@ describe("ralph-watchdog signal trap integration", () => {
     const pidFile = join(harness.tmpDir, ".tx", "ralph-watchdog.pid")
     const proc = harness.runWatchdogAsync(watchdogArgs)
     let procOut = ""
-    proc.stdout.on("data", (chunk) => { procOut += chunk.toString() })
-    proc.stderr.on("data", (chunk) => { procOut += chunk.toString() })
+    proc.stdout?.on("data", (chunk) => { procOut += chunk.toString() })
+    proc.stderr?.on("data", (chunk) => { procOut += chunk.toString() })
 
     try {
       expect(proc.pid ?? 0).toBeGreaterThan(0)

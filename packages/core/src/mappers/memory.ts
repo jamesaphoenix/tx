@@ -17,6 +17,7 @@ import type {
 } from "@jamesaphoenix/tx-types"
 import { MEMORY_LINK_TYPES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Schema for tags - an array of strings.
@@ -72,7 +73,7 @@ export const float32ArrayToBuffer = (arr: Float32Array): Buffer => {
  */
 export const rowToMemoryDocument = (row: MemoryDocumentRow): MemoryDocument => {
   return {
-    id: row.id as MemoryDocumentId,
+    id: coerceDbResult<MemoryDocumentId>(row.id),
     filePath: row.file_path,
     rootDir: row.root_dir,
     title: row.title,
@@ -81,7 +82,7 @@ export const rowToMemoryDocument = (row: MemoryDocumentRow): MemoryDocument => {
     tags: parseTags(row.tags),
     fileHash: row.file_hash,
     fileMtime: row.file_mtime,
-    embedding: row.embedding ? bufferToFloat32Array(row.embedding) as Float32Array<ArrayBuffer> : null,
+    embedding: row.embedding ? coerceDbResult<Float32Array<ArrayBuffer>>(bufferToFloat32Array(row.embedding)) : null,
     createdAt: row.created_at,
     indexedAt: row.indexed_at,
   }
@@ -92,7 +93,7 @@ export const rowToMemoryDocument = (row: MemoryDocumentRow): MemoryDocument => {
  */
 export const rowToMemoryDocumentWithoutEmbedding = (row: Omit<MemoryDocumentRow, "embedding">): MemoryDocument => {
   return {
-    id: row.id as MemoryDocumentId,
+    id: coerceDbResult<MemoryDocumentId>(row.id),
     filePath: row.file_path,
     rootDir: row.root_dir,
     title: row.title,
@@ -122,8 +123,8 @@ export const rowToMemoryLink = (row: MemoryLinkRow): MemoryLink => {
   }
   return {
     id: row.id,
-    sourceDocId: row.source_doc_id as MemoryDocumentId,
-    targetDocId: row.target_doc_id ? row.target_doc_id as MemoryDocumentId : null,
+    sourceDocId: coerceDbResult<MemoryDocumentId>(row.source_doc_id),
+    targetDocId: row.target_doc_id ? coerceDbResult<MemoryDocumentId>(row.target_doc_id) : null,
     targetRef: row.target_ref,
     linkType: row.link_type,
     createdAt: row.created_at,
@@ -148,7 +149,7 @@ export const rowToMemorySource = (row: MemorySourceRow): MemorySource => {
 export const rowToMemoryProperty = (row: MemoryPropertyRow): MemoryProperty => {
   return {
     id: row.id,
-    docId: row.doc_id as MemoryDocumentId,
+    docId: coerceDbResult<MemoryDocumentId>(row.doc_id),
     key: row.key,
     value: row.value,
   }

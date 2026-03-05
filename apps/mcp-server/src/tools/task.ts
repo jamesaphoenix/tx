@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import type { TaskStatus } from "@jamesaphoenix/tx-types"
 import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx-types"
 
@@ -177,7 +177,7 @@ const handleUpdate = async (args: {
           status: args.status,
           parentId: args.parentId,
           score: args.score ?? undefined
-        })
+        }, { actor: "agent" })
         return yield* taskService.getWithDeps(taskId)
       })
     )
@@ -206,7 +206,7 @@ const handleDone = async (args: { id: string }): Promise<McpToolResult> => {
         const blocking = yield* readyService.getBlocking(taskId)
 
         // Mark the task as done
-        yield* taskService.update(taskId, { status: "done" })
+        yield* taskService.update(taskId, { status: "done" }, { actor: "agent" })
 
         // Get the updated task with deps
         const completedTask = yield* taskService.getWithDeps(taskId)
@@ -418,8 +418,7 @@ const handleStats = async (): Promise<McpToolResult> => {
  */
 export const registerTaskTools = (server: McpServer): void => {
   // tx_ready - List tasks that are ready to work on
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_ready",
     "List tasks ready to be worked on (no incomplete blockers). Supports label filtering.",
     {
@@ -427,21 +426,19 @@ export const registerTaskTools = (server: McpServer): void => {
       labels: z.string().optional().describe("Comma-separated label names to include (e.g. 'phase:implement,sprint:w10')"),
       excludeLabels: z.string().optional().describe("Comma-separated label names to exclude (e.g. 'needs-review')"),
     },
-    handleReady as Parameters<typeof server.tool>[3]
+    handleReady
   )
 
   // tx_show - Show a single task with full dependency info
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_show",
     "Show detailed information about a task including dependencies",
     { id: z.string().describe("Task ID to show") },
-    handleShow as Parameters<typeof server.tool>[3]
+    handleShow
   )
 
   // tx_list - List tasks with optional filters
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_list",
     "List tasks with optional filters for status, parent, labels, and limit",
     {
@@ -451,24 +448,22 @@ export const registerTaskTools = (server: McpServer): void => {
       labels: z.string().optional().describe("Comma-separated label names to include (e.g. 'phase:implement,sprint:w10')"),
       excludeLabels: z.string().optional().describe("Comma-separated label names to exclude (e.g. 'needs-review')"),
     },
-    handleList as Parameters<typeof server.tool>[3]
+    handleList
   )
 
   // tx_children - List children of a task
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_children",
     "List direct children of a task",
     {
       id: z.string().describe("Parent task ID"),
       limit: z.number().int().positive().max(MCP_MAX_LIMIT).optional().describe(`Maximum number of children to return (default: 100, max: ${MCP_MAX_LIMIT})`)
     },
-    handleChildren as Parameters<typeof server.tool>[3]
+    handleChildren
   )
 
   // tx_add - Create a new task
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_add",
     "Create a new task",
     {
@@ -477,12 +472,11 @@ export const registerTaskTools = (server: McpServer): void => {
       parentId: z.string().optional().describe("Parent task ID for subtasks"),
       score: z.number().int().finite().min(-10000).max(10000).optional().describe("Priority score (higher = more important, range: -10000 to 10000)")
     },
-    handleAdd as Parameters<typeof server.tool>[3]
+    handleAdd
   )
 
   // tx_update - Update an existing task
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_update",
     "Update an existing task",
     {
@@ -493,94 +487,86 @@ export const registerTaskTools = (server: McpServer): void => {
       parentId: z.string().nullable().optional().describe("New parent ID (null to remove parent)"),
       score: z.number().int().finite().min(-10000).max(10000).optional().describe("New priority score (range: -10000 to 10000)")
     },
-    handleUpdate as Parameters<typeof server.tool>[3]
+    handleUpdate
   )
 
   // tx_done - Mark a task as complete
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_done",
     "Mark a task as complete and return any tasks that are now ready",
     { id: z.string().describe("Task ID to complete") },
-    handleDone as Parameters<typeof server.tool>[3]
+    handleDone
   )
 
   // tx_delete - Delete a task
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_delete",
     "Delete a task permanently. Fails if the task has children unless cascade is true.",
     {
       id: z.string().describe("Task ID to delete"),
       cascade: z.boolean().optional().describe("If true, delete all descendant tasks. If false (default), fail when children exist.")
     },
-    handleDelete as Parameters<typeof server.tool>[3]
+    handleDelete
   )
 
   // tx_block - Add a dependency (blocker blocks taskId)
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_block",
     "Add a dependency: blockerId blocks taskId (taskId cannot start until blockerId is done). Rejects circular dependencies.",
     {
       taskId: z.string().describe("Task ID that will be blocked"),
       blockerId: z.string().describe("Task ID that blocks the other task")
     },
-    handleBlock as Parameters<typeof server.tool>[3]
+    handleBlock
   )
 
   // tx_unblock - Remove a dependency
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_unblock",
     "Remove a dependency: blockerId no longer blocks taskId",
     {
       taskId: z.string().describe("Task ID that is currently blocked"),
       blockerId: z.string().describe("Task ID to remove as a blocker")
     },
-    handleUnblock as Parameters<typeof server.tool>[3]
+    handleUnblock
   )
 
   // tx_group_context_set - Set direct task-group context on a task
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_group_context_set",
     "Set direct task-group context on a task. The context is inherited by related ancestor/descendant tasks.",
     {
       taskId: z.string().describe("Task ID to set context on"),
       context: z.string().max(20000).describe("Group context text")
     },
-    handleGroupContextSet as Parameters<typeof server.tool>[3]
+    handleGroupContextSet
   )
 
   // tx_group_context_clear - Clear direct task-group context from a task
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_group_context_clear",
     "Clear direct task-group context from a task and recompute effective inherited context.",
     {
       taskId: z.string().describe("Task ID to clear context from")
     },
-    handleGroupContextClear as Parameters<typeof server.tool>[3]
+    handleGroupContextClear
   )
 
   // tx_tree - Show task subtree
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_tree",
     "Show the full subtree of a task including all descendants. Returns a nested tree structure.",
     {
       id: z.string().describe("Root task ID to show tree for")
     },
-    handleTree as Parameters<typeof server.tool>[3]
+    handleTree
   )
 
   // tx_stats - Aggregate queue statistics
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_stats",
     "Get aggregate queue statistics: total tasks, done, ready, and learnings count.",
     {},
-    handleStats as Parameters<typeof server.tool>[3]
+    handleStats
   )
 }

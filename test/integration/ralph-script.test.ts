@@ -1,17 +1,17 @@
 import { Database } from "bun:sqlite"
 import { describe, it, expect, afterEach } from "vitest"
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnSyncReturns } from "child_process"
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
-import { fixtureId } from "../fixtures"
+import { spawn, spawnSync, type SpawnSyncReturns } from "child_process"
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
+import { fixtureId } from "../fixtures.js"
 
 interface Harness {
   tmpDir: string
   stateDir: string
   scriptPath: string
   run: (args: string[], extraEnv?: Record<string, string>) => SpawnSyncReturns<string>
-  runAsync: (args: string[], extraEnv?: Record<string, string>) => ChildProcessWithoutNullStreams
+  runAsync: (args: string[], extraEnv?: Record<string, string>) => ReturnType<typeof spawn>
   readStateFile: (name: string) => string
 }
 
@@ -218,7 +218,7 @@ async function waitForCondition(
   throw new Error(`Timed out after ${timeoutMs}ms`)
 }
 
-async function waitForExit(proc: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<number | null> {
+async function waitForExit(proc: ReturnType<typeof spawn>, timeoutMs: number): Promise<number | null> {
   if (proc.exitCode !== null) {
     return proc.exitCode
   }
@@ -250,7 +250,7 @@ function isPidLive(pid: number): boolean {
   }
 }
 
-async function terminateChild(proc: ChildProcessWithoutNullStreams): Promise<void> {
+async function terminateChild(proc: ReturnType<typeof spawn>): Promise<void> {
   if (proc.exitCode !== null) {
     return
   }
@@ -492,10 +492,10 @@ describeIf("ralph.sh integration", () => {
 
     let proc1Out = ""
     let proc2Out = ""
-    proc1.stdout.on("data", (chunk) => { proc1Out += chunk.toString() })
-    proc1.stderr.on("data", (chunk) => { proc1Out += chunk.toString() })
-    proc2.stdout.on("data", (chunk) => { proc2Out += chunk.toString() })
-    proc2.stderr.on("data", (chunk) => { proc2Out += chunk.toString() })
+    proc1.stdout?.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc1.stderr?.on("data", (chunk) => { proc1Out += chunk.toString() })
+    proc2.stdout?.on("data", (chunk) => { proc2Out += chunk.toString() })
+    proc2.stderr?.on("data", (chunk) => { proc2Out += chunk.toString() })
 
     try {
       await waitForCondition(() => proc1.exitCode !== null || proc2.exitCode !== null, 8000)

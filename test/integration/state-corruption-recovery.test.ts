@@ -34,7 +34,8 @@ import {
   HierarchyServiceLive,
   HierarchyService,
   AutoSyncServiceNoop,
-  GuardRepositoryLive
+  GuardRepositoryLive,
+  PinRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import {
   corruptState,
@@ -47,7 +48,8 @@ import type { TaskId } from "@jamesaphoenix/tx-types"
 // Create test layer for services
 function makeTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
+  PinRepositoryLive).pipe(
     Layer.provide(infra)
   )
   const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(

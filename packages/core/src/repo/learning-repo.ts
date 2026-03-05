@@ -4,6 +4,7 @@ import { DatabaseError, EntityFetchError, LearningNotFoundError } from "../error
 import { rowToLearning, rowToLearningWithoutEmbedding, float32ArrayToBuffer } from "../mappers/learning.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 const MAX_SQL_VARIABLES = 900
 
@@ -16,7 +17,7 @@ const chunkBySqlLimit = <T>(
   }
   const chunks: T[][] = []
   for (let i = 0; i < values.length; i += chunkSize) {
-    chunks.push(values.slice(i, i + chunkSize) as T[])
+    chunks.push(coerceDbResult<T[]>(values.slice(i, i + chunkSize)))
   }
   return chunks
 }
@@ -36,7 +37,7 @@ const COLS_NO_EMBEDDING = "id, content, source_type, source_ref, created_at, key
 const COLS_NO_EMBEDDING_QUALIFIED = "l.id, l.content, l.source_type, l.source_ref, l.created_at, l.keywords, l.category, l.usage_count, l.last_used_at, l.outcome_score"
 
 /** Scored learning result from BM25 search */
-export interface BM25Result {
+export type BM25Result = {
   learning: Learning
   score: number
 }
@@ -116,38 +117,44 @@ export const LearningRepositoryLive = Layer.effect(
 
     return {
       insert: (input) =>
-        Effect.try({
-          try: () => {
-            const now = new Date().toISOString()
-            const result = db.prepare(
-              `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category)
-               VALUES (?, ?, ?, ?, ?, ?)`
-            ).run(
-              input.content,
-              input.sourceType ?? "manual",
-              input.sourceRef ?? null,
-              now,
-              input.keywords ? JSON.stringify(input.keywords) : null,
-              input.category ?? null
-            )
-            // Fetch the inserted row
-            const row = db.prepare("SELECT * FROM learnings WHERE id = ?").get(result.lastInsertRowid) as LearningRow | undefined
-            if (!row) {
-              throw new EntityFetchError({
+        Effect.gen(function* () {
+          const now = new Date().toISOString()
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category)
+                 VALUES (?, ?, ?, ?, ?, ?)`
+              ).run(
+                input.content,
+                input.sourceType ?? "manual",
+                input.sourceRef ?? null,
+                now,
+                input.keywords ? JSON.stringify(input.keywords) : null,
+                input.category ?? null
+              ),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          // Fetch the inserted row
+          const row = yield* Effect.try({
+            try: () => coerceDbResult<LearningRow | undefined>(db.prepare("SELECT * FROM learnings WHERE id = ?").get(result.lastInsertRowid)),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (!row) {
+            return yield* Effect.fail(new DatabaseError({
+              cause: new EntityFetchError({
                 entity: "learning",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
-            }
-            return rowToLearning(row)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+            }))
+          }
+          return rowToLearning(row)
         }),
 
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM learnings WHERE id = ?").get(id) as LearningRow | undefined
+            const row = coerceDbResult<LearningRow | undefined>(db.prepare("SELECT * FROM learnings WHERE id = ?").get(id))
             return row ? rowToLearning(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -156,9 +163,9 @@ export const LearningRepositoryLive = Layer.effect(
       findAll: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<LearningRow[]>(db.prepare(
               `SELECT * FROM learnings ORDER BY created_at ASC LIMIT ?`
-            ).all(limit ?? DEFAULT_QUERY_LIMIT) as LearningRow[]
+            ).all(limit ?? DEFAULT_QUERY_LIMIT))
             return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -168,12 +175,12 @@ export const LearningRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = afterId !== undefined
-              ? db.prepare(
+              ? coerceDbResult<LearningRow[]>(db.prepare(
                   `SELECT * FROM learnings WHERE id > ? ORDER BY id ASC LIMIT ?`
-                ).all(afterId, limit) as LearningRow[]
-              : db.prepare(
+                ).all(afterId, limit))
+              : coerceDbResult<LearningRow[]>(db.prepare(
                   `SELECT * FROM learnings ORDER BY id ASC LIMIT ?`
-                ).all(limit) as LearningRow[]
+                ).all(limit))
             return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -183,12 +190,12 @@ export const LearningRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = afterId !== undefined
-              ? db.prepare(
+              ? coerceDbResult<LearningRow[]>(db.prepare(
                   `SELECT * FROM learnings WHERE embedding IS NULL AND id > ? ORDER BY id ASC LIMIT ?`
-                ).all(afterId, limit) as LearningRow[]
-              : db.prepare(
+                ).all(afterId, limit))
+              : coerceDbResult<LearningRow[]>(db.prepare(
                   `SELECT * FROM learnings WHERE embedding IS NULL ORDER BY id ASC LIMIT ?`
-                ).all(limit) as LearningRow[]
+                ).all(limit))
             return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -197,9 +204,9 @@ export const LearningRepositoryLive = Layer.effect(
       findRecent: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<LearningRow[]>(db.prepare(
               `SELECT * FROM learnings ORDER BY created_at DESC LIMIT ?`
-            ).all(limit) as LearningRow[]
+            ).all(limit))
             return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -208,9 +215,9 @@ export const LearningRepositoryLive = Layer.effect(
       findRecentWithoutEmbedding: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<Omit<LearningRow, "embedding">[]>(db.prepare(
               `SELECT ${COLS_NO_EMBEDDING} FROM learnings ORDER BY created_at DESC LIMIT ?`
-            ).all(limit) as Omit<LearningRow, "embedding">[]
+            ).all(limit))
             return rows.map(rowToLearningWithoutEmbedding)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -225,14 +232,14 @@ export const LearningRepositoryLive = Layer.effect(
             // FTS5 BM25 returns negative scores; lower (more negative) = better match
             // Exclude embedding column — BM25 results never need it, and loading
             // ~6KB Float32Array per row just to discard it wastes memory.
-            const rows = db.prepare(`
+            const rows = coerceDbResult<Omit<LearningRowWithBM25, "embedding">[]>(db.prepare(`
               SELECT ${COLS_NO_EMBEDDING_QUALIFIED}, bm25(learnings_fts) as bm25_score
               FROM learnings l
               JOIN learnings_fts ON l.id = learnings_fts.rowid
               WHERE learnings_fts MATCH ?
               ORDER BY bm25_score
               LIMIT ?
-            `).all(ftsQuery, limit * 3) as Omit<LearningRowWithBM25, "embedding">[]
+            `).all(ftsQuery, limit * 3))
 
             if (rows.length === 0) return []
 
@@ -250,9 +257,9 @@ export const LearningRepositoryLive = Layer.effect(
       findWithEmbeddings: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<LearningRow[]>(db.prepare(
               `SELECT * FROM learnings WHERE embedding IS NOT NULL ORDER BY created_at DESC LIMIT ?`
-            ).all(limit) as LearningRow[]
+            ).all(limit))
             return rows.map(rowToLearning)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -317,7 +324,7 @@ export const LearningRepositoryLive = Layer.effect(
       count: () =>
         Effect.try({
           try: () => {
-            const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings").get() as { cnt: number }
+            const result = coerceDbResult<{ cnt: number }>(db.prepare("SELECT COUNT(*) as cnt FROM learnings").get())
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -326,7 +333,7 @@ export const LearningRepositoryLive = Layer.effect(
       countWithEmbeddings: () =>
         Effect.try({
           try: () => {
-            const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NOT NULL").get() as { cnt: number }
+            const result = coerceDbResult<{ cnt: number }>(db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NOT NULL").get())
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -335,7 +342,7 @@ export const LearningRepositoryLive = Layer.effect(
       countWithoutEmbeddings: () =>
         Effect.try({
           try: () => {
-            const result = db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NULL").get() as { cnt: number }
+            const result = coerceDbResult<{ cnt: number }>(db.prepare("SELECT COUNT(*) as cnt FROM learnings WHERE embedding IS NULL").get())
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -344,7 +351,7 @@ export const LearningRepositoryLive = Layer.effect(
       getConfig: (key) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT value FROM learnings_config WHERE key = ?").get(key) as { value: string } | undefined
+            const row = coerceDbResult<{ value: string } | undefined>(db.prepare("SELECT value FROM learnings_config WHERE key = ?").get(key))
             return row?.value ?? null
           },
           catch: (cause) => new DatabaseError({ cause })

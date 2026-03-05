@@ -23,6 +23,7 @@ import {
   ScoreService,
   AutoSyncServiceNoop,
   GuardRepositoryLive,
+  PinRepositoryLive,
   StaleDataError,
   HasChildrenError
 } from "@jamesaphoenix/tx-core"
@@ -31,7 +32,7 @@ import type { Database } from "bun:sqlite"
 
 function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive, PinRepositoryLive).pipe(
     Layer.provide(infra)
   )
   // Base services that only depend on repos and AutoSyncService
@@ -403,9 +404,13 @@ describe("Task CRUD", () => {
         const ids: TaskId[] = []
         let parentId: string | undefined = undefined
         for (let i = 0; i < 15; i++) {
-          const task = yield* svc.create({ title: `depth-${i}`, parentId, score: 100 })
-          ids.push(task.id)
-          parentId = task.id
+          const createdTask: { readonly id: TaskId } = yield* svc.create({
+            title: `depth-${i}`,
+            parentId,
+            score: 100
+          })
+          ids.push(createdTask.id)
+          parentId = createdTask.id
         }
         // Cascade delete from root — should remove ALL 15 tasks, not just first 10
         yield* svc.remove(ids[0], { cascade: true })
@@ -1607,6 +1612,10 @@ describe("Task Repository updateMany with staleness detection", () => {
           updatedAt: new Date(),
           createdAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }, new Date())
       }).pipe(Effect.provide(repoLayer), Effect.either)
@@ -1676,6 +1685,10 @@ describe("Task Repository updateMany with staleness detection", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       completedAt: null,
+      assigneeType: null,
+      assigneeId: null,
+      assignedAt: null,
+      assignedBy: null,
       metadata: {}
     }
 

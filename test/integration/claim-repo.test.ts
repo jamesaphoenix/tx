@@ -99,6 +99,10 @@ describe("ClaimRepository.insert", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -160,6 +164,10 @@ describe("ClaimRepository.insert", () => {
             createdAt: new Date(),
             updatedAt: new Date(),
             completedAt: null,
+            assigneeType: null,
+            assigneeId: null,
+            assignedAt: null,
+            assignedBy: null,
             metadata: {}
           }
           yield* taskRepo.insert(task)
@@ -223,6 +231,10 @@ describe("ClaimRepository.update", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -291,6 +303,10 @@ describe("ClaimRepository.findById", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -366,6 +382,10 @@ describe("ClaimRepository.findActiveByTaskId", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -419,6 +439,10 @@ describe("ClaimRepository.findActiveByTaskId", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -501,6 +525,10 @@ describe("ClaimRepository.findExpired", () => {
             createdAt: new Date(),
             updatedAt: new Date(),
             completedAt: null,
+            assigneeType: null,
+            assigneeId: null,
+            assignedAt: null,
+            assignedBy: null,
             metadata: {}
           }
           yield* taskRepo.insert(task)
@@ -604,6 +632,10 @@ describe("ClaimRepository.releaseAllByWorkerId", () => {
             createdAt: new Date(),
             updatedAt: new Date(),
             completedAt: null,
+            assigneeType: null,
+            assigneeId: null,
+            assignedAt: null,
+            assignedBy: null,
             metadata: {}
           }
           yield* taskRepo.insert(task)
@@ -700,6 +732,10 @@ describe("ClaimRepository.tryRenewAtomic", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -762,6 +798,10 @@ describe("ClaimRepository.tryRenewAtomic", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -842,6 +882,10 @@ describe("ClaimRepository.tryRenewAtomic", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -904,6 +948,10 @@ describe("ClaimRepository.tryRenewAtomic", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)
@@ -967,6 +1015,10 @@ describe("ClaimRepository.tryRenewAtomic", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         }
         yield* taskRepo.insert(task1)

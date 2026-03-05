@@ -17,9 +17,9 @@
  */
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult as BaseSharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 
 // Import services once at module level
 import {
@@ -27,6 +27,10 @@ import {
   LearningService,
   EdgeService
 } from "@jamesaphoenix/tx-core"
+
+type SharedTestLayerResult = BaseSharedTestLayerResult & {
+  readonly layer: Layer.Layer<any, any, never>
+}
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

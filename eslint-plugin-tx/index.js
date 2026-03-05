@@ -17,11 +17,16 @@ import prdFailureModes from './rules/prd-failure-modes.js';
 import noThrowInServices from './rules/no-throw-in-services.js';
 import noHono from './rules/no-hono.js';
 import noZod from './rules/no-zod.js';
+import noGenericUtilityFileNames from './rules/no-generic-utility-file-names.js';
 import noPlainInterfaces from './rules/no-plain-interfaces.js';
 import noAsCastInRepos from './rules/no-as-cast-in-repos.js';
 import requireInterfaceCoverage from './rules/require-interface-coverage.js';
 import requirePrimitiveImplementations from './rules/require-primitive-implementations.js';
 import requirePrimitiveDocs from './rules/require-primitive-docs.js';
+import requirePrimitiveTemplateCoverage from './rules/require-primitive-template-coverage.js';
+import requireLlmsPrimitiveCoverage from './rules/require-llms-primitive-coverage.js';
+import maxServiceLines from './rules/max-service-lines.js';
+import preferServiceFolderModules from './rules/prefer-service-folder-modules.js';
 
 const plugin = {
   meta: {
@@ -44,11 +49,16 @@ const plugin = {
     'no-throw-in-services': noThrowInServices,
     'no-hono': noHono,
     'no-zod': noZod,
+    'no-generic-utility-file-names': noGenericUtilityFileNames,
     'no-plain-interfaces': noPlainInterfaces,
     'no-as-cast-in-repos': noAsCastInRepos,
     'require-interface-coverage': requireInterfaceCoverage,
     'require-primitive-implementations': requirePrimitiveImplementations,
-    'require-primitive-docs': requirePrimitiveDocs
+    'require-primitive-docs': requirePrimitiveDocs,
+    'require-primitive-template-coverage': requirePrimitiveTemplateCoverage,
+    'require-llms-primitive-coverage': requireLlmsPrimitiveCoverage,
+    'max-service-lines': maxServiceLines,
+    'prefer-service-folder-modules': preferServiceFolderModules
   },
   // Flat config recommended configuration
   configs: {
@@ -122,15 +132,24 @@ const plugin = {
           allowHttpException: false,
           allowTypedErrors: false
         }],
-        'tx/no-hono': 'warn',
-        'tx/no-zod': 'warn',
-        'tx/no-plain-interfaces': ['warn', {
+        'tx/no-hono': 'error',
+        'tx/no-zod': 'error',
+        'tx/no-plain-interfaces': ['error', {
           excludedNames: ['ListResponse', 'PaginatedResponse', 'ActionResponse'],
           excludedSuffixes: ['Row']
         }],
-        'tx/no-as-cast-in-repos': ['warn', {
+        'tx/no-as-cast-in-repos': ['error', {
           enforcePaths: ['repo/', 'mappers/'],
           allowedTypes: ['unknown']
+        }],
+        'tx/require-llms-primitive-coverage': ['error', {
+          metaPath: 'apps/docs/content/docs/primitives/meta.json',
+          llmsPath: 'apps/docs/public/llms.txt',
+          urlBase: 'https://tx-docs.vercel.app/docs/primitives'
+        }],
+        'tx/max-service-lines': ['warn', {
+          warnAt: 500,
+          errorAt: 1000
         }]
       }
     }

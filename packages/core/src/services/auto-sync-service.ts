@@ -1,9 +1,9 @@
 /**
- * AutoSyncService provides hooks for automatic JSONL export on data mutations.
+ * AutoSyncService provides hooks for automatic stream-event export on data mutations.
  *
  * When auto-sync is enabled, any create/update/delete operation on tasks,
  * learnings, file-learnings, attempts, or dependencies triggers an export
- * to keep JSONL files in sync with SQLite.
+ * to keep stream logs in sync with SQLite.
  *
  * Design:
  * - Non-blocking: Exports run in background fiber to avoid latency impact
@@ -13,7 +13,7 @@
 
 import { Context, Effect, Fiber, Layer, Ref } from "effect"
 import { SqliteClient } from "../db.js"
-import { SyncService } from "./sync-service.js"
+import { SyncService } from "./sync/index.js"
 import { DatabaseError } from "../errors.js"
 
 /**
@@ -65,7 +65,12 @@ export const AutoSyncServiceLive = Layer.effect(
     // Track the current export fiber to prevent unbounded accumulation.
     // When a new mutation triggers an export, any in-flight export is interrupted
     // first — only the latest export needs to succeed since it captures all state.
-    const currentFiber = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+    type ExportRun = {
+      readonly runId: number
+      readonly fiber: Fiber.RuntimeFiber<void, never>
+    }
+    const currentRun = yield* Ref.make<ExportRun | null>(null)
+    const runCounter = yield* Ref.make(0)
 
     // Check if auto-sync is enabled
     const isEnabled = (): Effect.Effect<boolean, DatabaseError> =>
@@ -91,13 +96,16 @@ export const AutoSyncServiceLive = Layer.effect(
         }
 
         // Interrupt previous export fiber if still running
-        const prevFiber = yield* Ref.get(currentFiber)
-        if (prevFiber !== null) {
-          yield* Fiber.interrupt(prevFiber)
+        const prevRun = yield* Ref.get(currentRun)
+        if (prevRun !== null) {
+          yield* Fiber.interrupt(prevRun.fiber)
         }
 
         // Fork the new export and track it
-        const clearRef = Ref.set(currentFiber, null)
+        const runId = yield* Ref.updateAndGet(runCounter, (current) => current + 1)
+        const clearIfCurrent = Ref.update(currentRun, (activeRun) =>
+          activeRun !== null && activeRun.runId === runId ? null : activeRun
+        )
         const fiber = yield* Effect.fork(
           exportEffect.pipe(
             Effect.catchAll((error) =>
@@ -108,11 +116,11 @@ export const AutoSyncServiceLive = Layer.effect(
             ),
             Effect.asVoid,
             // Clear the fiber ref when this export completes or is interrupted
-            Effect.ensuring(clearRef)
+            Effect.ensuring(clearIfCurrent)
           )
         )
 
-        yield* Ref.set(currentFiber, fiber)
+        yield* Ref.set(currentRun, { runId, fiber })
       })
 
     return {

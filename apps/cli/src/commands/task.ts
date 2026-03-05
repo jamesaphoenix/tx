@@ -9,6 +9,9 @@ import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from 
 import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"
 
+const actorFromFlags = (flags: Flags): "agent" | "human" =>
+  flag(flags, "human") ? "human" : "agent"
+
 export const add = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const title = pos[0]
@@ -172,7 +175,7 @@ export const update = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--json]")
+      console.error("Usage: tx update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--human] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
@@ -186,7 +189,7 @@ export const update = (pos: string[], flags: Flags) =>
     if (opt(flags, "description", "d")) input.description = opt(flags, "description", "d")
     if (opt(flags, "parent", "p")) input.parentId = opt(flags, "parent", "p")
 
-    yield* svc.update(id, input)
+    yield* svc.update(id, input, { actor: actorFromFlags(flags) })
     const task = yield* svc.getWithDeps(id)
 
     if (flag(flags, "json")) {
@@ -202,7 +205,7 @@ export const done = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx done <id> [--json]")
+      console.error("Usage: tx done <id> [--human] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
@@ -213,7 +216,7 @@ export const done = (pos: string[], flags: Flags) =>
     // Get tasks blocked by this one BEFORE marking complete
     const blocking = yield* readySvc.getBlocking(id)
 
-    yield* taskSvc.update(id, { status: "done" })
+    yield* taskSvc.update(id, { status: "done" }, { actor: actorFromFlags(flags) })
     const task = yield* taskSvc.getWithDeps(id)
 
     // Find newly unblocked tasks using batch query

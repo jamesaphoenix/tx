@@ -18,6 +18,7 @@ import {
 } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export types from @tx/types for convenience
 export type { AnchorRow, InvalidationLogRow } from "@jamesaphoenix/tx-types"
@@ -26,21 +27,21 @@ export type { AnchorRow, InvalidationLogRow } from "@jamesaphoenix/tx-types"
  * Check if a string is a valid AnchorType.
  */
 export const isValidAnchorType = (s: string): s is AnchorType => {
-  return (ANCHOR_TYPES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(ANCHOR_TYPES)).includes(s)
 }
 
 /**
  * Check if a string is a valid AnchorStatus.
  */
 export const isValidAnchorStatus = (s: string): s is AnchorStatus => {
-  return (ANCHOR_STATUSES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(ANCHOR_STATUSES)).includes(s)
 }
 
 /**
  * Check if a string is a valid InvalidationSource.
  */
 export const isValidInvalidationSource = (s: string): s is InvalidationSource => {
-  return (INVALIDATION_SOURCES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(INVALIDATION_SOURCES)).includes(s)
 }
 
 /**
@@ -65,7 +66,7 @@ export const rowToAnchor = (row: AnchorRow): Anchor => {
     })
   }
   return {
-    id: row.id as Anchor["id"],
+    id: coerceDbResult<Anchor["id"]>(row.id),
     learningId: row.learning_id,
     anchorType: row.anchor_type,
     anchorValue: row.anchor_value,

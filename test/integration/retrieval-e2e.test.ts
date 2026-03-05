@@ -30,6 +30,7 @@ import {
   EmbeddingServiceNoop,
   AutoSyncServiceNoop,
   GuardRepositoryLive,
+  PinRepositoryLive,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive,
@@ -195,7 +196,8 @@ const createMockEmbeddingService = () => {
     embed: (text: string) => Effect.succeed(createMockEmbedding(text)),
     embedBatch: (texts: readonly string[]) =>
       Effect.succeed(texts.map(t => createMockEmbedding(t))),
-    isAvailable: () => Effect.succeed(true)
+    isAvailable: () => Effect.succeed(true),
+    dimensions: 256
   })
 }
 
@@ -203,12 +205,13 @@ const createMockEmbeddingService = () => {
 // Test Layer Setup
 // ============================================================================
 
-function makeTestLayer(db: Database, useVectorSearch = true) {
+function makeTestLayer(db: TestDatabase, useVectorSearch = true) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
+  PinRepositoryLive,
     LearningRepositoryLive
   ).pipe(Layer.provide(infra))
 

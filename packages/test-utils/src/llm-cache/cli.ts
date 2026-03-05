@@ -6,8 +6,8 @@
  * @module @tx/test-utils/llm-cache/cli
  */
 
-import * as fs from "fs/promises"
-import * as path from "path"
+import * as fs from "node:fs/promises"
+import * as path from "node:path"
 import { getCacheConfig, CacheEntry } from "./cache.js"
 
 // =============================================================================

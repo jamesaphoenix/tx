@@ -68,7 +68,7 @@ async function killPort(port: number): Promise<void> {
   }
 
   if (!(await waitForPortToClear(port, 3000))) {
-    throw new Error(`Failed to free port ${port}. Stop the process manually or run with --port.`)
+    return Promise.reject(new Error(`Failed to free port ${port}. Stop the process manually or run with --port.`))
   }
 }
 

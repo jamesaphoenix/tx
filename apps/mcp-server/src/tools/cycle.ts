@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { SqliteClient } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
@@ -200,14 +200,14 @@ const handleCycleGet = async (args: {
 // -----------------------------------------------------------------------------
 
 export const registerCycleTools = (server: McpServer): void => {
-  server.tool(
+  registerEffectTool(server,
     "tx_cycle_list",
     "List all cycle scan runs. Cycles are automated issue discovery runs performed by sub-agent swarms.",
     {},
     async () => handleCycleList()
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_cycle_get",
     "Get detailed information about a specific cycle run, including round metrics and discovered issues.",
     {

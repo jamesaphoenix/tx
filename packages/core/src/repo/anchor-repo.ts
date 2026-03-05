@@ -4,9 +4,10 @@ import { DatabaseError, EntityFetchError, UnexpectedRowCountError } from "../err
 import { rowToAnchor, rowToInvalidationLog } from "../mappers/anchor.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
 import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /** Input for logging an invalidation event */
-export interface LogInvalidationInput {
+export type LogInvalidationInput = {
   readonly anchorId: number
   readonly oldStatus: AnchorStatus
   readonly newStatus: AnchorStatus
@@ -79,12 +80,12 @@ export const AnchorRepositoryLive = Layer.effect(
                 actual: result.changes
               })
             }
-            const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(result.lastInsertRowid) as AnchorRow | undefined
+            const row = coerceDbResult<AnchorRow | undefined>(db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(result.lastInsertRowid))
             // Verify the inserted row can be fetched
             if (!row) {
               throw new EntityFetchError({
                 entity: "anchor",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -96,7 +97,7 @@ export const AnchorRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id) as AnchorRow | undefined
+            const row = coerceDbResult<AnchorRow | undefined>(db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id))
             return row ? rowToAnchor(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -105,9 +106,9 @@ export const AnchorRepositoryLive = Layer.effect(
       findByLearningId: (learningId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AnchorRow[]>(db.prepare(
               "SELECT * FROM learning_anchors WHERE learning_id = ? ORDER BY created_at ASC"
-            ).all(learningId) as AnchorRow[]
+            ).all(learningId))
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -116,9 +117,9 @@ export const AnchorRepositoryLive = Layer.effect(
       findByFilePath: (filePath) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AnchorRow[]>(db.prepare(
               "SELECT * FROM learning_anchors WHERE file_path = ? ORDER BY created_at ASC"
-            ).all(filePath) as AnchorRow[]
+            ).all(filePath))
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -168,7 +169,7 @@ export const AnchorRepositoryLive = Layer.effect(
             }
 
             if (updates.length === 0) {
-              const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id) as AnchorRow | undefined
+              const row = coerceDbResult<AnchorRow | undefined>(db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id))
               return row ? rowToAnchor(row) : null
             }
 
@@ -182,7 +183,7 @@ export const AnchorRepositoryLive = Layer.effect(
             }
 
             // Verify the updated row can be fetched
-            const row = db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id) as AnchorRow | undefined
+            const row = coerceDbResult<AnchorRow | undefined>(db.prepare("SELECT * FROM learning_anchors WHERE id = ?").get(id))
             if (!row) {
               throw new EntityFetchError({
                 entity: "anchor",
@@ -207,9 +208,9 @@ export const AnchorRepositoryLive = Layer.effect(
       findDrifted: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AnchorRow[]>(db.prepare(
               "SELECT * FROM learning_anchors WHERE status = 'drifted' ORDER BY created_at ASC"
-            ).all() as AnchorRow[]
+            ).all())
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -218,9 +219,9 @@ export const AnchorRepositoryLive = Layer.effect(
       findInvalid: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AnchorRow[]>(db.prepare(
               "SELECT * FROM learning_anchors WHERE status = 'invalid' ORDER BY created_at ASC"
-            ).all() as AnchorRow[]
+            ).all())
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -251,9 +252,9 @@ export const AnchorRepositoryLive = Layer.effect(
       findAll: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AnchorRow[]>(db.prepare(
               "SELECT * FROM learning_anchors ORDER BY created_at DESC LIMIT ?"
-            ).all(limit ?? DEFAULT_QUERY_LIMIT) as AnchorRow[]
+            ).all(limit ?? DEFAULT_QUERY_LIMIT))
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -262,9 +263,9 @@ export const AnchorRepositoryLive = Layer.effect(
       findAllValid: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AnchorRow[]>(db.prepare(
               "SELECT * FROM learning_anchors WHERE status = 'valid' ORDER BY created_at DESC LIMIT ?"
-            ).all(limit ?? DEFAULT_QUERY_LIMIT) as AnchorRow[]
+            ).all(limit ?? DEFAULT_QUERY_LIMIT))
             return rows.map(rowToAnchor)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -319,12 +320,12 @@ export const AnchorRepositoryLive = Layer.effect(
                 actual: result.changes
               })
             }
-            const row = db.prepare("SELECT * FROM invalidation_log WHERE id = ?").get(result.lastInsertRowid) as InvalidationLogRow | undefined
+            const row = coerceDbResult<InvalidationLogRow | undefined>(db.prepare("SELECT * FROM invalidation_log WHERE id = ?").get(result.lastInsertRowid))
             // Verify the inserted row can be fetched
             if (!row) {
               throw new EntityFetchError({
                 entity: "invalidation_log",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -337,14 +338,14 @@ export const AnchorRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             if (anchorId !== undefined) {
-              const rows = db.prepare(
+              const rows = coerceDbResult<InvalidationLogRow[]>(db.prepare(
                 "SELECT * FROM invalidation_log WHERE anchor_id = ? ORDER BY invalidated_at DESC, id DESC"
-              ).all(anchorId) as InvalidationLogRow[]
+              ).all(anchorId))
               return rows.map(rowToInvalidationLog)
             }
-            const rows = db.prepare(
+            const rows = coerceDbResult<InvalidationLogRow[]>(db.prepare(
               "SELECT * FROM invalidation_log ORDER BY invalidated_at DESC, id DESC LIMIT 100"
-            ).all() as InvalidationLogRow[]
+            ).all())
             return rows.map(rowToInvalidationLog)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -353,7 +354,7 @@ export const AnchorRepositoryLive = Layer.effect(
       getStatusSummary: () =>
         Effect.try({
           try: () => {
-            const result = db.prepare(`
+            const result = coerceDbResult<{ total: number; valid: number; drifted: number; invalid: number; pinned: number }>(db.prepare(`
               SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'valid' THEN 1 ELSE 0 END) as valid,
@@ -361,7 +362,7 @@ export const AnchorRepositoryLive = Layer.effect(
                 SUM(CASE WHEN status = 'invalid' THEN 1 ELSE 0 END) as invalid,
                 SUM(CASE WHEN pinned = 1 THEN 1 ELSE 0 END) as pinned
               FROM learning_anchors
-            `).get() as { total: number; valid: number; drifted: number; invalid: number; pinned: number }
+            `).get())
             return {
               total: result.total ?? 0,
               valid: result.valid ?? 0,

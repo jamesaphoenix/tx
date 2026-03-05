@@ -27,6 +27,7 @@ import { registerCycleTools } from "./tools/cycle.js"
 import { registerGuardTools } from "./tools/guard.js"
 import { registerVerifyTools } from "./tools/verify.js"
 import { registerReflectTools } from "./tools/reflect.js"
+import { registerSpecTraceTools } from "./tools/spec-trace.js"
 import { formatErrorWithStack } from "./response.js"
 
 // Re-export for library consumers
@@ -36,7 +37,7 @@ export { mcpResponse, mcpError, handleToolError, classifyError, buildStructuredE
 export type { McpContent, McpResponse, StructuredError } from "./response.js"
 export { registerTaskTools, serializeTask } from "./tools/task.js"
 export { registerLearningTools, serializeLearning, serializeLearningWithScore, serializeFileLearning } from "./tools/learning.js"
-export { registerSyncTools, serializeExportResult, serializeImportResult, serializeSyncStatus, serializeCompactResult } from "./tools/sync.js"
+export { registerSyncTools, serializeSyncStatus } from "./tools/sync.js"
 export { registerMessageTools, serializeMessage } from "./tools/message.js"
 export { registerDocTools, serializeDoc, serializeDocLink } from "./tools/doc.js"
 export { registerInvariantTools } from "./tools/invariant.js"
@@ -46,6 +47,7 @@ export { registerClaimTools } from "./tools/claim.js"
 export { registerMemoryTools } from "./tools/memory.js"
 export { registerCycleTools } from "./tools/cycle.js"
 export { registerGuardTools, registerVerifyTools, registerReflectTools }
+export { registerSpecTraceTools } from "./tools/spec-trace.js"
 
 // -----------------------------------------------------------------------------
 // Signal Handler State (prevents handler accumulation/memory leak)
@@ -98,6 +100,7 @@ export const createMcpServer = (): McpServer => {
   registerGuardTools(server)
   registerVerifyTools(server)
   registerReflectTools(server)
+  registerSpecTraceTools(server)
 
   return server
 }

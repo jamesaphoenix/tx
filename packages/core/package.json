@@ -52,7 +52,8 @@
   "dependencies": {
     "@jamesaphoenix/tx-types": "*",
     "chokidar": "^5.0.0",
-    "effect": "^3.19.15"
+    "effect": "^3.19.15",
+    "fast-xml-parser": "^5.2.0"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": "^0.52.0"

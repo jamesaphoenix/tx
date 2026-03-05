@@ -31,6 +31,10 @@ import {
   INVARIANT_ENFORCEMENT_TYPES,
   DocGraphNodeSchema,
   DocGraphEdgeSchema,
+  SpecDiscoveryMethodSchema,
+  DiscoverResultSchema,
+  FciResultSchema,
+  BatchRunInputSchema,
 } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
@@ -711,44 +715,54 @@ export const RunsGroup = HttpApiGroup.make("runs")
 // SYNC GROUP
 // =============================================================================
 
-const SyncPathBody = Schema.Struct({
-  path: Schema.optional(Schema.String),
-})
-
 const ExportResultResponse = Schema.Struct({
-  opCount: Schema.Number.pipe(Schema.int()),
+  eventCount: Schema.Number.pipe(Schema.int()),
+  streamId: Schema.String,
   path: Schema.String,
 })
 
 const ImportResultResponse = Schema.Struct({
-  imported: Schema.Number.pipe(Schema.int()),
-  skipped: Schema.Number.pipe(Schema.int()),
-  conflicts: Schema.Number.pipe(Schema.int()),
+  importedEvents: Schema.Number.pipe(Schema.int()),
+  appliedEvents: Schema.Number.pipe(Schema.int()),
+  streamCount: Schema.Number.pipe(Schema.int()),
 })
 
 const SyncStatusResponse = Schema.Struct({
   dbTaskCount: Schema.Number.pipe(Schema.int()),
-  jsonlOpCount: Schema.Number.pipe(Schema.int()),
+  eventOpCount: Schema.Number.pipe(Schema.int()),
   lastExport: Schema.NullOr(Schema.String),
   lastImport: Schema.NullOr(Schema.String),
   isDirty: Schema.Boolean,
   autoSyncEnabled: Schema.Boolean,
 })
 
-const CompactResultResponse = Schema.Struct({
-  before: Schema.Number.pipe(Schema.int()),
-  after: Schema.Number.pipe(Schema.int()),
+const SyncStreamInfoResponse = Schema.Struct({
+  streamId: Schema.String,
+  nextSeq: Schema.Number.pipe(Schema.int()),
+  lastSeq: Schema.Number.pipe(Schema.int()),
+  eventsDir: Schema.String,
+  configPath: Schema.String,
+  knownStreams: Schema.Array(Schema.Struct({
+    streamId: Schema.String,
+    lastSeq: Schema.Number.pipe(Schema.int()),
+    lastEventAt: Schema.NullOr(Schema.String),
+  })),
+})
+
+const SyncHydrateResponse = Schema.Struct({
+  importedEvents: Schema.Number.pipe(Schema.int()),
+  appliedEvents: Schema.Number.pipe(Schema.int()),
+  streamCount: Schema.Number.pipe(Schema.int()),
+  rebuilt: Schema.Boolean,
 })
 
 export const SyncGroup = HttpApiGroup.make("sync")
   .add(
     HttpApiEndpoint.post("syncExport", "/api/sync/export")
-      .setPayload(SyncPathBody)
       .addSuccess(ExportResultResponse)
   )
   .add(
     HttpApiEndpoint.post("syncImport", "/api/sync/import")
-      .setPayload(SyncPathBody)
       .addSuccess(ImportResultResponse)
   )
   .add(
@@ -756,9 +770,12 @@ export const SyncGroup = HttpApiGroup.make("sync")
       .addSuccess(SyncStatusResponse)
   )
   .add(
-    HttpApiEndpoint.post("syncCompact", "/api/sync/compact")
-      .setPayload(SyncPathBody)
-      .addSuccess(CompactResultResponse)
+    HttpApiEndpoint.get("syncStream", "/api/sync/stream")
+      .addSuccess(SyncStreamInfoResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("syncHydrate", "/api/sync/hydrate")
+      .addSuccess(SyncHydrateResponse)
   )
 
 // =============================================================================
@@ -1301,7 +1318,6 @@ export const MemoryGroup = HttpApiGroup.make("memory")
       .addSuccess(SuccessResponse, { status: 201 })
   )
 
-// =============================================================================
 // INVARIANTS GROUP
 // =============================================================================
 
@@ -1358,6 +1374,204 @@ export const InvariantsGroup = HttpApiGroup.make("invariants")
     HttpApiEndpoint.post("recordInvariantCheck")`/api/invariants/${InvariantIdParam}/check`
       .setPayload(RecordCheckBody)
       .addSuccess(InvariantCheckSerializedSchema, { status: 201 })
+  )
+
+// =============================================================================
+// SPEC TRACEABILITY GROUP
+// =============================================================================
+
+const SpecInvariantIdParam = HttpApiSchema.param("invariantId", Schema.String.pipe(Schema.minLength(1)))
+
+const SpecScopeParams = Schema.Struct({
+  doc: Schema.optional(Schema.String),
+  subsystem: Schema.optional(Schema.String),
+})
+
+const SpecTestSerializedSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  invariantId: Schema.String,
+  testId: Schema.String,
+  testFile: Schema.String,
+  testName: Schema.NullOr(Schema.String),
+  framework: Schema.NullOr(Schema.String),
+  discovery: SpecDiscoveryMethodSchema,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+})
+
+const SpecTestsResponse = Schema.Struct({
+  tests: Schema.Array(SpecTestSerializedSchema),
+})
+
+const SpecGapSchema = Schema.Struct({
+  id: Schema.String,
+  rule: Schema.String,
+  subsystem: Schema.NullOr(Schema.String),
+  docName: Schema.String,
+})
+
+const SpecGapsResponse = Schema.Struct({
+  gaps: Schema.Array(SpecGapSchema),
+})
+
+const SpecDiscoverBody = Schema.Struct({
+  doc: Schema.optional(Schema.String),
+  patterns: Schema.optional(Schema.Array(Schema.String.pipe(Schema.minLength(1)))),
+})
+
+const SpecLinkBody = Schema.Struct({
+  invariantId: Schema.String.pipe(Schema.minLength(1)),
+  file: Schema.String.pipe(Schema.minLength(1)),
+  name: Schema.optional(Schema.String),
+  framework: Schema.optional(Schema.String),
+})
+
+const SpecUnlinkBody = Schema.Struct({
+  invariantId: Schema.String.pipe(Schema.minLength(1)),
+  testId: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const SpecRunBody = Schema.Struct({
+  testId: Schema.String.pipe(Schema.minLength(1)),
+  passed: Schema.Boolean,
+  durationMs: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0))),
+  details: Schema.optional(Schema.String),
+  runAt: Schema.optional(Schema.String),
+})
+
+const SPEC_BATCH_RAW_MAX_BYTES = 5 * 1024 * 1024
+const SPEC_BATCH_MAX_RECORDS = 50_000
+
+const SpecBatchBody = Schema.Struct({
+  from: Schema.optional(Schema.String),
+  raw: Schema.optional(Schema.String.pipe(Schema.maxLength(SPEC_BATCH_RAW_MAX_BYTES))),
+  results: Schema.optional(Schema.Array(BatchRunInputSchema).pipe(Schema.maxItems(SPEC_BATCH_MAX_RECORDS))),
+  runAt: Schema.optional(Schema.String),
+})
+
+const SpecBatchResultSchema = Schema.Struct({
+  received: Schema.Number.pipe(Schema.int()),
+  recorded: Schema.Number.pipe(Schema.int()),
+  unmatched: Schema.Array(Schema.String),
+})
+
+const SpecStatusResultSchema = Schema.Struct({
+  phase: Schema.Literal("BUILD", "HARDEN", "COMPLETE"),
+  fci: Schema.Number,
+  gaps: Schema.Number.pipe(Schema.int()),
+  total: Schema.Number.pipe(Schema.int()),
+})
+
+const SpecSignoffSerializedSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  scopeType: Schema.Literal("doc", "subsystem", "global"),
+  scopeValue: Schema.NullOr(Schema.String),
+  signedOffBy: Schema.String,
+  notes: Schema.NullOr(Schema.String),
+  signedOffAt: Schema.String,
+})
+
+const SpecCompleteBody = Schema.Struct({
+  doc: Schema.optional(Schema.String),
+  subsystem: Schema.optional(Schema.String),
+  signedOffBy: Schema.String.pipe(Schema.minLength(1)),
+  notes: Schema.optional(Schema.String),
+})
+
+const SpecInvariantsForTestParams = Schema.Struct({
+  testId: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const SpecInvariantsForTestResponse = Schema.Struct({
+  testId: Schema.String,
+  invariants: Schema.Array(Schema.String),
+})
+
+const SpecMatrixLatestRunSchema = Schema.Struct({
+  passed: Schema.NullOr(Schema.Boolean),
+  runAt: Schema.NullOr(Schema.String),
+})
+
+const SpecMatrixTestSchema = Schema.Struct({
+  specTestId: Schema.Number.pipe(Schema.int()),
+  testId: Schema.String,
+  testFile: Schema.String,
+  testName: Schema.NullOr(Schema.String),
+  framework: Schema.NullOr(Schema.String),
+  discovery: SpecDiscoveryMethodSchema,
+  latestRun: SpecMatrixLatestRunSchema,
+})
+
+const SpecMatrixEntrySchema = Schema.Struct({
+  invariantId: Schema.String,
+  rule: Schema.String,
+  subsystem: Schema.NullOr(Schema.String),
+  tests: Schema.Array(SpecMatrixTestSchema),
+})
+
+const SpecMatrixResponse = Schema.Struct({
+  matrix: Schema.Array(SpecMatrixEntrySchema),
+})
+
+export const SpecGroup = HttpApiGroup.make("spec")
+  .add(
+    HttpApiEndpoint.post("discoverSpec", "/api/spec/discover")
+      .setPayload(SpecDiscoverBody)
+      .addSuccess(DiscoverResultSchema)
+  )
+  .add(
+    HttpApiEndpoint.get("listSpecTests")`/api/spec/tests/${SpecInvariantIdParam}`
+      .addSuccess(SpecTestsResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("listSpecGaps", "/api/spec/gaps")
+      .setUrlParams(SpecScopeParams)
+      .addSuccess(SpecGapsResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getSpecFci", "/api/spec/fci")
+      .setUrlParams(SpecScopeParams)
+      .addSuccess(FciResultSchema)
+  )
+  .add(
+    HttpApiEndpoint.get("getSpecMatrix", "/api/spec/matrix")
+      .setUrlParams(SpecScopeParams)
+      .addSuccess(SpecMatrixResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getSpecStatus", "/api/spec/status")
+      .setUrlParams(SpecScopeParams)
+      .addSuccess(SpecStatusResultSchema)
+  )
+  .add(
+    HttpApiEndpoint.get("listSpecInvariantsForTest", "/api/spec/invariants")
+      .setUrlParams(SpecInvariantsForTestParams)
+      .addSuccess(SpecInvariantsForTestResponse)
+  )
+  .add(
+    HttpApiEndpoint.post("linkSpecTest", "/api/spec/link")
+      .setPayload(SpecLinkBody)
+      .addSuccess(SpecTestSerializedSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.post("unlinkSpecTest", "/api/spec/unlink")
+      .setPayload(SpecUnlinkBody)
+      .addSuccess(Schema.Struct({ removed: Schema.Boolean }))
+  )
+  .add(
+    HttpApiEndpoint.post("recordSpecRun", "/api/spec/run")
+      .setPayload(SpecRunBody)
+      .addSuccess(SpecBatchResultSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.post("batchSpecRuns", "/api/spec/batch")
+      .setPayload(SpecBatchBody)
+      .addSuccess(SpecBatchResultSchema)
+  )
+  .add(
+    HttpApiEndpoint.post("completeSpec", "/api/spec/complete")
+      .setPayload(SpecCompleteBody)
+      .addSuccess(SpecSignoffSerializedSchema)
   )
 
 // =============================================================================
@@ -1544,6 +1758,7 @@ export class TxApi extends HttpApi.make("tx")
   .add(PinsGroup)
   .add(MemoryGroup)
   .add(InvariantsGroup)
+  .add(SpecGroup)
   .add(GuardsGroup)
   .add(VerifyGroup)
   .add(ReflectGroup) {}

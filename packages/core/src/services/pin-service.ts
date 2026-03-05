@@ -7,22 +7,29 @@
 
 import { Context, Effect, Layer } from "effect"
 import { readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs"
-import { resolve, sep, dirname } from "node:path"
+import { dirname } from "node:path"
 import { PinRepository } from "../repo/pin-repo.js"
 import { DatabaseError, ValidationError } from "../errors.js"
 import { syncBlocks } from "../utils/pin-file.js"
+import { resolvePathWithin } from "../utils/file-path.js"
 import type { Pin } from "@jamesaphoenix/tx-types"
+
+const isErrnoException = (cause: unknown): cause is NodeJS.ErrnoException =>
+  typeof cause === "object" && cause !== null && "code" in cause
+
+const isEnoentError = (cause: unknown): boolean =>
+  isErrnoException(cause) && cause.code === "ENOENT"
 
 /**
  * Validate that a target file path does not escape the project directory.
  */
 const validateProjectPath = (targetFile: string): Effect.Effect<string, ValidationError> => {
   const projectRoot = process.cwd()
-  const resolved = resolve(projectRoot, targetFile)
+  const resolved = resolvePathWithin(projectRoot, targetFile, { useRealpath: true })
 
-  if (!resolved.startsWith(projectRoot + sep)) {
+  if (!resolved) {
     return Effect.fail(new ValidationError({
-      reason: `Path traversal rejected: '${resolved}' escapes project directory '${projectRoot}'`
+      reason: `Path traversal rejected: '${targetFile}' escapes project directory '${projectRoot}'`
     }))
   }
 
@@ -77,35 +84,32 @@ export const PinServiceLive = Layer.effect(
 
           // Read file content — ENOENT → empty string, other errors → typed DatabaseError
           const fileContent = yield* Effect.try({
-            try: () => {
-              try {
-                return readFileSync(resolvedPath, "utf-8")
-              } catch (e: unknown) {
-                if ((e as NodeJS.ErrnoException).code === "ENOENT") return ""
-                throw e
-              }
-            },
-            catch: (e) => new DatabaseError({ cause: e })
-          })
+            try: () => readFileSync(resolvedPath, "utf-8"),
+            catch: (cause) => cause
+          }).pipe(
+            Effect.catchAll((cause) =>
+              isEnoentError(cause)
+                ? Effect.succeed("")
+                : Effect.fail(new DatabaseError({ cause }))
+            )
+          )
 
           const updated = syncBlocks(fileContent, pinMap)
 
           // Only write if content changed — use temp file + rename for atomicity
           if (updated !== fileContent) {
+            const tempPath = `${resolvedPath}.tmp.${Date.now()}.${process.pid}`
             yield* Effect.try({
               try: () => {
                 const dir = dirname(resolvedPath)
                 mkdirSync(dir, { recursive: true })
-                const tempPath = `${resolvedPath}.tmp.${Date.now()}.${process.pid}`
-                try {
-                  writeFileSync(tempPath, updated, "utf-8")
-                  renameSync(tempPath, resolvedPath)
-                } catch (e) {
-                  try { unlinkSync(tempPath) } catch { /* ignore cleanup error */ }
-                  throw e
-                }
+                writeFileSync(tempPath, updated, "utf-8")
+                renameSync(tempPath, resolvedPath)
               },
-              catch: (e) => new DatabaseError({ cause: e })
+              catch: (cause) => {
+                try { unlinkSync(tempPath) } catch { /* ignore cleanup error */ }
+                return new DatabaseError({ cause })
+              }
             })
             synced.push(targetFile)
           }

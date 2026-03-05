@@ -1,11 +1,12 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Compaction log entry from database.
  */
-export interface CompactionLogEntry {
+export type CompactionLogEntry = {
   readonly id: number
   readonly compactedAt: Date
   readonly taskCount: number
@@ -18,7 +19,7 @@ export interface CompactionLogEntry {
 /**
  * Input for creating a new compaction log entry.
  */
-export interface CreateCompactionLogInput {
+export type CreateCompactionLogInput = {
   readonly taskCount: number
   readonly summary: string
   readonly taskIds: readonly string[]
@@ -100,11 +101,11 @@ export const CompactionRepositoryLive = Layer.effect(
               input.learningsExportedTo ?? null,
               input.learnings
             )
-            const row = db.prepare("SELECT * FROM compaction_log WHERE id = ?").get(result.lastInsertRowid) as CompactionLogRow | undefined
+            const row = coerceDbResult<CompactionLogRow | undefined>(db.prepare("SELECT * FROM compaction_log WHERE id = ?").get(result.lastInsertRowid))
             if (!row) {
               throw new EntityFetchError({
                 entity: "compaction_log",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -116,7 +117,7 @@ export const CompactionRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM compaction_log WHERE id = ?").get(id) as CompactionLogRow | undefined
+            const row = coerceDbResult<CompactionLogRow | undefined>(db.prepare("SELECT * FROM compaction_log WHERE id = ?").get(id))
             return row ? rowToCompactionLogEntry(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -125,9 +126,9 @@ export const CompactionRepositoryLive = Layer.effect(
       findAll: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<CompactionLogRow[]>(db.prepare(
               `SELECT * FROM compaction_log ORDER BY compacted_at DESC`
-            ).all() as CompactionLogRow[]
+            ).all())
             return rows.map(rowToCompactionLogEntry)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -136,9 +137,9 @@ export const CompactionRepositoryLive = Layer.effect(
       findRecent: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<CompactionLogRow[]>(db.prepare(
               `SELECT * FROM compaction_log ORDER BY compacted_at DESC LIMIT ?`
-            ).all(limit) as CompactionLogRow[]
+            ).all(limit))
             return rows.map(rowToCompactionLogEntry)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -147,7 +148,7 @@ export const CompactionRepositoryLive = Layer.effect(
       count: () =>
         Effect.try({
           try: () => {
-            const result = db.prepare("SELECT COUNT(*) as cnt FROM compaction_log").get() as { cnt: number }
+            const result = coerceDbResult<{ cnt: number }>(db.prepare("SELECT COUNT(*) as cnt FROM compaction_log").get())
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })

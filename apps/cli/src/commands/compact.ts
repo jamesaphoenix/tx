@@ -27,7 +27,7 @@ function parseDate(input: string): Date {
   // Otherwise, parse as ISO date
   const date = new Date(input)
   if (isNaN(date.getTime())) {
-    throw new Error(`Invalid date format: ${input}. Use YYYY-MM-DD or Nd (e.g., 7d for 7 days ago).`)
+    return new Date(Number.NaN)
   }
   return date
 }
@@ -44,15 +44,21 @@ export const compact = (pos: string[], flags: Flags) =>
 
     // Parse --before option (default: 7 days ago)
     const beforeStr = opt(flags, "before")
-    let before: Date
-    try {
-      before = beforeStr ? parseDate(beforeStr) : (() => {
-        const d = new Date()
-        d.setDate(d.getDate() - 7)
-        return d
-      })()
-    } catch (e) {
-      console.error(String(e))
+    let before: Date | null = null
+    if (beforeStr) {
+      const parsed = parseDate(beforeStr)
+      if (isNaN(parsed.getTime())) {
+        console.error(`Invalid date format: ${beforeStr}. Use YYYY-MM-DD or Nd (e.g., 7d for 7 days ago).`)
+        process.exit(1)
+      }
+      before = parsed
+    } else {
+      const d = new Date()
+      d.setDate(d.getDate() - 7)
+      before = d
+    }
+
+    if (!before) {
       process.exit(1)
     }
 

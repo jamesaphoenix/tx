@@ -32,7 +32,8 @@ import {
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive,
-  GuardRepositoryLive
+  GuardRepositoryLive,
+  PinRepositoryLive
 } from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: TestDatabase) {
@@ -41,6 +42,7 @@ function makeTestLayer(db: TestDatabase) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
+  PinRepositoryLive,
     LearningRepositoryLive
   ).pipe(
     Layer.provide(infra)
@@ -65,7 +67,7 @@ function makeTestLayer(db: TestDatabase) {
 
 /** Helper to insert a learning with a specific timestamp */
 function insertLearningWithTimestamp(
-  db: Database,
+  db: TestDatabase,
   content: string,
   createdAt: Date,
   options: { usageCount?: number; outcomeScore?: number | null } = {}
@@ -593,7 +595,7 @@ describe("Weight Sensitivity", () => {
    * Helper to make layer with custom recency weight.
    * Note: In the current implementation, recency_weight is loaded from learnings_config table.
    */
-  function makeLayerWithRecencyWeight(db: Database, recencyWeight: number) {
+  function makeLayerWithRecencyWeight(db: TestDatabase, recencyWeight: number) {
     // Insert or update the recency_weight config
     db.db.prepare(`
       INSERT OR REPLACE INTO learnings_config (key, value) VALUES ('recency_weight', ?)
@@ -604,6 +606,7 @@ describe("Weight Sensitivity", () => {
       TaskRepositoryLive,
       DependencyRepositoryLive,
       GuardRepositoryLive,
+  PinRepositoryLive,
       LearningRepositoryLive
     ).pipe(
       Layer.provide(infra)

@@ -32,6 +32,10 @@
     "./tools/sync": {
       "types": "./dist/tools/sync.d.ts",
       "import": "./dist/tools/sync.js"
+    },
+    "./tools/spec-trace": {
+      "types": "./dist/tools/spec-trace.d.ts",
+      "import": "./dist/tools/spec-trace.js"
     }
   },
   "files": [

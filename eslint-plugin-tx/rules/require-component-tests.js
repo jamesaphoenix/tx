@@ -47,16 +47,16 @@ function matchesPattern(filePath, pattern) {
   // Convert glob pattern to regex using placeholder approach to avoid escaping regex chars we introduce
   // Step 1: Replace glob patterns with placeholders
   let regexStr = normalizedPattern
-    .replace(/\*\*\//g, '\x00GLOBSTAR\x00')  // **/ -> placeholder
-    .replace(/\*/g, '\x00STAR\x00');          // * -> placeholder
+    .replace(/\*\*\//g, '<<<GLOBSTAR>>>')  // **/ -> placeholder
+    .replace(/\*/g, '<<<STAR>>>');          // * -> placeholder
 
   // Step 2: Escape special regex characters (except our placeholders)
   regexStr = regexStr.replace(/[.+^${}()|[\]\\]/g, '\\$&');
 
   // Step 3: Replace placeholders with actual regex patterns
   regexStr = regexStr
-    .replace(/\x00GLOBSTAR\x00/g, '(?:.*/)?')  // **/ matches any directory depth (including none)
-    .replace(/\x00STAR\x00/g, '[^/]*');        // * matches any characters except /
+    .replace(/<<<GLOBSTAR>>>/g, '(?:.*/)?')  // **/ matches any directory depth (including none)
+    .replace(/<<<STAR>>>/g, '[^/]*');        // * matches any characters except /
 
   // Anchor the pattern
   const regex = new RegExp(`^${regexStr}$`);

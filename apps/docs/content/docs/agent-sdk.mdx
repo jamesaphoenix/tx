@@ -101,6 +101,17 @@ const tx = new TxClient({
 When both `apiUrl` and `dbPath` are provided, direct mode takes precedence. Direct mode requires `@jamesaphoenix/tx-core` and `effect` as installed dependencies.
 </Callout>
 
+<Callout type="info" title="HTTP Actor Header">
+In HTTP mode, `TxClient` sends `x-tx-actor: agent` by default. The dashboard sends `x-tx-actor: human` for interactive task changes. If you call the REST API directly as a human, send `x-tx-actor: human` on task update and completion requests.
+
+```bash
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done \
+  -H "x-tx-actor: human"
+```
+
+If your orchestration loop uses `tx gate` with a linked `taskId`, keep that review task human-owned. Let the agent stop at the gate, then have the human approve the gate and close the linked task via `tx done <id> --human` or a REST call with `x-tx-actor: human`. See [`tx gate`](/docs/primitives/gate) for the full loop recipes.
+</Callout>
+
 ## API Reference
 
 ### Tasks
@@ -193,7 +204,8 @@ tx done tx-abc123
 <Tab value="REST API">
 
 ```bash
-curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done \
+  -H "x-tx-actor: human"
 ```
 
 </Tab>
@@ -1039,3 +1051,5 @@ agentLoop()
 - [tx verify](/docs/primitives/verify) - Machine-checkable done criteria
 - [tx label](/docs/primitives/label) - Ready queue scoping by phase
 - [tx reflect](/docs/primitives/reflect) - Session retrospective and signals
+- [tx sync](/docs/primitives/sync) - Stream-based event sync
+- [tx gate](/docs/primitives/gate) - Human-in-the-loop phase approvals

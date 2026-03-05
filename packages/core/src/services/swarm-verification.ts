@@ -12,84 +12,28 @@
 import { Context, Effect, Layer, Option, Queue, Fiber, Ref } from "effect"
 import { AnchorVerificationService, type VerificationResult, type VerifyOptions } from "./anchor-verification.js"
 import { AnchorRepository } from "../repo/anchor-repo.js"
-import { DatabaseError, ValidationError } from "../errors.js"
+import { DatabaseError } from "../errors.js"
 import { matchesGlob } from "../utils/glob.js"
-import type { AnchorStatus } from "@jamesaphoenix/tx-types"
-
-// =============================================================================
-// Configuration Constants
-// =============================================================================
-
-/** Default batch size per agent (PRD-017: batches of 10) */
-const DEFAULT_BATCH_SIZE = 10
-
-/** Maximum concurrent agents (PRD-017: up to 4) */
-const MAX_CONCURRENT_AGENTS = 4
-
-/** Minimum batch size to trigger swarm (sequential is fine for small batches) */
-const SWARM_THRESHOLD = 20
-
-// =============================================================================
-// Types
-// =============================================================================
-
-/** A batch of anchor IDs to verify */
-export interface VerificationBatch {
-  readonly batchId: number
-  readonly anchorIds: readonly number[]
-}
-
-/** Result of a single agent's verification of a batch */
-export interface BatchResult {
-  readonly batchId: number
-  readonly results: readonly VerificationResult[]
-  readonly duration: number
-  readonly errors: number
-}
-
-/** Swarm verification metrics */
-export interface SwarmMetrics {
-  readonly totalAnchors: number
-  readonly totalBatches: number
-  readonly agentsUsed: number
-  readonly duration: number
-  /** Time spent per agent (for load balancing analysis) */
-  readonly agentDurations: readonly number[]
-  /** Counts by action type */
-  readonly unchanged: number
-  readonly selfHealed: number
-  readonly drifted: number
-  readonly invalid: number
-  readonly errors: number
-  /** Edge cases requiring human review (tie votes) */
-  readonly needsReview: number
-}
-
-/** Complete swarm verification result */
-export interface SwarmVerificationResult {
-  readonly metrics: SwarmMetrics
-  readonly results: readonly VerificationResult[]
-  /** Anchor IDs that require human review due to tie votes */
-  readonly reviewRequired: readonly number[]
-}
-
-/** Options for swarm verification */
-export interface SwarmVerifyOptions extends VerifyOptions {
-  /** Batch size per agent (default: 10) */
-  readonly batchSize?: number
-  /** Max concurrent agents (default: 4) */
-  readonly maxConcurrent?: number
-  /** Force swarm even for small batches */
-  readonly forceSwarm?: boolean
-}
-
-/** Majority vote result for an anchor */
-export interface VoteResult {
-  readonly anchorId: number
-  readonly votes: Map<AnchorStatus | "error", number>
-  readonly consensus: AnchorStatus | null
-  readonly needsReview: boolean
-}
+import {
+  DEFAULT_BATCH_SIZE,
+  MAX_CONCURRENT_AGENTS,
+  SWARM_THRESHOLD,
+  partitionIntoBatches,
+  aggregateResults,
+  type VerificationBatch,
+  type BatchResult,
+  type SwarmVerifyOptions,
+  type SwarmVerificationResult,
+} from "./swarm-verification/shared.js"
+export {
+  calculateMajorityVote,
+  type VerificationBatch,
+  type BatchResult,
+  type SwarmMetrics,
+  type SwarmVerificationResult,
+  type SwarmVerifyOptions,
+  type VoteResult,
+} from "./swarm-verification/shared.js"
 
 // =============================================================================
 // Service Definition
@@ -132,142 +76,6 @@ export class SwarmVerificationService extends Context.Tag("SwarmVerificationServ
     ) => Effect.Effect<SwarmVerificationResult, DatabaseError>
   }
 >() {}
-
-// =============================================================================
-// Utility Functions
-// =============================================================================
-
-/**
- * Partition anchor IDs into batches.
- */
-const partitionIntoBatches = (
-  anchorIds: readonly number[],
-  batchSize: number
-): VerificationBatch[] => {
-  const batches: VerificationBatch[] = []
-  for (let i = 0; i < anchorIds.length; i += batchSize) {
-    batches.push({
-      batchId: batches.length,
-      anchorIds: anchorIds.slice(i, i + batchSize)
-    })
-  }
-  return batches
-}
-
-/**
- * Calculate majority vote for conflicting results on the same anchor.
- * Used when multiple agents verify the same anchor (edge cases).
- *
- * Rules (per PRD-017):
- * - If 3/4 agents say valid, it's valid
- * - Tie = mark for human review
- *
- * Exported for use in LLM-assisted verification scenarios where multiple
- * agents may verify the same anchor for edge cases.
- */
-export const calculateMajorityVote = (
-  results: readonly VerificationResult[]
-): Effect.Effect<VoteResult, ValidationError> =>
-  Effect.gen(function* () {
-    if (results.length === 0) {
-      return yield* Effect.fail(
-        new ValidationError({
-          reason: "Cannot calculate majority vote with empty results"
-        })
-      )
-    }
-
-    const anchorId = results[0].anchorId
-    const votes = new Map<AnchorStatus | "error", number>()
-
-    for (const result of results) {
-      const status = result.newStatus
-      votes.set(status, (votes.get(status) ?? 0) + 1)
-    }
-
-    // Find the status with most votes
-    let maxVotes = 0
-    let consensus: AnchorStatus | null = null
-    let tieCount = 0
-
-    for (const [status, count] of votes) {
-      if (status === "error") continue // Don't count errors in consensus
-
-      if (count > maxVotes) {
-        maxVotes = count
-        consensus = status as AnchorStatus
-        tieCount = 1
-      } else if (count === maxVotes) {
-        tieCount++
-      }
-    }
-
-    // Tie = needs human review
-    const needsReview = tieCount > 1
-
-    return {
-      anchorId,
-      votes,
-      consensus: needsReview ? null : consensus,
-      needsReview
-    }
-  })
-
-/**
- * Aggregate batch results into final metrics.
- */
-const aggregateResults = (
-  batchResults: readonly BatchResult[],
-  startTime: number,
-  agentCount: number
-): { metrics: Omit<SwarmMetrics, "needsReview">; results: VerificationResult[] } => {
-  let unchanged = 0
-  let selfHealed = 0
-  let drifted = 0
-  let invalid = 0
-  let errors = 0
-  const allResults: VerificationResult[] = []
-  const agentDurations: number[] = []
-
-  for (const batch of batchResults) {
-    agentDurations.push(batch.duration)
-    errors += batch.errors
-
-    for (const result of batch.results) {
-      allResults.push(result)
-      switch (result.action) {
-        case "unchanged":
-          unchanged++
-          break
-        case "self_healed":
-          selfHealed++
-          break
-        case "drifted":
-          drifted++
-          break
-        case "invalidated":
-          invalid++
-          break
-      }
-    }
-  }
-
-  return {
-    metrics: {
-      totalAnchors: allResults.length + errors,
-      totalBatches: batchResults.length,
-      agentsUsed: agentCount,
-      duration: Date.now() - startTime,
-      agentDurations,
-      unchanged,
-      selfHealed,
-      drifted,
-      invalid,
-      errors
-    },
-    results: allResults
-  }
-}
 
 // =============================================================================
 // Service Implementation

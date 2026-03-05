@@ -18,8 +18,8 @@ tx handles persistence, dependencies, and memory primitives so you can stay focu
 │  tx primitives                                          │
 │                                                         │
 │   tx ready     tx done      tx context    tx learn      │
-│   tx claim     tx block     tx guard      tx sync       │
-│   tx verify    tx label     tx reflect    tx handoff    │
+│   tx claim     tx block     tx gate       tx sync       │
+│   tx guard     tx verify    tx reflect    tx handoff    │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -60,10 +60,11 @@ Follow the docs in this order:
 | [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection |
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge |
 | [`tx guard`](/docs/primitives/guard) | Set task creation limits (bounded autonomy) |
+| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints between phases |
 | [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria |
 | [`tx label`](/docs/primitives/label) | Organize tasks with labels for phase scoping |
 | [`tx reflect`](/docs/primitives/reflect) | Session retrospective with actionable signals |
-| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL |
+| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs |
 
 ## Structured Requirements (EARS)
 
@@ -87,7 +88,7 @@ As you build, these principles keep you in control:
 
 - **No opinions on orchestration.** Serial, parallel, swarm, human-in-loop. Your call.
 - **Powerful defaults.** `tx ready` just works. So does dependency resolution.
-- **Escape hatches everywhere.** Raw SQL access, JSONL export, custom scoring.
+- **Escape hatches everywhere.** Raw SQL access, stream event logs, custom scoring.
 - **Framework agnostic.** CLI, MCP, REST API, TypeScript SDK. Use what fits.
 - **Local-first.** SQLite + git. No server required. Works offline.
 
@@ -102,6 +103,8 @@ Choose the interface that fits how you want to operate:
 | **REST API** | Custom dashboards, external integrations |
 | **TypeScript SDK** | Programmatic access from your agents |
 | **Dashboard** | Visual monitoring and management |
+
+For REST task update and completion requests, tx defaults to the `agent` path. Send `x-tx-actor: human` when a human operator is updating or completing work, especially for gate-linked tasks where agent completion can be blocked by default.
 
 ## License
 

@@ -12,6 +12,7 @@ import type {
   UpdateEdgeInput,
   NeighborNode
 } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class EdgeRepository extends Context.Tag("EdgeRepository")<
   EdgeRepository,
@@ -51,40 +52,46 @@ export const EdgeRepositoryLive = Layer.effect(
 
     return {
       create: (input) =>
-        Effect.try({
-          try: () => {
-            const result = db.prepare(
-              `INSERT INTO learning_edges
-               (edge_type, source_type, source_id, target_type, target_id, weight, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`
-            ).run(
-              input.edgeType,
-              input.sourceType,
-              input.sourceId,
-              input.targetType,
-              input.targetId,
-              input.weight ?? 1.0,
-              JSON.stringify(input.metadata ?? {})
-            )
-            const row = db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(result.lastInsertRowid) as EdgeRow | undefined
-            if (!row) {
-              throw new EntityFetchError({
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                `INSERT INTO learning_edges
+                 (edge_type, source_type, source_id, target_type, target_id, weight, metadata)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`
+              ).run(
+                input.edgeType,
+                input.sourceType,
+                input.sourceId,
+                input.targetType,
+                input.targetId,
+                input.weight ?? 1.0,
+                JSON.stringify(input.metadata ?? {})
+              ),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          const row = yield* Effect.try({
+            try: () => coerceDbResult<EdgeRow | undefined>(db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(result.lastInsertRowid)),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (!row) {
+            return yield* Effect.fail(new DatabaseError({
+              cause: new EntityFetchError({
                 entity: "edge",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
-            }
-            return rowToEdge(row)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+            }))
+          }
+          return rowToEdge(row)
         }),
 
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<EdgeRow | undefined>(db.prepare(
               "SELECT * FROM learning_edges WHERE id = ? AND invalidated_at IS NULL"
-            ).get(id) as EdgeRow | undefined
+            ).get(id))
             return row ? rowToEdge(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -93,11 +100,11 @@ export const EdgeRepositoryLive = Layer.effect(
       findBySource: (sourceType, sourceId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<EdgeRow[]>(db.prepare(
               `SELECT * FROM learning_edges
                WHERE source_type = ? AND source_id = ? AND invalidated_at IS NULL
                ORDER BY created_at ASC`
-            ).all(sourceType, sourceId) as EdgeRow[]
+            ).all(sourceType, sourceId))
             return rows.map(rowToEdge)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -106,11 +113,11 @@ export const EdgeRepositoryLive = Layer.effect(
       findByTarget: (targetType, targetId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<EdgeRow[]>(db.prepare(
               `SELECT * FROM learning_edges
                WHERE target_type = ? AND target_id = ? AND invalidated_at IS NULL
                ORDER BY created_at ASC`
-            ).all(targetType, targetId) as EdgeRow[]
+            ).all(targetType, targetId))
             return rows.map(rowToEdge)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -126,11 +133,11 @@ export const EdgeRepositoryLive = Layer.effect(
 
             // Build IN clause with placeholders
             const placeholders = sourceIds.map(() => "?").join(", ")
-            const rows = db.prepare(
+            const rows = coerceDbResult<EdgeRow[]>(db.prepare(
               `SELECT * FROM learning_edges
                WHERE source_type = ? AND source_id IN (${placeholders}) AND invalidated_at IS NULL
                ORDER BY weight DESC, created_at ASC`
-            ).all(sourceType, ...sourceIds) as EdgeRow[]
+            ).all(sourceType, ...sourceIds))
 
             // Group edges by source_id
             const result = new Map<string, Edge[]>()
@@ -149,7 +156,7 @@ export const EdgeRepositoryLive = Layer.effect(
               }
             }
 
-            return result as ReadonlyMap<string, readonly Edge[]>
+            return coerceDbResult<ReadonlyMap<string, readonly Edge[]>>(result)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -157,11 +164,11 @@ export const EdgeRepositoryLive = Layer.effect(
       findByEdgeType: (edgeType) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<EdgeRow[]>(db.prepare(
               `SELECT * FROM learning_edges
                WHERE edge_type = ? AND invalidated_at IS NULL
                ORDER BY weight DESC, created_at ASC`
-            ).all(edgeType) as EdgeRow[]
+            ).all(edgeType))
             return rows.map(rowToEdge)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -170,17 +177,17 @@ export const EdgeRepositoryLive = Layer.effect(
       countByType: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<Array<{ edge_type: string; count: number }>>(db.prepare(
               `SELECT edge_type, COUNT(*) as count FROM learning_edges
                WHERE invalidated_at IS NULL
                GROUP BY edge_type`
-            ).all() as Array<{ edge_type: string; count: number }>
+            ).all())
 
             const result = new Map<EdgeType, number>()
             for (const row of rows) {
-              result.set(row.edge_type as EdgeType, row.count)
+              result.set(coerceDbResult<EdgeType>(row.edge_type), row.count)
             }
-            return result as ReadonlyMap<EdgeType, number>
+            return coerceDbResult<ReadonlyMap<EdgeType, number>>(result)
           },
           catch: (cause) => new DatabaseError({ cause })
         }),
@@ -200,18 +207,18 @@ export const EdgeRepositoryLive = Layer.effect(
 
             // Outgoing edges (this node is the source)
             if (direction === "outgoing" || direction === "both") {
-              const outgoingRows = db.prepare(
+              const outgoingRows = coerceDbResult<EdgeRow[]>(db.prepare(
                 `SELECT * FROM learning_edges
                  WHERE source_type = ? AND source_id = ? AND invalidated_at IS NULL
                  ${edgeTypeFilter}
                  ORDER BY weight DESC, created_at ASC`
-              ).all(nodeType, nodeId, ...edgeTypeParams) as EdgeRow[]
+              ).all(nodeType, nodeId, ...edgeTypeParams))
 
               for (const row of outgoingRows) {
                 neighbors.push({
-                  nodeType: row.target_type as NodeType,
+                  nodeType: coerceDbResult<NodeType>(row.target_type),
                   nodeId: row.target_id,
-                  edgeType: row.edge_type as EdgeType,
+                  edgeType: coerceDbResult<EdgeType>(row.edge_type),
                   weight: row.weight,
                   direction: "outgoing"
                 })
@@ -220,18 +227,18 @@ export const EdgeRepositoryLive = Layer.effect(
 
             // Incoming edges (this node is the target)
             if (direction === "incoming" || direction === "both") {
-              const incomingRows = db.prepare(
+              const incomingRows = coerceDbResult<EdgeRow[]>(db.prepare(
                 `SELECT * FROM learning_edges
                  WHERE target_type = ? AND target_id = ? AND invalidated_at IS NULL
                  ${edgeTypeFilter}
                  ORDER BY weight DESC, created_at ASC`
-              ).all(nodeType, nodeId, ...edgeTypeParams) as EdgeRow[]
+              ).all(nodeType, nodeId, ...edgeTypeParams))
 
               for (const row of incomingRows) {
                 neighbors.push({
-                  nodeType: row.source_type as NodeType,
+                  nodeType: coerceDbResult<NodeType>(row.source_type),
                   nodeId: row.source_id,
-                  edgeType: row.edge_type as EdgeType,
+                  edgeType: coerceDbResult<EdgeType>(row.edge_type),
                   weight: row.weight,
                   direction: "incoming"
                 })
@@ -249,7 +256,7 @@ export const EdgeRepositoryLive = Layer.effect(
             // Recursive CTE performs BFS in a single query (eliminates N+1 pattern)
             // Uses UNION ALL with delimiter-based visited tracking to prevent cycles
             // Similar pattern to hasPath CTE in dep-repo.ts
-            const result = db.prepare(`
+            const result = coerceDbResult<{ edge_path: string } | undefined>(db.prepare(`
               WITH RECURSIVE bfs(node_type, node_id, depth, edge_path, visited) AS (
                 -- Base case: starting node at depth 0
                 SELECT ?, ?, 0, '',
@@ -284,16 +291,16 @@ export const EdgeRepositoryLive = Layer.effect(
               fromType, fromId,   // CTE base: initial visited set
               maxDepth,           // depth limit
               toType, toId        // final filter: target node
-            ) as { edge_path: string } | undefined
+            ))
 
             if (!result) return null
 
             // Fetch full edge objects in a single query
             const edgeIds = result.edge_path.split(',').map(Number)
             const placeholders = edgeIds.map(() => '?').join(', ')
-            const edgeRows = db.prepare(
+            const edgeRows = coerceDbResult<EdgeRow[]>(db.prepare(
               `SELECT * FROM learning_edges WHERE id IN (${placeholders})`
-            ).all(...edgeIds) as EdgeRow[]
+            ).all(...edgeIds))
 
             // Maintain path order from CTE traversal
             const edgeMap = new Map(edgeRows.map(row => [row.id, rowToEdge(row)]))
@@ -303,72 +310,78 @@ export const EdgeRepositoryLive = Layer.effect(
         }),
 
       update: (id, input) =>
-        Effect.try({
-          try: () => {
-            const updates: string[] = []
-            const values: unknown[] = []
+        Effect.gen(function* () {
+          const updates: string[] = []
+          const values: unknown[] = []
 
-            if (input.weight !== undefined) {
-              updates.push("weight = ?")
-              values.push(input.weight)
-            }
-            if (input.metadata !== undefined) {
-              updates.push("metadata = ?")
-              values.push(JSON.stringify(input.metadata))
-            }
+          if (input.weight !== undefined) {
+            updates.push("weight = ?")
+            values.push(input.weight)
+          }
+          if (input.metadata !== undefined) {
+            updates.push("metadata = ?")
+            values.push(JSON.stringify(input.metadata))
+          }
 
-            if (updates.length === 0) {
-              const row = db.prepare(
+          if (updates.length === 0) {
+            const row = yield* Effect.try({
+              try: () => coerceDbResult<EdgeRow | undefined>(db.prepare(
                 "SELECT * FROM learning_edges WHERE id = ? AND invalidated_at IS NULL"
-              ).get(id) as EdgeRow | undefined
-              return row ? rowToEdge(row) : null
-            }
+              ).get(id)),
+              catch: (cause) => new DatabaseError({ cause })
+            })
+            return row ? rowToEdge(row) : null
+          }
 
-            values.push(id)
-            const result = db.prepare(
+          values.push(id)
+          const result = yield* Effect.try({
+            try: () => db.prepare(
               `UPDATE learning_edges SET ${updates.join(", ")} WHERE id = ? AND invalidated_at IS NULL`
-            ).run(...values)
+            ).run(...values),
+            catch: (cause) => new DatabaseError({ cause })
+          })
 
-            if (result.changes === 0) {
-              return null
-            }
+          if (result.changes === 0) {
+            return null
+          }
 
-            const row = db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(id) as EdgeRow | undefined
-            if (!row) {
-              throw new EntityFetchError({
+          const row = yield* Effect.try({
+            try: () => coerceDbResult<EdgeRow | undefined>(db.prepare("SELECT * FROM learning_edges WHERE id = ?").get(id)),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (!row) {
+            return yield* Effect.fail(new DatabaseError({
+              cause: new EntityFetchError({
                 entity: "edge",
                 id,
                 operation: "update"
               })
-            }
-            return rowToEdge(row)
-          },
-          catch: (cause) => new DatabaseError({ cause })
+            }))
+          }
+          return rowToEdge(row)
         }),
 
       invalidate: (id) =>
-        Effect.try({
-          try: () => {
-            const result = db.prepare(
-              "UPDATE learning_edges SET invalidated_at = datetime('now') WHERE id = ? AND invalidated_at IS NULL"
-            ).run(id)
-            if (result.changes === 0) {
-              throw new EdgeNotFoundError({ id })
-            }
-            return true
-          },
-          catch: (cause) => {
-            if (cause instanceof EdgeNotFoundError) throw cause
-            throw new DatabaseError({ cause })
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                "UPDATE learning_edges SET invalidated_at = datetime('now') WHERE id = ? AND invalidated_at IS NULL"
+              ).run(id),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes === 0) {
+            return yield* Effect.fail(new EdgeNotFoundError({ id }))
           }
+          return true
         }),
 
       findAll: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<EdgeRow[]>(db.prepare(
               "SELECT * FROM learning_edges WHERE invalidated_at IS NULL ORDER BY created_at ASC LIMIT ?"
-            ).all(limit ?? DEFAULT_QUERY_LIMIT) as EdgeRow[]
+            ).all(limit ?? DEFAULT_QUERY_LIMIT))
             return rows.map(rowToEdge)
           },
           catch: (cause) => new DatabaseError({ cause })

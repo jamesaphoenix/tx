@@ -67,7 +67,7 @@ const claudeUsage = (_pos: string[], flags: Flags) =>
       if (!existsSync(credPath)) {
         console.error("Error: Claude credentials not found at ~/.claude/.credentials.json")
         console.error("Hint: Sign in to Claude Code first (claude auth login)")
-        throw new CliExitError(1)
+        return Promise.reject(new CliExitError(1))
       }
 
       let creds: Record<string, unknown>
@@ -75,14 +75,14 @@ const claudeUsage = (_pos: string[], flags: Flags) =>
         creds = JSON.parse(readFileSync(credPath, "utf-8"))
       } catch {
         console.error("Error: Failed to parse ~/.claude/.credentials.json")
-        throw new CliExitError(1)
+        return Promise.reject(new CliExitError(1))
       }
 
       const accessToken = (creds?.claudeAiOauth as Record<string, unknown>)?.accessToken as string | undefined
       if (!accessToken) {
         console.error("Error: No OAuth access token found in credentials")
         console.error("Hint: Re-authenticate with Claude Code (claude auth login)")
-        throw new CliExitError(1)
+        return Promise.reject(new CliExitError(1))
       }
 
       const subscriptionType = (creds?.claudeAiOauth as Record<string, unknown>)?.subscriptionType as string | undefined
@@ -99,7 +99,7 @@ const claudeUsage = (_pos: string[], flags: Flags) =>
         if (response.status === 401) {
           console.error("Hint: Token may have expired. Re-authenticate with: claude auth login")
         }
-        throw new CliExitError(1)
+        return Promise.reject(new CliExitError(1))
       }
 
       const usage = await response.json() as Record<string, unknown>
@@ -139,9 +139,9 @@ const claudeUsage = (_pos: string[], flags: Flags) =>
       }
     },
     catch: (e) => {
-      if (e instanceof CliExitError) throw e
+      if (e instanceof CliExitError) return e
       console.error(`Error: ${e instanceof Error ? e.message : String(e)}`)
-      throw new CliExitError(1)
+      return new CliExitError(1)
     },
   })
 
@@ -174,7 +174,7 @@ const codexUsage = (_pos: string[], flags: Flags) =>
       if (codexCheck.status !== 0) {
         console.error("Error: codex CLI not found")
         console.error("Hint: Install with npm install -g codex@latest")
-        throw new CliExitError(1)
+        return Promise.reject(new CliExitError(1))
       }
 
       const proc = spawn("codex", ["app-server", "--listen", "stdio://"], {
@@ -270,9 +270,9 @@ const codexUsage = (_pos: string[], flags: Flags) =>
       }
     },
     catch: (e) => {
-      if (e instanceof CliExitError) throw e
+      if (e instanceof CliExitError) return e
       console.error(`Error: ${e instanceof Error ? e.message : String(e)}`)
-      throw new CliExitError(1)
+      return new CliExitError(1)
     },
   })
 
@@ -303,6 +303,6 @@ export const utils = (pos: string[], flags: Flags) =>
       default:
         console.error(`Unknown utils subcommand: ${sub}`)
         console.error("Run 'tx utils --help' for usage information")
-        throw new CliExitError(1)
+        return yield* Effect.fail(new CliExitError(1))
     }
   })

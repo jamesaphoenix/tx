@@ -20,28 +20,25 @@ import type { Worker, WorkerStatus, Heartbeat } from "../schemas/worker.js"
 /**
  * Input for worker registration.
  */
-export interface WorkerRegistration {
+export type WorkerRegistration = {
   readonly workerId?: string
   readonly name?: string
   readonly hostname?: string
   readonly pid?: number
-  readonly capabilities?: readonly string[]
-}
+  readonly capabilities?: readonly string[]};
 
 /**
  * Filter options for listing workers.
  */
-export interface WorkerFilter {
+export type WorkerFilter = {
   readonly status?: readonly WorkerStatus[]
-  readonly noCurrentTask?: boolean
-}
+  readonly noCurrentTask?: boolean};
 
 /**
  * Configuration for finding dead workers.
  */
-export interface FindDeadConfig {
-  readonly missedHeartbeats: number
-}
+export type FindDeadConfig = {
+  readonly missedHeartbeats: number};
 
 /**
  * Generate a unique worker ID.

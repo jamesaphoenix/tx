@@ -13,9 +13,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, existsSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
+import { mkdtempSync, rmSync, existsSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 import { Hono } from "hono"
@@ -42,7 +42,8 @@ import {
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive,
-  GuardRepositoryLive
+  GuardRepositoryLive,
+  PinRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
@@ -133,13 +134,14 @@ function runTxArgs(args: string[], dbPath: string): CliExecResult {
 
 type McpTestServices = TaskService | ReadyService | DependencyService
 
-function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
+function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
 
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
+  PinRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive
   ).pipe(
@@ -312,7 +314,7 @@ interface ApiTaskWithDeps {
   effectiveGroupContextSourceTaskId: string | null
 }
 
-function createTestApiApp(db: Database) {
+function createTestApiApp(db: TestDatabase) {
   const app = new Hono()
 
   function enrichTasksWithDeps(tasks: TaskRow[]): ApiTaskWithDeps[] {

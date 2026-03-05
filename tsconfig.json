@@ -2,7 +2,9 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": false,
-    "incremental": false
+    "incremental": false,
+    "noEmit": true,
+    "types": ["bun", "node", "vitest/globals"]
   },
   "references": [
     { "path": "packages/types" },
@@ -13,6 +15,11 @@
     { "path": "apps/mcp-server" },
     { "path": "apps/api-server" },
     { "path": "apps/agent-sdk" }
+  ],
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "vitest.setup.ts"
   ],
   "exclude": ["node_modules", "dist", "**/dist"]
 }

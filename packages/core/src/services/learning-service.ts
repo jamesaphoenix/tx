@@ -115,20 +115,18 @@ const averageEmbeddings = (
   })
 
 /** Result of embedding operation */
-export interface EmbedResult {
+export type EmbedResult = {
   processed: number
   skipped: number
   failed: number
-  total: number
-}
+  total: number};
 
 /** Embedding coverage status */
-export interface EmbedStatus {
+export type EmbedStatus = {
   total: number
   withEmbeddings: number
   withoutEmbeddings: number
-  coveragePercent: number
-}
+  coveragePercent: number};
 
 export class LearningService extends Context.Tag("LearningService")<
   LearningService,

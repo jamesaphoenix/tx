@@ -7,6 +7,7 @@ import type {
   TrackedProjectRow,
   CreateTrackedProjectInput
 } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class TrackedProjectRepository extends Context.Tag("TrackedProjectRepository")<
   TrackedProjectRepository,
@@ -37,13 +38,13 @@ export const TrackedProjectRepositoryLive = Layer.effect(
               input.projectId ?? null,
               input.sourceType ?? "claude"
             )
-            const row = db.prepare(
+            const row = coerceDbResult<TrackedProjectRow | undefined>(db.prepare(
               "SELECT * FROM daemon_tracked_projects WHERE id = ?"
-            ).get(result.lastInsertRowid) as TrackedProjectRow | undefined
+            ).get(result.lastInsertRowid))
             if (!row) {
               throw new EntityFetchError({
                 entity: "tracked_project",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -55,9 +56,9 @@ export const TrackedProjectRepositoryLive = Layer.effect(
       findAll: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<TrackedProjectRow[]>(db.prepare(
               "SELECT * FROM daemon_tracked_projects ORDER BY added_at DESC"
-            ).all() as TrackedProjectRow[]
+            ).all())
             return rows.map(rowToTrackedProject)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -66,9 +67,9 @@ export const TrackedProjectRepositoryLive = Layer.effect(
       findByPath: (projectPath) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<TrackedProjectRow | undefined>(db.prepare(
               "SELECT * FROM daemon_tracked_projects WHERE project_path = ?"
-            ).get(projectPath) as TrackedProjectRow | undefined
+            ).get(projectPath))
             return row ? rowToTrackedProject(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -96,9 +97,9 @@ export const TrackedProjectRepositoryLive = Layer.effect(
               return null
             }
 
-            const row = db.prepare(
+            const row = coerceDbResult<TrackedProjectRow | undefined>(db.prepare(
               "SELECT * FROM daemon_tracked_projects WHERE id = ?"
-            ).get(id) as TrackedProjectRow | undefined
+            ).get(id))
             if (!row) {
               throw new EntityFetchError({
                 entity: "tracked_project",

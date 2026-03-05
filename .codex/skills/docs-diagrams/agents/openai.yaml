@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docs Diagrams"
+  short_description: "Create or refine docs diagrams and visual workflow explanations"
+  default_prompt: "Use this skill when adding or improving documentation diagrams, especially Mermaid workflow diagrams in apps/docs."

@@ -8,6 +8,7 @@ import type {
   FileLearningRow
 } from "@jamesaphoenix/tx-types"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export type from @tx/types for convenience
 export type { FileLearningRow } from "@jamesaphoenix/tx-types"
@@ -16,7 +17,7 @@ export type { FileLearningRow } from "@jamesaphoenix/tx-types"
  * Convert a database row to a FileLearning domain object.
  */
 export const rowToFileLearning = (row: FileLearningRow): FileLearning => ({
-  id: row.id as FileLearningId,
+  id: coerceDbResult<FileLearningId>(row.id),
   filePattern: row.file_pattern,
   note: row.note,
   taskId: row.task_id,

@@ -14,6 +14,7 @@
     "learning",
     "pin",
     "---Bounded Autonomy---",
+    "gate",
     "guard",
     "verify",
     "reflect",
@@ -27,6 +28,7 @@
     "---Observability---",
     "traces",
     "docs",
-    "invariants"
+    "invariants",
+    "spec-trace"
   ]
 }

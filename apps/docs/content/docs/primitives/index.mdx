@@ -5,7 +5,7 @@ description: Composable building blocks for agent infrastructure
 
 ## Overview
 
-tx provides a set of composable primitives for managing tasks, dependencies, learnings, and synchronization. These primitives are the building blocks for any agent orchestration pattern.
+tx provides a set of composable primitives for managing tasks, dependencies, learnings, and stream-log synchronization. These primitives are the building blocks for any agent orchestration pattern.
 
 ## Philosophy
 
@@ -19,7 +19,8 @@ tx is about **primitives, not frameworks**. We don't dictate how you orchestrate
 │                                                     │
 │   tx ready     tx done      tx context    tx learn  │
 │   tx claim     tx block     tx sync       tx trace  │
-│   tx guard     tx verify    tx label      tx reflect│
+│   tx invariant tx spec                              │
+│   tx gate      tx guard     tx verify     tx reflect│
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
@@ -98,6 +99,17 @@ Best for: non-TypeScript agents, distributed systems, web dashboards.
 </Tab>
 </Tabs>
 
+## Update And Completion Actor Semantics
+
+Task update and completion flows can behave differently for agents and humans.
+
+- REST API task update and completion requests default to `agent`. If a human is driving the request from `curl`, a script, or a custom UI, send `x-tx-actor: human`.
+- The dashboard already sends `x-tx-actor: human` for task update and completion requests.
+- CLI task updates and completion default to `agent`. Use `--human` on commands such as `tx done` and `tx update` when a person is performing the action.
+- This is most visible with gate-linked tasks. If a gate pin stores `taskId` and `.tx/config.toml` leaves `[pins].block_agent_done_when_task_id_present = true` (default), agent callers cannot complete that linked task.
+
+See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) for the concrete completion rules.
+
 ## Core Primitives
 
 | Primitive | Purpose | Interfaces | Status |
@@ -110,16 +122,18 @@ Best for: non-TypeScript agents, distributed systems, web dashboards.
 | [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection | CLI, SDK, MCP, API | Available |
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge | CLI, SDK, MCP, API | Available |
 | [`tx pin`](/docs/primitives/pin) | Persistent named content blocks synced to context files | CLI, SDK, MCP, API | Available |
-| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly JSONL | CLI, SDK | Available |
+| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs | CLI, SDK, MCP, API | Available |
 | [`tx try` / `tx attempts`](/docs/primitives/attempts) | Record and track implementation attempts | CLI, SDK, MCP, API | Available |
 | [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation and EARS linting (`tx doc lint-ears`) | CLI, SDK, MCP, API | Available |
 | [`tx invariant *`](/docs/primitives/invariants) | Machine-checkable system rules with enforcement tracking | CLI, SDK, MCP, API | Available |
+| [`tx spec *`](/docs/primitives/spec-trace) | Spec-to-test traceability, multi-language discovery, and FCI phase scoring | CLI, Core, MCP, API | Available |
 | [`tx trace *`](/docs/primitives/traces) | Execution tracing and run observability | CLI, SDK, MCP, API | Available |
 
 ### Bounded Autonomy
 
 | Primitive | Purpose | Interfaces | Status |
 |-----------|---------|------------|--------|
+| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints for phase transitions | CLI, SDK (via `tx.pins`), API (via `/api/pins`) | Available |
 | [`tx guard`](/docs/primitives/guard) | Set task creation limits to prevent unbounded proliferation | CLI, SDK, MCP, API | Available |
 | [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria to tasks | CLI, SDK, MCP, API | Available |
 | [`tx label`](/docs/primitives/label) | Organize tasks with labels for ready queue scoping | CLI, SDK, MCP, API | Available |

@@ -112,6 +112,10 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   createdAt: task.createdAt.toISOString(),
   updatedAt: task.updatedAt.toISOString(),
   completedAt: task.completedAt?.toISOString() ?? null,
+  assigneeType: task.assigneeType,
+  assigneeId: task.assigneeId,
+  assignedAt: task.assignedAt?.toISOString() ?? null,
+  assignedBy: task.assignedBy,
   metadata: task.metadata,
   blockedBy: task.blockedBy,
   blocks: task.blocks,
@@ -135,6 +139,10 @@ const TaskWithDepsOutputSchema = Schema.Struct({
   createdAt: Schema.String.pipe(Schema.pattern(isoDatePattern)),
   updatedAt: Schema.String.pipe(Schema.pattern(isoDatePattern)),
   completedAt: Schema.NullOr(Schema.String.pipe(Schema.pattern(isoDatePattern))),
+  assigneeType: Schema.NullOr(Schema.Literal("human", "agent")),
+  assigneeId: Schema.NullOr(Schema.String),
+  assignedAt: Schema.NullOr(Schema.String.pipe(Schema.pattern(isoDatePattern))),
+  assignedBy: Schema.NullOr(Schema.String),
   metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
   blockedBy: Schema.Array(Schema.String),
   blocks: Schema.Array(Schema.String),
@@ -160,6 +168,10 @@ function makeTestTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     createdAt: new Date("2026-01-15T10:00:00Z"),
     updatedAt: new Date("2026-01-15T10:00:00Z"),
     completedAt: null,
+    assigneeType: null,
+    assigneeId: null,
+    assignedAt: null,
+    assignedBy: null,
     metadata: {},
     blockedBy: [],
     blocks: [],
@@ -199,6 +211,10 @@ describe("TaskWithDeps Schema Validation", () => {
     expect(serialized).toHaveProperty("createdAt")
     expect(serialized).toHaveProperty("updatedAt")
     expect(serialized).toHaveProperty("completedAt")
+    expect(serialized).toHaveProperty("assigneeType")
+    expect(serialized).toHaveProperty("assigneeId")
+    expect(serialized).toHaveProperty("assignedAt")
+    expect(serialized).toHaveProperty("assignedBy")
     expect(serialized).toHaveProperty("metadata")
 
     // TaskWithDeps-specific fields (Rule 1)

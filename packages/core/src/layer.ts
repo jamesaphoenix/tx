@@ -31,7 +31,8 @@ import { AttemptServiceLive } from "./services/attempt-service.js"
 import { AnchorServiceLive } from "./services/anchor-service.js"
 import { EdgeServiceLive } from "./services/edge-service.js"
 import { DeduplicationServiceLive } from "./services/deduplication-service.js"
-import { SyncServiceLive } from "./services/sync-service.js"
+import { SyncServiceLive } from "./services/sync/index.js"
+import { StreamServiceLive } from "./services/stream-service.js"
 import { AutoSyncServiceLive, AutoSyncServiceNoop } from "./services/auto-sync-service.js"
 import { MigrationServiceLive } from "./services/migration-service.js"
 import { EmbeddingServiceNoop, EmbeddingServiceAuto } from "./services/embedding-service.js"
@@ -68,12 +69,15 @@ import { LabelRepositoryLive } from "./repo/label-repo.js"
 import { GuardServiceLive } from "./services/guard-service.js"
 import { VerifyServiceLive } from "./services/verify-service.js"
 import { ReflectServiceLive } from "./services/reflect-service.js"
+import { SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
+import { SpecTraceServiceLive } from "./services/spec-trace-service.js"
 // AgentService + CycleScanService are NOT in the default layer.
 // They are provided by the cycle CLI command via Effect.provide overlay.
 // Re-exports below make them available from @jamesaphoenix/tx-core.
 
 // Re-export services for cleaner imports
-export { SyncService } from "./services/sync-service.js"
+export { SyncService } from "./services/sync/index.js"
+export { StreamService, StreamServiceLive, type StreamInfo, type StreamProgress } from "./services/stream-service.js"
 export { MigrationService } from "./services/migration-service.js"
 export { AutoSyncService, AutoSyncServiceNoop, AutoSyncServiceLive } from "./services/auto-sync-service.js"
 export { LearningService } from "./services/learning-service.js"
@@ -227,8 +231,17 @@ export {
 export { GuardService, GuardServiceLive, type GuardCheckResult } from "./services/guard-service.js"
 export { VerifyService, VerifyServiceLive, type VerifyResult } from "./services/verify-service.js"
 export { ReflectService, ReflectServiceLive, type ReflectResult, type ReflectSignal, type StuckTask } from "./services/reflect-service.js"
+export {
+  SpecTraceService,
+  SpecTraceServiceLive,
+  parseBatchRunInput,
+  type BatchSource,
+  type BatchRunResult,
+  type SpecTraceStatus,
+} from "./services/spec-trace-service.js"
 export { GuardRepository, GuardRepositoryLive } from "./repo/guard-repo.js"
 export { LabelRepository, LabelRepositoryLive } from "./repo/label-repo.js"
+export { SpecTraceRepository, SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
 
 /**
  * Create the full application layer from an existing SqliteClient infra layer.
@@ -265,17 +278,21 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     MemorySourceRepositoryLive,
     PinRepositoryLive,
     GuardRepositoryLive,
-    LabelRepositoryLive
+    LabelRepositoryLive,
+    SpecTraceRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+
+  const streamService = StreamServiceLive.pipe(Layer.provide(infra))
 
   // SyncServiceLive needs TaskService, repos, and infra
   const syncServiceWithDeps = SyncServiceLive.pipe(
     Layer.provide(Layer.mergeAll(
       infra,
       repos,
-      TaskServiceLive.pipe(Layer.provide(repos))
+      TaskServiceLive.pipe(Layer.provide(repos)),
+      streamService
     ))
   )
 
@@ -382,6 +399,11 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   // DocServiceLive needs DocRepository (from repos)
   const docService = DocServiceLive.pipe(Layer.provide(repos))
 
+  // SpecTraceServiceLive needs SpecTraceRepository + DocService
+  const specTraceService = SpecTraceServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, docService))
+  )
+
   // MemoryServiceLive needs memory repos (from repos)
   const memoryService = MemoryServiceLive.pipe(Layer.provide(repos))
 
@@ -395,7 +417,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, specTraceService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -405,7 +427,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   // Also expose RunRepository directly for run tracking
   // (Note: Consider creating RunService in future refactor)
   // Also expose SqliteClient directly for direct database access (e.g., trace commands)
-  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, repos, infra)
+  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, streamService, repos, infra)
 }
 
 /**
@@ -455,17 +477,21 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     MemorySourceRepositoryLive,
     PinRepositoryLive,
     GuardRepositoryLive,
-    LabelRepositoryLive
+    LabelRepositoryLive,
+    SpecTraceRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+
+  const streamService = StreamServiceLive.pipe(Layer.provide(infra))
 
   // SyncServiceLive needs TaskService, repos, and infra
   const syncServiceWithDeps = SyncServiceLive.pipe(
     Layer.provide(Layer.mergeAll(
       infra,
       repos,
-      TaskServiceLive.pipe(Layer.provide(repos))
+      TaskServiceLive.pipe(Layer.provide(repos)),
+      streamService
     ))
   )
 
@@ -540,6 +566,11 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   // DocServiceLive needs DocRepository (from repos)
   const docService = DocServiceLive.pipe(Layer.provide(repos))
 
+  // SpecTraceServiceLive needs SpecTraceRepository + DocService
+  const specTraceService = SpecTraceServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, docService))
+  )
+
   // MemoryServiceLive needs memory repos (from repos)
   const memoryService = MemoryServiceLive.pipe(Layer.provide(repos))
 
@@ -565,7 +596,7 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, specTraceService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -573,7 +604,7 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   )
 
   // Also expose RunRepository directly for run tracking and SqliteClient for direct access
-  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, repos, infra)
+  return Layer.mergeAll(allServices, syncServiceWithDeps, migrationService, streamService, repos, infra)
 }
 
 /**

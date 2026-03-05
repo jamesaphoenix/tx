@@ -12,6 +12,9 @@ interface BulkResult {
   readonly failed: { id: string; error: string }[]
 }
 
+const actorFromFlags = (flags: Flags): "agent" | "human" =>
+  flag(flags, "human") ? "human" : "agent"
+
 /** Extract error message safely without unsafe 'as' casts. */
 function extractErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -61,7 +64,7 @@ export const bulk = (pos: string[], flags: Flags) =>
 const bulkDone = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
-      console.error("Usage: tx bulk done <id> [id...] [--json]")
+      console.error("Usage: tx bulk done <id> [id...] [--human] [--json]")
       process.exit(1)
     }
 
@@ -77,7 +80,7 @@ const bulkDone = (pos: string[], flags: Flags) =>
         Effect.gen(function* () {
           // Get tasks blocked by this one BEFORE marking complete
           const blocking = yield* readySvc.getBlocking(id)
-          yield* taskSvc.update(id, { status: "done" })
+          yield* taskSvc.update(id, { status: "done" }, { actor: actorFromFlags(flags) })
 
           // Find newly unblocked tasks
           const candidateIds = blocking

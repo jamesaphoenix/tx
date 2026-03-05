@@ -3,6 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, RunNotFoundError } from "../errors.js"
 import { rowToRun, generateRunId } from "../mappers/run.js"
 import type { Run, RunId, RunStatus, RunRow, CreateRunInput, UpdateRunInput } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class RunRepository extends Context.Tag("RunRepository")<
   RunRepository,
@@ -68,7 +69,7 @@ export const RunRepositoryLive = Layer.effect(
               JSON.stringify(input.metadata ?? {})
             )
 
-            const row = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow | undefined
+            const row = coerceDbResult<RunRow | undefined>(db.prepare("SELECT * FROM runs WHERE id = ?").get(id))
             if (!row) {
               throw new EntityFetchError({
                 entity: "run",
@@ -84,7 +85,7 @@ export const RunRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow | undefined
+            const row = coerceDbResult<RunRow | undefined>(db.prepare("SELECT * FROM runs WHERE id = ?").get(id))
             return row ? rowToRun(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -93,9 +94,9 @@ export const RunRepositoryLive = Layer.effect(
       findByTaskId: (taskId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<RunRow[]>(db.prepare(
               "SELECT * FROM runs WHERE task_id = ? ORDER BY started_at DESC"
-            ).all(taskId) as RunRow[]
+            ).all(taskId))
             return rows.map(rowToRun)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -104,9 +105,9 @@ export const RunRepositoryLive = Layer.effect(
       findByStatus: (status) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<RunRow[]>(db.prepare(
               "SELECT * FROM runs WHERE status = ? ORDER BY started_at DESC"
-            ).all(status) as RunRow[]
+            ).all(status))
             return rows.map(rowToRun)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -115,9 +116,9 @@ export const RunRepositoryLive = Layer.effect(
       findRecent: (limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<RunRow[]>(db.prepare(
               "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?"
-            ).all(limit) as RunRow[]
+            ).all(limit))
             return rows.map(rowToRun)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -126,12 +127,12 @@ export const RunRepositoryLive = Layer.effect(
       findRecentSince: (since, limit) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(`
+            const rows = coerceDbResult<RunRow[]>(db.prepare(`
               SELECT * FROM runs
               WHERE started_at >= ?
               ORDER BY started_at DESC
               LIMIT ?
-            `).all(since.toISOString(), limit) as RunRow[]
+            `).all(since.toISOString(), limit))
             return rows.map(rowToRun)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -223,9 +224,9 @@ export const RunRepositoryLive = Layer.effect(
       getRunning: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<RunRow[]>(db.prepare(
               "SELECT * FROM runs WHERE status = 'running' ORDER BY started_at DESC"
-            ).all() as RunRow[]
+            ).all())
             return rows.map(rowToRun)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -234,9 +235,9 @@ export const RunRepositoryLive = Layer.effect(
       countByStatus: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<Array<{ status: string; count: number }>>(db.prepare(
               "SELECT status, COUNT(*) as count FROM runs GROUP BY status"
-            ).all() as Array<{ status: string; count: number }>
+            ).all())
 
             const counts: Record<RunStatus, number> = {
               running: 0,
@@ -247,7 +248,7 @@ export const RunRepositoryLive = Layer.effect(
             }
 
             for (const row of rows) {
-              counts[row.status as RunStatus] = row.count
+              counts[coerceDbResult<RunStatus>(row.status)] = row.count
             }
 
             return counts

@@ -12,9 +12,9 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, existsSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
+import { mkdtempSync, rmSync, existsSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { fixtureId, createMigratedSqliteDatabase } from "@jamesaphoenix/tx-test-utils"
 import type { SqliteDatabase as _SqliteDatabase } from "@jamesaphoenix/tx-core"
 

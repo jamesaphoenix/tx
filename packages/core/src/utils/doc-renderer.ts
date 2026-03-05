@@ -9,30 +9,26 @@
  */
 import type { DocKind } from "@jamesaphoenix/tx-types"
 
-interface ParsedYaml {
-  [key: string]: unknown
-}
+type ParsedYaml = {
+  [key: string]: unknown};
 
-interface IndexPrd {
+type IndexPrd = {
+  name: string
+  title: string
+  status: string};
+
+type IndexDesignDoc = {
   name: string
   title: string
   status: string
-}
+  implements?: string};
 
-interface IndexDesignDoc {
-  name: string
-  title: string
-  status: string
-  implements?: string
-}
-
-interface IndexLink {
+type IndexLink = {
   from: string
   to: string
-  type: string
-}
+  type: string};
 
-interface IndexData {
+type IndexData = {
   overview?: string
   prds: IndexPrd[]
   design_docs: IndexDesignDoc[]
@@ -41,8 +37,7 @@ interface IndexData {
     total: number
     by_enforcement: Record<string, number>
     by_subsystem: Record<string, number>
-  }
-}
+  }};
 
 /**
  * Render a parsed YAML doc to deterministic markdown.

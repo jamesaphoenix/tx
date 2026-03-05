@@ -25,6 +25,10 @@ function hasTxSection(content: string): boolean {
   return /^\s*#\s*tx\s*[—-]\s*Headless,\s*Local Infra for AI Agents\s*$/im.test(content)
 }
 
+class ScaffoldError extends Error {
+  readonly _tag = "ScaffoldError" as const
+}
+
 /**
  * Recursively copy files from src to dest, skipping files that already exist.
  * Returns arrays of copied and skipped file paths (relative to dest).
@@ -59,9 +63,9 @@ function copyTree(
         } catch (error) {
           const err = error as NodeJS.ErrnoException
           if (err.code === "ENOTDIR") {
-            throw new Error(`Cannot scaffold '${relPath}': a parent path exists as a file. Move/delete conflicting path and retry.`)
+            throw new ScaffoldError(`Cannot scaffold '${relPath}': a parent path exists as a file. Move/delete conflicting path and retry.`)
           }
-          throw error
+          throw new ScaffoldError(error instanceof Error ? error.message : String(error))
         }
         writeFileSync(destPath, readFileSync(srcPath))
         // Make .sh files executable
@@ -123,15 +127,15 @@ export function parseWatchdogRuntimeMode(value: string | boolean | undefined): W
     return "auto"
   }
   if (value === true) {
-    throw new Error("Flag --watchdog-runtime requires a value: auto|codex|claude|both.")
+    throw new ScaffoldError("Flag --watchdog-runtime requires a value: auto|codex|claude|both.")
   }
   if (typeof value !== "string") {
-    throw new Error("Flag --watchdog-runtime must be one of: auto|codex|claude|both.")
+    throw new ScaffoldError("Flag --watchdog-runtime must be one of: auto|codex|claude|both.")
   }
   if (WATCHDOG_RUNTIME_MODES.includes(value as WatchdogRuntimeMode)) {
     return value as WatchdogRuntimeMode
   }
-  throw new Error(`Invalid --watchdog-runtime value: ${value} (expected: auto|codex|claude|both)`)
+  throw new ScaffoldError(`Invalid --watchdog-runtime value: ${value} (expected: auto|codex|claude|both)`)
 }
 
 function commandAvailable(commandName: string, pathEnv: string): boolean {
@@ -168,7 +172,7 @@ function resolveWatchdogRuntime(mode: WatchdogRuntimeMode, pathEnv: string): Res
 
   if (mode === "codex") {
     if (!codexAvailable) {
-      throw new Error(
+      throw new ScaffoldError(
         "Watchdog runtime 'codex' unavailable: codex CLI not found in PATH. Install codex or use --watchdog-runtime auto|claude."
       )
     }
@@ -177,7 +181,7 @@ function resolveWatchdogRuntime(mode: WatchdogRuntimeMode, pathEnv: string): Res
 
   if (mode === "claude") {
     if (!claudeAvailable) {
-      throw new Error(
+      throw new ScaffoldError(
         "Watchdog runtime 'claude' unavailable: claude CLI not found in PATH. Install claude or use --watchdog-runtime auto|codex."
       )
     }
@@ -189,7 +193,7 @@ function resolveWatchdogRuntime(mode: WatchdogRuntimeMode, pathEnv: string): Res
     if (!codexAvailable) missing.push("codex")
     if (!claudeAvailable) missing.push("claude")
     if (missing.length > 0) {
-      throw new Error(`Watchdog runtime 'both' requires codex and claude; missing: ${missing.join(", ")}.`)
+      throw new ScaffoldError(`Watchdog runtime 'both' requires codex and claude; missing: ${missing.join(", ")}.`)
     }
     return { warnings: [], watchdogEnabled: true, codexEnabled: true, claudeEnabled: true }
   }

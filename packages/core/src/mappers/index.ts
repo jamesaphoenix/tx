@@ -146,6 +146,15 @@ export {
   isValidInvariantStatus,
 } from "./doc.js"
 
+// Spec traceability mappers
+export {
+  rowToSpecTest,
+  rowToSpecTestRun,
+  rowToSpecSignoff,
+  isValidSpecDiscoveryMethod,
+  isValidSpecScopeType,
+} from "./spec-trace.js"
+
 // Memory mappers
 export {
   rowToMemoryDocument,

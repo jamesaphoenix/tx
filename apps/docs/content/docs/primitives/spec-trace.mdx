@@ -1,0 +1,165 @@
+---
+title: tx spec
+description: Spec-to-test traceability with multi-language discovery and FCI phase scoring
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
+import { SpecPipelineFigure, SpecPhaseFigure } from '@/components/spec-trace-figures'
+
+## Purpose
+
+`tx spec` bridges docs and tests:
+
+1. Sync invariants from tx docs (`tx invariant sync` behavior)
+2. Discover test mappings across languages from source annotations and `.tx/spec-tests.yml`
+3. Record test outcomes
+4. Compute Feature Completion Index (FCI) and phase (`BUILD -> HARDEN -> COMPLETE`)
+
+This is primitive infrastructure, not a test runner. You keep your existing framework and CI.
+
+## At A Glance
+
+<SpecPipelineFigure />
+
+<SpecPhaseFigure />
+
+## Canonical Test ID
+
+Every mapped test uses:
+
+```text
+{relative_file}::{test_name}
+```
+
+Example:
+
+```text
+test/integration/core.test.ts::ready detection returns unblocked tasks
+```
+
+## Multi-Language Discovery
+
+Discovery is regex-based on raw text files. No AST parsing.
+
+Supported annotation conventions:
+
+- Tag in test names: `[INV-EARS-FL-001]`
+- Underscore tags in function names: `_INV_EARS_FL_001`
+- Comment annotations: `@spec INV-EARS-FL-001`
+- Manifest mappings: `.tx/spec-tests.yml`
+
+Default scan patterns include common JS/TS, Python, Go, Rust, Java, Ruby, and C/C++ conventions. Override via `.tx/config.toml` `[spec].test_patterns`.
+
+## CLI
+
+```bash
+# Discovery + mapping
+ tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>]
+ tx spec link <inv-id> <file> [name] [--framework <name>]
+ tx spec unlink <inv-id> <test-id>
+ tx spec tests <inv-id>
+ tx spec gaps [--doc <name>] [--sub <name>]
+ tx spec matrix [--doc <name>] [--sub <name>]
+
+# Scoring + lifecycle
+ tx spec fci [--doc <name>] [--sub <name>]
+ tx spec status [--doc <name>] [--sub <name>]
+ tx spec complete [--doc <name> | --sub <name>] --by <human> [--notes <text>]
+
+# Run ingestion
+ tx spec run <test-id> --passed|--failed [--duration <ms>] [--details <text>]
+ tx spec batch [--from generic|vitest|pytest|go|junit]   # reads stdin
+```
+
+Notes:
+
+- `tx spec run` requires exactly one of `--passed` or `--failed`.
+- `tx spec complete` requires `--by` and only succeeds from `HARDEN`.
+
+## Interfaces
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx spec discover --doc PRD-033-spec-test-traceability
+tx spec fci --doc PRD-033-spec-test-traceability
+tx spec status --doc PRD-033-spec-test-traceability
+vitest run --reporter=json | tx spec batch --from vitest
+tx spec complete --doc PRD-033-spec-test-traceability --by james
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// SDK-native call
+const invariants = await tx.invariants.list({ docName: 'PRD-033-spec-test-traceability' })
+
+// Spec traceability endpoints via API while dedicated SDK methods land
+const status = await fetch('http://localhost:3456/api/spec/status?doc=PRD-033-spec-test-traceability')
+  .then((r) => r.json())
+const matrix = await fetch('http://localhost:3456/api/spec/matrix?doc=PRD-033-spec-test-traceability')
+  .then((r) => r.json())
+
+console.log({ invariants: invariants.length, phase: status.phase, matrix: matrix.matrix.length })
+```
+
+</Tab>
+<Tab value="MCP">
+
+```text
+tx_spec_discover
+tx_spec_link
+tx_spec_unlink
+tx_spec_tests
+tx_spec_invariants_for_test
+tx_spec_gaps
+tx_spec_fci
+tx_spec_status
+tx_spec_matrix
+tx_spec_record_run
+tx_spec_batch_run
+tx_spec_complete
+```
+
+</Tab>
+<Tab value="REST API">
+
+```text
+POST /api/spec/discover
+GET  /api/spec/tests/:invariantId
+GET  /api/spec/invariants?testId=<canonical-id>
+GET  /api/spec/gaps
+GET  /api/spec/fci
+GET  /api/spec/status
+GET  /api/spec/matrix
+POST /api/spec/link
+POST /api/spec/unlink
+POST /api/spec/run
+POST /api/spec/batch
+POST /api/spec/complete
+```
+
+</Tab>
+</Tabs>
+
+## FCI and Phases
+
+`FCI = passing_invariants / total_active_invariants * 100`
+
+- `BUILD`: FCI < 100
+- `HARDEN`: FCI = 100 (auto)
+- `COMPLETE`: human sign-off (`tx spec complete`)
+
+Use this as a readiness primitive for moving from implementation to hardening and release review.
+
+## Related Primitives
+
+- [`tx doc`](/docs/primitives/docs)
+- [`tx invariant`](/docs/primitives/invariants)
+- [`tx verify`](/docs/primitives/verify)

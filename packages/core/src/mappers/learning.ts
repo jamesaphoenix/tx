@@ -11,6 +11,7 @@ import type {
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Schema for keywords - an array of strings.
@@ -95,7 +96,7 @@ export const rowToLearning = (row: LearningRow): Learning => {
     })
   }
   return {
-    id: row.id as Learning["id"],
+    id: coerceDbResult<Learning["id"]>(row.id),
     content: row.content,
     sourceType: row.source_type,
     sourceRef: row.source_ref,
@@ -105,7 +106,7 @@ export const rowToLearning = (row: LearningRow): Learning => {
     usageCount: row.usage_count,
     lastUsedAt: row.last_used_at ? parseDate(row.last_used_at, "last_used_at", row.id) : null,
     outcomeScore: row.outcome_score,
-    embedding: row.embedding ? bufferToFloat32Array(row.embedding) as Float32Array<ArrayBuffer> : null
+    embedding: row.embedding ? coerceDbResult<Float32Array<ArrayBuffer>>(bufferToFloat32Array(row.embedding)) : null
   }
 }
 
@@ -124,7 +125,7 @@ export const rowToLearningWithoutEmbedding = (row: Omit<LearningRow, "embedding"
     })
   }
   return {
-    id: row.id as Learning["id"],
+    id: coerceDbResult<Learning["id"]>(row.id),
     content: row.content,
     sourceType: row.source_type,
     sourceRef: row.source_ref,

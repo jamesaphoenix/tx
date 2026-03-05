@@ -29,6 +29,7 @@ import {
 } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export {
   DOC_KINDS,
@@ -118,7 +119,7 @@ export const rowToDoc = (row: DocRow): Doc => {
     })
   }
   return {
-    id: row.id as DocId,
+    id: coerceDbResult<DocId>(row.id),
     hash: row.hash,
     kind: row.kind,
     name: row.name,
@@ -127,7 +128,7 @@ export const rowToDoc = (row: DocRow): Doc => {
     status: row.status,
     filePath: row.file_path,
     parentDocId:
-      row.parent_doc_id !== null ? (row.parent_doc_id as DocId) : null,
+      row.parent_doc_id !== null ? (coerceDbResult<DocId>(row.parent_doc_id)) : null,
     createdAt: parseDate(row.created_at, "created_at", row.id),
     lockedAt: row.locked_at
       ? parseDate(row.locked_at, "locked_at", row.id)
@@ -147,8 +148,8 @@ export const rowToDocLink = (row: DocLinkRow): DocLink => {
   }
   return {
     id: row.id,
-    fromDocId: row.from_doc_id as DocId,
-    toDocId: row.to_doc_id as DocId,
+    fromDocId: coerceDbResult<DocId>(row.from_doc_id),
+    toDocId: coerceDbResult<DocId>(row.to_doc_id),
     linkType: row.link_type,
     createdAt: parseDate(row.created_at, "created_at", row.id),
   }
@@ -166,7 +167,7 @@ export const rowToTaskDocLink = (row: TaskDocLinkRow): TaskDocLink => {
   return {
     id: row.id,
     taskId: row.task_id,
-    docId: row.doc_id as DocId,
+    docId: coerceDbResult<DocId>(row.doc_id),
     linkType: row.link_type,
     createdAt: parseDate(row.created_at, "created_at", row.id),
   }
@@ -190,10 +191,10 @@ export const rowToInvariant = (row: InvariantRow): Invariant => {
     })
   }
   return {
-    id: row.id as InvariantId,
+    id: coerceDbResult<InvariantId>(row.id),
     rule: row.rule,
     enforcement: row.enforcement,
-    docId: row.doc_id as DocId,
+    docId: coerceDbResult<DocId>(row.doc_id),
     subsystem: row.subsystem,
     testRef: row.test_ref,
     lintRule: row.lint_rule,
@@ -207,7 +208,7 @@ export const rowToInvariant = (row: InvariantRow): Invariant => {
 export const rowToInvariantCheck = (row: InvariantCheckRow): InvariantCheck => {
   return {
     id: row.id,
-    invariantId: row.invariant_id as InvariantId,
+    invariantId: coerceDbResult<InvariantId>(row.invariant_id),
     passed: row.passed === 1,
     details: row.details,
     checkedAt: parseDate(row.checked_at, "checked_at", row.id),

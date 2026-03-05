@@ -17,8 +17,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { PinService } from "@jamesaphoenix/tx-core"
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs"
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync } from "node:fs"
 import { join } from "node:path"
+import { tmpdir } from "node:os"
 import { rmSync } from "node:fs"
 
 // Helper: create a temp directory WITHIN the project root (required by path validation)
@@ -382,6 +383,30 @@ describe("Context Pins Integration", () => {
       )
 
       expect(result.id).toBe("valid.kebab-case_id.01")
+    })
+
+    it("rejects symlink target paths that escape project root", async () => {
+      const outsideDir = mkdtempSync(join(tmpdir(), "tx-pin-outside-"))
+      const symlinkDir = join(tempDir, "linkout")
+      const escapedTarget = join(symlinkDir, "AGENTS.md")
+      symlinkSync(outsideDir, symlinkDir, "dir")
+
+      try {
+        const result = await Effect.runPromise(
+          Effect.gen(function* () {
+            const svc = yield* PinService
+            return yield* Effect.either(svc.setTargetFiles([escapedTarget]))
+          }).pipe(Effect.provide(shared.layer))
+        )
+
+        expect(result._tag).toBe("Left")
+        if (result._tag === "Left") {
+          expect(result.left._tag).toBe("ValidationError")
+        }
+        expect(existsSync(join(outsideDir, "AGENTS.md"))).toBe(false)
+      } finally {
+        rmSync(outsideDir, { recursive: true, force: true })
+      }
     })
   })
 

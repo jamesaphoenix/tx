@@ -9,8 +9,9 @@ import {
   CompactionServiceNoop,
   CompactionServiceAuto
 } from "@jamesaphoenix/tx-core"
-import { existsSync, unlinkSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, unlinkSync, readFileSync, writeFileSync, mkdtempSync, symlinkSync, rmSync } from "node:fs"
 import { join } from "node:path"
+import { tmpdir } from "node:os"
 
 /**
  * Create a minimal test layer for CompactionService tests
@@ -268,6 +269,30 @@ describe("CompactionServiceNoop", () => {
       if (result._tag === "Left") {
         expect(result.left._tag).toBe("ValidationError")
         expect((result.left as any).reason).toContain("Path traversal rejected")
+      }
+    })
+
+    it("rejects symlink targets that escape project root", async () => {
+      const outsideDir = mkdtempSync(join(tmpdir(), "tx-compaction-outside-"))
+      const symlinkDir = join(process.cwd(), ".tx", `compaction-link-${Date.now()}`)
+      const escapedPath = join(symlinkDir, "learnings.md")
+      symlinkSync(outsideDir, symlinkDir, "dir")
+
+      try {
+        const result = await runWithNoop(db, Effect.gen(function* () {
+          const svc = yield* CompactionService
+          return yield* Effect.either(svc.exportLearnings("- Test learning", escapedPath))
+        }))
+
+        expect(result._tag).toBe("Left")
+        if (result._tag === "Left") {
+          expect(result.left._tag).toBe("ValidationError")
+          expect((result.left as any).reason).toContain("Path traversal rejected")
+        }
+        expect(existsSync(join(outsideDir, "learnings.md"))).toBe(false)
+      } finally {
+        try { unlinkSync(symlinkDir) } catch { /* ignore cleanup */ }
+        rmSync(outsideDir, { recursive: true, force: true })
       }
     })
 

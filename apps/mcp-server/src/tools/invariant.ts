@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import type { Invariant, InvariantCheck, InvariantEnforcement } from "@jamesaphoenix/tx-types"
 import { INVARIANT_ENFORCEMENT_TYPES } from "@jamesaphoenix/tx-types"
 import { DocService, InvariantNotFoundError } from "@jamesaphoenix/tx-core"
@@ -145,7 +145,7 @@ const handleInvariantRecord = async (args: { invariantId: string; passed: boolea
  * Register all invariant-related MCP tools on the server.
  */
 export const registerInvariantTools = (server: McpServer): void => {
-  server.tool(
+  registerEffectTool(server,
     "tx_invariant_list",
     "List project invariants (rules that must hold). Can filter by subsystem or enforcement type.",
     {
@@ -155,7 +155,7 @@ export const registerInvariantTools = (server: McpServer): void => {
     handleInvariantList
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_invariant_get",
     "Get a specific invariant by its ID",
     {
@@ -164,7 +164,7 @@ export const registerInvariantTools = (server: McpServer): void => {
     handleInvariantGet
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_invariant_record",
     "Record the result of an invariant check (pass/fail with optional details)",
     {

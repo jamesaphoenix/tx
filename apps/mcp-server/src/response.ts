@@ -36,6 +36,78 @@ export interface StructuredError {
   timestamp: string
 }
 
+const MAX_ERROR_LOG_STRING_LENGTH = 2048
+const MAX_ERROR_LOG_ARRAY_ITEMS = 25
+const MAX_ERROR_LOG_OBJECT_KEYS = 50
+const MAX_ERROR_LOG_DEPTH = 4
+const MAX_ERROR_LOG_STACK_LENGTH = 8192
+const MAX_MCP_RESPONSE_TEXT_LENGTH = 128_000
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+
+const truncateLogString = (value: string): string => {
+  if (value.length <= MAX_ERROR_LOG_STRING_LENGTH) return value
+  return `${value.slice(0, MAX_ERROR_LOG_STRING_LENGTH)}…[truncated ${value.length - MAX_ERROR_LOG_STRING_LENGTH} chars]`
+}
+
+const truncateLogStack = (value: string): string => {
+  if (value.length <= MAX_ERROR_LOG_STACK_LENGTH) return value
+  return `${value.slice(0, MAX_ERROR_LOG_STACK_LENGTH)}…[truncated ${value.length - MAX_ERROR_LOG_STACK_LENGTH} chars]`
+}
+
+const truncateResponseText = (value: string): string => {
+  if (value.length <= MAX_MCP_RESPONSE_TEXT_LENGTH) return value
+  return `${value.slice(0, MAX_MCP_RESPONSE_TEXT_LENGTH)}…[truncated ${value.length - MAX_MCP_RESPONSE_TEXT_LENGTH} chars]`
+}
+
+const sanitizeForErrorLog = (
+  value: unknown,
+  depth: number,
+  seen: WeakSet<object>
+): unknown => {
+  if (typeof value === "string") return truncateLogString(value)
+  if (typeof value === "number" || typeof value === "boolean" || value === null || value === undefined) {
+    return value
+  }
+  if (typeof value === "bigint") return value.toString()
+  if (typeof value === "function") return "[Function]"
+  if (depth >= MAX_ERROR_LOG_DEPTH) return "[TruncatedDepth]"
+
+  if (Array.isArray(value)) {
+    const items = value.slice(0, MAX_ERROR_LOG_ARRAY_ITEMS).map((item) =>
+      sanitizeForErrorLog(item, depth + 1, seen)
+    )
+    if (value.length > MAX_ERROR_LOG_ARRAY_ITEMS) {
+      items.push(`[${value.length - MAX_ERROR_LOG_ARRAY_ITEMS} more items truncated]`)
+    }
+    return items
+  }
+
+  if (!isRecord(value)) {
+    return String(value)
+  }
+
+  if (seen.has(value)) return "[Circular]"
+  seen.add(value)
+
+  const entries = Object.entries(value)
+  const trimmedEntries = entries.slice(0, MAX_ERROR_LOG_OBJECT_KEYS)
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of trimmedEntries) {
+    out[key] = sanitizeForErrorLog(item, depth + 1, seen)
+  }
+  if (entries.length > MAX_ERROR_LOG_OBJECT_KEYS) {
+    out.__truncatedKeys = entries.length - MAX_ERROR_LOG_OBJECT_KEYS
+  }
+  return out
+}
+
+const sanitizeErrorArgs = (args: Record<string, unknown>): Record<string, unknown> => {
+  const sanitized = sanitizeForErrorLog(args, 0, new WeakSet<object>())
+  return isRecord(sanitized) ? sanitized : { value: sanitized }
+}
+
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
@@ -45,9 +117,12 @@ export interface StructuredError {
  * Circular references are replaced with "[Circular]".
  */
 export const safeStringify = (value: unknown): string => {
-  const seen = new WeakSet()
+  const seen = new WeakSet<object>()
 
   const replacer = (_key: string, val: unknown): unknown => {
+    if (typeof val === "bigint") {
+      return val.toString()
+    }
     if (val !== null && typeof val === "object") {
       if (seen.has(val)) {
         return "[Circular]"
@@ -57,7 +132,12 @@ export const safeStringify = (value: unknown): string => {
     return val
   }
 
-  return JSON.stringify(value, replacer)
+  try {
+    const serialized = JSON.stringify(value, replacer)
+    return serialized ?? String(value)
+  } catch {
+    return "\"[Unserializable]\""
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -135,8 +215,8 @@ export const formatErrorWithStack = (error: unknown): string => {
  */
 export const mcpResponse = (text: string, data: unknown): McpResponse => ({
   content: [
-    { type: "text" as const, text },
-    { type: "text" as const, text: safeStringify(data) }
+    { type: "text" as const, text: truncateResponseText(text) },
+    { type: "text" as const, text: truncateResponseText(safeStringify(data)) }
   ],
   isError: false
 })
@@ -147,7 +227,7 @@ export const mcpResponse = (text: string, data: unknown): McpResponse => ({
 export const mcpError = (error: unknown): McpResponse => ({
   content: [{
     type: "text" as const,
-    text: `Error: ${extractErrorMessage(error)}`
+    text: truncateResponseText(`Error: ${extractErrorMessage(error)}`)
   }],
   isError: true
 })
@@ -165,10 +245,10 @@ export const buildStructuredError = (
   error: unknown
 ): StructuredError => ({
   errorType: classifyError(error),
-  message: extractErrorMessage(error),
-  stack: formatErrorWithStack(error),
+  message: truncateLogString(extractErrorMessage(error)),
+  stack: truncateLogStack(formatErrorWithStack(error)),
   tool,
-  args,
+  args: sanitizeErrorArgs(args),
   timestamp: new Date().toISOString()
 })
 
@@ -177,7 +257,7 @@ export const buildStructuredError = (
  * MCP uses stdio for protocol communication so stderr is the correct channel.
  */
 export const logToolError = (structured: StructuredError): void => {
-  console.error(JSON.stringify(structured))
+  console.error(safeStringify(structured))
 }
 
 /**
@@ -195,9 +275,12 @@ export const handleToolError = (
   logToolError(structured)
   return {
     content: [
-      { type: "text" as const, text: `Error [${structured.errorType}]: ${structured.message}` },
-      { type: "text" as const, text: structured.stack },
-      { type: "text" as const, text: safeStringify(structured) }
+      {
+        type: "text" as const,
+        text: truncateResponseText(`Error [${structured.errorType}]: ${structured.message}`),
+      },
+      { type: "text" as const, text: truncateResponseText(structured.stack) },
+      { type: "text" as const, text: truncateResponseText(safeStringify(structured)) }
     ],
     isError: true
   }

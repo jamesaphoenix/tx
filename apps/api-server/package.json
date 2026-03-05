@@ -33,6 +33,10 @@
       "types": "./dist/routes/sync.d.ts",
       "import": "./dist/routes/sync.js"
     },
+    "./routes/spec-trace": {
+      "types": "./dist/routes/spec-trace.d.ts",
+      "import": "./dist/routes/spec-trace.js"
+    },
     "./routes/health": {
       "types": "./dist/routes/health.d.ts",
       "import": "./dist/routes/health.js"

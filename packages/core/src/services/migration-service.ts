@@ -12,30 +12,27 @@ export { EMBEDDED_MIGRATIONS } from "../migrations-embedded.js"
 /**
  * Describes a single database migration.
  */
-export interface Migration {
+export type Migration = {
   readonly version: number
   readonly description: string
-  readonly sql: string
-}
+  readonly sql: string};
 
 /**
  * Information about an applied migration.
  */
-export interface AppliedMigration {
+export type AppliedMigration = {
   readonly version: number
-  readonly appliedAt: Date
-}
+  readonly appliedAt: Date};
 
 /**
  * Migration status including current version and pending migrations.
  */
-export interface MigrationStatus {
+export type MigrationStatus = {
   readonly currentVersion: number
   readonly latestVersion: number
   readonly pendingCount: number
   readonly appliedMigrations: readonly AppliedMigration[]
-  readonly pendingMigrations: readonly Migration[]
-}
+  readonly pendingMigrations: readonly Migration[]};
 
 /**
  * Get the migrations directory path.
@@ -228,19 +225,24 @@ export const MigrationServiceLive = Layer.effect(
           const pendingMigrations = MIGRATIONS.filter(m => m.version > currentVersion)
 
           for (const migration of pendingMigrations) {
-            yield* Effect.try({
+            const transactionError = yield* Effect.try({
               try: () => {
                 db.exec("BEGIN IMMEDIATE")
                 try {
                   db.exec(migration.sql)
                   db.exec("COMMIT")
+                  return null
                 } catch (e) {
                   db.exec("ROLLBACK")
-                  throw e
+                  return e
                 }
               },
               catch: (cause) => new DatabaseError({ cause })
             })
+
+            if (transactionError !== null) {
+              yield* Effect.fail(new DatabaseError({ cause: transactionError }))
+            }
           }
 
           return pendingMigrations.length

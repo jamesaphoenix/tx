@@ -86,10 +86,291 @@ import tseslintPlugin from '@typescript-eslint/eslint-plugin';
 import tseslintParser from '@typescript-eslint/parser';
 import txPlugin from './eslint-plugin-tx/index.js';
 
+const GENERIC_UTILITY_FILE_NAME_RULE = ['error', {
+  bannedFileNames: ['utils.ts', 'helpers.ts'],
+  bannedPathPatterns: [
+    '^packages/core/src/(services|repo)/[^/]+\\.helpers\\.ts$',
+    '^packages/core/src/(services|repo)/[^/]+-internals\\.ts$'
+  ],
+  allow: [
+    'apps/agent-sdk/src/utils.ts',
+    'apps/cli/src/commands/utils.ts'
+  ]
+}]
+
+const SERVICE_FOLDER_MODULE_RULE = ['warn', {
+  paths: ['packages/core/src/services/'],
+  sidecarSuffixes: [
+    'from-files',
+    'shared',
+    'helpers',
+    'internals',
+    'live',
+    'runtime',
+    'patterns',
+    'process',
+    'templates',
+    'validation',
+    'ops',
+    'state',
+    'deps',
+    'factory',
+    'read',
+    'write'
+  ]
+}]
+
+const DEEP_CORE_RESTRICTED_PATTERNS = [
+  '@jamesaphoenix/tx-core/src',
+  '@jamesaphoenix/tx-core/src/**',
+  '**/packages/core/src',
+  '**/packages/core/src/**'
+]
+
+const RESTRICTED_IMPORTS_RULE = ['error', {
+  paths: [
+    { name: 'fs', message: 'Use node:fs instead of fs.' },
+    { name: 'fs/promises', message: 'Use node:fs/promises instead of fs/promises.' },
+    { name: 'node:module', message: 'Do not import node:module/createRequire; use static imports instead.' },
+    { name: 'module', message: 'Do not import module/createRequire; use static imports instead.' }
+  ],
+  patterns: [
+    {
+      group: DEEP_CORE_RESTRICTED_PATTERNS,
+      message: 'Import from @jamesaphoenix/tx-core public exports instead of deep core/src paths.'
+    }
+  ]
+}]
+
+const RESTRICTED_MODULES_RULE = ['error',
+  { name: 'fs', message: 'Use node:fs instead of fs.' },
+  { name: 'fs/promises', message: 'Use node:fs/promises instead of fs/promises.' },
+  { name: 'node:module', message: 'Do not import node:module/createRequire; use static imports instead.' },
+  { name: 'module', message: 'Do not import module/createRequire; use static imports instead.' }
+]
+
+const RESTRICTED_DYNAMIC_IMPORTS_RULE = ['error',
+  {
+    selector: "ImportExpression[source.type='Literal'][source.value='fs']",
+    message: 'Use dynamic import("node:fs") instead of import("fs").'
+  },
+  {
+    selector: "ImportExpression[source.type='Literal'][source.value='fs/promises']",
+    message: 'Use dynamic import("node:fs/promises") instead of import("fs/promises").'
+  },
+  {
+    selector: "ImportExpression[source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.length=1][source.quasis.0.value.cooked='fs']",
+    message: 'Use dynamic import("node:fs") instead of import(`fs`).'
+  },
+  {
+    selector: "ImportExpression[source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.length=1][source.quasis.0.value.cooked='fs/promises']",
+    message: 'Use dynamic import("node:fs/promises") instead of import(`fs/promises`).'
+  },
+  {
+    selector: "ImportExpression[source.type='Literal'][source.value='node:module']",
+    message: 'Do not dynamic import("node:module"); use static imports instead.'
+  },
+  {
+    selector: "ImportExpression[source.type='Literal'][source.value='module']",
+    message: 'Do not dynamic import("module"); use static imports instead.'
+  },
+  {
+    selector: "ImportExpression[source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.length=1][source.quasis.0.value.cooked='node:module']",
+    message: 'Do not dynamic import(`node:module`); use static imports instead.'
+  },
+  {
+    selector: "ImportExpression[source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.length=1][source.quasis.0.value.cooked='module']",
+    message: 'Do not dynamic import(`module`); use static imports instead.'
+  },
+  {
+    selector: "ImportExpression[source.type='TemplateLiteral'][source.expressions.length>0]",
+    message: 'Do not use computed dynamic import() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "ImportExpression[source.type!='Literal'][source.type!='TemplateLiteral']",
+    message: 'Do not use computed dynamic import() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "ImportExpression[source.type='Literal'][source.value=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of deep core/src dynamic imports.'
+  },
+  {
+    selector: "ImportExpression[source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.length=1][source.quasis.0.value.cooked=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of deep core/src dynamic imports.'
+  },
+  {
+    selector: "CallExpression[callee.name='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of deep core/src require() paths.'
+  },
+  {
+    selector: "CallExpression[callee.name='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0][arguments.0.quasis.length=1][arguments.0.quasis.0.value.cooked=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of deep core/src require() paths.'
+  },
+  {
+    selector: "CallExpression[callee.name='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length>0]",
+    message: 'Do not use computed require() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "CallExpression[callee.name='require'][arguments.length=1][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral']",
+    message: 'Do not use computed require() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "CallExpression[callee.type='SequenceExpression'][callee.expressions.length=2][callee.expressions.1.type='Identifier'][callee.expressions.1.name='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value='fs']",
+    message: 'Use require("node:fs") instead of wrapped require("fs").'
+  },
+  {
+    selector: "CallExpression[callee.type='SequenceExpression'][callee.expressions.length=2][callee.expressions.1.type='Identifier'][callee.expressions.1.name='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value='fs/promises']",
+    message: 'Use require("node:fs/promises") instead of wrapped require("fs/promises").'
+  },
+  {
+    selector: "CallExpression[callee.type='SequenceExpression'][callee.expressions.length=2][callee.expressions.1.type='Identifier'][callee.expressions.1.name='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of wrapped require() deep core/src paths.'
+  },
+  {
+    selector: "CallExpression[callee.type='SequenceExpression'][callee.expressions.length=2][callee.expressions.1.type='Identifier'][callee.expressions.1.name='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length>0]",
+    message: 'Do not use computed wrapped require() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "CallExpression[callee.type='SequenceExpression'][callee.expressions.length=2][callee.expressions.1.type='Identifier'][callee.expressions.1.name='require'][arguments.length=1][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral']",
+    message: 'Do not use computed wrapped require() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value='fs']",
+    message: 'Use module.require("node:fs") instead of module.require("fs").'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value='fs/promises']",
+    message: 'Use module.require("node:fs/promises") instead of module.require("fs/promises").'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0][arguments.0.quasis.length=1][arguments.0.quasis.0.value.cooked='fs']",
+    message: 'Use module.require("node:fs") instead of module.require(`fs`).'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0][arguments.0.quasis.length=1][arguments.0.quasis.0.value.cooked='fs/promises']",
+    message: 'Use module.require("node:fs/promises") instead of module.require(`fs/promises`).'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of deep core/src module.require() paths.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0][arguments.0.quasis.length=1][arguments.0.quasis.0.value.cooked=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of deep core/src module.require() paths.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.computed=true][callee.property.type='Literal'][callee.property.value='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value='fs']",
+    message: 'Use module.require("node:fs") instead of module["require"]("fs").'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.computed=true][callee.property.type='Literal'][callee.property.value='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value='fs/promises']",
+    message: 'Use module.require("node:fs/promises") instead of module["require"]("fs/promises").'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.computed=true][callee.property.type='Literal'][callee.property.value='require'][arguments.length=1][arguments.0.type='Literal'][arguments.0.value=/^@jamesaphoenix\\/tx-core\\/src(?:\\/|$)/]",
+    message: 'Use @jamesaphoenix/tx-core public exports instead of module["require"]() deep core/src paths.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.computed=true][callee.property.type='Literal'][callee.property.value='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length>0]",
+    message: 'Do not use computed module["require"]() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.computed=true][callee.property.type='Literal'][callee.property.value='require'][arguments.length=1][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral']",
+    message: 'Do not use computed module["require"]() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length>0]",
+    message: 'Do not use computed module.require() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.object.type='Identifier'][callee.object.name='module'][callee.property.type='Identifier'][callee.property.name='require'][arguments.length=1][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral']",
+    message: 'Do not use computed module.require() specifiers; use a static module specifier.'
+  },
+  {
+    selector: "VariableDeclarator[init.type='Identifier'][init.name='require']",
+    message: 'Do not alias require(); use direct require() so import restrictions remain enforceable.'
+  },
+  {
+    selector: "VariableDeclarator[init.type='Identifier'][init.name='module']",
+    message: 'Do not alias module; this can bypass module.require() import restrictions.'
+  },
+  {
+    selector: "AssignmentExpression[right.type='Identifier'][right.name='require']",
+    message: 'Do not reassign require(); use direct require() so import restrictions remain enforceable.'
+  },
+  {
+    selector: "AssignmentExpression[right.type='Identifier'][right.name='module']",
+    message: 'Do not reassign module; this can bypass module.require() import restrictions.'
+  },
+  {
+    selector: "VariableDeclarator[init.type='MemberExpression'][init.object.type='Identifier'][init.object.name='module'][init.property.type='Identifier'][init.property.name='require']",
+    message: 'Do not alias module.require(); use direct imports so import restrictions remain enforceable.'
+  },
+  {
+    selector: "VariableDeclarator[init.type='MemberExpression'][init.object.type='Identifier'][init.object.name='module'][init.computed=true][init.property.type='Literal'][init.property.value='require']",
+    message: 'Do not alias module["require"](); use direct imports so import restrictions remain enforceable.'
+  },
+  {
+    selector: "AssignmentExpression[right.type='MemberExpression'][right.object.type='Identifier'][right.object.name='module'][right.computed=true][right.property.type='Literal'][right.property.value='require']",
+    message: 'Do not reassign module["require"](); use direct imports so import restrictions remain enforceable.'
+  },
+  {
+    selector: "AssignmentExpression[right.type='MemberExpression'][right.object.type='Identifier'][right.object.name='module'][right.property.type='Identifier'][right.property.name='require']",
+    message: 'Do not reassign module.require(); use direct imports so import restrictions remain enforceable.'
+  },
+  {
+    selector: "VariableDeclarator[id.type='ObjectPattern'][init.type='Identifier'][init.name='module']",
+    message: 'Do not destructure from module; avoid aliasing module.require().'
+  },
+  {
+    selector: "ImportSpecifier[imported.type='Identifier'][imported.name='createRequire']",
+    message: 'Do not import createRequire(); use static node: module imports so restrictions remain enforceable.'
+  },
+  {
+    selector: "ImportDeclaration[source.value='node:module'] > ImportNamespaceSpecifier",
+    message: 'Do not namespace-import node:module; this can bypass createRequire restrictions.'
+  },
+  {
+    selector: "ImportDeclaration[source.value='module'] > ImportNamespaceSpecifier",
+    message: 'Do not namespace-import module; this can bypass createRequire restrictions.'
+  },
+  {
+    selector: "CallExpression[callee.type='Identifier'][callee.name='createRequire']",
+    message: 'Do not call createRequire(); use static node: module imports so restrictions remain enforceable.'
+  },
+  {
+    selector: "CallExpression[callee.type='MemberExpression'][callee.property.type='Identifier'][callee.property.name='createRequire']",
+    message: 'Do not call *.createRequire(); use static node: module imports so restrictions remain enforceable.'
+  }
+]
+
 export default [
   eslint.configs.recommended,
   {
     ignores: ['**/dist/**', '**/node_modules/**', 'eslint-plugin-tx/**', '**/*.js', '**/*.mjs', '!eslint.config.js']
+  },
+  // Root JS lint infrastructure (linted via `lint:root` with `--no-ignore`)
+  {
+    files: ['eslint-plugin-tx/index.js', 'eslint-plugin-tx/rules/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module'
+    },
+    rules: {
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-undef': 'off'
+    }
+  },
+  {
+    files: ['eslint-plugin-tx/tests/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module'
+    },
+    rules: {
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-undef': 'off'
+    }
   },
   // Root test files
   {
@@ -111,6 +392,9 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       'no-unused-vars': 'off', // Handled by @typescript-eslint
       'no-undef': 'off', // TypeScript handles this
+      'no-restricted-imports': RESTRICTED_IMPORTS_RULE,
+      'no-restricted-modules': RESTRICTED_MODULES_RULE,
+      'no-restricted-syntax': RESTRICTED_DYNAMIC_IMPORTS_RULE,
 
       // tx plugin rules - enforce SQL schema definitions in migrations/
       'tx/no-inline-sql': ['error', {
@@ -139,6 +423,9 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       'no-unused-vars': 'off',
       'no-undef': 'off',
+      'no-restricted-imports': RESTRICTED_IMPORTS_RULE,
+      'no-restricted-modules': RESTRICTED_MODULES_RULE,
+      'no-restricted-syntax': RESTRICTED_DYNAMIC_IMPORTS_RULE,
 
       // tx plugin rules - enforce SQL schema definitions in migrations/
       'tx/no-inline-sql': ['error', {
@@ -148,28 +435,39 @@ export default [
 
       // tx plugin rules - ban throw statements (CLAUDE.md DOCTRINE RULE 5)
       // Allow typed errors since packages/core uses Effect-TS Data.TaggedError pattern
-      'tx/no-throw-in-services': ['warn', {
+      'tx/no-throw-in-services': ['error', {
         excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
         allowHttpException: false,
         allowTypedErrors: true
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn',
+      'tx/no-hono': 'error',
 
       // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-zod': 'warn',
+      'tx/no-zod': 'error',
 
       // tx plugin rules - ban plain interfaces for domain types (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-plain-interfaces': ['warn', {
+      'tx/no-plain-interfaces': ['error', {
         excludedNames: ['ListResponse', 'PaginatedResponse', 'ActionResponse'],
         excludedSuffixes: ['Row']
       }],
 
+      // tx plugin rules - disallow generic utility filenames (prefer domain-specific modules)
+      'tx/no-generic-utility-file-names': GENERIC_UTILITY_FILE_NAME_RULE,
+
+      // tx plugin rules - keep service internals grouped under owner folders
+      'tx/prefer-service-folder-modules': SERVICE_FOLDER_MODULE_RULE,
+
       // tx plugin rules - ban unsafe 'as' casts in repo/mapper code (DB boundary)
-      'tx/no-as-cast-in-repos': ['warn', {
+      'tx/no-as-cast-in-repos': ['error', {
         enforcePaths: ['repo/', 'mappers/'],
         allowedTypes: ['unknown']
+      }],
+
+      'tx/max-service-lines': ['warn', {
+        warnAt: 500,
+        errorAt: 1000
       }]
     }
   },
@@ -192,6 +490,9 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       'no-unused-vars': 'off',
       'no-undef': 'off',
+      'no-restricted-imports': RESTRICTED_IMPORTS_RULE,
+      'no-restricted-modules': RESTRICTED_MODULES_RULE,
+      'no-restricted-syntax': RESTRICTED_DYNAMIC_IMPORTS_RULE,
 
       // tx plugin rules - enforce SQL schema definitions in migrations/
       'tx/no-inline-sql': ['error', {
@@ -200,7 +501,7 @@ export default [
       }],
 
       // tx plugin rules - require TaskWithDeps for external APIs (CLAUDE.md RULE 1)
-      'tx/require-taskwithdeps-return': ['warn', {
+      'tx/require-taskwithdeps-return': ['error', {
         externalPaths: ['apps/mcp-server/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
         internalPaths: ['packages/core/src/repo/', 'packages/core/src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
         checkObjectLiterals: true
@@ -216,17 +517,20 @@ export default [
 
       // tx plugin rules - ban throw statements (CLAUDE.md DOCTRINE RULE 5)
       // Allow HTTPException for Hono framework pattern, allow typed errors for Effect-TS
-      'tx/no-throw-in-services': ['warn', {
+      'tx/no-throw-in-services': ['error', {
         excludedPatterns: ['.test.', '.spec.', '__tests__/', '/scripts/', '/test/', '/tests/'],
         allowHttpException: true,
         allowTypedErrors: true
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn',
+      'tx/no-hono': 'error',
 
       // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-zod': 'warn',
+      'tx/no-zod': 'error',
+
+      // tx plugin rules - disallow generic utility filenames (prefer domain-specific modules)
+      'tx/no-generic-utility-file-names': GENERIC_UTILITY_FILE_NAME_RULE,
 
       // tx plugin rules - enforce primitive implementation coverage (reads primitives-registry.json)
       'tx/require-primitive-implementations': ['error', {
@@ -251,6 +555,23 @@ export default [
         ],
         bannedImports: ['@jamesaphoenix/tx-core'],
         bannedFunctions: ['createTx']
+      }],
+
+      // tx plugin rules - ensure scaffold templates include all documented primitives
+      'tx/require-primitive-template-coverage': ['error', {
+        metaPath: 'apps/docs/content/docs/primitives/meta.json',
+        registryPath: 'primitives-registry.json',
+        templates: [
+          'apps/cli/src/templates/claude/CLAUDE.md',
+          'apps/cli/src/templates/codex/AGENTS.md'
+        ]
+      }],
+
+      // tx plugin rules - ensure llms.txt links every documented primitive page
+      'tx/require-llms-primitive-coverage': ['error', {
+        metaPath: 'apps/docs/content/docs/primitives/meta.json',
+        llmsPath: 'apps/docs/public/llms.txt',
+        urlBase: 'https://tx-docs.vercel.app/docs/primitives'
       }]
     }
   },
@@ -274,9 +595,12 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       'no-unused-vars': 'off',
       'no-undef': 'off',
+      'no-restricted-imports': RESTRICTED_IMPORTS_RULE,
+      'no-restricted-modules': RESTRICTED_MODULES_RULE,
+      'no-restricted-syntax': RESTRICTED_DYNAMIC_IMPORTS_RULE,
 
       // Dashboard API integration test coverage
-      'tx/require-integration-tests': ['warn', {
+      'tx/require-integration-tests': ['error', {
         api: { src: 'apps/dashboard/server', test: 'test/integration/dashboard-api.test.ts', threshold: 80 }
       }],
 
@@ -287,10 +611,13 @@ export default [
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn',
+      'tx/no-hono': 'error',
 
       // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-zod': 'warn'
+      'tx/no-zod': 'error',
+
+      // tx plugin rules - disallow generic utility filenames (prefer domain-specific modules)
+      'tx/no-generic-utility-file-names': GENERIC_UTILITY_FILE_NAME_RULE
     }
   },
   // Dashboard React components and hooks (require component tests)
@@ -316,6 +643,9 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       'no-unused-vars': 'off',
       'no-undef': 'off',
+      'no-restricted-imports': RESTRICTED_IMPORTS_RULE,
+      'no-restricted-modules': RESTRICTED_MODULES_RULE,
+      'no-restricted-syntax': RESTRICTED_DYNAMIC_IMPORTS_RULE,
 
       // Enforce component and hook tests - principal engineer principle: if it's not tested, it doesn't exist
       'tx/require-component-tests': ['error', {
@@ -324,10 +654,19 @@ export default [
       }],
 
       // tx plugin rules - ban Hono framework imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-hono': 'warn',
+      'tx/no-hono': 'error',
 
       // tx plugin rules - ban Zod imports (CLAUDE.md DOCTRINE RULE 10)
-      'tx/no-zod': 'warn'
+      'tx/no-zod': 'error'
+    }
+  },
+  // Test utility package uses lightweight TS helper types/errors by design.
+  // Keep doctrine strict in production paths while avoiding false positives here.
+  {
+    files: ['packages/test-utils/**/*.ts'],
+    rules: {
+      'tx/no-plain-interfaces': 'off',
+      'tx/no-throw-in-services': 'off'
     }
   }
 ];

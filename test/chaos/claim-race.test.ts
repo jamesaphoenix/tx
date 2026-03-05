@@ -77,6 +77,10 @@ function createTaskData(id: string, title: string = "Test Task") {
     createdAt: new Date(),
     updatedAt: new Date(),
     completedAt: null,
+    assigneeType: null,
+    assigneeId: null,
+    assignedAt: null,
+    assignedBy: null,
     metadata: {}
   }
 }

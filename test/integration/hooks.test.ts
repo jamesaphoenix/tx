@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createHash } from "node:crypto"
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } from "node:fs"
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, statSync } from "node:fs"
 import { resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { execSync } from "node:child_process"
@@ -324,7 +324,7 @@ describe("Hook Installation", () => {
     chmodSync(hookPath, 0o755)
 
     // Check file permissions (on Unix-like systems)
-    const stats = require("fs").statSync(hookPath)
+    const stats = statSync(hookPath)
     const isExecutable = (stats.mode & 0o111) !== 0
     expect(isExecutable).toBe(true)
   })

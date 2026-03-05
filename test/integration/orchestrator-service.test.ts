@@ -336,6 +336,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -401,6 +405,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -443,6 +451,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: now,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -515,6 +527,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -642,6 +658,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -656,6 +676,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -700,6 +724,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: now,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -714,6 +742,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -760,6 +792,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -774,6 +810,10 @@ describe("OrchestratorService.reconcile", () => {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 

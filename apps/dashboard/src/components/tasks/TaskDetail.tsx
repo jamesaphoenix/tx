@@ -385,8 +385,9 @@ export function TaskDetail({
       if (requestSequence !== assignmentSaveSequenceRef.current) return
       setAssignmentError(error instanceof Error ? error.message : "Failed to update assignment")
     } finally {
-      if (requestSequence !== assignmentSaveSequenceRef.current) return
-      setIsSavingAssignment(false)
+      if (requestSequence === assignmentSaveSequenceRef.current) {
+        setIsSavingAssignment(false)
+      }
     }
   }, [onUpdateAssignment])
 

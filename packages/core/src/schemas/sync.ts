@@ -46,6 +46,7 @@ const TaskUpsertOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("upsert"),
   ts: IsoTimestamp,
+  eventId: Schema.optional(Schema.String),
   id: TaskIdSchema,
   data: TaskDataSchema
 })
@@ -57,6 +58,7 @@ const TaskDeleteOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("delete"),
   ts: IsoTimestamp,
+  eventId: Schema.optional(Schema.String),
   id: TaskIdSchema
 })
 export { TaskDeleteOpSchema as TaskDeleteOp }
@@ -67,6 +69,7 @@ const DepAddOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("dep_add"),
   ts: IsoTimestamp,
+  eventId: Schema.optional(Schema.String),
   blockerId: TaskIdSchema,
   blockedId: TaskIdSchema
 })
@@ -78,6 +81,7 @@ const DepRemoveOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("dep_remove"),
   ts: IsoTimestamp,
+  eventId: Schema.optional(Schema.String),
   blockerId: TaskIdSchema,
   blockedId: TaskIdSchema
 })
@@ -369,15 +373,23 @@ export type EdgeSyncOperation = typeof EdgeSyncOperationSchema.Type
 export const SyncDocKindSchema = Schema.Literal(...DOC_KINDS)
 // Doc status schema
 export const SyncDocStatusSchema = Schema.Literal(...DOC_STATUSES)
+// Doc names must be simple identifiers (no path separators/traversal).
+const SyncDocNameSchema = Schema.String.pipe(
+  Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
+)
+// Doc file paths must be relative and must not include traversal segments.
+const SyncDocFilePathSchema = Schema.String.pipe(
+  Schema.pattern(/^(?![\\/])(?![A-Za-z]:[\\/])(?!.*(?:^|[\\/])\.\.(?:[\\/]|$))(?!.*(?:^|[\\/])\.(?:[\\/]|$)).+$/)
+)
 
 // Doc data embedded in upsert operations
 export const DocDataSchema = Schema.Struct({
   kind: SyncDocKindSchema,
-  name: Schema.String,
+  name: SyncDocNameSchema,
   title: Schema.String,
   version: Schema.Number.pipe(Schema.int()),
   status: SyncDocStatusSchema,
-  filePath: Schema.String,
+  filePath: SyncDocFilePathSchema,
   hash: Schema.String,
   parentDocKey: Schema.NullOr(Schema.String),
   lockedAt: Schema.NullOr(Schema.String),
@@ -569,10 +581,6 @@ export { LabelSyncOperationSchema as LabelSyncOperation }
 export type LabelSyncOperation = typeof LabelSyncOperationSchema.Type
 
 // ----- Combined Sync Operations -----
-
-// Legacy alias for backward compatibility
-export { TaskSyncOperationSchema as SyncOperation }
-export type SyncOperation = typeof TaskSyncOperationSchema.Type
 
 // All sync operations combined (for parsing any JSONL file)
 const AnySyncOperationSchema = Schema.Union(

@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { serializeMessage } from "@jamesaphoenix/tx-types"
 import { MessageService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
@@ -171,7 +171,7 @@ const handlePending = async (args: { channel: string }): Promise<McpToolResult> 
 // -----------------------------------------------------------------------------
 
 export const registerMessageTools = (server: McpServer) => {
-  server.tool(
+  registerEffectTool(server,
     "tx_send",
     "Send a message to a channel for agent-to-agent communication",
     {
@@ -186,7 +186,7 @@ export const registerMessageTools = (server: McpServer) => {
     async (args) => handleSend(args)
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_inbox",
     "Read messages from a channel (read-only, no side effects). Use afterId for cursor-based fan-out.",
     {
@@ -200,7 +200,7 @@ export const registerMessageTools = (server: McpServer) => {
     async (args) => handleInbox(args)
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_ack",
     "Acknowledge a message (transition from pending to acked)",
     {
@@ -209,7 +209,7 @@ export const registerMessageTools = (server: McpServer) => {
     async (args) => handleAck(args)
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_ack_all",
     "Acknowledge all pending messages on a channel",
     {
@@ -218,7 +218,7 @@ export const registerMessageTools = (server: McpServer) => {
     async (args) => handleAckAll(args)
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_outbox_pending",
     "Count pending (unacknowledged) messages on a channel",
     {

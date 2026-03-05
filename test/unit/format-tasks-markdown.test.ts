@@ -6,28 +6,59 @@
  */
 import { describe, it, expect } from "vitest"
 import { formatTasksMarkdown } from "../../apps/cli/src/output.js"
-import type { TaskWithDeps, ContextResult } from "@jamesaphoenix/tx-types"
+import type { ContextResult, LearningId, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
 // Helper to create a minimal TaskWithDeps for testing
-function makeTask(overrides: Partial<TaskWithDeps> & { id: string; title: string }): TaskWithDeps {
+type TaskOverride =
+  Omit<Partial<TaskWithDeps>, "id" | "description" | "blockedBy" | "blocks" | "children" | "effectiveGroupContextSourceTaskId"> & {
+    id: string
+    title: string
+    description?: string | null
+    blockedBy?: readonly string[]
+    blocks?: readonly string[]
+    children?: readonly string[]
+    effectiveGroupContextSourceTaskId?: string | null
+  }
+
+const asTaskId = (value: string): TaskId => value as TaskId
+const asLearningId = (value: number): LearningId => value as LearningId
+
+function makeTask(overrides: TaskOverride): TaskWithDeps {
+  const {
+    id,
+    title,
+    description,
+    blockedBy,
+    blocks,
+    children,
+    effectiveGroupContextSourceTaskId,
+    ...rest
+  } = overrides
+
   return {
+    id: asTaskId(id),
+    title,
     status: "backlog",
     score: 500,
-    description: null,
+    description: description ?? "",
     parentId: null,
+    assigneeType: null,
+    assigneeId: null,
+    assignedAt: null,
+    assignedBy: null,
     metadata: {},
     createdAt: new Date("2026-02-28T10:00:00Z"),
     updatedAt: new Date("2026-02-28T10:00:00Z"),
     completedAt: null,
-    blockedBy: [],
-    blocks: [],
-    children: [],
+    blockedBy: (blockedBy ?? []).map(asTaskId),
+    blocks: (blocks ?? []).map(asTaskId),
+    children: (children ?? []).map(asTaskId),
     isReady: true,
     groupContext: null,
     effectiveGroupContext: null,
-    effectiveGroupContextSourceTaskId: null,
-    ...overrides,
-  } as TaskWithDeps
+    effectiveGroupContextSourceTaskId: effectiveGroupContextSourceTaskId ? asTaskId(effectiveGroupContextSourceTaskId) : null,
+    ...rest,
+  }
 }
 
 describe("formatTasksMarkdown", () => {
@@ -74,9 +105,9 @@ describe("formatTasksMarkdown", () => {
     expect(md).toContain("- **Description**: Some important context")
   })
 
-  it("omits description when null", () => {
+  it("omits description when empty", () => {
     const tasks = [
-      makeTask({ id: "tx-nodesc", title: "No Description", description: null }),
+      makeTask({ id: "tx-nodesc", title: "No Description", description: "" }),
     ]
     const md = formatTasksMarkdown(tasks, [], { ready: 1, active: 0, blocked: 0, done: 0 })
     expect(md).not.toContain("**Description**")
@@ -180,29 +211,43 @@ describe("formatTasksMarkdown", () => {
       taskTitle: "Learned Task",
       learnings: [
         {
-          id: 1,
+          id: asLearningId(1),
           content: "Use JWT for auth",
           relevanceScore: 0.95,
+          bm25Score: 0.95,
+          vectorScore: 0,
+          recencyScore: 0,
+          rrfScore: 0.95,
+          bm25Rank: 1,
+          vectorRank: 0,
           category: "security",
           createdAt: new Date(),
-          updatedAt: new Date(),
           sourceType: "manual",
           sourceRef: null,
-          helpfulCount: 0,
-          unhelpfulCount: 0,
+          keywords: [],
+          usageCount: 0,
+          lastUsedAt: null,
+          outcomeScore: null,
           embedding: null,
         },
         {
-          id: 2,
+          id: asLearningId(2),
           content: "Rotate refresh tokens",
           relevanceScore: 0.87,
+          bm25Score: 0.87,
+          vectorScore: 0,
+          recencyScore: 0,
+          rrfScore: 0.87,
+          bm25Rank: 2,
+          vectorRank: 0,
           category: null,
           createdAt: new Date(),
-          updatedAt: new Date(),
           sourceType: "manual",
           sourceRef: null,
-          helpfulCount: 0,
-          unhelpfulCount: 0,
+          keywords: [],
+          usageCount: 0,
+          lastUsedAt: null,
+          outcomeScore: null,
           embedding: null,
         },
       ],
@@ -318,16 +363,23 @@ describe("formatTasksMarkdown", () => {
       taskTitle: "Learn Task",
       learnings: [
         {
-          id: 1,
+          id: asLearningId(1),
           content: "First line\nSecond line",
           relevanceScore: 0.90,
+          bm25Score: 0.9,
+          vectorScore: 0,
+          recencyScore: 0,
+          rrfScore: 0.9,
+          bm25Rank: 1,
+          vectorRank: 0,
           category: null,
           createdAt: new Date(),
-          updatedAt: new Date(),
           sourceType: "manual",
           sourceRef: null,
-          helpfulCount: 0,
-          unhelpfulCount: 0,
+          keywords: [],
+          usageCount: 0,
+          lastUsedAt: null,
+          outcomeScore: null,
           embedding: null,
         },
       ],

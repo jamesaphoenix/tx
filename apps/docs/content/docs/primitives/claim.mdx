@@ -7,6 +7,45 @@ description: Claim a task with a lease to prevent parallel collisions
 
 `tx claim` marks a task as being actively worked on by a specific worker. This prevents multiple agents from picking the same task and duplicating work. Claims use a lease-based model with automatic expiry.
 
+## At A Glance
+
+<Mermaid
+  title="Lease Lifecycle"
+  caption="Claims stay active until they are renewed, released, or allowed to expire."
+  chart={`sequenceDiagram
+    autonumber
+    participant Worker
+    participant TX as tx
+    participant Store as claim store
+
+    Worker->>TX: tx claim task worker-1
+    TX->>Store: create active claim + expiry
+    Worker->>TX: tx claim:renew task worker-1
+    TX->>Store: extend expiry + renewal count
+    Worker->>TX: tx claim:release task worker-1
+    Store-->>TX: task becomes claimable again
+  `}
+/>
+
+<Mermaid
+  title="Collision Block"
+  caption="Claims close the race window after `tx ready` so only one worker keeps the task."
+  chart={`sequenceDiagram
+    autonumber
+    participant W1 as Worker 1
+    participant TX as tx
+    participant W2 as Worker 2
+
+    W1->>TX: tx ready -> tx-abc123
+    W2->>TX: tx ready -> tx-abc123
+    W1->>TX: tx claim tx-abc123 worker-1
+    TX-->>W1: lease granted
+    W2->>TX: tx claim tx-abc123 worker-2
+    TX-->>W2: already claimed
+    W2->>TX: tx ready (next task)
+  `}
+/>
+
 ## Claim a Task
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>

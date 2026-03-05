@@ -13,13 +13,15 @@ import {
   HierarchyService,
   AutoSyncServiceNoop,
   GuardRepositoryLive,
+  PinRepositoryLive,
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import type { Database } from "bun:sqlite"
 
 function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
+  PinRepositoryLive).pipe(
     Layer.provide(infra)
   )
   return Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(

@@ -8,20 +8,21 @@ import { dirname, resolve } from "node:path"
 export type DashboardDefaultTaskAssigmentType = "human" | "agent"
 export type GuardMode = "advisory" | "enforce"
 
-export interface TxConfig {
+export type TxConfig = {
   docs: { path: string }
+  spec: { testPatterns: string[] }
   memory: { defaultDir: string }
   cycles: { scanPrompt: string | null; agents: number; model: string }
   dashboard: { defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType }
-  pins: { targetFiles: string[] }
+  pins: { targetFiles: string[]; blockAgentDoneWhenTaskIdPresent: boolean }
   guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
   verify: { timeout: number; defaultSchema: string | null }
-  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }
-}
+  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }};
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
 const DASHBOARD_SECTION = "dashboard"
 const DOCS_SECTION = "docs"
+const SPEC_SECTION = "spec"
 const CYCLES_SECTION = "cycles"
 const PINS_SECTION = "pins"
 const MEMORY_SECTION = "memory"
@@ -34,10 +35,25 @@ const isGuardMode = (v: string | null): v is GuardMode =>
 
 const DEFAULT_CONFIG: TxConfig = {
   docs: { path: ".tx/docs" },
+  spec: {
+    testPatterns: [
+      "test/**/*.test.{ts,js,tsx,jsx}",
+      "tests/**/*.py",
+      "**/*_test.go",
+      "**/*_test.rs",
+      "**/test_*.py",
+      "**/*.spec.{ts,js,tsx,jsx}",
+      "**/Test*.java",
+      "**/*Test.java",
+      "**/*_spec.rb",
+      "**/*.test.{c,cpp,cc}",
+      "**/*_test.{c,cpp,cc}",
+    ]
+  },
   memory: { defaultDir: "docs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: { defaultTaskAssigmentType: "human" },
-  pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"] },
+  pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
   guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
   verify: { timeout: 300, defaultSchema: null },
   reflect: { provider: "auto", model: null, defaultSessions: 10, includeTranscripts: false },
@@ -53,6 +69,12 @@ const parseTaskAssigmentTypeOrDefault = (value: string | null): DashboardDefault
     ? value
     : DEFAULT_CONFIG.dashboard.defaultTaskAssigmentType
 
+const parseBooleanOrDefault = (value: string | null, fallback: boolean): boolean => {
+  if (value === "true") return true
+  if (value === "false") return false
+  return fallback
+}
+
 /**
  * Read .tx/config.toml and return parsed config.
  * Falls back to defaults if file doesn't exist or is invalid.
@@ -66,6 +88,7 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     const raw = readFileSync(configPath, "utf8")
     // Lightweight TOML parsing for our simple config structure.
     const docsPath = extractTomlValue(raw, DOCS_SECTION, "path")
+    const specPatterns = extractTomlArray(raw, SPEC_SECTION, "test_patterns")
     const cyclesScanPrompt = extractTomlValue(raw, CYCLES_SECTION, "scan_prompt")
     const cyclesAgents = extractTomlValue(raw, CYCLES_SECTION, "agents")
     const cyclesModel = extractTomlValue(raw, CYCLES_SECTION, "model")
@@ -76,6 +99,7 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     )
     const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
     const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
+    const pinsBlockAgentDone = extractTomlValue(raw, PINS_SECTION, "block_agent_done_when_task_id_present")
 
     // Guard section
     const guardMode = extractTomlValue(raw, GUARD_SECTION, "mode")
@@ -97,6 +121,9 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       docs: {
         path: docsPath ?? DEFAULT_CONFIG.docs.path,
       },
+      spec: {
+        testPatterns: specPatterns.length > 0 ? specPatterns : DEFAULT_CONFIG.spec.testPatterns,
+      },
       memory: {
         defaultDir: memoryDefaultDir ?? DEFAULT_CONFIG.memory.defaultDir,
       },
@@ -114,6 +141,10 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
         targetFiles: pinsTargetFiles
           ? pinsTargetFiles.split(",").map(f => f.trim()).filter(Boolean)
           : DEFAULT_CONFIG.pins.targetFiles,
+        blockAgentDoneWhenTaskIdPresent: parseBooleanOrDefault(
+          pinsBlockAgentDone,
+          DEFAULT_CONFIG.pins.blockAgentDoneWhenTaskIdPresent
+        )
       },
       guard: {
         mode: isGuardMode(guardMode) ? guardMode : DEFAULT_CONFIG.guard.mode,
@@ -204,6 +235,56 @@ const extractTomlValue = (
   return null
 }
 
+/**
+ * Extract an array value from TOML section/key.
+ * Supports:
+ * 1. key = ["a", "b", "c"] (single line)
+ * 2. key = [ ... ] (multi-line)
+ * 3. key = "a, b, c" (comma-separated fallback)
+ */
+const extractTomlArray = (
+  toml: string,
+  section: string,
+  key: string
+): string[] => {
+  const lines = toml.split("\n")
+  let inSection = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    if (trimmed === `[${section}]`) {
+      inSection = true
+      continue
+    }
+    if (trimmed.startsWith("[") && inSection) {
+      break
+    }
+    if (!inSection) continue
+
+    const arrayStart = new RegExp(`^${key}\\s*=\\s*\\[`).exec(trimmed)
+    if (arrayStart) {
+      let collected = trimmed
+      while (!collected.includes("]") && i + 1 < lines.length) {
+        i += 1
+        collected += lines[i].trim()
+      }
+
+      const out: string[] = []
+      const quoted = /["']([^"']+)["']/g
+      let match: RegExpExecArray | null
+      while ((match = quoted.exec(collected)) !== null) {
+        if (match[1].trim().length > 0) out.push(match[1].trim())
+      }
+      return out
+    }
+  }
+
+  const fallback = extractTomlValue(toml, section, key)
+  if (!fallback) return []
+  return fallback.split(",").map((s) => s.trim()).filter(Boolean)
+}
+
 function patchTomlKey(
   toml: string,
   section: string,
@@ -279,6 +360,27 @@ const DEFAULT_CONFIG_TOML = `# tx configuration
 # Relative to the project root.
 path = ".tx/docs"
 
+# ─── Spec Traceability ─────────────────────────────────────────────
+# Invariant-to-test mapping discovery and completion scoring.
+# Commands: tx spec discover, tx spec fci, tx spec matrix
+[spec]
+
+# Test file patterns scanned by tx spec discover.
+# Add/remove patterns to match your project's languages and conventions.
+test_patterns = [
+  "test/**/*.test.{ts,js,tsx,jsx}",
+  "tests/**/*.py",
+  "**/*_test.go",
+  "**/*_test.rs",
+  "**/test_*.py",
+  "**/*.spec.{ts,js,tsx,jsx}",
+  "**/Test*.java",
+  "**/*Test.java",
+  "**/*_spec.rb",
+  "**/*.test.{c,cpp,cc}",
+  "**/*_test.{c,cpp,cc}",
+]
+
 # ─── Memory ─────────────────────────────────────────────────────────
 # Filesystem-backed markdown search over your project's documentation.
 # Index directories with \`tx memory source add <dir>\`, then search
@@ -337,6 +439,10 @@ default_task_assigment_type = "human"
 # Both Claude Code (CLAUDE.md) and Codex (AGENTS.md) are synced by default
 # so all agents share the same persistent context.
 target_files = "CLAUDE.md, AGENTS.md"
+
+# When true, agent-driven task completion is blocked for any task linked
+# from a gate pin via \`taskId\`. Humans can still complete the task.
+block_agent_done_when_task_id_present = true
 
 # ─── Guard ─────────────────────────────────────────────────────────
 # Task creation guards — lightweight limits checked at \`tx add\` time.

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, beforeAll } from "vitest"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
@@ -31,6 +31,7 @@ import {
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
   CandidateExtractorServiceAuto,
+  LlmServiceNoop,
   writePid,
   readPid,
   removePid,
@@ -49,6 +50,10 @@ import {
   type LaunchdPlistOptions,
   type SystemdServiceOptions
 } from "@jamesaphoenix/tx-core/services"
+
+const CandidateExtractorServiceAutoNoop = CandidateExtractorServiceAuto.pipe(
+  Layer.provide(LlmServiceNoop)
+)
 
 // =============================================================================
 // Test Fixtures
@@ -409,7 +414,7 @@ describe("Daemon Auto Service Fallback", () => {
           sourceFile: FIXTURES.FILE_SESSION_1,
           sourceRunId: FIXTURES.RUN_SESSION_1
         })
-      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+      }).pipe(Effect.provide(CandidateExtractorServiceAutoNoop))
     )
 
     // Without API keys, should behave like Noop
@@ -423,7 +428,7 @@ describe("Daemon Auto Service Fallback", () => {
       Effect.gen(function* () {
         const svc = yield* CandidateExtractorService
         return yield* svc.isAvailable()
-      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+      }).pipe(Effect.provide(CandidateExtractorServiceAutoNoop))
     )
 
     expect(available).toBe(false)
@@ -443,7 +448,7 @@ describe("Daemon Auto Service Fallback", () => {
       Effect.gen(function* () {
         const svc = yield* CandidateExtractorService
         return yield* svc.extract(chunk)
-      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+      }).pipe(Effect.provide(CandidateExtractorServiceAutoNoop))
     )
 
     expect(result.sourceChunk.sourceRunId).toBe(FIXTURES.RUN_SESSION_1)
@@ -464,7 +469,7 @@ describe("Daemon Auto Service Fallback", () => {
         const r1 = yield* svc.extract(chunks[0])
         const r2 = yield* svc.extract(chunks[1])
         return [r1, r2]
-      }).pipe(Effect.provide(CandidateExtractorServiceAuto))
+      }).pipe(Effect.provide(CandidateExtractorServiceAutoNoop))
     )
 
     expect(results).toHaveLength(2)

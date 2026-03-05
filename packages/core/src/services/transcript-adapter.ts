@@ -14,7 +14,7 @@
 /**
  * Represents a parsed tool call from a transcript.
  */
-export interface ToolCall {
+export type ToolCall = {
   /** ISO timestamp of when the tool call occurred */
   readonly timestamp: string
   /** Name of the tool (e.g., "Read", "Bash", "Edit") */
@@ -24,26 +24,24 @@ export interface ToolCall {
   /** Tool call ID for correlation with results */
   readonly id?: string
   /** Result of the tool call, if available */
-  readonly result?: string
-}
+  readonly result?: string};
 
 /**
  * Represents a parsed message from a transcript.
  */
-export interface Message {
+export type Message = {
   /** ISO timestamp of when the message occurred */
   readonly timestamp: string
   /** Role of the message sender */
   readonly role: "user" | "assistant"
   /** Text content of the message */
-  readonly content: string
-}
+  readonly content: string};
 
 /**
  * Interface for adapters that parse different transcript formats.
  * Implement this to support new LLM tools.
  */
-export interface TranscriptAdapter {
+export type TranscriptAdapter = {
   /**
    * Parse tool calls from transcript lines.
    * @param lines - Raw JSONL lines from the transcript file
@@ -64,12 +62,10 @@ export interface TranscriptAdapter {
    * @param agentType - The agent type from runs.agent column
    * @returns true if this adapter can parse transcripts from this agent
    */
-  readonly canHandle: (agentType: string) => boolean
-}
+  readonly canHandle: (agentType: string) => boolean};
 
 /**
- * Helper to safely parse a JSON line, returning null for empty or non-JSON lines.
- * Only catches SyntaxError from JSON.parse; unexpected errors are re-thrown.
+ * Helper to safely parse a JSON line, returning null for empty or malformed lines.
  */
 const safeParseJson = (line: string): Record<string, unknown> | null => {
   const trimmed = line.trim()
@@ -77,12 +73,8 @@ const safeParseJson = (line: string): Record<string, unknown> | null => {
 
   try {
     return JSON.parse(trimmed) as Record<string, unknown>
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      return null
-    }
-    // eslint-disable-next-line tx/no-throw-in-services -- Re-throw unexpected non-SyntaxError; this is a non-Effect utility helper
-    throw error
+  } catch {
+    return null
   }
 }
 

@@ -39,7 +39,7 @@ import {
  *
  * All options are optional - defaults provide a fully functional tx instance.
  */
-export interface CreateTxOptions {
+export type CreateTxOptions = {
   /**
    * Path to SQLite database file.
    * @default ".tx/tasks.db"
@@ -74,7 +74,7 @@ export interface CreateTxOptions {
  * Provides methods to run Effects against the configured layer
  * and access commonly-used services directly.
  */
-export interface TxClient {
+export type TxClient = {
   /**
    * Run an Effect against the configured tx layer.
    *

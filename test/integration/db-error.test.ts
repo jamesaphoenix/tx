@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import {
   DatabaseError,
   RetrievalError,
@@ -44,7 +44,55 @@ const mockTask: Task = {
   createdAt: new Date(),
   updatedAt: new Date(),
   completedAt: null,
+  assigneeType: null,
+  assigneeId: null,
+  assignedAt: null,
+  assignedBy: null,
   metadata: {}
+}
+
+const baseLearningRepository: Context.Tag.Service<typeof LearningRepository> = {
+  insert: (_input) => Effect.fail(testDbError),
+  findById: (_id) => Effect.succeed(null),
+  findAll: (_limit) => Effect.succeed([]),
+  findPaginated: (_limit, _afterId) => Effect.succeed([]),
+  findWithoutEmbeddingPaginated: (_limit, _afterId) => Effect.succeed([]),
+  findRecent: (_limit) => Effect.succeed([]),
+  findRecentWithoutEmbedding: (_limit) => Effect.succeed([]),
+  bm25Search: (_query, _limit) => Effect.succeed([]),
+  findWithEmbeddings: (_limit) => Effect.succeed([]),
+  incrementUsage: (_id) => Effect.void,
+  incrementUsageMany: (_ids) => Effect.void,
+  updateOutcomeScore: (_id, _score) => Effect.void,
+  updateEmbedding: (_id, _embedding) => Effect.void,
+  remove: (_id) => Effect.void,
+  count: () => Effect.succeed(0),
+  countWithEmbeddings: () => Effect.succeed(0),
+  countWithoutEmbeddings: () => Effect.succeed(0),
+  getConfig: (_key) => Effect.succeed(null)
+}
+
+const baseTaskRepository: Context.Tag.Service<typeof TaskRepository> = {
+  findById: (_id) => Effect.succeed(null),
+  findByIds: (_ids) => Effect.succeed([]),
+  findAll: (_filter) => Effect.succeed([]),
+  findByParent: (_parentId) => Effect.succeed([]),
+  getChildIds: (_id) => Effect.succeed([]),
+  getChildIdsForMany: (_ids) => Effect.succeed(new Map()),
+  getAncestorChain: (_id) => Effect.succeed([]),
+  getDescendants: (_id, _maxDepth) => Effect.succeed([]),
+  getGroupContextForMany: (_ids) => Effect.succeed(new Map()),
+  resolveEffectiveGroupContextForMany: (_ids) => Effect.succeed(new Map()),
+  insert: (_task) => Effect.void,
+  update: (_task, _expectedUpdatedAt) => Effect.void,
+  updateMany: (_tasks) => Effect.void,
+  setGroupContext: (_taskId, _context) => Effect.void,
+  clearGroupContext: (_taskId) => Effect.void,
+  remove: (_id) => Effect.void,
+  count: (_filter) => Effect.succeed(0),
+  recoverTaskStatus: (_taskId, _expectedStatus) => Effect.succeed(false),
+  updateVerifyCmd: (_taskId, _cmd, _schema) => Effect.void,
+  getVerifyCmd: (_taskId) => Effect.succeed({ cmd: null, schema: null })
 }
 
 // ========================================================================
@@ -55,33 +103,11 @@ describe("LearningService Database Error Handling", () => {
   describe("create", () => {
     it("propagates DatabaseError from repository insert", async () => {
       const mockLearningRepo = Layer.succeed(LearningRepository, {
-        insert: () => Effect.fail(testDbError),
-        findById: () => Effect.succeed(null),
-        findAll: () => Effect.succeed([]),
-        findRecent: () => Effect.succeed([]),
-        bm25Search: () => Effect.succeed([]),
-        findWithEmbeddings: () => Effect.succeed([]),
-        incrementUsage: () => Effect.void,
-        incrementUsageMany: () => Effect.void,
-        updateOutcomeScore: () => Effect.void,
-        updateEmbedding: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0),
-        countWithEmbeddings: () => Effect.succeed(0),
-        getConfig: () => Effect.succeed(null)
+        ...baseLearningRepository
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(null),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository
       })
 
       const layer = LearningServiceLive.pipe(
@@ -107,33 +133,11 @@ describe("LearningService Database Error Handling", () => {
       const testRetrievalError = new RetrievalError({ reason: "Simulated retrieval failure" })
 
       const mockLearningRepo = Layer.succeed(LearningRepository, {
-        insert: () => Effect.fail(testDbError),
-        findById: () => Effect.succeed(null),
-        findAll: () => Effect.succeed([]),
-        findRecent: () => Effect.succeed([]),
-        bm25Search: () => Effect.succeed([]),
-        findWithEmbeddings: () => Effect.succeed([]),
-        incrementUsage: () => Effect.void,
-        incrementUsageMany: () => Effect.void,
-        updateOutcomeScore: () => Effect.void,
-        updateEmbedding: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0),
-        countWithEmbeddings: () => Effect.succeed(0),
-        getConfig: () => Effect.succeed(null)
+        ...baseLearningRepository
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(null),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository
       })
 
       // Mock RetrieverService that fails on search
@@ -163,33 +167,12 @@ describe("LearningService Database Error Handling", () => {
   describe("get", () => {
     it("propagates DatabaseError from findById", async () => {
       const mockLearningRepo = Layer.succeed(LearningRepository, {
-        insert: () => Effect.fail(testDbError),
+        ...baseLearningRepository,
         findById: () => Effect.fail(testDbError),
-        findAll: () => Effect.succeed([]),
-        findRecent: () => Effect.succeed([]),
-        bm25Search: () => Effect.succeed([]),
-        findWithEmbeddings: () => Effect.succeed([]),
-        incrementUsage: () => Effect.void,
-        incrementUsageMany: () => Effect.void,
-        updateOutcomeScore: () => Effect.void,
-        updateEmbedding: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0),
-        countWithEmbeddings: () => Effect.succeed(0),
-        getConfig: () => Effect.succeed(null)
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(null),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository
       })
 
       const layer = LearningServiceLive.pipe(
@@ -213,33 +196,12 @@ describe("LearningService Database Error Handling", () => {
   describe("count", () => {
     it("propagates DatabaseError from count", async () => {
       const mockLearningRepo = Layer.succeed(LearningRepository, {
-        insert: () => Effect.fail(testDbError),
-        findById: () => Effect.succeed(null),
-        findAll: () => Effect.succeed([]),
-        findRecent: () => Effect.succeed([]),
-        bm25Search: () => Effect.succeed([]),
-        findWithEmbeddings: () => Effect.succeed([]),
-        incrementUsage: () => Effect.void,
-        incrementUsageMany: () => Effect.void,
-        updateOutcomeScore: () => Effect.void,
-        updateEmbedding: () => Effect.void,
-        remove: () => Effect.void,
+        ...baseLearningRepository,
         count: () => Effect.fail(testDbError),
-        countWithEmbeddings: () => Effect.succeed(0),
-        getConfig: () => Effect.succeed(null)
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(null),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository
       })
 
       const layer = LearningServiceLive.pipe(
@@ -279,16 +241,8 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(mockTask),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository,
+        findById: () => Effect.succeed(mockTask)
       })
 
       const layer = AttemptServiceLive.pipe(
@@ -320,16 +274,8 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
+        ...baseTaskRepository,
         findById: () => Effect.fail(testDbError),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
       })
 
       const layer = AttemptServiceLive.pipe(
@@ -363,16 +309,8 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(mockTask),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository,
+        findById: () => Effect.succeed(mockTask)
       })
 
       const layer = AttemptServiceLive.pipe(
@@ -406,16 +344,8 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(mockTask),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository,
+        findById: () => Effect.succeed(mockTask)
       })
 
       const layer = AttemptServiceLive.pipe(
@@ -449,16 +379,8 @@ describe("AttemptService Database Error Handling", () => {
       })
 
       const mockTaskRepo = Layer.succeed(TaskRepository, {
-        findById: () => Effect.succeed(mockTask),
-        findByIds: () => Effect.succeed([]),
-        findAll: () => Effect.succeed([]),
-        findByParent: () => Effect.succeed([]),
-        getChildIds: () => Effect.succeed([]),
-        getChildIdsForMany: () => Effect.succeed(new Map()),
-        insert: () => Effect.void,
-        update: () => Effect.void,
-        remove: () => Effect.void,
-        count: () => Effect.succeed(0)
+        ...baseTaskRepository,
+        findById: () => Effect.succeed(mockTask)
       })
 
       const layer = AttemptServiceLive.pipe(

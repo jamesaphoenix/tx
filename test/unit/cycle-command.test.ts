@@ -27,6 +27,9 @@ function makeResult(cycleNumber: number): CycleResult {
   }
 }
 
+const provideCycleScanService = (effect: Effect.Effect<void, unknown, unknown>, layer: Layer.Layer<never, never, typeof CycleScanService>) =>
+  effect.pipe(Effect.provide(layer)) as Effect.Effect<void, unknown, never>
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -52,7 +55,7 @@ describe("cycle command progress labels", () => {
     })
 
     await Effect.runPromise(
-      cycle([], { ...baseFlags, cycles: "1" }).pipe(Effect.provide(mockLayer))
+      provideCycleScanService(cycle([], { ...baseFlags, cycles: "1" }), mockLayer)
     )
 
     const output = logs.join("\n")
@@ -83,7 +86,7 @@ describe("cycle command progress labels", () => {
     })
 
     await Effect.runPromise(
-      cycle([], { ...baseFlags, cycles: "2" }).pipe(Effect.provide(mockLayer))
+      provideCycleScanService(cycle([], { ...baseFlags, cycles: "2" }), mockLayer)
     )
 
     const output = logs.join("\n")

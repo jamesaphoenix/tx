@@ -7,17 +7,9 @@
 
 import { Effect } from "effect"
 import { readFile } from "node:fs/promises"
-import { existsSync, realpathSync } from "node:fs"
-import { resolve, sep } from "node:path"
-
-const normalizePathForComparison = (path: string): string => {
-  const resolved = resolve(path)
-  try {
-    return realpathSync(resolved)
-  } catch {
-    return resolved
-  }
-}
+import { existsSync } from "node:fs"
+import { resolve } from "node:path"
+import { isPathWithin, resolvePathForComparison } from "@jamesaphoenix/tx-core"
 
 /**
  * Check if a resolved path is under the project's .tx/runs/ directory.
@@ -25,9 +17,8 @@ const normalizePathForComparison = (path: string): string => {
  * bypasses where /.tx/runs/ appears elsewhere in the path.
  */
 export const isAllowedRunPath = (filePath: string): boolean => {
-  const resolved = normalizePathForComparison(filePath)
-  const runsDir = normalizePathForComparison(resolve(process.cwd(), ".tx", "runs"))
-  return resolved.startsWith(runsDir + sep)
+  const runsDir = resolvePathForComparison(resolve(process.cwd(), ".tx", "runs"))
+  return isPathWithin(runsDir, filePath, { allowBaseDir: false, useRealpath: true })
 }
 
 /**

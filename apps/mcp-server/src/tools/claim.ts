@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { ClaimService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
@@ -139,7 +139,7 @@ const handleClaimGet = async (args: {
 // -----------------------------------------------------------------------------
 
 export const registerClaimTools = (server: McpServer): void => {
-  server.tool(
+  registerEffectTool(server,
     "tx_claim",
     "Claim a task for a worker with a lease. Prevents other workers from claiming the same task until the lease expires.",
     {
@@ -150,7 +150,7 @@ export const registerClaimTools = (server: McpServer): void => {
     async (args) => handleClaim(args as { taskId: string; workerId: string; leaseDurationMinutes?: number })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_claim_release",
     "Release a task claim. Only the worker who holds the claim can release it.",
     {
@@ -160,7 +160,7 @@ export const registerClaimTools = (server: McpServer): void => {
     async (args) => handleClaimRelease(args as { taskId: string; workerId: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_claim_renew",
     "Renew the lease on an existing task claim. Fails if the claim is expired or max renewals exceeded.",
     {
@@ -170,7 +170,7 @@ export const registerClaimTools = (server: McpServer): void => {
     async (args) => handleClaimRenew(args as { taskId: string; workerId: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_claim_get",
     "Get the active claim for a task, if any. Returns null if no active claim exists.",
     {

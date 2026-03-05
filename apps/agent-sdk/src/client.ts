@@ -58,7 +58,8 @@ import type {
   SyncExportResult,
   SyncImportResult,
   SyncStatusResult,
-  SyncCompactResult,
+  SyncStreamInfoResult,
+  SyncHydrateResult,
   SerializedDoc,
   SerializedDocLink,
   SerializedInvariant,
@@ -179,10 +180,11 @@ interface Transport {
   memoryLinkCreate(sourceId: string, targetRef: string): Promise<void>
 
   // Sync
-  syncExport(path?: string): Promise<SyncExportResult>
-  syncImport(path?: string): Promise<SyncImportResult>
+  syncExport(): Promise<SyncExportResult>
+  syncImport(): Promise<SyncImportResult>
   syncStatus(): Promise<SyncStatusResult>
-  syncCompact(path?: string): Promise<SyncCompactResult>
+  syncStream(): Promise<SyncStreamInfoResult>
+  syncHydrate(): Promise<SyncHydrateResult>
 
   // Docs
   docsList(options?: { kind?: string; status?: string }): Promise<SerializedDoc[]>
@@ -261,7 +263,8 @@ class HttpTransport implements Transport {
       : `${this.baseUrl}${path}`
 
     const headers: Record<string, string> = {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "x-tx-actor": "agent"
     }
 
     if (this.apiKey) {
@@ -280,7 +283,7 @@ class HttpTransport implements Transport {
       })
 
       if (!response.ok) {
-        throw await parseApiError(response)
+        return Promise.reject(await parseApiError(response))
       }
 
       return await response.json() as T
@@ -611,7 +614,7 @@ class HttpTransport implements Transport {
       return await this.request<SerializedPin>("GET", `/api/pins/${id}`)
     } catch (e) {
       if (e instanceof TxError && e.statusCode === 404) return null
-      throw e
+      return Promise.reject(e)
     }
   }
 
@@ -625,7 +628,7 @@ class HttpTransport implements Transport {
       return await this.request<{ deleted: boolean }>("DELETE", `/api/pins/${id}`)
     } catch (e) {
       if (e instanceof TxError && e.statusCode === 404) return { deleted: false }
-      throw e
+      return Promise.reject(e)
     }
   }
 
@@ -737,20 +740,24 @@ class HttpTransport implements Transport {
   }
 
   // Sync
-  async syncExport(path?: string): Promise<SyncExportResult> {
-    return await this.request<SyncExportResult>("POST", "/api/sync/export", { body: { path } })
+  async syncExport(): Promise<SyncExportResult> {
+    return await this.request<SyncExportResult>("POST", "/api/sync/export")
   }
 
-  async syncImport(path?: string): Promise<SyncImportResult> {
-    return await this.request<SyncImportResult>("POST", "/api/sync/import", { body: { path } })
+  async syncImport(): Promise<SyncImportResult> {
+    return await this.request<SyncImportResult>("POST", "/api/sync/import")
   }
 
   async syncStatus(): Promise<SyncStatusResult> {
     return await this.request<SyncStatusResult>("GET", "/api/sync/status")
   }
 
-  async syncCompact(path?: string): Promise<SyncCompactResult> {
-    return await this.request<SyncCompactResult>("POST", "/api/sync/compact", { body: { path } })
+  async syncStream(): Promise<SyncStreamInfoResult> {
+    return await this.request<SyncStreamInfoResult>("GET", "/api/sync/stream")
+  }
+
+  async syncHydrate(): Promise<SyncHydrateResult> {
+    return await this.request<SyncHydrateResult>("POST", "/api/sync/hydrate")
   }
 
   // Docs
@@ -1234,7 +1241,7 @@ class DirectTransport implements Transport {
     const task = await this.run(
       Effect.gen(function* () {
         const taskService = yield* core.TaskService
-        yield* taskService.update(id, data)
+        yield* taskService.update(id, data, { actor: "agent" })
         return yield* taskService.getWithDeps(id)
       })
     )
@@ -1306,7 +1313,7 @@ class DirectTransport implements Transport {
         const blocking = yield* readyService.getBlocking(id)
 
         // Mark as done
-        yield* taskService.update(id, { status: "done" })
+        yield* taskService.update(id, { status: "done" }, { actor: "agent" })
 
         // Get updated task
         const task = yield* taskService.getWithDeps(id)
@@ -2356,7 +2363,7 @@ class DirectTransport implements Transport {
   }
 
   // Sync
-  async syncExport(path?: string): Promise<SyncExportResult> {
+  async syncExport(): Promise<SyncExportResult> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -2364,16 +2371,17 @@ class DirectTransport implements Transport {
     return await this.run<SyncExportResult>(
       Effect.gen(function* () {
         const syncService = yield* core.SyncService
-        const result = yield* syncService.export(path)
+        const result = yield* syncService.export()
         return {
-          opCount: result.opCount,
+          eventCount: result.eventCount,
+          streamId: result.streamId,
           path: result.path,
         }
       })
     )
   }
 
-  async syncImport(path?: string): Promise<SyncImportResult> {
+  async syncImport(): Promise<SyncImportResult> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -2381,11 +2389,11 @@ class DirectTransport implements Transport {
     return await this.run<SyncImportResult>(
       Effect.gen(function* () {
         const syncService = yield* core.SyncService
-        const result = yield* syncService.import(path)
+        const result = yield* syncService.import()
         return {
-          imported: result.imported,
-          skipped: result.skipped,
-          conflicts: result.conflicts,
+          importedEvents: result.importedEvents,
+          appliedEvents: result.appliedEvents,
+          streamCount: result.streamCount,
         }
       })
     )
@@ -2402,7 +2410,7 @@ class DirectTransport implements Transport {
         const status = yield* syncService.status()
         return {
           dbTaskCount: status.dbTaskCount,
-          jsonlOpCount: status.jsonlOpCount,
+          eventOpCount: status.eventOpCount,
           lastExport: status.lastExport instanceof Date ? status.lastExport.toISOString() : status.lastExport ?? null,
           lastImport: status.lastImport instanceof Date ? status.lastImport.toISOString() : status.lastImport ?? null,
           isDirty: status.isDirty,
@@ -2412,19 +2420,36 @@ class DirectTransport implements Transport {
     )
   }
 
-  async syncCompact(path?: string): Promise<SyncCompactResult> {
+  async syncStream(): Promise<SyncStreamInfoResult> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
 
-    return await this.run<SyncCompactResult>(
+    return await this.run<SyncStreamInfoResult>(
       Effect.gen(function* () {
         const syncService = yield* core.SyncService
-        const result = yield* syncService.compact(path)
+        const result = yield* syncService.stream()
         return {
-          before: result.before,
-          after: result.after,
+          streamId: result.streamId,
+          nextSeq: result.nextSeq,
+          lastSeq: result.lastSeq,
+          eventsDir: result.eventsDir,
+          configPath: result.configPath,
+          knownStreams: result.knownStreams,
         }
+      })
+    )
+  }
+
+  async syncHydrate(): Promise<SyncHydrateResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SyncHydrateResult>(
+      Effect.gen(function* () {
+        const syncService = yield* core.SyncService
+        return yield* syncService.hydrate()
       })
     )
   }
@@ -3828,12 +3853,12 @@ class MemoryNamespace {
 // =============================================================================
 
 /**
- * Sync namespace for JSONL-based export/import operations.
+ * Sync namespace for stream-based sync operations.
  *
  * @example
  * ```typescript
- * // Export tasks to JSONL
- * const { opCount, path } = await tx.sync.export()
+ * // Export stream events
+ * const { eventCount, path } = await tx.sync.export()
  *
  * // Check sync status
  * const status = await tx.sync.status()
@@ -3842,10 +3867,11 @@ class MemoryNamespace {
 class SyncNamespace {
   constructor(private readonly transport: Transport) {}
 
-  async export(path?: string): Promise<SyncExportResult> { return this.transport.syncExport(path) }
-  async import(path?: string): Promise<SyncImportResult> { return this.transport.syncImport(path) }
+  async export(): Promise<SyncExportResult> { return this.transport.syncExport() }
+  async import(): Promise<SyncImportResult> { return this.transport.syncImport() }
   async status(): Promise<SyncStatusResult> { return this.transport.syncStatus() }
-  async compact(path?: string): Promise<SyncCompactResult> { return this.transport.syncCompact(path) }
+  async stream(): Promise<SyncStreamInfoResult> { return this.transport.syncStream() }
+  async hydrate(): Promise<SyncHydrateResult> { return this.transport.syncHydrate() }
 }
 
 // =============================================================================
@@ -4065,7 +4091,7 @@ export class TxClient {
   public readonly memory: MemoryNamespace
 
   /**
-   * Sync operations (JSONL export/import).
+   * Sync operations (stream event export/import).
    */
   public readonly sync: SyncNamespace
 

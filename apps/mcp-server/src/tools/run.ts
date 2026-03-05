@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import type { RunId } from "@jamesaphoenix/tx-types"
 import { RunHeartbeatService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
@@ -15,19 +15,15 @@ import { handleToolError, type McpToolResult } from "../response.js"
 
 const RUN_ID_PATTERN = /^run-[a-z0-9]+$/i
 
-const assertRunId = (id: string): RunId => {
-  if (!RUN_ID_PATTERN.test(id)) {
-    throw new Error(`Invalid run ID format: ${id}`)
-  }
+const parseRunId = (id: string): RunId | null => {
+  if (!RUN_ID_PATTERN.test(id)) return null
   return id as RunId
 }
 
-const parseIsoDate = (value: string | undefined, field: string): Date | undefined => {
-  if (!value) return undefined
+const parseIsoDate = (value: string | undefined): Date | null => {
+  if (!value) return null
   const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error(`Invalid ${field}: must be an ISO timestamp`)
-  }
+  if (Number.isNaN(parsed.getTime())) return null
   return parsed
 }
 
@@ -75,9 +71,22 @@ const handleRunHeartbeat = async (args: {
   activityAt?: string
 }): Promise<McpToolResult> => {
   try {
-    const runId = assertRunId(args.runId)
-    const checkAt = parseIsoDate(args.checkAt, "checkAt")
-    const activityAt = parseIsoDate(args.activityAt, "activityAt")
+    const runId = parseRunId(args.runId)
+    if (!runId) {
+      return handleToolError("tx_run_heartbeat", args, new Error(`Invalid run ID format: ${args.runId}`))
+    }
+
+    const parsedCheckAt = parseIsoDate(args.checkAt)
+    if (args.checkAt && !parsedCheckAt) {
+      return handleToolError("tx_run_heartbeat", args, new Error("Invalid checkAt: must be an ISO timestamp"))
+    }
+    const checkAt = parsedCheckAt ?? undefined
+
+    const parsedActivityAt = parseIsoDate(args.activityAt)
+    if (args.activityAt && !parsedActivityAt) {
+      return handleToolError("tx_run_heartbeat", args, new Error("Invalid activityAt: must be an ISO timestamp"))
+    }
+    const activityAt = parsedActivityAt ?? undefined
 
     await runEffect(
       Effect.gen(function* () {
@@ -199,8 +208,7 @@ const handleRunReap = async (args: {
 }
 
 export const registerRunTools = (server: McpServer): void => {
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_run_heartbeat",
     "Record run heartbeat progress for transcript/log monitoring",
     {
@@ -212,22 +220,20 @@ export const registerRunTools = (server: McpServer): void => {
       checkAt: z.string().optional().describe("Optional ISO check timestamp"),
       activityAt: z.string().optional().describe("Optional ISO transcript activity timestamp"),
     },
-    handleRunHeartbeat as Parameters<typeof server.tool>[3]
+    handleRunHeartbeat
   )
 
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_run_stalled",
     "List running runs that appear stalled by heartbeat/transcript inactivity",
     {
       transcriptIdleSeconds: z.number().int().positive().optional().describe("Transcript idle threshold in seconds (default: 300)"),
       heartbeatLagSeconds: z.number().int().positive().optional().describe("Optional heartbeat-lag threshold in seconds"),
     },
-    handleRunStalled as Parameters<typeof server.tool>[3]
+    handleRunStalled
   )
 
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_run_reap",
     "Reap stalled runs (kill process tree, cancel run, optionally reset task)",
     {
@@ -236,6 +242,6 @@ export const registerRunTools = (server: McpServer): void => {
       resetTask: z.boolean().optional().describe("Reset associated task to ready (default: true)"),
       dryRun: z.boolean().optional().describe("Preview actions without mutating state"),
     },
-    handleRunReap as Parameters<typeof server.tool>[3]
+    handleRunReap
   )
 }

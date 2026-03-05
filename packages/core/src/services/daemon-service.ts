@@ -1,181 +1,51 @@
 import { Context, Effect, Layer } from "effect"
 import { spawn, type ChildProcess } from "node:child_process"
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync, writeSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { homedir } from "node:os"
 import { DaemonError } from "../errors.js"
+import {
+  acquirePidLock,
+  PID_FILE_PATH,
+  isProcessRunning,
+  readPid,
+  readStartedAt,
+  removePid,
+  removePidIfContentMatches,
+  removeStartedAt,
+  sendSignal,
+  tryAtomicPidCreate,
+  waitForExit,
+  writePid,
+  writeStartedAt
+} from "./daemon-service/process.js"
+import {
+  generateLaunchdPlist,
+  generateSystemdService,
+  LAUNCHD_PLIST_PATH,
+  SYSTEMD_SERVICE_PATH,
+  type LaunchdPlistOptions,
+  type SystemdServiceOptions
+} from "./daemon-service/templates.js"
 
-/**
- * Default path for the daemon PID file.
- */
-export const PID_FILE_PATH = ".tx/daemon.pid"
-
-/**
- * Default install path for the launchd plist file.
- * Located in the user's LaunchAgents directory for per-user daemons.
- */
-export const LAUNCHD_PLIST_PATH = "~/Library/LaunchAgents/com.tx.daemon.plist"
-
-/**
- * Default install path for the systemd service file.
- * Located in the user's systemd user directory for per-user services.
- */
-export const SYSTEMD_SERVICE_PATH = "~/.config/systemd/user/tx-daemon.service"
-
-/**
- * Options for generating a launchd plist file.
- */
-export interface LaunchdPlistOptions {
-  /**
-   * The label for the launchd job (e.g., "com.tx.daemon").
-   * This must be unique among all launchd jobs.
-   */
-  readonly label: string
-  /**
-   * The absolute path to the executable to run.
-   */
-  readonly executablePath: string
-  /**
-   * Optional path for log output (both stdout and stderr).
-   * If not provided, defaults to ~/Library/Logs/tx-daemon.log
-   */
-  readonly logPath?: string
+export {
+  acquirePidLock,
+  generateLaunchdPlist,
+  generateSystemdService,
+  isProcessRunning,
+  LAUNCHD_PLIST_PATH,
+  PID_FILE_PATH,
+  readPid,
+  removePid,
+  removePidIfContentMatches,
+  SYSTEMD_SERVICE_PATH,
+  tryAtomicPidCreate,
+  writePid
 }
 
-/**
- * Generate a macOS launchd plist file content.
- * Creates a valid XML plist that can be used with launchctl to run the daemon.
- *
- * The generated plist configures the daemon to:
- * - Run at load (start when user logs in)
- * - Keep alive (restart if it crashes)
- * - Log stdout and stderr to the specified log path
- *
- * @param options - Configuration options for the plist
- * @returns The XML content for the launchd plist file
- *
- * @example
- * ```typescript
- * const plist = generateLaunchdPlist({
- *   label: "com.tx.daemon",
- *   executablePath: "/usr/local/bin/tx",
- *   logPath: "~/Library/Logs/tx-daemon.log"
- * })
- * ```
- */
-export const generateLaunchdPlist = (options: LaunchdPlistOptions): string => {
-  const { label, executablePath, logPath } = options
-
-  // Expand ~ to home directory for the log path
-  const resolvedLogPath = logPath
-    ? logPath.replace(/^~/, homedir())
-    : join(homedir(), "Library", "Logs", "tx-daemon.log")
-
-  // Generate valid XML plist
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>${escapeXml(label)}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${escapeXml(executablePath)}</string>
-        <string>daemon</string>
-        <string>run</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${escapeXml(resolvedLogPath)}</string>
-    <key>StandardErrorPath</key>
-    <string>${escapeXml(resolvedLogPath)}</string>
-</dict>
-</plist>
-`
-}
-
-/**
- * Escape special characters for XML content.
- */
-const escapeXml = (str: string): string =>
-  str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-
-/**
- * Options for generating a systemd service file.
- */
-export interface SystemdServiceOptions {
-  /**
-   * The absolute path to the executable to run.
-   */
-  readonly executablePath: string
-  /**
-   * Optional user to run the service as.
-   * If not provided, the service runs as the current user (for user services).
-   */
-  readonly user?: string
-}
-
-/**
- * Generate a Linux systemd service file content.
- * Creates a valid systemd unit file for a user service.
- *
- * The generated service file configures the daemon to:
- * - Start after the network is available
- * - Run as Type=simple (foreground process)
- * - Restart always on failure with 5 second delay
- * - Be enabled for multi-user target
- *
- * @param options - Configuration options for the service file
- * @returns The content for the systemd service file
- *
- * @example
- * ```typescript
- * const service = generateSystemdService({
- *   executablePath: "/usr/local/bin/tx",
- *   user: "myuser"
- * })
- * ```
- */
-export const generateSystemdService = (options: SystemdServiceOptions): string => {
-  const { executablePath, user } = options
-
-  // Build the [Service] section lines
-  const serviceLines = [
-    "Type=simple",
-    `ExecStart=${executablePath} daemon run`,
-    "Restart=always",
-    "RestartSec=5"
-  ]
-
-  // Add User= directive only if user is provided
-  if (user) {
-    serviceLines.push(`User=${user}`)
-  }
-
-  return `[Unit]
-Description=tx Daemon - Task and memory management for AI agents
-After=network.target
-
-[Service]
-${serviceLines.join("\n")}
-
-[Install]
-WantedBy=default.target
-`
-}
+export type { LaunchdPlistOptions, SystemdServiceOptions }
 
 /**
  * Status information for the daemon process.
  */
-export interface DaemonStatus {
+export type DaemonStatus = {
   readonly running: boolean
   readonly pid: number | null
   readonly uptime: number | null
@@ -219,283 +89,9 @@ export class DaemonService extends Context.Tag("DaemonService")<
 >() {}
 
 /**
- * Check if a process with the given PID is currently running.
- * Uses kill signal 0 which doesn't actually send a signal but checks if the process exists.
- *
- * @param pid - The process ID to check
- * @returns Effect that resolves to true if the process is running, false otherwise
- */
-export const isProcessRunning = (pid: number): Effect.Effect<boolean, DaemonError> =>
-  Effect.try({
-    try: () => {
-      // Signal 0 doesn't send anything but checks if process exists
-      process.kill(pid, 0)
-      return true
-    },
-    catch: (error) => error as NodeJS.ErrnoException
-  }).pipe(
-    Effect.catchAll((error) => {
-      // ESRCH means no such process - return false (not running) as success value
-      if (error instanceof Error && "code" in error && error.code === "ESRCH") {
-        return Effect.succeed(false)
-      }
-      // EPERM means process exists but we don't have permission to signal it
-      // The process is still running, just owned by another user - return true as success value
-      if (error instanceof Error && "code" in error && error.code === "EPERM") {
-        return Effect.succeed(true)
-      }
-      // Any other error is unexpected - convert to DaemonError
-      return Effect.fail(
-        new DaemonError({
-          code: "PROCESS_CHECK_FAILED",
-          reason: `Failed to check if process ${pid} is running: ${error}`,
-          pid
-        })
-      )
-    })
-  )
-
-/**
- * Write a PID to the daemon PID file.
- * Creates the .tx directory if it doesn't exist.
- *
- * @param pid - The process ID to write
- * @returns Effect that resolves to void on success
- */
-export const writePid = (pid: number): Effect.Effect<void, DaemonError> =>
-  Effect.try({
-    try: () => {
-      const dir = dirname(PID_FILE_PATH)
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true })
-      }
-      writeFileSync(PID_FILE_PATH, String(pid), "utf-8")
-    },
-    catch: (error) =>
-      new DaemonError({
-        code: "PID_WRITE_FAILED",
-        reason: `Failed to write PID file: ${error}`,
-        pid
-      })
-  })
-
-/**
- * Read the PID from the daemon PID file.
- * Returns null if the file doesn't exist.
- * Handles stale PID cleanup: if the PID file exists but the process is not running,
- * the stale PID file is automatically removed and null is returned.
- *
- * @returns Effect that resolves to the PID number, or null if no valid PID file exists
- */
-export const readPid = (): Effect.Effect<number | null, DaemonError> =>
-  Effect.gen(function* () {
-    // Check if file exists
-    if (!existsSync(PID_FILE_PATH)) {
-      return null
-    }
-
-    // Read the PID file
-    const content = yield* Effect.try({
-      try: () => readFileSync(PID_FILE_PATH, "utf-8").trim(),
-      catch: (error) =>
-        new DaemonError({
-          code: "PID_READ_FAILED",
-          reason: `Failed to read PID file: ${error}`,
-          pid: null
-        })
-    })
-
-    // Parse the PID
-    const pid = parseInt(content, 10)
-    if (isNaN(pid) || pid <= 0) {
-      // Invalid PID content — use CAS removal so we don't delete a fresh PID
-      // written by a concurrent daemon start between our read and this removal.
-      yield* removePidIfContentMatches(content)
-      return null
-    }
-
-    // Check if the process is still running
-    const running = yield* isProcessRunning(pid)
-    if (!running) {
-      // Stale PID — use CAS removal so we don't delete a fresh PID written
-      // by a concurrent daemon start between isProcessRunning() and here.
-      yield* removePidIfContentMatches(content)
-      return null
-    }
-
-    return pid
-  })
-
-/**
- * Remove the daemon PID file.
- * Does nothing if the file doesn't exist.
- *
- * @returns Effect that resolves to void on success
- */
-export const removePid = (): Effect.Effect<void, DaemonError> =>
-  Effect.try({
-    try: () => {
-      if (existsSync(PID_FILE_PATH)) {
-        unlinkSync(PID_FILE_PATH)
-      }
-    },
-    catch: (error) =>
-      new DaemonError({
-        code: "PID_REMOVE_FAILED",
-        reason: `Failed to remove PID file: ${error}`,
-        pid: null
-      })
-  })
-
-/**
- * Remove the PID file only if its current content matches the expected value.
- *
- * This is a compare-and-swap guard that prevents the TOCTOU race where
- * readPid()'s stale cleanup could delete a freshly-written PID file created
- * by a concurrent daemon start. Between isProcessRunning() returning false
- * and removePid() executing, a new daemon may have written a fresh PID.
- *
- * If the file no longer exists or its content has changed, this is a no-op.
- *
- * @param expectedContent - The PID file content we originally read
- * @returns Effect that resolves to void on success
- */
-export const removePidIfContentMatches = (expectedContent: string): Effect.Effect<void, DaemonError> =>
-  Effect.try({
-    try: () => {
-      if (!existsSync(PID_FILE_PATH)) {
-        return
-      }
-      const currentContent = readFileSync(PID_FILE_PATH, "utf-8").trim()
-      if (currentContent === expectedContent) {
-        unlinkSync(PID_FILE_PATH)
-      }
-      // Content changed — a concurrent start wrote a fresh PID. Do not delete.
-    },
-    catch: (error) =>
-      new DaemonError({
-        code: "PID_REMOVE_FAILED",
-        reason: `Failed to remove PID file: ${error}`,
-        pid: null
-      })
-  })
-
-/**
- * Path to store the daemon start timestamp for uptime calculation.
- */
-const STARTED_AT_PATH = ".tx/daemon.started"
-
-/**
- * Write the daemon start timestamp to a file.
- */
-const writeStartedAt = (date: Date): Effect.Effect<void, DaemonError> =>
-  Effect.try({
-    try: () => {
-      const dir = dirname(STARTED_AT_PATH)
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true })
-      }
-      writeFileSync(STARTED_AT_PATH, date.toISOString(), "utf-8")
-    },
-    catch: (error) =>
-      new DaemonError({
-        code: "STARTED_AT_WRITE_FAILED",
-        reason: `Failed to write started_at file: ${error}`,
-        pid: null
-      })
-  })
-
-/**
- * Read the daemon start timestamp from file.
- */
-const readStartedAt = (): Effect.Effect<Date | null, DaemonError> =>
-  Effect.try({
-    try: () => {
-      if (!existsSync(STARTED_AT_PATH)) {
-        return null
-      }
-      const content = readFileSync(STARTED_AT_PATH, "utf-8").trim()
-      const date = new Date(content)
-      return isNaN(date.getTime()) ? null : date
-    },
-    catch: (error) =>
-      new DaemonError({
-        code: "STARTED_AT_READ_FAILED",
-        reason: `Failed to read started_at file: ${error}`,
-        pid: null
-      })
-  })
-
-/**
- * Remove the daemon start timestamp file.
- */
-const removeStartedAt = (): Effect.Effect<void, DaemonError> =>
-  Effect.try({
-    try: () => {
-      if (existsSync(STARTED_AT_PATH)) {
-        unlinkSync(STARTED_AT_PATH)
-      }
-    },
-    catch: (error) =>
-      new DaemonError({
-        code: "STARTED_AT_REMOVE_FAILED",
-        reason: `Failed to remove started_at file: ${error}`,
-        pid: null
-      })
-  })
-
-/**
- * Send a signal to a process by PID.
- * Returns true if the signal was sent successfully, false if the process doesn't exist.
- */
-const sendSignal = (pid: number, signal: NodeJS.Signals): Effect.Effect<boolean, DaemonError> =>
-  Effect.try({
-    try: () => {
-      process.kill(pid, signal)
-      return true
-    },
-    catch: (error) => error as NodeJS.ErrnoException
-  }).pipe(
-    Effect.catchAll((error) => {
-      // ESRCH means no such process - return false (not running) as success value
-      if (error instanceof Error && "code" in error && error.code === "ESRCH") {
-        return Effect.succeed(false)
-      }
-      // Any other error is unexpected - convert to DaemonError
-      return Effect.fail(
-        new DaemonError({
-          code: "SIGNAL_FAILED",
-          reason: `Failed to send signal ${signal} to process ${pid}: ${error}`,
-          pid
-        })
-      )
-    })
-  )
-
-/**
- * Wait for a process to exit with a timeout.
- * Returns true if the process exited, false if timeout was reached.
- */
-const waitForExit = (pid: number, timeoutMs: number): Effect.Effect<boolean, DaemonError> =>
-  Effect.gen(function* () {
-    const startTime = Date.now()
-    const pollIntervalMs = 100
-
-    while (Date.now() - startTime < timeoutMs) {
-      const running = yield* isProcessRunning(pid)
-      if (!running) {
-        return true
-      }
-      yield* Effect.sleep(`${pollIntervalMs} millis`)
-    }
-
-    return false
-  })
-
-/**
  * Configuration for the daemon service.
  */
-export interface DaemonConfig {
+export type DaemonConfig = {
   /**
    * The command to run the daemon (e.g., "tx", "node").
    * Defaults to "tx".
@@ -595,113 +191,11 @@ const spawnDaemonProcess = (config: DaemonConfig): Promise<{ child: ChildProcess
         // No PID and no error - reject to prevent the promise from hanging forever
         reject(new DaemonError({
           code: "SPAWN_FAILED",
-          reason: `Failed to spawn daemon process: no PID was assigned`,
+          reason: "Failed to spawn daemon process: no PID was assigned",
           pid: null
         }))
       }
     })
-  })
-
-/**
- * Try to atomically create the PID file using O_EXCL.
- * Returns true if created successfully, false if the file already exists.
- * This is the atomic primitive that prevents the TOCTOU race condition.
- */
-export const tryAtomicPidCreate = (): Effect.Effect<boolean, DaemonError> =>
-  Effect.try({
-    try: () => {
-      // O_CREAT | O_EXCL | O_WRONLY — fails with EEXIST if file already exists
-      const fd = openSync(PID_FILE_PATH, "wx")
-      // Write the lock holder's PID so stale detection works.
-      // This is the `tx daemon start` process PID, not the daemon PID.
-      // After spawning, writePid() overwrites with the actual daemon PID.
-      writeSync(fd, String(process.pid))
-      closeSync(fd)
-      return true
-    },
-    catch: (error) => error as NodeJS.ErrnoException
-  }).pipe(
-    Effect.catchAll((error) => {
-      if (error instanceof Error && "code" in error && error.code === "EEXIST") {
-        return Effect.succeed(false)
-      }
-      return Effect.fail(
-        new DaemonError({
-          code: "PID_WRITE_FAILED",
-          reason: `Failed to create PID lock file: ${error}`,
-          pid: null
-        })
-      )
-    })
-  )
-
-/**
- * Atomically acquire the daemon PID file lock.
- *
- * Uses O_EXCL flag to prevent the TOCTOU race condition where two concurrent
- * `tx daemon start` commands both pass the existence check before either writes
- * the PID file. With O_EXCL, the filesystem guarantees only one process can
- * create the file — the loser gets EEXIST immediately.
- *
- * If the file already exists, checks whether the PID is stale (process dead).
- * Stale files are removed and creation is retried once.
- */
-export const acquirePidLock = (): Effect.Effect<void, DaemonError> =>
-  Effect.gen(function* () {
-    const dir = dirname(PID_FILE_PATH)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-
-    // First attempt: atomic file creation
-    const created = yield* tryAtomicPidCreate()
-    if (created) return
-
-    // File already exists — check if the PID inside is stale
-    const existingContent = yield* Effect.try({
-      try: () =>
-        existsSync(PID_FILE_PATH) ? readFileSync(PID_FILE_PATH, "utf-8").trim() : null,
-      catch: (error) =>
-        new DaemonError({
-          code: "PID_READ_FAILED",
-          reason: `Failed to read existing PID file: ${error}`,
-          pid: null
-        })
-    })
-
-    if (existingContent !== null && existingContent !== "") {
-      const pid = parseInt(existingContent, 10)
-      if (!isNaN(pid) && pid > 0) {
-        const running = yield* isProcessRunning(pid)
-        if (running) {
-          return yield* Effect.fail(
-            new DaemonError({
-              code: "ALREADY_RUNNING",
-              reason: `Daemon is already running with PID ${pid}`,
-              pid
-            })
-          )
-        }
-      }
-    }
-
-    // PID file is stale — CAS removal to avoid deleting a fresh PID written
-    // by a concurrent start that raced us between isProcessRunning() and here.
-    if (existingContent !== null) {
-      yield* removePidIfContentMatches(existingContent)
-    }
-
-    const retryCreated = yield* tryAtomicPidCreate()
-    if (!retryCreated) {
-      // Another process won the race after our stale cleanup
-      return yield* Effect.fail(
-        new DaemonError({
-          code: "ALREADY_RUNNING",
-          reason: "Another daemon start is in progress",
-          pid: null
-        })
-      )
-    }
   })
 
 /**

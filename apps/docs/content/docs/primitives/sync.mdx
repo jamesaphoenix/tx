@@ -1,66 +1,114 @@
 ---
 title: tx sync
-description: Git-backed JSONL synchronization
+description: Git-backed synchronization via append-only stream event logs
 ---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
 
 ## Purpose
 
-`tx sync` manages bidirectional synchronization between the SQLite database and a git-friendly JSONL file. This enables:
+`tx sync` keeps local state portable across machines by writing append-only event logs under `.tx/streams/` and replaying them into SQLite.
 
-- Version control of task history
-- Team collaboration via git
-- Backup and recovery
-- Cross-machine synchronization
+This gives you:
+
+- Git-friendly sync artifacts
+- Cross-machine collaboration
+- Deterministic rebuilds from event history
+- Local-first operation (SQLite remains the runtime store)
+
+## At A Glance
+
+<Mermaid
+  title="Cross-Machine Sync"
+  caption="Export writes the local event log. Git moves the log. Import materializes unseen events on the other machine."
+  chart={`sequenceDiagram
+    autonumber
+    participant A as Machine A
+    participant G as Git
+    participant B as Machine B
+
+    A->>A: mutate task state
+    A->>A: tx sync export
+    A->>G: git push .tx/stream.json + .tx/streams/**
+    G->>B: git pull
+    B->>B: tx sync import
+    B->>B: apply unseen events to SQLite
+  `}
+/>
+
+<Mermaid
+  title="Rebuild Path"
+  caption="Hydrate replays stream logs into SQLite. Status tells you whether the materialized state is healthy and dirty."
+  chart={`flowchart LR
+    Operator[Operator] --> Hydrate[tx sync hydrate]
+    Logs[.tx/streams/**/*.jsonl] --> Hydrate
+    Hydrate --> Sqlite[Rebuilt SQLite state]
+    Sqlite --> Status[tx sync status]
+    Status --> Checks[counts, dirty flag, last import/export]
+  `}
+/>
+
+## Sync Model (Default)
+
+`tx sync` uses a stream event log model:
+
+```text
+.tx/
+├── stream.json                              # Local stream identity
+└── streams/
+    └── <stream-id>/
+        └── events-YYYY-MM-DD.jsonl          # Append-only events
+```
+
+Each event is a JSON object with envelope metadata and payload:
+
+```json
+{
+  "event_id": "01JZ...",
+  "stream_id": "01JY...",
+  "seq": 184,
+  "ts": "2026-03-05T13:12:04.123Z",
+  "type": "task.upsert",
+  "entity_id": "tx-abc123",
+  "v": 2,
+  "payload": { "id": "tx-abc123", "title": "Implement auth" }
+}
+```
 
 ## Subcommands
 
 | Command | Description |
 |---------|-------------|
-| `tx sync export` | Export tasks to JSONL file |
-| `tx sync import` | Import tasks from JSONL file |
-| `tx sync status` | Show sync status |
-| `tx sync auto` | Enable/disable automatic sync |
-| `tx sync compact` | Compact JSONL by deduplicating operations |
-
----
+| `tx sync export` | Emit current state as stream events |
+| `tx sync import` | Incrementally apply stream events |
+| `tx sync stream` | Show local stream ID + sequence state |
+| `tx sync hydrate` | Rebuild materialized state from event logs |
+| `tx sync status` | Show sync health and dirty status |
+| `tx sync auto` | Enable/disable automatic export on mutations |
 
 ## tx sync export
 
-Export all tasks and dependencies to a JSONL file.
+Write events to the local stream log.
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
-### Usage
-
 ```bash
-tx sync export [options]
+tx sync export [--json]
 ```
 
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--path <path>` | Output path (default: `.tx/tasks.jsonl`) |
-| `--json` | Output as JSON with operation count |
-
-### Examples
-
 ```bash
-# Export to default location
+# Export events
 tx sync export
 
-# Export to custom location
-tx sync export --path ./backup/tasks.jsonl
-
-# Get operation count
+# JSON output
 tx sync export --json
 ```
 
-### Output
+CLI output (human mode):
 
-```
-Exported 42 operations to .tx/tasks.jsonl
+```text
+Events: 42 event(s) → .tx/streams/<stream-id>/events-2026-03-05.jsonl
 ```
 
 </Tab>
@@ -71,26 +119,14 @@ import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
 const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// Export to default path (.tx/tasks.jsonl)
 const result = await tx.sync.export()
-console.log(`Exported ${result.opCount} operations to ${result.path}`)
-
-// Export to custom path
-const custom = await tx.sync.export('./backup/tasks.jsonl')
+console.log(result.eventCount, result.streamId, result.path)
 ```
 
 </Tab>
 <Tab value="MCP">
 
-**Tool name:** `tx_sync_export`
-
-**Arguments:**
-
-| Arg | Type | Required | Description |
-|-----|------|----------|-------------|
-| `path` | `string` | No | Path to JSONL file (default: `.tx/tasks.jsonl`) |
-
-**Example request:**
+**Tool:** `tx_sync_export`
 
 ```json
 {
@@ -102,19 +138,9 @@ const custom = await tx.sync.export('./backup/tasks.jsonl')
 </Tab>
 <Tab value="REST API">
 
-```
+```text
 POST /api/sync/export
 ```
-
-**Body:**
-
-```json
-{
-  "path": ".tx/tasks.jsonl"
-}
-```
-
-**Example:**
 
 ```bash
 curl -X POST http://localhost:3456/api/sync/export \
@@ -122,76 +148,53 @@ curl -X POST http://localhost:3456/api/sync/export \
   -d '{}'
 ```
 
+Response:
+
+```json
+{
+  "eventCount": 42,
+  "streamId": "01JY...",
+  "path": ".tx/streams/01JY.../events-2026-03-05.jsonl"
+}
+```
+
 </Tab>
 </Tabs>
 
----
-
 ## tx sync import
 
-Import tasks from a JSONL file using timestamp-based merge.
+Read stream event logs and apply unseen events.
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
-### Usage
-
 ```bash
-tx sync import [options]
+tx sync import [--json]
 ```
 
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--path <path>` | Input path (default: `.tx/tasks.jsonl`) |
-| `--json` | Output as JSON |
-
-### Examples
-
 ```bash
-# Import from default location
 tx sync import
-
-# Import from custom location
-tx sync import --path ./backup/tasks.jsonl
+tx sync import --json
 ```
 
-### Merge Strategy
+CLI output (human mode):
 
-Import uses **timestamp-based merge**:
-- Newer operations win over older ones
-- Conflicts are resolved by comparing `updatedAt` timestamps
-- Operations are applied in chronological order
+```text
+Events: imported=42, applied=42, streams=1
+```
 
 </Tab>
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
-
-const tx = new TxClient({ dbPath: '.tx/tasks.db' })
-
-// Import from default path (.tx/tasks.jsonl)
 const result = await tx.sync.import()
-console.log(`Imported: ${result.imported}, Skipped: ${result.skipped}`)
-
-// Import from custom path
-const custom = await tx.sync.import('./backup/tasks.jsonl')
+console.log(result.importedEvents, result.appliedEvents, result.streamCount)
 ```
 
 </Tab>
 <Tab value="MCP">
 
-**Tool name:** `tx_sync_import`
-
-**Arguments:**
-
-| Arg | Type | Required | Description |
-|-----|------|----------|-------------|
-| `path` | `string` | No | Path to JSONL file (default: `.tx/tasks.jsonl`) |
-
-**Example request:**
+**Tool:** `tx_sync_import`
 
 ```json
 {
@@ -203,19 +206,9 @@ const custom = await tx.sync.import('./backup/tasks.jsonl')
 </Tab>
 <Tab value="REST API">
 
-```
+```text
 POST /api/sync/import
 ```
-
-**Body:**
-
-```json
-{
-  "path": ".tx/tasks.jsonl"
-}
-```
-
-**Example:**
 
 ```bash
 curl -X POST http://localhost:3456/api/sync/import \
@@ -223,70 +216,149 @@ curl -X POST http://localhost:3456/api/sync/import \
   -d '{}'
 ```
 
+Response:
+
+```json
+{
+  "importedEvents": 42,
+  "appliedEvents": 42,
+  "streamCount": 1
+}
+```
+
 </Tab>
 </Tabs>
 
----
+## tx sync stream
+
+Inspect local stream identity and sequence progress.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx sync stream [--json]
+```
+
+```text
+Stream: 01JY...
+  nextSeq: 185
+  lastSeq: 184
+  eventsDir: /.../.tx/streams/01JY...
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+const stream = await tx.sync.stream()
+console.log(stream.streamId, stream.nextSeq, stream.lastSeq, stream.eventsDir)
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool:** `tx_sync_stream`
+
+```json
+{
+  "name": "tx_sync_stream",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```text
+GET /api/sync/stream
+```
+
+```bash
+curl http://localhost:3456/api/sync/stream
+```
+
+</Tab>
+</Tabs>
+
+## tx sync hydrate
+
+Clear and rebuild materialized task state by replaying event logs.
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+tx sync hydrate [--json]
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+const hydrated = await tx.sync.hydrate()
+console.log(hydrated.importedEvents, hydrated.appliedEvents, hydrated.rebuilt)
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tool:** `tx_sync_hydrate`
+
+```json
+{
+  "name": "tx_sync_hydrate",
+  "arguments": {}
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```text
+POST /api/sync/hydrate
+```
+
+```bash
+curl -X POST http://localhost:3456/api/sync/hydrate
+```
+
+</Tab>
+</Tabs>
 
 ## tx sync status
 
-Show sync status and whether the database has unexported changes.
+Show high-level sync state.
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
-### Usage
-
 ```bash
-tx sync status [options]
+tx sync status [--json]
 ```
 
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--json` | Output as JSON |
-
-### Examples
-
-```bash
-tx sync status
-```
-
-### Output
-
-```
-Sync status:
-  Database tasks: 156
-  JSONL operations: 312
-  Last export: 2025-01-28T10:30:00Z
-  Pending changes: 8
+```text
+Sync Status:
+  Tasks in database: 156
+  Events in stream logs: 312
+  Last export: 2026-03-05T12:40:33.000Z
+  Last import: 2026-03-05T12:41:18.000Z
+  Dirty (unexported changes): no
+  Auto-sync: enabled
 ```
 
 </Tab>
 <Tab value="TypeScript SDK">
 
 ```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
-
-const tx = new TxClient({ dbPath: '.tx/tasks.db' })
-
-// Get sync status
 const status = await tx.sync.status()
-console.log(`DB tasks: ${status.dbTaskCount}`)
-console.log(`JSONL ops: ${status.jsonlOpCount}`)
-console.log(`Dirty: ${status.isDirty}`)
-console.log(`Auto-sync: ${status.autoSyncEnabled}`)
+console.log(status.dbTaskCount, status.isDirty, status.autoSyncEnabled)
 ```
 
 </Tab>
 <Tab value="MCP">
 
-**Tool name:** `tx_sync_status`
-
-**Arguments:** None
-
-**Example request:**
+**Tool:** `tx_sync_status`
 
 ```json
 {
@@ -298,247 +370,41 @@ console.log(`Auto-sync: ${status.autoSyncEnabled}`)
 </Tab>
 <Tab value="REST API">
 
-```
+```text
 GET /api/sync/status
 ```
 
-**Example:**
-
 ```bash
 curl http://localhost:3456/api/sync/status
 ```
 
-**Response:**
-
-```json
-{
-  "dbTaskCount": 156,
-  "jsonlOpCount": 312,
-  "lastExport": "2025-01-28T10:30:00.000Z",
-  "lastImport": null,
-  "isDirty": true,
-  "autoSyncEnabled": false
-}
-```
-
 </Tab>
 </Tabs>
-
----
 
 ## tx sync auto
 
-Enable or disable automatic synchronization on mutations.
-
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
-<Tab value="CLI">
-
-### Usage
+Enable or disable automatic export on mutations.
 
 ```bash
-tx sync auto --enable|--disable [options]
-```
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--enable` | Enable auto-sync |
-| `--disable` | Disable auto-sync |
-| `--json` | Output as JSON |
-
-### Examples
-
-```bash
-# Enable auto-sync
 tx sync auto --enable
-
-# Disable auto-sync
 tx sync auto --disable
+tx sync auto --json
 ```
 
-When auto-sync is enabled, every task mutation automatically exports to JSONL.
+When enabled, mutating operations trigger sync export automatically.
 
-</Tab>
-<Tab value="TypeScript SDK">
+## Sync Constraints
 
-Auto-sync is typically configured through the CLI. The current auto-sync state is available via the sync status:
-
-```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
-
-const tx = new TxClient({ dbPath: '.tx/tasks.db' })
-
-// Check auto-sync state via status
-const status = await tx.sync.status()
-console.log(`Auto-sync enabled: ${status.autoSyncEnabled}`)
-```
-
-</Tab>
-<Tab value="MCP">
-
-Auto-sync is typically configured through the CLI. The current auto-sync state is included in the `tx_sync_status` tool response:
-
-```json
-{
-  "name": "tx_sync_status",
-  "arguments": {}
-}
-```
-
-</Tab>
-<Tab value="REST API">
-
-Auto-sync is typically configured through the CLI. The current auto-sync state is included in the sync status response:
-
-```bash
-curl http://localhost:3456/api/sync/status
-# Response includes "autoSyncEnabled": true/false
-```
-
-</Tab>
-</Tabs>
-
----
-
-## tx sync compact
-
-Compact the JSONL file by deduplicating operations.
-
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
-<Tab value="CLI">
-
-### Usage
-
-```bash
-tx sync compact [options]
-```
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--json` | Output as JSON |
-
-### Examples
-
-```bash
-tx sync compact
-```
-
-### Output
-
-```
-Compacted .tx/tasks.jsonl:
-  Before: 1,234 operations (256 KB)
-  After: 892 operations (189 KB)
-  Saved: 27%
-```
-
-</Tab>
-<Tab value="TypeScript SDK">
-
-```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
-
-const tx = new TxClient({ dbPath: '.tx/tasks.db' })
-
-// Compact JSONL file
-const result = await tx.sync.compact()
-console.log(`Before: ${result.before}, After: ${result.after}`)
-
-// Compact a custom path
-const custom = await tx.sync.compact('./backup/tasks.jsonl')
-```
-
-</Tab>
-<Tab value="MCP">
-
-**Tool name:** `tx_sync_compact`
-
-**Arguments:**
-
-| Arg | Type | Required | Description |
-|-----|------|----------|-------------|
-| `path` | `string` | No | Path to JSONL file (default: `.tx/tasks.jsonl`) |
-
-**Example request:**
-
-```json
-{
-  "name": "tx_sync_compact",
-  "arguments": {}
-}
-```
-
-</Tab>
-<Tab value="REST API">
-
-```
-POST /api/sync/compact
-```
-
-**Body:**
-
-```json
-{
-  "path": ".tx/tasks.jsonl"
-}
-```
-
-**Example:**
-
-```bash
-curl -X POST http://localhost:3456/api/sync/compact \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-**Response:**
-
-```json
-{
-  "before": 1234,
-  "after": 892
-}
-```
-
-</Tab>
-</Tabs>
-
----
-
-## JSONL Format
-
-The export format is newline-delimited JSON:
-
-```jsonl
-{"op":"create","id":"tx-abc123","title":"Implement auth","status":"backlog","score":800,"ts":"2025-01-28T10:00:00Z"}
-{"op":"update","id":"tx-abc123","status":"active","ts":"2025-01-28T10:30:00Z"}
-{"op":"block","taskId":"tx-def456","blockerId":"tx-abc123","ts":"2025-01-28T11:00:00Z"}
-{"op":"done","id":"tx-abc123","ts":"2025-01-28T14:00:00Z"}
-```
-
-### Operation Types
-
-| Operation | Description |
-|-----------|-------------|
-| `create` | New task created |
-| `update` | Task fields updated |
-| `delete` | Task deleted |
-| `block` | Dependency added |
-| `unblock` | Dependency removed |
-| `done` | Task completed |
-
----
+- Legacy single-file sync arguments are no longer supported.
 
 ## Git Workflow
 
 ```bash
-# After completing work
+# Before commit
 tx sync export
-git add .tx/tasks.jsonl
-git commit -m "Update tasks"
+git add .tx/stream.json .tx/streams
+
+git commit -m "chore: sync stream events"
 git push
 
 # On another machine
@@ -546,29 +412,22 @@ git pull
 tx sync import
 ```
 
-### .gitignore Recommendation
+## .gitignore Recommendation
 
 ```text
-# Track the JSONL, ignore the SQLite database
+# Keep database local
 .tx/tasks.db
 .tx/tasks.db-wal
 .tx/tasks.db-shm
-!.tx/tasks.jsonl
+
+# Track sync stream identity + event logs
+!.tx/stream.json
+!.tx/streams/
+!.tx/streams/**
 ```
-
----
-
-## Team Collaboration
-
-Multiple agents or developers can work on the same task database:
-
-1. **Export before pushing**: `tx sync export && git add .tx/tasks.jsonl`
-2. **Import after pulling**: `git pull && tx sync import`
-3. **Enable auto-sync** for real-time updates: `tx sync auto --enable`
-
-Merge conflicts in the JSONL file can be resolved by keeping both sides (JSONL is append-friendly) and running `tx sync compact` afterward.
 
 ## Related Commands
 
-- [`tx ready`](/docs/primitives/ready) - Get tasks after syncing
-- [`tx done`](/docs/primitives/done) - Complete tasks (triggers auto-sync if enabled)
+- [`tx ready`](/docs/primitives/ready) - Pull the next workable task after import
+- [`tx done`](/docs/primitives/done) - Mark work complete (can trigger auto-sync)
+- [`tx pin`](/docs/primitives/pin) - Sync context files alongside task/event sync

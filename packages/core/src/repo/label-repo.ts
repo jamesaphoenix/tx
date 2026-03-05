@@ -1,8 +1,9 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, LabelNotFoundError, TaskNotFoundError } from "../errors.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
-export interface LabelRow {
+export type LabelRow = {
   readonly id: number
   readonly name: string
   readonly color: string
@@ -10,7 +11,7 @@ export interface LabelRow {
   readonly updated_at: string
 }
 
-export interface Label {
+export type Label = {
   readonly id: number
   readonly name: string
   readonly color: string
@@ -48,9 +49,9 @@ export const LabelRepositoryLive = Layer.effect(
       findByName: (name) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<LabelRow | undefined>(db.prepare(
               "SELECT * FROM task_labels WHERE lower(name) = lower(?)"
-            ).get(name) as LabelRow | undefined
+            ).get(name))
             return row ? rowToLabel(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -59,7 +60,7 @@ export const LabelRepositoryLive = Layer.effect(
       findAll: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare("SELECT * FROM task_labels ORDER BY name").all() as LabelRow[]
+            const rows = coerceDbResult<LabelRow[]>(db.prepare("SELECT * FROM task_labels ORDER BY name").all())
             return rows.map(rowToLabel)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -72,9 +73,9 @@ export const LabelRepositoryLive = Layer.effect(
             db.prepare(
               "INSERT INTO task_labels (name, color, created_at, updated_at) VALUES (?, ?, ?, ?)"
             ).run(name, color, now, now)
-            const row = db.prepare(
+            const row = coerceDbResult<LabelRow>(db.prepare(
               "SELECT * FROM task_labels WHERE lower(name) = lower(?)"
-            ).get(name) as LabelRow
+            ).get(name))
             return rowToLabel(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -95,16 +96,16 @@ export const LabelRepositoryLive = Layer.effect(
         Effect.gen(function* () {
           // Validate task exists (INSERT OR IGNORE swallows FK violations silently)
           const task = yield* Effect.try({
-            try: () => db.prepare("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | undefined,
+            try: () => coerceDbResult<{ id: string } | undefined>(db.prepare("SELECT id FROM tasks WHERE id = ?").get(taskId)),
             catch: (cause) => new DatabaseError({ cause })
           })
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
           }
           const label = yield* Effect.try({
-            try: () => db.prepare(
+            try: () => coerceDbResult<{ id: number } | undefined>(db.prepare(
               "SELECT id FROM task_labels WHERE lower(name) = lower(?)"
-            ).get(labelName) as { id: number } | undefined,
+            ).get(labelName)),
             catch: (cause) => new DatabaseError({ cause })
           })
           if (!label) {
@@ -123,9 +124,9 @@ export const LabelRepositoryLive = Layer.effect(
       unassign: (taskId, labelName) =>
         Effect.try({
           try: (): "removed" | "not_assigned" | "label_not_found" => {
-            const label = db.prepare(
+            const label = coerceDbResult<{ id: number } | undefined>(db.prepare(
               "SELECT id FROM task_labels WHERE lower(name) = lower(?)"
-            ).get(labelName) as { id: number } | undefined
+            ).get(labelName))
             if (!label) return "label_not_found"
             const result = db.prepare(
               "DELETE FROM task_label_assignments WHERE task_id = ? AND label_id = ?"
@@ -138,12 +139,12 @@ export const LabelRepositoryLive = Layer.effect(
       getLabelsForTask: (taskId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<LabelRow[]>(db.prepare(
               `SELECT tl.* FROM task_labels tl
                JOIN task_label_assignments tla ON tla.label_id = tl.id
                WHERE tla.task_id = ?
                ORDER BY tl.name`
-            ).all(taskId) as LabelRow[]
+            ).all(taskId))
             return rows.map(rowToLabel)
           },
           catch: (cause) => new DatabaseError({ cause })

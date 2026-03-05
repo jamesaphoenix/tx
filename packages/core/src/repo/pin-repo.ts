@@ -10,6 +10,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToPin } from "../mappers/pin.js"
 import type { Pin, PinRow } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class PinRepository extends Context.Tag("PinRepository")<
   PinRepository,
@@ -52,9 +53,9 @@ export const PinRepositoryLive = Layer.effect(
                  updated_at = excluded.updated_at`
             ).run(id, content, now, now)
 
-            const row = db.prepare(
+            const row = coerceDbResult<PinRow | undefined>(db.prepare(
               "SELECT * FROM context_pins WHERE id = ?"
-            ).get(id) as PinRow | undefined
+            ).get(id))
             if (!row) {
               throw new EntityFetchError({ entity: "pin", id, operation: "insert" })
             }
@@ -66,9 +67,9 @@ export const PinRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<PinRow | undefined>(db.prepare(
               "SELECT * FROM context_pins WHERE id = ?"
-            ).get(id) as PinRow | undefined
+            ).get(id))
             return row ? rowToPin(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -77,9 +78,9 @@ export const PinRepositoryLive = Layer.effect(
       findAll: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<PinRow[]>(db.prepare(
               "SELECT * FROM context_pins ORDER BY id"
-            ).all() as PinRow[]
+            ).all())
             return rows.map(rowToPin)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -99,9 +100,9 @@ export const PinRepositoryLive = Layer.effect(
       getTargetFiles: () =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<{ value: string } | undefined>(db.prepare(
               "SELECT value FROM pin_config WHERE key = 'target_files'"
-            ).get() as { value: string } | undefined
+            ).get())
             if (!row || !row.value) return ["CLAUDE.md"]
             // Support both JSON array (new) and comma-separated (legacy) formats
             try {

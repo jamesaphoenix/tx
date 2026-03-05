@@ -124,6 +124,11 @@ describe("safeStringify", () => {
     expect(parsed.date).toBe("2026-01-15T10:00:00.000Z")
   })
 
+  it("serializes bigint values as strings", () => {
+    const result = safeStringify({ id: 123n })
+    expect(result).toBe('{"id":"123"}')
+  })
+
   it("handles complex nested structure with circular reference", () => {
     interface Node {
       id: number
@@ -210,6 +215,13 @@ describe("mcpResponse", () => {
     const parsed = JSON.parse(result.content[1].text)
     expect(parsed.id).toBe("tx-12345678")
     expect(parsed.isReady).toBe(true)
+  })
+
+  it("truncates oversized response payload text", () => {
+    const result = mcpResponse("payload", { body: "x".repeat(200_000) })
+
+    expect(result.content[1].text).toContain("[truncated")
+    expect(result.content[1].text.length).toBeLessThan(130_000)
   })
 })
 
@@ -511,6 +523,20 @@ describe("handleToolError", () => {
     const data = JSON.parse(result.content[2].text)
     expect(data.errorType).toBe("CircularDependencyError")
     expect(data.stack).toContain("CircularDependencyError")
+
+    consoleSpy.mockRestore()
+  })
+
+  it("truncates oversized stack traces in logs and MCP response", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const error = new Error("overflow stack")
+    error.stack = `Error: overflow stack\n${"at very.deep.path\n".repeat(5000)}`
+
+    const result = handleToolError("tx_show", { id: "tx-overflow" }, error)
+
+    expect(result.content[1].text).toContain("[truncated")
+    const logged = JSON.parse(consoleSpy.mock.calls[0][0] as string)
+    expect(String(logged.stack)).toContain("[truncated")
 
     consoleSpy.mockRestore()
   })

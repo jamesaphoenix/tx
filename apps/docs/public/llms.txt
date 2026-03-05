@@ -22,13 +22,24 @@ tx provides composable primitives for agent infrastructure — task management, 
 - [tx done](https://tx-docs.vercel.app/docs/primitives/done): Complete task, potentially unblocking others
 - [tx block](https://tx-docs.vercel.app/docs/primitives/block): Declare dependencies between tasks
 - [tx claim](https://tx-docs.vercel.app/docs/primitives/claim): Claim task with lease to prevent parallel collisions
+- [tx memory](https://tx-docs.vercel.app/docs/primitives/memory): Search and navigate your markdown knowledge graph
 - [tx context](https://tx-docs.vercel.app/docs/primitives/context): Get relevant learnings for prompt injection
 - [tx learning](https://tx-docs.vercel.app/docs/primitives/learning): Record and search knowledge
+- [tx pin](https://tx-docs.vercel.app/docs/primitives/pin): Persist named context blocks for reuse across agents
+- [tx gate](https://tx-docs.vercel.app/docs/primitives/gate): Add human approval checkpoints between phases
+- [tx guard](https://tx-docs.vercel.app/docs/primitives/guard): Set task creation limits to bound agent autonomy
+- [tx verify](https://tx-docs.vercel.app/docs/primitives/verify): Attach machine-checkable done criteria to tasks
+- [tx reflect](https://tx-docs.vercel.app/docs/primitives/reflect): Run session retrospectives and tune agent behavior
+- [tx label](https://tx-docs.vercel.app/docs/primitives/label): Organize tasks with labels for ready queue scoping
 - [tx sync](https://tx-docs.vercel.app/docs/primitives/sync): Persist to git-friendly JSONL
+- [tx send / tx inbox](https://tx-docs.vercel.app/docs/primitives/inbox): Send and read channel-based agent messages
 - [tx try / tx attempts](https://tx-docs.vercel.app/docs/primitives/attempts): Record and track implementation attempts
+- [tx handoff](https://tx-docs.vercel.app/docs/primitives/handoff): Transfer a task with context to another agent
+- [tx checkpoint](https://tx-docs.vercel.app/docs/primitives/checkpoint): Save progress without completing
+- [tx trace](https://tx-docs.vercel.app/docs/primitives/traces): Inspect execution traces for agent runs
 - [tx doc](https://tx-docs.vercel.app/docs/primitives/docs): Docs-as-primitives with YAML structured documentation
 - [tx invariant](https://tx-docs.vercel.app/docs/primitives/invariants): Machine-checkable system rules with enforcement tracking
-- [tx trace](https://tx-docs.vercel.app/docs/primitives/traces): Execution tracing and run observability
+- [tx spec](https://tx-docs.vercel.app/docs/primitives/spec-trace): Spec-to-test traceability and FCI phase scoring
 
 ## Interfaces
 

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest"
-import { spawnSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
-import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { spawnSync, spawn, type ChildProcessByStdio } from "node:child_process"
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createServer } from "node:net"
+import type { Readable } from "node:stream"
 import { Database } from "bun:sqlite"
 import { fixtureId } from "../fixtures.js"
 import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
@@ -19,6 +20,8 @@ interface ExecResult {
   stdout: string
   stderr: string
 }
+
+type ApiProcess = ChildProcessByStdio<null, Readable, Readable>
 
 const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => {
   setTimeout(resolveSleep, ms)
@@ -69,7 +72,7 @@ function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
   }
 }
 
-async function waitForHealth(baseUrl: string, proc: ChildProcessWithoutNullStreams): Promise<void> {
+async function waitForHealth(baseUrl: string, proc: ApiProcess): Promise<void> {
   const deadline = Date.now() + 30000
   while (Date.now() < deadline) {
     if (proc.exitCode !== null) {
@@ -110,7 +113,7 @@ describe("API + SDK run heartbeat integration", () => {
   let tmpProjectDir: string
   let dbPath: string
   let db: Database
-  let apiProc: ChildProcessWithoutNullStreams
+  let apiProc: ApiProcess
   let apiPort: number
   let baseUrl: string
   let serverLogs = ""
@@ -581,6 +584,148 @@ describe("API + SDK run heartbeat integration", () => {
     expect(cyclePayload.logs.stderr).toBeNull()
     expect(cyclePayload.logs.stdoutTruncated).toBe(false)
     expect(cyclePayload.logs.stderrTruncated).toBe(false)
+  })
+
+  it("POST /api/runs rejects invalid transcriptPath and does not insert a run", async () => {
+    const res = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agent: "tx-implementer",
+        transcriptPath: "/tmp/secret.jsonl",
+      }),
+    })
+
+    expect(res.status).toBe(400)
+    const body = await res.text()
+    expect(body).toContain("Invalid transcriptPath")
+
+    const row = db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }
+    expect(row.count).toBe(0)
+  })
+
+  it("POST /api/runs rejects invalid contextInjected and does not insert a run", async () => {
+    const res = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agent: "tx-implementer",
+        contextInjected: "/tmp/context.md",
+      }),
+    })
+
+    expect(res.status).toBe(400)
+    const body = await res.text()
+    expect(body).toContain("Invalid contextInjected")
+
+    const row = db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }
+    expect(row.count).toBe(0)
+  })
+
+  it("PATCH /api/runs/:id rejects traversal transcriptPath and preserves existing safe path", async () => {
+    const runId = runFixtureId("api-run-patch-path")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "runs")
+    mkdirSync(runLogsDir, { recursive: true })
+    const safeTranscriptPath = join(runLogsDir, `${runId}.jsonl`)
+    writeFileSync(safeTranscriptPath, "")
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, metadata)
+       VALUES (?, NULL, 'tx-implementer', ?, 'running', NULL, ?, '{}')`
+    ).run(runId, now, safeTranscriptPath)
+
+    const res = await fetch(`${baseUrl}/api/runs/${runId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transcriptPath: "../etc/passwd",
+      }),
+    })
+
+    expect(res.status).toBe(400)
+    const row = db.prepare("SELECT transcript_path FROM runs WHERE id = ?").get(runId) as
+      | { transcript_path: string | null }
+      | null
+    expect(row?.transcript_path).toBe(safeTranscriptPath)
+  })
+
+  it("GET /api/runs/:id/stdout|stderr|context does not leak paths outside .tx/runs", async () => {
+    const runId = runFixtureId("api-run-direct-log-path-guard")
+    const now = new Date().toISOString()
+    const outsideStdoutPath = join(tmpProjectDir, "..", `${runId}.stdout`)
+    const outsideStderrPath = join(tmpProjectDir, "..", `${runId}.stderr`)
+    const outsideContextPath = join(tmpProjectDir, "..", `${runId}.context`)
+
+    writeFileSync(outsideStdoutPath, "SENSITIVE_STDOUT")
+    writeFileSync(outsideStderrPath, "SENSITIVE_STDERR")
+    writeFileSync(outsideContextPath, "SENSITIVE_CONTEXT")
+
+    try {
+      db.prepare(
+        `INSERT INTO runs (id, task_id, agent, started_at, status, pid, stdout_path, stderr_path, context_injected, metadata)
+         VALUES (?, NULL, 'tx-implementer', ?, 'running', NULL, ?, ?, ?, '{}')`
+      ).run(runId, now, outsideStdoutPath, outsideStderrPath, outsideContextPath)
+
+      const [stdoutRes, stderrRes, contextRes] = await Promise.all([
+        fetch(`${baseUrl}/api/runs/${runId}/stdout`),
+        fetch(`${baseUrl}/api/runs/${runId}/stderr`),
+        fetch(`${baseUrl}/api/runs/${runId}/context`),
+      ])
+
+      for (const response of [stdoutRes, stderrRes, contextRes]) {
+        expect(response.status).toBe(200)
+        const payload = await response.json() as { content: string; truncated: boolean }
+        expect(payload).toEqual({ content: "", truncated: false })
+      }
+    } finally {
+      try { rmSync(outsideStdoutPath, { force: true }) } catch { /* ignore */ }
+      try { rmSync(outsideStderrPath, { force: true }) } catch { /* ignore */ }
+      try { rmSync(outsideContextPath, { force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  it("GET /api/runs/:id does not parse transcript when .tx path is a symlink escape", async () => {
+    const runId = runFixtureId("api-run-transcript-symlink-escape")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "runs")
+    mkdirSync(runLogsDir, { recursive: true })
+
+    const outsideDir = mkdtempSync(join(tmpdir(), "tx-api-transcript-outside-"))
+    const outsideTranscript = join(outsideDir, "secret.jsonl")
+    writeFileSync(
+      outsideTranscript,
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: "TOP_SECRET_DO_NOT_LEAK" },
+        timestamp: now,
+        uuid: "symlink-user-1",
+      })
+    )
+
+    const symlinkTranscriptPath = join(runLogsDir, `${runId}.jsonl`)
+    symlinkSync(outsideTranscript, symlinkTranscriptPath)
+
+    try {
+      db.prepare(
+        `INSERT INTO runs (id, task_id, agent, started_at, status, pid, transcript_path, metadata)
+         VALUES (?, NULL, 'tx-implementer', ?, 'running', NULL, ?, '{}')`
+      ).run(runId, now, symlinkTranscriptPath)
+
+      const res = await fetch(`${baseUrl}/api/runs/${runId}`)
+      expect(res.status).toBe(200)
+
+      const payload = await res.json() as {
+        run: { transcriptPath: string | null }
+        messages: Array<{ role: string; content: unknown }>
+      }
+
+      expect(payload.run.transcriptPath).toBe(symlinkTranscriptPath)
+      expect(payload.messages).toEqual([])
+    } finally {
+      try { rmSync(symlinkTranscriptPath, { force: true }) } catch { /* ignore */ }
+      rmSync(outsideDir, { recursive: true, force: true })
+    }
   })
 
   it("GET /api/runs/stalled lists stalled runs", async () => {

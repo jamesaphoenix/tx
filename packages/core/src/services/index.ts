@@ -45,15 +45,22 @@ export {
 export {
   SyncService,
   SyncServiceLive,
-  type ExportResult,
   type ImportResult,
+  type LegacySyncExportResult,
+  type SyncCompactResult,
+  type SyncExportResult,
+  type SyncImportResult,
+  type SyncHydrateResult,
+  type SyncStreamInfoResult,
   type SyncStatus,
-  type CompactResult,
-  type ExportOptions,
-  type ExportAllResult,
-  type EntityImportResult,
-  type ImportAllResult
-} from "./sync-service.js"
+  type DependencyImportResult
+} from "./sync/index.js"
+export {
+  StreamService,
+  StreamServiceLive,
+  type StreamInfo,
+  type StreamProgress
+} from "./stream-service.js"
 export {
   MigrationService,
   MigrationServiceLive,
@@ -310,3 +317,13 @@ export {
   type ReflectSignal,
   type StuckTask
 } from "./reflect-service.js"
+export {
+  SPEC_BATCH_MAX_BYTES,
+  SPEC_BATCH_MAX_RECORDS,
+  SpecTraceService,
+  SpecTraceServiceLive,
+  parseBatchRunInput,
+  type BatchSource,
+  type BatchRunResult,
+  type SpecTraceStatus,
+} from "./spec-trace-service.js"

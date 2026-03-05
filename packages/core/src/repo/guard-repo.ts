@@ -1,8 +1,9 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
-export interface GuardRow {
+export type GuardRow = {
   readonly id: number
   readonly scope: string
   readonly max_pending: number | null
@@ -12,7 +13,7 @@ export interface GuardRow {
   readonly created_at: string
 }
 
-export interface Guard {
+export type Guard = {
   readonly id: number
   readonly scope: string
   readonly maxPending: number | null
@@ -59,7 +60,7 @@ export const GuardRepositoryLive = Layer.effect(
       findByScope: (scope) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM task_guards WHERE scope = ?").get(scope) as GuardRow | undefined
+            const row = coerceDbResult<GuardRow | undefined>(db.prepare("SELECT * FROM task_guards WHERE scope = ?").get(scope))
             return row ? rowToGuard(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -68,7 +69,7 @@ export const GuardRepositoryLive = Layer.effect(
       findAll: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare("SELECT * FROM task_guards ORDER BY scope").all() as GuardRow[]
+            const rows = coerceDbResult<GuardRow[]>(db.prepare("SELECT * FROM task_guards ORDER BY scope").all())
             return rows.map(rowToGuard)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -106,7 +107,7 @@ export const GuardRepositoryLive = Layer.effect(
               guard.maxDepth ?? null,
               guard.enforce ? 1 : 0
             )
-            const row = db.prepare("SELECT * FROM task_guards WHERE scope = ?").get(scope) as GuardRow
+            const row = coerceDbResult<GuardRow>(db.prepare("SELECT * FROM task_guards WHERE scope = ?").get(scope))
             return rowToGuard(row)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -124,9 +125,9 @@ export const GuardRepositoryLive = Layer.effect(
       countPending: () =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<{ cnt: number }>(db.prepare(
               "SELECT COUNT(*) as cnt FROM tasks WHERE status != 'done'"
-            ).get() as { cnt: number }
+            ).get())
             return row.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -135,9 +136,9 @@ export const GuardRepositoryLive = Layer.effect(
       countChildrenOf: (parentId) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<{ cnt: number }>(db.prepare(
               "SELECT COUNT(*) as cnt FROM tasks WHERE parent_id = ?"
-            ).get(parentId) as { cnt: number }
+            ).get(parentId))
             return row.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -148,7 +149,7 @@ export const GuardRepositoryLive = Layer.effect(
           try: () => {
             // Count how many ancestors parentId has (0 for root, 1 for child of root, etc.)
             // A new child under parentId would be at depth = (ancestor count of parentId) + 1
-            const row = db.prepare(
+            const row = coerceDbResult<{ depth: number }>(db.prepare(
               `WITH RECURSIVE ancestors AS (
                 SELECT parent_id FROM tasks WHERE id = ?
                 UNION ALL
@@ -157,7 +158,7 @@ export const GuardRepositoryLive = Layer.effect(
                 WHERE a.parent_id IS NOT NULL
               )
               SELECT COUNT(*) as depth FROM ancestors WHERE parent_id IS NOT NULL`
-            ).get(parentId) as { depth: number }
+            ).get(parentId))
             return row.depth
           },
           catch: (cause) => new DatabaseError({ cause })

@@ -256,7 +256,10 @@ export const api = {
       try: async () => {
         const res = await fetch(`/api/tasks/${id}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-tx-actor": "human",
+          },
           body: JSON.stringify(payload),
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)

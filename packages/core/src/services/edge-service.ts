@@ -26,12 +26,11 @@ const VALID_EDGE_TYPES: readonly EdgeType[] = [
 const VALID_NODE_TYPES: readonly NodeType[] = ["learning", "file", "task", "run"]
 
 /** Extended neighbor with depth information */
-export interface NeighborWithDepth extends NeighborNode {
-  readonly depth: number
-}
+export type NeighborWithDepth = NeighborNode & {
+  readonly depth: number};
 
 /** Options for multi-hop neighbor finding */
-export interface FindNeighborsOptions {
+export type FindNeighborsOptions = {
   /** Maximum depth to traverse (default: 1) */
   readonly depth?: number
   /** Direction of traversal */
@@ -39,13 +38,11 @@ export interface FindNeighborsOptions {
   /** Filter by edge types */
   readonly edgeTypes?: readonly EdgeType[]
   /** Include the path of edges that led to this neighbor */
-  readonly includePath?: boolean
-}
+  readonly includePath?: boolean};
 
 /** Neighbor with path information */
-export interface NeighborWithPath extends NeighborWithDepth {
-  readonly path: readonly Edge[]
-}
+export type NeighborWithPath = NeighborWithDepth & {
+  readonly path: readonly Edge[]};
 
 export class EdgeService extends Context.Tag("EdgeService")<
   EdgeService,

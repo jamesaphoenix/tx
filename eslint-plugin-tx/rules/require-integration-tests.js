@@ -116,7 +116,6 @@ function calculateCoverage(sourceExports, testedIdentifiers) {
  * @param {string} cwd - Current working directory
  * @returns {string|null} - Expected test file path or null if no mapping found
  */
-// eslint-disable-next-line no-unused-vars
 function _getExpectedTestPath(sourcePath, mappings, cwd) {
   const relPath = path.relative(cwd, sourcePath);
 

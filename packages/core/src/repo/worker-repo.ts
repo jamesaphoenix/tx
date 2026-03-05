@@ -3,6 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, UnexpectedRowCountError, WorkerNotFoundError } from "../errors.js"
 import { rowToWorker, type WorkerRow } from "../mappers/worker.js"
 import type { Worker, WorkerStatus } from "../schemas/worker.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class WorkerRepository extends Context.Tag("WorkerRepository")<
   WorkerRepository,
@@ -23,11 +24,71 @@ export const WorkerRepositoryLive = Layer.effect(
   WorkerRepository,
   Effect.gen(function* () {
     const db = yield* SqliteClient
+    const runImmediateTransaction = <T>(body: () => T): { ok: true; value: T } | { ok: false; error: unknown } => {
+      db.exec("BEGIN IMMEDIATE")
+      try {
+        const value = body()
+        db.exec("COMMIT")
+        return { ok: true, value }
+      } catch (error) {
+        try {
+          db.exec("ROLLBACK")
+        } catch {
+          // no-op
+        }
+        return { ok: false, error }
+      }
+    }
 
     return {
       insert: (worker) =>
-        Effect.try({
-          try: () => {
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () =>
+              db.prepare(
+                `INSERT INTO workers
+                 (id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              ).run(
+                worker.id,
+                worker.name,
+                worker.hostname,
+                worker.pid,
+                worker.status,
+                worker.registeredAt.toISOString(),
+                worker.lastHeartbeatAt.toISOString(),
+                worker.currentTaskId,
+                JSON.stringify(worker.capabilities),
+                JSON.stringify(worker.metadata)
+              ),
+            catch: (cause) => new DatabaseError({ cause })
+          })
+          if (result.changes !== 1) {
+            return yield* Effect.fail(new DatabaseError({
+              cause: new UnexpectedRowCountError({
+                operation: "worker insert",
+                expected: 1,
+                actual: result.changes
+              })
+            }))
+          }
+        }),
+
+      insertIfUnderCapacity: (worker, maxCapacity) =>
+        Effect.gen(function* () {
+          type WorkerInsertTxResult =
+            | { readonly status: "inserted" | "atCapacity" }
+            | { readonly status: "failed"; readonly error: UnexpectedRowCountError }
+
+          const txResult = runImmediateTransaction((): WorkerInsertTxResult => {
+            const countResult = coerceDbResult<{ cnt: number }>(db.prepare(
+              "SELECT COUNT(*) as cnt FROM workers WHERE status IN ('starting', 'idle', 'busy')"
+            ).get())
+
+            if (countResult.cnt >= maxCapacity) {
+              return { status: "atCapacity" }
+            }
+
             const result = db.prepare(
               `INSERT INTO workers
                (id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata)
@@ -44,68 +105,29 @@ export const WorkerRepositoryLive = Layer.effect(
               JSON.stringify(worker.capabilities),
               JSON.stringify(worker.metadata)
             )
+
             if (result.changes !== 1) {
-              throw new UnexpectedRowCountError({
-                operation: "worker insert",
-                expected: 1,
-                actual: result.changes
-              })
-            }
-          },
-          catch: (cause) => new DatabaseError({ cause })
-        }),
-
-      insertIfUnderCapacity: (worker, maxCapacity) =>
-        Effect.try({
-          try: () => {
-            // BEGIN IMMEDIATE acquires write lock immediately, preventing other writers
-            // from registering workers until we commit/rollback
-            db.exec("BEGIN IMMEDIATE")
-            try {
-              // Count active workers atomically within the transaction
-              const countResult = db.prepare(
-                "SELECT COUNT(*) as cnt FROM workers WHERE status IN ('starting', 'idle', 'busy')"
-              ).get() as { cnt: number }
-
-              if (countResult.cnt >= maxCapacity) {
-                db.exec("ROLLBACK")
-                return false
-              }
-
-              const result = db.prepare(
-                `INSERT INTO workers
-                 (id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-              ).run(
-                worker.id,
-                worker.name,
-                worker.hostname,
-                worker.pid,
-                worker.status,
-                worker.registeredAt.toISOString(),
-                worker.lastHeartbeatAt.toISOString(),
-                worker.currentTaskId,
-                JSON.stringify(worker.capabilities),
-                JSON.stringify(worker.metadata)
-              )
-
-              if (result.changes !== 1) {
-                db.exec("ROLLBACK")
-                throw new UnexpectedRowCountError({
+              return {
+                status: "failed",
+                error: new UnexpectedRowCountError({
                   operation: "worker insertIfUnderCapacity",
                   expected: 1,
                   actual: result.changes
                 })
               }
-
-              db.exec("COMMIT")
-              return true
-            } catch (e) {
-              try { db.exec("ROLLBACK") } catch { /* already rolled back */ }
-              throw e
             }
-          },
-          catch: (cause) => new DatabaseError({ cause })
+
+            return { status: "inserted" }
+          })
+          if (!txResult.ok) {
+            return yield* Effect.fail(new DatabaseError({ cause: txResult.error }))
+          }
+
+          if (txResult.value.status === "failed") {
+            return yield* Effect.fail(new DatabaseError({ cause: txResult.value.error }))
+          }
+
+          return txResult.value.status === "inserted"
         }),
 
       update: (worker) =>
@@ -149,7 +171,7 @@ export const WorkerRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM workers WHERE id = ?").get(id) as WorkerRow | undefined
+            const row = coerceDbResult<WorkerRow | undefined>(db.prepare("SELECT * FROM workers WHERE id = ?").get(id))
             return row ? rowToWorker(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -158,9 +180,9 @@ export const WorkerRepositoryLive = Layer.effect(
       findByStatus: (status) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<WorkerRow[]>(db.prepare(
               "SELECT * FROM workers WHERE status = ? ORDER BY registered_at DESC"
-            ).all(status) as WorkerRow[]
+            ).all(status))
             return rows.map(rowToWorker)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -169,9 +191,9 @@ export const WorkerRepositoryLive = Layer.effect(
       findByLastHeartbeatBefore: (threshold) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<WorkerRow[]>(db.prepare(
               "SELECT * FROM workers WHERE last_heartbeat_at < ? ORDER BY last_heartbeat_at ASC"
-            ).all(threshold.toISOString()) as WorkerRow[]
+            ).all(threshold.toISOString()))
             return rows.map(rowToWorker)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -180,9 +202,9 @@ export const WorkerRepositoryLive = Layer.effect(
       countByStatus: (status) =>
         Effect.try({
           try: () => {
-            const result = db.prepare(
+            const result = coerceDbResult<{ cnt: number }>(db.prepare(
               "SELECT COUNT(*) as cnt FROM workers WHERE status = ?"
-            ).get(status) as { cnt: number }
+            ).get(status))
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -191,9 +213,9 @@ export const WorkerRepositoryLive = Layer.effect(
       findAll: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<WorkerRow[]>(db.prepare(
               "SELECT * FROM workers ORDER BY registered_at DESC"
-            ).all() as WorkerRow[]
+            ).all())
             return rows.map(rowToWorker)
           },
           catch: (cause) => new DatabaseError({ cause })

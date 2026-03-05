@@ -1,14 +1,19 @@
-import { serve } from "@hono/node-server"
-import { Hono, type Context } from "hono"
-import { cors } from "hono/cors"
 import { Database } from "bun:sqlite"
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs"
-import { resolve, dirname } from "path"
-import { homedir } from "os"
-import { fileURLToPath } from "url"
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
+import { resolve, dirname } from "node:path"
+import { homedir } from "node:os"
+import { fileURLToPath } from "node:url"
 import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/tx-types"
 import { parse as parseYaml } from "yaml"
-import { escapeLikePattern, readTxConfig, renderDocToMarkdown } from "@jamesaphoenix/tx-core"
+import {
+  applyMigrations,
+  escapeLikePattern,
+  isPathWithin,
+  readTxConfig,
+  renderDocToMarkdown,
+  resolvePathWithin,
+} from "@jamesaphoenix/tx-core"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fallbackRoot = resolve(__dirname, "../../..")
@@ -54,6 +59,188 @@ const LEGACY_LABELS_TO_REMOVE = [
   "AISEO",
 ] as const
 
+type JsonResponse = {
+  readonly status: number
+  readonly body: string
+  readonly headers: Record<string, string>
+}
+
+type Context = {
+  readonly req: {
+    query: (name: string) => string | undefined
+    param: (name: string) => string
+    json: <T>() => Promise<T>
+  }
+  json: (body: unknown, status?: number) => JsonResponse
+}
+
+type Route = {
+  readonly method: "GET" | "POST" | "PATCH" | "DELETE"
+  readonly path: string
+  readonly regex: RegExp
+  readonly paramNames: readonly string[]
+  readonly handler: (context: Context) => JsonResponse | Promise<JsonResponse>
+}
+
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+}
+
+const applyCorsHeaders = (res: ServerResponse): void => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(key, value)
+  }
+}
+
+const writeJsonResponse = (res: ServerResponse, response: JsonResponse): void => {
+  applyCorsHeaders(res)
+  for (const [key, value] of Object.entries(response.headers)) {
+    res.setHeader(key, value)
+  }
+  res.statusCode = response.status
+  res.end(response.body)
+}
+
+const compilePathPattern = (path: string): { regex: RegExp; paramNames: string[] } => {
+  const paramNames: string[] = []
+  const escapedSegments = path.split("/").map((segment) => {
+    if (segment.startsWith(":")) {
+      paramNames.push(segment.slice(1))
+      return "([^/]+)"
+    }
+    return segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  })
+  return {
+    regex: new RegExp(`^${escapedSegments.join("/")}$`),
+    paramNames,
+  }
+}
+
+class DashboardRouter {
+  private readonly routes: Route[] = []
+
+  get(path: string, handler: (context: Context) => JsonResponse | Promise<JsonResponse>): void {
+    this.register("GET", path, handler)
+  }
+
+  post(path: string, handler: (context: Context) => JsonResponse | Promise<JsonResponse>): void {
+    this.register("POST", path, handler)
+  }
+
+  patch(path: string, handler: (context: Context) => JsonResponse | Promise<JsonResponse>): void {
+    this.register("PATCH", path, handler)
+  }
+
+  delete(path: string, handler: (context: Context) => JsonResponse | Promise<JsonResponse>): void {
+    this.register("DELETE", path, handler)
+  }
+
+  private register(
+    method: Route["method"],
+    path: string,
+    handler: (context: Context) => JsonResponse | Promise<JsonResponse>
+  ): void {
+    const compiled = compilePathPattern(path)
+    this.routes.push({
+      method,
+      path,
+      regex: compiled.regex,
+      paramNames: compiled.paramNames,
+      handler,
+    })
+  }
+
+  async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method === "OPTIONS") {
+      applyCorsHeaders(res)
+      res.statusCode = 204
+      res.end()
+      return
+    }
+
+    const method = req.method as Route["method"] | undefined
+    if (!method || (method !== "GET" && method !== "POST" && method !== "PATCH" && method !== "DELETE")) {
+      writeJsonResponse(res, {
+        status: 405,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Method not allowed" }),
+      })
+      return
+    }
+
+    const url = new URL(req.url ?? "/", "http://localhost")
+    const pathname = url.pathname
+
+    for (const route of this.routes) {
+      if (route.method !== method) continue
+      const match = route.regex.exec(pathname)
+      if (!match) continue
+
+      const params = new Map<string, string>()
+      for (let i = 0; i < route.paramNames.length; i++) {
+        const rawValue = match[i + 1] ?? ""
+        try {
+          params.set(route.paramNames[i]!, decodeURIComponent(rawValue))
+        } catch {
+          params.set(route.paramNames[i]!, rawValue)
+        }
+      }
+
+      let bodyTextPromise: Promise<string> | null = null
+      const readBodyText = (): Promise<string> => {
+        if (bodyTextPromise) return bodyTextPromise
+        bodyTextPromise = new Promise((resolveBody, rejectBody) => {
+          const chunks: Buffer[] = []
+          req.on("data", (chunk) => {
+            chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
+          })
+          req.on("end", () => {
+            resolveBody(Buffer.concat(chunks).toString("utf8"))
+          })
+          req.on("error", rejectBody)
+        })
+        return bodyTextPromise
+      }
+
+      const context: Context = {
+        req: {
+          query: (name: string): string | undefined => url.searchParams.get(name) ?? undefined,
+          param: (name: string): string => params.get(name) ?? "",
+          json: async <T>(): Promise<T> => {
+            const raw = await readBodyText()
+            return JSON.parse(raw) as T
+          },
+        },
+        json: (body: unknown, status = 200): JsonResponse => ({
+          status,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify(body),
+        }),
+      }
+
+      try {
+        const response = await route.handler(context)
+        writeJsonResponse(res, response)
+      } catch (error) {
+        writeJsonResponse(res, {
+          status: 500,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ error: String(error) }),
+        })
+      }
+      return
+    }
+
+    writeJsonResponse(res, {
+      status: 404,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Not found" }),
+    })
+  }
+}
+
 /**
  * Validate that a file path is within an allowed directory.
  * Allows paths within:
@@ -65,19 +252,17 @@ const LEGACY_LABELS_TO_REMOVE = [
 const validateTranscriptPath = (filePath: string): string | null => {
   const resolved = resolve(dirname(dbPath), filePath)
   // Allow paths within the .tx directory
-  if (resolved.startsWith(txDir + "/") || resolved === txDir) {
+  if (isPathWithin(txDir, resolved, { useRealpath: true })) {
     return resolved
   }
   // Allow paths within ~/.claude directory (Claude Code transcripts)
-  if (resolved.startsWith(claudeDir + "/") || resolved === claudeDir) {
+  if (isPathWithin(claudeDir, resolved, { useRealpath: true })) {
     return resolved
   }
   return null
 }
 
-const app = new Hono()
-
-app.use("/*", cors())
+const app = new DashboardRouter()
 
 // Lazy DB connection
 let db: Database | null = null
@@ -88,30 +273,13 @@ const getDb = () => {
     }
     db = new Database(dbPath)
     db.exec("PRAGMA foreign_keys = ON;")
-    ensureLabelSchema(db)
+    applyMigrations(db)
+    ensureLabelDefaults(db)
   }
   return db
 }
 
-function ensureLabelSchema(db: Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS task_labels (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      color TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_task_labels_name_ci ON task_labels(lower(name));
-    CREATE TABLE IF NOT EXISTS task_label_assignments (
-      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-      label_id INTEGER NOT NULL REFERENCES task_labels(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (task_id, label_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_task_label_assignments_task ON task_label_assignments(task_id);
-    CREATE INDEX IF NOT EXISTS idx_task_label_assignments_label ON task_label_assignments(label_id);
-  `)
+function ensureLabelDefaults(db: Database): void {
   repairLegacyDefaultLabels(db)
   seedDefaultLabels(db)
 }
@@ -1693,8 +1861,12 @@ app.post("/api/docs/render", async (c) => {
 
     const docsRoot = getDocsRootPath()
     const rendered = rows.flatMap((row) => {
-      const yamlPath = resolve(docsRoot, row.file_path)
-      const mdPath = resolve(docsRoot, row.file_path.replace(/\.yml$/i, ".md"))
+      const yamlPath = resolvePathWithin(docsRoot, row.file_path, { useRealpath: true })
+      if (!yamlPath) {
+        return []
+      }
+      const mdRelativePath = row.file_path.replace(/\.yml$/i, ".md")
+      const mdPath = resolvePathWithin(docsRoot, mdRelativePath, { useRealpath: true })
 
       if (existsSync(yamlPath)) {
         try {
@@ -1705,7 +1877,7 @@ app.post("/api/docs/render", async (c) => {
         }
       }
 
-      if (existsSync(mdPath)) {
+      if (mdPath && existsSync(mdPath)) {
         try {
           return [readFileSync(mdPath, "utf-8")]
         } catch {
@@ -1770,13 +1942,17 @@ app.get("/api/docs/:name/source", (c) => {
     }
 
     const docsRoot = getDocsRootPath()
-    const yamlPath = resolve(docsRoot, row.file_path)
-    const mdPath = resolve(docsRoot, row.file_path.replace(/\.yml$/i, ".md"))
+    const yamlPath = resolvePathWithin(docsRoot, row.file_path, { useRealpath: true })
+    if (!yamlPath) {
+      return c.json({ error: "Invalid doc source path" }, 400)
+    }
+    const mdRelativePath = row.file_path.replace(/\.yml$/i, ".md")
+    const mdPath = resolvePathWithin(docsRoot, mdRelativePath, { useRealpath: true })
 
     const yamlContent = existsSync(yamlPath) ? readFileSync(yamlPath, "utf-8") : null
     const renderedContent = yamlContent
       ? renderMarkdownFromYaml(yamlContent, row.file_path)
-      : existsSync(mdPath)
+      : mdPath && existsSync(mdPath)
         ? readFileSync(mdPath, "utf-8")
         : null
 
@@ -2153,8 +2329,12 @@ app.get("/api/runs/:id", (c) => {
 
 const port = Number(process.env.PORT ?? "3001")
 try {
-  serve({ fetch: app.fetch, port })
-  console.log(`Dashboard API running on http://localhost:${port}`)
+  const server = createServer((req, res) => {
+    void app.handle(req, res)
+  })
+  server.listen(port, () => {
+    console.log(`Dashboard API running on http://localhost:${port}`)
+  })
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error)
   console.error(`Failed to start dashboard API on port ${port}: ${message}`)

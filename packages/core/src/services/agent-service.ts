@@ -19,7 +19,7 @@ import type { AgentRuntime } from "@jamesaphoenix/tx-types"
 // Types
 // =============================================================================
 
-export interface AgentRunConfig {
+export type AgentRunConfig = {
   readonly prompt: string
   readonly options?: {
     readonly tools?: readonly string[]
@@ -33,13 +33,11 @@ export interface AgentRunConfig {
       readonly type: string
       readonly schema: Record<string, unknown>
     }
-  }
-}
+  }};
 
-export interface AgentRunResult {
+export type AgentRunResult = {
   readonly text: string
-  readonly structuredOutput: Record<string, unknown> | null
-}
+  readonly structuredOutput: Record<string, unknown> | null};
 
 export type AgentMessageCallback = (message: unknown) => void
 

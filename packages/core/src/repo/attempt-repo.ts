@@ -3,6 +3,7 @@ import { SqliteClient } from "../db.js"
 import { AttemptNotFoundError, DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToAttempt } from "../mappers/attempt.js"
 import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 const MAX_SQL_VARIABLES = 900
 
@@ -15,7 +16,7 @@ const chunkBySqlLimit = <T>(
   }
   const chunks: T[][] = []
   for (let i = 0; i < values.length; i += chunkSize) {
-    chunks.push(values.slice(i, i + chunkSize) as T[])
+    chunks.push(coerceDbResult<T[]>(values.slice(i, i + chunkSize)))
   }
   return chunks
 }
@@ -67,11 +68,11 @@ export const AttemptRepositoryLive = Layer.effect(
               now
             )
             // Fetch the inserted row
-            const row = db.prepare("SELECT * FROM attempts WHERE id = ?").get(result.lastInsertRowid) as AttemptRow | undefined
+            const row = coerceDbResult<AttemptRow | undefined>(db.prepare("SELECT * FROM attempts WHERE id = ?").get(result.lastInsertRowid))
             if (!row) {
               throw new EntityFetchError({
                 entity: "attempt",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -83,7 +84,7 @@ export const AttemptRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare("SELECT * FROM attempts WHERE id = ?").get(id) as AttemptRow | undefined
+            const row = coerceDbResult<AttemptRow | undefined>(db.prepare("SELECT * FROM attempts WHERE id = ?").get(id))
             return row ? rowToAttempt(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -92,9 +93,9 @@ export const AttemptRepositoryLive = Layer.effect(
       findAll: () =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AttemptRow[]>(db.prepare(
               "SELECT * FROM attempts ORDER BY created_at ASC"
-            ).all() as AttemptRow[]
+            ).all())
             return rows.map(rowToAttempt)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -103,9 +104,9 @@ export const AttemptRepositoryLive = Layer.effect(
       findByTaskId: (taskId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<AttemptRow[]>(db.prepare(
               "SELECT * FROM attempts WHERE task_id = ? ORDER BY created_at DESC, id DESC"
-            ).all(taskId) as AttemptRow[]
+            ).all(taskId))
             return rows.map(rowToAttempt)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -115,12 +116,12 @@ export const AttemptRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             if (taskId) {
-              const result = db.prepare(
+              const result = coerceDbResult<{ cnt: number }>(db.prepare(
                 "SELECT COUNT(*) as cnt FROM attempts WHERE task_id = ?"
-              ).get(taskId) as { cnt: number }
+              ).get(taskId))
               return result.cnt
             }
-            const result = db.prepare("SELECT COUNT(*) as cnt FROM attempts").get() as { cnt: number }
+            const result = coerceDbResult<{ cnt: number }>(db.prepare("SELECT COUNT(*) as cnt FROM attempts").get())
             return result.cnt
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -147,11 +148,11 @@ export const AttemptRepositoryLive = Layer.effect(
             const result = new Map<string, number>()
             for (const chunk of chunkBySqlLimit(taskIds)) {
               const placeholders = chunk.map(() => "?").join(", ")
-              const rows = db.prepare(
+              const rows = coerceDbResult<Array<{ task_id: string; cnt: number }>>(db.prepare(
                 `SELECT task_id, COUNT(*) as cnt FROM attempts
                  WHERE task_id IN (${placeholders}) AND outcome = 'failed'
                  GROUP BY task_id`
-              ).all(...chunk) as Array<{ task_id: string; cnt: number }>
+              ).all(...chunk))
               for (const row of rows) {
                 result.set(row.task_id, row.cnt)
               }

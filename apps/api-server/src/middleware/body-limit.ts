@@ -3,6 +3,7 @@
  *
  * Prevents DoS via memory exhaustion by enforcing request body size limits.
  * - 1MB for standard API endpoints (tasks, learnings, runs)
+ * - 5MB for spec batch ingestion endpoints (raw framework output)
  * - 10MB for sync endpoints (bulk data import/export)
  *
  * Uses two mechanisms:
@@ -20,14 +21,19 @@ export const DEFAULT_MAX_BYTES = 1 * 1024 * 1024
 /** Sync endpoint body size limit: 10MB */
 export const SYNC_MAX_BYTES = 10 * 1024 * 1024
 
+/** Spec batch endpoint body size limit: 5MB */
+export const SPEC_BATCH_MAX_BYTES = 5 * 1024 * 1024
+
 /**
  * Get the max body size limit based on the request path.
  * Sync endpoints get a higher limit (10MB) since they handle bulk data.
+ * Spec batch endpoint gets 5MB for framework-native payloads.
  * All other endpoints get 1MB.
  * @internal Exported for testing.
  */
 export const getMaxBytes = (url: string): number => {
   if (url.startsWith("/api/sync")) return SYNC_MAX_BYTES
+  if (url.startsWith("/api/spec/batch")) return SPEC_BATCH_MAX_BYTES
   return DEFAULT_MAX_BYTES
 }
 

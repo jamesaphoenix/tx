@@ -10,6 +10,7 @@ import type {
 import { assertTaskId, ATTEMPT_OUTCOMES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export types and constants from @tx/types for convenience
 export type { AttemptRow } from "@jamesaphoenix/tx-types"
@@ -37,7 +38,7 @@ export const rowToAttempt = (row: AttemptRow): Attempt => {
     })
   }
   return {
-    id: row.id as Attempt["id"],
+    id: coerceDbResult<Attempt["id"]>(row.id),
     taskId: assertTaskId(row.task_id),
     approach: row.approach,
     outcome: row.outcome,

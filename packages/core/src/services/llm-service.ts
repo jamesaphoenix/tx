@@ -23,7 +23,7 @@ import { normalizeClaudeDebugLogPath } from "../utils/claude-debug-log.js"
 // Note: These follow the same interface pattern as other tx services
 // (CompactionResult, QueryExpansionResult, etc.)
 
-export interface LlmCompletionRequest {
+export type LlmCompletionRequest = {
   /** The prompt to send to the LLM */
   readonly prompt: string
   /** Model to use (default: "claude-haiku-4-20250514") */
@@ -35,10 +35,9 @@ export interface LlmCompletionRequest {
    * When provided, result.text is guaranteed valid JSON matching this schema.
    * Must be an object type at the top level.
    */
-  readonly jsonSchema?: Record<string, unknown>
-}
+  readonly jsonSchema?: Record<string, unknown>};
 
-export interface LlmCompletionResult {
+export type LlmCompletionResult = {
   /** The LLM's text response */
   readonly text: string
   /** Model that was actually used */
@@ -46,16 +45,14 @@ export interface LlmCompletionResult {
   /** Approximate tokens used (if available) */
   readonly tokensUsed?: number
   /** Duration of the LLM call in milliseconds */
-  readonly durationMs?: number
-}
+  readonly durationMs?: number};
 
 // Types for Anthropic SDK (imported dynamically — internal, not domain types)
-interface AnthropicMessage {
+type AnthropicMessage = {
   content: Array<{ type: string; text?: string }>
-  usage?: { input_tokens?: number; output_tokens?: number }
-}
+  usage?: { input_tokens?: number; output_tokens?: number }};
 
-interface AnthropicClient {
+type AnthropicClient = {
   messages: {
     create(params: {
       model: string
@@ -68,8 +65,7 @@ interface AnthropicClient {
         }
       }
     }): Promise<AnthropicMessage>
-  }
-}
+  }};
 
 // =============================================================================
 // Service Definition

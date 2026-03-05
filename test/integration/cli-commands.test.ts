@@ -3,19 +3,16 @@
  *
  * Tests the following CLI commands:
  * - tx tree <id> - hierarchy visualization, JSON output
- * - tx sync export - JSONL file creation, format validation
- * - tx sync import - import, conflict resolution
- * - tx sync status - status reporting
- * - tx sync compact - file compaction
+ * - tx sync stream compatibility + status behavior
  * - tx migrate status - schema version, applied/pending
  *
  * Per DD-007: Uses real in-memory SQLite and deterministic test setup.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, readdirSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))
@@ -233,28 +230,34 @@ describe("CLI tree command", () => {
   })
 })
 
+
 // =============================================================================
-// tx sync export Command Tests
+// tx sync Command Tests (stream model + strict legacy rejection)
 // =============================================================================
 
-describe("CLI sync export command", () => {
+describe("CLI sync command strict mode", () => {
   let tmpDir: string
   let dbPath: string
-  let jsonlPath: string
-  let taskId: string
+
+  const runInTmp = (args: string[]): ExecResult => {
+    const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
+      encoding: "utf-8",
+      timeout: CLI_TIMEOUT,
+      cwd: tmpDir,
+    })
+    return {
+      stdout: result.stdout || "",
+      stderr: result.stderr || "",
+      status: result.status ?? 1,
+    }
+  }
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-sync-export-"))
-    dbPath = join(tmpDir, "test.db")
-    jsonlPath = join(tmpDir, "tasks.jsonl")
-
-    // Initialize and create some tasks
-    runTx("init", dbPath)
-
-    const result = runTxArgs(["add", "Test task for export", "--json"], dbPath)
-    taskId = JSON.parse(result.stdout).id
-
-    runTxArgs(["add", "Second task", "--json"], dbPath)
+    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-sync-compat-"))
+    dbPath = join(tmpDir, ".tx", "tasks.db")
+    mkdirSync(join(tmpDir, ".tx"), { recursive: true })
+    const init = runInTmp(["init"])
+    expect(init.status).toBe(0)
   })
 
   afterEach(() => {
@@ -263,339 +266,74 @@ describe("CLI sync export command", () => {
     }
   })
 
-  describe("basic success cases", () => {
-    it("exports tasks to JSONL file", () => {
-      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Exported")
-      expect(result.stdout).toContain("operation(s)")
-      expect(existsSync(jsonlPath)).toBe(true)
-    })
+  it("rejects legacy file flags for sync export/import", () => {
+    const exportLegacy = runInTmp(["sync", "export", "--path", "tasks.jsonl"])
+    expect(exportLegacy.status).toBe(1)
+    expect(exportLegacy.stderr).toContain("no longer supported")
 
-    it("creates valid JSONL format", () => {
-      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
+    const exportTasksOnly = runInTmp(["sync", "export", "--tasks-only"])
+    expect(exportTasksOnly.status).toBe(1)
+    expect(exportTasksOnly.stderr).toContain("no longer supported")
 
-      const content = readFileSync(jsonlPath, "utf-8")
-      const lines = content.trim().split("\n")
+    const importLegacy = runInTmp(["sync", "import", "--path", "tasks.jsonl"])
+    expect(importLegacy.status).toBe(1)
+    expect(importLegacy.stderr).toContain("no longer supported")
 
-      // Should have at least 2 operations (2 tasks)
-      expect(lines.length).toBeGreaterThanOrEqual(2)
-
-      // Each line should be valid JSON
-      for (const line of lines) {
-        expect(() => JSON.parse(line)).not.toThrow()
-      }
-    })
-
-    it("exports with correct operation structure", () => {
-      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
-
-      const content = readFileSync(jsonlPath, "utf-8")
-      const lines = content.trim().split("\n")
-      const ops = lines.map(line => JSON.parse(line))
-
-      const upsertOps = ops.filter(op => op.op === "upsert")
-      expect(upsertOps.length).toBeGreaterThanOrEqual(2)
-
-      for (const op of upsertOps) {
-        expect(op.v).toBe(1)
-        expect(op.op).toBe("upsert")
-        expect(op.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-        expect(op.id).toMatch(/^tx-[a-z0-9]{6,12}$/)
-        expect(op.data).toHaveProperty("title")
-        expect(op.data).toHaveProperty("status")
-      }
-    })
-
-    it("exports specific task correctly", () => {
-      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
-
-      const content = readFileSync(jsonlPath, "utf-8")
-      const lines = content.trim().split("\n")
-      const ops = lines.map(line => JSON.parse(line))
-
-      const taskOp = ops.find(op => op.id === taskId)
-      expect(taskOp).toBeDefined()
-      expect(taskOp.data.title).toBe("Test task for export")
-    })
+    const importTasksOnly = runInTmp(["sync", "import", "--tasks-only"])
+    expect(importTasksOnly.status).toBe(1)
+    expect(importTasksOnly.stderr).toContain("no longer supported")
   })
 
-  describe("JSON output formatting", () => {
-    it("outputs JSON with --json flag", () => {
-      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json).toHaveProperty("path")
-      expect(json).toHaveProperty("opCount")
-      expect(json.path).toBe(jsonlPath)
-      expect(typeof json.opCount).toBe("number")
-    })
-
-    it("JSON output reports correct operation count", () => {
-      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.opCount).toBe(2) // 2 tasks, no dependencies
-    })
+  it("does not expose removed sync compact subcommand", () => {
+    const result = runInTmp(["sync", "compact"])
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Unknown sync subcommand: compact")
   })
 
-  describe("empty database", () => {
-    it("handles empty database gracefully", () => {
-      const emptyDbPath = join(tmpDir, "empty.db")
-      runTx("init", emptyDbPath)
+  it("sync subcommand help excludes legacy file options", () => {
+    const exportHelp = runInTmp(["sync", "export", "--help"])
+    expect(exportHelp.status).toBe(0)
+    expect(exportHelp.stdout).toContain("tx sync export")
+    expect(exportHelp.stdout).not.toContain("--path")
+    expect(exportHelp.stdout).not.toContain("--tasks-only")
 
-      const result = runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath, "--json"], emptyDbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.opCount).toBe(0)
-    })
-  })
-
-  describe("help", () => {
-    it("sync export --help shows help", () => {
-      const result = runTxArgs(["sync", "export", "--help"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("tx sync export")
-      expect(result.stdout).toContain("--path")
-    })
-
-    it("help sync export shows help", () => {
-      const result = runTxArgs(["help", "sync", "export"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("sync export")
-    })
+    const importHelp = runInTmp(["sync", "import", "--help"])
+    expect(importHelp.status).toBe(0)
+    expect(importHelp.stdout).toContain("tx sync import")
+    expect(importHelp.stdout).not.toContain("--path")
+    expect(importHelp.stdout).not.toContain("--tasks-only")
   })
 })
 
 // =============================================================================
-// tx sync import Command Tests
-// =============================================================================
-
-describe("CLI sync import command", () => {
-  let tmpDir: string
-  let dbPath: string
-  let jsonlPath: string
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-sync-import-"))
-    dbPath = join(tmpDir, "test.db")
-    jsonlPath = join(tmpDir, "tasks.jsonl")
-
-    // Initialize empty database
-    runTx("init", dbPath)
-  })
-
-  afterEach(() => {
-    if (existsSync(tmpDir)) {
-      rmSync(tmpDir, { recursive: true, force: true })
-    }
-  })
-
-  describe("basic success cases", () => {
-    it("imports tasks from JSONL file", () => {
-      const now = new Date().toISOString()
-      const jsonl = [
-        JSON.stringify({
-          v: 1,
-          op: "upsert",
-          ts: now,
-          id: "tx-aabbcc01",
-          data: { title: "Imported task", description: "", status: "backlog", score: 500, parentId: null, metadata: {} }
-        })
-      ].join("\n")
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("imported=1")
-
-      // Verify task was created
-      const showResult = runTxArgs(["show", "tx-aabbcc01", "--json"], dbPath)
-      expect(showResult.status).toBe(0)
-      const task = JSON.parse(showResult.stdout)
-      expect(task.title).toBe("Imported task")
-    })
-
-    it("imports multiple tasks", () => {
-      const now = new Date().toISOString()
-      const jsonl = [
-        JSON.stringify({
-          v: 1, op: "upsert", ts: now, id: "tx-aabbcc02",
-          data: { title: "Task 1", description: "", status: "backlog", score: 500, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "upsert", ts: now, id: "tx-aabbcc03",
-          data: { title: "Task 2", description: "", status: "ready", score: 600, parentId: null, metadata: {} }
-        })
-      ].join("\n")
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.imported).toBe(2)
-    })
-
-    it("imports dependencies correctly", () => {
-      const now = new Date().toISOString()
-      const jsonl = [
-        JSON.stringify({
-          v: 1, op: "upsert", ts: now, id: "tx-block001",
-          data: { title: "Blocker", description: "", status: "ready", score: 500, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "upsert", ts: now, id: "tx-block002",
-          data: { title: "Blocked", description: "", status: "backlog", score: 400, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "dep_add", ts: now, blockerId: "tx-block001", blockedId: "tx-block002"
-        })
-      ].join("\n")
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath], dbPath)
-      expect(result.status).toBe(0)
-
-      // Verify dependency was created
-      const showResult = runTxArgs(["show", "tx-block002", "--json"], dbPath)
-      const task = JSON.parse(showResult.stdout)
-      expect(task.blockedBy).toContain("tx-block001")
-    })
-  })
-
-  describe("conflict resolution", () => {
-    it("updates existing task when JSONL timestamp is newer", () => {
-      // Create a task first
-      runTxArgs(["add", "Original task", "--json"], dbPath)
-
-      // Export to get the task ID and timestamp
-      runTxArgs(["sync", "export", "--tasks-only", "--path", jsonlPath], dbPath)
-      const content = readFileSync(jsonlPath, "utf-8")
-      const ops = content.trim().split("\n").map(l => JSON.parse(l))
-      const taskOp = ops.find(op => op.data?.title === "Original task")
-
-      // Create JSONL with newer timestamp and different title
-      const newerTs = new Date(Date.now() + 10000).toISOString()
-      const newJsonl = JSON.stringify({
-        v: 1, op: "upsert", ts: newerTs, id: taskOp.id,
-        data: { title: "Updated task", description: "", status: "ready", score: 800, parentId: null, metadata: {} }
-      })
-      writeFileSync(jsonlPath, newJsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.imported).toBe(1)
-
-      // Verify task was updated
-      const showResult = runTxArgs(["show", taskOp.id, "--json"], dbPath)
-      const task = JSON.parse(showResult.stdout)
-      expect(task.title).toBe("Updated task")
-      expect(task.status).toBe("ready")
-    })
-
-    it("reports conflict when local timestamp is newer", () => {
-      // Create JSONL with old timestamp
-      const oldTs = "2020-01-01T00:00:00.000Z"
-      const jsonl = JSON.stringify({
-        v: 1, op: "upsert", ts: oldTs, id: "tx-confli01",
-        data: { title: "Old task", description: "", status: "backlog", score: 500, parentId: null, metadata: {} }
-      })
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      // Import first with old timestamp
-      runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath], dbPath)
-
-      // Now update the task locally (which gives it a newer timestamp)
-      runTxArgs(["update", "tx-confli01", "--title", "Local update"], dbPath)
-
-      // Try to import again with the old timestamp
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.conflicts).toBe(1)
-
-      // Verify local changes are preserved
-      const showResult = runTxArgs(["show", "tx-confli01", "--json"], dbPath)
-      const task = JSON.parse(showResult.stdout)
-      expect(task.title).toBe("Local update")
-    })
-  })
-
-  describe("error handling", () => {
-    it("returns zero counts for missing file", () => {
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", "/nonexistent/file.jsonl", "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.imported).toBe(0)
-      expect(json.skipped).toBe(0)
-      expect(json.conflicts).toBe(0)
-    })
-
-    it("returns zero counts for empty file", () => {
-      writeFileSync(jsonlPath, "", "utf-8")
-
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.imported).toBe(0)
-    })
-  })
-
-  describe("JSON output formatting", () => {
-    it("outputs JSON with --json flag", () => {
-      const now = new Date().toISOString()
-      const jsonl = JSON.stringify({
-        v: 1, op: "upsert", ts: now, id: "tx-jsonnn01",
-        data: { title: "JSON test", description: "", status: "backlog", score: 500, parentId: null, metadata: {} }
-      })
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "import", "--tasks-only", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json).toHaveProperty("imported")
-      expect(json).toHaveProperty("skipped")
-      expect(json).toHaveProperty("conflicts")
-    })
-  })
-
-  describe("help", () => {
-    it("sync import --help shows help", () => {
-      const result = runTxArgs(["sync", "import", "--help"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("tx sync import")
-      expect(result.stdout).toContain("--path")
-    })
-  })
-})
-
-// =============================================================================
-// tx sync status Command Tests
+// tx sync status Command Tests (stream)
 // =============================================================================
 
 describe("CLI sync status command", () => {
   let tmpDir: string
   let dbPath: string
-  let txDir: string
+
+  const runInTmp = (args: string[]): ExecResult => {
+    const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
+      encoding: "utf-8",
+      timeout: CLI_TIMEOUT,
+      cwd: tmpDir,
+    })
+    return {
+      stdout: result.stdout || "",
+      stderr: result.stderr || "",
+      status: result.status ?? 1,
+    }
+  }
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-sync-status-"))
-    txDir = join(tmpDir, ".tx")
-    mkdirSync(txDir, { recursive: true })
-    dbPath = join(txDir, "tasks.db")
-
-    runTx("init", dbPath)
-    runTxArgs(["add", "Test task"], dbPath)
+    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-sync-status-stream-"))
+    dbPath = join(tmpDir, ".tx", "tasks.db")
+    mkdirSync(join(tmpDir, ".tx"), { recursive: true })
+    const init = runInTmp(["init"])
+    expect(init.status).toBe(0)
+    const add = runInTmp(["add", "Status task", "--json"])
+    expect(add.status).toBe(0)
     walCheckpoint(dbPath)
   })
 
@@ -605,275 +343,50 @@ describe("CLI sync status command", () => {
     }
   })
 
-  describe("basic success cases", () => {
-    it("shows sync status", () => {
-      const result = runTxArgs(["sync", "status"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Sync Status:")
-      expect(result.stdout).toContain("Tasks in database:")
-      expect(result.stdout).toContain("Operations in JSONL:")
-    })
-
-    it("shows correct task count", () => {
-      const result = runTxArgs(["sync", "status"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toMatch(/Tasks in database:\s*1/)
-    })
-
-    it("shows dirty status when no export exists", () => {
-      const result = runTxArgs(["sync", "status"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Dirty")
-      expect(result.stdout).toContain("yes")
-    })
-
-    it("shows auto-sync status", () => {
-      const result = runTxArgs(["sync", "status"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Auto-sync:")
-    })
+  it("prints stream-based status fields", () => {
+    const result = runInTmp(["sync", "status"])
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("Sync Status:")
+    expect(result.stdout).toContain("Tasks in database:")
+    expect(result.stdout).toContain("Events in stream logs:")
+    expect(result.stdout).toContain("Auto-sync:")
   })
 
-  describe("JSON output formatting", () => {
-    it("outputs JSON with --json flag", () => {
-      const result = runTxArgs(["sync", "status", "--json"], dbPath)
-      expect(result.status).toBe(0)
+  it("returns stream JSON status shape", () => {
+    const result = runInTmp(["sync", "status", "--json"])
+    expect(result.status).toBe(0)
 
-      const json = JSON.parse(result.stdout)
-      expect(json).toHaveProperty("dbTaskCount")
-      expect(json).toHaveProperty("jsonlOpCount")
-      expect(json).toHaveProperty("isDirty")
-      expect(json).toHaveProperty("autoSyncEnabled")
-    })
-
-    it("JSON output has correct task count", () => {
-      const result = runTxArgs(["sync", "status", "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.dbTaskCount).toBe(1)
-    })
+    const json = JSON.parse(result.stdout)
+    expect(json).toHaveProperty("dbTaskCount")
+    expect(json).toHaveProperty("eventOpCount")
+    expect(json).toHaveProperty("isDirty")
+    expect(json).toHaveProperty("autoSyncEnabled")
+    expect(json.dbTaskCount).toBe(1)
   })
 
-  describe("after export", () => {
-    it("shows operation count after export to default path", () => {
-      // Export to the default path that sync status checks
-      // sync status looks at .tx/tasks.jsonl relative to cwd
-      // Since our db is in tmpDir/.tx/tasks.db, we need to run from tmpDir
-      const jsonlPath = join(txDir, "tasks.jsonl")
-      runTxArgs(["sync", "export", "--path", jsonlPath], dbPath)
+  it("marks clean after export and dirty again after local deletion", () => {
+    const exported = runInTmp(["sync", "export", "--json"])
+    expect(exported.status).toBe(0)
 
-      // Read the status - it should show the op count from the file
-      const result = runTxArgs(["sync", "status", "--json"], dbPath)
-      expect(result.status).toBe(0)
+    const clean = JSON.parse(runInTmp(["sync", "status", "--json"]).stdout)
+    expect(clean.lastExport).not.toBeNull()
+    expect(clean.isDirty).toBe(false)
 
-      const json = JSON.parse(result.stdout)
-      // The status shows that export happened (lastExport is set)
-      expect(json.lastExport).not.toBeNull()
-      // dbTaskCount should be correct
-      expect(json.dbTaskCount).toBe(1)
-    })
+    const listed = JSON.parse(runInTmp(["list", "--json"]).stdout) as Array<{ id: string }>
+    const deleted = runInTmp(["delete", listed[0]!.id])
+    expect(deleted.status).toBe(0)
+
+    const dirty = JSON.parse(runInTmp(["sync", "status", "--json"]).stdout)
+    expect(dirty.dbTaskCount).toBe(0)
+    expect(dirty.isDirty).toBe(true)
   })
 
-  describe("help", () => {
-    it("sync status --help shows help", () => {
-      const result = runTxArgs(["sync", "status", "--help"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("tx sync status")
-    })
+  it("sync status --help shows help", () => {
+    const result = runInTmp(["sync", "status", "--help"])
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("tx sync status")
   })
 })
-
-// =============================================================================
-// tx sync compact Command Tests
-// =============================================================================
-
-describe("CLI sync compact command", () => {
-  let tmpDir: string
-  let dbPath: string
-  let jsonlPath: string
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "tx-test-sync-compact-"))
-    dbPath = join(tmpDir, "test.db")
-    jsonlPath = join(tmpDir, "tasks.jsonl")
-
-    runTx("init", dbPath)
-  })
-
-  afterEach(() => {
-    if (existsSync(tmpDir)) {
-      rmSync(tmpDir, { recursive: true, force: true })
-    }
-  })
-
-  describe("basic success cases", () => {
-    it("compacts duplicate upserts (keeps latest)", () => {
-      const earlier = "2024-01-01T00:00:00.000Z"
-      const later = "2024-01-02T00:00:00.000Z"
-
-      const jsonl = [
-        JSON.stringify({
-          v: 1, op: "upsert", ts: earlier, id: "tx-compac01",
-          data: { title: "Old Title", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "upsert", ts: later, id: "tx-compac01",
-          data: { title: "New Title", description: "", status: "ready", score: 200, parentId: null, metadata: {} }
-        })
-      ].join("\n")
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "compact", "--path", jsonlPath], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Compacted: 2")
-      expect(result.stdout).toContain("1 operations")
-
-      // Verify compacted content has newer version
-      const content = readFileSync(jsonlPath, "utf-8")
-      const lines = content.trim().split("\n")
-      expect(lines).toHaveLength(1)
-
-      const op = JSON.parse(lines[0])
-      expect(op.data.title).toBe("New Title")
-      expect(op.ts).toBe(later)
-    })
-
-    it("removes deleted tasks (tombstones)", () => {
-      const createTs = "2024-01-01T00:00:00.000Z"
-      const deleteTs = "2024-01-02T00:00:00.000Z"
-
-      const jsonl = [
-        JSON.stringify({
-          v: 1, op: "upsert", ts: createTs, id: "tx-todelete",
-          data: { title: "To Delete", description: "", status: "backlog", score: 100, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "delete", ts: deleteTs, id: "tx-todelete"
-        })
-      ].join("\n")
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "compact", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.before).toBe(2)
-      expect(json.after).toBe(0)
-
-      // File should be empty
-      const content = readFileSync(jsonlPath, "utf-8")
-      expect(content.trim()).toBe("")
-    })
-
-    it("removes dep_add followed by dep_remove", () => {
-      const addTs = "2024-01-01T00:00:00.000Z"
-      const removeTs = "2024-01-02T00:00:00.000Z"
-
-      const jsonl = [
-        JSON.stringify({
-          v: 1, op: "upsert", ts: addTs, id: "tx-depaa01",
-          data: { title: "A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "upsert", ts: addTs, id: "tx-depbb01",
-          data: { title: "B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "dep_add", ts: addTs, blockerId: "tx-depaa01", blockedId: "tx-depbb01"
-        }),
-        JSON.stringify({
-          v: 1, op: "dep_remove", ts: removeTs, blockerId: "tx-depaa01", blockedId: "tx-depbb01"
-        })
-      ].join("\n")
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "compact", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.before).toBe(4)
-      expect(json.after).toBe(2) // Only 2 task upserts remain
-
-      // Verify no dependency operations remain
-      const content = readFileSync(jsonlPath, "utf-8")
-      const lines = content.trim().split("\n").filter(Boolean)
-      const ops = lines.map(line => JSON.parse(line))
-      const depOps = ops.filter(op => op.op === "dep_add" || op.op === "dep_remove")
-      expect(depOps).toHaveLength(0)
-    })
-
-    it("preserves active dependencies", () => {
-      const ts = "2024-01-01T00:00:00.000Z"
-
-      const jsonl = [
-        JSON.stringify({
-          v: 1, op: "upsert", ts, id: "tx-presaa01",
-          data: { title: "A", description: "", status: "ready", score: 100, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "upsert", ts, id: "tx-presbb01",
-          data: { title: "B", description: "", status: "backlog", score: 50, parentId: null, metadata: {} }
-        }),
-        JSON.stringify({
-          v: 1, op: "dep_add", ts, blockerId: "tx-presaa01", blockedId: "tx-presbb01"
-        })
-      ].join("\n")
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "compact", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.before).toBe(3)
-      expect(json.after).toBe(3) // All preserved
-
-      // Verify dep_add is preserved
-      const content = readFileSync(jsonlPath, "utf-8")
-      const lines = content.trim().split("\n").filter(Boolean)
-      const ops = lines.map(line => JSON.parse(line))
-      const depOps = ops.filter(op => op.op === "dep_add")
-      expect(depOps).toHaveLength(1)
-    })
-  })
-
-  describe("error handling", () => {
-    it("returns zero counts for missing file", () => {
-      const result = runTxArgs(["sync", "compact", "--path", "/nonexistent/file.jsonl", "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json.before).toBe(0)
-      expect(json.after).toBe(0)
-    })
-  })
-
-  describe("JSON output formatting", () => {
-    it("outputs JSON with --json flag", () => {
-      const jsonl = JSON.stringify({
-        v: 1, op: "upsert", ts: new Date().toISOString(), id: "tx-jsoncp01",
-        data: { title: "Test", description: "", status: "backlog", score: 500, parentId: null, metadata: {} }
-      })
-      writeFileSync(jsonlPath, jsonl + "\n", "utf-8")
-
-      const result = runTxArgs(["sync", "compact", "--path", jsonlPath, "--json"], dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      expect(json).toHaveProperty("before")
-      expect(json).toHaveProperty("after")
-    })
-  })
-
-  describe("help", () => {
-    it("sync compact --help shows help", () => {
-      const result = runTxArgs(["sync", "compact", "--help"], dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("tx sync compact")
-    })
-  })
-})
-
 // =============================================================================
 // tx migrate status Command Tests
 // =============================================================================
@@ -1048,7 +561,7 @@ describe("CLI sync claude command", () => {
     expect(result.stdout).toContain("Wrote 1 task(s)")
 
     // Only 1.json should exist
-    const files = require("fs").readdirSync(targetDir).filter((f: string) => /^\d+\.json$/.test(f))
+    const files = readdirSync(targetDir).filter((f: string) => /^\d+\.json$/.test(f))
     expect(files).toHaveLength(1)
 
     const task = JSON.parse(readFileSync(join(targetDir, "1.json"), "utf-8"))
@@ -1143,7 +656,7 @@ describe("CLI sync claude command", () => {
     expect(readFileSync(join(targetDir, ".highwatermark"), "utf-8")).toBe("1")
 
     // No task files
-    const files = require("fs").readdirSync(targetDir).filter((f: string) => /^\d+\.json$/.test(f))
+    const files = readdirSync(targetDir).filter((f: string) => /^\d+\.json$/.test(f))
     expect(files).toHaveLength(0)
   })
 
@@ -1162,7 +675,7 @@ describe("CLI sync claude command", () => {
     runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
 
     // Read all task files and find by subject
-    const files = require("fs").readdirSync(targetDir)
+    const files = readdirSync(targetDir)
       .filter((f: string) => /^\d+\.json$/.test(f))
       .map((f: string) => JSON.parse(readFileSync(join(targetDir, f), "utf-8")))
 

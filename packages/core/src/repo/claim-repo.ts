@@ -3,11 +3,12 @@ import { SqliteClient } from "../db.js"
 import { ClaimIdNotFoundError, DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToClaim, type ClaimRow } from "../mappers/claim.js"
 import type { TaskClaim } from "../schemas/worker.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 /**
  * Result of an atomic claim insert attempt.
  */
-export interface AtomicInsertResult {
+export type AtomicInsertResult = {
   /** Whether the insert succeeded (no existing active claim) */
   success: boolean
   /** The claim if insert succeeded, null otherwise */
@@ -19,7 +20,7 @@ export interface AtomicInsertResult {
 /**
  * Result of an atomic lease renewal attempt.
  */
-export interface AtomicRenewResult {
+export type AtomicRenewResult = {
   /** Whether the renewal succeeded */
   success: boolean
   /** The renewed claim if successful, null otherwise */
@@ -87,13 +88,13 @@ export const ClaimRepositoryLive = Layer.effect(
               claim.renewedCount,
               claim.status
             )
-            const row = db.prepare(
+            const row = coerceDbResult<ClaimRow | undefined>(db.prepare(
               "SELECT * FROM task_claims WHERE id = ?"
-            ).get(result.lastInsertRowid) as ClaimRow | undefined
+            ).get(result.lastInsertRowid))
             if (!row) {
               throw new EntityFetchError({
                 entity: "claim",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -127,13 +128,13 @@ export const ClaimRepositoryLive = Layer.effect(
 
             if (result.changes > 0) {
               // Insert succeeded - fetch the newly created claim
-              const row = db.prepare(
+              const row = coerceDbResult<ClaimRow | undefined>(db.prepare(
                 "SELECT * FROM task_claims WHERE id = ?"
-              ).get(result.lastInsertRowid) as ClaimRow | undefined
+              ).get(result.lastInsertRowid))
               if (!row) {
                 throw new EntityFetchError({
                   entity: "claim",
-                  id: result.lastInsertRowid as number,
+                  id: coerceDbResult<number>(result.lastInsertRowid),
                   operation: "insert"
                 })
               }
@@ -144,9 +145,9 @@ export const ClaimRepositoryLive = Layer.effect(
               } satisfies AtomicInsertResult
             } else {
               // Insert was blocked by existing active claim - fetch it
-              const existingRow = db.prepare(
+              const existingRow = coerceDbResult<ClaimRow | undefined>(db.prepare(
                 "SELECT * FROM task_claims WHERE task_id = ? AND status = 'active' LIMIT 1"
-              ).get(claim.taskId) as ClaimRow | undefined
+              ).get(claim.taskId))
               return {
                 success: false,
                 claim: null,
@@ -200,9 +201,9 @@ export const ClaimRepositoryLive = Layer.effect(
 
             if (result.changes > 0) {
               // Renewal succeeded - fetch the updated claim
-              const row = db.prepare(
+              const row = coerceDbResult<ClaimRow | undefined>(db.prepare(
                 "SELECT * FROM task_claims WHERE id = ?"
-              ).get(claimId) as ClaimRow | undefined
+              ).get(claimId))
               if (!row) {
                 throw new EntityFetchError({
                   entity: "claim",
@@ -218,9 +219,9 @@ export const ClaimRepositoryLive = Layer.effect(
             } else {
               // Renewal failed - determine why
               // Check if claim exists and is owned by this worker
-              const existingRow = db.prepare(
+              const existingRow = coerceDbResult<ClaimRow | undefined>(db.prepare(
                 "SELECT * FROM task_claims WHERE id = ? AND worker_id = ? AND status = 'active'"
-              ).get(claimId, workerId) as ClaimRow | undefined
+              ).get(claimId, workerId))
 
               if (!existingRow) {
                 return {
@@ -244,9 +245,9 @@ export const ClaimRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<ClaimRow | undefined>(db.prepare(
               "SELECT * FROM task_claims WHERE id = ?"
-            ).get(id) as ClaimRow | undefined
+            ).get(id))
             return row ? rowToClaim(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -255,9 +256,9 @@ export const ClaimRepositoryLive = Layer.effect(
       findActiveByTaskId: (taskId) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<ClaimRow | undefined>(db.prepare(
               "SELECT * FROM task_claims WHERE task_id = ? AND status = 'active' LIMIT 1"
-            ).get(taskId) as ClaimRow | undefined
+            ).get(taskId))
             return row ? rowToClaim(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -266,11 +267,11 @@ export const ClaimRepositoryLive = Layer.effect(
       findExpired: (now) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<ClaimRow[]>(db.prepare(
               `SELECT * FROM task_claims
                WHERE status = 'active' AND lease_expires_at < ?
                ORDER BY lease_expires_at ASC`
-            ).all(now.toISOString()) as ClaimRow[]
+            ).all(now.toISOString()))
             return rows.map(rowToClaim)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -293,13 +294,13 @@ export const ClaimRepositoryLive = Layer.effect(
           try: () => {
             // Find active claims where the task status is NOT 'active'
             // This catches claims that weren't released after task completion
-            const rows = db.prepare(
+            const rows = coerceDbResult<ClaimRow[]>(db.prepare(
               `SELECT c.* FROM task_claims c
                JOIN tasks t ON c.task_id = t.id
                WHERE c.status = 'active'
                AND t.status != 'active'
                ORDER BY c.claimed_at ASC`
-            ).all() as ClaimRow[]
+            ).all())
             return rows.map(rowToClaim)
           },
           catch: (cause) => new DatabaseError({ cause })

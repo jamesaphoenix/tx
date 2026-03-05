@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { VerifyService } from "@jamesaphoenix/tx-core"
 import { assertTaskId } from "@jamesaphoenix/tx-types"
 import { runEffect } from "../runtime.js"
@@ -115,7 +115,7 @@ const handleVerifyClear = async (args: {
 // -----------------------------------------------------------------------------
 
 export const registerVerifyTools = (server: McpServer): void => {
-  server.tool(
+  registerEffectTool(server,
     "tx_verify_set",
     "Attach a shell verification command to a task. The command is run by tx_verify_run to determine if a task is truly done. Exit code 0 = pass.",
     {
@@ -126,7 +126,7 @@ export const registerVerifyTools = (server: McpServer): void => {
     async (args) => handleVerifySet(args as { taskId: string; cmd: string; schema?: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_verify_show",
     "Show the verification command and schema attached to a task.",
     {
@@ -135,7 +135,7 @@ export const registerVerifyTools = (server: McpServer): void => {
     async (args) => handleVerifyShow(args as { taskId: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_verify_run",
     "Execute the verification command for a task. Returns exit code, stdout, stderr, duration, and optional schema validation result. Use to gate task completion: tx_verify_run then tx_done.",
     {
@@ -145,7 +145,7 @@ export const registerVerifyTools = (server: McpServer): void => {
     async (args) => handleVerifyRun(args as { taskId: string; timeout?: number })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_verify_clear",
     "Remove the verification command from a task.",
     {

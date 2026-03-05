@@ -12,6 +12,7 @@ import type {
 import { EDGE_TYPES, NODE_TYPES } from "@jamesaphoenix/tx-types"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
+import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export type from @tx/types for convenience
 export type { EdgeRow } from "@jamesaphoenix/tx-types"
@@ -40,14 +41,14 @@ const parseMetadata = (metadataJson: string | null): Record<string, unknown> => 
  * Check if a string is a valid EdgeType.
  */
 export const isValidEdgeType = (s: string): s is EdgeType => {
-  return (EDGE_TYPES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(EDGE_TYPES)).includes(s)
 }
 
 /**
  * Check if a string is a valid NodeType.
  */
 export const isValidNodeType = (s: string): s is NodeType => {
-  return (NODE_TYPES as readonly string[]).includes(s)
+  return (coerceDbResult<readonly string[]>(NODE_TYPES)).includes(s)
 }
 
 /**
@@ -80,7 +81,7 @@ export const rowToEdge = (row: EdgeRow): Edge => {
     })
   }
   return {
-    id: row.id as Edge["id"],
+    id: coerceDbResult<Edge["id"]>(row.id),
     edgeType: row.edge_type,
     sourceType: row.source_type,
     sourceId: row.source_id,

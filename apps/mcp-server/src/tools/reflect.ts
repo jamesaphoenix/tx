@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { ReflectService } from "@jamesaphoenix/tx-core"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
@@ -69,7 +69,7 @@ const handleReflect = async (args: {
 // -----------------------------------------------------------------------------
 
 export const registerReflectTools = (server: McpServer): void => {
-  server.tool(
+  registerEffectTool(server,
     "tx_reflect",
     "Run a session retrospective to analyze recent agent sessions. Returns structured metrics on throughput, proliferation, stuck tasks, and signals. Use to detect problems and tune approach.",
     {

@@ -13,17 +13,16 @@ import type {
 /**
  * Result of promoting a candidate to the learnings table.
  */
-export interface PromotionResult {
+export type PromotionResult = {
   /** The updated candidate with promoted status */
   readonly candidate: LearningCandidate
   /** The newly created learning */
-  readonly learning: Learning
-}
+  readonly learning: Learning};
 
 /**
  * Result of auto-promotion batch operation.
  */
-export interface AutoPromoteResult {
+export type AutoPromoteResult = {
   /** Number of candidates auto-promoted */
   readonly promoted: number
   /** Number of candidates skipped (already processed or low confidence) */
@@ -31,8 +30,7 @@ export interface AutoPromoteResult {
   /** Number of candidates that failed to promote */
   readonly failed: number
   /** IDs of promoted learnings */
-  readonly learningIds: readonly number[]
-}
+  readonly learningIds: readonly number[]};
 
 /**
  * PromotionService manages the lifecycle of learning candidates,

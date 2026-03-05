@@ -36,6 +36,7 @@ import {
   ReadyServiceLive,
   HierarchyServiceLive,
   SyncServiceLive,
+  StreamServiceLive,
   SyncService,
   AutoSyncServiceNoop,
   GuardRepositoryLive
@@ -72,7 +73,7 @@ function makeTestLayer(db: TestDatabase) {
     Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop))
   )
   const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(baseServices, repos, infra))
+    Layer.provide(Layer.mergeAll(baseServices, repos, infra, StreamServiceLive.pipe(Layer.provide(infra))))
   )
   return Layer.mergeAll(baseServices, syncService, repos)
 }

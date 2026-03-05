@@ -2,35 +2,30 @@ import { Context, Effect, Layer, Ref } from "effect"
 import { RerankerUnavailableError } from "../errors.js"
 
 // Types for node-llama-cpp (imported dynamically)
-interface LlamaRankingResult {
+type LlamaRankingResult = {
   readonly document: string
-  readonly score: number
-}
+  readonly score: number};
 
-interface LlamaRankingContext {
+type LlamaRankingContext = {
   rankAndSort(query: string, documents: string[]): Promise<LlamaRankingResult[]>
-  dispose(): Promise<void>
-}
+  dispose(): Promise<void>};
 
-interface LlamaModel {
-  createRankingContext(): Promise<LlamaRankingContext>
-}
+type LlamaModel = {
+  createRankingContext(): Promise<LlamaRankingContext>};
 
-interface Llama {
-  loadModel(options: { modelPath: string }): Promise<LlamaModel>
-}
+type Llama = {
+  loadModel(options: { modelPath: string }): Promise<LlamaModel>};
 
 /**
  * Result of re-ranking documents against a query.
  */
-export interface RerankerResult {
+export type RerankerResult = {
   /** Original document content */
   readonly document: string
   /** Relevance score (0-1, higher is more relevant) */
   readonly score: number
   /** Original index before re-ranking */
-  readonly originalIndex: number
-}
+  readonly originalIndex: number};
 
 /**
  * RerankerService uses LLM-based re-ranking to improve search result quality.

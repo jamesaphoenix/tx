@@ -38,8 +38,8 @@ const FIXTURES = {
  * Same seed produces identical embedding for test reproducibility.
  * Different seeds produce dissimilar embeddings (low cosine similarity).
  */
-function createDeterministicEmbedding(seed: number, dimensions = 256): Float32Array {
-  const embedding = new Float32Array(dimensions)
+function createDeterministicEmbedding(seed: number, dimensions = 256): Float32Array<ArrayBuffer> {
+  const embedding = new Float32Array(new ArrayBuffer(dimensions * Float32Array.BYTES_PER_ELEMENT))
   for (let i = 0; i < dimensions; i++) {
     // Create a deterministic value based on seed and position
     embedding[i] = Math.sin(seed * 100 + i * 0.1) * 0.5 + 0.5
@@ -62,8 +62,11 @@ function createDeterministicEmbedding(seed: number, dimensions = 256): Float32Ar
  * Create a similar embedding to a source embedding.
  * Introduces small perturbations to create high cosine similarity.
  */
-function createSimilarEmbedding(source: Float32Array, perturbation = 0.05): Float32Array {
-  const embedding = new Float32Array(source.length)
+function createSimilarEmbedding(
+  source: Float32Array<ArrayBuffer>,
+  perturbation = 0.05
+): Float32Array<ArrayBuffer> {
+  const embedding = new Float32Array(new ArrayBuffer(source.length * Float32Array.BYTES_PER_ELEMENT))
   for (let i = 0; i < source.length; i++) {
     // Add small random-like perturbation based on index
     embedding[i] = source[i]! + Math.sin(i * 0.5) * perturbation
@@ -88,7 +91,7 @@ function createSimilarEmbedding(source: Float32Array, perturbation = 0.05): Floa
 function createMockLearning(
   id: LearningId,
   relevanceScore: number,
-  embedding: Float32Array | null,
+  embedding: LearningWithScore["embedding"],
   category: string | null = null
 ): LearningWithScore {
   return {

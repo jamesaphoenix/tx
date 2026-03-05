@@ -444,6 +444,11 @@ describe('require-taskwithdeps-return rule', () => {
             type: 'Property',
             key: { type: 'Identifier', name: 'status' },
             value: { type: 'Literal', value: 'active' }
+          },
+          {
+            type: 'Property',
+            key: { type: 'Identifier', name: 'description' },
+            value: { type: 'Literal', value: 'task description' }
           }
         ],
         parent: toolCallNode
@@ -474,6 +479,7 @@ describe('require-taskwithdeps-return rule', () => {
           { type: 'Property', key: { type: 'Identifier', name: 'id' }, value: { type: 'Literal' } },
           { type: 'Property', key: { type: 'Identifier', name: 'title' }, value: { type: 'Literal' } },
           { type: 'Property', key: { type: 'Identifier', name: 'status' }, value: { type: 'Literal' } },
+          { type: 'Property', key: { type: 'Identifier', name: 'description' }, value: { type: 'Literal' } },
           { type: 'Property', key: { type: 'Identifier', name: 'blockedBy' }, value: { type: 'ArrayExpression' } },
           { type: 'Property', key: { type: 'Identifier', name: 'blocks' }, value: { type: 'ArrayExpression' } },
           { type: 'Property', key: { type: 'Identifier', name: 'children' }, value: { type: 'ArrayExpression' } },
@@ -635,7 +641,43 @@ describe('require-taskwithdeps-return rule', () => {
       expect(context._messages).toHaveLength(0);
     });
 
-    it('requires id, title, AND status to consider as Task object', () => {
+    it('skips Effect Schema objects (Schema.String, Schema.Number, etc.)', () => {
+      const context = createContext('/project/apps/api-server/src/api.ts');
+      const visitor = rule.create(context);
+
+      const schemaStructCall = {
+        type: 'CallExpression',
+        callee: {
+          type: 'MemberExpression',
+          object: { type: 'Identifier', name: 'Schema' },
+          property: { type: 'Identifier', name: 'Struct' }
+        }
+      };
+
+      // Object with Effect Schema values: { id: Schema.String, title: Schema.String, status: Schema.String }
+      const schemaStringMember = {
+        type: 'MemberExpression',
+        object: { type: 'Identifier', name: 'Schema' },
+        property: { type: 'Identifier', name: 'String' }
+      };
+
+      const objectNode = {
+        type: 'ObjectExpression',
+        properties: [
+          { type: 'Property', key: { type: 'Identifier', name: 'id' }, value: schemaStringMember },
+          { type: 'Property', key: { type: 'Identifier', name: 'title' }, value: schemaStringMember },
+          { type: 'Property', key: { type: 'Identifier', name: 'status' }, value: schemaStringMember }
+        ],
+        parent: schemaStructCall
+      };
+
+      visitor.ObjectExpression(objectNode);
+
+      // Should not report because this is an Effect Schema definition, not a Task object
+      expect(context._messages).toHaveLength(0);
+    });
+
+    it('requires both core task fields and at least one task-specific field', () => {
       const context = createContext('/project/src/mcp/server.ts');
       const visitor = rule.create(context);
 
@@ -656,6 +698,27 @@ describe('require-taskwithdeps-return rule', () => {
           { type: 'Property', key: { type: 'Identifier', name: 'title' }, value: { type: 'Literal' } }
         ],
         parent: toolCallNode
+      };
+
+      visitor.ObjectExpression(objectNode);
+
+      expect(context._messages).toHaveLength(0);
+    });
+
+    it('skips non-task serializer objects that share id/title/status (e.g. docs)', () => {
+      const context = createContext('/project/apps/api-server/src/api.ts');
+      const visitor = rule.create(context);
+
+      const objectNode = {
+        type: 'ObjectExpression',
+        properties: [
+          { type: 'Property', key: { type: 'Identifier', name: 'id' }, value: { type: 'Literal' } },
+          { type: 'Property', key: { type: 'Identifier', name: 'title' }, value: { type: 'Literal' } },
+          { type: 'Property', key: { type: 'Identifier', name: 'status' }, value: { type: 'Literal' } },
+          { type: 'Property', key: { type: 'Identifier', name: 'kind' }, value: { type: 'Literal' } },
+          { type: 'Property', key: { type: 'Identifier', name: 'version' }, value: { type: 'Literal' } }
+        ],
+        parent: null
       };
 
       visitor.ObjectExpression(objectNode);

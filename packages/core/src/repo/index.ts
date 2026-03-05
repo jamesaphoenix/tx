@@ -29,3 +29,9 @@ export {
 export { PinRepository, PinRepositoryLive } from "./pin-repo.js"
 export { GuardRepository, GuardRepositoryLive, type Guard, type GuardRow } from "./guard-repo.js"
 export { LabelRepository, LabelRepositoryLive, type Label, type LabelRow } from "./label-repo.js"
+export {
+  SpecTraceRepository,
+  SpecTraceRepositoryLive,
+  type InvariantSummary,
+  type SpecTraceFilter,
+} from "./spec-trace-repo.js"

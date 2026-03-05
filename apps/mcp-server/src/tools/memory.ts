@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import z from "zod"
+import { registerEffectTool, z } from "./effect-schema-tool.js"
 import { MemoryService, MemoryRetrieverService } from "@jamesaphoenix/tx-core"
 import { serializeMemoryDocument, serializeMemoryDocumentWithScore } from "@jamesaphoenix/tx-types"
 import { runEffect } from "../runtime.js"
@@ -569,7 +569,7 @@ const handleMemoryLink = async (args: {
 
 export const registerMemoryTools = (server: McpServer): void => {
   // Source management
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_source_add",
     "Register a directory as a memory source for indexing. Files in this directory will be searchable.",
     {
@@ -579,7 +579,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleSourceAdd(args as { dir: string; label?: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_source_rm",
     "Unregister a directory as a memory source. Removes the source and its indexed documents from the index.",
     {
@@ -588,7 +588,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleSourceRm(args as { dir: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_source_list",
     "List all registered memory sources.",
     {},
@@ -596,7 +596,7 @@ export const registerMemoryTools = (server: McpServer): void => {
   )
 
   // Document CRUD
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_add",
     "Create a new markdown memory document with optional tags and properties.",
     {
@@ -609,7 +609,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemoryAdd(args as { title: string; content?: string; tags?: string[]; properties?: Record<string, string>; dir?: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_show",
     "Display a memory document by ID, including its full content and metadata.",
     {
@@ -618,7 +618,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemoryShow(args as { id: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_list",
     "List memory documents with optional source and tag filters.",
     {
@@ -629,7 +629,7 @@ export const registerMemoryTools = (server: McpServer): void => {
   )
 
   // Search
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_search",
     "Search memory documents using BM25 full-text search with optional semantic similarity and graph expansion.",
     {
@@ -645,7 +645,7 @@ export const registerMemoryTools = (server: McpServer): void => {
   )
 
   // Indexing
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_index",
     "Index all registered memory sources. Scans directories for markdown files and updates the search index.",
     {
@@ -654,7 +654,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemoryIndex(args as { incremental?: boolean })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_index_status",
     "Show the status of the memory index including file counts, staleness, and embedding coverage.",
     {},
@@ -662,7 +662,7 @@ export const registerMemoryTools = (server: McpServer): void => {
   )
 
   // Tags
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_tag",
     "Add tags to a memory document's frontmatter.",
     {
@@ -672,7 +672,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemoryTag(args as { id: string; tags: string[] })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_untag",
     "Remove tags from a memory document's frontmatter.",
     {
@@ -683,7 +683,7 @@ export const registerMemoryTools = (server: McpServer): void => {
   )
 
   // Relations
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_relate",
     "Add a relation to a memory document's frontmatter 'related' field.",
     {
@@ -694,7 +694,7 @@ export const registerMemoryTools = (server: McpServer): void => {
   )
 
   // Properties
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_set",
     "Set a key-value property on a memory document (writes to frontmatter and DB index).",
     {
@@ -705,7 +705,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemorySet(args as { id: string; key: string; value: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_unset",
     "Remove a property from a memory document (removes from frontmatter and DB index).",
     {
@@ -715,7 +715,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemoryUnset(args as { id: string; key: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_props",
     "Show all properties of a memory document.",
     {
@@ -725,7 +725,7 @@ export const registerMemoryTools = (server: McpServer): void => {
   )
 
   // Links
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_links",
     "Show outgoing links (wikilinks and frontmatter relations) from a memory document.",
     {
@@ -734,7 +734,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemoryLinks(args as { id: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_backlinks",
     "Show incoming links (backlinks) to a memory document.",
     {
@@ -743,7 +743,7 @@ export const registerMemoryTools = (server: McpServer): void => {
     async (args) => handleMemoryBacklinks(args as { id: string })
   )
 
-  server.tool(
+  registerEffectTool(server,
     "tx_memory_link",
     "Create an explicit link (edge) between two memory documents.",
     {

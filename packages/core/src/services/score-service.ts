@@ -8,7 +8,7 @@ import type { Task, TaskId } from "@jamesaphoenix/tx-types"
 /**
  * Score breakdown showing each adjustment factor (for CLI display)
  */
-export interface ScoreBreakdown {
+export type ScoreBreakdown = {
   readonly baseScore: number
   readonly blockingBonus: number
   readonly blockingCount: number
@@ -17,8 +17,7 @@ export interface ScoreBreakdown {
   readonly depthPenalty: number
   readonly depth: number
   readonly blockedPenalty: number
-  readonly finalScore: number
-}
+  readonly finalScore: number};
 
 export class ScoreService extends Context.Tag("ScoreService")<
   ScoreService,

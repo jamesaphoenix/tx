@@ -5,7 +5,7 @@
  * All responses return TaskWithDeps per Doctrine Rule 1.
  */
 
-import { HttpApiBuilder } from "@effect/platform"
+import { HttpApiBuilder, HttpServerRequest } from "@effect/platform"
 import { Effect } from "effect"
 import type { TaskId, TaskWithDeps, TaskCursor, TaskStatus } from "@jamesaphoenix/tx-types"
 import { isValidTaskStatus, TASK_STATUSES, serializeTask } from "@jamesaphoenix/tx-types"
@@ -55,6 +55,12 @@ const parseCursor = (cursor: string): ParsedCursor | null => {
 const buildCursor = (task: TaskWithDeps): string => {
   return `${task.score}:${task.id}`
 }
+
+const getTaskMutationActor = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest
+  const headers = request.headers as unknown as Record<string, string | undefined>
+  return headers["x-tx-actor"] === "human" ? "human" as const : "agent" as const
+})
 
 // -----------------------------------------------------------------------------
 // Handler Layer
@@ -172,6 +178,7 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
     .handle("updateTask", ({ path, payload }) =>
       Effect.gen(function* () {
         const taskService = yield* TaskService
+        const actor = yield* getTaskMutationActor
         yield* taskService.update(path.id as TaskId, {
           title: payload.title,
           description: payload.description,
@@ -179,7 +186,7 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
           parentId: payload.parentId,
           score: payload.score,
           metadata: payload.metadata,
-        })
+        }, { actor })
         const task = yield* taskService.getWithDeps(path.id as TaskId)
         return serializeTask(task)
       }).pipe(Effect.mapError(mapCoreError))
@@ -189,9 +196,10 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
       Effect.gen(function* () {
         const taskService = yield* TaskService
         const readyService = yield* ReadyService
+        const actor = yield* getTaskMutationActor
 
         const blocking = yield* readyService.getBlocking(path.id as TaskId)
-        yield* taskService.update(path.id as TaskId, { status: "done" })
+        yield* taskService.update(path.id as TaskId, { status: "done" }, { actor })
         const completedTask = yield* taskService.getWithDeps(path.id as TaskId)
 
         const candidateIds = blocking

@@ -10,8 +10,8 @@ import {
   hasBlock,
   upsertBlock,
   removeBlock,
-  syncBlocks
-} from "../../packages/core/src/utils/pin-file.js"
+  syncBlocks,
+} from "@jamesaphoenix/tx-core"
 
 describe("parseBlocks", () => {
   it("returns empty map for content with no blocks", () => {

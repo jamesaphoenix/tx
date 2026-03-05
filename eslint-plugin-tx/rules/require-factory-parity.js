@@ -49,7 +49,6 @@ function extractEntityInterfaces(content) {
  * @param {string} content - Migration file content
  * @returns {string[]} - Array of table names (normalized to PascalCase)
  */
-// eslint-disable-next-line no-unused-vars
 function _extractTableNames(content) {
   const tables = [];
 

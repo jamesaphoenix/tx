@@ -39,15 +39,26 @@ tx handoff tx-abc123 --to security-auditor --file ./threat-model.md
 
 ## Use Case: Specialist Agent Pipeline
 
-```
-┌─────────────┐    handoff    ┌─────────────┐    handoff    ┌─────────────┐
-│   Planner   │ ───────────►  │  Implementer │ ───────────►  │   Reviewer  │
-└─────────────┘               └─────────────┘               └─────────────┘
-       │                             │                             │
-       │                             │                             │
-   "Decomposed                  "Code written,                "Approved for
-    into subtasks"               tests passing"                   merge"
-```
+<Mermaid
+  title="Agent Pipeline"
+  caption="Each specialist hands the same task forward with the context the next specialist needs."
+  actorIcons={{ Planner: "robot", Implementer: "robot", Reviewer: "robot" }}
+  chart={`sequenceDiagram
+    autonumber
+    actor Planner
+    participant TX as tx
+    actor Implementer
+    actor Reviewer
+
+    Planner->>TX: write plan and subtasks
+    Planner->>TX: handoff to implementer
+    TX-->>Implementer: plan approved, ready to build
+    Implementer->>TX: attach code notes and passing tests
+    Implementer->>TX: handoff to reviewer
+    TX-->>Reviewer: code written, tests passing
+    Reviewer->>TX: approve and complete task
+  `}
+/>
 
 ```bash
 # Planner creates plan

@@ -113,7 +113,7 @@ export default {
         const raw = fs.readFileSync(absPath, "utf-8")
         const parsed = JSON.parse(raw)
         // Remove $comment key if present
-        const { $comment, ...rest } = parsed
+        const { $comment: _comment, ...rest } = parsed
         registry = rest
       } catch {
         registry = {}

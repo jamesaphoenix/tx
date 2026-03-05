@@ -3,10 +3,9 @@ import { GuardRepository, type Guard } from "../repo/guard-repo.js"
 import { DatabaseError, GuardExceededError } from "../errors.js"
 import { readTxConfig } from "../utils/toml-config.js"
 
-export interface GuardCheckResult {
+export type GuardCheckResult = {
   readonly passed: boolean
-  readonly warnings: readonly string[]
-}
+  readonly warnings: readonly string[]};
 
 export class GuardService extends Context.Tag("GuardService")<
   GuardService,

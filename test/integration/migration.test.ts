@@ -141,6 +141,72 @@ describe("Migration system", () => {
       expect(version).toBe(getLatestVersion())
     })
 
+    it("repairs missing anchor tables on drifted schema-version-head databases", () => {
+      const db = new Database(":memory:")
+      db.run("PRAGMA foreign_keys = ON")
+
+      const repairMigration = MIGRATIONS.find((m) => m.description === "anchor schema repair")
+      expect(repairMigration).toBeDefined()
+      const preRepairVersion = (repairMigration?.version ?? getLatestVersion()) - 1
+
+      // Simulate a long-lived DB that is otherwise up-to-date before the repair migration.
+      applyMigrationsThroughVersion(db, preRepairVersion)
+      expect(getSchemaVersion(db)).toBe(preRepairVersion)
+
+      // Simulate schema drift: anchor tables missing despite high schema_version.
+      db.exec("PRAGMA foreign_keys = OFF")
+      // eslint-disable-next-line tx/no-inline-sql -- drift simulation for migration repair test
+      db.exec("DROP TABLE IF EXISTS invalidation_log")
+      // eslint-disable-next-line tx/no-inline-sql -- drift simulation for migration repair test
+      db.exec("DROP TABLE IF EXISTS learning_anchors")
+      db.exec("PRAGMA foreign_keys = ON")
+
+      const beforeRepairTables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+      ).all() as Array<{ name: string }>
+      const beforeNames = beforeRepairTables.map((t) => t.name)
+      expect(beforeNames).not.toContain("learning_anchors")
+      expect(beforeNames).not.toContain("invalidation_log")
+
+      applyMigrations(db)
+
+      const afterRepairTables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+      ).all() as Array<{ name: string }>
+      const afterNames = afterRepairTables.map((t) => t.name)
+      expect(afterNames).toContain("learning_anchors")
+      expect(afterNames).toContain("invalidation_log")
+      expect(getSchemaVersion(db)).toBe(getLatestVersion())
+    })
+
+    it("repairs missing anchor tables even when repair migration version is already recorded", () => {
+      const db = new Database(":memory:")
+      db.run("PRAGMA foreign_keys = ON")
+
+      applyMigrations(db)
+      expect(getSchemaVersion(db)).toBe(getLatestVersion())
+
+      db.exec("PRAGMA foreign_keys = OFF")
+      // eslint-disable-next-line tx/no-inline-sql -- drift simulation for repair safety-net behavior
+      db.exec("DROP TABLE IF EXISTS invalidation_log")
+      // eslint-disable-next-line tx/no-inline-sql -- drift simulation for repair safety-net behavior
+      db.exec("DROP TABLE IF EXISTS learning_anchors")
+      // eslint-disable-next-line tx/no-inline-sql -- drift simulation for repair safety-net behavior
+      db.exec("DROP TABLE IF EXISTS learning_edges")
+      db.exec("PRAGMA foreign_keys = ON")
+
+      applyMigrations(db)
+
+      const repairedTables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+      ).all() as Array<{ name: string }>
+      const repairedNames = repairedTables.map((t) => t.name)
+      expect(repairedNames).toContain("learning_anchors")
+      expect(repairedNames).toContain("learning_edges")
+      expect(repairedNames).toContain("invalidation_log")
+      expect(getSchemaVersion(db)).toBe(getLatestVersion())
+    })
+
     it("creates all required tables", () => {
       const db = new Database(":memory:")
       db.run("PRAGMA foreign_keys = ON")
@@ -195,6 +261,10 @@ describe("Migration system", () => {
         "context_pins", "pin_config",
         // Migration 031 — task guards (bounded autonomy)
         "task_guards",
+        // Migration 033 — sync events
+        "sync_events", "sync_streams", "sync_watermark",
+        // Migration 034 — spec traceability
+        "spec_tests", "spec_test_runs", "spec_signoffs",
       ]
 
       for (const table of expectedTables) {
@@ -266,6 +336,10 @@ describe("Migration system", () => {
       expect(indexNames).toContain("idx_runs_task_status")
       expect(indexNames).toContain("idx_runs_worker_status_started")
       expect(indexNames).toContain("idx_events_type_metadata_status_timestamp")
+
+      // Indexes from migration 33 (sync events)
+      expect(indexNames).toContain("idx_sync_events_ts_event")
+      expect(indexNames).toContain("idx_sync_events_entity")
     })
 
     it("uses composite task-order indexes without temp B-tree for dashboard task list query shapes", () => {

@@ -184,7 +184,7 @@ describe('no-as-cast-in-repos rule', () => {
       expect(context._messages[0].data.typeName).toBe('string[]');
     });
 
-    it('reports qualified name "as Attempt[\"id\"]"', () => {
+    it('reports qualified name "as Attempt["id"]"', () => {
       const context = createContext([], 'packages/core/src/mappers/attempt.ts');
       const visitor = rule.create(context);
 

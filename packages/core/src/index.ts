@@ -90,6 +90,7 @@ export {
 // ID Generation
 // =============================================================================
 export { generateTaskId, fixtureId } from "./id.js"
+export { generateUlid, isUlid } from "./utils/ulid.js"
 
 // =============================================================================
 // Layers
@@ -101,6 +102,9 @@ export {
   makeMinimalLayerFromInfra,
   // Re-exports for convenience
   SyncService,
+  StreamService,
+  type StreamInfo,
+  type StreamProgress,
   MigrationService,
   AutoSyncService,
   AutoSyncServiceNoop,
@@ -160,7 +164,7 @@ export {
   GuardRepository,
   GuardRepositoryLive,
   LabelRepository,
-  LabelRepositoryLive
+  LabelRepositoryLive,
 } from "./layer.js"
 
 // =============================================================================
@@ -176,6 +180,7 @@ export {
   FileLearningServiceLive,
   AttemptServiceLive,
   SyncServiceLive,
+  StreamServiceLive,
   MigrationServiceLive,
   AnchorService,
   AnchorServiceLive,
@@ -242,14 +247,15 @@ export {
   EMBEDDED_MIGRATIONS,
   getLatestVersion,
   type ScoreBreakdown,
-  type ExportResult,
-  type ImportResult,
   type SyncStatus,
-  type CompactResult,
-  type ExportOptions,
-  type ExportAllResult,
-  type EntityImportResult,
-  type ImportAllResult,
+  type DependencyImportResult,
+  type ImportResult,
+  type LegacySyncExportResult,
+  type SyncCompactResult,
+  type SyncExportResult,
+  type SyncImportResult,
+  type SyncHydrateResult,
+  type SyncStreamInfoResult,
   type Migration,
   type AppliedMigration,
   type MigrationStatus,
@@ -314,6 +320,14 @@ export {
   type AgentMessageCallback,
   CycleScanService,
   CycleScanServiceLive,
+  SPEC_BATCH_MAX_BYTES,
+  SPEC_BATCH_MAX_RECORDS,
+  SpecTraceService,
+  SpecTraceServiceLive,
+  parseBatchRunInput,
+  type BatchSource,
+  type BatchRunResult,
+  type SpecTraceStatus,
   // Runtime interface validators for optional peer dependencies
   isValidLlama,
   isValidLlamaModel,
@@ -373,7 +387,11 @@ export {
   MemoryPropertyRepositoryLive,
   MemorySourceRepository,
   MemorySourceRepositoryLive,
-  type MemoryBM25Result
+  type MemoryBM25Result,
+  SpecTraceRepository,
+  SpecTraceRepositoryLive,
+  type InvariantSummary,
+  type SpecTraceFilter,
 } from "./repo/index.js"
 
 // =============================================================================
@@ -475,6 +493,14 @@ export {
 export { cosineSimilarity } from "./utils/math.js"
 export { parseLlmJson } from "./utils/llm-json.js"
 export { matchesGlob } from "./utils/glob.js"
+export {
+  normalizePathSeparators,
+  toNormalizedRelativePath,
+  resolvePathForComparison,
+  isPathWithin,
+  resolvePathWithin,
+  type PathWithinOptions,
+} from "./utils/file-path.js"
 export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"
 export { computeDocHash } from "./utils/doc-hash.js"
 export {
@@ -494,6 +520,21 @@ export {
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
   type DashboardDefaultTaskAssigmentType
 } from "./utils/toml-config.js"
+export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
+export {
+  parseBlocks,
+  hasBlock,
+  upsertBlock,
+  removeBlock,
+  syncBlocks,
+} from "./utils/pin-file.js"
+export {
+  discoverSpecTests,
+  readSpecManifest,
+  defaultSpecTestPatterns,
+  type DiscoveredTest,
+  type SpecDiscoveryMethod,
+} from "./utils/spec-discovery.js"
 
 // =============================================================================
 // Worker (PRD-018 headless worker system)

@@ -23,6 +23,7 @@ import { DocsLive } from "./routes/docs.js"
 import { PinsLive } from "./routes/pins.js"
 import { MemoryLive } from "./routes/memory.js"
 import { InvariantsLive } from "./routes/invariants.js"
+import { SpecTraceLive } from "./routes/spec-trace.js"
 import { GuardsLive } from "./routes/guards.js"
 import { VerifyLive } from "./routes/verify.js"
 import { ReflectLive } from "./routes/reflect.js"
@@ -50,6 +51,7 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(PinsLive),
   Layer.provide(MemoryLive),
   Layer.provide(InvariantsLive),
+  Layer.provide(SpecTraceLive),
   Layer.provide(GuardsLive),
   Layer.provide(VerifyLive),
   Layer.provide(ReflectLive),

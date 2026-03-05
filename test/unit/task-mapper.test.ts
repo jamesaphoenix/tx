@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { rowToTask } from "../../packages/core/src/mappers/task.js"
+import { rowToTask } from "@jamesaphoenix/tx-core"
 import { fixtureId } from "../fixtures.js"
 import type { TaskRow } from "@jamesaphoenix/tx-types"
 

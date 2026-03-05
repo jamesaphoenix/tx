@@ -3,6 +3,8 @@ title: Getting Started
 description: Install tx and run your first agent loop
 ---
 
+import { Callout } from "fumadocs-ui/components/callout"
+
 Get up and running with tx in minutes. tx provides four interfaces -- pick whichever fits your workflow.
 
 | Interface | Package | Best For |
@@ -11,6 +13,42 @@ Get up and running with tx in minutes. tx provides four interfaces -- pick which
 | TypeScript SDK | `@jamesaphoenix/tx-agent-sdk` | Custom agents in Node/Bun |
 | MCP Server | `@jamesaphoenix/tx-mcp-server` | Claude, Cursor, AI IDEs |
 | REST API | `@jamesaphoenix/tx-api-server` | Language-agnostic HTTP clients |
+
+## At A Glance
+
+<Mermaid
+  title="Interface Paths"
+  caption="CLI, MCP, and SDK direct mode use SQLite directly. REST and SDK HTTP mode go through the API server, which also reads the same SQLite store."
+  chart={`flowchart LR
+    Start[Install tx] --> Init[tx init]
+    Init --> CLI[CLI]
+    Init --> MCP[MCP]
+    Init --> SDK[TypeScript SDK]
+    Init --> REST[REST API]
+    CLI --> Sqlite[SQLite]
+    MCP --> Sqlite
+    SDK --> Direct[SDK direct mode]
+    Direct --> Sqlite
+    SDK --> Api[SDK HTTP mode]
+    REST --> ApiServer[API server]
+    Api --> ApiServer
+    ApiServer --> Sqlite
+  `}
+/>
+
+<Mermaid
+  title="Work Loop"
+  caption="Pull one ready task, inspect it, implement, verify, then either finish it or keep iterating."
+  chart={`flowchart TB
+    Ready[tx ready] --> Found{task found?}
+    Found -->|No| Exit[stop]
+    Found -->|Yes| Read[show + context]
+    Read --> Work[implement]
+    Work --> Pass{verify passes?}
+    Pass -->|Yes| Done[tx done]
+    Pass -->|No| Iterate[fix or block]
+  `}
+/>
 
 ## Installation
 
@@ -116,9 +154,8 @@ This creates a `.tx/` directory:
 .tx/
 ├── tasks.db           # SQLite database (gitignored)
 ├── config.toml        # Project configuration with annotated defaults
-├── tasks.jsonl        # Git-tracked task history
-├── learnings.jsonl    # Git-tracked learnings
-└── runs.jsonl         # Git-tracked run history
+├── stream.json        # Stream identity (created on first tx sync export)
+└── streams/           # Event log directories (created on first tx sync export)
 ```
 
 ### Configuration
@@ -141,6 +178,7 @@ default_task_assigment_type = "human"      # Default assignee: "human" | "agent"
 
 [pins]
 target_files = "CLAUDE.md, AGENTS.md"      # Files that tx pin sync writes to
+block_agent_done_when_task_id_present = true  # Block agent completion for pin-linked tasks by default
 ```
 
 See the generated file for full documentation on each setting, or the relevant primitive docs linked in the comments.
@@ -263,6 +301,18 @@ Once configured, your AI assistant has access to these tools:
 | `tx_guard_check` | Check if creation would pass limits |
 | `tx_verify_set` | Attach verification command to task |
 | `tx_verify_run` | Run verification command |
+| `tx_spec_discover` | Discover invariant-to-test mappings |
+| `tx_spec_link` | Manually link an invariant to a test |
+| `tx_spec_unlink` | Remove an invariant-to-test mapping |
+| `tx_spec_tests` | List tests linked to an invariant |
+| `tx_spec_invariants_for_test` | Reverse lookup invariants for a test ID |
+| `tx_spec_gaps` | List uncovered invariants |
+| `tx_spec_fci` | Compute Feature Completion Index and phase |
+| `tx_spec_status` | Show quick phase/FCI/gap summary |
+| `tx_spec_matrix` | Show full spec traceability matrix |
+| `tx_spec_record_run` | Record a single test run result |
+| `tx_spec_batch_run` | Ingest framework/generic batch results |
+| `tx_spec_complete` | Record human COMPLETE sign-off |
 | `tx_reflect` | Session retrospective with signals |
 
 Example prompt: *"Use tx_ready to find the highest priority task, then work on it and mark it done with tx_done."*
@@ -279,9 +329,20 @@ curl -X POST http://localhost:3456/api/tasks \
 # List ready tasks
 curl http://localhost:3456/api/tasks/ready?limit=5
 
-# Complete a task
-curl -X POST http://localhost:3456/api/tasks/tx-abc123/done
+# Complete a task as an agent (default path)
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done \
+  -H "x-tx-actor: agent"
+
+# Complete a task as a human operator
+curl -X POST http://localhost:3456/api/tasks/tx-abc123/done \
+  -H "x-tx-actor: human"
 ```
+
+Task update and completion endpoints treat requests as `agent` actions unless you send `x-tx-actor: human`. This matters for gate-linked tasks: when a pin carries a task ID and `[pins].block_agent_done_when_task_id_present = true` (the default), agent callers cannot mark that task `done`.
+
+<Callout type="info" title="Need A Real Human Review Loop?">
+For the full pattern where a gate stores `taskId`, the human approves the gate, and only the human can close the linked review task, see [`tx gate`](/docs/primitives/gate). That page includes complete CLI and REST worker loops.
+</Callout>
 
 </Tab>
 </Tabs>
@@ -306,6 +367,11 @@ The server binds to `http://localhost:3456` by default. Available options:
 | `--host` | `TX_API_HOST` | `127.0.0.1` | Hostname to bind to |
 | `--db` | `TX_DB_PATH` | `.tx/tasks.db` | Path to SQLite database |
 | -- | `TX_API_KEY` | -- | API key for authentication (optional) |
+
+For REST task updates and completion:
+- Use `x-tx-actor: agent` for automated clients.
+- Use `x-tx-actor: human` for dashboard-style or manual operator actions.
+- If you omit the header, tx treats the request as `agent`.
 
 ## Memory & File-Based Knowledge
 
@@ -454,13 +520,13 @@ tx context tx-abc123
 
 ## Sync with Git
 
-tx stores data in SQLite for speed, but syncs to JSONL for git:
+tx stores runtime state in SQLite and syncs via append-only stream event logs:
 
 ```bash
-# Export to git-trackable files
+# Export event logs
 tx sync export
 
-# Import from JSONL (e.g., after git pull)
+# Import event logs (e.g., after git pull)
 tx sync import
 ```
 
@@ -468,7 +534,7 @@ Add to your workflow:
 
 ```bash
 # Before committing
-tx sync export && git add .tx/*.jsonl
+tx sync export && git add .tx/stream.json .tx/streams
 
 # After pulling
 git pull && tx sync import
@@ -525,9 +591,8 @@ your-project/
 ├── .tx/
 │   ├── tasks.db           # SQLite (gitignored)
 │   ├── config.toml        # Project configuration
-│   ├── tasks.jsonl        # Tasks (git-tracked)
-│   ├── learnings.jsonl    # Learnings (git-tracked)
-│   └── runs.jsonl         # Run history (git-tracked)
+│   ├── stream.json        # Local stream identity
+│   └── streams/           # Append-only sync event logs
 ├── CLAUDE.md              # Claude instructions (optional)
 ├── AGENTS.md              # Codex instructions (optional)
 ├── .claude/               # Claude skills/hooks (optional)
@@ -540,7 +605,7 @@ your-project/
 You now have tx running. Keep moving in this order so each step builds on the last one:
 
 1. **[Primitives](/docs/primitives)** -- learn the core building blocks (`ready`, `done`, `block`, `context`, `sync`).
-2. **[Bounded Autonomy](/docs/primitives/guard)** -- prevent runaway agents with `guard`, `verify`, `label`, and `reflect`.
+2. **[Bounded Autonomy](/docs/primitives/gate)** -- prevent runaway agents with `gate`, `guard`, `verify`, `label`, and `reflect`.
 3. **[Headful Experience](/docs/headful)** -- apply the same primitives visually with dashboard workflows.
 4. **[Watchdog Runbook](/docs/watchdog-runbook)** -- final, advanced step for detached supervision and recovery.
 
@@ -549,6 +614,7 @@ Interface-specific deep dives:
 - **[Agent SDK](/docs/agent-sdk)** -- build your own TypeScript agents.
 - **[tx ready](/docs/primitives/ready)** -- readiness detection details.
 - **[tx context](/docs/primitives/context)** -- contextual learning retrieval.
+- **[tx gate](/docs/primitives/gate)** -- human-in-the-loop phase approvals.
 - **[tx guard](/docs/primitives/guard)** -- task creation limits.
 - **[tx verify](/docs/primitives/verify)** -- machine-checkable done criteria.
 - **[tx label](/docs/primitives/label)** -- ready queue scoping by phase.
@@ -578,6 +644,8 @@ tx learning:search <query>  # Find learnings
 tx context <task-id>        # Get relevant context
 
 # Bounded Autonomy
+tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+tx gate check docs-to-build            # exit 0 approved, 1 blocked
 tx guard set --max-pending 30       # Set task creation limits
 tx verify set <id> "bun test"       # Attach verification command
 tx verify run <id>                  # Run verification
@@ -588,8 +656,8 @@ tx reflect                          # Session retrospective
 tx reflect --analyze                # With LLM analysis
 
 # Sync
-tx sync export              # SQLite → JSONL
-tx sync import              # JSONL → SQLite
+tx sync export              # Materialize current state into stream event logs
+tx sync import              # Apply stream event logs into SQLite
 
 # API Server
 npx @jamesaphoenix/tx-api-server   # Start REST API

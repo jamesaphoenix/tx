@@ -13,17 +13,16 @@ import { DatabaseError, RunNotFoundError, ValidationError } from "../errors.js"
 import { RunRepository } from "../repo/run-repo.js"
 import { TaskService } from "./task-service.js"
 
-export interface RunHeartbeatInput {
+export type RunHeartbeatInput = {
   readonly runId: RunId
   readonly checkAt?: Date
   readonly activityAt?: Date
   readonly stdoutBytes: number
   readonly stderrBytes: number
   readonly transcriptBytes: number
-  readonly deltaBytes?: number
-}
+  readonly deltaBytes?: number};
 
-export interface StalledRun {
+export type StalledRun = {
   readonly run: Run
   readonly reason: "transcript_idle" | "heartbeat_stale"
   readonly transcriptIdleSeconds: number | null
@@ -32,20 +31,17 @@ export interface StalledRun {
   readonly lastCheckAt: Date | null
   readonly stdoutBytes: number
   readonly stderrBytes: number
-  readonly transcriptBytes: number
-}
+  readonly transcriptBytes: number};
 
-export interface StalledRunQuery {
+export type StalledRunQuery = {
   readonly transcriptIdleSeconds: number
-  readonly heartbeatLagSeconds?: number
-}
+  readonly heartbeatLagSeconds?: number};
 
-export interface ReapStalledOptions extends StalledRunQuery {
+export type ReapStalledOptions = StalledRunQuery & {
   readonly resetTask?: boolean
-  readonly dryRun?: boolean
-}
+  readonly dryRun?: boolean};
 
-export interface ReapedRun {
+export type ReapedRun = {
   readonly id: RunId
   readonly taskId: string | null
   readonly pid: number | null
@@ -53,17 +49,15 @@ export interface ReapedRun {
   readonly transcriptIdleSeconds: number | null
   readonly heartbeatLagSeconds: number | null
   readonly processTerminated: boolean
-  readonly taskReset: boolean
-}
+  readonly taskReset: boolean};
 
-interface HeartbeatRow {
+type HeartbeatRow = {
   run_id: string
   last_check_at: string
   last_activity_at: string
   stdout_bytes: number
   stderr_bytes: number
-  transcript_bytes: number
-}
+  transcript_bytes: number};
 
 const asDate = (value: string | null | undefined): Date | null => {
   if (!value) return null

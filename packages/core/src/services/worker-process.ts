@@ -7,14 +7,24 @@
  */
 
 import { Effect, Duration, Fiber, Ref, Schedule } from "effect"
-import { spawn, type ChildProcess } from "child_process"
 import * as os from "os"
 import { WorkerService } from "./worker-service.js"
 import { ClaimService } from "./claim-service.js"
 import { ReadyService } from "./ready-service.js"
 import { TaskService } from "./task-service.js"
 import { AttemptService } from "./attempt-service.js"
-import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
+import {
+  runHeartbeatLoop,
+  runLeaseRenewalLoop,
+  runAgent,
+  selectAgent,
+  killWithEscalation,
+  type MutableWorkerState,
+} from "./worker-process/runtime.js"
+export {
+  killWithEscalation,
+  SIGKILL_ESCALATION_TIMEOUT_MS,
+} from "./worker-process/runtime.js"
 
 /**
  * Maximum number of failed attempts before a task is marked as blocked.
@@ -23,46 +33,9 @@ import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
 const MAX_RETRIES = 3
 
 /**
- * Timeout in milliseconds to wait after SIGTERM before escalating to SIGKILL.
- * If the agent subprocess doesn't exit within this window, it will be forcefully killed.
- */
-export const SIGKILL_ESCALATION_TIMEOUT_MS = 5_000
-
-/**
- * Kill a child process with SIGTERM, escalating to SIGKILL after a timeout.
- *
- * If the process ignores SIGTERM (e.g., traps the signal), it would become orphaned.
- * This function ensures cleanup by sending SIGKILL after SIGKILL_ESCALATION_TIMEOUT_MS.
- *
- * Uses setTimeout with .unref() so the escalation timer doesn't keep the event loop alive
- * during graceful shutdown.
- */
-export const killWithEscalation = (proc: ChildProcess): void => {
-  if (proc.killed) return
-
-  proc.kill("SIGTERM")
-
-  const escalationTimer = setTimeout(() => {
-    try {
-      if (!proc.killed) {
-        console.log(
-          `Agent process ${proc.pid} did not exit after SIGTERM, escalating to SIGKILL`
-        )
-        proc.kill("SIGKILL")
-      }
-    } catch {
-      // Process may have already exited between the check and kill call
-    }
-  }, SIGKILL_ESCALATION_TIMEOUT_MS)
-
-  // Don't keep event loop alive waiting for the escalation timer
-  escalationTimer.unref()
-}
-
-/**
  * Configuration for the worker process.
  */
-export interface WorkerProcessConfig {
+export type WorkerProcessConfig = {
   /** Optional worker name. Defaults to worker-{timestamp} */
   readonly name?: string
   /** List of agent capabilities (e.g., ['tx-implementer', 'tx-tester']) */
@@ -74,42 +47,7 @@ export interface WorkerProcessConfig {
   /** How often to renew the lease (in seconds). Should be < lease duration. Defaults to 1/3 of leaseDurationMinutes. */
   readonly leaseRenewalIntervalSeconds?: number
   /** Working directory for agent subprocess. Defaults to process.cwd() */
-  readonly workingDirectory?: string
-}
-
-/**
- * Result from an agent subprocess execution.
- */
-interface AgentResult {
-  readonly success: boolean
-  readonly error?: string
-  readonly exitCode?: number
-}
-
-/**
- * Mutable shared state for signal handler communication and heartbeat status.
- *
- * Uses simple mutable variables instead of Effect Refs because:
- * 1. Signal handlers must be synchronous and minimal
- * 2. Using Effect.runSync in signal handlers violates best practices
- * 3. These variables are only accessed/mutated from the main thread
- *
- * `currentStatus` and `currentTaskId` are set explicitly by the main work loop
- * so the heartbeat fiber reports accurate status. Previously, status was inferred
- * from `agentProcess !== null`, which was unreliable during the windows between
- * claiming a task and spawning the agent, and between agent exiting and claim release.
- *
- * Note: tasksCompleted is NOT included here because it's only accessed
- * from Effect contexts (fibers), not signal handlers. It uses Effect.Ref
- * to properly handle concurrent access between the main work loop and
- * heartbeat fiber.
- */
-interface MutableWorkerState {
-  shutdownRequested: boolean
-  agentProcess: ChildProcess | null
-  currentStatus: "idle" | "busy"
-  currentTaskId: string | undefined
-}
+  readonly workingDirectory?: string};
 
 /**
  * Run the worker process.
@@ -265,7 +203,7 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
 
           if (result.success) {
             // Mark task as done
-            yield* taskService.update(task.id, { status: "done" })
+            yield* taskService.update(task.id, { status: "done" }, { actor: "agent" })
             yield* Ref.update(tasksCompletedRef, (n) => n + 1)
             yield* Effect.log(`Task ${task.id} completed successfully`)
           } else {
@@ -366,208 +304,3 @@ export const runWorkerProcess = (config: WorkerProcessConfig) =>
       yield* Effect.log(`Worker ${workerId} shutdown complete`)
     }
   })
-
-/**
- * Run the heartbeat loop.
- * Sends periodic heartbeats to the orchestrator.
- */
-const runHeartbeatLoop = (
-  workerId: string,
-  intervalSeconds: number,
-  state: MutableWorkerState,
-  tasksCompletedRef: Ref.Ref<number>
-) =>
-  Effect.gen(function* () {
-    const workerService = yield* WorkerService
-
-    while (true) {
-      // Check shutdown before heartbeat
-      if (state.shutdownRequested) break
-
-      // Read status from shared state (set explicitly by the main work loop)
-      const { currentStatus, currentTaskId } = state
-
-      // Read tasksCompleted from Ref (safe concurrent access)
-      const tasksCompleted = yield* Ref.get(tasksCompletedRef)
-
-      yield* workerService
-        .heartbeat({
-          workerId,
-          timestamp: new Date(),
-          status: currentStatus,
-          currentTaskId,
-          metrics: {
-            cpuPercent: process.cpuUsage().user / 1000000,
-            memoryMb: process.memoryUsage().heapUsed / 1024 / 1024,
-            tasksCompleted
-          }
-        })
-        .pipe(
-          Effect.catchAll((error) =>
-            Effect.log(`Heartbeat failed for ${workerId}: ${error.message}`)
-          )
-        )
-
-      yield* Effect.sleep(Duration.seconds(intervalSeconds))
-    }
-  })
-
-/**
- * Run the lease renewal loop.
- * Periodically renews the lease on a claimed task.
- */
-const runLeaseRenewalLoop = (
-  taskId: string,
-  workerId: string,
-  intervalSeconds: number,
-  state: MutableWorkerState,
-) =>
-  Effect.gen(function* () {
-    const claimService = yield* ClaimService
-
-    while (true) {
-      // Wait before first renewal
-      yield* Effect.sleep(Duration.seconds(intervalSeconds))
-
-      // Check shutdown before renewal
-      if (state.shutdownRequested) break
-
-      const renewResult = yield* claimService
-        .renew(taskId, workerId)
-        .pipe(
-          Effect.tap(() => Effect.log(`Renewed lease on task ${taskId}`)),
-          Effect.map(() => true),
-          Effect.catchAll((error) =>
-            Effect.gen(function* () {
-              yield* Effect.log(
-                `CRITICAL: Lease renewal failed for task ${taskId}: ${error.message}. Stopping worker to prevent duplicate execution.`
-              )
-              // Stop the worker to prevent duplicate task execution
-              // Another worker may have claimed this task after lease expiry
-              state.shutdownRequested = true
-              // Kill agent subprocess with SIGKILL escalation
-              if (state.agentProcess) {
-                killWithEscalation(state.agentProcess)
-              }
-              return false
-            })
-          )
-        )
-
-      // Exit renewal loop if renewal failed
-      if (!renewResult) break
-    }
-  })
-
-/**
- * Run an agent subprocess to work on a task.
- *
- * Uses direct mutation on state object instead of Effect.runSync
- * because this function uses Effect.async with process event callbacks.
- */
-const runAgent = (
-  agent: string,
-  task: TaskWithDeps,
-  workerId: string,
-  workingDirectory: string,
-  state: MutableWorkerState,
-): Effect.Effect<AgentResult, never> =>
-  Effect.async((resume) => {
-    const prompt = buildPrompt(agent, task)
-
-    const proc = spawn(
-      "claude",
-      ["--dangerously-skip-permissions", "--print", prompt],
-      {
-        cwd: workingDirectory,
-        env: { ...process.env, TX_WORKER_ID: workerId },
-        stdio: ["pipe", "pipe", "pipe"]
-      }
-    )
-
-    // Store the process reference for signal handling (direct mutation)
-    state.agentProcess = proc
-
-    let stderr = ""
-
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString()
-    })
-
-    proc.on("close", (code) => {
-      // Clear the process reference (direct mutation)
-      state.agentProcess = null
-
-      if (code === 0) {
-        resume(Effect.succeed({ success: true, exitCode: code ?? 0 }))
-      } else {
-        resume(
-          Effect.succeed({
-            success: false,
-            error: stderr || `Exit code ${code}`,
-            exitCode: code ?? 1
-          })
-        )
-      }
-    })
-
-    proc.on("error", (err) => {
-      // Clear the process reference (direct mutation)
-      state.agentProcess = null
-
-      resume(
-        Effect.succeed({
-          success: false,
-          error: err.message,
-          exitCode: 1
-        })
-      )
-    })
-  })
-
-/**
- * Build the prompt for the agent subprocess.
- */
-const buildPrompt = (agent: string, task: TaskWithDeps): string =>
-  `Read .claude/agents/${agent}.md for your instructions.
-
-Your assigned task: ${task.id}
-Task title: ${task.title}
-
-Run \`tx show ${task.id}\` to get full details, then follow your agent instructions.
-When done, run \`tx done ${task.id}\` to mark the task complete.
-If you discover new work, create subtasks with \`tx add\`.
-If you hit a blocker, update the task status: \`tx update ${task.id} --status blocked\`.`
-
-/**
- * Select the appropriate agent based on task characteristics.
- */
-const selectAgent = (task: TaskWithDeps): string => {
-  const title = task.title.toLowerCase()
-
-  // Test/integration tasks go to tester
-  if (
-    title.includes("test") ||
-    title.includes("integration") ||
-    title.includes("fixture")
-  ) {
-    return "tx-tester"
-  }
-
-  // Review/audit tasks go to reviewer
-  if (
-    title.includes("review") ||
-    title.includes("audit") ||
-    title.includes("check")
-  ) {
-    return "tx-reviewer"
-  }
-
-  // High-priority tasks without children may need decomposition
-  if (task.score >= 800 && task.children.length === 0) {
-    return "tx-decomposer"
-  }
-
-  // Default to implementer
-  return "tx-implementer"
-}

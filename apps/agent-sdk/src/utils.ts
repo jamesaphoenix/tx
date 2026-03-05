@@ -245,7 +245,7 @@ export const withRetry = async <T>(
       lastError = error
 
       if (attempt === maxAttempts || !shouldRetry(error)) {
-        throw error
+        return Promise.reject(error)
       }
 
       await sleep(delay)
@@ -253,5 +253,5 @@ export const withRetry = async <T>(
     }
   }
 
-  throw lastError
+  return Promise.reject(lastError)
 }

@@ -18,14 +18,13 @@ import type { OrchestratorState, ReconciliationResult } from "../schemas/worker.
 /**
  * Configuration options for the orchestrator.
  */
-export interface OrchestratorConfig {
+export type OrchestratorConfig = {
   readonly workerPoolSize?: number
   readonly heartbeatIntervalSeconds?: number
   readonly leaseDurationMinutes?: number
   readonly reconcileIntervalSeconds?: number
   readonly shutdownTimeoutSeconds?: number
-  readonly maxClaimRenewals?: number
-}
+  readonly maxClaimRenewals?: number};
 
 /**
  * Default orchestrator configuration values.

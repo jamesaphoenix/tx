@@ -136,6 +136,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -212,6 +216,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -275,6 +283,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -299,7 +311,7 @@ describe("runWorker", () => {
         yield* Fiber.interrupt(workerFiber)
 
         // Verify run record has IO capture paths
-        runRecord = yield* runRepo.findById(capturedRunId as `run-${string}`)
+        runRecord = yield* runRepo.findById(capturedRunId as Parameters<typeof runRepo.findById>[0])
       }).pipe(Effect.provide(layer))
     )
 
@@ -339,6 +351,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -357,7 +373,7 @@ describe("runWorker", () => {
         yield* Effect.sleep("1 second")
         yield* Fiber.interrupt(workerFiber)
 
-        runRecord = yield* runRepo.findById(capturedRunId as `run-${string}`)
+        runRecord = yield* runRepo.findById(capturedRunId as Parameters<typeof runRepo.findById>[0])
       }).pipe(Effect.provide(layer))
     )
 
@@ -397,6 +413,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -415,7 +435,7 @@ describe("runWorker", () => {
         yield* Effect.sleep("1 second")
         yield* Fiber.interrupt(workerFiber)
 
-        runRecord = yield* runRepo.findById(capturedRunId as `run-${string}`)
+        runRecord = yield* runRepo.findById(capturedRunId as Parameters<typeof runRepo.findById>[0])
       }).pipe(Effect.provide(layer))
     )
 
@@ -455,6 +475,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -474,7 +498,7 @@ describe("runWorker", () => {
         yield* Effect.sleep("1 second")
         yield* Fiber.interrupt(workerFiber)
 
-        runRecord = yield* runRepo.findById(capturedRunId as `run-${string}`)
+        runRecord = yield* runRepo.findById(capturedRunId as Parameters<typeof runRepo.findById>[0])
       }).pipe(Effect.provide(layer))
     )
 
@@ -510,6 +534,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -563,6 +591,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -629,6 +661,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 
@@ -706,6 +742,10 @@ describe("runWorker", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           completedAt: null,
+          assigneeType: null,
+          assigneeId: null,
+          assignedAt: null,
+          assignedBy: null,
           metadata: {}
         })
 

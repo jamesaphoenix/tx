@@ -47,7 +47,8 @@ async function makeTestLayer() {
     ReadyServiceLive,
     HierarchyServiceLive,
     AutoSyncServiceNoop,
-    GuardRepositoryLive
+    GuardRepositoryLive,
+  PinRepositoryLive
   } = await import("@jamesaphoenix/tx-core")
 
   const infra = SqliteClientLive(":memory:")
@@ -55,6 +56,7 @@ async function makeTestLayer() {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
+  PinRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     AttemptRepositoryLive

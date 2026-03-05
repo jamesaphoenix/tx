@@ -4,8 +4,8 @@ import {
   LlmService,
   LlmServiceNoop,
   LlmServiceAuto,
+  normalizeClaudeDebugLogPath,
 } from "@jamesaphoenix/tx-core"
-import { normalizeClaudeDebugLogPath } from "../../packages/core/src/utils/claude-debug-log.js"
 
 const CLAUDE_DEBUG_LOG_ENV = "CLAUDE_CODE_DEBUG_LOGS_DIR"
 const originalClaudeDebugLogPath = process.env[CLAUDE_DEBUG_LOG_ENV]

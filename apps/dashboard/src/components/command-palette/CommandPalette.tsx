@@ -116,14 +116,12 @@ export function CommandPalette() {
     const container = listRef.current
     if (!container) return
     // Find the active element (account for group headers)
-    let idx = 0
     for (let i = 0; i < container.children.length; i++) {
       const child = container.children[i] as HTMLElement
       if (child.dataset.itemIndex === String(activeIndex)) {
         child.scrollIntoView({ block: "nearest" })
         break
       }
-      idx++
     }
   }, [activeIndex])
 

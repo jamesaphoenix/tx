@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, symlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs"
-import { tmpdir } from "os"
-import { join, resolve } from "path"
+import { mkdtempSync, rmSync, symlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 
 interface Sandbox {
   dir: string

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest"
-import { spawnSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { spawnSync, spawn, type ChildProcessByStdio } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createServer } from "node:net"
+import type { Readable } from "node:stream"
 import { Database } from "bun:sqlite"
 import { fixtureId } from "../fixtures.js"
 
@@ -28,6 +29,8 @@ interface SerializedTask {
   children: string[]
   isReady: boolean
 }
+
+type ApiProcess = ChildProcessByStdio<null, Readable, Readable>
 
 const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => {
   setTimeout(resolveSleep, ms)
@@ -78,7 +81,7 @@ function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
   }
 }
 
-async function waitForHealth(baseUrl: string, proc: ChildProcessWithoutNullStreams): Promise<void> {
+async function waitForHealth(baseUrl: string, proc: ApiProcess): Promise<void> {
   const deadline = Date.now() + 30000
   while (Date.now() < deadline) {
     if (proc.exitCode !== null) {
@@ -114,7 +117,7 @@ describe("API task group-context integration", () => {
   let tmpProjectDir: string
   let dbPath: string
   let db: Database
-  let apiProc: ChildProcessWithoutNullStreams
+  let apiProc: ApiProcess
   let apiPort: number
   let baseUrl: string
   let serverLogs = ""

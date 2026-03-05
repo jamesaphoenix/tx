@@ -7,11 +7,11 @@
 
 import { Context, Effect, Layer } from "effect"
 import { writeFileSync, existsSync, readFileSync } from "node:fs"
-import { resolve, sep } from "node:path"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, ExtractionUnavailableError, ValidationError } from "../errors.js"
 import { CompactionRepository, type CompactionLogEntry } from "../repo/compaction-repo.js"
 import { rowToTask, type TaskRow } from "../mappers/task.js"
+import { resolvePathWithin } from "../utils/file-path.js"
 import type { Task } from "@jamesaphoenix/tx-types"
 import { LlmService } from "./llm-service.js"
 
@@ -26,19 +26,18 @@ export type CompactionOutputMode = 'database' | 'markdown' | 'both'
 /**
  * Result of a compaction operation.
  */
-export interface CompactionResult {
+export type CompactionResult = {
   readonly compactedCount: number
   readonly summary: string
   readonly learnings: string
   readonly taskIds: readonly string[]
   readonly learningsExportedTo: string | null
-  readonly outputMode: CompactionOutputMode
-}
+  readonly outputMode: CompactionOutputMode};
 
 /**
  * Options for compaction.
  */
-export interface CompactionOptions {
+export type CompactionOptions = {
   /** Compact tasks completed before this date */
   readonly before: Date
   /** Path to export learnings (default: CLAUDE.md) */
@@ -49,17 +48,15 @@ export interface CompactionOptions {
    * Output mode for learnings: 'database', 'markdown', or 'both'.
    * Default: 'both' (per DOCTRINE RULE 2)
    */
-  readonly outputMode?: CompactionOutputMode
-}
+  readonly outputMode?: CompactionOutputMode};
 
 /**
  * Preview result showing what would be compacted.
  */
-export interface CompactionPreview {
+export type CompactionPreview = {
   readonly tasks: readonly Task[]
   readonly summary: string | null
-  readonly learnings: string | null
-}
+  readonly learnings: string | null};
 
 /**
  * LLM prompt template for compaction.
@@ -87,10 +84,9 @@ Example response format:
   "learnings": "- JWT tokens should use RS256 for production signing\\n- Token validation middleware must run before route handlers"
 }`
 
-interface CompactionLlmResponse {
+type CompactionLlmResponse = {
   summary: string
-  learnings: string
-}
+  learnings: string};
 
 /** JSON Schema for structured output from the compaction LLM call */
 const COMPACTION_SCHEMA = {
@@ -110,11 +106,11 @@ const COMPACTION_SCHEMA = {
  */
 const validateProjectPath = (targetFile: string): Effect.Effect<string, ValidationError> => {
   const projectRoot = process.cwd()
-  const resolved = resolve(projectRoot, targetFile)
+  const resolved = resolvePathWithin(projectRoot, targetFile, { useRealpath: true })
 
-  if (!resolved.startsWith(projectRoot + sep)) {
+  if (!resolved) {
     return Effect.fail(new ValidationError({
-      reason: `Path traversal rejected: resolved path '${resolved}' escapes project directory '${projectRoot}'`
+      reason: `Path traversal rejected: '${targetFile}' escapes project directory '${projectRoot}'`
     }))
   }
 
@@ -343,7 +339,7 @@ export const CompactionServiceLive = Layer.effect(
           }
 
           // Transaction: store log (optionally with learnings) + delete tasks atomically
-          yield* Effect.try({
+          const transactionResult = yield* Effect.try({
             try: () => {
               db.exec("BEGIN IMMEDIATE")
               try {
@@ -371,13 +367,18 @@ export const CompactionServiceLive = Layer.effect(
                 }
 
                 db.exec("COMMIT")
-              } catch (e) {
+                return { _tag: "success" as const }
+              } catch (cause) {
                 db.exec("ROLLBACK")
-                throw e // eslint-disable-line tx/no-throw-in-services -- re-throw for Effect.try catch
+                return { _tag: "failure" as const, cause }
               }
             },
             catch: (cause) => new DatabaseError({ cause })
           })
+
+          if (transactionResult._tag === "failure") {
+            yield* Effect.fail(new DatabaseError({ cause: transactionResult.cause }))
+          }
 
           return {
             compactedCount: tasks.length,

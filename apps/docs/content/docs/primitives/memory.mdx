@@ -3,12 +3,39 @@ title: tx memory
 description: Headless search over markdown directories — index, search, tag, and navigate your knowledge graph
 ---
 
+import { MemoryVsLearningsFigure } from '@/components/memory-figures'
+
 ## Purpose
 
 Memory provides filesystem-backed document search over markdown directories. Unlike [learnings](/docs/primitives/learning) (which are structured records stored in SQLite), memory indexes **your existing `.md` files** — project notes, design docs, meeting notes, wikis — and makes them searchable via BM25 keyword search, vector similarity, and graph expansion through wikilinks and frontmatter relationships.
 
 Documents are regular `.md` files with YAML frontmatter. tx indexes them; it does not own them. Your files stay where they are.
 
+## At A Glance
+
+<Mermaid
+  title="Memory Pipeline"
+  caption="Register a markdown source once, index it into a searchable graph, then query that graph without moving your files into tx."
+  chart={`flowchart LR
+    Sources[markdown docs] --> Index[tx memory index]
+    Index --> Graph[searchable graph]
+    Graph --> Query[tx memory search]
+    Query --> Results[ranked results]
+  `}
+/>
+
+<Mermaid
+  title="Search Mode"
+  caption="Keep the search stack simple: start with BM25, add semantic matching for fuzzy recall, then add graph expansion when related docs matter."
+  chart={`flowchart LR
+    Query[query] --> BM25[BM25 default]
+    BM25 --> Semantic[optional --semantic]
+    Semantic --> Expand[optional --expand]
+    Expand --> Results[ranked results]
+  `}
+/>
+
+<MemoryVsLearningsFigure />
 ## Commands
 
 ### Source Management

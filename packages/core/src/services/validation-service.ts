@@ -12,28 +12,26 @@ export type ValidationSeverity = "error" | "warning" | "info"
 /**
  * A single validation issue found during validation.
  */
-export interface ValidationIssue {
+export type ValidationIssue = {
   readonly check: string
   readonly severity: ValidationSeverity
   readonly message: string
-  readonly details?: Record<string, unknown>
-}
+  readonly details?: Record<string, unknown>};
 
 /**
  * Result of a single validation check.
  */
-export interface CheckResult {
+export type CheckResult = {
   readonly name: string
   readonly passed: boolean
   readonly issues: readonly ValidationIssue[]
   readonly fixable: boolean
-  readonly fixed?: number
-}
+  readonly fixed?: number};
 
 /**
  * Overall validation result.
  */
-export interface ValidationResult {
+export type ValidationResult = {
   readonly valid: boolean
   readonly checks: readonly CheckResult[]
   readonly issueCount: {
@@ -41,15 +39,13 @@ export interface ValidationResult {
     readonly warning: number
     readonly info: number
   }
-  readonly fixedCount: number
-}
+  readonly fixedCount: number};
 
 /**
  * Options for running validation.
  */
-export interface ValidateOptions {
-  readonly fix?: boolean
-}
+export type ValidateOptions = {
+  readonly fix?: boolean};
 
 /**
  * ValidationService performs pre-flight database checks.

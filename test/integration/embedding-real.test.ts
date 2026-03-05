@@ -176,9 +176,9 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
       )
 
       // Each pair should have different vectors (cosine similarity < 1)
-      const sim01 = cosineSimilarity(results[0]!, results[1]!)
-      const sim02 = cosineSimilarity(results[0]!, results[2]!)
-      const sim12 = cosineSimilarity(results[1]!, results[2]!)
+      const sim01 = Effect.runSync(cosineSimilarity(results[0]!, results[1]!))
+      const sim02 = Effect.runSync(cosineSimilarity(results[0]!, results[2]!))
+      const sim12 = Effect.runSync(cosineSimilarity(results[1]!, results[2]!))
 
       // Very different topics should not have identical embeddings
       expect(sim01).toBeLessThan(0.99)
@@ -204,7 +204,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
         )
       )
 
-      const similarity = cosineSimilarity(results.emb1, results.emb2)
+      const similarity = Effect.runSync(cosineSimilarity(results.emb1, results.emb2))
 
       // Semantically similar texts should have high similarity
       // Note: The exact threshold depends on the model, but related concepts
@@ -228,7 +228,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
         )
       )
 
-      const similarity = cosineSimilarity(results.emb1, results.emb2)
+      const similarity = Effect.runSync(cosineSimilarity(results.emb1, results.emb2))
 
       // Unrelated texts should have lower similarity
       // The exact threshold depends on the model
@@ -255,8 +255,8 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
         )
       )
 
-      const simToSimilar = cosineSimilarity(results[0]!, results[1]!)
-      const simToDissimilar = cosineSimilarity(results[0]!, results[2]!)
+      const simToSimilar = Effect.runSync(cosineSimilarity(results[0]!, results[1]!))
+      const simToDissimilar = Effect.runSync(cosineSimilarity(results[0]!, results[2]!))
 
       // The related text should have higher similarity
       expect(simToSimilar).toBeGreaterThan(simToDissimilar)
@@ -280,7 +280,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
       )
 
       // Same text should produce identical embeddings
-      const similarity = cosineSimilarity(results.emb1, results.emb2)
+      const similarity = Effect.runSync(cosineSimilarity(results.emb1, results.emb2))
       expect(similarity).toBeGreaterThan(0.9999)
 
       // Check element-wise equality (with small tolerance for floating point)
@@ -308,7 +308,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
 
       // Batch results should be deterministic
       for (let i = 0; i < texts.length; i++) {
-        const similarity = cosineSimilarity(results.batch1[i]!, results.batch2[i]!)
+        const similarity = Effect.runSync(cosineSimilarity(results.batch1[i]!, results.batch2[i]!))
         expect(similarity).toBeGreaterThan(0.9999)
       }
     }, TEST_TIMEOUT)
@@ -334,7 +334,7 @@ describe.skipIf(SKIP_REAL_TESTS || !modelAvailable)("Real Embedding Integration 
 
       // All embeddings should be essentially identical
       for (let i = 1; i < embeddings.length; i++) {
-        const similarity = cosineSimilarity(embeddings[0]!, embeddings[i]!)
+        const similarity = Effect.runSync(cosineSimilarity(embeddings[0]!, embeddings[i]!))
         expect(similarity).toBeGreaterThan(0.9999)
       }
     }, TEST_TIMEOUT)

@@ -10,6 +10,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToMessage, type MessageRow } from "../mappers/message.js"
 import type { Message } from "@jamesaphoenix/tx-types"
+import { coerceDbResult } from "../utils/db-result.js"
 
 export class MessageRepository extends Context.Tag("MessageRepository")<
   MessageRepository,
@@ -86,13 +87,13 @@ export const MessageRepositoryLive = Layer.effect(
               params.createdAt,
               params.expiresAt
             )
-            const row = db.prepare(
+            const row = coerceDbResult<MessageRow | undefined>(db.prepare(
               "SELECT * FROM outbox_messages WHERE id = ?"
-            ).get(result.lastInsertRowid) as MessageRow | undefined
+            ).get(result.lastInsertRowid))
             if (!row) {
               throw new EntityFetchError({
                 entity: "message",
-                id: result.lastInsertRowid as number,
+                id: coerceDbResult<number>(result.lastInsertRowid),
                 operation: "insert"
               })
             }
@@ -144,7 +145,7 @@ export const MessageRepositoryLive = Layer.effect(
               ORDER BY id ASC
               LIMIT ?`
 
-            const rows = db.prepare(sql).all(...values) as MessageRow[]
+            const rows = coerceDbResult<MessageRow[]>(db.prepare(sql).all(...values))
             return rows.map(rowToMessage)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -153,9 +154,9 @@ export const MessageRepositoryLive = Layer.effect(
       findById: (id) =>
         Effect.try({
           try: () => {
-            const row = db.prepare(
+            const row = coerceDbResult<MessageRow | undefined>(db.prepare(
               "SELECT * FROM outbox_messages WHERE id = ?"
-            ).get(id) as MessageRow | undefined
+            ).get(id))
             return row ? rowToMessage(row) : null
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -188,11 +189,11 @@ export const MessageRepositoryLive = Layer.effect(
       findByCorrelationId: (correlationId) =>
         Effect.try({
           try: () => {
-            const rows = db.prepare(
+            const rows = coerceDbResult<MessageRow[]>(db.prepare(
               `SELECT * FROM outbox_messages
                WHERE correlation_id = ?
                ORDER BY id ASC`
-            ).all(correlationId) as MessageRow[]
+            ).all(correlationId))
             return rows.map(rowToMessage)
           },
           catch: (cause) => new DatabaseError({ cause })
@@ -226,11 +227,11 @@ export const MessageRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const now = new Date().toISOString()
-            const row = db.prepare(
+            const row = coerceDbResult<{ count: number }>(db.prepare(
               `SELECT COUNT(*) as count FROM outbox_messages
                WHERE channel = ? AND status = 'pending'
                AND (expires_at IS NULL OR expires_at > ?)`
-            ).get(channel, now) as { count: number }
+            ).get(channel, now))
             return row.count
           },
           catch: (cause) => new DatabaseError({ cause })
