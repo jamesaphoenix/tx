@@ -64,5 +64,7 @@
     "cli",
     "task-management",
     "effect-ts"
-  ]
+  ],
+  "author": "James Phoenix",
+  "license": "MIT"
 }

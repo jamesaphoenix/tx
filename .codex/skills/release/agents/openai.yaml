@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release"
+  short_description: "Ship a verified lockstep tx release and monitor publish"
+  default_prompt: "Use this skill when cutting a tx release, repairing a failed publish, or verifying publish readiness."
