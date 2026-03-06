@@ -28,6 +28,14 @@ const runTx = (cwd: string, dbPath: string, args: string[], input?: string): Exe
   }
 }
 
+const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
+  writeFileSync(
+    join(cwd, ".tx", "config.toml"),
+    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    "utf-8"
+  )
+}
+
 const writeSpecDocYaml = (
   cwd: string,
   name: string,
@@ -60,6 +68,7 @@ describe("CLI spec traceability", () => {
 
     const init = runTx(cwd, dbPath, ["init", "--codex"])
     expect(init.status).toBe(0)
+    writeDocsConfig(cwd, false)
   })
 
   afterEach(() => {

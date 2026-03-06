@@ -581,6 +581,53 @@ curl http://localhost:3456/api/context/tx-abc123
 
 Run-level heartbeat primitives for orchestration loops and watchdogs.
 
+#### `tx.runs.list(options?)`
+
+List recent runs with filtering and cursor pagination.
+
+```typescript
+const recent = await tx.runs.list({
+  limit: 20,
+  status: ["failed", "running"],
+})
+```
+
+#### `tx.runs.get(runId)`
+
+Get a run with parsed transcript messages and captured stdout/stderr logs.
+
+```typescript
+const detail = await tx.runs.get("run-abc12345")
+console.log(detail.run.status)
+console.log(detail.messages.length)
+```
+
+#### `tx.runs.transcript(runId)`
+
+Get parsed transcript entries for a run.
+
+```typescript
+const messages = await tx.runs.transcript("run-abc12345")
+const toolCalls = messages.filter((message) => message.type === "tool_use")
+```
+
+#### `tx.runs.stderr(runId, options?)`
+
+Read stderr for a run, optionally tailing the last N lines.
+
+```typescript
+const stderr = await tx.runs.stderr("run-abc12345", { tail: 50 })
+console.log(stderr.content)
+```
+
+#### `tx.runs.errors(options?)`
+
+Aggregate recent run errors, span errors, and error events.
+
+```typescript
+const errors = await tx.runs.errors({ hours: 24, limit: 10 })
+```
+
 #### `tx.runs.heartbeat(runId, data?)`
 
 Record transcript/log progress for a running run.
@@ -611,6 +658,87 @@ Reap stalled runs by cancelling the run and optionally resetting task status.
 const reaped = await tx.runs.reap({
   transcriptIdleSeconds: 300,
   dryRun: false,
+})
+```
+
+### Spec
+
+Spec traceability primitives bridge docs, invariants, tests, and FCI.
+
+#### `tx.spec.discover(options?)`
+
+Sync invariants from docs and discover mappings from tags, comments, and manifest entries.
+
+```typescript
+const discover = await tx.spec.discover({
+  doc: "PRD-033-spec-test-traceability",
+})
+```
+
+#### `tx.spec.link(invariantId, file, name?, framework?)`
+
+Create or upsert a manual invariant-to-test mapping.
+
+```typescript
+await tx.spec.link(
+  "INV-EARS-FL-001",
+  "test/integration/flow.test.ts",
+  "flow stays unblocked",
+  "vitest"
+)
+```
+
+#### `tx.spec.status(options?)`
+
+Get current FCI phase and uncovered-gap count.
+
+```typescript
+const status = await tx.spec.status({
+  doc: "PRD-033-spec-test-traceability",
+})
+```
+
+#### `tx.spec.matrix(options?)`
+
+Get the invariant-to-test traceability matrix with latest run outcomes.
+
+```typescript
+const matrix = await tx.spec.matrix({
+  doc: "PRD-033-spec-test-traceability",
+})
+```
+
+#### `tx.spec.run(testId, passed, options?)`
+
+Record a single test outcome.
+
+```typescript
+await tx.spec.run(
+  "test/integration/flow.test.ts::flow stays unblocked",
+  true,
+  { durationMs: 42 }
+)
+```
+
+#### `tx.spec.batch(data)`
+
+Ingest framework-native batch output or pre-parsed result rows.
+
+```typescript
+await tx.spec.batch({
+  from: "junit",
+  raw: "<testsuites>...</testsuites>",
+})
+```
+
+#### `tx.spec.complete(options)`
+
+Human sign-off for a HARDEN scope.
+
+```typescript
+await tx.spec.complete({
+  doc: "PRD-033-spec-test-traceability",
+  signedOffBy: "james",
 })
 ```
 
@@ -1047,9 +1175,9 @@ agentLoop()
 - [tx context](/docs/primitives/context) - Contextual learning retrieval
 - [tx send / tx inbox](/docs/primitives/inbox) - Agent-to-agent messaging
 - [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents
+- [tx label](/docs/primitives/label) - Ready queue scoping by phase
 - [tx guard](/docs/primitives/guard) - Task creation limits (bounded autonomy)
 - [tx verify](/docs/primitives/verify) - Machine-checkable done criteria
-- [tx label](/docs/primitives/label) - Ready queue scoping by phase
 - [tx reflect](/docs/primitives/reflect) - Session retrospective and signals
-- [tx sync](/docs/primitives/sync) - Stream-based event sync
 - [tx gate](/docs/primitives/gate) - Human-in-the-loop phase approvals
+- [tx sync](/docs/primitives/sync) - Stream-based event sync

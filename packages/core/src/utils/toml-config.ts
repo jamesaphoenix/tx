@@ -9,7 +9,7 @@ export type DashboardDefaultTaskAssigmentType = "human" | "agent"
 export type GuardMode = "advisory" | "enforce"
 
 export type TxConfig = {
-  docs: { path: string }
+  docs: { path: string; requireEars: boolean }
   spec: { testPatterns: string[] }
   memory: { defaultDir: string }
   cycles: { scanPrompt: string | null; agents: number; model: string }
@@ -34,7 +34,7 @@ const isGuardMode = (v: string | null): v is GuardMode =>
   v === "advisory" || v === "enforce"
 
 const DEFAULT_CONFIG: TxConfig = {
-  docs: { path: ".tx/docs" },
+  docs: { path: ".tx/docs", requireEars: true },
   spec: {
     testPatterns: [
       "test/**/*.test.{ts,js,tsx,jsx}",
@@ -88,6 +88,7 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     const raw = readFileSync(configPath, "utf8")
     // Lightweight TOML parsing for our simple config structure.
     const docsPath = extractTomlValue(raw, DOCS_SECTION, "path")
+    const docsRequireEars = extractTomlValue(raw, DOCS_SECTION, "require_ears")
     const specPatterns = extractTomlArray(raw, SPEC_SECTION, "test_patterns")
     const cyclesScanPrompt = extractTomlValue(raw, CYCLES_SECTION, "scan_prompt")
     const cyclesAgents = extractTomlValue(raw, CYCLES_SECTION, "agents")
@@ -120,6 +121,10 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     return {
       docs: {
         path: docsPath ?? DEFAULT_CONFIG.docs.path,
+        requireEars: parseBooleanOrDefault(
+          docsRequireEars,
+          DEFAULT_CONFIG.docs.requireEars
+        ),
       },
       spec: {
         testPatterns: specPatterns.length > 0 ? specPatterns : DEFAULT_CONFIG.spec.testPatterns,
@@ -359,6 +364,10 @@ const DEFAULT_CONFIG_TOML = `# tx configuration
 # Where tx stores YAML doc files on disk.
 # Relative to the project root.
 path = ".tx/docs"
+
+# When true, PRDs that define legacy \`requirements\` must also define
+# structured \`ears_requirements\`. Set to false to keep EARS optional.
+require_ears = true
 
 # ─── Spec Traceability ─────────────────────────────────────────────
 # Invariant-to-test mapping discovery and completion scoring.

@@ -23,6 +23,48 @@ import { CliExitError } from "../cli-exit.js"
 
 const docKindStrings: readonly string[] = DOC_KINDS
 
+const collectLegacyRequirements = (value: unknown): string[] => {
+  const normalize = (item: string): string | null => {
+    const stripped = item
+      .trim()
+      .replace(/^[-*]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      .trim()
+    return stripped.length > 0 ? stripped : null
+  }
+
+  if (Array.isArray(value)) {
+    const out: string[] = []
+    for (const item of value) {
+      if (typeof item !== "string") continue
+      const normalized = normalize(item)
+      if (!normalized) continue
+      out.push(normalized)
+    }
+    return out
+  }
+
+  if (typeof value === "string") {
+    const out: string[] = []
+    for (const line of value.split(/\r?\n/)) {
+      const normalized = normalize(line)
+      if (!normalized) continue
+      out.push(normalized)
+    }
+    return out
+  }
+
+  return []
+}
+
+const toEarsAreaSegment = (name: string): string => {
+  const normalized = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "")
+    .slice(0, 12)
+  return normalized.length > 0 ? normalized : "DOC"
+}
+
 /** Dispatch doc subcommands. */
 export const doc = (pos: string[], flags: Flags) => {
   const sub = pos[0]
@@ -68,7 +110,12 @@ const docAdd = (pos: string[], flags: Flags) =>
     }
 
     const title = opt(flags, "title", "t") ?? name
-    const yamlContent = generateTemplate(kind as DocKind, name, title)
+    const yamlContent = generateTemplate(
+      kind as DocKind,
+      name,
+      title,
+      readTxConfig().docs.requireEars
+    )
 
     const svc = yield* DocService
     const doc = yield* svc.create({
@@ -336,6 +383,7 @@ const docLintEars = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const target = pos[0]
     const jsonMode = flag(flags, "json")
+    const requireEars = readTxConfig().docs.requireEars
     if (!target) {
       console.error("Usage: tx doc lint-ears <doc-name-or-yaml-path> [--json]")
       throw new CliExitError(1)
@@ -356,8 +404,7 @@ const docLintEars = (pos: string[], flags: Flags) =>
         throw new CliExitError(1)
       }
       docName = doc.name
-      const config = readTxConfig()
-      yamlPath = resolve(config.docs.path, doc.filePath)
+      yamlPath = resolve(readTxConfig().docs.path, doc.filePath)
     }
 
     let parsed: unknown
@@ -402,6 +449,8 @@ const docLintEars = (pos: string[], flags: Flags) =>
 
     const parsedRecord = parsed as Record<string, unknown>
     const kind = typeof parsedRecord.kind === "string" ? parsedRecord.kind : null
+    const usesLegacyRequirements =
+      collectLegacyRequirements(parsedRecord.requirements).length > 0
     if (kind && kind !== "prd") {
       const message = `YAML kind '${kind}' is not 'prd'. EARS validation is only supported for PRD docs.`
       if (jsonMode) {
@@ -421,6 +470,26 @@ const docLintEars = (pos: string[], flags: Flags) =>
 
     const earsRequirements = parsedRecord.ears_requirements
     if (earsRequirements === undefined) {
+      if (requireEars && usesLegacyRequirements) {
+        const message =
+          "PRDs with legacy 'requirements' must also define a non-empty " +
+          "'ears_requirements' array while [docs].require_ears = true. " +
+          "Set [docs].require_ears = false to opt out."
+        if (jsonMode) {
+          console.log(
+            toJson({
+              valid: false,
+              doc: docName ?? null,
+              path: yamlPath,
+              errors: [{ field: "ears_requirements", message }],
+            })
+          )
+        } else {
+          console.error(`EARS validation failed: ${message}`)
+        }
+        throw new CliExitError(1)
+      }
+
       if (jsonMode) {
         console.log(
           toJson({
@@ -456,6 +525,26 @@ const docLintEars = (pos: string[], flags: Flags) =>
       throw new CliExitError(1)
     }
 
+    if (requireEars && usesLegacyRequirements && earsRequirements.length === 0) {
+      const message =
+        "PRDs with legacy 'requirements' must also define a non-empty " +
+        "'ears_requirements' array while [docs].require_ears = true. " +
+        "Set [docs].require_ears = false to opt out."
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: false,
+            doc: docName ?? null,
+            path: yamlPath,
+            errors: [{ field: "ears_requirements", message }],
+          })
+        )
+      } else {
+        console.error(`EARS validation failed: ${message}`)
+      }
+      throw new CliExitError(1)
+    }
+
     const errors = validateEarsRequirements(earsRequirements)
     if (jsonMode) {
       console.log(
@@ -484,7 +573,12 @@ const docLintEars = (pos: string[], flags: Flags) =>
   })
 
 /** Generate template YAML content for a doc kind. */
-function generateTemplate(kind: DocKind, name: string, title: string): string {
+function generateTemplate(
+  kind: DocKind,
+  name: string,
+  title: string,
+  requireEars: boolean
+): string {
   switch (kind) {
     case "overview":
       return [
@@ -525,6 +619,40 @@ function generateTemplate(kind: DocKind, name: string, title: string): string {
         ``,
       ].join("\n")
     case "prd":
+      if (requireEars) {
+        const earsArea = toEarsAreaSegment(name)
+        return [
+          `kind: prd`,
+          `name: ${name}`,
+          `title: "${title}"`,
+          `status: changing`,
+          ``,
+          `problem: |`,
+          `  Describe the problem.`,
+          ``,
+          `solution: |`,
+          `  Describe the solution approach.`,
+          ``,
+          `ears_requirements:`,
+          `  - id: EARS-${earsArea}-001`,
+          `    pattern: ubiquitous`,
+          `    system: the system`,
+          `    response: do something important`,
+          `    priority: must`,
+          ``,
+          `# Optional legacy requirements list (kept for backward compatibility)`,
+          `# requirements:`,
+          `#   - Requirement 1`,
+          ``,
+          `acceptance_criteria:`,
+          `  - Criterion 1`,
+          ``,
+          `out_of_scope:`,
+          `  - Item 1`,
+          ``,
+        ].join("\n")
+      }
+
       return [
         `kind: prd`,
         `name: ${name}`,
@@ -540,7 +668,8 @@ function generateTemplate(kind: DocKind, name: string, title: string): string {
         `requirements:`,
         `  - Requirement 1`,
         ``,
-        `# Structured requirements using EARS notation (optional)`,
+        `# Structured requirements using EARS notation (enabled by default;`,
+        `# set [docs].require_ears = false in .tx/config.toml to keep optional)`,
         `# ears_requirements:`,
         `#   - id: EARS-XXX-001`,
         `#     pattern: ubiquitous`,

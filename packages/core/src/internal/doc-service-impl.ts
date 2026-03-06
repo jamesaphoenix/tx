@@ -113,6 +113,43 @@ const resolveMdPath = (
   return resolvedDocPath
 }
 
+const collectLegacyRequirements = (value: unknown): string[] => {
+  const normalize = (item: string): string | null => {
+    const stripped = item
+      .trim()
+      .replace(/^[-*]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      .trim()
+    return stripped.length > 0 ? stripped : null
+  }
+
+  if (Array.isArray(value)) {
+    const out: string[] = []
+    for (const item of value) {
+      if (typeof item !== "string") continue
+      const normalized = normalize(item)
+      if (!normalized) continue
+      out.push(normalized)
+    }
+    return out
+  }
+
+  if (typeof value === "string") {
+    const out: string[] = []
+    for (const line of value.split(/\r?\n/)) {
+      const normalized = normalize(line)
+      if (!normalized) continue
+      out.push(normalized)
+    }
+    return out
+  }
+
+  return []
+}
+
+const isEarsRequiredForLegacyPrds = (): boolean =>
+  readTxConfig().docs.requireEars
+
 /** Validate YAML content and return parsed object. */
 const validateYaml = (
   name: string,
@@ -158,6 +195,22 @@ const validateYaml = (
     }
   }
 
+  if (
+    effectiveKind === "prd" &&
+    isEarsRequiredForLegacyPrds() &&
+    collectLegacyRequirements(parsedObject.requirements).length > 0 &&
+    (!Array.isArray(parsedObject.ears_requirements) ||
+      parsedObject.ears_requirements.length === 0)
+  ) {
+    throw new InvalidDocYamlError({
+      name,
+      reason:
+        "EARS: PRDs with legacy 'requirements' must also define a non-empty " +
+        "'ears_requirements' array while [docs].require_ears = true. " +
+        "Set [docs].require_ears = false to opt out.",
+    })
+  }
+
   return parsedObject
 }
 
@@ -195,37 +248,7 @@ const normalizeInvariantSegment = (value: string): string => {
 }
 
 const collectStringList = (value: unknown): string[] => {
-  const normalize = (item: string): string | null => {
-    const stripped = item
-      .trim()
-      .replace(/^[-*]\s+/, "")
-      .replace(/^\d+\.\s+/, "")
-      .trim()
-    return stripped.length > 0 ? stripped : null
-  }
-
-  if (Array.isArray(value)) {
-    const out: string[] = []
-    for (const item of value) {
-      if (typeof item !== "string") continue
-      const normalized = normalize(item)
-      if (!normalized) continue
-      out.push(normalized)
-    }
-    return out
-  }
-
-  if (typeof value === "string") {
-    const out: string[] = []
-    for (const line of value.split(/\r?\n/)) {
-      const normalized = normalize(line)
-      if (!normalized) continue
-      out.push(normalized)
-    }
-    return out
-  }
-
-  return []
+  return collectLegacyRequirements(value)
 }
 
 const extractSubsystemFromEarsId = (id: string): string | undefined => {

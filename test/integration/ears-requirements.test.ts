@@ -45,6 +45,14 @@ const setupDocsWorkspace = (cwd: string): void => {
   mkdirSync(join(cwd, ".tx", "docs", "design"), { recursive: true })
 }
 
+const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
+  writeFileSync(
+    join(cwd, ".tx", "config.toml"),
+    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    "utf8"
+  )
+}
+
 describe("EARS requirements integration", () => {
   let shared: SharedTestLayerResult
   let originalCwd: string
@@ -214,7 +222,39 @@ describe("EARS requirements integration", () => {
     ).rejects.toThrow("'ears_requirements' must be an array")
   })
 
-  it("keeps backward compatibility for PRDs without ears_requirements", async () => {
+  it("requires EARS when legacy requirements are present by default", async () => {
+    const name = `prd-${fixtureId("ears-required-default").slice(3, 10)}`
+    const yamlContent = [
+      "kind: prd",
+      `name: ${name}`,
+      'title: "Legacy PRD"',
+      "status: changing",
+      "",
+      "requirements:",
+      "  - legacy requirement",
+      "",
+      "acceptance_criteria:",
+      "  - legacy criterion",
+    ].join("\n")
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* DocService
+          yield* svc.create({
+            kind: "prd",
+            name,
+            title: "Legacy PRD",
+            yamlContent,
+          })
+        }).pipe(Effect.provide(shared.layer))
+      )
+    ).rejects.toThrow("must also define a non-empty 'ears_requirements' array")
+  })
+
+  it("keeps backward compatibility for PRDs without ears_requirements when config disables it", async () => {
+    writeDocsConfig(tempDir, false)
+
     const name = `prd-${fixtureId("ears-backward-compatible").slice(3, 10)}`
     const yamlContent = [
       "kind: prd",
@@ -293,8 +333,11 @@ describe("EARS requirements integration", () => {
       'title: "Update PRD"',
       "status: changing",
       "",
-      "requirements:",
-      "  - legacy requirement",
+      "problem: |",
+      "  Start without structured requirements.",
+      "",
+      "solution: |",
+      "  Add them during update.",
     ].join("\n")
 
     const updatedYaml = [
@@ -341,8 +384,11 @@ describe("EARS requirements integration", () => {
       'title: "Update Invalid PRD"',
       "status: changing",
       "",
-      "requirements:",
-      "  - legacy requirement",
+      "problem: |",
+      "  Start without structured requirements.",
+      "",
+      "solution: |",
+      "  Add an invalid EARS block during update.",
     ].join("\n")
 
     const invalidUpdateYaml = [
@@ -436,10 +482,20 @@ describe("CLI doc lint-ears", () => {
     expect(addDoc.status).toBe(0)
 
     const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
-    const baseYaml = readFileSync(yamlPath, "utf8")
-    const earsYaml = [
-      baseYaml.trimEnd(),
-      "",
+    writeFileSync(
+      yamlPath,
+      [
+        "kind: prd",
+        `name: ${name}`,
+        'title: "Valid EARS"',
+        "status: changing",
+        "",
+        "problem: |",
+        "  Validate structured requirements.",
+        "",
+        "solution: |",
+        "  Use EARS syntax.",
+        "",
       "ears_requirements:",
       "  - id: EARS-FL-001",
       "    pattern: event_driven",
@@ -447,8 +503,9 @@ describe("CLI doc lint-ears", () => {
       "    system: recall service",
       "    response: return relevant learnings",
       "",
-    ].join("\n")
-    writeFileSync(yamlPath, earsYaml, "utf8")
+      ].join("\n"),
+      "utf8"
+    )
 
     const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
     expect(lint.status).toBe(0)
@@ -461,18 +518,29 @@ describe("CLI doc lint-ears", () => {
     expect(addDoc.status).toBe(0)
 
     const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
-    const baseYaml = readFileSync(yamlPath, "utf8")
-    const earsYaml = [
-      baseYaml.trimEnd(),
-      "",
+    writeFileSync(
+      yamlPath,
+      [
+        "kind: prd",
+        `name: ${name}`,
+        'title: "Path EARS"',
+        "status: changing",
+        "",
+        "problem: |",
+        "  Validate by path.",
+        "",
+        "solution: |",
+        "  Read YAML directly.",
+        "",
       "ears_requirements:",
       "  - id: EARS-PATH-001",
       "    pattern: ubiquitous",
       "    system: tx",
       "    response: lint via path",
       "",
-    ].join("\n")
-    writeFileSync(yamlPath, earsYaml, "utf8")
+      ].join("\n"),
+      "utf8"
+    )
 
     const lint = runTx(["doc", "lint-ears", yamlPath], tempProjectDir)
     expect(lint.status).toBe(0)
@@ -485,18 +553,29 @@ describe("CLI doc lint-ears", () => {
     expect(addDoc.status).toBe(0)
 
     const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
-    const baseYaml = readFileSync(yamlPath, "utf8")
-    const earsYaml = [
-      baseYaml.trimEnd(),
-      "",
+    writeFileSync(
+      yamlPath,
+      [
+        "kind: prd",
+        `name: ${name}`,
+        'title: "Invalid EARS"',
+        "status: changing",
+        "",
+        "problem: |",
+        "  Missing trigger.",
+        "",
+        "solution: |",
+        "  Should fail lint.",
+        "",
       "ears_requirements:",
       "  - id: EARS-FL-001",
       "    pattern: event_driven",
       "    system: recall service",
       "    response: return relevant learnings",
       "",
-    ].join("\n")
-    writeFileSync(yamlPath, earsYaml, "utf8")
+      ].join("\n"),
+      "utf8"
+    )
 
     const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
     expect(lint.status).not.toBe(0)
@@ -510,18 +589,29 @@ describe("CLI doc lint-ears", () => {
     expect(addDoc.status).toBe(0)
 
     const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
-    const baseYaml = readFileSync(yamlPath, "utf8")
-    const earsYaml = [
-      baseYaml.trimEnd(),
-      "",
+    writeFileSync(
+      yamlPath,
+      [
+        "kind: prd",
+        `name: ${name}`,
+        'title: "Valid JSON EARS"',
+        "status: changing",
+        "",
+        "problem: |",
+        "  Produce JSON output.",
+        "",
+        "solution: |",
+        "  Lint a valid EARS block.",
+        "",
       "ears_requirements:",
       "  - id: EARS-JSON-001",
       "    pattern: ubiquitous",
       "    system: tx",
       "    response: return json payload",
       "",
-    ].join("\n")
-    writeFileSync(yamlPath, earsYaml, "utf8")
+      ].join("\n"),
+      "utf8"
+    )
     // Force fsync to ensure data is on disk before subprocess reads it
     const fd = openSync(yamlPath, "r")
     fsyncSync(fd)
@@ -547,18 +637,29 @@ describe("CLI doc lint-ears", () => {
     expect(addDoc.status).toBe(0)
 
     const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
-    const baseYaml = readFileSync(yamlPath, "utf8")
-    const earsYaml = [
-      baseYaml.trimEnd(),
-      "",
+    writeFileSync(
+      yamlPath,
+      [
+        "kind: prd",
+        `name: ${name}`,
+        'title: "Invalid JSON EARS"',
+        "status: changing",
+        "",
+        "problem: |",
+        "  Produce JSON error output.",
+        "",
+        "solution: |",
+        "  Lint an invalid EARS block.",
+        "",
       "ears_requirements:",
       "  - id: EARS-JSON-001",
       "    pattern: event_driven",
       "    system: tx",
       "    response: fail json payload",
       "",
-    ].join("\n")
-    writeFileSync(yamlPath, earsYaml, "utf8")
+      ].join("\n"),
+      "utf8"
+    )
 
     const lint = runTx(["doc", "lint-ears", name, "--json"], tempProjectDir)
     expect(lint.status).not.toBe(0)
@@ -572,6 +673,72 @@ describe("CLI doc lint-ears", () => {
     expect(parsed.count).toBe(1)
     expect(parsed.path).toContain(`${name}.yml`)
     expect(parsed.errors.some((error) => error.field === "trigger")).toBe(true)
+  })
+
+  it("fails lint when legacy requirements omit EARS under the default config", () => {
+    const name = `prd-${fixtureId("cli-ears-required").slice(3, 10)}`
+    const addDoc = runTx(["doc", "add", "prd", name, "--title", "Legacy PRD"], tempProjectDir)
+    expect(addDoc.status).toBe(0)
+
+    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    writeFileSync(
+      yamlPath,
+      [
+        "kind: prd",
+        `name: ${name}`,
+        'title: "Legacy PRD"',
+        "status: changing",
+        "",
+        "problem: |",
+        "  Missing EARS section.",
+        "",
+        "solution: |",
+        "  Still using legacy requirements only.",
+        "",
+        "requirements:",
+        "  - Legacy requirement one",
+        "",
+      ].join("\n"),
+      "utf8"
+    )
+
+    const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
+    expect(lint.status).not.toBe(0)
+    expect(lint.stderr).toContain("must also define a non-empty 'ears_requirements' array")
+  })
+
+  it("allows legacy requirements when config disables required EARS", () => {
+    writeDocsConfig(tempProjectDir, false)
+
+    const name = `prd-${fixtureId("cli-ears-optional").slice(3, 10)}`
+    const addDoc = runTx(["doc", "add", "prd", name, "--title", "Optional EARS"], tempProjectDir)
+    expect(addDoc.status).toBe(0)
+
+    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    writeFileSync(
+      yamlPath,
+      [
+        "kind: prd",
+        `name: ${name}`,
+        'title: "Optional EARS"',
+        "status: changing",
+        "",
+        "problem: |",
+        "  Legacy-only authoring.",
+        "",
+        "solution: |",
+        "  Config opt-out.",
+        "",
+        "requirements:",
+        "  - Legacy requirement one",
+        "",
+      ].join("\n"),
+      "utf8"
+    )
+
+    const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
+    expect(lint.status).toBe(0)
+    expect(lint.stdout).toContain("No ears_requirements section found")
   })
 
   it("shows lint-ears in doc help output", () => {

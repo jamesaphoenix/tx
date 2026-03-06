@@ -52,6 +52,9 @@ export const readLogFile = (
 
     if (tailLines > 0) {
       const lines = content.split("\n")
+      if (lines.length > 0 && lines[lines.length - 1] === "") {
+        lines.pop()
+      }
       if (lines.length > tailLines) {
         return {
           content: lines.slice(-tailLines).join("\n"),

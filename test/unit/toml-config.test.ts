@@ -18,7 +18,7 @@ import {
 
 const tempDirs: string[] = [];
 const DEFAULTS = {
-  docs: { path: ".tx/docs" },
+  docs: { path: ".tx/docs", requireEars: true },
   spec: {
     testPatterns: [
       "test/**/*.test.{ts,js,tsx,jsx}",
@@ -113,8 +113,31 @@ describe("toml-config", () => {
 
     const parsed = readTxConfig(cwd);
     expect(parsed.docs.path).toBe("custom/docs");
+    expect(parsed.docs.requireEars).toBe(true);
     expect(parsed.cycles.agents).toBe(7);
     expect(parsed.dashboard.defaultTaskAssigmentType).toBe("human");
+  });
+
+  it("parses docs require_ears from config", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      ["[docs]", 'path = ".tx/docs"', "require_ears = false"].join("\n"),
+    );
+
+    const parsed = readTxConfig(cwd);
+    expect(parsed.docs.requireEars).toBe(false);
+  });
+
+  it("falls back to true when docs require_ears is invalid", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      ["[docs]", 'path = ".tx/docs"', 'require_ears = "maybe"'].join("\n"),
+    );
+
+    const parsed = readTxConfig(cwd);
+    expect(parsed.docs.requireEars).toBe(true);
   });
 
   it("writes dashboard default assignment type to config.toml", () => {
@@ -269,6 +292,7 @@ describe("scaffoldConfigToml", () => {
     // Check all sections exist with doc links
     expect(raw).toContain("[docs]");
     expect(raw).toContain("https://txdocs.dev/docs/primitives/docs");
+    expect(raw).toContain("require_ears = true");
     expect(raw).toContain("[spec]");
     expect(raw).toContain("tx spec discover");
     expect(raw).toContain("[memory]");

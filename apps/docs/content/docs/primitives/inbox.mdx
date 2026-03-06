@@ -42,7 +42,7 @@ Key properties:
   chart={`stateDiagram-v2
     [*] --> Pending: tx send
     Pending --> Pending: tx inbox / cursor read
-    Pending --> Acked: tx ack / tx ack:all
+    Pending --> Acked: tx ack or ack all
     Pending --> Expired: TTL elapsed
     Acked --> GC: outbox GC
     Expired --> GC: outbox GC

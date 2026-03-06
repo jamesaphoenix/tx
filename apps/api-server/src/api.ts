@@ -661,6 +661,26 @@ const LogContentResponse = Schema.Struct({
   truncated: Schema.Boolean,
 })
 
+const TraceErrorsParams = Schema.Struct({
+  hours: Schema.optional(Schema.NumberFromString.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1))),
+  limit: Schema.optional(Schema.NumberFromString.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1))),
+})
+
+const TraceErrorEntryResponse = Schema.Struct({
+  timestamp: Schema.String,
+  source: Schema.Literal("run", "span", "event"),
+  runId: Schema.NullOr(Schema.String),
+  taskId: Schema.NullOr(Schema.String),
+  agent: Schema.NullOr(Schema.String),
+  name: Schema.String,
+  error: Schema.String,
+  durationMs: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+})
+
+const TraceErrorsResponse = Schema.Struct({
+  errors: Schema.Array(TraceErrorEntryResponse),
+})
+
 export const RunsGroup = HttpApiGroup.make("runs")
   .add(
     HttpApiEndpoint.get("listRuns", "/api/runs")
@@ -680,6 +700,11 @@ export const RunsGroup = HttpApiGroup.make("runs")
   .add(
     HttpApiEndpoint.get("getRun")`/api/runs/${RunIdParam}`
       .addSuccess(RunDetailWithMessagesResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getRunErrors", "/api/runs/errors")
+      .setUrlParams(TraceErrorsParams)
+      .addSuccess(TraceErrorsResponse)
   )
   .add(
     HttpApiEndpoint.post("createRun", "/api/runs")

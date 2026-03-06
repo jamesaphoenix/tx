@@ -85,6 +85,17 @@ export {
   type UpdateRunInput
 } from "@jamesaphoenix/tx-types"
 
+export {
+  SPEC_DISCOVERY_METHODS,
+  SPEC_SCOPE_TYPES,
+  SPEC_PHASES,
+  type SpecDiscoveryMethod,
+  type SpecScopeType,
+  type SpecPhase,
+  type DiscoverResult,
+  type FciResult,
+} from "@jamesaphoenix/tx-types"
+
 export interface RunHeartbeatData {
   stdoutBytes?: number
   stderrBytes?: number
@@ -151,6 +162,81 @@ export interface SerializedReapedRun {
   heartbeatLagSeconds: number | null
   processTerminated: boolean
   taskReset: boolean
+}
+
+export interface SerializedRun {
+  id: string
+  taskId: string | null
+  agent: string
+  startedAt: string
+  endedAt: string | null
+  status: string
+  exitCode: number | null
+  pid: number | null
+  transcriptPath: string | null
+  stderrPath: string | null
+  stdoutPath: string | null
+  contextInjected: string | null
+  summary: string | null
+  errorMessage: string | null
+  metadata: Record<string, unknown>
+}
+
+export interface RunsListOptions {
+  cursor?: string
+  limit?: number
+  agent?: string
+  status?: string | string[]
+  taskId?: string
+}
+
+export interface PaginatedRunsResult {
+  runs: SerializedRun[]
+  nextCursor: string | null
+  hasMore: boolean
+  total: number
+}
+
+export interface SerializedTraceMessage {
+  role: "user" | "assistant" | "system"
+  content: unknown
+  type?: "tool_use" | "tool_result" | "text" | "thinking"
+  toolName?: string
+  timestamp?: string
+}
+
+export interface RunLogsResult {
+  stdout: string | null
+  stderr: string | null
+  stdoutTruncated: boolean
+  stderrTruncated: boolean
+}
+
+export interface RunDetailResult {
+  run: SerializedRun
+  messages: SerializedTraceMessage[]
+  logs: RunLogsResult
+}
+
+export interface LogContentResult {
+  content: string
+  truncated: boolean
+}
+
+export interface TraceErrorsOptions {
+  hours?: number
+  limit?: number
+}
+
+export interface TraceErrorEntry {
+  timestamp: string
+  source: "run" | "span" | "event"
+  runId: string | null
+  taskId: string | null
+  agent: string | null
+  name: string
+  error: string
+  durationMs: number | null
 }
 
 // =============================================================================
@@ -621,6 +707,87 @@ export interface SerializedInvariantCheck {
   durationMs: number | null
   checkedAt: string
 }
+
+// =============================================================================
+// Spec Trace Types (SDK-specific)
+// =============================================================================
+
+export interface SpecScopeOptions {
+  doc?: string
+  subsystem?: string
+}
+
+export interface SerializedSpecTest {
+  id: number
+  invariantId: string
+  testId: string
+  testFile: string
+  testName: string | null
+  framework: string | null
+  discovery: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SerializedSpecGap {
+  id: string
+  rule: string
+  subsystem: string | null
+  docName: string
+}
+
+export interface SpecStatusResult {
+  phase: "BUILD" | "HARDEN" | "COMPLETE"
+  fci: number
+  gaps: number
+  total: number
+}
+
+export interface SerializedTraceabilityMatrixLatestRun {
+  passed: boolean | null
+  runAt: string | null
+}
+
+export interface SerializedTraceabilityMatrixTest {
+  specTestId: number
+  testId: string
+  testFile: string
+  testName: string | null
+  framework: string | null
+  discovery: string
+  latestRun: SerializedTraceabilityMatrixLatestRun
+}
+
+export interface SerializedTraceabilityMatrixEntry {
+  invariantId: string
+  rule: string
+  subsystem: string | null
+  tests: SerializedTraceabilityMatrixTest[]
+}
+
+export interface SerializedSpecSignoff {
+  id: number
+  scopeType: "doc" | "subsystem" | "global"
+  scopeValue: string | null
+  signedOffBy: string
+  notes: string | null
+  signedOffAt: string
+}
+
+export interface SpecBatchRunInput {
+  testId: string
+  passed: boolean
+  durationMs?: number | null
+  details?: string | null
+}
+
+export interface SpecBatchRunResult {
+  received: number
+  recorded: number
+  unmatched: string[]
+}
+
+export type SpecBatchSource = "generic" | "vitest" | "pytest" | "go" | "junit"
 
 // =============================================================================
 // Cycle Types (SDK-specific)

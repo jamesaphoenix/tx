@@ -37,6 +37,14 @@ const setupDocsWorkspace = (cwd: string): void => {
   mkdirSync(join(cwd, ".tx", "docs", "design"), { recursive: true })
 }
 
+const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
+  writeFileSync(
+    join(cwd, ".tx", "config.toml"),
+    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    "utf8"
+  )
+}
+
 const writeRelative = (cwd: string, relativePath: string, content: string): void => {
   const absPath = join(cwd, relativePath)
   mkdirSync(dirname(absPath), { recursive: true })
@@ -97,6 +105,7 @@ describe("SpecTraceService Integration", () => {
     shared = await getSharedTestLayer()
     tempDir = mkdtempSync(join(tmpdir(), "tx-spec-trace-"))
     setupDocsWorkspace(tempDir)
+    writeDocsConfig(tempDir, false)
     process.chdir(tempDir)
   })
 

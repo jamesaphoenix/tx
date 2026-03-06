@@ -4,7 +4,6 @@ description: Spec-to-test traceability with multi-language discovery and FCI pha
 ---
 
 import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
-import { SpecPipelineFigure, SpecPhaseFigure } from '@/components/spec-trace-figures'
 
 ## Purpose
 
@@ -17,11 +16,54 @@ import { SpecPipelineFigure, SpecPhaseFigure } from '@/components/spec-trace-fig
 
 This is primitive infrastructure, not a test runner. You keep your existing framework and CI.
 
+## Prerequisites
+
+To get useful output from `tx spec`, you need three things in place already:
+
+- [`tx doc`](/docs/primitives/docs): structured PRDs and design docs on disk so invariants have a canonical source
+- [`tx invariant`](/docs/primitives/invariants): synced active invariants to score against
+- Existing tests with either source annotations or `.tx/spec-tests.yml`: discovery maps tests from tags, comments, or explicit manifest entries
+
+Common follow-on primitives:
+
+- [`tx verify`](/docs/primitives/verify): make spec or FCI checks part of task completion
+- [`tx gate`](/docs/primitives/gate): require a human checkpoint before release movement
+- [`tx trace`](/docs/primitives/traces): inspect failing runs, transcripts, and stderr when outcomes regress
+
 ## At A Glance
 
-<SpecPipelineFigure />
+<Mermaid
+  title="Spec Pipeline"
+  caption="Specs become invariants, discovery builds mappings from tags or manifest entries, and recorded outcomes drive FCI and phase."
+  chart={`flowchart TB
+    Docs["A. Docs and invariants<br/>tx docs<br/>tx invariant sync"]
+    Tests["B. Test sources<br/>tags<br/>.tx/spec-tests.yml"]
+    Map["1. Traceability mappings<br/>discover<br/>link<br/>canonical IDs"]
+    Runs["2. Recorded outcomes<br/>tx spec run<br/>tx spec batch"]
+    Phase["3. FCI and phase<br/>BUILD<br/>HARDEN<br/>COMPLETE"]
 
-<SpecPhaseFigure />
+    Docs --> Map
+    Tests --> Map
+    Map --> Runs
+    Runs --> Phase
+  `}
+/>
+
+<Mermaid
+  title="FCI Gate"
+  caption="BUILD is automatic while any active invariant is failing. HARDEN starts at 100% FCI. COMPLETE still requires a human sign-off."
+  chart={`flowchart TB
+    Build["BUILD<br/>FCI < 100<br/>automatic"]
+    Harden["HARDEN<br/>FCI = 100<br/>automatic"]
+    Complete["COMPLETE<br/>human sign-off<br/>manual"]
+
+    Build -->|"FCI reaches 100"| Harden
+    Harden -->|"tx spec complete --by human"| Complete
+    Harden -. "failing outcome" .-> Build
+  `}
+/>
+
+Use this as a release gate: automation can move from `BUILD` to `HARDEN`, but only a human can mark `COMPLETE`.
 
 ## Canonical Test ID
 
@@ -95,18 +137,38 @@ tx spec complete --doc PRD-033-spec-test-traceability --by james
 ```typescript
 import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+const junitXml = '<testsuites>...</testsuites>'
 
-// SDK-native call
-const invariants = await tx.invariants.list({ docName: 'PRD-033-spec-test-traceability' })
+const discover = await tx.spec.discover({
+  doc: 'PRD-033-spec-test-traceability',
+})
 
-// Spec traceability endpoints via API while dedicated SDK methods land
-const status = await fetch('http://localhost:3456/api/spec/status?doc=PRD-033-spec-test-traceability')
-  .then((r) => r.json())
-const matrix = await fetch('http://localhost:3456/api/spec/matrix?doc=PRD-033-spec-test-traceability')
-  .then((r) => r.json())
+const status = await tx.spec.status({
+  doc: 'PRD-033-spec-test-traceability',
+})
 
-console.log({ invariants: invariants.length, phase: status.phase, matrix: matrix.matrix.length })
+const matrix = await tx.spec.matrix({
+  doc: 'PRD-033-spec-test-traceability',
+})
+
+await tx.spec.batch({
+  from: 'junit',
+  raw: junitXml,
+})
+
+if (status.phase === 'HARDEN') {
+  await tx.spec.complete({
+    doc: 'PRD-033-spec-test-traceability',
+    signedOffBy: 'james',
+  })
+}
+
+console.log({
+  discovered: discover.discoveredLinks,
+  phase: status.phase,
+  mappedInvariants: matrix.length,
+})
 ```
 
 </Tab>
@@ -163,3 +225,5 @@ Use this as a readiness primitive for moving from implementation to hardening an
 - [`tx doc`](/docs/primitives/docs)
 - [`tx invariant`](/docs/primitives/invariants)
 - [`tx verify`](/docs/primitives/verify)
+- [`tx gate`](/docs/primitives/gate)
+- [`tx trace`](/docs/primitives/traces)

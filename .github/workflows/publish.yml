@@ -42,7 +42,7 @@ jobs:
       - name: Strip bun export conditions for npm
         run: node scripts/strip-bun-exports.js
 
-      # Publish in dependency order: types -> core -> test-utils -> tx -> tx-cli
+      # Publish in dependency order: types -> core -> test-utils -> tx -> tx-agent-sdk -> tx-api-server -> tx-mcp-server -> tx-cli
       - name: Publish @jamesaphoenix/tx-types
         working-directory: packages/types
         run: npm publish --provenance --access public
@@ -63,6 +63,24 @@ jobs:
 
       - name: Publish @jamesaphoenix/tx
         working-directory: packages/tx
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @jamesaphoenix/tx-agent-sdk
+        working-directory: apps/agent-sdk
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @jamesaphoenix/tx-api-server
+        working-directory: apps/api-server
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @jamesaphoenix/tx-mcp-server
+        working-directory: apps/mcp-server
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -3,6 +3,8 @@ title: Primitives
 description: Composable building blocks for agent infrastructure
 ---
 
+import { HeadlessLayersFigure } from "@/components/headless-layers-figure"
+
 ## Overview
 
 tx provides a set of composable primitives for managing tasks, dependencies, learnings, and stream-log synchronization. These primitives are the building blocks for any agent orchestration pattern.
@@ -11,19 +13,7 @@ tx provides a set of composable primitives for managing tasks, dependencies, lea
 
 tx is about **primitives, not frameworks**. We don't dictate how you orchestrate your agents. Instead, we provide headless infrastructure that you compose however you need.
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Your Orchestration (your code, your rules)         │
-├─────────────────────────────────────────────────────┤
-│  tx primitives                                      │
-│                                                     │
-│   tx ready     tx done      tx context    tx learn  │
-│   tx claim     tx block     tx sync       tx trace  │
-│   tx invariant tx spec                              │
-│   tx gate      tx guard     tx verify     tx reflect│
-│                                                     │
-└─────────────────────────────────────────────────────┘
-```
+<HeadlessLayersFigure />
 
 ## Access Patterns
 
@@ -133,11 +123,11 @@ See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) fo
 
 | Primitive | Purpose | Interfaces | Status |
 |-----------|---------|------------|--------|
-| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints for phase transitions | CLI, SDK (via `tx.pins`), API (via `/api/pins`) | Available |
+| [`tx label`](/docs/primitives/label) | Organize tasks with labels for ready queue scoping | CLI, SDK, MCP, API | Available |
 | [`tx guard`](/docs/primitives/guard) | Set task creation limits to prevent unbounded proliferation | CLI, SDK, MCP, API | Available |
 | [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria to tasks | CLI, SDK, MCP, API | Available |
-| [`tx label`](/docs/primitives/label) | Organize tasks with labels for ready queue scoping | CLI, SDK, MCP, API | Available |
 | [`tx reflect`](/docs/primitives/reflect) | Session retrospective with structured signals | CLI, SDK, MCP, API | Available |
+| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints for phase transitions | CLI, SDK (via `tx.pins`), API (via `/api/pins`) | Available |
 
 ## Example Orchestration Patterns
 

@@ -66,7 +66,7 @@ export default function HomePage() {
     <main className="flex min-h-screen flex-col">
       {/* Hero Section */}
       <section className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
-        <div className="max-w-4xl">
+        <div className="w-full max-w-4xl">
           <h1 className="mb-4 text-5xl font-bold tracking-tight sm:text-6xl">
             <span className="text-fd-primary">tx</span>
           </h1>

@@ -10,7 +10,7 @@ import { existsSync } from "node:fs"
 
 import type { Run, RunId, RunStatus } from "@jamesaphoenix/tx-types"
 import { serializeRun } from "@jamesaphoenix/tx-types"
-import { RunRepository, RunHeartbeatService } from "@jamesaphoenix/tx-core"
+import { RunRepository, RunHeartbeatService, SqliteClient } from "@jamesaphoenix/tx-core"
 import { TxApi, NotFound, BadRequest, mapCoreError } from "../api.js"
 import { parseTranscript, findMatchingTranscript, isAllowedTranscriptPath, type ChatMessage } from "../utils/transcript-parser.js"
 import { readLogFile, isAllowedRunPath } from "../utils/log-reader.js"
@@ -267,6 +267,127 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
             stdoutTruncated: stdoutLog.truncated,
             stderrTruncated: stderrLog.truncated,
           },
+        }
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("getRunErrors", ({ urlParams }) =>
+      Effect.gen(function* () {
+        const db = yield* SqliteClient
+        const limit = urlParams.limit ?? 20
+        const hours = urlParams.hours ?? 24
+        const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+        const errors: Array<{
+          timestamp: string
+          source: "run" | "span" | "event"
+          runId: string | null
+          taskId: string | null
+          agent: string | null
+          name: string
+          error: string
+          durationMs: number | null
+        }> = []
+
+        const failedRuns = db.prepare(`
+          SELECT id, task_id, agent, ended_at, error_message
+          FROM runs
+          WHERE status = ? AND ended_at >= ?
+          ORDER BY ended_at DESC
+          LIMIT ?
+        `).all("failed", cutoff, limit) as Array<{
+          id: string
+          task_id: string | null
+          agent: string | null
+          ended_at: string | null
+          error_message: string | null
+        }>
+
+        for (const run of failedRuns) {
+          errors.push({
+            timestamp: run.ended_at ?? new Date().toISOString(),
+            source: "run",
+            runId: run.id,
+            taskId: run.task_id,
+            agent: run.agent,
+            name: "Run failed",
+            error: run.error_message ?? "Unknown error",
+            durationMs: null,
+          })
+        }
+
+        const errorSpans = db.prepare(`
+          SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
+          FROM events
+          WHERE event_type = ?
+            AND json_extract(metadata, '$.status') = ?
+            AND timestamp >= ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `).all("span", "error", cutoff, limit) as Array<{
+          timestamp: string
+          run_id: string | null
+          task_id: string | null
+          agent: string | null
+          content: string | null
+          metadata: string
+          duration_ms: number | null
+        }>
+
+        for (const span of errorSpans) {
+          let errorMessage = "Unknown error"
+          try {
+            const metadata = JSON.parse(span.metadata) as { error?: unknown }
+            if (metadata.error !== undefined) {
+              errorMessage = String(metadata.error)
+            }
+          } catch {
+            // Ignore malformed metadata and fall back to default.
+          }
+
+          errors.push({
+            timestamp: span.timestamp,
+            source: "span",
+            runId: span.run_id,
+            taskId: span.task_id,
+            agent: span.agent,
+            name: span.content ?? "Unknown span",
+            error: errorMessage,
+            durationMs: span.duration_ms,
+          })
+        }
+
+        const errorEvents = db.prepare(`
+          SELECT timestamp, run_id, task_id, agent, content, duration_ms
+          FROM events
+          WHERE event_type = ? AND timestamp >= ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `).all("error", cutoff, limit) as Array<{
+          timestamp: string
+          run_id: string | null
+          task_id: string | null
+          agent: string | null
+          content: string | null
+          duration_ms: number | null
+        }>
+
+        for (const event of errorEvents) {
+          errors.push({
+            timestamp: event.timestamp,
+            source: "event",
+            runId: event.run_id,
+            taskId: event.task_id,
+            agent: event.agent,
+            name: "Error event",
+            error: event.content ?? "Unknown error",
+            durationMs: event.duration_ms,
+          })
+        }
+
+        errors.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+
+        return {
+          errors: errors.slice(0, limit),
         }
       }).pipe(Effect.mapError(mapCoreError))
     )

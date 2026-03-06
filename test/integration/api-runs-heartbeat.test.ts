@@ -865,6 +865,98 @@ describe("API + SDK run heartbeat integration", () => {
     expect(taskRow?.status).toBe("active")
   })
 
+  it("GET /api/runs/errors aggregates failed runs, error spans, and error events", async () => {
+    const runId = runFixtureId("api-errors")
+    const now = new Date().toISOString()
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, ended_at, status, pid, error_message, metadata)
+       VALUES (?, NULL, 'tx-implementer', ?, ?, 'failed', NULL, ?, '{}')`
+    ).run(runId, now, now, "run exploded")
+
+    db.prepare(
+      `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, content, metadata, duration_ms)
+       VALUES (?, 'span', ?, NULL, 'tx-implementer', 'SyncService.export', ?, 42)`
+    ).run(now, runId, JSON.stringify({ status: "error", error: "span exploded" }))
+
+    db.prepare(
+      `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, content, metadata, duration_ms)
+       VALUES (?, 'error', ?, NULL, 'tx-implementer', 'event exploded', '{}', 7)`
+    ).run(now, runId)
+
+    const res = await fetch(`${baseUrl}/api/runs/errors?hours=24&limit=10`)
+    expect(res.status).toBe(200)
+
+    const payload = await res.json() as {
+      errors: Array<{
+        source: "run" | "span" | "event"
+        runId: string | null
+        name: string
+        error: string
+      }>
+    }
+
+    expect(payload.errors.some((entry) => entry.source === "run" && entry.runId === runId && entry.error === "run exploded")).toBe(true)
+    expect(payload.errors.some((entry) => entry.source === "span" && entry.runId === runId && entry.name === "SyncService.export" && entry.error === "span exploded")).toBe(true)
+    expect(payload.errors.some((entry) => entry.source === "event" && entry.runId === runId && entry.error === "event exploded")).toBe(true)
+  })
+
+  it("SDK HTTP client can list/get/transcript/stderr/errors for traced runs", async () => {
+    const runId = runFixtureId("sdk-http-detail")
+    const now = new Date().toISOString()
+    const runLogsDir = join(tmpProjectDir, ".tx", "runs")
+    mkdirSync(runLogsDir, { recursive: true })
+
+    const transcriptPath = join(runLogsDir, `${runId}.jsonl`)
+    const stdoutPath = join(runLogsDir, `${runId}.stdout`)
+    const stderrPath = join(runLogsDir, `${runId}.stderr`)
+
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "show status" },
+          timestamp: now,
+          uuid: "sdk-http-detail-user",
+        }),
+        JSON.stringify({
+          type: "assistant",
+          message: { role: "assistant", content: [{ type: "text", text: "status failed" }] },
+          timestamp: now,
+          uuid: "sdk-http-detail-assistant",
+        }),
+      ].join("\n")
+    )
+    writeFileSync(stdoutPath, "stdout line\n")
+    writeFileSync(stderrPath, "stderr line\n")
+
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, ended_at, status, pid, transcript_path, stdout_path, stderr_path, error_message, metadata)
+       VALUES (?, NULL, 'tx-implementer', ?, ?, 'failed', NULL, ?, ?, ?, ?, '{}')`
+    ).run(runId, now, now, transcriptPath, stdoutPath, stderrPath, "sdk http failed")
+
+    const tx = new TxClient({ apiUrl: baseUrl })
+
+    const list = await tx.runs.list({ status: "failed", limit: 10 })
+    expect(list.runs.some((run) => run.id === runId)).toBe(true)
+
+    const detail = await tx.runs.get(runId)
+    expect(detail.run.id).toBe(runId)
+    expect(detail.messages).toHaveLength(2)
+    expect(detail.logs.stderr).toContain("stderr line")
+
+    const transcript = await tx.runs.transcript(runId)
+    expect(transcript).toHaveLength(2)
+    expect(transcript[1]?.content).toBe("status failed")
+
+    const stderr = await tx.runs.stderr(runId)
+    expect(stderr.content).toContain("stderr line")
+
+    const errors = await tx.runs.errors({ hours: 24, limit: 10 })
+    expect(errors.some((entry) => entry.source === "run" && entry.runId === runId && entry.error === "sdk http failed")).toBe(true)
+  })
+
   it("POST /api/runs/:id/heartbeat validates ISO timestamps", async () => {
     const runId = runFixtureId("api-invalid-check-at")
     insertRun(db, runId)

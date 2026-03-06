@@ -474,6 +474,15 @@ curl -X POST http://localhost:3456/api/pins/sync
 
 View or set which files pins are synced to. By default, pins sync to `CLAUDE.md`.
 
+This setting lives in `.tx/config.toml` under `[pins].target_files`, so it can be reviewed and versioned like the rest of your project configuration:
+
+```toml
+[pins]
+target_files = "CLAUDE.md, AGENTS.md"
+```
+
+The CLI, SDK, MCP, and REST interfaces below all read or update that same underlying config.
+
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 

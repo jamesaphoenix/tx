@@ -1,12 +1,13 @@
 ---
 title: tx doc
-description: Docs-as-primitives — YAML-on-disk documentation management
+description: Docs-as-primitives — structured PRDs and design docs on disk
 ---
 
 ## Purpose
 
-`tx doc` manages structured documentation as first-class primitives. Docs are YAML files on disk (`.tx/docs/`) with metadata and links stored in the database. This enables:
+`tx doc` manages structured documentation as first-class primitives. In practice, that means PRDs and design docs live as structured data on disk instead of prose blobs hidden in chat history. Docs are YAML files in `.tx/docs/` with metadata and links stored in the database. This enables:
 
+- **Structured PRDs** with stable fields, lifecycle state, linked references, and optional EARS requirements
 - **Version-controlled docs** that live alongside code
 - **Linked doc graphs** connecting overviews, PRDs, and design docs
 - **Rendered markdown** generated from YAML source
@@ -331,16 +332,17 @@ invariants:
 
 Docs form a directed acyclic graph (DAG):
 
-```
-overview ──overview_to_prd──► prd ──prd_to_design──► design
-                                                        │
-                                               design_patch
-                                                        │
-                                                        ▼
-                                                   design-patch
-```
+<Mermaid
+  title="Doc Graph"
+  caption="Link types are auto-inferred from doc kinds when you do not set them explicitly."
+  chart={`flowchart LR
+    Overview[overview] -->|overview_to_prd| PRD[prd]
+    PRD -->|prd_to_design| Design[design]
+    Design -->|design_patch| Patch[design-patch]
+  `}
+/>
 
-Link types are auto-inferred from doc kinds when not specified explicitly.
+You can still set link types explicitly when you need a non-default edge.
 
 ## Related Commands
 

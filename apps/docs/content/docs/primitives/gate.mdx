@@ -374,8 +374,11 @@ Important:
 
 ## Human Review Loop (CLI)
 
+Keep the linked review task out of the agent phase queue. Do **not** assign it the same phase label that drives `tx ready --label "phase:docs_harden"`. Leave it unlabeled, or give it a separate human-only label such as `human-review`.
+
 ```bash
 # 1. Create the human review task and capture its ID
+# Intentionally do not label this task with phase:docs_harden
 REVIEW_TASK=$(tx add "Human review: docs_harden -> feature_build" --json | jq -r '.id')
 
 # 2. Link the gate to that review task
@@ -408,6 +411,8 @@ done
 ## Human Review Loop (REST + Agent Worker)
 
 Use this when your workers talk to the API server over HTTP instead of the local CLI.
+
+The same rule applies here: keep the review task out of the agent's phase-scoped queue. Do not tag it with `phase:docs_harden`; use no phase label or a separate human-only label instead.
 
 ```bash
 # Human creates a review task

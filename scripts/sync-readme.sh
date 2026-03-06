@@ -8,12 +8,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 README_SRC="$ROOT_DIR/README.md"
 
-# List of packages that get published to npm
+# List of publishable workspaces that should carry the root README
 PACKAGES=(
   "packages/core"
   "packages/types"
   "packages/test-utils"
   "packages/tx"
+  "apps/agent-sdk"
+  "apps/api-server"
+  "apps/cli"
+  "apps/mcp-server"
 )
 
 if [ ! -f "$README_SRC" ]; then

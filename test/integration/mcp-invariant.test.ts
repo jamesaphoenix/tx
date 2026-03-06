@@ -22,7 +22,7 @@ import { afterEach, beforeAll, beforeEach, describe, it, expect } from "vitest"
 import { Effect } from "effect"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { DocService } from "@jamesaphoenix/tx-core"
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -66,6 +66,14 @@ const setupDocsWorkspace = (cwd: string): void => {
   mkdirSync(join(cwd, ".tx"), { recursive: true })
   mkdirSync(join(cwd, ".tx", "docs", "prd"), { recursive: true })
   mkdirSync(join(cwd, ".tx", "docs", "design"), { recursive: true })
+}
+
+const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
+  writeFileSync(
+    join(cwd, ".tx", "config.toml"),
+    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    "utf8"
+  )
 }
 
 /**
@@ -137,6 +145,7 @@ describe("MCP Invariant Tools Integration", () => {
     shared = await getSharedTestLayer()
     tempDir = mkdtempSync(join(tmpdir(), "tx-mcp-invariant-"))
     setupDocsWorkspace(tempDir)
+    writeDocsConfig(tempDir, false)
     process.chdir(tempDir)
   })
 

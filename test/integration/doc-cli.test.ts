@@ -34,6 +34,14 @@ function runTx(args: string[], cwd: string): ExecResult {
   }
 }
 
+function writeDocsConfig(cwd: string, requireEars: boolean): void {
+  writeFileSync(
+    join(cwd, ".tx", "config.toml"),
+    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    "utf-8"
+  )
+}
+
 describe("tx doc command default behavior", () => {
   let tmpProjectDir: string
 
@@ -81,6 +89,23 @@ describe("tx doc command default behavior", () => {
     expect(Array.isArray(parsed)).toBe(true)
     expect(parsed.some((doc) => doc.name === "doc-default-json")).toBe(true)
   })
+
+  it("scaffolds PRDs with active EARS by default", () => {
+    const addDoc = runTx(
+      ["doc", "add", "prd", "doc-default-prd", "--title", "Doc Default PRD"],
+      tmpProjectDir,
+    )
+    expect(addDoc.status).toBe(0)
+
+    const yaml = readFileSync(
+      join(tmpProjectDir, ".tx", "docs", "prd", "doc-default-prd.yml"),
+      "utf-8"
+    )
+    expect(yaml).toContain("ears_requirements:")
+    expect(yaml).toContain("EARS-DOCDEFAULTPR-001")
+    expect(yaml).toContain("# requirements:")
+    expect(yaml).not.toContain("\nrequirements:\n  - Requirement 1")
+  })
 })
 
 describe("tx doc lifecycle coverage", () => {
@@ -90,6 +115,7 @@ describe("tx doc lifecycle coverage", () => {
     tmpProjectDir = mkdtempSync(join(tmpdir(), "tx-doc-lifecycle-"))
     const init = runTx(["init", "--codex"], tmpProjectDir)
     expect(init.status).toBe(0)
+    writeDocsConfig(tmpProjectDir, false)
   })
 
   afterEach(() => {

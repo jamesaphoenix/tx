@@ -3,6 +3,9 @@ title: tx
 description: Headless, Local Infra for AI Agents. Primitives, not frameworks.
 ---
 
+import { HeadlessLayersFigure } from '@/components/headless-layers-figure'
+import { InterfaceOverviewTable } from '@/components/interface-overview-table'
+
 ## The Problem
 
 You open a new session and context is gone. Two agents pick the same task. A key decision disappears into chat history. You end up rebuilding the same infrastructure every project.
@@ -11,18 +14,7 @@ You open a new session and context is gone. Two agents pick the same task. A key
 
 tx handles persistence, dependencies, and memory primitives so you can stay focused on your orchestration logic.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Your Orchestration (your code, your rules)             │
-├─────────────────────────────────────────────────────────┤
-│  tx primitives                                          │
-│                                                         │
-│   tx ready     tx done      tx context    tx learn      │
-│   tx claim     tx block     tx gate       tx sync       │
-│   tx guard     tx verify    tx reflect    tx handoff    │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
+<HeadlessLayersFigure />
 
 ## Why Primitives?
 
@@ -59,11 +51,11 @@ Follow the docs in this order:
 | [`tx checkpoint`](/docs/primitives/checkpoint) | Save progress without completing |
 | [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection |
 | [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge |
-| [`tx guard`](/docs/primitives/guard) | Set task creation limits (bounded autonomy) |
-| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints between phases |
-| [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria |
 | [`tx label`](/docs/primitives/label) | Organize tasks with labels for phase scoping |
+| [`tx guard`](/docs/primitives/guard) | Set task creation limits (bounded autonomy) |
+| [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria |
 | [`tx reflect`](/docs/primitives/reflect) | Session retrospective with actionable signals |
+| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints between phases |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs |
 
 ## Structured Requirements (EARS)
@@ -96,13 +88,7 @@ As you build, these principles keep you in control:
 
 Choose the interface that fits how you want to operate:
 
-| Interface | Use Case |
-|-----------|----------|
-| **CLI** | Scripts, terminal workflows, agent loops |
-| **MCP Server** | Claude Code integration (18 tools) |
-| **REST API** | Custom dashboards, external integrations |
-| **TypeScript SDK** | Programmatic access from your agents |
-| **Dashboard** | Visual monitoring and management |
+<InterfaceOverviewTable />
 
 For REST task update and completion requests, tx defaults to the `agent` path. Send `x-tx-actor: human` when a human operator is updating or completing work, especially for gate-linked tasks where agent completion can be blocked by default.
 

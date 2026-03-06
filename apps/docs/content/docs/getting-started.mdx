@@ -3,6 +3,7 @@ title: Getting Started
 description: Install tx and run your first agent loop
 ---
 
+import { WorkLoopFigure } from "@/components/getting-started-figures"
 import { Callout } from "fumadocs-ui/components/callout"
 
 Get up and running with tx in minutes. tx provides four interfaces -- pick whichever fits your workflow.
@@ -36,19 +37,7 @@ Get up and running with tx in minutes. tx provides four interfaces -- pick which
   `}
 />
 
-<Mermaid
-  title="Work Loop"
-  caption="Pull one ready task, inspect it, implement, verify, then either finish it or keep iterating."
-  chart={`flowchart TB
-    Ready[tx ready] --> Found{task found?}
-    Found -->|No| Exit[stop]
-    Found -->|Yes| Read[show + context]
-    Read --> Work[implement]
-    Work --> Pass{verify passes?}
-    Pass -->|Yes| Done[tx done]
-    Pass -->|No| Iterate[fix or block]
-  `}
-/>
+<WorkLoopFigure />
 
 ## Installation
 
@@ -605,7 +594,7 @@ your-project/
 You now have tx running. Keep moving in this order so each step builds on the last one:
 
 1. **[Primitives](/docs/primitives)** -- learn the core building blocks (`ready`, `done`, `block`, `context`, `sync`).
-2. **[Bounded Autonomy](/docs/primitives/gate)** -- prevent runaway agents with `gate`, `guard`, `verify`, `label`, and `reflect`.
+2. **[Bounded Autonomy](/docs/primitives/label)** -- prevent runaway agents with `label`, `guard`, `verify`, `reflect`, and `gate`.
 3. **[Headful Experience](/docs/headful)** -- apply the same primitives visually with dashboard workflows.
 4. **[Watchdog Runbook](/docs/watchdog-runbook)** -- final, advanced step for detached supervision and recovery.
 
@@ -614,11 +603,11 @@ Interface-specific deep dives:
 - **[Agent SDK](/docs/agent-sdk)** -- build your own TypeScript agents.
 - **[tx ready](/docs/primitives/ready)** -- readiness detection details.
 - **[tx context](/docs/primitives/context)** -- contextual learning retrieval.
-- **[tx gate](/docs/primitives/gate)** -- human-in-the-loop phase approvals.
+- **[tx label](/docs/primitives/label)** -- ready queue scoping by phase.
 - **[tx guard](/docs/primitives/guard)** -- task creation limits.
 - **[tx verify](/docs/primitives/verify)** -- machine-checkable done criteria.
-- **[tx label](/docs/primitives/label)** -- ready queue scoping by phase.
 - **[tx reflect](/docs/primitives/reflect)** -- session retrospective and signals.
+- **[tx gate](/docs/primitives/gate)** -- human-in-the-loop phase approvals.
 - **[tx sync](/docs/primitives/sync)** -- git synchronization behavior.
 
 ## Quick Reference
@@ -644,16 +633,16 @@ tx learning:search <query>  # Find learnings
 tx context <task-id>        # Get relevant context
 
 # Bounded Autonomy
-tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
-tx gate check docs-to-build            # exit 0 approved, 1 blocked
-tx guard set --max-pending 30       # Set task creation limits
-tx verify set <id> "bun test"       # Attach verification command
-tx verify run <id>                  # Run verification
 tx label add "phase:discovery"      # Create a label
 tx label assign <id> "phase:discovery"  # Assign label to task
 tx ready --label "phase:discovery"  # Scope ready queue by label
+tx guard set --max-pending 30       # Set task creation limits
+tx verify set <id> "bun test"       # Attach verification command
+tx verify run <id>                  # Run verification
 tx reflect                          # Session retrospective
 tx reflect --analyze                # With LLM analysis
+tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+tx gate check docs-to-build         # exit 0 approved, 1 blocked
 
 # Sync
 tx sync export              # Materialize current state into stream event logs

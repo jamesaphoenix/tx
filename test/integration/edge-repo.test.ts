@@ -1399,24 +1399,25 @@ describe("EdgeRepository.invalidate", () => {
   })
 
   it("throws EdgeNotFoundError for nonexistent ID", async () => {
-    // The invalidate method throws EdgeNotFoundError as a defect when the edge doesn't exist
+    // The invalidate method fails with a typed EdgeNotFoundError when the edge doesn't exist
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* EdgeRepository
         return yield* repo.invalidate(999)
       }).pipe(
         Effect.provide(shared.layer),
-        Effect.catchAllDefect((defect) => Effect.succeed({ caught: true, defect })),
-        Effect.map((r) => r)
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => ({ _tag: "UnexpectedSuccess" as const }),
+        }),
       )
     )
 
-    expect((result as any).caught).toBe(true)
-    expect(((result as any).defect as any)._tag).toBe("EdgeNotFoundError")
+    expect(result._tag).toBe("EdgeNotFoundError")
   })
 
   it("throws EdgeNotFoundError for already invalidated edge", async () => {
-    // The invalidate method throws EdgeNotFoundError as a defect when the edge is already invalidated
+    // The invalidate method fails with a typed EdgeNotFoundError when the edge is already invalidated
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* EdgeRepository
@@ -1425,13 +1426,14 @@ describe("EdgeRepository.invalidate", () => {
         return yield* repo.invalidate(edge.id) // Try again
       }).pipe(
         Effect.provide(shared.layer),
-        Effect.catchAllDefect((defect) => Effect.succeed({ caught: true, defect })),
-        Effect.map((r) => r)
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => ({ _tag: "UnexpectedSuccess" as const }),
+        }),
       )
     )
 
-    expect((result as any).caught).toBe(true)
-    expect(((result as any).defect as any)._tag).toBe("EdgeNotFoundError")
+    expect(result._tag).toBe("EdgeNotFoundError")
   })
 })
 

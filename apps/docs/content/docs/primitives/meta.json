@@ -9,16 +9,16 @@
     "block",
     "claim",
     "---Memory & Context---",
+    "pin",
     "memory",
     "context",
     "learning",
-    "pin",
     "---Bounded Autonomy---",
-    "gate",
+    "label",
     "guard",
     "verify",
     "reflect",
-    "label",
+    "gate",
     "---Coordination---",
     "sync",
     "inbox",
@@ -26,9 +26,9 @@
     "handoff",
     "checkpoint",
     "---Observability---",
-    "traces",
     "docs",
     "invariants",
-    "spec-trace"
+    "spec-trace",
+    "traces"
   ]
 }

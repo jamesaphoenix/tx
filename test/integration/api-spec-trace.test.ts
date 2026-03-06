@@ -7,7 +7,7 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
@@ -24,6 +24,14 @@ type InvariantInput = {
 const setupDocsWorkspace = (cwd: string): void => {
   mkdirSync(join(cwd, ".tx", "docs", "prd"), { recursive: true })
   mkdirSync(join(cwd, ".tx", "docs", "design"), { recursive: true })
+}
+
+const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
+  writeFileSync(
+    join(cwd, ".tx", "config.toml"),
+    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    "utf8"
+  )
 }
 
 const createDocWithInvariants = (docName: string, invariants: readonly InvariantInput[]) =>
@@ -107,6 +115,7 @@ describe("API Spec Trace Integration", () => {
     shared = await getSharedTestLayer()
     tempDir = mkdtempSync(join(tmpdir(), "tx-api-spec-trace-"))
     setupDocsWorkspace(tempDir)
+    writeDocsConfig(tempDir, false)
     process.chdir(tempDir)
   })
 

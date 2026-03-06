@@ -19,6 +19,8 @@
  * ```
  */
 
+import { existsSync, readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
 import type {
   TxClientConfig,
   ListOptions,
@@ -46,6 +48,14 @@ import type {
   ReapStalledRunsOptions,
   SerializedStalledRun,
   SerializedReapedRun,
+  SerializedRun,
+  RunsListOptions,
+  PaginatedRunsResult,
+  SerializedTraceMessage,
+  RunDetailResult,
+  LogContentResult,
+  TraceErrorsOptions,
+  TraceErrorEntry,
   SerializedPin,
   SerializedMemoryDocument,
   SerializedMemoryDocumentWithScore,
@@ -64,6 +74,17 @@ import type {
   SerializedDocLink,
   SerializedInvariant,
   SerializedInvariantCheck,
+  DiscoverResult,
+  FciResult,
+  SpecScopeOptions,
+  SerializedSpecTest,
+  SerializedSpecGap,
+  SpecStatusResult,
+  SerializedTraceabilityMatrixEntry,
+  SerializedSpecSignoff,
+  SpecBatchRunInput,
+  SpecBatchRunResult,
+  SpecBatchSource,
   SerializedCycleRun,
   SerializedCycleDetail,
   DocGraph,
@@ -73,6 +94,25 @@ import type {
   SerializedReflectResult,
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
+
+const MAX_RUN_LOG_CHARS = 200_000
+
+type ParsedRunCursor = {
+  startedAt: string
+  id: string
+}
+
+const parseRunCursor = (cursor: string): ParsedRunCursor | null => {
+  const colonIndex = cursor.lastIndexOf(":")
+  if (colonIndex === -1) return null
+  return {
+    startedAt: cursor.slice(0, colonIndex),
+    id: cursor.slice(colonIndex + 1),
+  }
+}
+
+const buildRunCursor = (run: { startedAt: string; id: string }): string =>
+  `${run.startedAt}:${run.id}`
 
 // =============================================================================
 // Transport Interface
@@ -146,6 +186,11 @@ interface Transport {
   getActiveClaim(taskId: string): Promise<SerializedClaim | null>
 
   // Runs / heartbeat primitives
+  listRuns(options?: RunsListOptions): Promise<PaginatedRunsResult>
+  getRun(id: string): Promise<RunDetailResult>
+  getRunTranscript(id: string): Promise<SerializedTraceMessage[]>
+  getRunStderr(id: string, options?: { tail?: number }): Promise<LogContentResult>
+  getRunErrors(options?: TraceErrorsOptions): Promise<TraceErrorEntry[]>
   runHeartbeat(runId: string, data?: RunHeartbeatData): Promise<RunHeartbeatResult>
   listStalledRuns(options?: StalledRunsOptions): Promise<SerializedStalledRun[]>
   reapStalledRuns(options?: ReapStalledRunsOptions): Promise<SerializedReapedRun[]>
@@ -200,6 +245,20 @@ interface Transport {
   invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]>
   invariantsGet(id: string): Promise<SerializedInvariant>
   invariantsRecord(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck>
+
+  // Spec traceability
+  specDiscover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult>
+  specLink(invariantId: string, file: string, name?: string, framework?: string): Promise<SerializedSpecTest>
+  specUnlink(invariantId: string, testId: string): Promise<{ removed: boolean }>
+  specTests(invariantId: string): Promise<SerializedSpecTest[]>
+  specInvariantsForTest(testId: string): Promise<string[]>
+  specGaps(options?: SpecScopeOptions): Promise<SerializedSpecGap[]>
+  specFci(options?: SpecScopeOptions): Promise<FciResult>
+  specMatrix(options?: SpecScopeOptions): Promise<SerializedTraceabilityMatrixEntry[]>
+  specStatus(options?: SpecScopeOptions): Promise<SpecStatusResult>
+  specRun(testId: string, passed: boolean, options?: { durationMs?: number | null; details?: string | null; runAt?: string }): Promise<SpecBatchRunResult>
+  specBatch(data: { results?: SpecBatchRunInput[]; raw?: string; from?: SpecBatchSource; runAt?: string }): Promise<SpecBatchRunResult>
+  specComplete(options: { doc?: string; subsystem?: string; signedOffBy: string; notes?: string }): Promise<SerializedSpecSignoff>
 
   // Cycles
   cyclesList(): Promise<SerializedCycleRun[]>
@@ -573,6 +632,63 @@ class HttpTransport implements Transport {
     return result.claim
   }
 
+  async listRuns(options: RunsListOptions = {}): Promise<PaginatedRunsResult> {
+    const params: Record<string, string | number | undefined> = {
+      cursor: options.cursor,
+      limit: options.limit,
+      agent: options.agent,
+      status: Array.isArray(options.status) ? options.status.join(",") : options.status,
+      taskId: options.taskId,
+    }
+    return await this.request<PaginatedRunsResult>("GET", "/api/runs", { params })
+  }
+
+  async getRun(id: string): Promise<RunDetailResult> {
+    const result = await this.request<{
+      run: SerializedRun
+      messages: Array<{
+        role: "user" | "assistant" | "system"
+        content: unknown
+        type?: "tool_use" | "tool_result" | "text" | "thinking"
+        tool_name?: string
+        timestamp?: string
+      }>
+      logs: RunDetailResult["logs"]
+    }>("GET", `/api/runs/${encodeURIComponent(id)}`)
+
+    return {
+      run: result.run,
+      messages: result.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        type: message.type,
+        toolName: message.tool_name,
+        timestamp: message.timestamp,
+      })),
+      logs: result.logs,
+    }
+  }
+
+  async getRunTranscript(id: string): Promise<SerializedTraceMessage[]> {
+    const result = await this.getRun(id)
+    return result.messages
+  }
+
+  async getRunStderr(id: string, options?: { tail?: number }): Promise<LogContentResult> {
+    const params: Record<string, number | undefined> = { tail: options?.tail }
+    return await this.request<LogContentResult>("GET", `/api/runs/${encodeURIComponent(id)}/stderr`, { params })
+  }
+
+  async getRunErrors(options: TraceErrorsOptions = {}): Promise<TraceErrorEntry[]> {
+    const result = await this.request<{ errors: TraceErrorEntry[] }>("GET", "/api/runs/errors", {
+      params: {
+        hours: options.hours,
+        limit: options.limit,
+      },
+    })
+    return result.errors
+  }
+
   async runHeartbeat(runId: string, data: RunHeartbeatData = {}): Promise<RunHeartbeatResult> {
     return await this.request<RunHeartbeatResult>(
       "POST",
@@ -813,6 +929,84 @@ class HttpTransport implements Transport {
       `/api/invariants/${encodeURIComponent(id)}/check`,
       { body: { passed, details, durationMs } }
     )
+  }
+
+  async specDiscover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult> {
+    return await this.request<DiscoverResult>("POST", "/api/spec/discover", { body: options ?? {} })
+  }
+
+  async specLink(invariantId: string, file: string, name?: string, framework?: string): Promise<SerializedSpecTest> {
+    return await this.request<SerializedSpecTest>("POST", "/api/spec/link", {
+      body: { invariantId, file, name, framework },
+    })
+  }
+
+  async specUnlink(invariantId: string, testId: string): Promise<{ removed: boolean }> {
+    return await this.request<{ removed: boolean }>("POST", "/api/spec/unlink", {
+      body: { invariantId, testId },
+    })
+  }
+
+  async specTests(invariantId: string): Promise<SerializedSpecTest[]> {
+    const result = await this.request<{ tests: SerializedSpecTest[] }>("GET", `/api/spec/tests/${encodeURIComponent(invariantId)}`)
+    return result.tests
+  }
+
+  async specInvariantsForTest(testId: string): Promise<string[]> {
+    const result = await this.request<{ testId: string; invariants: string[] }>("GET", "/api/spec/invariants", {
+      params: { testId },
+    })
+    return result.invariants
+  }
+
+  async specGaps(options?: SpecScopeOptions): Promise<SerializedSpecGap[]> {
+    const params = options
+      ? { doc: options.doc, subsystem: options.subsystem }
+      : undefined
+    const result = await this.request<{ gaps: SerializedSpecGap[] }>("GET", "/api/spec/gaps", { params })
+    return result.gaps
+  }
+
+  async specFci(options?: SpecScopeOptions): Promise<FciResult> {
+    const params = options
+      ? { doc: options.doc, subsystem: options.subsystem }
+      : undefined
+    return await this.request<FciResult>("GET", "/api/spec/fci", { params })
+  }
+
+  async specMatrix(options?: SpecScopeOptions): Promise<SerializedTraceabilityMatrixEntry[]> {
+    const params = options
+      ? { doc: options.doc, subsystem: options.subsystem }
+      : undefined
+    const result = await this.request<{ matrix: SerializedTraceabilityMatrixEntry[] }>("GET", "/api/spec/matrix", { params })
+    return result.matrix
+  }
+
+  async specStatus(options?: SpecScopeOptions): Promise<SpecStatusResult> {
+    const params = options
+      ? { doc: options.doc, subsystem: options.subsystem }
+      : undefined
+    return await this.request<SpecStatusResult>("GET", "/api/spec/status", { params })
+  }
+
+  async specRun(testId: string, passed: boolean, options?: { durationMs?: number | null; details?: string | null; runAt?: string }): Promise<SpecBatchRunResult> {
+    return await this.request<SpecBatchRunResult>("POST", "/api/spec/run", {
+      body: {
+        testId,
+        passed,
+        durationMs: options?.durationMs ?? undefined,
+        details: options?.details ?? undefined,
+        runAt: options?.runAt,
+      },
+    })
+  }
+
+  async specBatch(data: { results?: SpecBatchRunInput[]; raw?: string; from?: SpecBatchSource; runAt?: string }): Promise<SpecBatchRunResult> {
+    return await this.request<SpecBatchRunResult>("POST", "/api/spec/batch", { body: data })
+  }
+
+  async specComplete(options: { doc?: string; subsystem?: string; signedOffBy: string; notes?: string }): Promise<SerializedSpecSignoff> {
+    return await this.request<SerializedSpecSignoff>("POST", "/api/spec/complete", { body: options })
   }
 
   // Cycles
@@ -1074,7 +1268,7 @@ class DirectTransport implements Transport {
     }
   }
 
-  private serializeRun(run: any): SerializedStalledRun["run"] {
+  private serializeRun(run: any): SerializedRun {
     return {
       id: run.id,
       taskId: run.taskId,
@@ -1091,6 +1285,266 @@ class DirectTransport implements Transport {
       summary: run.summary,
       errorMessage: run.errorMessage,
       metadata: run.metadata ?? {},
+    }
+  }
+
+  private serializeTraceMessage(message: {
+    role: "user" | "assistant" | "system"
+    content: unknown
+    type?: "tool_use" | "tool_result" | "text" | "thinking"
+    tool_name?: string
+    toolName?: string
+    timestamp?: string
+  }): SerializedTraceMessage {
+    return {
+      role: message.role,
+      content: message.content,
+      type: message.type,
+      toolName: message.toolName ?? message.tool_name,
+      timestamp: message.timestamp,
+    }
+  }
+
+  private serializeSpecTest(test: any): SerializedSpecTest {
+    return {
+      id: test.id,
+      invariantId: test.invariantId,
+      testId: test.testId,
+      testFile: test.testFile,
+      testName: test.testName ?? null,
+      framework: test.framework ?? null,
+      discovery: test.discovery,
+      createdAt: test.createdAt instanceof Date ? test.createdAt.toISOString() : test.createdAt,
+      updatedAt: test.updatedAt instanceof Date ? test.updatedAt.toISOString() : test.updatedAt,
+    }
+  }
+
+  private serializeSpecGap(gap: any): SerializedSpecGap {
+    return {
+      id: gap.id,
+      rule: gap.rule,
+      subsystem: gap.subsystem ?? null,
+      docName: gap.docName,
+    }
+  }
+
+  private serializeSpecMatrixEntry(entry: any): SerializedTraceabilityMatrixEntry {
+    return {
+      invariantId: entry.invariantId,
+      rule: entry.rule,
+      subsystem: entry.subsystem ?? null,
+      tests: (entry.tests ?? []).map((test: any) => ({
+        specTestId: test.specTestId,
+        testId: test.testId,
+        testFile: test.testFile,
+        testName: test.testName ?? null,
+        framework: test.framework ?? null,
+        discovery: test.discovery,
+        latestRun: {
+          passed: test.latestRun?.passed ?? null,
+          runAt: test.latestRun?.runAt instanceof Date
+            ? test.latestRun.runAt.toISOString()
+            : test.latestRun?.runAt ?? null,
+        },
+      })),
+    }
+  }
+
+  private serializeSpecSignoff(signoff: any): SerializedSpecSignoff {
+    return {
+      id: signoff.id,
+      scopeType: signoff.scopeType,
+      scopeValue: signoff.scopeValue ?? null,
+      signedOffBy: signoff.signedOffBy,
+      notes: signoff.notes ?? null,
+      signedOffAt: signoff.signedOffAt instanceof Date ? signoff.signedOffAt.toISOString() : signoff.signedOffAt,
+    }
+  }
+
+  private getTxDir(): string {
+    const parent = dirname(resolve(this.dbPath))
+    const normalizedParent = parent.replace(/\\/g, "/")
+    if (normalizedParent.endsWith("/.tx")) {
+      return parent
+    }
+    return resolve(process.cwd(), ".tx")
+  }
+
+  private resolveRunPath(filePath: string): string {
+    return filePath.startsWith("/") ? filePath : resolve(this.getTxDir(), filePath)
+  }
+
+  private readOptionalRunLog(
+    filePath: string | null,
+    options?: { tailLines?: number; trimToDashboard?: boolean }
+  ): { content: string | null; truncated: boolean } {
+    if (!filePath) {
+      return { content: null, truncated: false }
+    }
+
+    const resolvedPath = this.resolveRunPath(filePath)
+    if (!existsSync(resolvedPath)) {
+      return { content: null, truncated: false }
+    }
+
+    try {
+      let content = readFileSync(resolvedPath, "utf8")
+      let truncated = false
+
+      if ((options?.tailLines ?? 0) > 0) {
+        const lines = content.split("\n")
+        if (lines.length > 0 && lines[lines.length - 1] === "") {
+          lines.pop()
+        }
+        if (lines.length > (options?.tailLines ?? 0)) {
+          content = lines.slice(-(options?.tailLines ?? 0)).join("\n")
+          truncated = true
+        }
+      }
+
+      if (options?.trimToDashboard && content.length > MAX_RUN_LOG_CHARS) {
+        content = content.slice(-MAX_RUN_LOG_CHARS)
+        truncated = true
+      }
+
+      return { content, truncated }
+    } catch {
+      return { content: null, truncated: false }
+    }
+  }
+
+  private parseClaudeTranscriptLines(lines: readonly string[]): SerializedTraceMessage[] {
+    const messages: SerializedTraceMessage[] = []
+    const seenUuids = new Set<string>()
+    const toolNameById = new Map<string, string>()
+
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line) as {
+          type?: string
+          timestamp?: string
+          uuid?: string
+          message?: {
+            role?: string
+            content?: unknown
+          }
+        }
+
+        const uuid = typeof entry.uuid === "string" ? entry.uuid : undefined
+        if (uuid && seenUuids.has(uuid)) continue
+        if (uuid) seenUuids.add(uuid)
+
+        const timestamp = entry.timestamp
+
+        if (entry.type === "assistant" && Array.isArray(entry.message?.content)) {
+          for (const block of entry.message.content) {
+            if (typeof block !== "object" || block === null) continue
+            const typedBlock = block as {
+              type?: string
+              text?: string
+              thinking?: string
+              id?: string
+              name?: string
+              input?: Record<string, unknown>
+            }
+
+            if (typedBlock.type === "text" && typeof typedBlock.text === "string" && typedBlock.text.trim().length > 0) {
+              messages.push({
+                role: "assistant",
+                content: typedBlock.text,
+                type: "text",
+                timestamp,
+              })
+            }
+
+            if (typedBlock.type === "tool_use" && typeof typedBlock.name === "string") {
+              if (typedBlock.id) {
+                toolNameById.set(typedBlock.id, typedBlock.name)
+              }
+              messages.push({
+                role: "assistant",
+                content: typedBlock.input ?? {},
+                type: "tool_use",
+                toolName: typedBlock.name,
+                timestamp,
+              })
+            }
+          }
+          continue
+        }
+
+        if (entry.type === "user") {
+          const content = entry.message?.content
+          if (typeof content === "string" && content.trim().length > 0) {
+            messages.push({
+              role: "user",
+              content,
+              timestamp,
+            })
+            continue
+          }
+
+          if (Array.isArray(content)) {
+            for (const item of content) {
+              if (typeof item !== "object" || item === null) continue
+              const typedItem = item as {
+                type?: string
+                tool_use_id?: string
+                content?: unknown
+              }
+              if (typedItem.type !== "tool_result") continue
+
+              let resultContent = ""
+              if (typeof typedItem.content === "string") {
+                resultContent = typedItem.content
+              } else if (Array.isArray(typedItem.content)) {
+                resultContent = typedItem.content
+                  .filter(
+                    (block): block is { type?: string; text?: string } =>
+                      typeof block === "object" && block !== null
+                  )
+                  .filter((block) => block.type === "text" && typeof block.text === "string")
+                  .map((block) => block.text ?? "")
+                  .join("\n")
+              }
+
+              messages.push({
+                role: "user",
+                content: resultContent,
+                type: "tool_result",
+                toolName: typedItem.tool_use_id ? toolNameById.get(typedItem.tool_use_id) : undefined,
+                timestamp,
+              })
+            }
+          }
+        }
+      } catch {
+        // Ignore malformed transcript lines.
+      }
+    }
+
+    return messages
+  }
+
+  private readTranscriptMessages(run: { transcriptPath: string | null; agent: string }): SerializedTraceMessage[] {
+    if (!run.transcriptPath) return []
+
+    const resolvedPath = this.resolveRunPath(run.transcriptPath)
+    if (!existsSync(resolvedPath)) return []
+
+    try {
+      const lines = readFileSync(resolvedPath, "utf8").split("\n").filter((line) => line.trim().length > 0)
+      const detailed = this.parseClaudeTranscriptLines(lines)
+      if (detailed.length > 0) {
+        return detailed
+      }
+
+      const adapter = (this as any).core.getAdapter(run.agent)
+      return adapter.parseMessages(lines).map((message: { role: "user" | "assistant"; content: string; timestamp: string }) =>
+        this.serializeTraceMessage(message)
+      )
+    } catch {
+      return []
     }
   }
 
@@ -1773,6 +2227,245 @@ class DirectTransport implements Transport {
     )
 
     return claim ? this.serializeClaim(claim) : null
+  }
+
+  async listRuns(options: RunsListOptions = {}): Promise<PaginatedRunsResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const runs = await this.run<any[]>(
+      Effect.gen(function* () {
+        const runRepo = yield* core.RunRepository
+        if (options.taskId) {
+          return yield* runRepo.findByTaskId(options.taskId)
+        }
+        if (options.status && !Array.isArray(options.status)) {
+          return yield* runRepo.findByStatus(options.status)
+        }
+        return yield* runRepo.findRecent(1000)
+      })
+    )
+
+    let filtered = [...runs]
+    if (options.agent) {
+      filtered = filtered.filter((run) => run.agent === options.agent)
+    }
+
+    if (options.status) {
+      const statuses = Array.isArray(options.status) ? options.status : [options.status]
+      filtered = filtered.filter((run) => statuses.includes(run.status))
+    }
+
+    filtered.sort((a, b) => {
+      const aTime = new Date(a.startedAt).getTime()
+      const bTime = new Date(b.startedAt).getTime()
+      if (aTime !== bTime) return bTime - aTime
+      return a.id.localeCompare(b.id)
+    })
+
+    const limit = options.limit ?? 20
+    let startIndex = 0
+    if (options.cursor) {
+      const cursor = parseRunCursor(options.cursor)
+      if (cursor) {
+        const cursorTime = new Date(cursor.startedAt).getTime()
+        startIndex = filtered.findIndex((run) => {
+          const runTime = new Date(run.startedAt).getTime()
+          return runTime < cursorTime || (runTime === cursorTime && run.id > cursor.id)
+        })
+        if (startIndex === -1) {
+          startIndex = filtered.length
+        }
+      }
+    }
+
+    const total = filtered.length
+    const paginated = filtered.slice(startIndex, startIndex + limit + 1)
+    const hasMore = paginated.length > limit
+    const resultRuns = hasMore ? paginated.slice(0, limit) : paginated
+    const serialized = resultRuns.map((run) => this.serializeRun(run))
+
+    return {
+      runs: serialized,
+      nextCursor: hasMore && serialized.length > 0 ? buildRunCursor(serialized[serialized.length - 1]!) : null,
+      hasMore,
+      total,
+    }
+  }
+
+  async getRun(id: string): Promise<RunDetailResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const run = await this.run<any | null>(
+      Effect.gen(function* () {
+        const runRepo = yield* core.RunRepository
+        return yield* runRepo.findById(id)
+      })
+    )
+
+    if (!run) {
+      throw new TxError(`Run not found: ${id}`, "NOT_FOUND", 404)
+    }
+
+    const stdoutLog = this.readOptionalRunLog(run.stdoutPath, { trimToDashboard: true })
+    const stderrLog = this.readOptionalRunLog(run.stderrPath, { trimToDashboard: true })
+
+    return {
+      run: this.serializeRun(run),
+      messages: this.readTranscriptMessages(run),
+      logs: {
+        stdout: stdoutLog.content,
+        stderr: stderrLog.content,
+        stdoutTruncated: stdoutLog.truncated,
+        stderrTruncated: stderrLog.truncated,
+      },
+    }
+  }
+
+  async getRunTranscript(id: string): Promise<SerializedTraceMessage[]> {
+    const result = await this.getRun(id)
+    return result.messages
+  }
+
+  async getRunStderr(id: string, options?: { tail?: number }): Promise<LogContentResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const run = await this.run<any | null>(
+      Effect.gen(function* () {
+        const runRepo = yield* core.RunRepository
+        return yield* runRepo.findById(id)
+      })
+    )
+
+    if (!run) {
+      throw new TxError(`Run not found: ${id}`, "NOT_FOUND", 404)
+    }
+
+    const stderrLog = this.readOptionalRunLog(run.stderrPath, { tailLines: options?.tail })
+    return {
+      content: stderrLog.content ?? "",
+      truncated: stderrLog.truncated,
+    }
+  }
+
+  async getRunErrors(options: TraceErrorsOptions = {}): Promise<TraceErrorEntry[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<TraceErrorEntry[]>(
+      Effect.gen(function* () {
+        const db = yield* core.SqliteClient
+        const limit = options.limit ?? 20
+        const hours = options.hours ?? 24
+        const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+        const errors: TraceErrorEntry[] = []
+
+        const failedRuns = db.prepare(`
+          SELECT id, task_id, agent, ended_at, error_message
+          FROM runs
+          WHERE status = ? AND ended_at >= ?
+          ORDER BY ended_at DESC
+          LIMIT ?
+        `).all("failed", cutoff, limit) as Array<{
+          id: string
+          task_id: string | null
+          agent: string | null
+          ended_at: string | null
+          error_message: string | null
+        }>
+
+        for (const run of failedRuns) {
+          errors.push({
+            timestamp: run.ended_at ?? new Date().toISOString(),
+            source: "run",
+            runId: run.id,
+            taskId: run.task_id,
+            agent: run.agent,
+            name: "Run failed",
+            error: run.error_message ?? "Unknown error",
+            durationMs: null,
+          })
+        }
+
+        const errorSpans = db.prepare(`
+          SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
+          FROM events
+          WHERE event_type = ?
+            AND json_extract(metadata, '$.status') = ?
+            AND timestamp >= ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `).all("span", "error", cutoff, limit) as Array<{
+          timestamp: string
+          run_id: string | null
+          task_id: string | null
+          agent: string | null
+          content: string | null
+          metadata: string
+          duration_ms: number | null
+        }>
+
+        for (const span of errorSpans) {
+          let errorMessage = "Unknown error"
+          try {
+            const metadata = JSON.parse(span.metadata) as { error?: unknown }
+            if (metadata.error !== undefined) {
+              errorMessage = String(metadata.error)
+            }
+          } catch {
+            // Ignore malformed metadata.
+          }
+
+          errors.push({
+            timestamp: span.timestamp,
+            source: "span",
+            runId: span.run_id,
+            taskId: span.task_id,
+            agent: span.agent,
+            name: span.content ?? "Unknown span",
+            error: errorMessage,
+            durationMs: span.duration_ms,
+          })
+        }
+
+        const errorEvents = db.prepare(`
+          SELECT timestamp, run_id, task_id, agent, content, duration_ms
+          FROM events
+          WHERE event_type = ? AND timestamp >= ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `).all("error", cutoff, limit) as Array<{
+          timestamp: string
+          run_id: string | null
+          task_id: string | null
+          agent: string | null
+          content: string | null
+          duration_ms: number | null
+        }>
+
+        for (const event of errorEvents) {
+          errors.push({
+            timestamp: event.timestamp,
+            source: "event",
+            runId: event.run_id,
+            taskId: event.task_id,
+            agent: event.agent,
+            name: "Error event",
+            error: event.content ?? "Unknown error",
+            durationMs: event.duration_ms,
+          })
+        }
+
+        errors.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        return errors.slice(0, limit)
+      })
+    )
   }
 
   async runHeartbeat(runId: string, data: RunHeartbeatData = {}): Promise<RunHeartbeatResult> {
@@ -2642,6 +3335,191 @@ class DirectTransport implements Transport {
     )
   }
 
+  // Spec traceability
+  async specDiscover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<DiscoverResult>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        return yield* specService.discover(options)
+      })
+    )
+  }
+
+  async specLink(invariantId: string, file: string, name?: string, framework?: string): Promise<SerializedSpecTest> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    return await this.run<SerializedSpecTest>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        const linked = yield* specService.link(invariantId, file, name, framework ?? null)
+        return self.serializeSpecTest(linked)
+      })
+    )
+  }
+
+  async specUnlink(invariantId: string, testId: string): Promise<{ removed: boolean }> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<{ removed: boolean }>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        const removed = yield* specService.unlink(invariantId, testId)
+        return { removed }
+      })
+    )
+  }
+
+  async specTests(invariantId: string): Promise<SerializedSpecTest[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    return await this.run<SerializedSpecTest[]>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        const tests = yield* specService.testsForInvariant(invariantId)
+        return tests.map((test: any) => self.serializeSpecTest(test))
+      })
+    )
+  }
+
+  async specInvariantsForTest(testId: string): Promise<string[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<string[]>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        const invariants = yield* specService.invariantsForTest(testId)
+        return [...invariants]
+      })
+    )
+  }
+
+  async specGaps(options?: SpecScopeOptions): Promise<SerializedSpecGap[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    return await this.run<SerializedSpecGap[]>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        const gaps = yield* specService.uncoveredInvariants(options)
+        return gaps.map((gap: any) => self.serializeSpecGap(gap))
+      })
+    )
+  }
+
+  async specFci(options?: SpecScopeOptions): Promise<FciResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<FciResult>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        return yield* specService.fci(options)
+      })
+    )
+  }
+
+  async specMatrix(options?: SpecScopeOptions): Promise<SerializedTraceabilityMatrixEntry[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    return await this.run<SerializedTraceabilityMatrixEntry[]>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        const matrix = yield* specService.matrix(options)
+        return matrix.map((entry: any) => self.serializeSpecMatrixEntry(entry))
+      })
+    )
+  }
+
+  async specStatus(options?: SpecScopeOptions): Promise<SpecStatusResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SpecStatusResult>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        return yield* specService.status(options)
+      })
+    )
+  }
+
+  async specRun(testId: string, passed: boolean, options?: { durationMs?: number | null; details?: string | null; runAt?: string }): Promise<SpecBatchRunResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SpecBatchRunResult>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        return yield* specService.recordRun(testId, passed, options)
+      })
+    )
+  }
+
+  async specBatch(data: { results?: SpecBatchRunInput[]; raw?: string; from?: SpecBatchSource; runAt?: string }): Promise<SpecBatchRunResult> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    if (data.raw && data.results && data.results.length > 0) {
+      throw new TxError(
+        "Provide either raw batch input or parsed results, not both",
+        "VALIDATION_ERROR",
+        400
+      )
+    }
+
+    const rows = data.raw
+      ? core.parseBatchRunInput(data.raw, data.from ?? "generic")
+      : (data.results ?? [])
+
+    return await this.run<SpecBatchRunResult>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        return yield* specService.recordBatchRun(rows, { runAt: data.runAt })
+      })
+    )
+  }
+
+  async specComplete(options: { doc?: string; subsystem?: string; signedOffBy: string; notes?: string }): Promise<SerializedSpecSignoff> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+    const self = this
+
+    return await this.run<SerializedSpecSignoff>(
+      Effect.gen(function* () {
+        const specService = yield* core.SpecTraceService
+        const signoff = yield* specService.complete(
+          { doc: options.doc, subsystem: options.subsystem },
+          options.signedOffBy,
+          options.notes
+        )
+        return self.serializeSpecSignoff(signoff)
+      })
+    )
+  }
+
   // Cycles
   // Cycle data is stored in the runs table with metadata.type === "cycle".
   // We query via raw SQL since there's no dedicated CycleRepository.
@@ -3474,10 +4352,45 @@ class ContextNamespace {
 }
 
 /**
- * Run heartbeat namespace for transcript/log progress primitives.
+ * Run tracing namespace for run inspection, logs, and heartbeat primitives.
  */
 class RunsNamespace {
   constructor(private readonly transport: Transport) {}
+
+  /**
+   * List recent runs with pagination and filtering.
+   */
+  async list(options: RunsListOptions = {}): Promise<PaginatedRunsResult> {
+    return this.transport.listRuns(options)
+  }
+
+  /**
+   * Get a run with parsed transcript messages and captured logs.
+   */
+  async get(id: string): Promise<RunDetailResult> {
+    return this.transport.getRun(id)
+  }
+
+  /**
+   * Get parsed transcript messages for a run.
+   */
+  async transcript(id: string): Promise<SerializedTraceMessage[]> {
+    return this.transport.getRunTranscript(id)
+  }
+
+  /**
+   * Get stderr content for a run, optionally tailing the last N lines.
+   */
+  async stderr(id: string, options?: { tail?: number }): Promise<LogContentResult> {
+    return this.transport.getRunStderr(id, options)
+  }
+
+  /**
+   * List recent run/span/event errors across the tracing store.
+   */
+  async errors(options: TraceErrorsOptions = {}): Promise<TraceErrorEntry[]> {
+    return this.transport.getRunErrors(options)
+  }
 
   /**
    * Record a run heartbeat sample for progress monitoring.
@@ -3498,6 +4411,61 @@ class RunsNamespace {
    */
   async reap(options: ReapStalledRunsOptions = {}): Promise<SerializedReapedRun[]> {
     return this.transport.reapStalledRuns(options)
+  }
+}
+
+/**
+ * Spec traceability namespace for invariant-to-test mapping and FCI scoring.
+ */
+class SpecNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async discover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult> {
+    return this.transport.specDiscover(options)
+  }
+
+  async link(invariantId: string, file: string, name?: string, framework?: string): Promise<SerializedSpecTest> {
+    return this.transport.specLink(invariantId, file, name, framework)
+  }
+
+  async unlink(invariantId: string, testId: string): Promise<{ removed: boolean }> {
+    return this.transport.specUnlink(invariantId, testId)
+  }
+
+  async tests(invariantId: string): Promise<SerializedSpecTest[]> {
+    return this.transport.specTests(invariantId)
+  }
+
+  async invariantsForTest(testId: string): Promise<string[]> {
+    return this.transport.specInvariantsForTest(testId)
+  }
+
+  async gaps(options?: SpecScopeOptions): Promise<SerializedSpecGap[]> {
+    return this.transport.specGaps(options)
+  }
+
+  async fci(options?: SpecScopeOptions): Promise<FciResult> {
+    return this.transport.specFci(options)
+  }
+
+  async matrix(options?: SpecScopeOptions): Promise<SerializedTraceabilityMatrixEntry[]> {
+    return this.transport.specMatrix(options)
+  }
+
+  async status(options?: SpecScopeOptions): Promise<SpecStatusResult> {
+    return this.transport.specStatus(options)
+  }
+
+  async run(testId: string, passed: boolean, options?: { durationMs?: number | null; details?: string | null; runAt?: string }): Promise<SpecBatchRunResult> {
+    return this.transport.specRun(testId, passed, options)
+  }
+
+  async batch(data: { results?: SpecBatchRunInput[]; raw?: string; from?: SpecBatchSource; runAt?: string }): Promise<SpecBatchRunResult> {
+    return this.transport.specBatch(data)
+  }
+
+  async complete(options: { doc?: string; subsystem?: string; signedOffBy: string; notes?: string }): Promise<SerializedSpecSignoff> {
+    return this.transport.specComplete(options)
   }
 }
 
@@ -4106,6 +5074,11 @@ export class TxClient {
   public readonly invariants: InvariantsNamespace
 
   /**
+   * Spec traceability and FCI operations.
+   */
+  public readonly spec: SpecNamespace
+
+  /**
    * Cycle-based issue discovery results.
    */
   public readonly cycles: CyclesNamespace
@@ -4161,6 +5134,7 @@ export class TxClient {
     this.sync = new SyncNamespace(this.transport)
     this.docs = new DocsNamespace(this.transport)
     this.invariants = new InvariantsNamespace(this.transport)
+    this.spec = new SpecNamespace(this.transport)
     this.cycles = new CyclesNamespace(this.transport)
     this.guards = new GuardsNamespace(this.transport)
     this.verify = new VerifyNamespace(this.transport)

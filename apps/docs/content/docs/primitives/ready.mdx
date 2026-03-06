@@ -156,33 +156,45 @@ Every response includes full dependency information per [Rule 1](/docs/prd/prd-0
 
 `tx ready` includes inherited task-group context fields so agents can pick up shared context automatically.
 
-Set or clear direct context:
+Set or clear direct context through the interface you are already using:
+
+<Tabs groupId="group-context-interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
 
 ```bash
-# CLI
 tx group-context:set tx-root001 "Shared auth rollout context"
 tx group-context:clear tx-root001
 ```
 
+</Tab>
+<Tab value="TypeScript SDK">
+
 ```typescript
-// SDK
 await tx.tasks.setGroupContext("tx-root001", "Shared auth rollout context")
 await tx.tasks.clearGroupContext("tx-root001")
 ```
 
+</Tab>
+<Tab value="MCP">
+
 ```json
-// MCP
 { "name": "tx_group_context_set", "arguments": { "taskId": "tx-root001", "context": "Shared auth rollout context" } }
 { "name": "tx_group_context_clear", "arguments": { "taskId": "tx-root001" } }
 ```
 
+</Tab>
+<Tab value="REST API">
+
 ```bash
-# REST API
 curl -X PUT http://localhost:3456/api/tasks/tx-root001/group-context \
   -H "Content-Type: application/json" \
   -d '{"context":"Shared auth rollout context"}'
+
 curl -X DELETE http://localhost:3456/api/tasks/tx-root001/group-context
 ```
+
+</Tab>
+</Tabs>
 
 ## Agent Loop Pattern
 

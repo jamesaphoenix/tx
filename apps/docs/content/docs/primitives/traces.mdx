@@ -92,14 +92,18 @@ tx trace list --json
 ```typescript
 import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// List runs via the REST API directly
-const res = await fetch('http://localhost:3456/api/runs?limit=20&status=failed')
-const { runs, hasMore, nextCursor } = await res.json()
+const recent = await tx.runs.list({
+  limit: 20,
+  status: ['failed', 'running'],
+})
 
-// The SDK exposes heartbeat, stalled, and reap operations
-const stalled = await tx.runs.stalled({ transcriptIdleSeconds: 300 })
+console.log(recent.runs.map((run) => ({
+  id: run.id,
+  status: run.status,
+  agent: run.agent,
+})))
 ```
 
 </Tab>
@@ -182,7 +186,7 @@ tx trace stalled --reap --transcript-idle-seconds 300
 ```typescript
 import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
 await tx.runs.heartbeat('run-abc12345', {
   transcriptBytes: 2048,
@@ -307,18 +311,13 @@ tx trace show run-abc12345 --full
 ```typescript
 import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// Get run details via REST API directly
-const res = await fetch('http://localhost:3456/api/runs/run-abc12345')
-const { run, messages } = await res.json()
+const detail = await tx.runs.get('run-abc12345')
 
-// messages includes tool_use, tool_result, text, and thinking entries
-for (const msg of messages) {
-  if (msg.type === 'tool_use') {
-    console.log(`Tool: ${msg.tool_name}`)
-  }
-}
+console.log(detail.run.status)
+console.log(detail.messages.length)
+console.log(detail.logs.stderr)
 ```
 
 </Tab>
@@ -399,9 +398,12 @@ tx trace transcript run-abc12345 | jq 'select(.type == "assistant")'
 <Tab value="TypeScript SDK">
 
 ```typescript
-// Transcript messages are included in the run detail REST response
-const res = await fetch('http://localhost:3456/api/runs/run-abc12345')
-const { run, messages } = await res.json()
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+const transcript = await tx.runs.transcript('run-abc12345')
+const toolCalls = transcript.filter((message) => message.type === 'tool_use')
 ```
 
 </Tab>
@@ -452,10 +454,10 @@ tx trace stderr run-abc12345
 ```typescript
 import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
 
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
 
-// Access stderr via REST API (HTTP mode)
-// The SDK wraps the /api/runs/:id/stderr endpoint
+const stderr = await tx.runs.stderr('run-abc12345', { tail: 50 })
+console.log(stderr.content)
 ```
 
 </Tab>
@@ -543,9 +545,16 @@ Aggregates errors from three sources:
 <Tab value="TypeScript SDK">
 
 ```typescript
-// List failed runs via REST API
-const res = await fetch('http://localhost:3456/api/runs?status=failed&limit=10')
-const { runs } = await res.json()
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+const errors = await tx.runs.errors({ hours: 24, limit: 10 })
+console.log(errors.map((entry) => ({
+  source: entry.source,
+  runId: entry.runId,
+  error: entry.error,
+})))
 ```
 
 </Tab>
@@ -561,8 +570,7 @@ tx trace errors --json
 <Tab value="REST API">
 
 ```bash
-# List failed runs
-GET /api/runs?status=failed&limit=10
+GET /api/runs/errors?hours=24&limit=10
 ```
 
 </Tab>

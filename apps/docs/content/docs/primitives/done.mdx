@@ -119,7 +119,9 @@ This matters when completion rules depend on whether the caller is an agent or a
 
 ## Gate-Linked Tasks
 
-Gate pins can optionally link to a task by storing `taskId`. When `.tx/config.toml` keeps the default:
+A pin is a named persistent record that tx stores in the database and can sync into agent context files. Gates are implemented as special pins with IDs like `gate.docs-to-build`, whose JSON state can optionally include a linked `taskId`.
+
+When that gate pin stores a task ID and `.tx/config.toml` keeps the default:
 
 ```toml
 [pins]
@@ -133,6 +135,8 @@ Use one of these human paths to finish the task:
 - CLI: `tx done <id> --human`
 - REST API: `POST /api/tasks/:id/done` with `x-tx-actor: human`
 - Dashboard: no extra work; the dashboard already sends the human actor header
+
+See [`tx pin`](/docs/primitives/pin) for the underlying storage primitive and [`tx gate`](/docs/primitives/gate) for the full human review pattern.
 
 ## Output
 

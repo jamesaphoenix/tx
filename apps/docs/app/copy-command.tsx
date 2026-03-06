@@ -12,11 +12,15 @@ export function CopyCommand({ command }: { command: string }) {
   };
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-fd-border bg-fd-muted/50 py-4 pl-6 pr-3">
-      <code className="min-w-0 truncate text-sm">{command}</code>
+    <div className="flex w-full max-w-full flex-col gap-3 rounded-lg border border-fd-border bg-fd-muted/50 py-4 pl-4 pr-3 sm:flex-row sm:items-center sm:justify-between sm:pl-6">
+      <div className="min-w-0 flex-1 overflow-x-auto">
+        <code className="block min-w-0 break-all text-left text-sm sm:w-max sm:min-w-full sm:whitespace-nowrap sm:pr-2">
+          {command}
+        </code>
+      </div>
       <button
         onClick={handleCopy}
-        className="flex w-[5.5rem] shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-foreground"
+        className="flex w-[5.5rem] shrink-0 cursor-pointer items-center justify-center gap-1.5 self-end rounded-md px-2.5 py-1.5 text-xs text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-foreground sm:self-auto"
         aria-label="Copy to clipboard"
       >
         {copied ? (
