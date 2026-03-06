@@ -95,9 +95,12 @@ export function TaskComposerModal({
   }, [])
 
   const resetFields = useCallback((keepSelections: boolean) => {
+    titleValueRef.current = ""
+    descriptionValueRef.current = ""
     setTitle("")
     setDescription("")
     setErrorMessage(null)
+    isSubmittingRef.current = false
     setIsSubmitting(false)
     setIsCreatingCommandLabel(false)
     pendingCommandLabelCreateRef.current = null

@@ -1,6 +1,6 @@
 {
   "name": "tx-monorepo",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "A lean task management system for AI agents and humans",
   "private": true,
   "type": "module",

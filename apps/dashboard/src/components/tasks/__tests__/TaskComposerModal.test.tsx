@@ -115,7 +115,9 @@ describe("TaskComposerModal", () => {
       createMore: true,
     })
     expect(onClose).not.toHaveBeenCalled()
-    expect(screen.getByPlaceholderText("Task title")).toHaveValue("")
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Task title")).toHaveValue("")
+    })
   })
 
   it("uses provided default assignment type", async () => {
