@@ -105,7 +105,7 @@ export const triangle = (_pos: string[], flags: Flags): Effect.Effect<void, unkn
 
     // Human-readable output
     const statusLabel = health.status.toUpperCase()
-    console.log(`Triangle Health: ${statusLabel}`)
+    console.log(`Spec Health: ${statusLabel}`)
     console.log("")
 
     // Spec-test coverage

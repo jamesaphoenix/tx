@@ -7,6 +7,8 @@ description: Record and search knowledge for future agents
 
 Learnings are pieces of knowledge that persist across sessions and can be retrieved based on context. They're the memory layer that helps agents avoid repeating mistakes and build on past insights.
 
+The CLI learning commands store learnings as tagged markdown documents via [`tx memory`](/docs/primitives/memory), while the SDK, MCP, and REST API use the dedicated learnings service backed by its own database tables. Both paths serve the same purpose — recording and retrieving knowledge — but use different storage backends.
+
 ## Commands
 
 | Command | Description |
@@ -332,17 +334,20 @@ Record whether a learning was helpful for a task. This feedback improves future 
 <Tab value="CLI">
 
 ```bash
-tx learning helpful <learning-id> <task-id> --yes|--no
+tx learning helpful <id> [--score <0-1>] [--json]
 ```
 
 **Examples:**
 
 ```bash
-# Mark a learning as helpful
-tx learning helpful 42 tx-def456 --yes
+# Record a learning as helpful (default score 1.0)
+tx learning helpful 42
 
-# Mark a learning as not helpful
-tx learning helpful 42 tx-def456 --no
+# Record with a specific helpfulness score
+tx learning helpful 42 --score 0.8
+
+# JSON output
+tx learning helpful 42 --json
 ```
 
 </Tab>
@@ -408,68 +413,6 @@ POST /api/learnings/:id/helpful
 curl -X POST http://localhost:3456/api/learnings/42/helpful \
   -H "Content-Type: application/json" \
   -d '{"score": 1.0}'
-```
-
-</Tab>
-</Tabs>
-
----
-
-## tx learning:get
-
-Retrieve a specific learning by its ID.
-
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
-<Tab value="CLI">
-
-```bash
-tx learning:get <id> [--json]
-```
-
-</Tab>
-<Tab value="TypeScript SDK">
-
-```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
-
-const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
-
-const learning = await tx.learnings.get(42)
-console.log(learning.content)
-```
-
-</Tab>
-<Tab value="MCP">
-
-Individual learning retrieval is available via the REST API (`GET /api/learnings/:id`) or CLI (`tx learning:show`). Use `tx_learning_search` via MCP to find specific learnings.
-
-```json
-{
-  "name": "tx_learning_search",
-  "arguments": {
-    "query": "",
-    "limit": 1
-  }
-}
-```
-
-</Tab>
-<Tab value="REST API">
-
-```
-GET /api/learnings/:id
-```
-
-**Path parameters:**
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | `number` | Yes | Learning ID |
-
-**Example:**
-
-```bash
-curl http://localhost:3456/api/learnings/42
 ```
 
 </Tab>

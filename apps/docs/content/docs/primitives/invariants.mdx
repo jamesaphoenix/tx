@@ -199,10 +199,11 @@ invariants:
 Running `tx invariant sync` reads invariant sources from each doc's YAML and upserts them into the database:
 
 - explicit `invariants` arrays,
-- PRD `ears_requirements` and legacy `requirements`,
-- design `goals`.
+- PRD `ears_requirements` (EARS-structured behavioral requirements),
+- PRD `requirements` (plain-text, auto-derived as `INV-PRD-<docname>-REQ-NNN`),
+- design `goals` (auto-derived as `INV-DESIGN-<docname>-GOAL-NNN`).
 
-For legacy docs that use block-scalar strings for `requirements` or `goals`, sync normalizes non-empty lines into invariant candidates.
+For docs that use block-scalar strings for `requirements` or `goals`, sync normalizes non-empty lines into invariant candidates.
 
 Invariants that are no longer present in YAML are marked as `deprecated`.
 

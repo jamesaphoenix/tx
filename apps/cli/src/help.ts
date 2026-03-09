@@ -2341,6 +2341,7 @@ Subcommands:
   batch                        Import batch run results from stdin JSON
   complete                     Record human sign-off (HARDEN -> COMPLETE)
   status                       Quick phase + FCI + gaps summary
+  health                       Spec-driven development health (decisions + drift + coverage)
 
 Run 'tx spec <subcommand> --help' for subcommand-specific help.
 
@@ -2350,7 +2351,8 @@ Examples:
   tx spec fci --doc PRD-033-spec-test-traceability
   tx spec run test/core.test.ts::"ready returns unblocked" --passed
   vitest run --reporter=json | tx spec batch --from vitest
-  tx spec complete --doc PRD-033-spec-test-traceability --by james`,
+  tx spec complete --doc PRD-033-spec-test-traceability --by james
+  tx spec health`,
 
   "spec discover": `tx spec discover - Scan and upsert invariant/test mappings
 
@@ -3234,9 +3236,9 @@ Examples:
   tx decision edit dec-abc123 "Use WAL mode with 64MB cache"
   tx decision pending`,
 
-  triangle: `tx triangle - Spec-driven development health check
+  "spec health": `tx spec health - Spec-driven development health check
 
-Usage: tx triangle [--json]
+Usage: tx spec health [--json]
 
 Aggregates spec-test coverage, decision status, and doc drift into a
 single health view. Shows overall status: SYNCED, DRIFTING, or BROKEN.
@@ -3252,6 +3254,10 @@ Options:
   --help    Show this help
 
 Examples:
-  tx triangle
-  tx triangle --json`,
+  tx spec health
+  tx spec health --json`,
+
+  triangle: `tx triangle is a deprecated alias for 'tx spec health'.
+
+Run 'tx spec health --help' for full usage.`,
 }

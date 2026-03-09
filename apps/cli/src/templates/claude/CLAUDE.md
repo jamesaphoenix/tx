@@ -84,7 +84,7 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx invariant list` | Inspect invariant registry and status |
 | `tx decision list` | List captured decisions and their review status |
 | `tx decision pending` | Show decisions awaiting review |
-| `tx triangle` | View spec-driven development health (decisions + docs + tests) |
+| `tx spec health` | View spec-driven development health (decisions + docs + tests) |
 | `tx spec status` | Inspect requirement/spec/test traceability status |
 
 ### Sync & Data

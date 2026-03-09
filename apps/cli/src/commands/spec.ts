@@ -9,6 +9,7 @@ import {
   parseBatchRunInput,
   type BatchSource,
 } from "@jamesaphoenix/tx-core"
+import { triangle as specHealthImpl } from "./triangle.js"
 import { toJson } from "../output.js"
 import { CliExitError } from "../cli-exit.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
@@ -62,6 +63,7 @@ export const spec = (pos: string[], flags: Flags) => {
     case "batch": return specBatch(rest, flags)
     case "complete": return specComplete(rest, flags)
     case "status": return specStatus(rest, flags)
+    case "health": return specHealthImpl(rest, flags)
     default:
       return Effect.sync(() => {
         console.error(`Unknown spec subcommand: ${sub ?? "(none)"}`)

@@ -34,32 +34,22 @@ Common follow-on primitives:
 
 <Mermaid
   title="Spec Pipeline"
-  caption="Specs become invariants, discovery builds mappings from tags or manifest entries, and recorded outcomes drive FCI and phase."
-  chart={`flowchart TB
-    Docs["A. Docs and invariants<br/>tx docs<br/>tx invariant sync"]
-    Tests["B. Test sources<br/>tags<br/>.tx/spec-tests.yml"]
-    Map["1. Traceability mappings<br/>discover<br/>link<br/>canonical IDs"]
-    Runs["2. Recorded outcomes<br/>tx spec run<br/>tx spec batch"]
-    Phase["3. FCI and phase<br/>BUILD<br/>HARDEN<br/>COMPLETE"]
-
-    Docs --> Map
-    Tests --> Map
-    Map --> Runs
-    Runs --> Phase
+  caption="Specs become invariants, discovery builds mappings, and recorded outcomes drive FCI and phase."
+  chart={`flowchart LR
+    Docs["Docs + invariants"] --> Map["Traceability mappings"]
+    Tests["Test sources"] --> Map
+    Map --> Runs["Recorded outcomes"]
+    Runs --> Phase["FCI + phase"]
   `}
 />
 
 <Mermaid
   title="FCI Gate"
-  caption="BUILD is automatic while any active invariant is failing. HARDEN starts at 100% FCI. COMPLETE still requires a human sign-off."
-  chart={`flowchart TB
-    Build["BUILD<br/>FCI < 100<br/>automatic"]
-    Harden["HARDEN<br/>FCI = 100<br/>automatic"]
-    Complete["COMPLETE<br/>human sign-off<br/>manual"]
-
-    Build -->|"FCI reaches 100"| Harden
-    Harden -->|"tx spec complete --by human"| Complete
-    Harden -. "failing outcome" .-> Build
+  caption="BUILD is automatic while any invariant is failing. HARDEN starts at 100% FCI. COMPLETE requires human sign-off."
+  chart={`flowchart LR
+    Build["BUILD<br/>FCI < 100"] -->|"FCI = 100"| Harden["HARDEN<br/>FCI = 100"]
+    Harden -->|"tx spec complete --by human"| Complete["COMPLETE"]
+    Harden -. "regression" .-> Build
   `}
 />
 

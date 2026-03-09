@@ -47,10 +47,10 @@ Follow the docs in this order:
 | [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others |
 | [`tx block`](/docs/primitives/block) | Declare dependencies between tasks |
 | [`tx claim`](/docs/primitives/claim) | Mark task as being worked by an agent |
-| [`tx handoff`](/docs/primitives/handoff) | Transfer task with context to another agent |
-| [`tx checkpoint`](/docs/primitives/checkpoint) | Save progress without completing |
+| [`tx pin`](/docs/primitives/pin) | Attach key-value metadata to tasks |
+| [`tx memory`](/docs/primitives/memory) | Filesystem-backed knowledge search |
+| [`tx learning:*`](/docs/primitives/learning) | Record and search session learnings |
 | [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection |
-| [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge |
 | [`tx label`](/docs/primitives/label) | Organize tasks with labels for phase scoping |
 | [`tx guard`](/docs/primitives/guard) | Set task creation limits (bounded autonomy) |
 | [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria |
@@ -60,7 +60,7 @@ Follow the docs in this order:
 
 ## Structured Requirements (EARS)
 
-tx enforces **EARS** (**Easy Approach to Requirements Syntax**) as mandatory for all PRDs via `ears_requirements`. PRDs with legacy `requirements` must also define a non-empty `ears_requirements` array.
+tx enforces **EARS** (**Easy Approach to Requirements Syntax**) as the standard requirement format for PRDs. When a PRD contains `requirements`, it must also define `ears_requirements`.
 
 EARS requirements are:
 
@@ -70,11 +70,11 @@ EARS requirements are:
 
 Start in [`tx doc`](/docs/primitives/docs) for syntax and examples.
 
-## The Spec-Driven Development Triangle
+## Spec-Driven Development
 
 Spec-driven development is not a one-way equation (spec + tests + agent = code) — it's a feedback loop. Implementing code generates decisions that must feed back into specs and tests. tx is the control plane that keeps these three nodes in sync: tasks define what to build, [learnings](/docs/primitives/learning) and [decisions](/docs/primitives/decision) capture the choices made during implementation, and [`tx done`](/docs/primitives/done) is a checkpoint that closes the loop.
 
-The answer to AI coding's volume problem — waterfall output at agile cadence — is not more complex orchestration but lightweight process, so that moving fast doesn't require abandoning intent tracking. Use [`tx triangle`](/docs/primitives/decision) to monitor the health of your spec-code-test triangle.
+The answer to AI coding's volume problem — waterfall output at agile cadence — is not more complex orchestration but lightweight process, so that moving fast doesn't require abandoning intent tracking. Use [`tx spec health`](/docs/primitives/decision) to monitor the health of your spec-code-test cycle.
 
 ## Your First Step
 

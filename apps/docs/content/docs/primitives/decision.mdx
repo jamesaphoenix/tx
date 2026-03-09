@@ -5,7 +5,7 @@ description: Decisions as first-class artifacts — capture, review, and sync to
 
 ## Purpose
 
-Decisions are first-class artifacts in tx. When agents or developers make implementation choices, those decisions are captured, reviewed, and optionally synced back to design docs as invariants. This closes the spec-driven development triangle: code changes produce decisions, which feed back to update specs and tests.
+Decisions are first-class artifacts in tx. When agents or developers make implementation choices, those decisions are captured, reviewed, and optionally synced back to design docs as invariants. This closes the spec-driven development loop: code changes produce decisions, which feed back to update specs and tests.
 
 ## Decision Lifecycle
 
@@ -55,9 +55,9 @@ tx decision edit dec-abc123def456 "Use WAL mode with 64MB cache" --reviewer jame
 # Shorthand for pending decisions
 tx decision pending
 
-# Triangle health (aggregates decisions + docs + invariants)
-tx triangle
-tx triangle --json
+# Spec health (aggregates decisions + docs + invariants)
+tx spec health
+tx spec health --json
 ```
 
 </Tab>
@@ -176,14 +176,14 @@ curl -X POST http://localhost:3456/api/decisions/dec-abc123def456/approve \
 | `runId` | Linked run ID (if extracted during a run) |
 | `invariantId` | Linked invariant ID (after doc sync) |
 
-## Triangle Health
+## Spec Health
 
-Use `tx triangle` to see overall spec-driven development health:
+Use `tx spec health` to see overall spec-driven development health:
 
 ```bash
-$ tx triangle
+$ tx spec health
 
-Triangle Health: DRIFTING
+Spec Health: DRIFTING
 
   Decisions:    3 pending, 1 approved-unsynced
   Doc Drift:    0 docs with hash mismatch
@@ -194,7 +194,7 @@ Triangle Health: DRIFTING
     - Sync 1 approved decision to docs
 ```
 
-The triangle command aggregates decision status, doc drift, and invariant coverage into a single health view.
+The `spec health` command aggregates decision status, doc drift, and invariant coverage into a single health view.
 
 ## Related Commands
 

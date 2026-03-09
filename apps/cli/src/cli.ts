@@ -237,9 +237,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   invariant,
   spec,
 
-  // Decision commands (spec-driven development triangle)
+  // Decision commands
   decision,
-  triangle,
+  triangle: deprecatedAlias("spec health", triangle),
 
   // Memory commands (filesystem-backed memory)
   memory,

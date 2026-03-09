@@ -3,8 +3,6 @@ title: tx label
 description: Organize tasks with labels for ready queue scoping
 ---
 
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
-
 ## Purpose
 
 Labels let you organize tasks into phases, sprints, or categories. Use them with `tx ready --label` to scope the ready queue — work on discovery tasks without seeing implementation tasks.
@@ -61,16 +59,15 @@ const discovery = await tx.tasks.ready({
 const tasks = await tx.tasks.ready({
   excludeLabels: ['needs-review'],
 })
-
 ```
 
-The SDK supports label-based filtering on `ready()`. Label CRUD (add, assign, unassign) is available via the CLI.
+The SDK supports label-based filtering on `ready()` and `list()`. Label CRUD (add, assign, unassign) is currently available via the CLI only.
 
 </Tab>
 
 <Tab value="MCP">
 
-**Tool name:** `tx_ready`
+**Label filtering** is supported on `tx_ready` and `tx_list`:
 
 ```json
 {
@@ -89,7 +86,7 @@ The SDK supports label-based filtering on `ready()`. Label CRUD (add, assign, un
 | `labels` | `string` | No | Comma-separated label names to include (e.g. `'phase:implement,sprint:w10'`) |
 | `excludeLabels` | `string` | No | Comma-separated label names to exclude (e.g. `'needs-review'`) |
 
-**Also available:** `tx_list` supports the same `labels` and `excludeLabels` arguments for filtering.
+Label CRUD (add, assign, unassign) is currently available via the CLI only.
 
 </Tab>
 
@@ -106,7 +103,7 @@ curl "http://localhost:3456/api/tasks/ready?excludeLabels=needs-review"
 curl "http://localhost:3456/api/tasks?labels=phase:implement"
 ```
 
-The REST API supports label-based filtering on the ready and list endpoints. Label CRUD (add, assign, unassign) is available via the CLI.
+Label filtering is supported on the ready and list endpoints. Label CRUD (add, assign, unassign) is currently available via the CLI only.
 
 </Tab>
 

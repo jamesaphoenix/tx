@@ -293,19 +293,19 @@ describe("Decision commands (Phase 2)", () => {
     expect(bad.stderr).toContain("Invalid --source")
   })
 
-  it("triangle command runs and returns health", () => {
-    // Add a decision so triangle has something to report
-    runTx(["decision", "add", "Triangle test decision"], tmpDir)
+  it("spec health command runs and returns health", () => {
+    // Add a decision so spec health has something to report
+    runTx(["decision", "add", "Spec health test decision"], tmpDir)
 
-    const tri = runTx(["triangle"], tmpDir)
+    const tri = runTx(["spec", "health"], tmpDir)
     expect(tri.status).toBe(0)
-    expect(tri.stdout).toContain("Triangle Health:")
+    expect(tri.stdout).toContain("Spec Health:")
     expect(tri.stdout).toContain("Decisions:")
     expect(tri.stdout).toContain("Doc Drift:")
   })
 
-  it("triangle command supports --json output", () => {
-    const tri = runTx(["triangle", "--json"], tmpDir)
+  it("spec health command supports --json output", () => {
+    const tri = runTx(["spec", "health", "--json"], tmpDir)
     expect(tri.status).toBe(0)
     const health = JSON.parse(tri.stdout)
     expect(health.status).toBeDefined()
@@ -313,6 +313,13 @@ describe("Decision commands (Phase 2)", () => {
     expect(health.decisions).toBeDefined()
     expect(health.docDrift).toBeDefined()
     expect(["synced", "drifting", "broken"]).toContain(health.status)
+  })
+
+  it("triangle alias still works (backwards compat)", () => {
+    const tri = runTx(["triangle", "--json"], tmpDir)
+    expect(tri.status).toBe(0)
+    const health = JSON.parse(tri.stdout)
+    expect(health.status).toBeDefined()
   })
 
   it("unknown decision subcommand fails gracefully", () => {

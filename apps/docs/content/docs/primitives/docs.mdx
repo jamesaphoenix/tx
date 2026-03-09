@@ -15,7 +15,7 @@ description: Docs-as-primitives — structured PRDs and design docs on disk
 
 ## EARS in tx PRDs
 
-tx uses **EARS** (**Easy Approach to Requirements Syntax**) as a **mandatory** requirement format for all PRDs. The `ears_requirements` block is required when a PRD has legacy `requirements`.
+tx uses **EARS** (**Easy Approach to Requirements Syntax**) as the standard requirement format for PRDs. When a PRD contains a `requirements` section, it **must** also define `ears_requirements`.
 
 Why EARS is mandatory:
 
@@ -336,7 +336,7 @@ invariants:
     test_ref: test/auth.test.ts
 ```
 
-`requirements` and `ears_requirements` can coexist. When a PRD has legacy `requirements`, it **must** also define `ears_requirements`. EARS is mandatory for all PRDs.
+When a PRD has `requirements`, it **must** also define `ears_requirements`. Use `tx doc lint-ears` to validate compliance.
 
 ## Doc Graph
 
