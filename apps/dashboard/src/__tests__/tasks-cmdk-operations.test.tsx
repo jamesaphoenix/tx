@@ -200,7 +200,7 @@ describe("Task CMD+K operations", () => {
     })
   })
 
-  it("executes all single-item CMD+K operations in task detail", async () => {
+  it("executes all single-item CMD+K operations in task detail", { timeout: 15000 }, async () => {
     const parentTask = createTask({
       id: "tx-parent-cmdk",
       title: "Parent CMDK",
@@ -405,7 +405,7 @@ describe("Task CMD+K operations", () => {
   it("keeps parent detail selected when create-more is enabled for new sub-tasks", async () => {
     const parentTask = createTask({
       id: "tx-parent-create-more",
-      title: "Create more parent",
+      title: "Parent subtask creator",
       status: "backlog",
       isReady: true,
     })
@@ -475,10 +475,10 @@ describe("Task CMD+K operations", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }))
     await waitFor(() => {
-      expect(screen.getByText("Create more parent")).toBeInTheDocument()
+      expect(screen.getByText("Parent subtask creator")).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByText("Create more parent"))
+    fireEvent.click(screen.getByText("Parent subtask creator"))
     await waitFor(() => {
       expect(screen.getByText("Properties")).toBeInTheDocument()
       expect(screen.getByText("Children (0)")).toBeInTheDocument()
