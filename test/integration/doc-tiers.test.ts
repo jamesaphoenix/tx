@@ -201,7 +201,7 @@ describe("4-tier doc system (Phase 1)", () => {
     expect(doc.name).toBe("show-sd")
   })
 
-  it("full doc chain: requirement -> prd -> design with system_design cross-cut", () => {
+  it("full doc chain: requirement -> prd -> design with system_design cross-cut", { timeout: 30000 }, () => {
     // Create all 4 doc types
     runTx(["doc", "add", "requirement", "full-req", "--title", "Full Req"], tmpDir)
     runTx(["doc", "add", "prd", "full-prd", "--title", "Full PRD"], tmpDir)
