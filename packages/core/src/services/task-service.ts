@@ -68,6 +68,15 @@ export const TaskServiceLive = Layer.effect(
     const guardRepo = yield* GuardRepository
     const pinRepo = yield* PinRepository
     const config = readTxConfig()
+    const reconcileDependentStatuses = (blockerId: TaskId) =>
+      Effect.gen(function* () {
+        const blockedTaskIds = yield* depRepo.getBlockingIds(blockerId)
+        for (const blockedTaskId of blockedTaskIds) {
+          for (const expectedStatus of ["ready", "backlog", "planning", "blocked"] as const) {
+            yield* taskRepo.recoverTaskStatus(blockedTaskId, expectedStatus)
+          }
+        }
+      })
 
     return {
       create: (input) =>
@@ -301,6 +310,9 @@ export const TaskServiceLive = Layer.effect(
           }
 
           yield* taskRepo.update(updated, existing.updatedAt)
+          if ((existing.status === "done") !== (updated.status === "done")) {
+            yield* reconcileDependentStatuses(id)
+          }
 
           // Auto-complete parent if all children are done
           if (isDone && updated.parentId) {
@@ -368,6 +380,9 @@ export const TaskServiceLive = Layer.effect(
           }
 
           yield* taskRepo.update(updated, existing.updatedAt)
+          if ((existing.status === "done") !== (status === "done")) {
+            yield* reconcileDependentStatuses(id)
+          }
           return updated
         }),
 

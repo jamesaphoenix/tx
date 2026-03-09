@@ -18,6 +18,15 @@ export const DependencyServiceLive = Layer.effect(
     const depRepo = yield* DependencyRepository
     const taskRepo = yield* TaskRepository
 
+    const reconcileBlockedStatus = (taskId: TaskId) =>
+      Effect.gen(function* () {
+        // Keep stored status consistent with dependency graph for workable states.
+        // This prevents status='ready' while effective readiness is false.
+        for (const expectedStatus of ["ready", "backlog", "planning", "blocked"] as const) {
+          yield* taskRepo.recoverTaskStatus(taskId, expectedStatus)
+        }
+      })
+
     return {
       addBlocker: (taskId, blockerId) =>
         Effect.gen(function* () {
@@ -46,10 +55,17 @@ export const DependencyServiceLive = Layer.effect(
           if (result._tag === "alreadyExists") {
             return
           }
+
+          // Synchronize persisted status with dependency graph after mutation.
+          yield* reconcileBlockedStatus(taskId)
         }),
 
       removeBlocker: (taskId, blockerId) =>
-        depRepo.remove(blockerId, taskId)
+        Effect.gen(function* () {
+          yield* depRepo.remove(blockerId, taskId)
+          // Task may become ready when last blocker is removed.
+          yield* reconcileBlockedStatus(taskId)
+        })
     }
   })
 )
