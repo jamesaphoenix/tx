@@ -198,6 +198,51 @@ describe("Golden Path: Dependency Chain", () => {
 
     expect(result.taskB.id).toBeDefined()
   })
+
+  it("keeps persisted status consistent when adding blocker", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const depSvc = yield* DependencyService
+
+        const blocker = yield* taskSvc.create({ title: "Blocker", score: 700 })
+        const blocked = yield* taskSvc.create({ title: "Blocked", score: 600 })
+
+        // New tasks start as workable status (ready/backlog/planning).
+        const before = yield* taskSvc.getWithDeps(blocked.id)
+        expect(["ready", "backlog", "planning"]).toContain(before.status)
+
+        yield* depSvc.addBlocker(blocked.id, blocker.id)
+
+        const after = yield* taskSvc.getWithDeps(blocked.id)
+        expect(after.isReady).toBe(false)
+        expect(after.status).toBe("blocked")
+      }).pipe(Effect.provide(layer))
+    )
+  })
+
+  it("keeps persisted status consistent when removing last blocker", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const depSvc = yield* DependencyService
+
+        const blocker = yield* taskSvc.create({ title: "Blocker", score: 700 })
+        const blocked = yield* taskSvc.create({ title: "Blocked", score: 600 })
+
+        yield* depSvc.addBlocker(blocked.id, blocker.id)
+        const mid = yield* taskSvc.getWithDeps(blocked.id)
+        expect(mid.status).toBe("blocked")
+
+        yield* depSvc.removeBlocker(blocked.id, blocker.id)
+
+        const after = yield* taskSvc.getWithDeps(blocked.id)
+        expect(after.blockedBy).toHaveLength(0)
+        expect(after.isReady).toBe(true)
+        expect(after.status).toBe("ready")
+      }).pipe(Effect.provide(layer))
+    )
+  })
 })
 
 // =============================================================================
