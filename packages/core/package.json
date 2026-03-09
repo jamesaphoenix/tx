@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-core",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "description": "Core business logic for tx - Effect-TS services and repositories",
   "type": "module",
   "main": "./dist/index.js",
