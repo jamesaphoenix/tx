@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createHash } from "node:crypto"
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, statSync } from "node:fs"
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, statSync, realpathSync } from "node:fs"
 import { resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { execSync } from "node:child_process"
@@ -59,14 +59,20 @@ const FIXTURES = {
  * Create a temporary test directory with optional git initialization
  */
 function createTestDir(name: string, initGit = false): string {
-  const testDir = resolve(tmpdir(), `tx-hooks-test-${name}-${Date.now()}`)
-  mkdirSync(testDir, { recursive: true })
+  const rawDir = resolve(tmpdir(), `tx-hooks-test-${name}-${Date.now()}`)
+  mkdirSync(rawDir, { recursive: true })
+  // Resolve symlinks (macOS /tmp → /private/tmp) to match findGitRoot's realpathSync
+  const testDir = realpathSync(rawDir)
 
   if (initGit) {
-    execSync("git init", { cwd: testDir, stdio: "pipe" })
-    // Configure git user for commits
-    execSync('git config user.email "test@test.com"', { cwd: testDir, stdio: "pipe" })
-    execSync('git config user.name "Test"', { cwd: testDir, stdio: "pipe" })
+    // Clear GIT_DIR/GIT_WORK_TREE so git init creates a fresh repo
+    // (husky sets these during pre-commit, which would pollute git init)
+    const cleanEnv = { ...process.env }
+    delete cleanEnv.GIT_DIR
+    delete cleanEnv.GIT_WORK_TREE
+    execSync("git init", { cwd: testDir, stdio: "pipe", env: cleanEnv })
+    execSync('git config user.email "test@test.com"', { cwd: testDir, stdio: "pipe", env: cleanEnv })
+    execSync('git config user.name "Test"', { cwd: testDir, stdio: "pipe", env: cleanEnv })
   }
 
   return testDir

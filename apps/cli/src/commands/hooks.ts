@@ -6,7 +6,7 @@
  */
 
 import { Effect } from "effect"
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync, realpathSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
@@ -105,7 +105,13 @@ export function writeTxrc(projectDir: string, config: TxrcConfig): void {
  * Find git root directory from current directory.
  */
 export function findGitRoot(startDir: string): string | null {
-  let dir = startDir
+  // Resolve symlinks (macOS /tmp → /private/tmp) to ensure consistent paths
+  let dir: string
+  try {
+    dir = realpathSync(startDir)
+  } catch {
+    dir = startDir
+  }
   while (dir !== "/") {
     if (existsSync(resolve(dir, ".git"))) {
       return dir
