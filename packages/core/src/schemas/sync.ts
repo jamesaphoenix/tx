@@ -6,7 +6,8 @@ import {
   TASK_STATUSES, TaskAssigneeTypeSchema,
   ANCHOR_TYPES, EDGE_TYPES, NODE_TYPES,
   DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, TASK_DOC_LINK_TYPES,
-  INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES
+  INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES,
+  DECISION_STATUSES, DECISION_SOURCES,
 } from "@jamesaphoenix/tx-types"
 
 // Schema version - v=1 for all sync operations
@@ -580,6 +581,65 @@ const LabelSyncOperationSchema = Schema.Union(
 export { LabelSyncOperationSchema as LabelSyncOperation }
 export type LabelSyncOperation = typeof LabelSyncOperationSchema.Type
 
+// ----- Decision Sync Operations -----
+
+// Decision status schema
+export const SyncDecisionStatusSchema = Schema.Literal(...DECISION_STATUSES)
+// Decision source schema
+export const SyncDecisionSourceSchema = Schema.Literal(...DECISION_SOURCES)
+
+// Decision data embedded in upsert operations
+export const DecisionDataSchema = Schema.Struct({
+  content: Schema.String,
+  question: Schema.NullOr(Schema.String),
+  status: SyncDecisionStatusSchema,
+  source: SyncDecisionSourceSchema,
+  commitSha: Schema.NullOr(Schema.String),
+  runId: Schema.NullOr(Schema.String),
+  taskId: Schema.NullOr(Schema.String),
+  docKey: Schema.NullOr(Schema.String),
+  invariantId: Schema.NullOr(Schema.String),
+  reviewedBy: Schema.NullOr(Schema.String),
+  reviewNote: Schema.NullOr(Schema.String),
+  editedContent: Schema.NullOr(Schema.String),
+  reviewedAt: Schema.NullOr(Schema.String),
+  supersededBy: Schema.NullOr(Schema.String),
+  syncedToDoc: Schema.Boolean,
+  createdAt: Schema.optional(Schema.NullOr(Schema.String)),
+})
+
+// Decision upsert operation
+// id is dec-<12 hex chars>, contentHash is SHA256(content)
+const DecisionUpsertOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("decision_upsert"),
+  ts: IsoTimestamp,
+  id: Schema.String,
+  contentHash: Schema.String,
+  data: DecisionDataSchema,
+})
+export { DecisionUpsertOpSchema as DecisionUpsertOp }
+export type DecisionUpsertOp = typeof DecisionUpsertOpSchema.Type
+
+// Decision delete operation (tombstone)
+const DecisionDeleteOpSchema = Schema.Struct({
+  v: SyncVersion,
+  op: Schema.Literal("decision_delete"),
+  ts: IsoTimestamp,
+  id: Schema.String,
+  contentHash: Schema.String,
+})
+export { DecisionDeleteOpSchema as DecisionDeleteOp }
+export type DecisionDeleteOp = typeof DecisionDeleteOpSchema.Type
+
+// Union of decision sync operations
+const DecisionSyncOperationSchema = Schema.Union(
+  DecisionUpsertOpSchema,
+  DecisionDeleteOpSchema,
+)
+export { DecisionSyncOperationSchema as DecisionSyncOperation }
+export type DecisionSyncOperation = typeof DecisionSyncOperationSchema.Type
+
 // ----- Combined Sync Operations -----
 
 // All sync operations combined (for parsing any JSONL file)
@@ -605,7 +665,9 @@ const AnySyncOperationSchema = Schema.Union(
   TaskDocLinkUpsertOpSchema,
   InvariantUpsertOpSchema,
   LabelUpsertOpSchema,
-  LabelAssignmentUpsertOpSchema
+  LabelAssignmentUpsertOpSchema,
+  DecisionUpsertOpSchema,
+  DecisionDeleteOpSchema
 )
 export { AnySyncOperationSchema as AnySyncOperation }
 export type AnySyncOperation = typeof AnySyncOperationSchema.Type

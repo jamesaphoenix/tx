@@ -811,4 +811,122 @@ describe("Sync stream event logs", () => {
 
     expect(title).toBe("Newer by event_id")
   })
+
+  it("decision sync round-trip: export → clear → import", async () => {
+    // 1. Insert a decision directly via SQL
+    const decId = "dec-roundtrip01"
+    const contentHash = "abc123hash"
+    const now = new Date().toISOString()
+    await run(Effect.gen(function* () {
+      const db = yield* SqliteClient
+      db.prepare(
+        `INSERT INTO decisions (id, content, question, status, source, commit_sha, task_id, content_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(decId, "Use WAL mode", "Which journal mode?", "approved", "manual", "sha123", null, contentHash, now, now)
+    }))
+
+    // 2. Export to stream
+    const syncSvc = await run(Effect.map(SyncService, s => s))
+    const exportResult = await run(syncSvc.export())
+    expect(exportResult.eventCount).toBeGreaterThan(0)
+
+    // Read the stream file to find decision events
+    const streamsDir = resolve(".tx", "streams")
+    const streamDirs = readdirSync(streamsDir)
+    expect(streamDirs.length).toBeGreaterThan(0)
+
+    const streamDir = join(streamsDir, streamDirs[0])
+    const eventFiles = readdirSync(streamDir).filter(f => f.startsWith("events-"))
+    expect(eventFiles.length).toBeGreaterThan(0)
+
+    const eventFile = join(streamDir, eventFiles[0])
+    const events = readJsonl(eventFile)
+    const decisionEvents = events.filter(e => e.type === "decision.upsert")
+    expect(decisionEvents.length).toBe(1)
+    expect(decisionEvents[0].payload.data.content).toBe("Use WAL mode")
+
+    // 3. Clear decisions table
+    await run(Effect.gen(function* () {
+      const db = yield* SqliteClient
+      db.prepare("DELETE FROM decisions").run()
+      const count = db.prepare("SELECT COUNT(*) as c FROM decisions").get() as { c: number }
+      expect(count.c).toBe(0)
+    }))
+
+    // 4. Hydrate from stream (reimports everything including decisions)
+    const hydrateResult = await run(syncSvc.hydrate())
+    expect(hydrateResult).toBeDefined()
+
+    // 5. Verify decision was reimported
+    const reimported = await run(Effect.gen(function* () {
+      const db = yield* SqliteClient
+      const row = db.prepare("SELECT * FROM decisions WHERE id = ?").get(decId) as Record<string, unknown> | undefined
+      return row
+    }))
+
+    expect(reimported).toBeDefined()
+    expect(reimported!.content).toBe("Use WAL mode")
+    expect(reimported!.question).toBe("Which journal mode?")
+    expect(reimported!.status).toBe("approved")
+    expect(reimported!.source).toBe("manual")
+    expect(reimported!.content_hash).toBe(contentHash)
+  })
+
+  it("decision import deduplicates by content_hash", async () => {
+    const decId = "dec-dedup00001"
+    const contentHash = "deduphash123"
+    const now = new Date().toISOString()
+
+    // Insert an existing decision
+    await run(Effect.gen(function* () {
+      const db = yield* SqliteClient
+      db.prepare(
+        `INSERT INTO decisions (id, content, question, status, source, content_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(decId, "Existing decision", null, "pending", "manual", contentHash, now, now)
+    }))
+
+    // Write a decisions.jsonl with the same content_hash
+    const decisionsPath = resolve(".tx", "decisions.jsonl")
+    const op = {
+      v: 1,
+      op: "decision_upsert",
+      ts: now,
+      id: "dec-differentid",
+      contentHash: contentHash,
+      data: {
+        content: "Existing decision",
+        question: null,
+        status: "pending",
+        source: "manual",
+        commitSha: null,
+        runId: null,
+        taskId: null,
+        docKey: null,
+        invariantId: null,
+        reviewedBy: null,
+        reviewNote: null,
+        editedContent: null,
+        reviewedAt: null,
+        supersededBy: null,
+        syncedToDoc: false,
+      }
+    }
+    writeFileSync(decisionsPath, JSON.stringify(op) + "\n")
+
+    // Import — should skip the duplicate
+    const syncSvc = await run(Effect.map(SyncService, s => s))
+    const result = await run(syncSvc.importDecisions(decisionsPath))
+
+    expect(result.skipped).toBe(1)
+    expect(result.imported).toBe(0)
+
+    // Only one decision should exist
+    const count = await run(Effect.gen(function* () {
+      const db = yield* SqliteClient
+      const row = db.prepare("SELECT COUNT(*) as c FROM decisions").get() as { c: number }
+      return row.c
+    }))
+    expect(count).toBe(1)
+  })
 })

@@ -15,6 +15,7 @@ export { CandidateRepository, CandidateRepositoryLive } from "./candidate-repo.j
 export { TrackedProjectRepository, TrackedProjectRepositoryLive } from "./tracked-project-repo.js"
 export { WorkerRepository, WorkerRepositoryLive } from "./worker-repo.js"
 export { ClaimRepository, ClaimRepositoryLive, type AtomicInsertResult, type AtomicRenewResult } from "./claim-repo.js"
+export { ProcessRegistryRepository, ProcessRegistryRepositoryLive } from "./process-registry-repo.js"
 export { OrchestratorStateRepository, OrchestratorStateRepositoryLive, type OrchestratorStateUpdate } from "./orchestrator-state-repo.js"
 export { CompactionRepository, CompactionRepositoryLive, type CompactionLogEntry, type CreateCompactionLogInput } from "./compaction-repo.js"
 export { MessageRepository, MessageRepositoryLive } from "./message-repo.js"
@@ -35,3 +36,4 @@ export {
   type InvariantSummary,
   type SpecTraceFilter,
 } from "./spec-trace-repo.js"
+export { DecisionRepository, DecisionRepositoryLive } from "./decision-repo.js"

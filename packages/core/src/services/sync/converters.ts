@@ -10,7 +10,8 @@ import type {
   Doc,
   DocLink,
   TaskDocLink,
-  Invariant
+  Invariant,
+  Decision,
 } from "@jamesaphoenix/tx-types"
 import type {
   TaskUpsertOp,
@@ -27,6 +28,7 @@ import type {
   InvariantUpsertOp,
   LabelUpsertOp,
   LabelAssignmentUpsertOp,
+  DecisionUpsertOp,
 } from "../../schemas/sync.js"
 import { contentHash, sqliteToIso } from "./sync-helpers.js"
 
@@ -306,3 +308,33 @@ export const labelAssignmentToUpsertOp = (row: LabelAssignmentRow, labelNameMap:
     }
   }
 }
+
+/**
+ * Convert a Decision to a DecisionUpsertOp for JSONL export.
+ * Uses docKeyMap to resolve integer doc IDs to stable name:version keys.
+ */
+export const decisionToUpsertOp = (d: Decision, docKeyMap: Map<number, string>): DecisionUpsertOp => ({
+  v: 1,
+  op: "decision_upsert",
+  ts: d.updatedAt.toISOString(),
+  id: d.id,
+  contentHash: d.contentHash,
+  data: {
+    content: d.content,
+    question: d.question,
+    status: d.status,
+    source: d.source,
+    commitSha: d.commitSha,
+    runId: d.runId,
+    taskId: d.taskId,
+    docKey: d.docId != null ? (docKeyMap.get(d.docId as number) ?? null) : null,
+    invariantId: d.invariantId,
+    reviewedBy: d.reviewedBy,
+    reviewNote: d.reviewNote,
+    editedContent: d.editedContent,
+    reviewedAt: d.reviewedAt?.toISOString() ?? null,
+    supersededBy: d.supersededBy,
+    syncedToDoc: d.syncedToDoc,
+    createdAt: d.createdAt.toISOString(),
+  }
+})

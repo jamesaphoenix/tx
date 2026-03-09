@@ -27,6 +27,7 @@ import { SpecTraceLive } from "./routes/spec-trace.js"
 import { GuardsLive } from "./routes/guards.js"
 import { VerifyLive } from "./routes/verify.js"
 import { ReflectLive } from "./routes/reflect.js"
+import { DecisionsLive } from "./routes/decisions.js"
 import { TxApi } from "./api.js"
 import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
@@ -55,6 +56,7 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(GuardsLive),
   Layer.provide(VerifyLive),
   Layer.provide(ReflectLive),
+  Layer.provide(DecisionsLive),
 )
 
 // -----------------------------------------------------------------------------

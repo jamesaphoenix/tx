@@ -25,6 +25,9 @@ export {
   AttemptDataSchema,
   AttemptUpsertOp,
   AttemptSyncOperation,
+  DecisionUpsertOp,
+  DecisionDeleteOp,
+  DecisionSyncOperation,
   AnySyncOperation
 } from "./sync.js"
 
@@ -42,6 +45,9 @@ export type {
   FileLearningSyncOperation as FileLearningSyncOperationType,
   AttemptUpsertOp as AttemptUpsertOpType,
   AttemptSyncOperation as AttemptSyncOperationType,
+  DecisionUpsertOp as DecisionUpsertOpType,
+  DecisionDeleteOp as DecisionDeleteOpType,
+  DecisionSyncOperation as DecisionSyncOperationType,
   AnySyncOperation as AnySyncOperationType
 } from "./sync.js"
 

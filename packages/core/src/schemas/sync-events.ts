@@ -31,7 +31,9 @@ export const SyncEventTypeSchema = Schema.Literal(
   "task_doc_link.upsert",
   "invariant.upsert",
   "label.upsert",
-  "label_assignment.upsert"
+  "label_assignment.upsert",
+  "decision.upsert",
+  "decision.delete"
 )
 export type SyncEventType = typeof SyncEventTypeSchema.Type
 

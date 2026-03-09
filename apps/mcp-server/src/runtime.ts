@@ -26,6 +26,7 @@ import {
   VerifyService,
   ReflectService,
   SpecTraceService,
+  DecisionService,
   SqliteClient,
 } from "@jamesaphoenix/tx-core"
 
@@ -52,6 +53,7 @@ export type McpServices =
   | VerifyService
   | ReflectService
   | SpecTraceService
+  | DecisionService
   | SqliteClient
 
 // -----------------------------------------------------------------------------

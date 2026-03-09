@@ -41,6 +41,9 @@ import {
   RunHeartbeatServiceLive,
   GuardRepositoryLive,
   PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive,
 } from "@jamesaphoenix/tx-core"
 import type { RunId, TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
 import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
@@ -94,10 +97,14 @@ export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<Mcp
     PinRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
-    RunRepositoryLive
+    RunRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
   const retrieverLayer = RetrieverServiceLive.pipe(
@@ -111,7 +118,8 @@ export function makeTestRuntime(db: Database): ManagedRuntime.ManagedRuntime<Mcp
     QueryExpansionServiceNoop,
     RerankerServiceNoop,
     retrieverLayer,
-    AutoSyncServiceNoop
+    AutoSyncServiceNoop,
+    claimService
   )
 
   const baseServices = Layer.mergeAll(

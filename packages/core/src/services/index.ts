@@ -228,6 +228,10 @@ export {
   ClaimServiceLive
 } from "./claim-service.js"
 export {
+  ProcessRegistryService,
+  ProcessRegistryServiceLive
+} from "./process-registry-service.js"
+export {
   OrchestratorService,
   OrchestratorServiceLive,
   type OrchestratorConfig
@@ -246,8 +250,10 @@ export {
 } from "./tracing-service.js"
 export {
   ClaudeCodeAdapter,
+  CodexAdapter,
   GenericJSONLAdapter,
   getAdapter,
+  detectAdapter,
   registerAdapter,
   type TranscriptAdapter,
   type ToolCall,
@@ -327,3 +333,4 @@ export {
   type BatchRunResult,
   type SpecTraceStatus,
 } from "./spec-trace-service.js"
+export { DecisionService, DecisionServiceLive } from "./decision-service.js"

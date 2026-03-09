@@ -30,14 +30,14 @@ Attempts:
   attempts <id>           List attempts for a task
 
 Learnings:
-  learning:add            Add a learning
-  learning:search         Search learnings
-  learning:recent         List recent learnings
-  learning:helpful        Record learning helpfulness
-  learning:embed          Compute embeddings for learnings
+  learning add            Add a learning
+  learning search         Search learnings
+  learning recent         List recent learnings
+  learning helpful        Record learning helpfulness
+  learning embed          Compute embeddings for learnings
   context                 Get contextual learnings for a task
-  group-context:set       Set task-group context on a task
-  group-context:clear     Clear task-group context on a task
+  group-context set       Set task-group context on a task
+  group-context clear     Clear task-group context on a task
   learn                   Attach a learning to file/glob pattern
   recall                  Query learnings for a path
 
@@ -58,9 +58,9 @@ Messages:
   send                    Send a message to a channel
   inbox                   Read messages from a channel
   ack                     Acknowledge a message
-  ack:all                 Acknowledge all messages on a channel
-  outbox:pending          Count pending messages on a channel
-  outbox:gc               Garbage collect old messages
+  ack all                 Acknowledge all messages on a channel
+  outbox pending          Count pending messages on a channel
+  outbox gc               Garbage collect old messages
 
 Context Pins:
   pin set <id> [content]  Create/update a context pin
@@ -228,6 +228,8 @@ are done). Sorted by score, highest first.
 
 Options:
   --limit, -n <n>            Maximum tasks to show (default: 10)
+  --claim <worker-id>        Atomically claim the first ready task for the given worker
+  --lease <minutes>          Lease duration when using --claim (default: 30)
   --label <name,...>         Filter to tasks with these labels (comma-separated)
   --exclude-label <name,...> Exclude tasks with these labels (comma-separated)
   --json                     Output as JSON
@@ -237,6 +239,7 @@ Examples:
   tx ready                                # Top 10 ready tasks
   tx ready -n 5                           # Top 5 ready tasks
   tx ready --json                         # Output as JSON for scripting
+  tx ready --claim worker-1 --lease 30    # Atomic ready+claim for parallel workers
   tx ready --label "phase:implement"      # Only implementation-phase tasks
   tx ready --exclude-label "needs-review" # Skip tasks needing review`,
 
@@ -674,9 +677,9 @@ Examples:
   tx migrate status
   tx migrate status --json`,
 
-  "learning:add": `tx learning:add - Add a learning
+  "learning add": `tx learning add - Add a learning
 
-Usage: tx learning:add <content> [options]
+Usage: tx learning add <content> [options]
 
 Creates a new learning entry. Learnings are pieces of knowledge that can
 be retrieved based on task context.
@@ -692,13 +695,13 @@ Options:
   --help                   Show this help
 
 Examples:
-  tx learning:add "Always use transactions for multi-step DB operations"
-  tx learning:add "Rate limit is 100 req/min" -c api
-  tx learning:add "Migration requires downtime" --source-ref tx-abc123`,
+  tx learning add "Always use transactions for multi-step DB operations"
+  tx learning add "Rate limit is 100 req/min" -c api
+  tx learning add "Migration requires downtime" --source-ref tx-abc123`,
 
-  "learning:search": `tx learning:search - Search learnings
+  "learning search": `tx learning search - Search learnings
 
-Usage: tx learning:search <query> [options]
+Usage: tx learning search <query> [options]
 
 Searches learnings using BM25 full-text search. Returns results ranked by
 relevance (BM25 score) and recency. Supports graph expansion to discover
@@ -717,13 +720,13 @@ Options:
   --help               Show this help
 
 Examples:
-  tx learning:search "database transactions"
-  tx learning:search "authentication" -n 5 --json
-  tx learning:search "auth" --expand --depth 3`,
+  tx learning search "database transactions"
+  tx learning search "authentication" -n 5 --json
+  tx learning search "auth" --expand --depth 3`,
 
-  "learning:recent": `tx learning:recent - List recent learnings
+  "learning recent": `tx learning recent - List recent learnings
 
-Usage: tx learning:recent [options]
+Usage: tx learning recent [options]
 
 Lists the most recently created learnings.
 
@@ -733,12 +736,12 @@ Options:
   --help           Show this help
 
 Examples:
-  tx learning:recent
-  tx learning:recent -n 5 --json`,
+  tx learning recent
+  tx learning recent -n 5 --json`,
 
-  "learning:helpful": `tx learning:helpful - Record learning helpfulness
+  "learning helpful": `tx learning helpful - Record learning helpfulness
 
-Usage: tx learning:helpful <id> [options]
+Usage: tx learning helpful <id> [options]
 
 Records whether a learning was helpful (outcome feedback). This improves
 future retrieval by boosting helpful learnings in search results.
@@ -752,52 +755,47 @@ Options:
   --help       Show this help
 
 Examples:
-  tx learning:helpful 42
-  tx learning:helpful 42 --score 0.8`,
+  tx learning helpful 42
+  tx learning helpful 42 --score 0.8`,
 
-  "learning:embed": `tx learning:embed - Compute embeddings for learnings
+  "learning embed": `tx learning embed - Index and embed learning documents
 
-Usage: tx learning:embed [options]
+Usage: tx learning embed [options]
 
-Computes vector embeddings for learnings to enable semantic search.
-Requires TX_EMBEDDINGS=1 environment variable to be set.
+Runs incremental indexing on memory sources (including docs/learnings/).
+Embeddings are computed automatically when EmbeddingService is available.
 
 Options:
-  --embedder <type>  Select embedder: auto (default), openai, local, noop
-                     Overrides TX_EMBEDDER environment variable
-  --all              Re-embed all learnings (default: only those without embeddings)
-  --status           Show embedding coverage status
+  --status           Show index/embedding coverage status
   --json             Output as JSON
   --help             Show this help
 
-Embedder Types:
-  auto     Auto-detect based on available API keys and packages
-  openai   Use OpenAI text-embedding-3-small (requires OPENAI_API_KEY)
-  local    Use local node-llama-cpp with embeddinggemma-300M GGUF
-  noop     Disable embeddings (for testing)
+Examples:
+  tx learning embed              # Incremental index
+  tx learning embed --status     # Show coverage`,
 
-Local Embedder Env:
-  TX_LOCAL_EMBEDDING_MODEL_URI   Model URI/path (default: embeddinggemma HF URI)
-  TX_LOCAL_EMBEDDING_MODEL_DIR   Optional local model cache directory
-  TX_LOCAL_EMBEDDING_DOWNLOAD    1/true to auto-download when model is missing
-  TX_LOCAL_EMBEDDING_DIMENSIONS  Expected local vector size (default: 768)
+  "learning migrate": `tx learning migrate - Migrate old learnings to memory system
+
+Usage: tx learning migrate [options]
+
+Exports learnings from the old SQLite tables to docs/learnings/ as .md files
+backed by the memory system. This is a one-time migration command.
+
+Options:
+  --dry-run  Preview what would be migrated without writing files
+  --help     Show this help
 
 Examples:
-  TX_EMBEDDINGS=1 tx learning:embed                    # Embed with auto-detection
-  TX_EMBEDDINGS=1 tx learning:embed --embedder openai  # Force OpenAI embedder
-  TX_EMBEDDINGS=1 tx learning:embed --embedder local   # Force local embedder
-  TX_EMBEDDINGS=1 TX_LOCAL_EMBEDDING_DOWNLOAD=1 tx learning:embed --embedder local
-  TX_EMBEDDINGS=1 tx learning:embed --all              # Re-embed all learnings
-  tx learning:embed --status                           # Show embedding coverage
-  tx learning:embed --status --embedder openai         # Show status with embedder info`,
+  tx learning migrate --dry-run  # Preview migration
+  tx learning migrate            # Run migration`,
 
-  context: `tx context - Get contextual learnings for a task
+  context: `tx context - Get contextual memory for a task
 
 Usage: tx context <task-id> [options]
 
-Retrieves learnings relevant to a specific task based on its title and
-description. Uses hybrid BM25 + recency scoring. Supports graph expansion
-to discover related learnings through the knowledge graph.
+Retrieves context relevant to a specific task by searching all memory
+documents (including learnings). Uses hybrid BM25 + recency scoring.
+Supports graph expansion to discover related documents through links.
 
 Arguments:
   <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
@@ -805,37 +803,20 @@ Arguments:
 Options:
   --json               Output as JSON
   --inject             Write to .tx/context.md for injection
-  --expand             Enable graph expansion to find related learnings
-  --depth <n>          Graph expansion depth (default: 2)
-  --edge-types <types> Comma-separated edge types to traverse
-  --retriever <path>   Use custom retriever module (exports Layer<RetrieverService>)
+  --expand             Enable graph expansion to find related documents
+  --semantic           Enable vector similarity search
+  -n, --limit <n>      Maximum results (default: 10)
   --help               Show this help
-
-Custom Retriever Format:
-  The module should export a default Layer that provides RetrieverService:
-
-  // my-retriever.ts
-  import { Layer, Effect } from "effect"
-  import { RetrieverService } from "@jamesaphoenix/tx-core"
-
-  export default Layer.succeed(RetrieverService, {
-    search: (query, options) => Effect.gen(function* () {
-      // Custom Pinecone/Weaviate/Chroma implementation
-      return yield* myVectorSearch(query, options)
-    }),
-    isAvailable: () => Effect.succeed(true)
-  })
 
 Examples:
   tx context tx-a1b2c3d4
   tx context tx-a1b2c3d4 --json
   tx context tx-a1b2c3d4 --inject
-  tx context tx-a1b2c3d4 --expand --depth 3
-  tx context tx-a1b2c3d4 --retriever ./my-retriever.ts`,
+  tx context tx-a1b2c3d4 --expand --semantic`,
 
-  "group-context:set": `tx group-context:set - Set task-group context on a task
+  "group-context set": `tx group-context set - Set task-group context on a task
 
-Usage: tx group-context:set <task-id> <context> [options]
+Usage: tx group-context set <task-id> <context> [options]
 
 Sets task-group context on a task. The context is inherited by related
 ancestors and descendants when querying task payloads.
@@ -849,12 +830,12 @@ Options:
   --help     Show this help
 
 Examples:
-  tx group-context:set tx-a1b2c3d4 "Shared auth rollout context"
-  tx group-context:set tx-a1b2c3d4 "Phase 2 migration notes" --json`,
+  tx group-context set tx-a1b2c3d4 "Shared auth rollout context"
+  tx group-context set tx-a1b2c3d4 "Phase 2 migration notes" --json`,
 
-  "group-context:clear": `tx group-context:clear - Clear task-group context on a task
+  "group-context clear": `tx group-context clear - Clear task-group context on a task
 
-Usage: tx group-context:clear <task-id> [options]
+Usage: tx group-context clear <task-id> [options]
 
 Removes direct task-group context from a task. Effective inherited context
 is re-resolved from the remaining lineage context sources.
@@ -867,8 +848,8 @@ Options:
   --help     Show this help
 
 Examples:
-  tx group-context:clear tx-a1b2c3d4
-  tx group-context:clear tx-a1b2c3d4 --json`,
+  tx group-context clear tx-a1b2c3d4
+  tx group-context clear tx-a1b2c3d4 --json`,
 
   learn: `tx learn - Attach a learning to a file path or glob pattern
 
@@ -1703,9 +1684,9 @@ Examples:
   tx claim tx-abc123 worker-def456 --lease 60   # Claim with 60m lease
   tx claim tx-abc123 worker-def456 --json       # JSON output`,
 
-  "claim:release": `tx claim:release - Release a claim on a task
+  "claim release": `tx claim release - Release a claim on a task
 
-Usage: tx claim:release <task-id> <worker-id> [options]
+Usage: tx claim release <task-id> <worker-id> [options]
 
 Releases a worker's claim on a task, allowing other workers to claim it.
 Only the worker holding the claim can release it.
@@ -1719,12 +1700,12 @@ Options:
   --help   Show this help
 
 Examples:
-  tx claim:release tx-abc123 worker-def456
-  tx claim:release tx-abc123 worker-def456 --json`,
+  tx claim release tx-abc123 worker-def456
+  tx claim release tx-abc123 worker-def456 --json`,
 
-  "claim:renew": `tx claim:renew - Renew the lease on a claim
+  "claim renew": `tx claim renew - Renew the lease on a claim
 
-Usage: tx claim:renew <task-id> <worker-id> [options]
+Usage: tx claim renew <task-id> <worker-id> [options]
 
 Extends the lease on an existing claim. Use this for long-running tasks
 to prevent the claim from expiring. Maximum 10 renewals by default.
@@ -1743,8 +1724,8 @@ Fails if:
   - Maximum renewals (10) have been exceeded
 
 Examples:
-  tx claim:renew tx-abc123 worker-def456
-  tx claim:renew tx-abc123 worker-def456 --json`,
+  tx claim renew tx-abc123 worker-def456
+  tx claim renew tx-abc123 worker-def456 --json`,
 
   compact: `tx compact - Compact completed tasks and export learnings
 
@@ -1953,25 +1934,25 @@ Examples:
   tx ack 42
   tx ack 42 --json`,
 
-  "ack:all": `tx ack:all - Acknowledge all pending messages on a channel
+  "ack all": `tx ack all - Acknowledge all pending messages on a channel
 
-Usage: tx ack:all <channel> [--json]
-
-Examples:
-  tx ack:all worker-3
-  tx ack:all errors --json`,
-
-  "outbox:pending": `tx outbox:pending - Count pending messages
-
-Usage: tx outbox:pending <channel> [--json]
+Usage: tx ack all <channel> [--json]
 
 Examples:
-  tx outbox:pending errors
-  tx outbox:pending worker-3 --json`,
+  tx ack all worker-3
+  tx ack all errors --json`,
 
-  "outbox:gc": `tx outbox:gc - Garbage collect old messages
+  "outbox pending": `tx outbox pending - Count pending messages
 
-Usage: tx outbox:gc [--acked-older-than <hours>] [--json]
+Usage: tx outbox pending <channel> [--json]
+
+Examples:
+  tx outbox pending errors
+  tx outbox pending worker-3 --json`,
+
+  "outbox gc": `tx outbox gc - Garbage collect old messages
+
+Usage: tx outbox gc [--acked-older-than <hours>] [--json]
 
 Deletes expired messages (past TTL) and optionally old acked messages.
 
@@ -1979,8 +1960,8 @@ Options:
   --acked-older-than <hours>  Delete acked messages older than N hours
 
 Examples:
-  tx outbox:gc                         # Delete expired only
-  tx outbox:gc --acked-older-than 24   # Also clean acked > 24h old`,
+  tx outbox gc                         # Delete expired only
+  tx outbox gc --acked-older-than 24   # Also clean acked > 24h old`,
 
   doc: `tx doc - Manage docs-as-primitives
 
@@ -2230,7 +2211,7 @@ Examples:
 
 Usage: tx doc lint-ears <doc-name-or-yaml-path> [--json]
 
-Validates the optional \`ears_requirements\` section in PRD YAML.
+Validates the mandatory \`ears_requirements\` section in PRD YAML.
 Returns non-zero exit code when EARS entries are invalid.
 
 Arguments:
@@ -3217,4 +3198,60 @@ Examples:
   tx reflect --hours 1        # last hour's activity
   tx reflect --analyze        # with LLM analysis (requires ANTHROPIC_API_KEY)
   tx reflect --json           # machine-readable for orchestrators`,
+
+  decision: `tx decision - Manage decisions as first-class artifacts
+
+Usage: tx decision <subcommand> [options]
+
+Subcommands:
+  add <content>       Add a decision manually
+  list                List decisions (default if no subcommand)
+  show <id>           Show decision details
+  approve <id>        Approve a pending decision
+  reject <id>         Reject a pending decision (--reason required)
+  edit <id> <content> Edit a pending decision's content
+  pending             Shorthand for list --status pending
+
+Options (where applicable):
+  --question <q>      Question this decision answers (add)
+  --task <id>         Link to a task (add)
+  --doc <id>          Link to a doc (add)
+  --commit <sha>      Git commit (add)
+  --reviewer <name>   Reviewer name (approve/reject/edit)
+  --note <text>       Approval note (approve)
+  --reason <text>     Rejection reason (reject, required)
+  --status <s>        Filter by status (list)
+  --source <s>        Filter by source: manual, diff, transcript, agent (list)
+  --limit <n>         Maximum results (list)
+  --json              Output as JSON
+  --help              Show this help
+
+Examples:
+  tx decision add "Use WAL mode for SQLite" --question "Which journal mode?"
+  tx decision list --status pending
+  tx decision approve dec-abc123 --reviewer james --note "Good call"
+  tx decision reject dec-abc123 --reviewer james --reason "Too complex"
+  tx decision edit dec-abc123 "Use WAL mode with 64MB cache"
+  tx decision pending`,
+
+  triangle: `tx triangle - Spec-driven development health check
+
+Usage: tx triangle [--json]
+
+Aggregates spec-test coverage, decision status, and doc drift into a
+single health view. Shows overall status: SYNCED, DRIFTING, or BROKEN.
+
+Dimensions:
+  Spec -> Test    How many invariants have linked tests
+  Decisions       Pending and approved-but-unsynced decisions
+  Doc Drift       Docs with YAML hash mismatches
+  Doc hierarchy   Count of docs by tier (REQ, PRD, DD, SD)
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx triangle
+  tx triangle --json`,
 }

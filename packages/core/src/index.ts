@@ -123,6 +123,7 @@ export {
   DependencyService,
   ReadyService,
   type ReadyCheckResult,
+  type ReadyAndClaimResult,
   isReadyResult,
   HierarchyService,
   ScoreService,
@@ -305,6 +306,8 @@ export {
   type FindDeadConfig,
   ClaimService,
   ClaimServiceLive,
+  ProcessRegistryService,
+  ProcessRegistryServiceLive,
   OrchestratorService,
   OrchestratorServiceLive,
   type OrchestratorConfig,
@@ -328,6 +331,8 @@ export {
   type BatchSource,
   type BatchRunResult,
   type SpecTraceStatus,
+  DecisionService,
+  DecisionServiceLive,
   // Runtime interface validators for optional peer dependencies
   isValidLlama,
   isValidLlamaModel,
@@ -368,6 +373,8 @@ export {
   WorkerRepositoryLive,
   ClaimRepository,
   ClaimRepositoryLive,
+  ProcessRegistryRepository,
+  ProcessRegistryRepositoryLive,
   OrchestratorStateRepository,
   OrchestratorStateRepositoryLive,
   type OrchestratorStateUpdate,
@@ -456,6 +463,11 @@ export {
   WORKER_STATUSES,
   type WorkerRow
 } from "./mappers/worker.js"
+
+export {
+  rowToProcessEntry,
+  type ProcessRegistryRow
+} from "./mappers/process-registry.js"
 
 export {
   rowToMessage,
@@ -553,8 +565,10 @@ export {
 // =============================================================================
 export {
   ClaudeCodeAdapter,
+  CodexAdapter,
   GenericJSONLAdapter,
   getAdapter,
+  detectAdapter,
   registerAdapter,
   type TranscriptAdapter,
   type ToolCall,

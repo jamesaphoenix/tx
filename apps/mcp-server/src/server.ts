@@ -28,6 +28,7 @@ import { registerGuardTools } from "./tools/guard.js"
 import { registerVerifyTools } from "./tools/verify.js"
 import { registerReflectTools } from "./tools/reflect.js"
 import { registerSpecTraceTools } from "./tools/spec-trace.js"
+import { registerDecisionTools } from "./tools/decision.js"
 import { formatErrorWithStack } from "./response.js"
 
 // Re-export for library consumers
@@ -48,6 +49,7 @@ export { registerMemoryTools } from "./tools/memory.js"
 export { registerCycleTools } from "./tools/cycle.js"
 export { registerGuardTools, registerVerifyTools, registerReflectTools }
 export { registerSpecTraceTools } from "./tools/spec-trace.js"
+export { registerDecisionTools, serializeDecision } from "./tools/decision.js"
 
 // -----------------------------------------------------------------------------
 // Signal Handler State (prevents handler accumulation/memory leak)
@@ -101,6 +103,7 @@ export const createMcpServer = (): McpServer => {
   registerVerifyTools(server)
   registerReflectTools(server)
   registerSpecTraceTools(server)
+  registerDecisionTools(server)
 
   return server
 }

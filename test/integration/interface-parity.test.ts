@@ -43,7 +43,10 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive,
   GuardRepositoryLive,
-  PinRepositoryLive
+  PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
@@ -141,12 +144,16 @@ function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTes
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
+    PinRepositoryLive,
     LearningRepositoryLive,
-    FileLearningRepositoryLive
+    FileLearningRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   const retrieverLayer = RetrieverServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
@@ -160,7 +167,7 @@ function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTes
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop, claimService))
   )
 
   return ManagedRuntime.make(services)
@@ -863,8 +870,8 @@ describe("Interface Parity", () => {
       const targetTaskId = FIXTURES.TASK_LOGIN
       const contextText = "Auth hierarchy rollout context"
 
-      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
 
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -913,8 +920,8 @@ describe("Interface Parity", () => {
       const ancestorTaskId = FIXTURES.TASK_AUTH
       const contextText = "Login-only context"
 
-      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
 
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -967,10 +974,10 @@ describe("Interface Parity", () => {
       const contextA = "Fallback source A"
       const contextB = "Fallback source B (newest)"
 
-      const cliSetA = runTxArgs(["group-context:set", sourceA, contextA, "--json"], dbPath)
-      expect(cliSetA.status, `CLI group-context:set A failed: ${cliSetA.stderr}`).toBe(0)
-      const cliSetB = runTxArgs(["group-context:set", sourceB, contextB, "--json"], dbPath)
-      expect(cliSetB.status, `CLI group-context:set B failed: ${cliSetB.stderr}`).toBe(0)
+      const cliSetA = runTxArgs(["group-context", "set", sourceA, contextA, "--json"], dbPath)
+      expect(cliSetA.status, `CLI group-context set A failed: ${cliSetA.stderr}`).toBe(0)
+      const cliSetB = runTxArgs(["group-context", "set", sourceB, contextB, "--json"], dbPath)
+      expect(cliSetB.status, `CLI group-context set B failed: ${cliSetB.stderr}`).toBe(0)
 
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -1004,8 +1011,8 @@ describe("Interface Parity", () => {
       expect(beforeClearMcp.effectiveGroupContextSourceTaskId).toBe(sourceB)
       expect(beforeClearApi.effectiveGroupContextSourceTaskId).toBe(sourceB)
 
-      const cliClearWinner = runTxArgs(["group-context:clear", sourceB, "--json"], dbPath)
-      expect(cliClearWinner.status, `CLI group-context:clear winner failed: ${cliClearWinner.stderr}`).toBe(0)
+      const cliClearWinner = runTxArgs(["group-context", "clear", sourceB, "--json"], dbPath)
+      expect(cliClearWinner.status, `CLI group-context clear winner failed: ${cliClearWinner.stderr}`).toBe(0)
 
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -1039,10 +1046,10 @@ describe("Interface Parity", () => {
       const contextB = "Lexicographic source B"
       const tieUpdatedAt = "2026-01-01T00:00:01.000Z"
 
-      const cliSetA = runTxArgs(["group-context:set", sourceA, contextA, "--json"], dbPath)
-      expect(cliSetA.status, `CLI group-context:set A failed: ${cliSetA.stderr}`).toBe(0)
-      const cliSetB = runTxArgs(["group-context:set", sourceB, contextB, "--json"], dbPath)
-      expect(cliSetB.status, `CLI group-context:set B failed: ${cliSetB.stderr}`).toBe(0)
+      const cliSetA = runTxArgs(["group-context", "set", sourceA, contextA, "--json"], dbPath)
+      expect(cliSetA.status, `CLI group-context set A failed: ${cliSetA.stderr}`).toBe(0)
+      const cliSetB = runTxArgs(["group-context", "set", sourceB, contextB, "--json"], dbPath)
+      expect(cliSetB.status, `CLI group-context set B failed: ${cliSetB.stderr}`).toBe(0)
 
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -1106,8 +1113,8 @@ describe("Interface Parity", () => {
       expect(setTask.effectiveGroupContext).toBe(contextText)
       expect(setTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
 
-      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
 
       const cliAfterSet = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
       const mcpAfterSet = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
@@ -1134,8 +1141,8 @@ describe("Interface Parity", () => {
       expect(clearedTask.effectiveGroupContext).toBeNull()
       expect(clearedTask.effectiveGroupContextSourceTaskId).toBeNull()
 
-      const cliClear = runTxArgs(["group-context:clear", sourceTaskId, "--json"], dbPath)
-      expect(cliClear.status, `CLI group-context:clear failed: ${cliClear.stderr}`).toBe(0)
+      const cliClear = runTxArgs(["group-context", "clear", sourceTaskId, "--json"], dbPath)
+      expect(cliClear.status, `CLI group-context clear failed: ${cliClear.stderr}`).toBe(0)
 
       const cliAfterClear = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
       const mcpAfterClear = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
@@ -1278,8 +1285,8 @@ describe("Interface Parity", () => {
       const targetTaskId = FIXTURES.TASK_LOGIN
       const contextText = "Ready inherited context parity"
 
-      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
 
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -1426,8 +1433,8 @@ describe("Interface Parity", () => {
       const targetTaskId = FIXTURES.TASK_LOGIN
       const contextText = "List inherited context parity"
 
-      const cliSet = runTxArgs(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
 
       await runtime.runPromise(
         Effect.gen(function* () {

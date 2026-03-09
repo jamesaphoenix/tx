@@ -1,0 +1,203 @@
+---
+title: tx decision
+description: Decisions as first-class artifacts — capture, review, and sync to specs
+---
+
+## Purpose
+
+Decisions are first-class artifacts in tx. When agents or developers make implementation choices, those decisions are captured, reviewed, and optionally synced back to design docs as invariants. This closes the spec-driven development triangle: code changes produce decisions, which feed back to update specs and tests.
+
+## Decision Lifecycle
+
+```
+pending → approved → synced to doc (creates invariant)
+        → rejected
+        → edited → approved
+        → superseded (by newer decision)
+```
+
+## Decision Sources
+
+| Source | Description |
+|--------|-------------|
+| `manual` | Manually recorded via `tx decision add` |
+| `diff` | Extracted from a code diff |
+| `transcript` | Extracted from an agent transcript |
+| `agent` | Recorded by an agent during execution |
+
+## Content-Hash Dedup
+
+Decisions are deduplicated by content hash (SHA256). Adding a decision with identical content to an existing one returns the existing decision instead of creating a duplicate.
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# Add a decision manually
+tx decision add "Use WAL mode for SQLite" --question "Which journal mode?"
+tx decision add "Batch inserts for bulk operations" --task tx-abc123 --source agent
+
+# List decisions
+tx decision list
+tx decision list --status pending --json
+tx decision list --source manual --limit 10
+
+# Show decision details
+tx decision show dec-abc123def456
+
+# Review decisions
+tx decision approve dec-abc123def456 --reviewer james --note "Good call"
+tx decision reject dec-abc123def456 --reviewer james --reason "Too complex"
+tx decision edit dec-abc123def456 "Use WAL mode with 64MB cache" --reviewer james
+
+# Shorthand for pending decisions
+tx decision pending
+
+# Triangle health (aggregates decisions + docs + invariants)
+tx triangle
+tx triangle --json
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+// HTTP mode
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Or direct SQLite mode
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// Record a decision
+const decision = await tx.decisions.add({
+  content: 'Use WAL mode for SQLite',
+  question: 'Which journal mode?',
+  source: 'agent',
+})
+
+// List and filter decisions
+const all = await tx.decisions.list()
+const pending = await tx.decisions.pending()
+const filtered = await tx.decisions.list({ status: 'pending', source: 'agent' })
+
+// Show a specific decision
+const detail = await tx.decisions.show('dec-abc123def456')
+
+// Review decisions
+await tx.decisions.approve(pending[0].id, 'agent', 'Verified correct')
+await tx.decisions.reject('dec-abc123def456', 'reviewer', 'Too complex')
+await tx.decisions.edit('dec-abc123def456', 'Updated content', 'reviewer')
+```
+
+</Tab>
+<Tab value="MCP">
+
+**Tools:**
+
+| Tool | Description |
+|------|-------------|
+| `tx_decision_add` | Record a decision (auto-deduplicates by content hash) |
+| `tx_decision_list` | List decisions with optional status/source filters |
+| `tx_decision_show` | Show a decision by ID |
+| `tx_decision_approve` | Approve a pending decision |
+| `tx_decision_reject` | Reject a pending decision (requires reason) |
+| `tx_decision_edit` | Edit a pending decision's content |
+| `tx_decision_pending` | List all pending decisions awaiting review |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_decision_add",
+  "arguments": {
+    "content": "Use WAL mode for SQLite",
+    "question": "Which journal mode?",
+    "source": "agent"
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```
+POST /api/decisions
+GET  /api/decisions?status=pending&source=agent&limit=10
+GET  /api/decisions/:id
+POST /api/decisions/:id/approve
+POST /api/decisions/:id/reject
+POST /api/decisions/:id/edit
+GET  /api/decisions/pending
+```
+
+**Examples:**
+
+```bash
+# Create a decision
+curl -X POST http://localhost:3456/api/decisions \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "Use WAL mode for SQLite", "source": "manual"}'
+
+# List pending decisions
+curl http://localhost:3456/api/decisions?status=pending
+
+# Approve a decision
+curl -X POST http://localhost:3456/api/decisions/dec-abc123def456/approve \
+  -H 'Content-Type: application/json' \
+  -d '{"reviewer": "james", "note": "Good call"}'
+```
+
+</Tab>
+</Tabs>
+
+## Decision Fields
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique ID: `dec-<12 hex chars>` (derived from content hash) |
+| `content` | The decision text |
+| `question` | Optional: the question the decision answers |
+| `status` | pending, approved, rejected, edited, superseded |
+| `source` | manual, diff, transcript, agent |
+| `commitSha` | Git commit associated with the decision |
+| `taskId` | Linked task ID |
+| `docId` | Linked doc ID |
+| `contentHash` | SHA256 hash for dedup |
+| `reviewedBy` | Who reviewed the decision |
+| `reviewNote` | Review notes or rejection reason |
+| `editedContent` | Updated content (when status is "edited") |
+| `reviewedAt` | Timestamp of review |
+| `supersededBy` | ID of the decision that supersedes this one |
+| `syncedToDoc` | Whether the decision has been synced to a doc |
+| `runId` | Linked run ID (if extracted during a run) |
+| `invariantId` | Linked invariant ID (after doc sync) |
+
+## Triangle Health
+
+Use `tx triangle` to see overall spec-driven development health:
+
+```bash
+$ tx triangle
+
+Triangle Health: DRIFTING
+
+  Decisions:    3 pending, 1 approved-unsynced
+  Doc Drift:    0 docs with hash mismatch
+  Invariants:   21 active
+
+  Action items:
+    - Review 3 pending decisions
+    - Sync 1 approved decision to docs
+```
+
+The triangle command aggregates decision status, doc drift, and invariant coverage into a single health view.
+
+## Related Commands
+
+- [`tx doc`](/docs/primitives/docs) - Manage documentation (all 4 tiers)
+- [`tx invariant`](/docs/primitives/invariants) - Machine-checkable rules with provenance
+- [`tx spec gaps`](/docs/primitives/spec-trace) - Find invariants missing tests

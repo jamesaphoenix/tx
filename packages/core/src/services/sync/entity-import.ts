@@ -17,6 +17,7 @@ export type SyncEntityImportContract = {
   readonly importEdges: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
   readonly importDocs: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
   readonly importLabels: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
+  readonly importDecisions: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
   readonly import: {
     (): Effect.Effect<SyncImportResult, ValidationError | DatabaseError | TaskNotFoundError>
     (path: string): Effect.Effect<ImportResult, ValidationError | DatabaseError | TaskNotFoundError>
@@ -34,6 +35,7 @@ export const ENTITY_IMPORT_METHODS = [
   "importEdges",
   "importDocs",
   "importLabels",
+  "importDecisions",
   "import",
   "hydrate",
 ] as const

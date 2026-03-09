@@ -25,10 +25,12 @@
     "attempts",
     "handoff",
     "checkpoint",
-    "---Observability---",
+    "---Spec-Driven Development---",
     "docs",
     "invariants",
+    "decision",
     "spec-trace",
+    "---Observability---",
     "traces"
   ]
 }

@@ -376,6 +376,7 @@ describe("SDK method names in docs match TxClient implementation", () => {
     verify: "verify",
     reflect: "reflect",
     spec: "spec",
+    decisions: "decisions",
   }
 
   for (const mdxFile of mdxFiles) {

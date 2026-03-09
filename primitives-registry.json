@@ -140,6 +140,13 @@
     "sdk": "apps/agent-sdk/src/client.ts",
     "required": ["cli", "mcp", "api", "sdk"]
   },
+  "decision": {
+    "cli": "apps/cli/src/commands/decision.ts",
+    "mcp": "apps/mcp-server/src/tools/decision.ts",
+    "api": "apps/api-server/src/routes/decisions.ts",
+    "sdk": "apps/agent-sdk/src/client.ts",
+    "required": ["cli", "mcp", "api", "sdk"]
+  },
   "checkpoint": {
     "planned": true,
     "required": []

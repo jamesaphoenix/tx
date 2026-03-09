@@ -60,15 +60,21 @@ Follow the docs in this order:
 
 ## Structured Requirements (EARS)
 
-tx PRDs can now include optional **EARS** (**Easy Approach to Requirements Syntax**) via `ears_requirements`.
+tx enforces **EARS** (**Easy Approach to Requirements Syntax**) as mandatory for all PRDs via `ears_requirements`. PRDs with legacy `requirements` must also define a non-empty `ears_requirements` array.
 
-Use it when you want requirements that are:
+EARS requirements are:
 
 - clearer and less ambiguous than plain bullets,
 - machine-validated before implementation (`tx doc lint-ears`),
 - easier to map to tests in DD traceability matrices.
 
 Start in [`tx doc`](/docs/primitives/docs) for syntax and examples.
+
+## The Spec-Driven Development Triangle
+
+Spec-driven development is not a one-way equation (spec + tests + agent = code) — it's a feedback loop. Implementing code generates decisions that must feed back into specs and tests. tx is the control plane that keeps these three nodes in sync: tasks define what to build, [learnings](/docs/primitives/learning) and [decisions](/docs/primitives/decision) capture the choices made during implementation, and [`tx done`](/docs/primitives/done) is a checkpoint that closes the loop.
+
+The answer to AI coding's volume problem — waterfall output at agile cadence — is not more complex orchestration but lightweight process, so that moving fast doesn't require abandoning intent tracking. Use [`tx triangle`](/docs/primitives/decision) to monitor the health of your spec-code-test triangle.
 
 ## Your First Step
 

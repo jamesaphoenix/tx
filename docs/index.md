@@ -4,7 +4,7 @@ A lean task management system for AI agents and humans, built with Effect-TS.
 
 ## EARS Adoption
 
-tx now supports **EARS** (**Easy Approach to Requirements Syntax**) for PRD authoring via optional `ears_requirements`.
+tx enforces **EARS** (**Easy Approach to Requirements Syntax**) as a hard requirement for all PRD authoring via `ears_requirements`.
 
 Why this is used:
 

@@ -20,6 +20,7 @@ import { CandidateRepositoryLive } from "./repo/candidate-repo.js"
 import { TrackedProjectRepositoryLive } from "./repo/tracked-project-repo.js"
 import { WorkerRepositoryLive } from "./repo/worker-repo.js"
 import { ClaimRepositoryLive } from "./repo/claim-repo.js"
+import { ProcessRegistryRepositoryLive } from "./repo/process-registry-repo.js"
 import { OrchestratorStateRepositoryLive } from "./repo/orchestrator-state-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
@@ -49,6 +50,7 @@ import { DiversifierServiceLive } from "./services/diversifier-service.js"
 import { WorkerServiceLive } from "./services/worker-service.js"
 import { RunHeartbeatServiceLive } from "./services/run-heartbeat-service.js"
 import { ClaimServiceLive } from "./services/claim-service.js"
+import { ProcessRegistryServiceLive } from "./services/process-registry-service.js"
 import { OrchestratorServiceLive } from "./services/orchestrator-service.js"
 import { DaemonServiceLive, DaemonServiceNoop } from "./services/daemon-service.js"
 import { TracingServiceLive, TracingServiceNoop } from "./services/tracing-service.js"
@@ -71,6 +73,8 @@ import { VerifyServiceLive } from "./services/verify-service.js"
 import { ReflectServiceLive } from "./services/reflect-service.js"
 import { SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
 import { SpecTraceServiceLive } from "./services/spec-trace-service.js"
+import { DecisionRepositoryLive } from "./repo/decision-repo.js"
+import { DecisionServiceLive } from "./services/decision-service.js"
 // AgentService + CycleScanService are NOT in the default layer.
 // They are provided by the cycle CLI command via Effect.provide overlay.
 // Re-exports below make them available from @jamesaphoenix/tx-core.
@@ -102,7 +106,7 @@ export {
 export { AttemptService } from "./services/attempt-service.js"
 export { TaskService } from "./services/task-service.js"
 export { DependencyService } from "./services/dep-service.js"
-export { ReadyService, type ReadyCheckResult, isReadyResult } from "./services/ready-service.js"
+export { ReadyService, type ReadyCheckResult, type ReadyAndClaimResult, isReadyResult } from "./services/ready-service.js"
 export { HierarchyService } from "./services/hierarchy-service.js"
 export { ScoreService } from "./services/score-service.js"
 export { RunRepository } from "./repo/run-repo.js"
@@ -242,6 +246,8 @@ export {
 export { GuardRepository, GuardRepositoryLive } from "./repo/guard-repo.js"
 export { LabelRepository, LabelRepositoryLive } from "./repo/label-repo.js"
 export { SpecTraceRepository, SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
+export { DecisionRepository, DecisionRepositoryLive } from "./repo/decision-repo.js"
+export { DecisionService, DecisionServiceLive } from "./services/decision-service.js"
 
 /**
  * Create the full application layer from an existing SqliteClient infra layer.
@@ -268,6 +274,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     TrackedProjectRepositoryLive,
     WorkerRepositoryLive,
     ClaimRepositoryLive,
+    ProcessRegistryRepositoryLive,
     OrchestratorStateRepositoryLive,
     CompactionRepositoryLive,
     MessageRepositoryLive,
@@ -279,7 +286,8 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     PinRepositoryLive,
     GuardRepositoryLive,
     LabelRepositoryLive,
-    SpecTraceRepositoryLive
+    SpecTraceRepositoryLive,
+    DecisionRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -300,6 +308,9 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   const autoSyncService = AutoSyncServiceLive.pipe(
     Layer.provide(Layer.merge(infra, syncServiceWithDeps))
   )
+
+  // ProcessRegistryServiceLive needs ProcessRegistryRepository (from repos)
+  const processRegistryService = ProcessRegistryServiceLive.pipe(Layer.provide(repos))
 
   // PinServiceLive needs PinRepository (from repos)
   const pinService = PinServiceLive.pipe(Layer.provide(repos))
@@ -343,7 +354,11 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.mergeAll(repos, embeddingService, queryExpansionService, rerankerService, graphExpansionService, feedbackTrackerService, DiversifierServiceLive))
   )
 
-  // Services need repos, embedding, query expansion, reranker, retriever, and autoSyncService
+  // ClaimServiceLive needs ClaimRepository and OrchestratorStateRepository (from repos)
+  // Moved before services because ReadyServiceLive depends on ClaimService for readyAndClaim
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
+
+  // Services need repos, embedding, query expansion, reranker, retriever, autoSyncService, and claimService
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -355,7 +370,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     AnchorServiceLive,
     DeduplicationServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, embeddingService, queryExpansionService, rerankerService, retrieverService, autoSyncService))
+    Layer.provide(Layer.mergeAll(repos, embeddingService, queryExpansionService, rerankerService, retrieverService, autoSyncService, claimService))
   )
 
   // AnchorVerificationServiceLive needs AnchorRepository from repos
@@ -373,9 +388,6 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
 
   // WorkerServiceLive needs WorkerRepository and OrchestratorStateRepository (from repos)
   const workerService = WorkerServiceLive.pipe(Layer.provide(repos))
-
-  // ClaimServiceLive needs ClaimRepository and OrchestratorStateRepository (from repos)
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   // OrchestratorServiceLive needs WorkerService, ClaimService, TaskService, OrchestratorStateRepository, and SqliteClient
   const orchestratorService = OrchestratorServiceLive.pipe(
@@ -404,6 +416,9 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.merge(repos, docService))
   )
 
+  // DecisionServiceLive needs DecisionRepository (from repos)
+  const decisionService = DecisionServiceLive.pipe(Layer.provide(repos))
+
   // MemoryServiceLive needs memory repos (from repos)
   const memoryService = MemoryServiceLive.pipe(Layer.provide(repos))
 
@@ -417,7 +432,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, specTraceService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -467,6 +482,7 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     TrackedProjectRepositoryLive,
     WorkerRepositoryLive,
     ClaimRepositoryLive,
+    ProcessRegistryRepositoryLive,
     OrchestratorStateRepositoryLive,
     CompactionRepositoryLive,
     MessageRepositoryLive,
@@ -478,7 +494,8 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     PinRepositoryLive,
     GuardRepositoryLive,
     LabelRepositoryLive,
-    SpecTraceRepositoryLive
+    SpecTraceRepositoryLive,
+    DecisionRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -513,6 +530,10 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, graphExpansionService, feedbackTrackerService, DiversifierServiceLive))
   )
 
+  // ClaimServiceLive needs ClaimRepository and OrchestratorStateRepository (from repos)
+  // Moved before services because ReadyServiceLive depends on ClaimService for readyAndClaim
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
+
   // Services with Noop embedding, query expansion, reranker, retriever, and auto-sync
   const services = Layer.mergeAll(
     TaskServiceLive,
@@ -525,7 +546,7 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     AnchorServiceLive,
     DeduplicationServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverService, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverService, AutoSyncServiceNoop, claimService))
   )
 
   // AnchorVerificationServiceLive needs AnchorRepository from repos
@@ -544,8 +565,8 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   // WorkerServiceLive needs WorkerRepository and OrchestratorStateRepository (from repos)
   const workerService = WorkerServiceLive.pipe(Layer.provide(repos))
 
-  // ClaimServiceLive needs ClaimRepository and OrchestratorStateRepository (from repos)
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
+  // ProcessRegistryServiceLive needs ProcessRegistryRepository (from repos)
+  const processRegistryService = ProcessRegistryServiceLive.pipe(Layer.provide(repos))
 
   // OrchestratorServiceLive needs WorkerService, ClaimService, TaskService, OrchestratorStateRepository, and SqliteClient
   const orchestratorService = OrchestratorServiceLive.pipe(
@@ -570,6 +591,9 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   const specTraceService = SpecTraceServiceLive.pipe(
     Layer.provide(Layer.merge(repos, docService))
   )
+
+  // DecisionServiceLive needs DecisionRepository (from repos)
+  const decisionService = DecisionServiceLive.pipe(Layer.provide(repos))
 
   // MemoryServiceLive needs memory repos (from repos)
   const memoryService = MemoryServiceLive.pipe(Layer.provide(repos))
@@ -596,7 +620,7 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, specTraceService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(

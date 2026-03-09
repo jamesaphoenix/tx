@@ -92,6 +92,9 @@ import type {
   SerializedGuard,
   SerializedVerifyResult,
   SerializedReflectResult,
+  SerializedDecision,
+  CreateDecisionData,
+  DecisionListOptions,
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
 
@@ -286,6 +289,15 @@ interface Transport {
 
   // Stats
   getStats(): Promise<StatsResult>
+
+  // Decisions
+  decisionAdd(data: CreateDecisionData): Promise<SerializedDecision>
+  decisionList(options?: DecisionListOptions): Promise<SerializedDecision[]>
+  decisionShow(id: string): Promise<SerializedDecision>
+  decisionApprove(id: string, reviewer?: string, note?: string): Promise<SerializedDecision>
+  decisionReject(id: string, reviewer?: string, reason?: string): Promise<SerializedDecision>
+  decisionEdit(id: string, content: string, reviewer?: string): Promise<SerializedDecision>
+  decisionPending(): Promise<SerializedDecision[]>
 }
 
 // =============================================================================
@@ -1070,6 +1082,49 @@ class HttpTransport implements Transport {
   // Stats
   async getStats(): Promise<StatsResult> {
     return await this.request<StatsResult>("GET", "/api/stats")
+  }
+
+  // Decisions
+  async decisionAdd(data: CreateDecisionData): Promise<SerializedDecision> {
+    return await this.request<SerializedDecision>("POST", "/api/decisions", { body: data })
+  }
+
+  async decisionList(options?: DecisionListOptions): Promise<SerializedDecision[]> {
+    const result = await this.request<{ decisions: SerializedDecision[] }>("GET", "/api/decisions", {
+      params: {
+        status: options?.status,
+        source: options?.source,
+        limit: options?.limit,
+      },
+    })
+    return result.decisions
+  }
+
+  async decisionShow(id: string): Promise<SerializedDecision> {
+    return await this.request<SerializedDecision>("GET", `/api/decisions/${id}`)
+  }
+
+  async decisionApprove(id: string, reviewer?: string, note?: string): Promise<SerializedDecision> {
+    return await this.request<SerializedDecision>("POST", `/api/decisions/${id}/approve`, {
+      body: { reviewer, note },
+    })
+  }
+
+  async decisionReject(id: string, reviewer?: string, reason?: string): Promise<SerializedDecision> {
+    return await this.request<SerializedDecision>("POST", `/api/decisions/${id}/reject`, {
+      body: { reviewer, reason },
+    })
+  }
+
+  async decisionEdit(id: string, content: string, reviewer?: string): Promise<SerializedDecision> {
+    return await this.request<SerializedDecision>("POST", `/api/decisions/${id}/edit`, {
+      body: { content, reviewer },
+    })
+  }
+
+  async decisionPending(): Promise<SerializedDecision[]> {
+    const result = await this.request<{ decisions: SerializedDecision[] }>("GET", "/api/decisions/pending")
+    return result.decisions
   }
 }
 
@@ -3880,6 +3935,133 @@ class DirectTransport implements Transport {
     )
   }
 
+  // Decisions
+  private serializeDecisionDirect(d: any): SerializedDecision {
+    return {
+      id: d.id,
+      content: d.content,
+      question: d.question,
+      status: d.status,
+      source: d.source,
+      commitSha: d.commitSha,
+      runId: d.runId,
+      taskId: d.taskId,
+      docId: d.docId,
+      invariantId: d.invariantId,
+      reviewedBy: d.reviewedBy,
+      reviewNote: d.reviewNote,
+      editedContent: d.editedContent,
+      reviewedAt: d.reviewedAt instanceof Date ? d.reviewedAt.toISOString() : d.reviewedAt,
+      contentHash: d.contentHash,
+      supersededBy: d.supersededBy,
+      syncedToDoc: d.syncedToDoc,
+      createdAt: d.createdAt instanceof Date ? d.createdAt.toISOString() : d.createdAt,
+      updatedAt: d.updatedAt instanceof Date ? d.updatedAt.toISOString() : d.updatedAt,
+    }
+  }
+
+  async decisionAdd(data: CreateDecisionData): Promise<SerializedDecision> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<SerializedDecision>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecisionService
+        return yield* svc.add({
+          content: data.content,
+          question: data.question ?? null,
+          source: data.source ?? "manual",
+          taskId: data.taskId ?? null,
+          docId: data.docId ?? null,
+          commitSha: data.commitSha ?? null,
+        })
+      })
+    ).then((d: any) => this.serializeDecisionDirect(d))
+  }
+
+  async decisionList(options?: DecisionListOptions): Promise<SerializedDecision[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<any[]>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecisionService
+        return yield* svc.list({
+          status: options?.status,
+          source: options?.source,
+          limit: options?.limit,
+        })
+      })
+    ).then((ds: any[]) => ds.map((d) => this.serializeDecisionDirect(d)))
+  }
+
+  async decisionShow(id: string): Promise<SerializedDecision> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<any>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecisionService
+        return yield* svc.show(id)
+      })
+    ).then((d: any) => this.serializeDecisionDirect(d))
+  }
+
+  async decisionApprove(id: string, reviewer?: string, note?: string): Promise<SerializedDecision> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<any>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecisionService
+        return yield* svc.approve(id, reviewer, note)
+      })
+    ).then((d: any) => this.serializeDecisionDirect(d))
+  }
+
+  async decisionReject(id: string, reviewer?: string, reason?: string): Promise<SerializedDecision> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<any>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecisionService
+        return yield* svc.reject(id, reviewer, reason)
+      })
+    ).then((d: any) => this.serializeDecisionDirect(d))
+  }
+
+  async decisionEdit(id: string, content: string, reviewer?: string): Promise<SerializedDecision> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<any>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecisionService
+        return yield* svc.edit(id, content, reviewer)
+      })
+    ).then((d: any) => this.serializeDecisionDirect(d))
+  }
+
+  async decisionPending(): Promise<SerializedDecision[]> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    return await this.run<any[]>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecisionService
+        return yield* svc.pending()
+      })
+    ).then((ds: any[]) => ds.map((d) => this.serializeDecisionDirect(d)))
+  }
+
   /**
    * Dispose of the runtime and release resources.
    * Only actually disposes when all clients using this dbPath have disposed.
@@ -4972,6 +5154,48 @@ class ReflectNamespace {
 }
 
 // =============================================================================
+// Decisions Namespace
+// =============================================================================
+
+/**
+ * Namespace for decision lifecycle operations.
+ *
+ * Decisions are first-class artifacts in the spec-driven development triangle.
+ * They capture implementation choices, support review workflows, and sync to docs.
+ */
+class DecisionsNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async add(data: CreateDecisionData): Promise<SerializedDecision> {
+    return this.transport.decisionAdd(data)
+  }
+
+  async list(options?: DecisionListOptions): Promise<SerializedDecision[]> {
+    return this.transport.decisionList(options)
+  }
+
+  async show(id: string): Promise<SerializedDecision> {
+    return this.transport.decisionShow(id)
+  }
+
+  async approve(id: string, reviewer?: string, note?: string): Promise<SerializedDecision> {
+    return this.transport.decisionApprove(id, reviewer, note)
+  }
+
+  async reject(id: string, reviewer?: string, reason?: string): Promise<SerializedDecision> {
+    return this.transport.decisionReject(id, reviewer, reason)
+  }
+
+  async edit(id: string, content: string, reviewer?: string): Promise<SerializedDecision> {
+    return this.transport.decisionEdit(id, content, reviewer)
+  }
+
+  async pending(): Promise<SerializedDecision[]> {
+    return this.transport.decisionPending()
+  }
+}
+
+// =============================================================================
 // Main Client
 // =============================================================================
 
@@ -5099,6 +5323,11 @@ export class TxClient {
   public readonly reflect: ReflectNamespace
 
   /**
+   * Decision lifecycle operations (spec-driven development triangle).
+   */
+  public readonly decisions: DecisionsNamespace
+
+  /**
    * Create a new TxClient.
    *
    * @param config - Client configuration
@@ -5139,6 +5368,7 @@ export class TxClient {
     this.guards = new GuardsNamespace(this.transport)
     this.verify = new VerifyNamespace(this.transport)
     this.reflect = new ReflectNamespace(this.transport)
+    this.decisions = new DecisionsNamespace(this.transport)
   }
 
   /**

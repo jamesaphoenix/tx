@@ -35,6 +35,7 @@ import {
   DiscoverResultSchema,
   FciResultSchema,
   BatchRunInputSchema,
+  DecisionSerializedSchema,
 } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
@@ -105,7 +106,9 @@ export const mapCoreError = (
       case "MemoryDocumentNotFoundError":
       case "MemorySourceNotFoundError":
       case "WorkerNotFoundError":
+      case "DecisionNotFoundError":
         return new NotFound({ message })
+      case "DecisionAlreadyReviewedError":
       case "MessageAlreadyAckedError":
         return new BadRequest({ message })
       case "AlreadyClaimedError":
@@ -1762,6 +1765,90 @@ export const ReflectGroup = HttpApiGroup.make("reflect")
   )
 
 // =============================================================================
+// DECISIONS GROUP
+// =============================================================================
+
+const DecisionIdParam = HttpApiSchema.param("id", Schema.String.pipe(
+  Schema.pattern(/^dec-[a-f0-9]{12}$/)
+))
+
+const CreateDecisionBody = Schema.Struct({
+  content: Schema.String.pipe(Schema.minLength(1)),
+  question: Schema.optional(Schema.NullOr(Schema.String)),
+  source: Schema.optional(Schema.Literal("manual", "diff", "transcript", "agent")),
+  taskId: Schema.optional(Schema.NullOr(Schema.String)),
+  docId: Schema.optional(Schema.NullOr(Schema.Number)),
+  commitSha: Schema.optional(Schema.NullOr(Schema.String)),
+})
+
+const DecisionListParams = Schema.Struct({
+  status: Schema.optional(Schema.Literal("pending", "approved", "rejected", "edited", "superseded")),
+  source: Schema.optional(Schema.Literal("manual", "diff", "transcript", "agent")),
+  limit: Schema.optional(Schema.NumberFromString.pipe(Schema.int(), Schema.greaterThan(0))),
+})
+
+const DecisionListResponse = Schema.Struct({
+  decisions: Schema.Array(DecisionSerializedSchema),
+})
+
+const ApproveDecisionBody = Schema.Struct({
+  reviewer: Schema.optional(Schema.String),
+  note: Schema.optional(Schema.String),
+})
+
+const RejectDecisionBody = Schema.Struct({
+  reviewer: Schema.optional(Schema.String),
+  reason: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const EditDecisionBody = Schema.Struct({
+  content: Schema.String.pipe(Schema.minLength(1)),
+  reviewer: Schema.optional(Schema.String),
+})
+
+export const DecisionsGroup = HttpApiGroup.make("decisions")
+  .add(
+    HttpApiEndpoint.post("createDecision", "/api/decisions")
+      .setPayload(CreateDecisionBody)
+      .addSuccess(DecisionSerializedSchema, { status: 201 })
+  )
+  .add(
+    HttpApiEndpoint.get("listDecisions", "/api/decisions")
+      .setUrlParams(DecisionListParams)
+      .addSuccess(DecisionListResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getDecision")`/api/decisions/${DecisionIdParam}`
+      .addSuccess(DecisionSerializedSchema)
+      .addError(NotFound)
+  )
+  .add(
+    HttpApiEndpoint.post("approveDecision")`/api/decisions/${DecisionIdParam}/approve`
+      .setPayload(ApproveDecisionBody)
+      .addSuccess(DecisionSerializedSchema)
+      .addError(NotFound)
+      .addError(BadRequest)
+  )
+  .add(
+    HttpApiEndpoint.post("rejectDecision")`/api/decisions/${DecisionIdParam}/reject`
+      .setPayload(RejectDecisionBody)
+      .addSuccess(DecisionSerializedSchema)
+      .addError(NotFound)
+      .addError(BadRequest)
+  )
+  .add(
+    HttpApiEndpoint.post("editDecision")`/api/decisions/${DecisionIdParam}/edit`
+      .setPayload(EditDecisionBody)
+      .addSuccess(DecisionSerializedSchema)
+      .addError(NotFound)
+      .addError(BadRequest)
+  )
+  .add(
+    HttpApiEndpoint.get("pendingDecisions", "/api/decisions/pending")
+      .addSuccess(DecisionListResponse)
+  )
+
+// =============================================================================
 // TOP-LEVEL API
 // =============================================================================
 
@@ -1786,4 +1873,5 @@ export class TxApi extends HttpApi.make("tx")
   .add(SpecGroup)
   .add(GuardsGroup)
   .add(VerifyGroup)
-  .add(ReflectGroup) {}
+  .add(ReflectGroup)
+  .add(DecisionsGroup) {}

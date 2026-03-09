@@ -22,7 +22,7 @@ import { DocRepository } from "../../repo/doc-repo.js";
 import { LearningUpsertOp as LearningUpsertOpSchema, FileLearningUpsertOp as FileLearningUpsertOpSchema, AttemptUpsertOp as AttemptUpsertOpSchema, PinUpsertOp as PinUpsertOpSchema, AnchorUpsertOp as AnchorUpsertOpSchema, EdgeUpsertOp as EdgeUpsertOpSchema, DocUpsertOp as DocUpsertOpSchema, DocLinkUpsertOp as DocLinkUpsertOpSchema, TaskDocLinkUpsertOp as TaskDocLinkUpsertOpSchema, InvariantUpsertOp as InvariantUpsertOpSchema, LabelUpsertOp as LabelUpsertOpSchema, LabelAssignmentUpsertOp as LabelAssignmentUpsertOpSchema, TaskSyncOperation as TaskSyncOperationSchema } from "../../schemas/sync.js";
 import { SyncEventEnvelopeSchema } from "../../schemas/sync-events.js";
 import { generateUlid } from "../../utils/ulid.js";
-import type { ImportResult, LegacySyncExportResult, SyncCompactResult, SyncExportResult, SyncHydrateResult, SyncImportResult, SyncStatus, SyncStreamInfoResult } from "../../services/sync/types.js";
+import type { EntityImportResult, ImportResult, LegacySyncExportResult, SyncCompactResult, SyncExportResult, SyncHydrateResult, SyncImportResult, SyncStatus, SyncStreamInfoResult } from "../../services/sync/types.js";
 import { applyEntityImportContract } from "../../services/sync/entity-import.js";
 import { applyEntityExportContract } from "../../services/sync/entity-export.js";
 import { importEntityJsonl } from "../../services/sync/file-utils.js";
@@ -46,6 +46,8 @@ export class SyncService extends Context.Tag("SyncService")<
             (path: string): Effect.Effect<ImportResult, ValidationError | DatabaseError | TaskNotFoundError>;
         };
         readonly hydrate: () => Effect.Effect<SyncHydrateResult, ValidationError | DatabaseError | TaskNotFoundError>;
+        readonly importDecisions: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>;
+        readonly exportDecisions: (path?: string) => Effect.Effect<LegacySyncExportResult, DatabaseError>;
         readonly compact: (path?: string) => Effect.Effect<SyncCompactResult, DatabaseError | ValidationError>;
         readonly stream: () => Effect.Effect<SyncStreamInfoResult, DatabaseError | ValidationError>;
     }
@@ -102,6 +104,8 @@ const V1_TO_SYNC_TYPE = {
     invariant_upsert: "invariant.upsert",
     label_upsert: "label.upsert",
     label_assignment_upsert: "label_assignment.upsert",
+    decision_upsert: "decision.upsert",
+    decision_delete: "decision.delete",
 };
 const entityIdFromV1Op = (op) => {
     const kind = typeof op.op === "string" ? op.op : "";
@@ -128,6 +132,9 @@ const entityIdFromV1Op = (op) => {
             return String(op.contentHash ?? op.id ?? "");
         case "label_assignment_upsert":
             return String(op.contentHash ?? "");
+        case "decision_upsert":
+        case "decision_delete":
+            return String(op.id ?? op.contentHash ?? "");
         default:
             return String(op.id ?? op.contentHash ?? "");
     }
@@ -197,6 +204,7 @@ const emptyV1Buckets = () => ({
     edges: [],
     docs: [],
     labels: [],
+    decisions: [],
 });
 const bucketForOp = (opName) => {
     if (opName === "upsert" || opName === "delete" || opName === "dep_add" || opName === "dep_remove")
@@ -217,6 +225,8 @@ const bucketForOp = (opName) => {
         return "docs";
     if (opName === "label_upsert" || opName === "label_assignment_upsert")
         return "labels";
+    if (opName === "decision_upsert" || opName === "decision_delete")
+        return "decisions";
     return null;
 };
 const stateCategoryForOp = (opName) => {
@@ -248,6 +258,10 @@ const stateCategoryForOp = (opName) => {
         return "label";
     if (opName === "label_assignment_upsert")
         return "label_assignment";
+    if (opName === "decision_upsert")
+        return "decision";
+    if (opName === "decision_delete")
+        return "decision";
     return null;
 };
 const stateCategoryForSyncType = (syncType) => {
@@ -279,6 +293,8 @@ const stateCategoryForSyncType = (syncType) => {
         return "label";
     if (syncType === "label_assignment.upsert")
         return "label_assignment";
+    if (syncType === "decision.upsert" || syncType === "decision.delete")
+        return "decision";
     return null;
 };
 const isRemovalSyncType = (syncType) => syncType === "task.delete" ||
@@ -288,7 +304,8 @@ const isRemovalSyncType = (syncType) => syncType === "task.delete" ||
     syncType === "pin.delete" ||
     syncType === "anchor.delete" ||
     syncType === "edge.delete" ||
-    syncType === "doc.delete";
+    syncType === "doc.delete" ||
+    syncType === "decision.delete";
 const stateKeyForSyncEvent = (syncType, entityId) => {
     if (typeof entityId !== "string" || entityId.length === 0)
         return null;
@@ -647,6 +664,31 @@ const labelAssignmentToUpsertOp = (row, labelNameMap) => {
         }
     };
 };
+const decisionToUpsertOp = (d, docKeyMap) => ({
+    v: 1,
+    op: "decision_upsert",
+    ts: d.updatedAt.toISOString(),
+    id: d.id,
+    contentHash: d.contentHash,
+    data: {
+        content: d.content,
+        question: d.question,
+        status: d.status,
+        source: d.source,
+        commitSha: d.commitSha,
+        runId: d.runId,
+        taskId: d.taskId,
+        docKey: d.docId != null ? (docKeyMap.get(d.docId) ?? null) : null,
+        invariantId: d.invariantId,
+        reviewedBy: d.reviewedBy,
+        reviewNote: d.reviewNote,
+        editedContent: d.editedContent,
+        reviewedAt: d.reviewedAt?.toISOString() ?? null,
+        supersededBy: d.supersededBy,
+        syncedToDoc: d.syncedToDoc,
+        createdAt: d.createdAt.toISOString(),
+    }
+});
 /**
  * Check if a file exists without blocking the event loop.
  */
@@ -847,6 +889,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         sortByTs(buckets.edges);
         sortByTs(buckets.docs);
         sortByTs(buckets.labels);
+        sortByTs(buckets.decisions);
         return buckets;
     };
     const writeBucketsToTempFiles = (buckets) => Effect.gen(function* () {
@@ -875,6 +918,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         const edgesPath = yield* writeBucket("edges.jsonl", buckets.edges);
         const docsPath = yield* writeBucket("docs.jsonl", buckets.docs);
         const labelsPath = yield* writeBucket("labels.jsonl", buckets.labels);
+        const decisionsPath = yield* writeBucket("decisions.jsonl", buckets.decisions);
         return {
             dir,
             tasksPath,
@@ -886,11 +930,13 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             edgesPath,
             docsPath,
             labelsPath,
+            decisionsPath,
         };
     });
     const clearMaterializedTables = () => Effect.try({
         try: () => {
             withWriteTransaction(() => {
+                db.prepare("DELETE FROM decisions").run();
                 db.prepare("DELETE FROM task_label_assignments").run();
                 db.prepare("DELETE FROM task_labels").run();
                 db.prepare("DELETE FROM invariant_checks").run();
@@ -971,6 +1017,31 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         const labelAssignmentOps = assignmentRows
             .map(a => labelAssignmentToUpsertOp(a, labelNameMap))
             .filter((op) => op !== null);
+        const decisionRows = yield* Effect.try({
+            try: () => db.prepare("SELECT * FROM decisions").all(),
+            catch: (cause) => new DatabaseError({ cause })
+        });
+        const decisionOps = decisionRows.map(row => decisionToUpsertOp({
+            id: row.id,
+            content: row.content,
+            question: row.question,
+            status: row.status,
+            source: row.source,
+            commitSha: row.commit_sha,
+            runId: row.run_id,
+            taskId: row.task_id,
+            docId: row.doc_id,
+            invariantId: row.invariant_id,
+            reviewedBy: row.reviewed_by,
+            reviewNote: row.review_note,
+            editedContent: row.edited_content,
+            reviewedAt: row.reviewed_at ? new Date(row.reviewed_at) : null,
+            contentHash: row.content_hash,
+            supersededBy: row.superseded_by,
+            syncedToDoc: !!row.synced_to_doc,
+            createdAt: new Date(row.created_at),
+            updatedAt: new Date(row.updated_at),
+        }, docKeyMap));
         const all = [
             ...taskOps,
             ...depOps,
@@ -986,6 +1057,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             ...invariantOps,
             ...labelOps,
             ...labelAssignmentOps,
+            ...decisionOps,
         ];
         all.sort(compareOpOrder);
         return all;
@@ -1795,6 +1867,44 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
             return { opCount: allOps.length, path: filePath };
         }),
+        exportDecisions: (path) => Effect.gen(function* () {
+            const filePath = resolve(path ?? ".tx/decisions.jsonl");
+            const decisionRows = yield* Effect.try({
+                try: () => db.prepare("SELECT * FROM decisions").all(),
+                catch: (cause) => new DatabaseError({ cause })
+            });
+            // Build doc key map for resolving docId
+            const docs = yield* docRepo.findAll();
+            const docKeyMap = new Map();
+            for (const d of docs) {
+                docKeyMap.set(d.id, `${d.name}:${d.version}`);
+            }
+            const ops = decisionRows.map(row => decisionToUpsertOp({
+                id: row.id,
+                content: row.content,
+                question: row.question,
+                status: row.status,
+                source: row.source,
+                commitSha: row.commit_sha,
+                runId: row.run_id,
+                taskId: row.task_id,
+                docId: row.doc_id,
+                invariantId: row.invariant_id,
+                reviewedBy: row.reviewed_by,
+                reviewNote: row.review_note,
+                editedContent: row.edited_content,
+                reviewedAt: row.reviewed_at ? new Date(row.reviewed_at) : null,
+                contentHash: row.content_hash,
+                supersededBy: row.superseded_by,
+                syncedToDoc: !!row.synced_to_doc,
+                createdAt: new Date(row.created_at),
+                updatedAt: new Date(row.updated_at),
+            }, docKeyMap));
+            ops.sort((a, b) => a.ts.localeCompare(b.ts));
+            const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
+            yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
+            return { opCount: ops.length, path: filePath };
+        }),
         importLabels: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_LABELS_JSONL_PATH);
             const importLabelsFileExists = yield* fileExists(filePath);
@@ -1888,6 +1998,105 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                                 // Skip FK failures (task may not exist)
                                 skipped++;
                             }
+                        }
+                        return { imported, skipped };
+                    });
+                },
+                catch: (cause) => new DatabaseError({ cause })
+            });
+        }),
+        importDecisions: (path) => Effect.gen(function* () {
+            const filePath = resolve(path ?? ".tx/decisions.jsonl");
+            const importDecisionsFileExists = yield* fileExists(filePath);
+            if (!importDecisionsFileExists)
+                return EMPTY_ENTITY_IMPORT_RESULT;
+            const content = yield* readUtf8FileWithLimit(filePath);
+            const lines = content.trim().split("\n").filter(Boolean);
+            if (lines.length === 0)
+                return EMPTY_ENTITY_IMPORT_RESULT;
+            const upsertOps = [];
+            const deleteOps = [];
+            for (const line of lines) {
+                const parsed = yield* Effect.try({
+                    try: () => JSON.parse(line),
+                    catch: (cause) => new ValidationError({ reason: `Invalid decision JSONL: ${cause}` })
+                });
+                if (parsed.op === "decision_upsert") {
+                    upsertOps.push(parsed);
+                } else if (parsed.op === "decision_delete") {
+                    deleteOps.push(parsed);
+                }
+            }
+            if (upsertOps.length === 0 && deleteOps.length === 0)
+                return EMPTY_ENTITY_IMPORT_RESULT;
+            // Dedup by content_hash
+            const existingHashes = yield* Effect.try({
+                try: () => {
+                    const rows = db.prepare("SELECT content_hash FROM decisions").all();
+                    return new Set(rows.map(r => r.content_hash));
+                },
+                catch: (cause) => new DatabaseError({ cause })
+            });
+            // Resolve doc keys to doc IDs
+            const docKeyToId = yield* Effect.try({
+                try: () => {
+                    const rows = db.prepare("SELECT id, name, version FROM docs").all();
+                    const map = new Map();
+                    for (const r of rows) {
+                        map.set(`${r.name}:${r.version}`, r.id);
+                    }
+                    return map;
+                },
+                catch: (cause) => new DatabaseError({ cause })
+            });
+            const insertStmt = db.prepare(
+                `INSERT OR IGNORE INTO decisions
+                 (id, content, question, status, source, commit_sha, run_id, task_id, doc_id, invariant_id,
+                  reviewed_by, review_note, edited_content, reviewed_at, content_hash, superseded_by,
+                  synced_to_doc, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            );
+            const deleteStmt = db.prepare("DELETE FROM decisions WHERE id = ?");
+            return yield* Effect.try({
+                try: () => {
+                    return withWriteTransaction(() => {
+                        let imported = 0;
+                        let skipped = 0;
+                        // Handle deletes first (tombstones)
+                        for (const op of deleteOps) {
+                            deleteStmt.run(op.id);
+                            imported++;
+                        }
+                        // Handle upserts
+                        for (const op of upsertOps) {
+                            if (existingHashes.has(op.contentHash)) {
+                                skipped++;
+                                continue;
+                            }
+                            const d = op.data;
+                            const docId = d.docKey ? (docKeyToId.get(d.docKey) ?? null) : null;
+                            insertStmt.run(
+                                op.id,
+                                d.content,
+                                d.question,
+                                d.status,
+                                d.source,
+                                d.commitSha,
+                                d.runId,
+                                d.taskId,
+                                docId,
+                                d.invariantId,
+                                d.reviewedBy,
+                                d.reviewNote,
+                                d.editedContent,
+                                d.reviewedAt,
+                                op.contentHash,
+                                d.supersededBy,
+                                d.syncedToDoc ? 1 : 0,
+                                d.createdAt ?? op.ts,
+                                op.ts
+                            );
+                            imported++;
                         }
                         return { imported, skipped };
                     });
@@ -1989,6 +2198,8 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     yield* syncService.importDocs(tempFiles.docsPath);
                 if (buckets.labels.length > 0)
                     yield* syncService.importLabels(tempFiles.labelsPath);
+                if (buckets.decisions.length > 0)
+                    yield* syncService.importDecisions(tempFiles.decisionsPath);
                 const insertStmt = db.prepare(`INSERT OR IGNORE INTO sync_events (event_id, stream_id, seq, ts, type, entity_id, v, payload, imported_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`);
                 yield* Effect.try({
@@ -2084,6 +2295,8 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     yield* syncService.importDocs(tempFiles.docsPath);
                 if (buckets.labels.length > 0)
                     yield* syncService.importLabels(tempFiles.labelsPath);
+                if (buckets.decisions.length > 0)
+                    yield* syncService.importDecisions(tempFiles.decisionsPath);
                 yield* Effect.try({
                     try: () => {
                         const lastEventAtByStream = new Map();

@@ -20,6 +20,7 @@ export type SyncEntityExportContract = {
   readonly exportEdges: (path?: string) => Effect.Effect<LegacySyncExportResult, DatabaseError>
   readonly exportDocs: (path?: string) => Effect.Effect<LegacySyncExportResult, DatabaseError>
   readonly exportLabels: (path?: string) => Effect.Effect<LegacySyncExportResult, DatabaseError>
+  readonly exportDecisions: (path?: string) => Effect.Effect<LegacySyncExportResult, DatabaseError>
   readonly compact: (path?: string) => Effect.Effect<SyncCompactResult, DatabaseError | ValidationError>
   readonly stream: () => Effect.Effect<SyncStreamInfoResult, DatabaseError>
 }
@@ -34,6 +35,7 @@ export const ENTITY_EXPORT_METHODS = [
   "exportEdges",
   "exportDocs",
   "exportLabels",
+  "exportDecisions",
   "compact",
   "stream",
 ] as const

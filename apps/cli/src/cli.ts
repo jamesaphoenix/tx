@@ -18,23 +18,25 @@ import { add, list, ready, show, update, done, deleteTask, reset } from "./comma
 import { block, unblock } from "./commands/dep.js"
 import { children, tree } from "./commands/hierarchy.js"
 import { sync } from "./commands/sync.js"
-import { learningAdd, learningSearch, learningRecent, learningHelpful, learningEmbed, context, learn, recall } from "./commands/learning.js"
+import { learning, context, learn, recall } from "./commands/learning.js"
 import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
 import { cycle } from "./commands/cycle.js"
 import { trace } from "./commands/trace.js"
-import { claim, claimRelease, claimRenew } from "./commands/claim.js"
+import { claim } from "./commands/claim.js"
 import { compact, history } from "./commands/compact.js"
 import { validate } from "./commands/validate.js"
 import { doctor } from "./commands/doctor.js"
 import { stats } from "./commands/stats.js"
 import { bulk } from "./commands/bulk.js"
 import { dashboard } from "./commands/dashboard.js"
-import { send, inbox, ack, ackAll, outboxPending, outboxGc } from "./commands/outbox.js"
+import { send, inbox, ack, outbox } from "./commands/outbox.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
 import { spec } from "./commands/spec.js"
-import { groupContextSet, groupContextClear } from "./commands/group-context.js"
+import { decision } from "./commands/decision.js"
+import { triangle } from "./commands/triangle.js"
+import { groupContext } from "./commands/group-context.js"
 import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
 import { scaffoldConfigToml } from "@jamesaphoenix/tx-core"
 import { memory } from "./commands/memory.js"
@@ -101,6 +103,19 @@ function parseArgs(argv: string[]): { command: string; positional: string[]; fla
 
 function flag(flags: Record<string, string | boolean>, ...names: string[]): boolean {
   return names.some(n => flags[n] === true)
+}
+
+// --- Deprecation helper ---
+
+type CommandFn = (positional: string[], flags: Record<string, string | boolean>) => Effect.Effect<void, unknown, unknown>
+
+/** Wrap a handler so it emits a stderr deprecation warning before delegating. */
+function deprecatedAlias(newCmd: string, handler: CommandFn): CommandFn {
+  return (pos, flags) =>
+    Effect.gen(function* () {
+      console.error(`[deprecated] Use "tx ${newCmd}" instead.`)
+      yield* handler(pos, flags)
+    })
 }
 
 // --- Commands registry ---
@@ -173,27 +188,20 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   context,
   learn,
   recall,
-  "group-context:set": groupContextSet,
-  "group-context:clear": groupContextClear,
+  "group-context": groupContext,
 
   // Attempt commands
   try: tryAttempt,
   attempts,
 
-  // Learning commands (colon-prefixed)
-  "learning:add": learningAdd,
-  "learning:search": learningSearch,
-  "learning:recent": learningRecent,
-  "learning:helpful": learningHelpful,
-  "learning:embed": learningEmbed,
+  // Learning commands (space-dispatched)
+  learning,
 
   // Cycle scan (PRD-023)
   cycle,
 
-  // Claim commands (PRD-018)
+  // Claim commands (PRD-018) — claim dispatches release/renew subcommands
   claim,
-  "claim:release": claimRelease,
-  "claim:renew": claimRenew,
 
   // Trace command (with subcommands)
   trace,
@@ -218,17 +226,20 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   dashboard,
 
   // Outbox commands (PRD-024 agent messaging)
+  // ack dispatches "all" subcommand; outbox dispatches "pending"/"gc"
   send,
   inbox,
   ack,
-  "ack:all": ackAll,
-  "outbox:pending": outboxPending,
-  "outbox:gc": outboxGc,
+  outbox,
 
   // Doc commands (DD-023 docs-as-primitives)
   doc,
   invariant,
   spec,
+
+  // Decision commands (spec-driven development triangle)
+  decision,
+  triangle,
 
   // Memory commands (filesystem-backed memory)
   memory,
@@ -249,6 +260,20 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   label,
   reflect,
 
+  // --- Deprecated colon-style aliases (emit warning, delegate to new syntax) ---
+  "learning:add": deprecatedAlias("learning add", (pos, flags) => learning(["add", ...pos], flags)),
+  "learning:search": deprecatedAlias("learning search", (pos, flags) => learning(["search", ...pos], flags)),
+  "learning:recent": deprecatedAlias("learning recent", (pos, flags) => learning(["recent", ...pos], flags)),
+  "learning:helpful": deprecatedAlias("learning helpful", (pos, flags) => learning(["helpful", ...pos], flags)),
+  "learning:embed": deprecatedAlias("learning embed", (pos, flags) => learning(["embed", ...pos], flags)),
+  "claim:release": deprecatedAlias("claim release", (pos, flags) => claim(["release", ...pos], flags)),
+  "claim:renew": deprecatedAlias("claim renew", (pos, flags) => claim(["renew", ...pos], flags)),
+  "group-context:set": deprecatedAlias("group-context set", (pos, flags) => groupContext(["set", ...pos], flags)),
+  "group-context:clear": deprecatedAlias("group-context clear", (pos, flags) => groupContext(["clear", ...pos], flags)),
+  "ack:all": deprecatedAlias("ack all", (pos, flags) => ack(["all", ...pos], flags)),
+  "outbox:pending": deprecatedAlias("outbox pending", (pos, flags) => outbox(["pending", ...pos], flags)),
+  "outbox:gc": deprecatedAlias("outbox gc", (pos, flags) => outbox(["gc", ...pos], flags)),
+
   // Help command
   help: (pos) =>
     Effect.sync(() => {
@@ -258,57 +283,12 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
         return
       }
       // Check for compound command help (e.g., tx help sync export)
-      if (subcommand === "sync" && pos[1]) {
-        const subcommandKey = `sync ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      if (subcommand === "utils" && pos[1]) {
-        const subcommandKey = `utils ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      if (subcommand === "pin" && pos[1]) {
-        const subcommandKey = `pin ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      if (subcommand === "guard" && pos[1]) {
-        const subcommandKey = `guard ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      if (subcommand === "gate" && pos[1]) {
-        const subcommandKey = `gate ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      if (subcommand === "verify" && pos[1]) {
-        const subcommandKey = `verify ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      if (subcommand === "label" && pos[1]) {
-        const subcommandKey = `label ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      if (subcommand === "spec" && pos[1]) {
-        const subcommandKey = `spec ${pos[1]}`
+      const compoundParents = [
+        "sync", "utils", "pin", "guard", "gate", "verify", "label", "spec",
+        "learning", "claim", "outbox", "group-context", "ack"
+      ]
+      if (pos[1] && compoundParents.includes(subcommand ?? "")) {
+        const subcommandKey = `${subcommand} ${pos[1]}`
         if (commandHelp[subcommandKey]) {
           console.log(commandHelp[subcommandKey])
           return
@@ -328,95 +308,17 @@ if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
   process.exit(0)
 }
 
+// Commands that support compound help (e.g., tx sync export --help, tx help learning add)
+const compoundHelpParents = [
+  "sync", "trace", "bulk", "doc", "invariant", "spec", "memory", "utils", "pin",
+  "guard", "gate", "verify", "label", "learning", "claim", "outbox", "group-context", "ack"
+]
+
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
 if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
-  // Check for subcommand help (e.g., tx sync export --help, tx daemon start --help)
-  if (command === "sync" && positional[0]) {
-    const subcommandKey = `sync ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "trace" && positional[0]) {
-    const subcommandKey = `trace ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "bulk" && positional[0]) {
-    const subcommandKey = `bulk ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "doc" && positional[0]) {
-    const subcommandKey = `doc ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "invariant" && positional[0]) {
-    const subcommandKey = `invariant ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "spec" && positional[0]) {
-    const subcommandKey = `spec ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "memory" && positional[0]) {
-    const subcommandKey = `memory ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "utils" && positional[0]) {
-    const subcommandKey = `utils ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "pin" && positional[0]) {
-    const subcommandKey = `pin ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "guard" && positional[0]) {
-    const subcommandKey = `guard ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "gate" && positional[0]) {
-    const subcommandKey = `gate ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "verify" && positional[0]) {
-    const subcommandKey = `verify ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (command === "label" && positional[0]) {
-    const subcommandKey = `label ${positional[0]}`
+  // Check for subcommand help (e.g., tx sync export --help)
+  if (positional[0] && compoundHelpParents.includes(command)) {
+    const subcommandKey = `${command} ${positional[0]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -435,93 +337,9 @@ if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
 // Handle 'tx help' and 'tx help <command>'
 if (command === "help") {
   const subcommand = positional[0]
-  // Check for compound command help (e.g., tx help sync export, tx help daemon start)
-  if (subcommand === "sync" && positional[1]) {
-    const subcommandKey = `sync ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "trace" && positional[1]) {
-    const subcommandKey = `trace ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "bulk" && positional[1]) {
-    const subcommandKey = `bulk ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "doc" && positional[1]) {
-    const subcommandKey = `doc ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "invariant" && positional[1]) {
-    const subcommandKey = `invariant ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "spec" && positional[1]) {
-    const subcommandKey = `spec ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "memory" && positional[1]) {
-    const subcommandKey = `memory ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "utils" && positional[1]) {
-    const subcommandKey = `utils ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "pin" && positional[1]) {
-    const subcommandKey = `pin ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "guard" && positional[1]) {
-    const subcommandKey = `guard ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "gate" && positional[1]) {
-    const subcommandKey = `gate ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "verify" && positional[1]) {
-    const subcommandKey = `verify ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
-  }
-  if (subcommand === "label" && positional[1]) {
-    const subcommandKey = `label ${positional[1]}`
+  // Check for compound command help (e.g., tx help sync export)
+  if (subcommand && positional[1] && compoundHelpParents.includes(subcommand)) {
+    const subcommandKey = `${subcommand} ${positional[1]}`
     if (commandHelp[subcommandKey]) {
       console.log(commandHelp[subcommandKey])
       process.exit(0)
@@ -600,6 +418,8 @@ const errorExitCodes: Record<string, number> = {
   DocLockedError: 1,
   InvalidDocYamlError: 1,
   InvariantNotFoundError: 2,
+  DecisionNotFoundError: 2,
+  DecisionAlreadyReviewedError: 1,
   MemoryDocumentNotFoundError: 2,
   MemorySourceNotFoundError: 2,
   RetrievalError: 1,

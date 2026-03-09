@@ -96,6 +96,54 @@ export {
   type FciResult,
 } from "@jamesaphoenix/tx-types"
 
+// Decision types
+export {
+  DECISION_STATUSES,
+  DECISION_SOURCES,
+  type DecisionStatus,
+  type DecisionSource,
+  type DecisionId,
+  type Decision,
+  type DecisionSerialized,
+} from "@jamesaphoenix/tx-types"
+
+export interface SerializedDecision {
+  id: string
+  content: string
+  question: string | null
+  status: string
+  source: string
+  commitSha: string | null
+  runId: string | null
+  taskId: string | null
+  docId: number | null
+  invariantId: string | null
+  reviewedBy: string | null
+  reviewNote: string | null
+  editedContent: string | null
+  reviewedAt: string | null
+  contentHash: string
+  supersededBy: string | null
+  syncedToDoc: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateDecisionData {
+  content: string
+  question?: string | null
+  source?: "manual" | "diff" | "transcript" | "agent"
+  taskId?: string | null
+  docId?: number | null
+  commitSha?: string | null
+}
+
+export interface DecisionListOptions {
+  status?: string
+  source?: string
+  limit?: number
+}
+
 export interface RunHeartbeatData {
   stdoutBytes?: number
   stderrBytes?: number
