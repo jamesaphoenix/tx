@@ -28,10 +28,17 @@ type IndexLink = {
   to: string
   type: string};
 
+type IndexDoc = {
+  name: string
+  title: string
+  status: string}
+
 type IndexData = {
   overview?: string
+  requirements: IndexDoc[]
   prds: IndexPrd[]
   design_docs: IndexDesignDoc[]
+  system_designs: IndexDoc[]
   links: IndexLink[]
   invariant_summary?: {
     total: number
@@ -64,6 +71,12 @@ export const renderDocToMarkdown = (parsed: ParsedYaml, kind: DocKind): string =
     case "design":
       renderDesign(parsed, lines)
       break
+    case "requirement":
+      renderRequirement(parsed, lines)
+      break
+    case "system_design":
+      renderSystemDesign(parsed, lines)
+      break
   }
 
   return lines.join("\n")
@@ -93,6 +106,27 @@ const renderPrd = (parsed: ParsedYaml, lines: string[]): void => {
   renderEarsRequirements(parsed.ears_requirements as unknown[] | undefined, lines)
   renderStringList(parsed.acceptance_criteria as string[] | undefined, lines, "Acceptance Criteria")
   renderStringList(parsed.out_of_scope as string[] | undefined, lines, "Out of Scope")
+}
+
+const renderRequirement = (parsed: ParsedYaml, lines: string[]): void => {
+  renderFreeTextSection(parsed, lines, "overview", "Overview")
+  renderFreeTextSection(parsed, lines, "actors", "Actors")
+  renderFreeTextSection(parsed, lines, "use_cases", "Use Cases")
+  renderFreeTextSection(parsed, lines, "functional_requirements", "Functional Requirements")
+  renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
+  renderEarsRequirements(parsed.ears_requirements as unknown[] | undefined, lines)
+  renderFreeTextSection(parsed, lines, "non_functional_requirements", "Non-Functional Requirements")
+  renderFreeTextSection(parsed, lines, "traceability", "Traceability")
+}
+
+const renderSystemDesign = (parsed: ParsedYaml, lines: string[]): void => {
+  renderFreeTextSection(parsed, lines, "overview", "Overview")
+  renderFreeTextSection(parsed, lines, "scope", "Scope")
+  renderStringList(parsed.constraints as string[] | undefined, lines, "Constraints")
+  renderFreeTextSection(parsed, lines, "design", "Design")
+  renderFreeTextSection(parsed, lines, "applies_to", "Applies To")
+  renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
+  renderFreeTextSection(parsed, lines, "decision_log", "Decision Log")
 }
 
 const renderDesign = (parsed: ParsedYaml, lines: string[]): void => {
@@ -387,6 +421,19 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
     )
   }
 
+  // Requirements table
+  if (indexData.requirements.length > 0) {
+    lines.push("## Requirements Documents", "")
+    lines.push("| Name | Title | Status |")
+    lines.push("|------|-------|--------|")
+    for (const req of indexData.requirements) {
+      lines.push(
+        `| [${req.name}](requirement/${req.name}.md) | ${req.title} | ${req.status} |`
+      )
+    }
+    lines.push("")
+  }
+
   // PRDs table
   if (indexData.prds.length > 0) {
     lines.push("## Product Requirements Documents", "")
@@ -408,6 +455,19 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
     for (const dd of indexData.design_docs) {
       lines.push(
         `| [${dd.name}](design/${dd.name}.md) | ${dd.title} | ${dd.implements ?? "-"} | ${dd.status} |`
+      )
+    }
+    lines.push("")
+  }
+
+  // System Design docs table
+  if (indexData.system_designs.length > 0) {
+    lines.push("## System Design Documents", "")
+    lines.push("| Name | Title | Status |")
+    lines.push("|------|-------|--------|")
+    for (const sd of indexData.system_designs) {
+      lines.push(
+        `| [${sd.name}](system_design/${sd.name}.md) | ${sd.title} | ${sd.status} |`
       )
     }
     lines.push("")

@@ -48,4 +48,60 @@ describe("Doc renderer structured section normalization", () => {
     const markdown = renderDocToMarkdown(parsed, "design")
     expect(markdown).toContain("| FM-001 | Service timeout | Retry once |")
   })
+
+  it("renders requirement doc with expected sections", () => {
+    const parsed: Record<string, unknown> = {
+      kind: "requirement",
+      title: "Auth Flows",
+      status: "changing",
+      actors: "End users, Admin users",
+      use_cases: "Login, logout, password reset",
+      functional_requirements: "All auth endpoints must return 401 on invalid token",
+      traceability: "PRD-001, DD-002",
+      invariants: [
+        { id: "INV-REQ-001", rule: "Auth tokens expire after 24h", enforcement: "integration_test" },
+      ],
+    }
+
+    const markdown = renderDocToMarkdown(parsed, "requirement")
+    expect(markdown).toContain("# Auth Flows")
+    expect(markdown).toContain("**Kind**: requirement")
+    expect(markdown).toContain("## Actors")
+    expect(markdown).toContain("## Use Cases")
+    expect(markdown).toContain("## Functional Requirements")
+    expect(markdown).toContain("All auth endpoints must return 401 on invalid token")
+    expect(markdown).toContain("## Traceability")
+    expect(markdown).toContain("## Invariants")
+    expect(markdown).toContain("INV-REQ-001")
+    expect(markdown).not.toContain("undefined")
+  })
+
+  it("renders system_design doc with expected sections", () => {
+    const parsed: Record<string, unknown> = {
+      kind: "system_design",
+      title: "Error Handling",
+      status: "changing",
+      scope: "All services",
+      constraints: ["Must be Bash 3.2 compatible", "No raw try/catch"],
+      design: "Use Effect-TS tagged errors throughout",
+      applies_to: "DD-002, DD-005",
+      decision_log: "2024-01-01: Adopted Effect-TS",
+      invariants: [
+        { id: "INV-SD-001", rule: "All errors use Data.TaggedError", enforcement: "linter" },
+      ],
+    }
+
+    const markdown = renderDocToMarkdown(parsed, "system_design")
+    expect(markdown).toContain("# Error Handling")
+    expect(markdown).toContain("**Kind**: system_design")
+    expect(markdown).toContain("## Scope")
+    expect(markdown).toContain("## Constraints")
+    expect(markdown).toContain("Must be Bash 3.2 compatible")
+    expect(markdown).toContain("## Design")
+    expect(markdown).toContain("## Applies To")
+    expect(markdown).toContain("## Invariants")
+    expect(markdown).toContain("INV-SD-001")
+    expect(markdown).toContain("## Decision Log")
+    expect(markdown).not.toContain("undefined")
+  })
 })

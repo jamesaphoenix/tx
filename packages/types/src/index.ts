@@ -313,6 +313,7 @@ export {
   TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES,
   INVARIANT_STATUSES,
+  INVARIANT_SOURCES,
   EARS_PATTERNS,
   DocKindSchema,
   DocStatusSchema,
@@ -326,12 +327,14 @@ export {
   CreateDocInputSchema,
   InvariantEnforcementSchema,
   InvariantStatusSchema,
+  InvariantSourceSchema,
   InvariantIdSchema,
   InvariantSchema,
   InvariantCheckSchema,
   UpsertInvariantInputSchema,
   RecordInvariantCheckInputSchema,
   EarsPatternSchema,
+  renderEarsRule,
   EarsPrioritySchema,
   EarsRequirementIdSchema,
   EarsRequirementSchema,
@@ -359,6 +362,7 @@ export {
   type CreateDocInput,
   type InvariantEnforcement,
   type InvariantStatus,
+  type InvariantSource,
   type InvariantId,
   type Invariant,
   type InvariantCheck,
@@ -417,6 +421,30 @@ export {
   type SpecTestRunRow,
   type SpecSignoffRow,
 } from "./spec-trace.js"
+
+// Decision types & schemas (spec-driven development triangle)
+export {
+  DECISION_STATUSES,
+  DECISION_SOURCES,
+  DecisionStatusSchema,
+  DecisionSourceSchema,
+  DecisionIdSchema,
+  DecisionSchema,
+  CreateDecisionInputSchema,
+  ReviewDecisionInputSchema,
+  DecisionSerializedSchema,
+  serializeDecision,
+  isValidDecisionStatus,
+  isValidDecisionSource,
+  type DecisionStatus,
+  type DecisionSource,
+  type DecisionId,
+  type Decision,
+  type CreateDecisionInput,
+  type ReviewDecisionInput,
+  type DecisionSerialized,
+  type DecisionRow,
+} from "./decision.js"
 
 // Memory types & schemas (filesystem-backed memory system)
 export {

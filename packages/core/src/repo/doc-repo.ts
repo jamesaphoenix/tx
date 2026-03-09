@@ -326,8 +326,8 @@ export const DocRepositoryLive = Layer.effect(
           try: () => {
             const now = new Date().toISOString()
             db.prepare(
-              `INSERT INTO invariants (id, rule, enforcement, doc_id, subsystem, test_ref, lint_rule, prompt_ref, status, created_at, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, '{}')
+              `INSERT INTO invariants (id, rule, enforcement, doc_id, subsystem, test_ref, lint_rule, prompt_ref, status, created_at, metadata, source, source_ref, pattern, trigger_text, state_text, condition_text, feature, system_name, response, rationale, test_hint)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET
                  rule = excluded.rule,
                  enforcement = excluded.enforcement,
@@ -336,7 +336,18 @@ export const DocRepositoryLive = Layer.effect(
                  test_ref = excluded.test_ref,
                  lint_rule = excluded.lint_rule,
                  prompt_ref = excluded.prompt_ref,
-                 status = 'active'`
+                 status = 'active',
+                 source = excluded.source,
+                 source_ref = excluded.source_ref,
+                 pattern = excluded.pattern,
+                 trigger_text = excluded.trigger_text,
+                 state_text = excluded.state_text,
+                 condition_text = excluded.condition_text,
+                 feature = excluded.feature,
+                 system_name = excluded.system_name,
+                 response = excluded.response,
+                 rationale = excluded.rationale,
+                 test_hint = excluded.test_hint`
             ).run(
               input.id,
               input.rule,
@@ -346,7 +357,18 @@ export const DocRepositoryLive = Layer.effect(
               input.testRef ?? null,
               input.lintRule ?? null,
               input.promptRef ?? null,
-              now
+              now,
+              input.source ?? "explicit",
+              input.sourceRef ?? null,
+              input.pattern ?? null,
+              input.triggerText ?? null,
+              input.stateText ?? null,
+              input.conditionText ?? null,
+              input.feature ?? null,
+              input.systemName ?? null,
+              input.response ?? null,
+              input.rationale ?? null,
+              input.testHint ?? null
             )
             const row = db
               .prepare<InvariantRow>("SELECT * FROM invariants WHERE id = ?")
@@ -362,7 +384,6 @@ export const DocRepositoryLive = Layer.effect(
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
-
       findInvariantById: (id: string) =>
         Effect.try({
           try: () => {
@@ -373,7 +394,6 @@ export const DocRepositoryLive = Layer.effect(
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
-
       findInvariants: (filter?: InvariantFilter) =>
         Effect.try({
           try: () => {
@@ -419,7 +439,6 @@ export const DocRepositoryLive = Layer.effect(
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
-
       insertInvariantCheck: (
         invariantId: string,
         passed: boolean,

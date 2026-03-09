@@ -8,12 +8,16 @@ import {
   TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES,
   INVARIANT_STATUSES,
+  INVARIANT_SOURCES,
+  EARS_PATTERNS,
   type DocKind,
   type DocStatus,
   type DocLinkType,
   type TaskDocLinkType,
   type InvariantEnforcement,
   type InvariantStatus,
+  type InvariantSource,
+  type EarsPattern,
   type Doc,
   type DocLink,
   type TaskDocLink,
@@ -38,6 +42,8 @@ export {
   TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES,
   INVARIANT_STATUSES,
+  INVARIANT_SOURCES,
+  EARS_PATTERNS,
 }
 
 // Local string arrays for .includes() (avoids 'as readonly string[]' casts)
@@ -47,6 +53,8 @@ const docLinkTypeStrings: readonly string[] = DOC_LINK_TYPES
 const taskDocLinkTypeStrings: readonly string[] = TASK_DOC_LINK_TYPES
 const invariantEnforcementStrings: readonly string[] = INVARIANT_ENFORCEMENT_TYPES
 const invariantStatusStrings: readonly string[] = INVARIANT_STATUSES
+const invariantSourceStrings: readonly string[] = INVARIANT_SOURCES
+const earsPatternStrings: readonly string[] = EARS_PATTERNS
 
 // =============================================================================
 // TYPE GUARDS
@@ -64,6 +72,10 @@ export const isValidInvariantEnforcement = (s: string): s is InvariantEnforcemen
   invariantEnforcementStrings.includes(s)
 export const isValidInvariantStatus = (s: string): s is InvariantStatus =>
   invariantStatusStrings.includes(s)
+export const isValidInvariantSource = (s: string): s is InvariantSource =>
+  invariantSourceStrings.includes(s)
+export const isValidEarsPattern = (s: string): s is EarsPattern =>
+  earsPatternStrings.includes(s)
 
 // =============================================================================
 // METADATA PARSING
@@ -190,6 +202,20 @@ export const rowToInvariant = (row: InvariantRow): Invariant => {
       rowId: row.id,
     })
   }
+  // Provenance: default to "explicit" if missing or invalid
+  const rawSource = row.source ?? null
+  const source: InvariantSource =
+    rawSource !== null && isValidInvariantSource(rawSource)
+      ? rawSource
+      : "explicit"
+
+  // EARS pattern: null if missing or invalid
+  const rawPattern = row.pattern ?? null
+  const pattern: EarsPattern | null =
+    rawPattern !== null && isValidEarsPattern(rawPattern)
+      ? rawPattern
+      : null
+
   return {
     id: coerceDbResult<InvariantId>(row.id),
     rule: row.rule,
@@ -202,6 +228,19 @@ export const rowToInvariant = (row: InvariantRow): Invariant => {
     status: row.status,
     createdAt: parseDate(row.created_at, "created_at", row.id),
     metadata: parseMetadata(row.metadata),
+    // Provenance fields
+    source,
+    sourceRef: row.source_ref ?? null,
+    // EARS fields
+    pattern,
+    triggerText: row.trigger_text ?? null,
+    stateText: row.state_text ?? null,
+    conditionText: row.condition_text ?? null,
+    feature: row.feature ?? null,
+    systemName: row.system_name ?? null,
+    response: row.response ?? null,
+    rationale: row.rationale ?? null,
+    testHint: row.test_hint ?? null,
   }
 }
 

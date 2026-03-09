@@ -18,7 +18,7 @@ import {
 
 const tempDirs: string[] = [];
 const DEFAULTS = {
-  docs: { path: ".tx/docs", requireEars: true },
+  docs: { path: ".tx/docs" },
   spec: {
     testPatterns: [
       "test/**/*.test.{ts,js,tsx,jsx}",
@@ -113,12 +113,11 @@ describe("toml-config", () => {
 
     const parsed = readTxConfig(cwd);
     expect(parsed.docs.path).toBe("custom/docs");
-    expect(parsed.docs.requireEars).toBe(true);
     expect(parsed.cycles.agents).toBe(7);
     expect(parsed.dashboard.defaultTaskAssigmentType).toBe("human");
   });
 
-  it("parses docs require_ears from config", () => {
+  it("ignores unknown keys in docs section gracefully", () => {
     const cwd = makeTempDir();
     writeConfig(
       cwd,
@@ -126,18 +125,8 @@ describe("toml-config", () => {
     );
 
     const parsed = readTxConfig(cwd);
-    expect(parsed.docs.requireEars).toBe(false);
-  });
-
-  it("falls back to true when docs require_ears is invalid", () => {
-    const cwd = makeTempDir();
-    writeConfig(
-      cwd,
-      ["[docs]", 'path = ".tx/docs"', 'require_ears = "maybe"'].join("\n"),
-    );
-
-    const parsed = readTxConfig(cwd);
-    expect(parsed.docs.requireEars).toBe(true);
+    // require_ears is no longer a config option (EARS is always mandatory)
+    expect(parsed.docs.path).toBe(".tx/docs");
   });
 
   it("writes dashboard default assignment type to config.toml", () => {
@@ -292,7 +281,7 @@ describe("scaffoldConfigToml", () => {
     // Check all sections exist with doc links
     expect(raw).toContain("[docs]");
     expect(raw).toContain("https://txdocs.dev/docs/primitives/docs");
-    expect(raw).toContain("require_ears = true");
+    expect(raw).toContain("EARS (Easy Approach to Requirements Syntax) is mandatory");
     expect(raw).toContain("[spec]");
     expect(raw).toContain("tx spec discover");
     expect(raw).toContain("[memory]");

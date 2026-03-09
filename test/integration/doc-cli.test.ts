@@ -505,6 +505,13 @@ describe("tx doc lifecycle coverage", () => {
         "requirements:",
         "  - Requirement to remove later",
         "",
+        "ears_requirements:",
+        "  - id: EARS-DEP-001",
+        "    pattern: ubiquitous",
+        "    system: the system",
+        "    response: handle deprecation",
+        "    priority: must",
+        "",
         "acceptance_criteria:",
         "  - Criterion 1",
         "",
@@ -523,7 +530,8 @@ describe("tx doc lifecycle coverage", () => {
     const firstSync = runTx(["invariant", "sync", "--doc", "deprecation-prd", "--json"], tmpProjectDir)
     expect(firstSync.status).toBe(0)
     const firstSyncJson = JSON.parse(firstSync.stdout) as { synced: number }
-    expect(firstSyncJson.synced).toBe(2)
+    // 1 explicit invariant + 1 legacy requirement invariant + 1 EARS invariant
+    expect(firstSyncJson.synced).toBe(3)
 
     writeFileSync(
       prdPath,
@@ -562,9 +570,10 @@ describe("tx doc lifecycle coverage", () => {
     const deprecationIds = new Set([
       "INV-DEPRECATION-EXPLICIT-001",
       "INV-PRD-DEPRECATION-PRD-REQ-001",
+      "INV-EARS-DEP-001",
     ])
     const rows = listed.filter((inv) => deprecationIds.has(inv.id))
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
     for (const row of rows) {
       expect(row.status).toBe("deprecated")
     }
@@ -686,6 +695,13 @@ describe("tx doc lifecycle coverage", () => {
         "  - Legacy requirement one",
         "  - Legacy requirement two",
         "",
+        "ears_requirements:",
+        "  - id: EARS-SCALAR-001",
+        "    pattern: ubiquitous",
+        "    system: the system",
+        "    response: handle scalar requirements",
+        "    priority: must",
+        "",
         "acceptance_criteria:",
         "  - Criterion 1",
         "",
@@ -732,10 +748,12 @@ describe("tx doc lifecycle coverage", () => {
       invariants: Array<{ id: string }>
     }
 
-    expect(syncJson.synced).toBe(4)
+    // 2 legacy reqs + 1 EARS + 2 design goals = 5
+    expect(syncJson.synced).toBe(5)
     const ids = new Set(syncJson.invariants.map((inv) => inv.id))
     expect(ids.has("INV-PRD-SCALAR-PRD-REQ-001")).toBe(true)
     expect(ids.has("INV-PRD-SCALAR-PRD-REQ-002")).toBe(true)
+    expect(ids.has("INV-EARS-SCALAR-001")).toBe(true)
     expect(ids.has("INV-DESIGN-SCALAR-DESIGN-GOAL-001")).toBe(true)
     expect(ids.has("INV-DESIGN-SCALAR-DESIGN-GOAL-002")).toBe(true)
   })
@@ -863,6 +881,13 @@ describe("tx doc lifecycle coverage", () => {
         "requirements:",
         "  - Good requirement",
         "",
+        "ears_requirements:",
+        "  - id: EARS-GOOD-001",
+        "    pattern: ubiquitous",
+        "    system: the system",
+        "    response: do something good",
+        "    priority: must",
+        "",
         "acceptance_criteria:",
         "  - Good criterion",
         "",
@@ -884,10 +909,12 @@ describe("tx doc lifecycle coverage", () => {
       synced: number
       invariants: Array<{ id: string }>
     }
-    expect(payload.synced).toBe(2)
+    // 1 explicit invariant + 1 legacy requirement + 1 EARS = 3
+    expect(payload.synced).toBe(3)
     const ids = new Set(payload.invariants.map((inv) => inv.id))
     expect(ids.has("INV-GOOD-001")).toBe(true)
     expect(ids.has("INV-PRD-GOOD-PRD-REQ-001")).toBe(true)
+    expect(ids.has("INV-EARS-GOOD-001")).toBe(true)
   })
 
   it("fails doc-scoped invariant sync when the target doc YAML is malformed", () => {

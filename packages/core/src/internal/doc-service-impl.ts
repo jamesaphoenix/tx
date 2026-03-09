@@ -39,6 +39,8 @@ import { resolvePathWithin } from "../utils/file-path.js"
 import {
   DOC_KINDS,
   INVARIANT_ENFORCEMENT_TYPES,
+  EARS_PATTERNS,
+  renderEarsRule,
 } from "@jamesaphoenix/tx-types"
 import type {
   Doc,
@@ -51,6 +53,7 @@ import type {
   DocGraph,
   DocGraphNode,
   DocGraphEdge,
+  EarsPattern,
 } from "@jamesaphoenix/tx-types"
 
 // Local string arrays for .includes() (avoids readonly cast)
@@ -66,12 +69,18 @@ const inferLinkType = (
   if (fromKind === "overview" && toKind === "design")
     return "overview_to_design"
   if (fromKind === "prd" && toKind === "design") return "prd_to_design"
+  if (fromKind === "requirement" && toKind === "prd") return "requirement_to_prd"
+  if (fromKind === "requirement" && toKind === "design") return "requirement_to_design"
+  if (fromKind === "system_design" && toKind === "design") return "system_design_to_design"
+  if (fromKind === "system_design" && toKind === "prd") return "system_design_to_prd"
   return null
 }
 
 /** Get the subdirectory for a doc kind. overview lives at root. */
 const kindSubdir = (kind: DocKind): string => {
   if (kind === "overview") return ""
+  if (kind === "requirement") return "requirement"
+  if (kind === "system_design") return "system_design"
   return kind
 }
 
@@ -147,8 +156,8 @@ const collectLegacyRequirements = (value: unknown): string[] => {
   return []
 }
 
-const isEarsRequiredForLegacyPrds = (): boolean =>
-  readTxConfig().docs.requireEars
+/** EARS is a hard requirement for PRDs — not configurable. */
+const isEarsRequiredForLegacyPrds = (): boolean => true
 
 /** Validate YAML content and return parsed object. */
 const validateYaml = (
@@ -206,8 +215,7 @@ const validateYaml = (
       name,
       reason:
         "EARS: PRDs with legacy 'requirements' must also define a non-empty " +
-        "'ears_requirements' array while [docs].require_ears = true. " +
-        "Set [docs].require_ears = false to opt out.",
+        "'ears_requirements' array. EARS-structured requirements are mandatory for all PRDs.",
     })
   }
 
@@ -236,7 +244,20 @@ type InvariantCandidate = {
   subsystem?: string | null
   testRef?: string | null
   lintRule?: string | null
-  promptRef?: string | null};
+  promptRef?: string | null
+  source?: string
+  sourceRef?: string | null
+  // EARS fields
+  pattern?: string | null
+  triggerText?: string | null
+  stateText?: string | null
+  conditionText?: string | null
+  feature?: string | null
+  systemName?: string | null
+  response?: string | null
+  rationale?: string | null
+  testHint?: string | null
+};
 
 const normalizeInvariantSegment = (value: string): string => {
   const normalized = value
@@ -287,6 +308,19 @@ const extractExplicitInvariants = (raw: unknown): InvariantCandidate[] => {
         typeof inv.lint_rule === "string" ? inv.lint_rule : undefined,
       promptRef:
         typeof inv.prompt_ref === "string" ? inv.prompt_ref : undefined,
+      // Provenance
+      source: typeof inv.source === "string" ? inv.source : undefined,
+      sourceRef: typeof inv.source_ref === "string" ? inv.source_ref : undefined,
+      // EARS fields (explicit invariants may include these)
+      pattern: typeof inv.pattern === "string" ? inv.pattern : undefined,
+      triggerText: typeof inv.trigger === "string" ? inv.trigger : undefined,
+      stateText: typeof inv.state === "string" ? inv.state : undefined,
+      conditionText: typeof inv.condition === "string" ? inv.condition : undefined,
+      feature: typeof inv.feature === "string" ? inv.feature : undefined,
+      systemName: typeof inv.system === "string" ? inv.system : undefined,
+      response: typeof inv.response === "string" ? inv.response : undefined,
+      rationale: typeof inv.rationale === "string" ? inv.rationale : undefined,
+      testHint: typeof inv.test_hint === "string" ? inv.test_hint : undefined,
     })
   }
 
@@ -297,7 +331,7 @@ const deriveEarsInvariants = (
   doc: Doc,
   parsed: Record<string, unknown>
 ): InvariantCandidate[] => {
-  if (doc.kind !== "prd") return []
+  if (doc.kind !== "prd" && doc.kind !== "requirement") return []
   const raw = parsed.ears_requirements
   if (!Array.isArray(raw)) return []
 
@@ -310,13 +344,47 @@ const deriveEarsInvariants = (
     const response = typeof req.response === "string" ? req.response.trim() : ""
     if (!earsId || !system || !response) continue
 
+    const pattern = typeof req.pattern === "string" ? req.pattern : "ubiquitous"
+    const trigger = typeof req.trigger === "string" ? req.trigger : undefined
+    const state = typeof req.state === "string" ? req.state : undefined
+    const condition = typeof req.condition === "string" ? req.condition : undefined
+    const feature = typeof req.feature === "string" ? req.feature : undefined
+    const rationale = typeof req.rationale === "string" ? req.rationale : undefined
+    const testHint = typeof req.test_hint === "string" ? req.test_hint : undefined
+
+    // Validate pattern against known EARS patterns
+    const earsPatternStrings: readonly string[] = EARS_PATTERNS
+    const validPattern: EarsPattern = earsPatternStrings.includes(pattern)
+      ? (pattern as EarsPattern)
+      : "ubiquitous"
+
+    const rule = renderEarsRule({
+      pattern: validPattern,
+      system,
+      response,
+      trigger,
+      state,
+      condition,
+      feature,
+    })
+
     candidates.push({
       id: `INV-${earsId}`,
-      rule: `${system} shall ${response}`,
+      rule,
       enforcement: "integration_test",
       subsystem: extractSubsystemFromEarsId(earsId),
-      testRef:
-        typeof req.test_hint === "string" ? req.test_hint : undefined,
+      testRef: testHint ?? null,
+      source: "explicit",
+      // EARS fields
+      pattern: validPattern,
+      triggerText: trigger ?? null,
+      stateText: state ?? null,
+      conditionText: condition ?? null,
+      feature: feature ?? null,
+      systemName: system,
+      response,
+      rationale: rationale ?? null,
+      testHint: testHint ?? null,
     })
   }
 
@@ -337,6 +405,7 @@ const derivePrdRequirementInvariants = (
     rule,
     enforcement: "integration_test",
     subsystem: "prd",
+    source: "explicit",
   }))
 }
 
@@ -354,6 +423,7 @@ const deriveDesignGoalInvariants = (
     rule,
     enforcement: "integration_test",
     subsystem: "design",
+    source: "goals",
   }))
 }
 
@@ -469,6 +539,10 @@ export const DocServiceLive = Layer.effect(
           .filter((d) => d.kind === "prd")
           .map((d) => ({ name: d.name, title: d.title, status: d.status }))
 
+        const requirementDocs = allDocs
+          .filter((d) => d.kind === "requirement")
+          .map((d) => ({ name: d.name, title: d.title, status: d.status }))
+
         const designDocs = allDocs
           .filter((d) => d.kind === "design")
           .map((d) => {
@@ -486,6 +560,10 @@ export const DocServiceLive = Layer.effect(
               implements: implDoc?.name,
             }
           })
+
+        const systemDesignDocs = allDocs
+          .filter((d) => d.kind === "system_design")
+          .map((d) => ({ name: d.name, title: d.title, status: d.status }))
 
         const links = allLinks.map((l) => {
           const from = allDocs.find((d) => d.id === l.fromDocId)
@@ -513,8 +591,10 @@ export const DocServiceLive = Layer.effect(
 
         const indexData = {
           overview: overviewDoc?.name,
+          requirements: requirementDocs,
           prds,
           design_docs: designDocs,
+          system_designs: systemDesignDocs,
           links,
           invariant_summary:
             activeInvariants.length > 0
@@ -534,6 +614,13 @@ export const DocServiceLive = Layer.effect(
         if (indexData.overview) {
           indexYamlObj.overview = indexData.overview
         }
+        if (requirementDocs.length > 0) {
+          indexYamlObj.requirements = requirementDocs.map((r) => ({
+            name: r.name,
+            title: r.title,
+            status: r.status,
+          }))
+        }
         if (prds.length > 0) {
           indexYamlObj.prds = prds.map((p) => ({
             name: p.name,
@@ -551,6 +638,13 @@ export const DocServiceLive = Layer.effect(
             if (dd.implements) entry.implements = dd.implements
             return entry
           })
+        }
+        if (systemDesignDocs.length > 0) {
+          indexYamlObj.system_designs = systemDesignDocs.map((sd) => ({
+            name: sd.name,
+            title: sd.title,
+            status: sd.status,
+          }))
         }
 
         const indexYamlPath = resolve(docsPath, "index.yml")
@@ -606,6 +700,18 @@ export const DocServiceLive = Layer.effect(
             testRef: candidate.testRef,
             lintRule: candidate.lintRule,
             promptRef: candidate.promptRef,
+            source: candidate.source,
+            sourceRef: candidate.sourceRef,
+            // EARS fields
+            pattern: candidate.pattern,
+            triggerText: candidate.triggerText,
+            stateText: candidate.stateText,
+            conditionText: candidate.conditionText,
+            feature: candidate.feature,
+            systemName: candidate.systemName,
+            response: candidate.response,
+            rationale: candidate.rationale,
+            testHint: candidate.testHint,
           }
           const result = yield* docRepo.upsertInvariant(input)
           synced.push(result)
@@ -651,8 +757,8 @@ export const DocServiceLive = Layer.effect(
           ensureDir(filePath)
           writeFileSync(filePath, yamlContent, "utf8")
 
-          const relPath =
-            kind === "overview" ? `${name}.yml` : join(kind, `${name}.yml`)
+          const sub = kindSubdir(kind)
+          const relPath = sub ? join(sub, `${name}.yml`) : `${name}.yml`
 
           const doc = yield* docRepo.insert({
             hash,
@@ -829,10 +935,8 @@ export const DocServiceLive = Layer.effect(
           const hash = computeDocHash(yamlContent)
           const newVersion = doc.version + 1
 
-          const relPath =
-            doc.kind === "overview"
-              ? `${name}.yml`
-              : join(doc.kind, `${name}.yml`)
+          const versionSub = kindSubdir(doc.kind)
+          const relPath = versionSub ? join(versionSub, `${name}.yml`) : `${name}.yml`
 
           const newDoc = yield* docRepo.insert({
             hash,

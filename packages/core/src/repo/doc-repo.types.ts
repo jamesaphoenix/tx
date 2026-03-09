@@ -52,6 +52,19 @@ export type InvariantUpsertInput = {
   testRef?: string | null
   lintRule?: string | null
   promptRef?: string | null
+  // Provenance
+  source?: string | null
+  sourceRef?: string | null
+  // EARS fields
+  pattern?: string | null
+  triggerText?: string | null
+  stateText?: string | null
+  conditionText?: string | null
+  feature?: string | null
+  systemName?: string | null
+  response?: string | null
+  rationale?: string | null
+  testHint?: string | null
 }
 
 export type DocRepositoryService = {

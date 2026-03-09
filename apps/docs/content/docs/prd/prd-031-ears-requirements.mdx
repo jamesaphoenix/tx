@@ -1,10 +1,10 @@
 ---
 title: "PRD-031: EARS Structured Requirements"
-description: "Optional EARS-based structured requirements for PRDs with linting and traceability support"
+description: "Mandatory EARS-based structured requirements for PRDs with linting and traceability support"
 ---
 
-**Status**: Draft  
-**Priority**: P1 (Should Have)  
+**Status**: Active
+**Priority**: P0 (Must Have)  
 **Owner**: TBD  
 **Last Updated**: 2026-02-22
 
@@ -24,7 +24,7 @@ We needed a structured format that keeps docs human-readable while making requir
 
 ## Solution
 
-Add optional **EARS** (**Easy Approach to Requirements Syntax**) support to PRD YAML via `ears_requirements`, while preserving backwards compatibility with existing `requirements`.
+Add **EARS** (**Easy Approach to Requirements Syntax**) as a **mandatory** requirement format for PRD YAML via `ears_requirements`. PRDs with legacy `requirements` must also define `ears_requirements`. Backwards compatibility with existing `requirements` is preserved, but EARS is required.
 
 The system now supports:
 
@@ -49,12 +49,12 @@ The system now supports:
 
 | ID | Pattern | Requirement |
 |----|---------|-------------|
-| EARS-PRD-001 | ubiquitous | Renderer supports optional `ears_requirements` section in PRD YAML |
+| EARS-PRD-001 | ubiquitous | Renderer supports mandatory `ears_requirements` section in PRD YAML |
 | EARS-PRD-002 | event_driven | Invalid EARS entries are rejected with typed validation errors |
 | EARS-PRD-003 | state_driven | Structured EARS entries render deterministically in markdown |
 | EARS-PRD-004 | optional | Legacy `requirements` continue to render unchanged |
 | EARS-PRD-005 | event_driven | `tx doc lint-ears` returns non-zero on invalid EARS input |
-| EARS-PRD-006 | ubiquitous | PRDs without `ears_requirements` remain fully supported |
+| EARS-PRD-006 | ubiquitous | PRDs with no legacy `requirements` section are accepted (EARS enforcement triggers only when legacy requirements are present) |
 
 ---
 

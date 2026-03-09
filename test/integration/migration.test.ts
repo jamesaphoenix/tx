@@ -265,6 +265,10 @@ describe("Migration system", () => {
         "sync_events", "sync_streams", "sync_watermark",
         // Migration 034 — spec traceability
         "spec_tests", "spec_test_runs", "spec_signoffs",
+        // Migration 035 — process registry
+        "process_registry",
+        // Migration 037 — decisions
+        "decisions",
       ]
 
       for (const table of expectedTables) {

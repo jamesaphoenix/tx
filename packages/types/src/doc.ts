@@ -14,13 +14,17 @@ import { Schema } from "effect"
 // CONSTANTS
 // =============================================================================
 
-export const DOC_KINDS = ["overview", "prd", "design"] as const
+export const DOC_KINDS = ["overview", "prd", "design", "requirement", "system_design"] as const
 export const DOC_STATUSES = ["changing", "locked"] as const
 export const DOC_LINK_TYPES = [
   "overview_to_prd",
   "overview_to_design",
   "prd_to_design",
   "design_patch",
+  "requirement_to_prd",
+  "requirement_to_design",
+  "system_design_to_design",
+  "system_design_to_prd",
 ] as const
 export const TASK_DOC_LINK_TYPES = ["implements", "references"] as const
 export const INVARIANT_ENFORCEMENT_TYPES = [
@@ -29,12 +33,13 @@ export const INVARIANT_ENFORCEMENT_TYPES = [
   "llm_as_judge",
 ] as const
 export const INVARIANT_STATUSES = ["active", "deprecated"] as const
+export const INVARIANT_SOURCES = ["explicit", "goals", "decision", "constraint"] as const
 
 // =============================================================================
 // SCHEMAS & TYPES — Docs
 // =============================================================================
 
-/** Doc kind — overview (one per project), prd, or design. */
+/** Doc kind — overview, requirement, prd, design, or system_design. */
 export const DocKindSchema = Schema.Literal(...DOC_KINDS)
 export type DocKind = typeof DocKindSchema.Type
 
@@ -129,79 +134,6 @@ export const CreateDocInputSchema = Schema.Struct({
 export type CreateDocInput = typeof CreateDocInputSchema.Type
 
 // =============================================================================
-// SCHEMAS & TYPES — Invariants
-// =============================================================================
-
-/** Invariant enforcement type — how the invariant is verified. */
-export const InvariantEnforcementSchema = Schema.Literal(
-  ...INVARIANT_ENFORCEMENT_TYPES
-)
-export type InvariantEnforcement = typeof InvariantEnforcementSchema.Type
-
-/** Invariant status. */
-export const InvariantStatusSchema = Schema.Literal(...INVARIANT_STATUSES)
-export type InvariantStatus = typeof InvariantStatusSchema.Type
-
-/** Invariant ID — branded string matching INV-[A-Z0-9-]+. */
-export const InvariantIdSchema = Schema.String.pipe(
-  Schema.pattern(/^INV-[A-Z0-9-]+$/),
-  Schema.brand("InvariantId")
-)
-export type InvariantId = typeof InvariantIdSchema.Type
-
-/** Invariant entity — a machine-checkable system rule. */
-export const InvariantSchema = Schema.Struct({
-  id: InvariantIdSchema,
-  rule: Schema.String,
-  enforcement: InvariantEnforcementSchema,
-  docId: DocIdSchema,
-  subsystem: Schema.NullOr(Schema.String),
-  testRef: Schema.NullOr(Schema.String),
-  lintRule: Schema.NullOr(Schema.String),
-  promptRef: Schema.NullOr(Schema.String),
-  status: InvariantStatusSchema,
-  createdAt: Schema.DateFromSelf,
-  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-})
-export type Invariant = typeof InvariantSchema.Type
-
-/** Invariant check result — audit trail entry. */
-export const InvariantCheckSchema = Schema.Struct({
-  id: Schema.Number.pipe(Schema.int()),
-  invariantId: InvariantIdSchema,
-  passed: Schema.Boolean,
-  details: Schema.NullOr(Schema.String),
-  checkedAt: Schema.DateFromSelf,
-  durationMs: Schema.NullOr(Schema.Number.pipe(Schema.int())),
-})
-export type InvariantCheck = typeof InvariantCheckSchema.Type
-
-/** Input for upserting an invariant (from YAML sync). */
-export const UpsertInvariantInputSchema = Schema.Struct({
-  id: Schema.String,
-  rule: Schema.String,
-  enforcement: InvariantEnforcementSchema,
-  docId: DocIdSchema,
-  subsystem: Schema.optional(Schema.NullOr(Schema.String)),
-  testRef: Schema.optional(Schema.NullOr(Schema.String)),
-  lintRule: Schema.optional(Schema.NullOr(Schema.String)),
-  promptRef: Schema.optional(Schema.NullOr(Schema.String)),
-})
-export type UpsertInvariantInput = typeof UpsertInvariantInputSchema.Type
-
-/** Input for recording an invariant check. */
-export const RecordInvariantCheckInputSchema = Schema.Struct({
-  invariantId: Schema.String,
-  passed: Schema.Boolean,
-  details: Schema.optional(Schema.NullOr(Schema.String)),
-  durationMs: Schema.optional(
-    Schema.NullOr(Schema.Number.pipe(Schema.int()))
-  ),
-})
-export type RecordInvariantCheckInput =
-  typeof RecordInvariantCheckInputSchema.Type
-
-// =============================================================================
 // SCHEMAS & TYPES — EARS Requirements (PRD layer)
 // =============================================================================
 
@@ -242,6 +174,139 @@ export const EarsRequirementSchema = Schema.Struct({
   priority: Schema.optional(EarsPrioritySchema),
 })
 export type EarsRequirement = typeof EarsRequirementSchema.Type
+
+/** Render an EARS-structured invariant into a natural language rule. */
+export const renderEarsRule = (opts: {
+  pattern: EarsPattern
+  system: string
+  response: string
+  trigger?: string
+  state?: string
+  condition?: string
+  feature?: string
+}): string => {
+  switch (opts.pattern) {
+    case "ubiquitous":
+      return `The ${opts.system} SHALL ${opts.response}`
+    case "event_driven":
+      return `When ${opts.trigger ?? "EVENT"}, the ${opts.system} SHALL ${opts.response}`
+    case "state_driven":
+      return `While ${opts.state ?? "STATE"}, the ${opts.system} SHALL ${opts.response}`
+    case "unwanted":
+      return `If ${opts.condition ?? "CONDITION"}, the ${opts.system} SHALL NOT ${opts.response}`
+    case "optional":
+      return `Where ${opts.feature ?? "FEATURE"} is supported, the ${opts.system} SHALL ${opts.response}`
+    case "complex": {
+      const prefix = opts.condition ?? opts.state ?? opts.trigger ?? ""
+      return prefix
+        ? `${prefix} the ${opts.system} SHALL ${opts.response}`
+        : `The ${opts.system} SHALL ${opts.response}`
+    }
+  }
+}
+
+// =============================================================================
+// SCHEMAS & TYPES — Invariants
+// =============================================================================
+
+/** Invariant enforcement type — how the invariant is verified. */
+export const InvariantEnforcementSchema = Schema.Literal(
+  ...INVARIANT_ENFORCEMENT_TYPES
+)
+export type InvariantEnforcement = typeof InvariantEnforcementSchema.Type
+
+/** Invariant status. */
+export const InvariantStatusSchema = Schema.Literal(...INVARIANT_STATUSES)
+export type InvariantStatus = typeof InvariantStatusSchema.Type
+
+/** Invariant source — how the invariant was created. */
+export const InvariantSourceSchema = Schema.Literal(...INVARIANT_SOURCES)
+export type InvariantSource = typeof InvariantSourceSchema.Type
+
+/** Invariant ID — branded string matching INV-[A-Z0-9-]+. */
+export const InvariantIdSchema = Schema.String.pipe(
+  Schema.pattern(/^INV-[A-Z0-9-]+$/),
+  Schema.brand("InvariantId")
+)
+export type InvariantId = typeof InvariantIdSchema.Type
+
+/** Invariant entity — a machine-checkable system rule. */
+export const InvariantSchema = Schema.Struct({
+  id: InvariantIdSchema,
+  rule: Schema.String,
+  enforcement: InvariantEnforcementSchema,
+  docId: DocIdSchema,
+  subsystem: Schema.NullOr(Schema.String),
+  testRef: Schema.NullOr(Schema.String),
+  lintRule: Schema.NullOr(Schema.String),
+  promptRef: Schema.NullOr(Schema.String),
+  status: InvariantStatusSchema,
+  createdAt: Schema.DateFromSelf,
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  // Provenance fields
+  source: InvariantSourceSchema,
+  sourceRef: Schema.NullOr(Schema.String),
+  // EARS-derived provenance fields (nullable for invariants from non-EARS sources)
+  pattern: Schema.NullOr(EarsPatternSchema),
+  triggerText: Schema.NullOr(Schema.String),
+  stateText: Schema.NullOr(Schema.String),
+  conditionText: Schema.NullOr(Schema.String),
+  feature: Schema.NullOr(Schema.String),
+  systemName: Schema.NullOr(Schema.String),
+  response: Schema.NullOr(Schema.String),
+  rationale: Schema.NullOr(Schema.String),
+  testHint: Schema.NullOr(Schema.String),
+})
+export type Invariant = typeof InvariantSchema.Type
+
+/** Invariant check result — audit trail entry. */
+export const InvariantCheckSchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  invariantId: InvariantIdSchema,
+  passed: Schema.Boolean,
+  details: Schema.NullOr(Schema.String),
+  checkedAt: Schema.DateFromSelf,
+  durationMs: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+})
+export type InvariantCheck = typeof InvariantCheckSchema.Type
+
+/** Input for upserting an invariant (from YAML sync). */
+export const UpsertInvariantInputSchema = Schema.Struct({
+  id: Schema.String,
+  rule: Schema.String,
+  enforcement: InvariantEnforcementSchema,
+  docId: DocIdSchema,
+  subsystem: Schema.optional(Schema.NullOr(Schema.String)),
+  testRef: Schema.optional(Schema.NullOr(Schema.String)),
+  lintRule: Schema.optional(Schema.NullOr(Schema.String)),
+  promptRef: Schema.optional(Schema.NullOr(Schema.String)),
+  // Provenance
+  source: Schema.optional(InvariantSourceSchema),
+  sourceRef: Schema.optional(Schema.NullOr(Schema.String)),
+  // EARS fields
+  pattern: Schema.optional(Schema.NullOr(EarsPatternSchema)),
+  triggerText: Schema.optional(Schema.NullOr(Schema.String)),
+  stateText: Schema.optional(Schema.NullOr(Schema.String)),
+  conditionText: Schema.optional(Schema.NullOr(Schema.String)),
+  feature: Schema.optional(Schema.NullOr(Schema.String)),
+  systemName: Schema.optional(Schema.NullOr(Schema.String)),
+  response: Schema.optional(Schema.NullOr(Schema.String)),
+  rationale: Schema.optional(Schema.NullOr(Schema.String)),
+  testHint: Schema.optional(Schema.NullOr(Schema.String)),
+})
+export type UpsertInvariantInput = typeof UpsertInvariantInputSchema.Type
+
+/** Input for recording an invariant check. */
+export const RecordInvariantCheckInputSchema = Schema.Struct({
+  invariantId: Schema.String,
+  passed: Schema.Boolean,
+  details: Schema.optional(Schema.NullOr(Schema.String)),
+  durationMs: Schema.optional(
+    Schema.NullOr(Schema.Number.pipe(Schema.int()))
+  ),
+})
+export type RecordInvariantCheckInput =
+  typeof RecordInvariantCheckInputSchema.Type
 
 // =============================================================================
 // RUNTIME VALIDATORS
@@ -328,7 +393,7 @@ export const assertDocLinkType = (linkType: string): DocLinkType => {
 export const DocGraphNodeSchema = Schema.Struct({
   id: Schema.String,
   label: Schema.String,
-  kind: Schema.Literal("overview", "prd", "design", "task"),
+  kind: Schema.Literal("overview", "prd", "design", "requirement", "system_design", "task"),
   status: Schema.optional(Schema.String),
 })
 export type DocGraphNode = typeof DocGraphNodeSchema.Type
@@ -399,6 +464,19 @@ export interface InvariantRow {
   status: string
   created_at: string
   metadata: string | null
+  // Provenance
+  source: string | null
+  source_ref: string | null
+  // EARS fields
+  pattern: string | null
+  trigger_text: string | null
+  state_text: string | null
+  condition_text: string | null
+  feature: string | null
+  system_name: string | null
+  response: string | null
+  rationale: string | null
+  test_hint: string | null
 }
 
 /** Database row type for invariant checks. */

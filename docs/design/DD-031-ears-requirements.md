@@ -1,7 +1,7 @@
 # DD-031: EARS Requirements Integration
 
 ## Overview
-This design adds optional EARS requirements support to PRD docs without breaking existing YAML shape.
+This design enforces EARS requirements as mandatory for all PRD docs. Legacy `requirements` are still rendered for backward compatibility, but PRDs with legacy requirements must also include `ears_requirements`.
 
 The implementation introduces:
 - Effect Schema types for EARS entries (`packages/types/src/doc.ts`)

@@ -9,7 +9,7 @@ description: "Design for validating and rendering structured EARS requirements i
 
 ## Overview
 
-DD-031 adds optional EARS support to tx PRD docs without breaking existing YAML flows.
+DD-031 enforces EARS as mandatory for all tx PRD docs while preserving backward compatibility for legacy YAML flows.
 
 Main integration points:
 
@@ -23,13 +23,13 @@ Main integration points:
 
 ## Why This Design
 
-The design keeps adoption low-risk:
+The design enforces EARS while preserving backward compatibility:
 
-- `ears_requirements` is optional.
+- `ears_requirements` is mandatory for PRDs with legacy `requirements`.
 - legacy `requirements` still render and validate.
 - structured entries are lintable and test-traceable.
 
-This enables teams to transition incrementally while improving requirement quality.
+This improves requirement quality with a hard enforcement boundary.
 
 ---
 

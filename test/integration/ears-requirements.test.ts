@@ -252,7 +252,8 @@ describe("EARS requirements integration", () => {
     ).rejects.toThrow("must also define a non-empty 'ears_requirements' array")
   })
 
-  it("keeps backward compatibility for PRDs without ears_requirements when config disables it", async () => {
+  it("rejects PRDs with legacy requirements but no ears_requirements regardless of config", async () => {
+    // EARS is now a hard requirement — config.require_ears has no effect
     writeDocsConfig(tempDir, false)
 
     const name = `prd-${fixtureId("ears-backward-compatible").slice(3, 10)}`
@@ -269,23 +270,19 @@ describe("EARS requirements integration", () => {
       "  - legacy criterion",
     ].join("\n")
 
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* DocService
-        yield* svc.create({
-          kind: "prd",
-          name,
-          title: "Legacy PRD",
-          yamlContent,
-        })
-        yield* svc.render(name)
-      }).pipe(Effect.provide(shared.layer))
-    )
-
-    const markdown = readFileSync(join(tempDir, ".tx", "docs", "prd", `${name}.md`), "utf8")
-    expect(markdown).toContain("## Requirements")
-    expect(markdown).toContain("- legacy requirement")
-    expect(markdown).not.toContain("Structured Requirements (EARS)")
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* DocService
+          yield* svc.create({
+            kind: "prd",
+            name,
+            title: "Legacy PRD",
+            yamlContent,
+          })
+        }).pipe(Effect.provide(shared.layer))
+      )
+    ).rejects.toThrow("must also define a non-empty 'ears_requirements' array")
   })
 
   it("supports mixed requirements and ears_requirements in the same PRD", async () => {
@@ -707,7 +704,8 @@ describe("CLI doc lint-ears", () => {
     expect(lint.stderr).toContain("must also define a non-empty 'ears_requirements' array")
   })
 
-  it("allows legacy requirements when config disables required EARS", () => {
+  it("rejects legacy requirements without EARS regardless of config", () => {
+    // EARS is now a hard requirement — config toggle has no effect
     writeDocsConfig(tempProjectDir, false)
 
     const name = `prd-${fixtureId("cli-ears-optional").slice(3, 10)}`
@@ -737,8 +735,8 @@ describe("CLI doc lint-ears", () => {
     )
 
     const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
-    expect(lint.status).toBe(0)
-    expect(lint.stdout).toContain("No ears_requirements section found")
+    expect(lint.status).not.toBe(0)
+    expect(lint.stderr).toContain("must also define a non-empty 'ears_requirements' array")
   })
 
   it("shows lint-ears in doc help output", () => {
