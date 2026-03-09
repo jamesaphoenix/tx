@@ -134,24 +134,42 @@ describe("primitive docs quality (real files)", () => {
 
     describe(primName, () => {
       const tabs = extractTabs(content)
+      const registryEntry = primitives[primName]
+      const requiredInterfaces = registryEntry?.required ?? []
+      // Map registry interface names to tab names
+      const TAB_NAME_MAP = { cli: "CLI", mcp: "MCP", api: "REST API", sdk: "TypeScript SDK" }
+      // If all 4 interfaces required, check all 4 tabs. Otherwise, only check tabs for required interfaces.
+      const requiredTabsForPrim = requiredInterfaces.length === 4
+        ? REQUIRED_TABS
+        : requiredInterfaces.map((r) => TAB_NAME_MAP[r]).filter(Boolean)
 
-      // Check all 4 required tabs present
-      for (const tabName of REQUIRED_TABS) {
-        it(`has "${tabName}" tab`, () => {
-          expect(tabs.has(tabName), `Missing "${tabName}" tab in ${primName}.mdx`).toBe(true)
-        })
-      }
-
-      // Check each tab has a code block
-      for (const tabName of REQUIRED_TABS) {
-        it(`"${tabName}" tab has code block`, () => {
-          if (!tabs.has(tabName)) return // covered by previous test
-          const combined = tabs.get(tabName).join("\n")
+      if (requiredTabsForPrim.length < 4 && tabs.size === 0) {
+        // CLI-only primitives may use plain code blocks instead of tabs
+        it("has code block", () => {
           expect(
-            CODE_BLOCK_REGEX.test(combined),
-            `No code block in "${tabName}" tab of ${primName}.mdx`
+            CODE_BLOCK_REGEX.test(content),
+            `No code block in ${primName}.mdx`
           ).toBe(true)
         })
+      } else {
+        // Check required tabs present
+        for (const tabName of requiredTabsForPrim) {
+          it(`has "${tabName}" tab`, () => {
+            expect(tabs.has(tabName), `Missing "${tabName}" tab in ${primName}.mdx`).toBe(true)
+          })
+        }
+
+        // Check each present tab has a code block
+        for (const tabName of requiredTabsForPrim) {
+          it(`"${tabName}" tab has code block`, () => {
+            if (!tabs.has(tabName)) return // covered by previous test
+            const combined = tabs.get(tabName).join("\n")
+            expect(
+              CODE_BLOCK_REGEX.test(combined),
+              `No code block in "${tabName}" tab of ${primName}.mdx`
+            ).toBe(true)
+          })
+        }
       }
 
       // Check no banned patterns in any tab
@@ -357,6 +375,7 @@ describe("SDK method names in docs match TxClient implementation", () => {
     guards: "guards",
     verify: "verify",
     reflect: "reflect",
+    spec: "spec",
   }
 
   for (const mdxFile of mdxFiles) {

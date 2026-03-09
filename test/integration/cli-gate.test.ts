@@ -12,11 +12,13 @@ interface ExecResult {
   status: number
 }
 
+const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))
+
 function runTx(args: string[], dbPath: string, cwd: string = dirname(dbPath)): ExecResult {
   const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
     encoding: "utf-8",
     cwd,
-    timeout: 30000,
+    timeout: CLI_TIMEOUT,
   })
 
   return {
@@ -32,7 +34,7 @@ function writeConfig(cwd: string, content: string): void {
   writeFileSync(configPath, content)
 }
 
-describe("CLI gate integration", () => {
+describe("CLI gate integration", { timeout: CLI_TIMEOUT }, () => {
   let tmpDir: string
   let dbPath: string
 

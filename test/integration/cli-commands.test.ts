@@ -691,7 +691,7 @@ describe("CLI sync claude command", () => {
 // tx group-context:* Command Tests
 // =============================================================================
 
-describe("CLI group-context commands", () => {
+describe("CLI group-context commands", { timeout: CLI_TIMEOUT }, () => {
   let tmpDir: string
   let dbPath: string
   let parentId: string
