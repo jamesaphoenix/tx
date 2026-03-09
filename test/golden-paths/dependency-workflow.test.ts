@@ -243,6 +243,31 @@ describe("Golden Path: Dependency Chain", () => {
       }).pipe(Effect.provide(layer))
     )
   })
+
+  it("reconciles persisted status when a blocker is completed and reopened", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskSvc = yield* TaskService
+        const depSvc = yield* DependencyService
+
+        const blocker = yield* taskSvc.create({ title: "Blocker", score: 700 })
+        const blocked = yield* taskSvc.create({ title: "Blocked", score: 600 })
+
+        yield* depSvc.addBlocker(blocked.id, blocker.id)
+        expect((yield* taskSvc.getWithDeps(blocked.id)).status).toBe("blocked")
+
+        yield* taskSvc.update(blocker.id, { status: "done" })
+        const afterDone = yield* taskSvc.getWithDeps(blocked.id)
+        expect(afterDone.isReady).toBe(true)
+        expect(afterDone.status).toBe("ready")
+
+        yield* taskSvc.forceStatus(blocker.id, "ready")
+        const afterReopen = yield* taskSvc.getWithDeps(blocked.id)
+        expect(afterReopen.isReady).toBe(false)
+        expect(afterReopen.status).toBe("blocked")
+      }).pipe(Effect.provide(layer))
+    )
+  })
 })
 
 // =============================================================================
