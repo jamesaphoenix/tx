@@ -56,7 +56,10 @@ async function makeTestLayer() {
     HierarchyServiceLive,
     AutoSyncServiceNoop,
     GuardRepositoryLive,
-  PinRepositoryLive
+    PinRepositoryLive,
+    ClaimRepositoryLive,
+    ClaimServiceLive,
+    OrchestratorStateRepositoryLive
   } = await import("@jamesaphoenix/tx-core")
 
   const infra = SqliteClientLive(":memory:")
@@ -64,18 +67,22 @@ async function makeTestLayer() {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
+    PinRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
-    AttemptRepositoryLive
+    AttemptRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(Layer.provide(infra))
+
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
-  ).pipe(Layer.provide(Layer.merge(repos, AutoSyncServiceNoop)))
+  ).pipe(Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService)))
 
   return Layer.mergeAll(services, repos)
 }

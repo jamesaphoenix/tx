@@ -89,13 +89,13 @@ Structured insights that attach to tasks and file paths.
 
 ```bash
 # Store knowledge
-tx learning:add "Use bcrypt for passwords, not SHA256"
+tx learning add "Use bcrypt for passwords, not SHA256"
 
 # Attach learnings to file paths
 tx learn "src/auth/*.ts" "Services must use Effect-TS patterns"
 
 # Retrieve via search or task context
-tx learning:search "authentication"
+tx learning search "authentication"
 tx context tx-abc123  # Get relevant learnings for a task
 tx recall "src/auth/hash.ts"  # Recall learnings for a file
 ```
@@ -126,8 +126,8 @@ Lease-based claims prevent parallel agents from colliding.
 ```bash
 tx claim tx-abc123 worker-1          # Claim with 30-min lease
 tx claim tx-abc123 worker-1 --lease 60  # Custom lease duration
-tx claim:renew tx-abc123 worker-1    # Extend lease
-tx claim:release tx-abc123 worker-1  # Release early
+tx claim renew tx-abc123 worker-1    # Extend lease
+tx claim release tx-abc123 worker-1  # Release early
 ```
 
 ### Attempts
@@ -324,19 +324,19 @@ tx memory list              # List documents (--source, --tags)
 tx memory link <src> <tgt>  # Create explicit edge
 
 # Context & Learnings
-tx learning:add <content>   # Store knowledge
-tx learning:search <query>  # Search learnings
-tx learning:recent          # Recent learnings
-tx learning:helpful         # Mark as helpful
-tx learning:embed           # Generate embeddings
+tx learning add <content>   # Store knowledge
+tx learning search <query>  # Search learnings
+tx learning recent          # Recent learnings
+tx learning helpful         # Mark as helpful
+tx learning embed           # Generate embeddings
 tx context <task-id>        # Contextual retrieval
 tx learn <path> <note>      # Attach to file
 tx recall [path]            # Query by file
 
 # Coordination
 tx claim <id> <worker>      # Lease-based claim
-tx claim:renew <id> <worker>  # Extend lease
-tx claim:release <id> <worker>  # Release early
+tx claim renew <id> <worker>  # Extend lease
+tx claim release <id> <worker>  # Release early
 tx try <id> <approach>      # Record attempt
 tx attempts <id>            # List attempts
 

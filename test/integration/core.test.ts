@@ -24,6 +24,9 @@ import {
   AutoSyncServiceNoop,
   GuardRepositoryLive,
   PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive,
   StaleDataError,
   HasChildrenError
 } from "@jamesaphoenix/tx-core"
@@ -32,12 +35,14 @@ import type { Database } from "bun:sqlite"
 
 function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive, PinRepositoryLive).pipe(
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive, PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
     Layer.provide(infra)
   )
-  // Base services that only depend on repos and AutoSyncService
+  // ClaimService needed by ReadyServiceLive for readyAndClaim
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
+  // Base services that only depend on repos, AutoSyncService, and ClaimService
   const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
   // ScoreService depends on HierarchyService, so it needs baseServices
   const scoreService = ScoreServiceLive.pipe(

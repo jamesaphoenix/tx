@@ -69,9 +69,9 @@ Migration: `migrations/021_agent_outbox.sql`
 | `tx send <channel> <content>` | Send a message |
 | `tx inbox <channel>` | Read pending messages |
 | `tx ack <id>` | Acknowledge a message |
-| `tx ack:all <channel>` | Ack all pending on channel |
-| `tx outbox:pending <channel>` | Count pending messages |
-| `tx outbox:gc` | Garbage collect old messages |
+| `tx ack all <channel>` | Ack all pending on channel |
+| `tx outbox pending <channel>` | Count pending messages |
+| `tx outbox gc` | Garbage collect old messages |
 
 ### MCP Tools
 

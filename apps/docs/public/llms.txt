@@ -39,6 +39,7 @@ tx provides composable primitives for agent infrastructure — task management, 
 - [tx trace](https://tx-docs.vercel.app/docs/primitives/traces): Inspect execution traces for agent runs
 - [tx doc](https://tx-docs.vercel.app/docs/primitives/docs): Docs-as-primitives with YAML structured documentation
 - [tx invariant](https://tx-docs.vercel.app/docs/primitives/invariants): Machine-checkable system rules with enforcement tracking
+- [tx decision](https://tx-docs.vercel.app/docs/primitives/decision): Decisions as first-class artifacts with review lifecycle
 - [tx spec](https://tx-docs.vercel.app/docs/primitives/spec-trace): Spec-to-test traceability and FCI phase scoring
 
 ## Interfaces

@@ -60,7 +60,7 @@ worker() {
             sleep 0.3
 
             # Release and complete
-            bun run ../apps/cli/src/cli.ts claim:release "$TASK" "$WORKER_ID" --db "$TX_DB" 2>/dev/null || true
+            bun run ../apps/cli/src/cli.ts claim release "$TASK" "$WORKER_ID" --db "$TX_DB" 2>/dev/null || true
             bun run ../apps/cli/src/cli.ts done "$TASK" --db "$TX_DB" > /dev/null
             echo "[$WORKER_ID] Completed $TASK" >> "$LOG_FILE"
         fi

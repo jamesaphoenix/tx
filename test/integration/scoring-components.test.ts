@@ -33,7 +33,10 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive,
   GuardRepositoryLive,
-  PinRepositoryLive
+  PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: TestDatabase) {
@@ -42,11 +45,15 @@ function makeTestLayer(db: TestDatabase) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
-    LearningRepositoryLive
+    PinRepositoryLive,
+    LearningRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
   const retrieverLayer = RetrieverServiceLive.pipe(
@@ -60,7 +67,7 @@ function makeTestLayer(db: TestDatabase) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop, retrieverLayer))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop, retrieverLayer, claimService))
   )
   return services
 }
@@ -606,11 +613,15 @@ describe("Weight Sensitivity", () => {
       TaskRepositoryLive,
       DependencyRepositoryLive,
       GuardRepositoryLive,
-  PinRepositoryLive,
-      LearningRepositoryLive
+      PinRepositoryLive,
+      LearningRepositoryLive,
+      ClaimRepositoryLive,
+      OrchestratorStateRepositoryLive
     ).pipe(
       Layer.provide(infra)
     )
+
+    const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
     // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
     const retrieverLayer = RetrieverServiceLive.pipe(
@@ -624,7 +635,7 @@ describe("Weight Sensitivity", () => {
       HierarchyServiceLive,
       LearningServiceLive
     ).pipe(
-      Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop, retrieverLayer))
+      Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop, retrieverLayer, claimService))
     )
     return services
   }

@@ -497,11 +497,11 @@ As you work, capture knowledge that should persist:
 
 ```bash
 # Store a learning
-tx learning:add "Use bcrypt for password hashing, not SHA256"
-tx learning:add "The auth service requires Redis for session storage"
+tx learning add "Use bcrypt for password hashing, not SHA256"
+tx learning add "The auth service requires Redis for session storage"
 
 # Search learnings
-tx learning:search "authentication"
+tx learning search "authentication"
 
 # Get context for a specific task (relevant learnings auto-selected)
 tx context tx-abc123
@@ -621,15 +621,15 @@ tx block <id> <blocker>     # Add dependency
 tx tree <id>                # Show hierarchy
 tx show <id>                # View task details
 tx md-export               # Export tasks to markdown file
-tx group-context:set <id> <context>   # Attach shared task-group context
-tx group-context:clear <id>           # Clear shared task-group context
+tx group-context set <id> <context>   # Attach shared task-group context
+tx group-context clear <id>           # Clear shared task-group context
 
 # Memory
 tx memory source add <dir>  # Register markdown directory
 tx memory index             # Index all sources
 tx memory search <query>    # Search documents
-tx learning:add <content>   # Store task learning
-tx learning:search <query>  # Find learnings
+tx learning add <content>   # Store task learning
+tx learning search <query>  # Find learnings
 tx context <task-id>        # Get relevant context
 
 # Bounded Autonomy

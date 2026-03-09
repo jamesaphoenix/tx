@@ -44,7 +44,10 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive,
   GuardRepositoryLive,
-  PinRepositoryLive
+  PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 import { serializeTask } from "@jamesaphoenix/tx-types"
@@ -232,12 +235,16 @@ function createMcpRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpSe
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
+    PinRepositoryLive,
     LearningRepositoryLive,
-    FileLearningRepositoryLive
+    FileLearningRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   const retrieverLayer = RetrieverServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
@@ -251,7 +258,7 @@ function createMcpRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpSe
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop, claimService))
   )
 
   return ManagedRuntime.make(services)
@@ -662,8 +669,8 @@ describe("API Contract Validator", () => {
       const targetTaskId = FIXTURES.TASK_LOGIN
       const contextText = "Shared auth rollout context"
 
-      const cliSet = runCli(["group-context:set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context:set failed: ${cliSet.stderr}`).toBe(0)
+      const cliSet = runCli(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
+      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
 
       await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
 

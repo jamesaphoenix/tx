@@ -434,7 +434,7 @@ Acknowledge all pending messages on a channel at once.
 <Tab value="CLI">
 
 ```bash
-tx ack:all <channel> [options]
+tx ack all <channel> [options]
 ```
 
 ### Arguments
@@ -452,7 +452,7 @@ tx ack:all <channel> [options]
 ### Examples
 
 ```bash
-tx ack:all agent-1
+tx ack all agent-1
 ```
 
 </Tab>
@@ -513,7 +513,7 @@ Count unacknowledged messages on a channel.
 <Tab value="CLI">
 
 ```bash
-tx outbox:pending <channel> [options]
+tx outbox pending <channel> [options]
 ```
 
 ### Options
@@ -525,7 +525,7 @@ tx outbox:pending <channel> [options]
 ### Examples
 
 ```bash
-tx outbox:pending agent-1
+tx outbox pending agent-1
 ```
 
 </Tab>
@@ -586,7 +586,7 @@ Clean up expired and old acknowledged messages.
 <Tab value="CLI">
 
 ```bash
-tx outbox:gc [options]
+tx outbox gc [options]
 ```
 
 ### Options
@@ -600,7 +600,7 @@ tx outbox:gc [options]
 
 ```bash
 # Remove expired + acked messages older than 24 hours
-tx outbox:gc --acked-older-than 24
+tx outbox gc --acked-older-than 24
 ```
 
 </Tab>
@@ -621,7 +621,7 @@ There is no dedicated MCP tool for garbage collection. Use the REST API or CLI:
 
 ```json
 {
-  "note": "Use REST API endpoint POST /api/messages/gc or CLI: tx outbox:gc"
+  "note": "Use REST API endpoint POST /api/messages/gc or CLI: tx outbox gc"
 }
 ```
 

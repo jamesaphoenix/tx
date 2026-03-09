@@ -279,8 +279,8 @@ tx worker list
 # Manual operations
 tx coordinator reconcile          # Force reconciliation
 tx claim <task-id> [--lease 30m]   # Manual task claim
-tx claim:release <task-id>         # Release claim
-tx claim:renew <task-id>           # Renew lease
+tx claim release <task-id>         # Release claim
+tx claim renew <task-id>           # Renew lease
 ```
 
 ### Service Interface
@@ -504,7 +504,7 @@ while true; do
   # YOUR CODE HERE - do whatever you want
   my_llm_script "$TASK"
 
-  tx claim:release "$TASK" "$WORKER_ID"
+  tx claim release "$TASK" "$WORKER_ID"
 done
 ```
 
@@ -529,7 +529,7 @@ while true; do
     > ".tx/runs/${RUN_ID}.jsonl" \
     2> ".tx/runs/${RUN_ID}.stderr"
 
-  tx claim:release "$TASK" "$WORKER_ID"
+  tx claim release "$TASK" "$WORKER_ID"
 done
 ```
 
@@ -547,7 +547,7 @@ for i in {1..3}; do
       [ -z "$TASK" ] && sleep 5 && continue
       tx claim "$TASK" "$WID" || continue
       claude --print "Task: $TASK. tx show $TASK, implement, tx done $TASK"
-      tx claim:release "$TASK" "$WID"
+      tx claim release "$TASK" "$WID"
     done
   ) &
 done

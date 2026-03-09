@@ -1,5 +1,5 @@
 /**
- * Claim commands: claim, claim:release, claim:renew
+ * Claim commands: claim, claim release, claim renew
  *
  * PRD-018: Worker Orchestration System
  *
@@ -13,6 +13,19 @@ import { toJson } from "../output.js"
 import { type Flags, flag, parseIntOpt, parseTaskId } from "../utils/parse.js"
 
 /**
+ * Claim dispatcher: routes `tx claim <subcommand>` or acts as direct claim.
+ *
+ * - `tx claim release <task-id> <worker-id>` → claimRelease
+ * - `tx claim renew <task-id> <worker-id>` → claimRenew
+ * - `tx claim <task-id> <worker-id>` → direct claim
+ */
+export const claim = (pos: string[], flags: Flags) => {
+  if (pos[0] === "release") return claimRelease(pos.slice(1), flags)
+  if (pos[0] === "renew") return claimRenew(pos.slice(1), flags)
+  return claimDirect(pos, flags)
+}
+
+/**
  * Claim a task for a worker with a lease.
  *
  * Usage: tx claim <task-id> <worker-id> [--lease <minutes>] [--json]
@@ -21,7 +34,7 @@ import { type Flags, flag, parseIntOpt, parseTaskId } from "../utils/parse.js"
  *   tx claim tx-abc123 worker-def456
  *   tx claim tx-abc123 worker-def456 --lease 60
  */
-export const claim = (pos: string[], flags: Flags) =>
+const claimDirect = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const rawTaskId = pos[0]
     const workerId = pos[1]
@@ -71,10 +84,10 @@ export const claim = (pos: string[], flags: Flags) =>
 /**
  * Release a claim on a task.
  *
- * Usage: tx claim:release <task-id> <worker-id> [--json]
+ * Usage: tx claim release <task-id> <worker-id> [--json]
  *
  * Examples:
- *   tx claim:release tx-abc123 worker-def456
+ *   tx claim release tx-abc123 worker-def456
  */
 export const claimRelease = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -82,7 +95,7 @@ export const claimRelease = (pos: string[], flags: Flags) =>
     const workerId = pos[1]
 
     if (!rawTaskId || !workerId) {
-      console.error("Usage: tx claim:release <task-id> <worker-id> [--json]")
+      console.error("Usage: tx claim release <task-id> <worker-id> [--json]")
       process.exit(1)
     }
     const taskId = parseTaskId(rawTaskId)
@@ -100,10 +113,10 @@ export const claimRelease = (pos: string[], flags: Flags) =>
 /**
  * Renew the lease on an existing claim.
  *
- * Usage: tx claim:renew <task-id> <worker-id> [--json]
+ * Usage: tx claim renew <task-id> <worker-id> [--json]
  *
  * Examples:
- *   tx claim:renew tx-abc123 worker-def456
+ *   tx claim renew tx-abc123 worker-def456
  */
 export const claimRenew = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -111,7 +124,7 @@ export const claimRenew = (pos: string[], flags: Flags) =>
     const workerId = pos[1]
 
     if (!rawTaskId || !workerId) {
-      console.error("Usage: tx claim:renew <task-id> <worker-id> [--json]")
+      console.error("Usage: tx claim renew <task-id> <worker-id> [--json]")
       process.exit(1)
     }
     const taskId = parseTaskId(rawTaskId)

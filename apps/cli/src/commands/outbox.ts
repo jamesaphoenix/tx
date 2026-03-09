@@ -1,5 +1,5 @@
 /**
- * Outbox commands: send, inbox, ack, ack:all, outbox:pending, outbox:gc
+ * Outbox commands: send, inbox, ack, ack all, outbox pending, outbox gc
  *
  * PRD-024: Agent Outbox Messaging Primitive
  *
@@ -111,11 +111,22 @@ export const inbox = (pos: string[], flags: Flags) =>
   })
 
 /**
+ * Ack dispatcher: routes `tx ack all <channel>` or acts as direct ack.
+ *
+ * - `tx ack all <channel>` → ackAll
+ * - `tx ack <message-id>` → direct ack
+ */
+export const ack = (pos: string[], flags: Flags) => {
+  if (pos[0] === "all") return ackAll(pos.slice(1), flags)
+  return ackDirect(pos, flags)
+}
+
+/**
  * Acknowledge a single message by ID.
  *
  * Usage: tx ack <message-id> [--json]
  */
-export const ack = (pos: string[], flags: Flags) =>
+const ackDirect = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const rawId = pos[0]
 
@@ -143,14 +154,14 @@ export const ack = (pos: string[], flags: Flags) =>
 /**
  * Acknowledge all pending messages on a channel.
  *
- * Usage: tx ack:all <channel> [--json]
+ * Usage: tx ack all <channel> [--json]
  */
 export const ackAll = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const channel = pos[0]
 
     if (!channel) {
-      console.error("Usage: tx ack:all <channel> [--json]")
+      console.error("Usage: tx ack all <channel> [--json]")
       process.exit(1)
     }
 
@@ -167,14 +178,14 @@ export const ackAll = (pos: string[], flags: Flags) =>
 /**
  * Count pending messages on a channel.
  *
- * Usage: tx outbox:pending <channel> [--json]
+ * Usage: tx outbox pending <channel> [--json]
  */
 export const outboxPending = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const channel = pos[0]
 
     if (!channel) {
-      console.error("Usage: tx outbox:pending <channel> [--json]")
+      console.error("Usage: tx outbox pending <channel> [--json]")
       process.exit(1)
     }
 
@@ -191,7 +202,7 @@ export const outboxPending = (pos: string[], flags: Flags) =>
 /**
  * Garbage collect old messages.
  *
- * Usage: tx outbox:gc [--acked-older-than <hours>] [--json]
+ * Usage: tx outbox gc [--acked-older-than <hours>] [--json]
  */
 export const outboxGc = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -206,3 +217,21 @@ export const outboxGc = (_pos: string[], flags: Flags) =>
       console.log(`GC complete: ${result.expired} expired, ${result.acked} old acked messages removed`)
     }
   })
+
+/**
+ * Outbox dispatcher: routes `tx outbox <subcommand>` to the appropriate handler.
+ */
+export const outbox = (pos: string[], flags: Flags) => {
+  const sub = pos[0]
+  switch (sub) {
+    case "pending": return outboxPending(pos.slice(1), flags)
+    case "gc": return outboxGc(pos.slice(1), flags)
+    default: return Effect.sync(() => {
+      console.log("Outbox commands:")
+      console.log("  tx outbox pending <channel>   Count pending messages")
+      console.log("  tx outbox gc                  Garbage collect old messages")
+      console.log("")
+      console.log("Run 'tx outbox <command> --help' for command-specific help.")
+    })
+  }
+}

@@ -80,6 +80,7 @@ WORKER_REGISTERED=false
 LAST_BACKGROUND_PID=""
 AUTO_COMMIT=${AUTO_COMMIT:-true}
 CLAIM_RENEW_PID=""
+WORKER_HEARTBEAT_PID=""
 LAST_RUN_ID=""
 LAST_RUN_STATUS=""
 LAST_RUN_ERROR=""
@@ -566,8 +567,12 @@ fi
 
 cleanup() {
   stop_claim_renewer
+  stop_worker_heartbeat
 
+  # Deregister this process and all child processes from the registry
+  deregister_process $$
   if [ "$WORKER_REGISTERED" = true ]; then
+    deregister_processes_by_worker "$WORKER_ID"
     mark_worker_dead "$WORKER_ID"
     WORKER_REGISTERED=false
   fi
@@ -624,7 +629,7 @@ cancel_current_run() {
   if [ -n "${CURRENT_TASK_ID:-}" ]; then
     log "Resetting task $CURRENT_TASK_ID to ready"
     tx reset "$CURRENT_TASK_ID" 2>/dev/null || true
-    tx claim:release "$CURRENT_TASK_ID" "$WORKER_ID" 2>/dev/null || true
+    tx claim release "$CURRENT_TASK_ID" "$WORKER_ID" 2>/dev/null || true
     set_worker_status "$WORKER_ID" "idle"
   fi
 
@@ -909,6 +914,7 @@ register_worker() {
   escaped_hostname=$(sql_escape "$(hostname 2>/dev/null || echo unknown)")
 
   if sqlite3 "$PROJECT_DIR/.tx/tasks.db" <<EOF >/dev/null 2>&1
+BEGIN IMMEDIATE;
 INSERT INTO workers (
   id, name, hostname, pid, status, registered_at, last_heartbeat_at, current_task_id, capabilities, metadata
 ) VALUES (
@@ -923,6 +929,7 @@ ON CONFLICT(id) DO UPDATE SET
   last_heartbeat_at=datetime('now'),
   current_task_id=NULL,
   metadata='{"source":"ralph.sh"}';
+COMMIT;
 EOF
   then
     WORKER_REGISTERED=true
@@ -967,6 +974,101 @@ mark_worker_dead() {
   escaped_worker_id=$(sql_escape "$worker_id")
   sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
     "UPDATE workers SET status='dead', current_task_id=NULL, last_heartbeat_at=datetime('now') WHERE id='$escaped_worker_id';" \
+    >/dev/null 2>&1 || true
+}
+
+# ==============================================================================
+# Process Registry (SQLite-based PID hierarchy tracking)
+# ==============================================================================
+
+PROCESS_REGISTRY_AVAILABLE=false
+
+detect_process_registry() {
+  PROCESS_REGISTRY_AVAILABLE=false
+
+  if [ "$WORKER_TABLE_AVAILABLE" != true ]; then
+    return
+  fi
+
+  local table_exists
+  table_exists=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='process_registry';" \
+    2>/dev/null || true)
+  if [ "$table_exists" = "1" ]; then
+    PROCESS_REGISTRY_AVAILABLE=true
+  fi
+}
+
+register_process() {
+  local role="$1"
+  local pid="$2"
+  local parent_pid="${3:-}"
+  local worker_id="${4:-}"
+  local run_id="${5:-}"
+  local command_hint="${6:-}"
+
+  if [ "$PROCESS_REGISTRY_AVAILABLE" != true ]; then
+    return
+  fi
+
+  # Validate pid and parent_pid are numeric to prevent SQL injection
+  if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+    return
+  fi
+  if [ -n "$parent_pid" ] && ! [[ "$parent_pid" =~ ^[0-9]+$ ]]; then
+    parent_pid=""
+  fi
+
+  local escaped_worker_id="NULL"
+  local escaped_run_id="NULL"
+  local escaped_hint="NULL"
+
+  if [ -n "$worker_id" ]; then
+    escaped_worker_id="'$(sql_escape "$worker_id")'"
+  fi
+  if [ -n "$run_id" ]; then
+    escaped_run_id="'$(sql_escape "$run_id")'"
+  fi
+  if [ -n "$command_hint" ]; then
+    escaped_hint="'$(sql_escape "$command_hint")'"
+  fi
+
+  sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "INSERT OR IGNORE INTO process_registry
+       (pid, parent_pid, worker_id, run_id, role, started_at, last_heartbeat_at, command_hint)
+     VALUES
+       ($pid, ${parent_pid:-NULL}, $escaped_worker_id, $escaped_run_id, '$(sql_escape "$role")', datetime('now'), datetime('now'), $escaped_hint);" \
+    >/dev/null 2>&1 || true
+}
+
+deregister_process() {
+  local pid="$1"
+
+  if [ "$PROCESS_REGISTRY_AVAILABLE" != true ]; then
+    return
+  fi
+
+  # Validate pid is numeric to prevent SQL injection
+  if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+    return
+  fi
+
+  sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "UPDATE process_registry SET ended_at=datetime('now') WHERE pid=$pid AND ended_at IS NULL;" \
+    >/dev/null 2>&1 || true
+}
+
+deregister_processes_by_worker() {
+  local worker_id="$1"
+
+  if [ "$PROCESS_REGISTRY_AVAILABLE" != true ]; then
+    return
+  fi
+
+  local escaped_worker_id
+  escaped_worker_id=$(sql_escape "$worker_id")
+  sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "UPDATE process_registry SET ended_at=datetime('now') WHERE worker_id='$escaped_worker_id' AND ended_at IS NULL;" \
     >/dev/null 2>&1 || true
 }
 
@@ -1467,7 +1569,7 @@ Helpful commands if needed:
 When complete, run \`tx done $task_id\`.
 If you discover new work, create subtasks with \`tx add\`.
 If blocked, run \`tx update $task_id --status blocked\`.
-Optionally record useful insights with \`tx learning:add \"<what you learned>\" --source-ref $task_id\`."
+Optionally record useful insights with \`tx learning add \"<what you learned>\" --source-ref $task_id\`."
 
   log "Dispatching to $ACTIVE_RUNTIME_LABEL..."
 
@@ -1514,6 +1616,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     return 1
   fi
   CLAUDE_PID="$LAST_BACKGROUND_PID"
+  register_process "agent" "$CLAUDE_PID" $$ "$worker_id" "$CURRENT_RUN_ID" "$ACTIVE_RUNTIME_LABEL"
 
   # Update run record with PID and log/transcript paths
   if command -v sqlite3 >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.tx/tasks.db" ]; then
@@ -1649,6 +1752,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
         if kill -0 "$CLAUDE_PID" 2>/dev/null; then
           terminate_pid_tree "$CLAUDE_PID" KILL
         fi
+        deregister_process "$CLAUDE_PID"
         CLAUDE_PID=""
         complete_run "$CURRENT_RUN_ID" "cancelled" 137 "Transcript stalled for ${idle_seconds}s (no output delta)"
         record_last_run_outcome "$CURRENT_RUN_ID"
@@ -1682,6 +1786,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
       if kill -0 "$CLAUDE_PID" 2>/dev/null; then
         terminate_pid_tree "$CLAUDE_PID" KILL
       fi
+      deregister_process "$CLAUDE_PID"
       CLAUDE_PID=""
       complete_run "$CURRENT_RUN_ID" "failed" 124 "Task timed out after ${TASK_TIMEOUT}s"
       record_last_run_outcome "$CURRENT_RUN_ID"
@@ -1714,6 +1819,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
   fi
 
   if [ $exit_code -eq 0 ]; then
+    deregister_process "$CLAUDE_PID"
     CLAUDE_PID=""
     complete_run "$CURRENT_RUN_ID" "completed" 0
     record_last_run_outcome "$CURRENT_RUN_ID"
@@ -1721,6 +1827,7 @@ Optionally record useful insights with \`tx learning:add \"<what you learned>\" 
     return 0
   fi
 
+  deregister_process "$CLAUDE_PID"
   CLAUDE_PID=""
   complete_run "$CURRENT_RUN_ID" "failed" "$exit_code" "$ACTIVE_RUNTIME_LABEL exited with code $exit_code"
   record_last_run_outcome "$CURRENT_RUN_ID"
@@ -1834,7 +1941,7 @@ acquire_claim() {
 release_claim() {
   local task_id="$1"
   local worker_id="$2"
-  tx claim:release "$task_id" "$worker_id" >/dev/null 2>&1 || true
+  tx claim release "$task_id" "$worker_id" >/dev/null 2>&1 || true
 }
 
 start_claim_renewer() {
@@ -1850,19 +1957,59 @@ start_claim_renewer() {
   (
     while true; do
       sleep "$CLAIM_RENEW_INTERVAL"
-      tx claim:renew "$task_id" "$worker_id" >/dev/null 2>&1 || exit 0
+      tx claim renew "$task_id" "$worker_id" >/dev/null 2>&1 || exit 0
       log "[$worker_id] Claim renewed for $task_id"
     done
   ) &
   CLAIM_RENEW_PID=$!
+  register_process "renewal" "$CLAIM_RENEW_PID" $$ "$worker_id" "" "claim-renewer"
 }
 
 stop_claim_renewer() {
-  if [ -n "${CLAIM_RENEW_PID:-}" ] && kill -0 "$CLAIM_RENEW_PID" 2>/dev/null; then
-    kill "$CLAIM_RENEW_PID" 2>/dev/null || true
-    wait "$CLAIM_RENEW_PID" 2>/dev/null || true
+  if [ -n "${CLAIM_RENEW_PID:-}" ]; then
+    deregister_process "$CLAIM_RENEW_PID"
+    if kill -0 "$CLAIM_RENEW_PID" 2>/dev/null; then
+      kill "$CLAIM_RENEW_PID" 2>/dev/null || true
+      wait "$CLAIM_RENEW_PID" 2>/dev/null || true
+    fi
   fi
   CLAIM_RENEW_PID=""
+}
+
+start_worker_heartbeat() {
+  local worker_id="$1"
+  local interval="${RUN_HEARTBEAT_INTERVAL:-30}"
+
+  stop_worker_heartbeat
+
+  if [ "$WORKER_TABLE_AVAILABLE" != true ]; then
+    return
+  fi
+
+  local escaped_worker_id
+  escaped_worker_id=$(sql_escape "$worker_id")
+
+  (
+    while true; do
+      sleep "$interval"
+      sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+        "UPDATE workers SET last_heartbeat_at=datetime('now') WHERE id='$escaped_worker_id';" \
+        >/dev/null 2>&1 || exit 0
+    done
+  ) &
+  WORKER_HEARTBEAT_PID=$!
+  register_process "renewal" "$WORKER_HEARTBEAT_PID" $$ "$worker_id" "" "worker-heartbeat"
+}
+
+stop_worker_heartbeat() {
+  if [ -n "${WORKER_HEARTBEAT_PID:-}" ]; then
+    deregister_process "$WORKER_HEARTBEAT_PID"
+  fi
+  if [ -n "${WORKER_HEARTBEAT_PID:-}" ] && kill -0 "$WORKER_HEARTBEAT_PID" 2>/dev/null; then
+    kill "$WORKER_HEARTBEAT_PID" 2>/dev/null || true
+    wait "$WORKER_HEARTBEAT_PID" 2>/dev/null || true
+  fi
+  WORKER_HEARTBEAT_PID=""
 }
 
 run_worker_loop() {
@@ -1883,6 +2030,13 @@ run_worker_loop() {
   fi
   LAST_REVIEW=0
   register_worker "$worker_id"
+  start_worker_heartbeat "$worker_id"
+  # Register this worker process in process registry (for child/single-worker mode)
+  if [ "$CHILD_MODE" = true ]; then
+    register_process "worker" $$ "${PPID:-}" "$worker_id" "" "ralph.sh --child"
+  elif [ "$WORKERS" -eq 1 ]; then
+    register_process "worker" $$ "" "$worker_id" "" "ralph.sh"
+  fi
   set_worker_status "$worker_id" "idle"
 
   while [ "$iteration" -lt "$MAX_ITERATIONS" ]; do
@@ -2040,7 +2194,7 @@ Extract all key learnings — things that would help a future agent working on t
 - Tool/API quirks encountered
 
 For each learning, record it with:
-  tx learning:add \"<learning>\" --source-ref $TASK_ID
+  tx learning add \"<learning>\" --source-ref $TASK_ID
 
 Skip obvious or generic observations. Only record insights specific to this project." \
         "$LEARNINGS_TIMEOUT" \
@@ -2141,6 +2295,7 @@ spawn_parallel_workers() {
 
     "$SCRIPT_PATH" "${child_args[@]}" >>"$LOG_FILE" 2>&1 &
     CHILD_PIDS+=($!)
+    register_process "worker" $! $$ "$child_worker_id" "" "ralph.sh --child"
     log "Spawned worker $child_worker_id (pid ${CHILD_PIDS[$((i - 1))]})"
     i=$((i + 1))
   done
@@ -2156,6 +2311,12 @@ spawn_parallel_workers() {
 }
 
 detect_worker_table
+detect_process_registry
+
+# Auto-scale heartbeat interval for high worker counts to reduce SQLite contention
+if [ "$WORKERS" -gt 4 ] && [ "$RUN_HEARTBEAT_INTERVAL" -lt 60 ]; then
+  RUN_HEARTBEAT_INTERVAL=60
+fi
 
 log "========================================"
 log "RALPH Loop Started"
@@ -2193,6 +2354,9 @@ if [ "$CHILD_MODE" = false ]; then
 
   # Mark orchestrator as running in database (for dashboard)
   set_orchestrator_running
+
+  # Register orchestrator in process registry
+  register_process "orchestrator" $$ "" "" "" "ralph.sh"
 fi
 
 if [ "$CHILD_MODE" = false ] && [ "$WORKERS" -gt 1 ]; then

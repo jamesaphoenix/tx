@@ -34,7 +34,10 @@ import {
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
   RetrieverServiceLive,
-  cosineSimilarity
+  cosineSimilarity,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { LearningWithScore } from "@jamesaphoenix/tx-types"
 
@@ -211,9 +214,13 @@ function makeTestLayer(db: TestDatabase, useVectorSearch = true) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
-    LearningRepositoryLive
+    PinRepositoryLive,
+    LearningRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(Layer.provide(infra))
+
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   const embeddingLayer = useVectorSearch
     ? createMockEmbeddingService()
@@ -231,7 +238,7 @@ function makeTestLayer(db: TestDatabase, useVectorSearch = true) {
     HierarchyServiceLive,
     LearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, embeddingLayer, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop, retrieverLayer))
+    Layer.provide(Layer.mergeAll(repos, embeddingLayer, QueryExpansionServiceNoop, RerankerServiceNoop, AutoSyncServiceNoop, retrieverLayer, claimService))
   )
 
   return services

@@ -339,12 +339,133 @@ export const GenericJSONLAdapter: TranscriptAdapter = {
 }
 
 /**
+ * CodexAdapter - Parses OpenAI Codex transcript format.
+ *
+ * Codex transcripts use a JSONL format with entries containing:
+ * - type: "function_call" with function name and arguments
+ * - role: "assistant" / "user" with content field
+ * - Timestamps may be in `created_at` or `timestamp` fields
+ */
+export const CodexAdapter: TranscriptAdapter = {
+  canHandle: (agentType) =>
+    agentType.includes("codex") ||
+    agentType === "openai-codex",
+
+  parseToolCalls: (lines) => {
+    const toolCalls: ToolCall[] = []
+
+    for (const line of lines) {
+      const entry = safeParseJson(line)
+      if (!entry) continue
+
+      // Codex function_call format
+      if (entry.type === "function_call") {
+        const name = (entry.name as string) ?? (entry.function as string)
+        if (name) {
+          toolCalls.push({
+            timestamp: (entry.created_at as string) ?? (entry.timestamp as string) ?? new Date().toISOString(),
+            name,
+            input: (entry.arguments as Record<string, unknown>) ?? (entry.input as Record<string, unknown>) ?? {},
+            id: entry.call_id as string | undefined,
+            result: entry.output as string | undefined,
+          })
+        }
+        continue
+      }
+
+      // Codex tool_calls array format (OpenAI chat completions style)
+      const toolCallsArr = entry.tool_calls as Array<Record<string, unknown>> | undefined
+      if (Array.isArray(toolCallsArr)) {
+        const ts = (entry.created_at as string) ?? (entry.timestamp as string) ?? new Date().toISOString()
+        for (const tc of toolCallsArr) {
+          const fn = tc.function as Record<string, unknown> | undefined
+          const name = (fn?.name as string) ?? (tc.name as string)
+          if (name) {
+            let args: Record<string, unknown> = {}
+            if (typeof fn?.arguments === "string") {
+              try { args = JSON.parse(fn.arguments as string) } catch { /* ignore */ }
+            } else if (typeof fn?.arguments === "object" && fn?.arguments !== null) {
+              args = fn.arguments as Record<string, unknown>
+            }
+            toolCalls.push({
+              timestamp: ts,
+              name,
+              input: args,
+              id: tc.id as string | undefined,
+            })
+          }
+        }
+      }
+    }
+
+    return toolCalls
+  },
+
+  parseMessages: (lines) => {
+    const messages: Message[] = []
+
+    for (const line of lines) {
+      const entry = safeParseJson(line)
+      if (!entry) continue
+
+      // Skip function_call / tool entries
+      if (entry.type === "function_call" || entry.type === "function_result") continue
+      if (Array.isArray(entry.tool_calls)) continue
+
+      const role = (entry.role as string) ?? (entry.type as string)
+      if (role === "user" || role === "assistant") {
+        const content =
+          typeof entry.content === "string"
+            ? entry.content
+            : typeof entry.text === "string"
+              ? entry.text
+              : ""
+
+        if (content) {
+          messages.push({
+            timestamp: (entry.created_at as string) ?? (entry.timestamp as string) ?? new Date().toISOString(),
+            role,
+            content,
+          })
+        }
+      }
+    }
+
+    return messages
+  },
+}
+
+/**
+ * Auto-detect adapter by probing transcript content.
+ * Checks first few lines for format indicators.
+ */
+export function detectAdapter(lines: readonly string[]): TranscriptAdapter {
+  const sample = lines.slice(0, 5)
+  for (const line of sample) {
+    const entry = safeParseJson(line)
+    if (!entry) continue
+
+    // Claude Code: has `type` of "user"/"assistant" and nested `message` object
+    if ((entry.type === "user" || entry.type === "assistant") && typeof entry.message === "object") {
+      return ClaudeCodeAdapter
+    }
+
+    // Codex: has `type` of "function_call" or has `tool_calls` array
+    if (entry.type === "function_call" || Array.isArray(entry.tool_calls)) {
+      return CodexAdapter
+    }
+  }
+
+  return GenericJSONLAdapter
+}
+
+/**
  * Registry of available transcript adapters.
  * Order matters - first matching adapter is used.
  */
 const adapters: readonly TranscriptAdapter[] = [
   ClaudeCodeAdapter,
-  // Future: CodexAdapter, CursorAdapter, etc.
+  CodexAdapter,
   GenericJSONLAdapter // Fallback - always matches
 ]
 

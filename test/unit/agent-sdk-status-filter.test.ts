@@ -14,18 +14,22 @@ import {
   ScoreServiceLive,
   AutoSyncServiceNoop,
   GuardRepositoryLive,
-  PinRepositoryLive
+  PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskStatus } from "@jamesaphoenix/tx-types"
 
 function makeTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive).pipe(
+  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
   const scoreService = ScoreServiceLive.pipe(
     Layer.provide(baseServices),

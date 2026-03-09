@@ -48,7 +48,7 @@ Channel-based outbox messaging primitive. Agents write messages to an outbox tab
 4. Multiple readers on the same channel see the same messages independently
 5. `tx ack <id>` transitions a message from pending to acked
 6. Acked messages are excluded from default inbox reads
-7. `tx outbox:gc` removes expired and old acked messages
+7. `tx outbox gc` removes expired and old acked messages
 8. All interfaces work: CLI, MCP tools, REST API
 
 ## Out of Scope

@@ -96,7 +96,7 @@ describe("CLI claim/dependency critical flows", () => {
     expect(readyWhileClaimed.map((t) => t.id)).not.toContain(taskA.id)
     expect(readyWhileClaimed.map((t) => t.id)).toContain(taskB.id)
 
-    const release = runTx(["claim:release", taskA.id, "worker-alpha", "--json"], dbPath)
+    const release = runTx(["claim", "release", taskA.id, "worker-alpha", "--json"], dbPath)
     expect(release.status).toBe(0)
     const releaseJson = parseJsonFromOutput<{ released: boolean; taskId: string; workerId: string }>(
       release.stdout
@@ -111,13 +111,13 @@ describe("CLI claim/dependency critical flows", () => {
     expect(readyAfter.map((t) => t.id)).toEqual(expect.arrayContaining([taskA.id, taskB.id]))
   }, TEST_TIMEOUT)
 
-  it("claim:renew updates claim metadata", () => {
+  it("claim renew updates claim metadata", () => {
     const task = JSON.parse(runTx(["add", "Renew target", "--json"], dbPath).stdout) as { id: string }
 
     const claimed = parseJsonFromOutput<{ leaseExpiresAt: string; renewedCount: number }>(
       runTx(["claim", task.id, "worker-renew", "--lease", "30", "--json"], dbPath).stdout
     )
-    const renewedResult = runTx(["claim:renew", task.id, "worker-renew", "--json"], dbPath)
+    const renewedResult = runTx(["claim", "renew", task.id, "worker-renew", "--json"], dbPath)
     expect(renewedResult.status).toBe(0)
 
     const renewed = parseJsonFromOutput<{ leaseExpiresAt: string; renewedCount: number }>(renewedResult.stdout)

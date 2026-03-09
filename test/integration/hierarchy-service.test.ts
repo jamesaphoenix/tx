@@ -14,6 +14,9 @@ import {
   AutoSyncServiceNoop,
   GuardRepositoryLive,
   PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive,
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import type { Database } from "bun:sqlite"
@@ -21,11 +24,12 @@ import type { Database } from "bun:sqlite"
 function makeTestLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive).pipe(
+  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   return Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
 }
 

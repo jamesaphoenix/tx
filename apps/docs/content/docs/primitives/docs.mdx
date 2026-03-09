@@ -7,7 +7,7 @@ description: Docs-as-primitives — structured PRDs and design docs on disk
 
 `tx doc` manages structured documentation as first-class primitives. In practice, that means PRDs and design docs live as structured data on disk instead of prose blobs hidden in chat history. Docs are YAML files in `.tx/docs/` with metadata and links stored in the database. This enables:
 
-- **Structured PRDs** with stable fields, lifecycle state, linked references, and optional EARS requirements
+- **Structured PRDs** with stable fields, lifecycle state, linked references, and mandatory EARS requirements
 - **Version-controlled docs** that live alongside code
 - **Linked doc graphs** connecting overviews, PRDs, and design docs
 - **Rendered markdown** generated from YAML source
@@ -15,14 +15,15 @@ description: Docs-as-primitives — structured PRDs and design docs on disk
 
 ## EARS in tx PRDs
 
-tx now supports **EARS** (**Easy Approach to Requirements Syntax**) for PRD requirements through the optional `ears_requirements` block.
+tx uses **EARS** (**Easy Approach to Requirements Syntax**) as a **mandatory** requirement format for all PRDs. The `ears_requirements` block is required when a PRD has legacy `requirements`.
 
-Why this is now used:
+Why EARS is mandatory:
 
-- Plain bullet requirements are easy to write but can be ambiguous.
-- EARS gives requirements a predictable structure that is easier to lint and review.
+- Plain bullet requirements are ambiguous and untestable.
+- EARS gives requirements a predictable structure that is machine-parseable and lintable.
 - EARS IDs map cleanly to test cases in DD testing strategies (traceability).
-- tx can validate EARS early with `tx doc lint-ears` before implementation starts.
+- tx validates EARS early with `tx doc lint-ears` before implementation starts.
+- EARS-structured invariants populate provenance fields (pattern, trigger, state, condition) for full traceability.
 
 EARS in tx uses these patterns:
 
@@ -42,8 +43,10 @@ Use deterministic IDs: `EARS-<AREA>-NNN` (example: `EARS-AUTH-001`).
 | Kind | Purpose |
 |------|---------|
 | `overview` | Project-level overview (one per project) |
-| `prd` | Product Requirements Document |
+| `requirement` | Requirements / Use Cases (behavioral requirements, actor flows) |
+| `prd` | Product Requirements Document (scope, acceptance criteria) |
 | `design` | Design Document (technical specification) |
+| `system_design` | System Design (cross-cutting architecture constraints) |
 
 ## Lifecycle
 
@@ -62,8 +65,11 @@ changing → locked
 <Tab value="CLI">
 
 ```bash
-# Create a new doc
+# Create docs (all 4 tiers)
+tx doc add requirement auth-flows --title "Auth Use Cases"
 tx doc add prd auth-system --title "Authentication System"
+tx doc add design auth-design --title "Auth Design"
+tx doc add system_design error-handling --title "Error Handling Patterns"
 
 # Edit a doc (opens YAML in $EDITOR)
 tx doc edit auth-system
@@ -156,7 +162,7 @@ const graph = await tx.docs.graph()
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
-| `kind` | `string` | No | Filter by kind (overview, prd, design) |
+| `kind` | `string` | No | Filter by kind (overview, requirement, prd, design, system_design) |
 | `status` | `string` | No | Filter by status (changing, locked) |
 
 **Tool name:** `tx_doc_get`
@@ -181,7 +187,7 @@ const graph = await tx.docs.graph()
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
-| `kind` | `string` | Yes | Doc kind (overview, prd, design) |
+| `kind` | `string` | Yes | Doc kind (overview, requirement, prd, design, system_design) |
 | `name` | `string` | Yes | Unique doc name |
 | `title` | `string` | Yes | Human-readable title |
 | `yamlContent` | `string` | Yes | YAML content |
@@ -276,15 +282,19 @@ Docs are stored as YAML files in `.tx/docs/`:
 
 ```
 .tx/docs/
-  overview.yml          # Project overview
+  overview.yml              # Project overview
+  requirement/
+    auth-flows.yml          # Requirements / Use Cases
   prd/
-    auth-system.yml     # PRD
+    auth-system.yml         # PRD
     data-pipeline.yml
   design/
-    auth-design.yml     # Design doc
-    auth-patch-001.yml  # Design patch
-  index.yml             # Auto-generated index
-  index.md              # Auto-generated markdown index
+    auth-design.yml         # Design doc
+    auth-patch-001.yml      # Design patch
+  system_design/
+    error-handling.yml      # System design (cross-cutting)
+  index.yml                 # Auto-generated index
+  index.md                  # Auto-generated markdown index
 ```
 
 Example PRD YAML:
@@ -326,7 +336,7 @@ invariants:
     test_ref: test/auth.test.ts
 ```
 
-`requirements` and `ears_requirements` can coexist. This keeps backwards compatibility while allowing structured, test-traceable requirements.
+`requirements` and `ears_requirements` can coexist. When a PRD has legacy `requirements`, it **must** also define `ears_requirements`. EARS is mandatory for all PRDs.
 
 ## Doc Graph
 
@@ -336,9 +346,13 @@ Docs form a directed acyclic graph (DAG):
   title="Doc Graph"
   caption="Link types are auto-inferred from doc kinds when you do not set them explicitly."
   chart={`flowchart LR
-    Overview[overview] -->|overview_to_prd| PRD[prd]
-    PRD -->|prd_to_design| Design[design]
+    REQ[requirement] -->|requirement_to_prd| PRD[prd]
+    REQ -->|requirement_to_design| Design[design]
+    Overview[overview] -->|overview_to_prd| PRD
+    PRD -->|prd_to_design| Design
     Design -->|design_patch| Patch[design-patch]
+    SD[system_design] -->|system_design_to_design| Design
+    SD -->|system_design_to_prd| PRD
   `}
 />
 

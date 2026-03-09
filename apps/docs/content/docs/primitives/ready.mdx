@@ -103,6 +103,8 @@ curl http://localhost:3456/api/tasks/ready?limit=5
 | Option | Description |
 |--------|-------------|
 | `--limit, -n <n>` | Maximum tasks to show (default: 10) |
+| `--claim <worker-id>` | Atomically claim the first ready task for the given worker |
+| `--lease <minutes>` | Lease duration when using `--claim` (default: 30) |
 | `--json` | Output as JSON for scripting |
 | `--help` | Show help |
 
@@ -162,8 +164,8 @@ Set or clear direct context through the interface you are already using:
 <Tab value="CLI">
 
 ```bash
-tx group-context:set tx-root001 "Shared auth rollout context"
-tx group-context:clear tx-root001
+tx group-context set tx-root001 "Shared auth rollout context"
+tx group-context clear tx-root001
 ```
 
 </Tab>
@@ -196,6 +198,25 @@ curl -X DELETE http://localhost:3456/api/tasks/tx-root001/group-context
 </Tab>
 </Tabs>
 
+## Atomic Ready + Claim
+
+When running multiple workers in parallel, use `--claim` to atomically fetch the highest-priority ready task and claim it in a single operation. This eliminates the race window between `tx ready` and `tx claim` where multiple workers could pick the same task.
+
+```bash
+# Atomically get and claim the top ready task
+tx ready --json --limit 1 --claim worker-1 --lease 30
+
+# Returns the claimed task with claim info, or empty if nothing available
+```
+
+The `--claim` flag:
+1. Fetches a small batch of ready candidates (sorted by score)
+2. Attempts to claim each one in priority order
+3. Returns the first successfully claimed task
+4. Returns `null` if no tasks could be claimed (all taken by other workers)
+
+This is the recommended approach for parallel agent loops — see [tx claim](/docs/primitives/claim) for more on the claim lifecycle.
+
 ## Agent Loop Pattern
 
 ```bash
@@ -217,6 +238,23 @@ while true; do
 done
 
 echo "All tasks complete!"
+```
+
+### Parallel Agent Loop (Recommended)
+
+```bash
+#!/bin/bash
+# Parallel agent loop using atomic ready+claim
+WORKER_ID="worker-$$"
+
+while true; do
+  RESULT=$(tx ready --json --limit 1 --claim "$WORKER_ID" --lease 30)
+  TASK=$(echo "$RESULT" | jq -r '.task.id // empty')
+  [ -z "$TASK" ] && break
+
+  claude "Your task is $TASK. Run 'tx show $TASK' for details."
+  tx done "$TASK"
+done
 ```
 
 ## Related Commands

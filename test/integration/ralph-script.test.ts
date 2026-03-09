@@ -84,13 +84,16 @@ case "$CMD" in
     echo "[]"
     ;;
   claim)
-    echo "$*" >> "$STATE_DIR/claims.log"
-    if [ "\${MOCK_CLAIM_FAIL:-0}" = "1" ]; then
-      exit 1
+    SUBCMD="\${1:-}"
+    if [ "$SUBCMD" = "release" ]; then
+      shift || true
+      echo "$*" >> "$STATE_DIR/releases.log"
+    else
+      echo "$*" >> "$STATE_DIR/claims.log"
+      if [ "\${MOCK_CLAIM_FAIL:-0}" = "1" ]; then
+        exit 1
+      fi
     fi
-    ;;
-  "claim:release")
-    echo "$*" >> "$STATE_DIR/releases.log"
     ;;
   show)
     STATUS="\${MOCK_SHOW_STATUS:-done}"

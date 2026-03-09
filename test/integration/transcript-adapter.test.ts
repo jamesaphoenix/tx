@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   ClaudeCodeAdapter,
+  CodexAdapter,
   GenericJSONLAdapter,
   getAdapter,
   registerAdapter,
@@ -347,9 +348,9 @@ describe("getAdapter", () => {
     expect(adapter).toBe(ClaudeCodeAdapter)
   })
 
-  it("returns GenericJSONLAdapter for unknown agent types", () => {
+  it("returns CodexAdapter for codex agent type", () => {
     const adapter = getAdapter("codex")
-    expect(adapter).toBe(GenericJSONLAdapter)
+    expect(adapter).toBe(CodexAdapter)
   })
 
   it("returns GenericJSONLAdapter for empty agent type", () => {

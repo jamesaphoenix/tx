@@ -24,7 +24,7 @@ tx claim tx-task001 worker-alpha
 # Worker does work...
 
 # Release the claim when done
-tx claim:release tx-task001 worker-alpha
+tx claim release tx-task001 worker-alpha
 # Output: Claim on task tx-task001 released by worker-alpha
 ```
 
@@ -35,14 +35,14 @@ tx claim:release tx-task001 worker-alpha
 tx claim tx-task001 worker-alpha --lease 60
 
 # Renew the lease before it expires
-tx claim:renew tx-task001 worker-alpha
+tx claim renew tx-task001 worker-alpha
 # Output:
 # Lease on task tx-task001 renewed
 #   New expiry: 2025-01-28T11:30:00.000Z
 #   Renewals: 1/10
 
 # Can renew up to 10 times
-tx claim:renew tx-task001 worker-alpha
+tx claim renew tx-task001 worker-alpha
 # Output:
 #   Renewals: 2/10
 ```
@@ -62,9 +62,9 @@ tx claim tx-task003 worker-gamma
 # Workers work in parallel...
 
 # Each releases their own task
-tx claim:release tx-task001 worker-alpha
-tx claim:release tx-task002 worker-beta
-tx claim:release tx-task003 worker-gamma
+tx claim release tx-task001 worker-alpha
+tx claim release tx-task002 worker-beta
+tx claim release tx-task003 worker-gamma
 ```
 
 ### Claim Rejection (Already Claimed)
@@ -196,7 +196,7 @@ await Effect.runPromise(Effect.provide(handleWorkerCrash("worker-crashed"), laye
 
 ```bash
 # If lease has expired, renew fails
-tx claim:renew tx-task001 worker-alpha
+tx claim renew tx-task001 worker-alpha
 # Error: Lease has expired
 ```
 
@@ -204,7 +204,7 @@ tx claim:renew tx-task001 worker-alpha
 
 ```bash
 # After 10 renewals
-tx claim:renew tx-task001 worker-alpha
+tx claim renew tx-task001 worker-alpha
 # Error: Maximum renewals exceeded
 ```
 
@@ -215,7 +215,7 @@ tx claim:renew tx-task001 worker-alpha
 tx claim tx-task001 worker-alpha
 
 # Worker Beta tries to release
-tx claim:release tx-task001 worker-beta
+tx claim release tx-task001 worker-beta
 # Error: Claim not found
 ```
 

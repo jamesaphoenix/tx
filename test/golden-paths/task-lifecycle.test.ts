@@ -23,7 +23,10 @@ import {
   HierarchyServiceLive,
   AutoSyncServiceNoop,
   GuardRepositoryLive,
-  PinRepositoryLive
+  PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
@@ -35,15 +38,16 @@ import { seedFixtures, FIXTURES } from "../fixtures.js"
 function makeTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive).pipe(
+  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const services = Layer.mergeAll(
     TaskServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
   return services
 }

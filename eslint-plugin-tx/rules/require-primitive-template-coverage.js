@@ -53,7 +53,7 @@ function isDividerOrIndexPage(page) {
 function primitiveRegex(primitive) {
   switch (primitive) {
     case "learning":
-      return /\btx\s+learning(?::|\s)/i
+      return /\btx\s+learning\s/i
     case "docs":
       return /\btx\s+doc\b/i
     case "invariants":
@@ -80,7 +80,7 @@ function expectedCommand(primitive) {
     case "traces":
       return "tx trace"
     case "learning":
-      return "tx learning:*"
+      return "tx learning *"
     case "attempts":
       return "tx attempts (or tx try)"
     default:

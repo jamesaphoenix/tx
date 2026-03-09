@@ -22,7 +22,10 @@ import {
   RerankerServiceNoop,
   RetrieverServiceLive,
   GuardRepositoryLive,
-  PinRepositoryLive
+  PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: TestDatabase) {
@@ -31,12 +34,16 @@ function makeTestLayer(db: TestDatabase) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
+    PinRepositoryLive,
     LearningRepositoryLive,
-    FileLearningRepositoryLive
+    FileLearningRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
   // RetrieverServiceLive needs repos, embedding, query expansion, and reranker
   const retrieverLayer = RetrieverServiceLive.pipe(
@@ -51,7 +58,7 @@ function makeTestLayer(db: TestDatabase) {
     LearningServiceLive,
     FileLearningServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop, claimService))
   )
   return services
 }

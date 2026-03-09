@@ -59,15 +59,16 @@ import type { TaskId } from "@jamesaphoenix/tx-types"
 function makeTaskTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)
   const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive).pipe(
+  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const baseServices = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
-  ).pipe(Layer.provide(Layer.merge(repos, AutoSyncServiceNoop)))
+  ).pipe(Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService)))
   return Layer.mergeAll(baseServices, repos)
 }
 
@@ -78,19 +79,19 @@ function makeWorkerTestLayer(db: TestDatabase) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
+    PinRepositoryLive,
     WorkerRepositoryLive,
     ClaimRepositoryLive,
     OrchestratorStateRepositoryLive
   ).pipe(Layer.provide(infra))
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
-    HierarchyServiceLive,
-    ClaimServiceLive
-  ).pipe(Layer.provide(Layer.merge(repos, AutoSyncServiceNoop)))
-  return Layer.mergeAll(services, repos)
+    HierarchyServiceLive
+  ).pipe(Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService)))
+  return Layer.mergeAll(services, claimService, repos)
 }
 
 // =============================================================================

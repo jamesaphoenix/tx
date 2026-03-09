@@ -543,7 +543,7 @@ curl -X POST http://localhost:3456/api/tasks/tx-abc123/claim
 <Tab value="CLI">
 
 \`\`\`bash
-tx claim:release tx-abc123 worker-1
+tx claim release tx-abc123 worker-1
 \`\`\`
 
 </Tab>

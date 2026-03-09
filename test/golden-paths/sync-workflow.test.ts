@@ -39,7 +39,10 @@ import {
   StreamServiceLive,
   SyncService,
   AutoSyncServiceNoop,
-  GuardRepositoryLive
+  GuardRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
@@ -60,17 +63,20 @@ function makeTestLayer(db: TestDatabase) {
     PinRepositoryLive,
     AnchorRepositoryLive,
     EdgeRepositoryLive,
-    DocRepositoryLive
+    DocRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const baseServices = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
   const syncService = SyncServiceLive.pipe(
     Layer.provide(Layer.mergeAll(baseServices, repos, infra, StreamServiceLive.pipe(Layer.provide(infra))))

@@ -59,7 +59,7 @@ fi
 # Fallback: search learnings based on prompt keywords
 # Extract first 100 chars of prompt for search
 SEARCH_QUERY=$(echo "$PROMPT" | head -c 100 | tr -d '"' | tr '\n' ' ')
-SEARCH_RESULTS=$(tx_cmd learning:search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
+SEARCH_RESULTS=$(tx_cmd learning search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
 
 if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
   FORMATTED=$(echo "$SEARCH_RESULTS" | jq -r '.[] | "- \(.content)"' 2>/dev/null || true)

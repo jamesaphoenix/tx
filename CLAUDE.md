@@ -80,7 +80,7 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx done <id>` | Complete task, potentially unblocking others |
 | `tx block <id> <blocker>` | Declare dependencies |
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
-| `tx learning:add` | Record knowledge for future agents |
+| `tx learning add` | Record knowledge for future agents |
 | `tx send <channel> <content>` | Send a message to an agent channel |
 | `tx inbox <channel>` | Read messages (read-only, cursor-based) |
 | `tx ack <id>` | Acknowledge a message |
@@ -156,6 +156,10 @@ The moat is the **knowledge layer**:
 - Context that transfers across projects and sessions
 
 This compounds. Agents get smarter over time.
+
+### The Spec-Driven Development Triangle
+
+Spec-driven development is not a one-way equation (spec + tests + agent = code) — it's a feedback loop where implementing code generates decisions that must feed back into the spec and tests. tx is the control plane that keeps these three nodes in sync as agents work: tasks define what to build, learnings and traces capture the decisions made during implementation, and `tx done` is a checkpoint — not a suggestion — that closes the loop. The answer to AI coding's volume problem (waterfall output at agile cadence) is not more complex orchestration but lightweight process, so that moving fast doesn't require abandoning intent tracking. Decisions made during implementation, whether by humans or agents, are first-class artifacts that compound in the knowledge layer.
 
 ---
 
@@ -490,11 +494,11 @@ tx try <id> <approach>     # Record an attempt (--failed|--succeeded)
 tx attempts <id>           # List attempts
 
 # Learnings
-tx learning:add <content>  # Add a learning
-tx learning:search <q>     # Search (BM25 + recency)
-tx learning:recent         # Recent learnings
-tx learning:helpful <id>   # Record helpfulness
-tx learning:embed          # Compute vector embeddings
+tx learning add <content>  # Add a learning
+tx learning search <q>     # Search (BM25 + recency)
+tx learning recent         # Recent learnings
+tx learning helpful <id>   # Record helpfulness
+tx learning embed          # Compute vector embeddings
 tx context <task-id>       # Contextual learnings for a task
 tx learn <path> <note>     # Attach learning to file/glob
 tx recall [path]           # Query file learnings
@@ -522,9 +526,9 @@ tx memory link <src> <tgt> # Create explicit edge
 tx send <channel> <msg>    # Send to channel
 tx inbox <channel>         # Read messages
 tx ack <id>                # Acknowledge message
-tx ack:all <channel>       # Acknowledge all on channel
-tx outbox:pending <ch>     # Count pending messages
-tx outbox:gc               # Garbage collect old messages
+tx ack all <channel>       # Acknowledge all on channel
+tx outbox pending <ch>     # Count pending messages
+tx outbox gc               # Garbage collect old messages
 
 # Docs & Invariants
 tx doc <sub>               # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
@@ -532,8 +536,8 @@ tx invariant <sub>         # list, show, record, sync
 
 # Claims (Worker Leasing)
 tx claim <task> <worker>   # Claim with lease (--lease minutes)
-tx claim:release <t> <w>   # Release claim
-tx claim:renew <t> <w>     # Renew lease
+tx claim release <t> <w>   # Release claim
+tx claim renew <t> <w>     # Renew lease
 
 # Traces (Run Debugging)
 tx trace list              # Recent runs

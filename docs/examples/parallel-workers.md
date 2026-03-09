@@ -37,7 +37,7 @@ for i in {1..3}; do
         sleep 2
 
         # Release and mark done
-        tx claim:release "$TASK" "$WORKER"
+        tx claim release "$TASK" "$WORKER"
         tx done "$TASK"
         echo "[$WORKER] Completed $TASK"
       fi

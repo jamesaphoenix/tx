@@ -35,7 +35,7 @@ function runTx(args: string[], dbPath: string): ExecResult {
   }
 }
 
-describe("CLI learning:add", () => {
+describe("CLI learning add", () => {
   let tmpDir: string
   let dbPath: string
 
@@ -53,32 +53,32 @@ describe("CLI learning:add", () => {
   })
 
   it("creates a learning with content", () => {
-    const result = runTx(["learning:add", "Always use transactions"], dbPath)
+    const result = runTx(["learning", "add", "Always use transactions"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Created learning: #1")
     expect(result.stdout).toContain("Content: Always use transactions")
   })
 
   it("creates a learning with category flag", () => {
-    const result = runTx(["learning:add", "DB tip", "-c", "database"], dbPath)
+    const result = runTx(["learning", "add", "DB tip", "-c", "database"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Category: database")
   })
 
   it("creates a learning with --category flag", () => {
-    const result = runTx(["learning:add", "API tip", "--category", "api"], dbPath)
+    const result = runTx(["learning", "add", "API tip", "--category", "api"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Category: api")
   })
 
   it("creates a learning with source-ref flag", () => {
-    const result = runTx(["learning:add", "From task", "--source-ref", "tx-abc123"], dbPath)
+    const result = runTx(["learning", "add", "From task", "--source-ref", "tx-abc123"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Source: tx-abc123")
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx(["learning:add", "JSON test", "--json"], dbPath)
+    const result = runTx(["learning", "add", "JSON test", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.id).toBe(1)
@@ -87,20 +87,20 @@ describe("CLI learning:add", () => {
   })
 
   it("handles source-type flag", () => {
-    const result = runTx(["learning:add", "Compaction note", "--source-type", "compaction", "--json"], dbPath)
+    const result = runTx(["learning", "add", "Compaction note", "--source-type", "compaction", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.sourceType).toBe("compaction")
   })
 
   it("shows error when content is missing", () => {
-    const result = runTx(["learning:add"], dbPath)
+    const result = runTx(["learning", "add"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
 })
 
-describe("CLI learning:search", () => {
+describe("CLI learning search", () => {
   let tmpDir: string
   let dbPath: string
 
@@ -109,9 +109,9 @@ describe("CLI learning:search", () => {
     dbPath = join(tmpDir, "test.db")
     runTx(["init"], dbPath)
     // Seed some learnings
-    runTx(["learning:add", "Database transactions are essential for consistency"], dbPath)
-    runTx(["learning:add", "API rate limiting prevents abuse"], dbPath)
-    runTx(["learning:add", "PostgreSQL supports ACID transactions"], dbPath)
+    runTx(["learning", "add", "Database transactions are essential for consistency"], dbPath)
+    runTx(["learning", "add", "API rate limiting prevents abuse"], dbPath)
+    runTx(["learning", "add", "PostgreSQL supports ACID transactions"], dbPath)
   })
 
   afterEach(() => {
@@ -121,27 +121,27 @@ describe("CLI learning:search", () => {
   })
 
   it("searches learnings by query", () => {
-    const result = runTx(["learning:search", "database"], dbPath)
+    const result = runTx(["learning", "search", "database"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("learning(s) found")
   })
 
   it("respects --limit flag", () => {
-    const result = runTx(["learning:search", "transactions", "--limit", "1", "--json"], dbPath)
+    const result = runTx(["learning", "search", "transactions", "--limit", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBeLessThanOrEqual(1)
   })
 
   it("respects -n short flag for limit", () => {
-    const result = runTx(["learning:search", "transactions", "-n", "1", "--json"], dbPath)
+    const result = runTx(["learning", "search", "transactions", "-n", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBeLessThanOrEqual(1)
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx(["learning:search", "database", "--json"], dbPath)
+    const result = runTx(["learning", "search", "database", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(Array.isArray(json)).toBe(true)
@@ -153,19 +153,19 @@ describe("CLI learning:search", () => {
   })
 
   it("returns empty results for non-matching query", () => {
-    const result = runTx(["learning:search", "xyz123nonexistent"], dbPath)
+    const result = runTx(["learning", "search", "xyz123nonexistent"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("No learnings found")
   })
 
   it("shows error when query is missing", () => {
-    const result = runTx(["learning:search"], dbPath)
+    const result = runTx(["learning", "search"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
 
   it("respects --min-score flag", () => {
-    const result = runTx(["learning:search", "database", "--min-score", "0.9", "--json"], dbPath)
+    const result = runTx(["learning", "search", "database", "--min-score", "0.9", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     // Results should be filtered by min-score
@@ -175,7 +175,7 @@ describe("CLI learning:search", () => {
   })
 })
 
-describe("CLI learning:recent", () => {
+describe("CLI learning recent", () => {
   let tmpDir: string
   let dbPath: string
 
@@ -184,9 +184,9 @@ describe("CLI learning:recent", () => {
     dbPath = join(tmpDir, "test.db")
     runTx(["init"], dbPath)
     // Seed some learnings
-    runTx(["learning:add", "First learning"], dbPath)
-    runTx(["learning:add", "Second learning"], dbPath)
-    runTx(["learning:add", "Third learning"], dbPath)
+    runTx(["learning", "add", "First learning"], dbPath)
+    runTx(["learning", "add", "Second learning"], dbPath)
+    runTx(["learning", "add", "Third learning"], dbPath)
   })
 
   afterEach(() => {
@@ -196,27 +196,27 @@ describe("CLI learning:recent", () => {
   })
 
   it("lists recent learnings", () => {
-    const result = runTx(["learning:recent"], dbPath)
+    const result = runTx(["learning", "recent"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("recent learning(s)")
   })
 
   it("respects --limit flag", () => {
-    const result = runTx(["learning:recent", "--limit", "2", "--json"], dbPath)
+    const result = runTx(["learning", "recent", "--limit", "2", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBeLessThanOrEqual(2)
   })
 
   it("respects -n short flag for limit", () => {
-    const result = runTx(["learning:recent", "-n", "1", "--json"], dbPath)
+    const result = runTx(["learning", "recent", "-n", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.length).toBe(1)
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx(["learning:recent", "--json"], dbPath)
+    const result = runTx(["learning", "recent", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(Array.isArray(json)).toBe(true)
@@ -232,7 +232,7 @@ describe("CLI learning:recent", () => {
     const emptyDbPath = join(emptyTmpDir, "test.db")
     runTx(["init"], emptyDbPath)
 
-    const result = runTx(["learning:recent"], emptyDbPath)
+    const result = runTx(["learning", "recent"], emptyDbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("No learnings found")
 
@@ -240,7 +240,7 @@ describe("CLI learning:recent", () => {
   })
 })
 
-describe("CLI learning:helpful", () => {
+describe("CLI learning helpful", () => {
   let tmpDir: string
   let dbPath: string
 
@@ -249,7 +249,7 @@ describe("CLI learning:helpful", () => {
     dbPath = join(tmpDir, "test.db")
     runTx(["init"], dbPath)
     // Create a learning to mark as helpful
-    runTx(["learning:add", "Test learning for helpfulness"], dbPath)
+    runTx(["learning", "add", "Test learning for helpfulness"], dbPath)
   })
 
   afterEach(() => {
@@ -259,20 +259,20 @@ describe("CLI learning:helpful", () => {
   })
 
   it("records helpfulness with default score", () => {
-    const result = runTx(["learning:helpful", "1"], dbPath)
+    const result = runTx(["learning", "helpful", "1"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Recorded helpfulness for learning #1")
     expect(result.stdout).toContain("Score: 100%")
   })
 
   it("records helpfulness with custom score", () => {
-    const result = runTx(["learning:helpful", "1", "--score", "0.8"], dbPath)
+    const result = runTx(["learning", "helpful", "1", "--score", "0.8"], dbPath)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Score: 80%")
   })
 
   it("outputs JSON with --json flag", () => {
-    const result = runTx(["learning:helpful", "1", "--json"], dbPath)
+    const result = runTx(["learning", "helpful", "1", "--json"], dbPath)
     expect(result.status).toBe(0)
     const json = JSON.parse(result.stdout)
     expect(json.success).toBe(true)
@@ -281,19 +281,19 @@ describe("CLI learning:helpful", () => {
   })
 
   it("shows error when ID is missing", () => {
-    const result = runTx(["learning:helpful"], dbPath)
+    const result = runTx(["learning", "helpful"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Usage:")
   })
 
   it("shows error for non-numeric ID", () => {
-    const result = runTx(["learning:helpful", "abc"], dbPath)
+    const result = runTx(["learning", "helpful", "abc"], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("Learning ID must be a number")
   })
 
   it("shows error for non-existent learning", () => {
-    const result = runTx(["learning:helpful", "999"], dbPath)
+    const result = runTx(["learning", "helpful", "999"], dbPath)
     expect(result.status).toBe(2)
     expect(result.stderr).toContain("Learning not found")
   })
@@ -315,8 +315,8 @@ describe("CLI context", () => {
     taskId = taskJson.id
 
     // Create learnings related to JWT
-    runTx(["learning:add", "JWT tokens should be validated on every request"], dbPath)
-    runTx(["learning:add", "Always check token expiration"], dbPath)
+    runTx(["learning", "add", "JWT tokens should be validated on every request"], dbPath)
+    runTx(["learning", "add", "Always check token expiration"], dbPath)
   })
 
   afterEach(() => {
@@ -518,29 +518,29 @@ describe("CLI learning command help", () => {
     }
   })
 
-  it("learning:add --help shows help", () => {
-    const result = runTx(["learning:add", "--help"], dbPath)
+  it("learning add --help shows help", () => {
+    const result = runTx(["learning", "add", "--help"], dbPath)
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain("tx learning:add")
+    expect(result.stdout).toContain("tx learning add")
     expect(result.stdout).toContain("Usage:")
   })
 
-  it("learning:search --help shows help", () => {
-    const result = runTx(["learning:search", "--help"], dbPath)
+  it("learning search --help shows help", () => {
+    const result = runTx(["learning", "search", "--help"], dbPath)
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain("tx learning:search")
+    expect(result.stdout).toContain("tx learning search")
   })
 
-  it("learning:recent --help shows help", () => {
-    const result = runTx(["learning:recent", "--help"], dbPath)
+  it("learning recent --help shows help", () => {
+    const result = runTx(["learning", "recent", "--help"], dbPath)
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain("tx learning:recent")
+    expect(result.stdout).toContain("tx learning recent")
   })
 
-  it("learning:helpful --help shows help", () => {
-    const result = runTx(["learning:helpful", "--help"], dbPath)
+  it("learning helpful --help shows help", () => {
+    const result = runTx(["learning", "helpful", "--help"], dbPath)
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain("tx learning:helpful")
+    expect(result.stdout).toContain("tx learning helpful")
   })
 
   it("context --help shows help", () => {
@@ -563,10 +563,10 @@ describe("CLI learning command help", () => {
     expect(result.stdout).toContain("tx recall")
   })
 
-  it("help learning:add shows help", () => {
-    const result = runTx(["help", "learning:add"], dbPath)
+  it("help learning add shows help", () => {
+    const result = runTx(["help", "learning", "add"], dbPath)
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain("tx learning:add")
+    expect(result.stdout).toContain("tx learning add")
   })
 
   it("help context shows help", () => {

@@ -578,7 +578,7 @@ export const OpenAIExtractorLive = Layer.effect(
  *
  * Note: Claude Code subscribers typically have ANTHROPIC_API_KEY available.
  * The daemon still works without any LLM - it just won't auto-extract candidates.
- * Users can manually review transcripts and add learnings via `tx learning:add`.
+ * Users can manually review transcripts and add learnings via `tx learning add`.
  */
 export const resolveExtractor = (): Layer.Layer<CandidateExtractorService> => {
   if (process.env.TX_EXTRACTOR === 'none') return CandidateExtractorNoop

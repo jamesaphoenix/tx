@@ -21,7 +21,7 @@ You are an implementation agent for the tx project.
 7. If PRD docs changed, run `tx doc lint-ears <doc-name-or-yaml-path>` for touched PRDs.
 8. If telemetry code changed, verify noop/configured/exporter-failure behavior remains non-blocking.
 9. Mark complete: `tx done <id>`
-10. Record learnings: `tx learning:add "<what you learned>" --source-ref <id>`
+10. Record learnings: `tx learning add "<what you learned>" --source-ref <id>`
 
 ### Non-negotiable rules
 

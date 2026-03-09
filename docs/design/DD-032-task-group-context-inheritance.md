@@ -74,8 +74,8 @@ Sort rule for winner selection:
 
 Add commands:
 
-- `tx group-context:set <task-id> <context> [--json]`
-- `tx group-context:clear <task-id> [--json]`
+- `tx group-context set <task-id> <context> [--json]`
+- `tx group-context clear <task-id> [--json]`
 
 Update:
 

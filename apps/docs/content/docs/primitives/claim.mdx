@@ -20,9 +20,9 @@ description: Claim a task with a lease to prevent parallel collisions
 
     Worker->>TX: tx claim task worker-1
     TX->>Store: create active claim + expiry
-    Worker->>TX: tx claim:renew task worker-1
+    Worker->>TX: tx claim renew task worker-1
     TX->>Store: extend expiry + renewal count
-    Worker->>TX: tx claim:release task worker-1
+    Worker->>TX: tx claim release task worker-1
     Store-->>TX: task becomes claimable again
   `}
 />
@@ -141,7 +141,7 @@ Release a worker's claim on a task, allowing other workers to claim it.
 <Tab value="CLI">
 
 ```bash
-tx claim:release <task-id> <worker-id> [options]
+tx claim release <task-id> <worker-id> [options]
 ```
 
 ### Arguments
@@ -161,7 +161,7 @@ tx claim:release <task-id> <worker-id> [options]
 ### Examples
 
 ```bash
-tx claim:release tx-abc123 worker-def456
+tx claim release tx-abc123 worker-def456
 ```
 
 </Tab>
@@ -209,7 +209,7 @@ Extend the lease on an existing claim. Use this for long-running tasks to preven
 <Tab value="CLI">
 
 ```bash
-tx claim:renew <task-id> <worker-id> [options]
+tx claim renew <task-id> <worker-id> [options]
 ```
 
 ### Arguments
@@ -235,7 +235,7 @@ tx claim:renew <task-id> <worker-id> [options]
 ### Examples
 
 ```bash
-tx claim:renew tx-abc123 worker-def456
+tx claim renew tx-abc123 worker-def456
 ```
 
 </Tab>
@@ -277,6 +277,17 @@ curl -X POST http://localhost:3456/api/tasks/tx-abc123/claim/renew \
 </Tab>
 </Tabs>
 
+## Atomic Ready + Claim
+
+For parallel workers, use `tx ready --claim` to atomically fetch and claim a task in one step. This eliminates the race window between separate `tx ready` and `tx claim` calls.
+
+```bash
+# One command: find the best ready task AND claim it
+tx ready --json --limit 1 --claim worker-1 --lease 30
+```
+
+This is the recommended approach for multi-worker setups. See [`tx ready`](/docs/primitives/ready) for full details.
+
 ## Use Case: Parallel Agent Execution
 
 Without claims, parallel agents might pick the same task:
@@ -295,7 +306,24 @@ Agent1: tx claim tx-abc123 worker-1   # Success
 Agent2: tx claim tx-abc123 worker-2   # Fails - already claimed
 ```
 
-### Parallel Agent Loop
+### Parallel Agent Loop (Recommended)
+
+```bash
+#!/bin/bash
+# Use atomic ready+claim to avoid race conditions
+WORKER_ID="worker-$$"
+
+while true; do
+  RESULT=$(tx ready --json --limit 1 --claim "$WORKER_ID" --lease 30)
+  TASK=$(echo "$RESULT" | jq -r '.task.id // empty')
+  [ -z "$TASK" ] && break
+
+  claude "Your task is $TASK. Run 'tx show $TASK' for details."
+  tx done "$TASK"
+done
+```
+
+### Two-Step Pattern (Legacy)
 
 ```bash
 #!/bin/bash
@@ -321,7 +349,7 @@ done
 1. **Claiming** creates a lease with an expiry time
 2. **Expired leases** allow other workers to claim the task
 3. **Completing** a task (`tx done`) does not require releasing the claim first
-4. **Long tasks** should periodically renew with `tx claim:renew`
+4. **Long tasks** should periodically renew with `tx claim renew`
 
 ## Related Commands
 

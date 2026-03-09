@@ -791,6 +791,53 @@ trap 'log "Received SIGHUP signal; ignoring to stay detached"' HUP
 log "Watchdog started interval=${POLL_SECONDS}s codex=${CODEX_ENABLED} claude=${CLAUDE_ENABLED} auto_start=${AUTO_START} idle_rounds=${IDLE_ROUNDS}"
 log "Stall thresholds: transcript_idle=${TRANSCRIPT_IDLE_SECONDS}s claude_grace=${CLAUDE_STALL_GRACE_SECONDS}s heartbeat_lag=${HEARTBEAT_LAG_SECONDS}s run_stale=${RUN_STALE_SECONDS}s"
 
+reconcile_process_registry() {
+  # Check if process_registry table exists
+  local table_exists
+  table_exists=$(sqlite3 "$DB_PATH" \
+    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='process_registry';" \
+    2>/dev/null || echo "0")
+  if [ "$table_exists" != "1" ]; then
+    return
+  fi
+
+  # Find alive entries and verify PIDs are still running
+  local rows=""
+  rows=$(sqlite3 "$DB_PATH" \
+    "SELECT id, pid, role, worker_id FROM process_registry WHERE ended_at IS NULL;" \
+    2>/dev/null || echo "")
+  [ -z "$rows" ] && return
+
+  local cleaned=0
+  while IFS='|' read -r reg_id pid role worker_id; do
+    [ -z "$reg_id" ] && continue
+    [[ "$reg_id" =~ ^[0-9]+$ ]] || continue
+    if ! pid_is_live "$pid"; then
+      sqlite3 "$DB_PATH" \
+        "UPDATE process_registry SET ended_at=datetime('now') WHERE id=$reg_id;" \
+        >/dev/null 2>&1 || true
+      cleaned=$((cleaned + 1))
+      log "Process registry: marked pid=$pid role=$role worker=$worker_id as ended (dead)"
+    fi
+  done <<< "$rows"
+
+  if [ $cleaned -gt 0 ]; then
+    log "Process registry: cleaned $cleaned dead process(es)"
+  fi
+}
+
+expire_stale_claims() {
+  local count
+  count=$(sqlite3 "$DB_PATH" \
+    "UPDATE task_claims SET status='expired' WHERE status='active' AND lease_expires_at < datetime('now');
+     SELECT changes();" \
+    2>/dev/null || echo "0")
+  count=${count:-0}
+  if [ "$count" -gt 0 ] 2>/dev/null; then
+    log "Expired $count stale claim(s)"
+  fi
+}
+
 while true; do
   ensure_loop "codex" "$CODEX_PREFIX" "$CODEX_ENABLED"
   ensure_loop "claude" "$CLAUDE_PREFIX" "$CLAUDE_ENABLED"
@@ -798,6 +845,8 @@ while true; do
   reconcile_running_runs
   reset_orphaned_active_tasks
   reap_stalled_runs_via_primitive
+  reconcile_process_registry
+  expire_stale_claims
 
   check_error_burst_for_worker "codex" "$CODEX_PREFIX" "$CODEX_ENABLED"
   check_error_burst_for_worker "claude" "$CLAUDE_PREFIX" "$CLAUDE_ENABLED"

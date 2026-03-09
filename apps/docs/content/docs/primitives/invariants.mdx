@@ -214,6 +214,35 @@ tx invariant sync
 tx invariant sync --doc auth-design
 ```
 
+## Invariant Provenance
+
+Every invariant tracks where it came from via `source` and `source_ref` fields:
+
+| Source | Description | Example |
+|--------|-------------|---------|
+| `explicit` | Manually authored in YAML `invariants[]` | Default for all hand-written invariants |
+| `goals` | Auto-derived from design doc `goals[]` | `INV-DESIGN-AUTH-GOAL-001` |
+| `decision` | Generated from an approved decision | `source_ref: dec-abc123def456` |
+| `constraint` | System design constraint | `INV-SD-ERROR-001` |
+
+## EARS Fields on Invariants
+
+Invariants derived from EARS-structured requirements carry full EARS metadata in the database:
+
+| Field | Description |
+|-------|-------------|
+| `pattern` | EARS pattern (ubiquitous, event_driven, state_driven, unwanted, optional, complex) |
+| `system_name` | The system/subject (e.g., "authentication service") |
+| `response` | The SHALL behavior |
+| `trigger_text` | WHEN clause (event_driven) |
+| `state_text` | WHILE clause (state_driven) |
+| `condition_text` | IF clause (unwanted) |
+| `feature` | WHERE clause (optional) |
+| `rationale` | Why the invariant exists |
+| `test_hint` | Suggested test file/approach |
+
+The `rule` field is auto-computed from EARS components using `renderEarsRule()`.
+
 ## Invariant Statuses
 
 | Status | Description |

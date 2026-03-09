@@ -55,7 +55,7 @@ A set of **Claude Code hooks** that:
 │        ▼                                                                │
 │  Stop ──────────────► capture-learning.sh ► Prompt learning capture    │
 │                             │                                           │
-│                             └─► "tx learning:add" if insights gained   │
+│                             └─► "tx learning add" if insights gained   │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -197,7 +197,7 @@ A set of **Claude Code hooks** that:
 **Script**: `session-start.sh`
 ```bash
 #!/bin/bash
-LEARNINGS=$(tx learning:recent -n 5 --json 2>/dev/null)
+LEARNINGS=$(tx learning recent -n 5 --json 2>/dev/null)
 if [ -n "$LEARNINGS" ] && [ "$LEARNINGS" != "[]" ]; then
   # Format as additionalContext JSON
   echo "{\"hookSpecificOutput\":{...}}"
@@ -214,7 +214,7 @@ exit 0
 **Logic**:
 1. Check if prompt contains task ID (tx-[a-z0-9]+)
 2. If yes, call `tx context <task-id> --json`
-3. If no, call `tx learning:search "<prompt keywords>" -n 3 --json`
+3. If no, call `tx learning search "<prompt keywords>" -n 3 --json`
 4. Return as `additionalContext`
 
 **Output** (JSON):
@@ -258,14 +258,14 @@ exit 0
 **Logic**:
 1. Check `stop_hook_active` - if true, exit (avoid infinite loop)
 2. Check if `.tx/current-task` exists
-3. If yes, block stop and prompt for `tx learning:add`
+3. If yes, block stop and prompt for `tx learning add`
 4. Clean up `.tx/current-task`
 
 **Output** (JSON to block):
 ```json
 {
   "decision": "block",
-  "reason": "Please capture learnings with tx learning:add before finishing."
+  "reason": "Please capture learnings with tx learning add before finishing."
 }
 ```
 
@@ -319,7 +319,7 @@ For more intelligent learning capture, use a prompt-based hook:
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Evaluate if Claude should stop. Input: $ARGUMENTS\n\nCheck if:\n1. The task was completed successfully\n2. Any learnings should be captured\n\nIf learnings should be captured, return {\"ok\": false, \"reason\": \"Please capture learnings with tx learning:add\"}\nIf complete, return {\"ok\": true}",
+            "prompt": "Evaluate if Claude should stop. Input: $ARGUMENTS\n\nCheck if:\n1. The task was completed successfully\n2. Any learnings should be captured\n\nIf learnings should be captured, return {\"ok\": false, \"reason\": \"Please capture learnings with tx learning add\"}\nIf complete, return {\"ok\": true}",
             "timeout": 30
           }
         ]

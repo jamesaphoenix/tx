@@ -104,6 +104,24 @@ export const ready = (_pos: string[], flags: Flags) =>
     const labels = labelStr ? labelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
     const excludeLabels = excludeLabelStr ? excludeLabelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
 
+    // Atomic ready+claim mode
+    const claimWorkerId = opt(flags, "claim")
+    if (claimWorkerId) {
+      const leaseMins = parseIntOpt(flags, "lease") ?? 30
+      const result = yield* svc.readyAndClaim(claimWorkerId, leaseMins, {
+        labels: labels?.length ? labels : undefined,
+        excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
+      })
+      if (flag(flags, "json")) {
+        console.log(toJson(result))
+      } else if (result) {
+        console.log(`Claimed ${result.task.id} for ${claimWorkerId} (expires ${result.claim.leaseExpiresAt})`)
+      } else {
+        console.log("No ready tasks available to claim")
+      }
+      return
+    }
+
     const tasks = yield* svc.getReady(limit, {
       labels: labels?.length ? labels : undefined,
       excludeLabels: excludeLabels?.length ? excludeLabels : undefined,

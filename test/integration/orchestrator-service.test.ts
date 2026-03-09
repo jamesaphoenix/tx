@@ -75,8 +75,8 @@ async function makeTestLayer() {
   // ClaimService needs ClaimRepository, TaskRepository, and OrchestratorStateRepository
   const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
 
-  // ReadyService needs TaskRepository and DependencyRepository
-  const readyService = ReadyServiceLive.pipe(Layer.provide(repos))
+  // ReadyService needs TaskRepository, DependencyRepository, and ClaimService
+  const readyService = ReadyServiceLive.pipe(Layer.provide(Layer.merge(repos, claimService)))
 
   // OrchestratorService needs everything plus SqliteClient for transaction support
   const orchestratorService = OrchestratorServiceLive.pipe(

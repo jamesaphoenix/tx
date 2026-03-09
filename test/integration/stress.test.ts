@@ -52,7 +52,10 @@ import {
   GuardRepositoryLive,
   QueryExpansionServiceNoop,
   RerankerServiceNoop,
-  RetrieverServiceLive
+  RetrieverServiceLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId } from "@jamesaphoenix/tx-types"
 
@@ -100,17 +103,20 @@ function makeTaskTestLayer(db: TestDatabase) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-    PinRepositoryLive
+    PinRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
   return Layer.mergeAll(services, repos)
 }
@@ -125,10 +131,13 @@ function makeLearningTestLayer(db: TestDatabase) {
     DependencyRepositoryLive,
     LearningRepositoryLive,
     GuardRepositoryLive,
-    PinRepositoryLive
+    PinRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const retrieverLayer = RetrieverServiceLive.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -153,7 +162,8 @@ function makeLearningTestLayer(db: TestDatabase) {
         AutoSyncServiceNoop,
         QueryExpansionServiceNoop,
         RerankerServiceNoop,
-        retrieverLayer
+        retrieverLayer,
+        claimService
       )
     )
   )
@@ -175,17 +185,20 @@ function makeSyncTestLayer(db: TestDatabase) {
     AnchorRepositoryLive,
     EdgeRepositoryLive,
     DocRepositoryLive,
-    GuardRepositoryLive
+    GuardRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const baseServices = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
     HierarchyServiceLive
   ).pipe(
-    Layer.provide(Layer.merge(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
   const syncService = SyncServiceLive.pipe(
     Layer.provide(Layer.mergeAll(infra, repos, baseServices, StreamServiceLive.pipe(Layer.provide(infra))))

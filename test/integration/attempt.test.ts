@@ -15,7 +15,10 @@ import {
   AttemptService,
   AutoSyncServiceNoop,
   GuardRepositoryLive,
-  PinRepositoryLive
+  PinRepositoryLive,
+  ClaimRepositoryLive,
+  ClaimServiceLive,
+  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 
 function makeTestLayer(db: TestDatabase) {
@@ -24,11 +27,14 @@ function makeTestLayer(db: TestDatabase) {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     GuardRepositoryLive,
-  PinRepositoryLive,
-    AttemptRepositoryLive
+    PinRepositoryLive,
+    AttemptRepositoryLive,
+    ClaimRepositoryLive,
+    OrchestratorStateRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
+  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
   const services = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
@@ -36,7 +42,7 @@ function makeTestLayer(db: TestDatabase) {
     HierarchyServiceLive,
     AttemptServiceLive
   ).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop))
+    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
   )
   return services
 }

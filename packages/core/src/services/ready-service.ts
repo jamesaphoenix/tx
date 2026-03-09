@@ -1,7 +1,9 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import { DatabaseError } from "../errors.js"
+import { AlreadyClaimedError, DatabaseError, TaskNotFoundError } from "../errors.js"
+import { ClaimService } from "./claim-service.js"
+import type { TaskClaim } from "../schemas/worker.js"
 import type { Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
 /**
@@ -17,6 +19,11 @@ export type ReadyCheckResult =
 /** Helper to check if a ReadyCheckResult indicates the task is ready. */
 export const isReadyResult = (result: ReadyCheckResult): boolean => result._tag === "Ready"
 
+export type ReadyAndClaimResult = {
+  readonly task: TaskWithDeps
+  readonly claim: TaskClaim
+}
+
 export class ReadyService extends Context.Tag("ReadyService")<
   ReadyService,
   {
@@ -24,6 +31,11 @@ export class ReadyService extends Context.Tag("ReadyService")<
     readonly isReady: (id: TaskId) => Effect.Effect<ReadyCheckResult, DatabaseError>
     readonly getBlockers: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getBlocking: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
+    readonly readyAndClaim: (
+      workerId: string,
+      leaseDurationMinutes?: number,
+      options?: { labels?: string[]; excludeLabels?: string[] }
+    ) => Effect.Effect<ReadyAndClaimResult | null, DatabaseError | TaskNotFoundError | AlreadyClaimedError>
   }
 >() {}
 
@@ -32,111 +44,114 @@ export const ReadyServiceLive = Layer.effect(
   Effect.gen(function* () {
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
+    const claimService = yield* ClaimService
+
+    const getReadyImpl = (limit = 100, options?: { labels?: string[]; excludeLabels?: string[] }) =>
+      Effect.gen(function* () {
+        const safeLimit = Math.max(0, Math.floor(limit))
+        if (safeLimit === 0) {
+          return [] as TaskWithDeps[]
+        }
+
+        // Page through candidates ordered by score/id to avoid loading the
+        // entire backlog when only a small ready set is requested.
+        const ready: TaskWithDeps[] = []
+        let cursor: { score: number; id: string } | undefined
+
+        while (ready.length < safeLimit) {
+          const remaining = safeLimit - ready.length
+          const pageSize = Math.min(Math.max(remaining * 4, 200), 1000)
+
+          const candidates = yield* taskRepo.findAll({
+            status: ["backlog", "ready", "planning"],
+            excludeClaimed: true,
+            cursor,
+            limit: pageSize,
+            labels: options?.labels,
+            excludeLabels: options?.excludeLabels,
+          })
+
+          if (candidates.length === 0) {
+            break
+          }
+
+          const candidateIds = candidates.map(t => t.id)
+
+          // Batch dependency lookups for each page.
+          const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(candidateIds)
+          const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(candidateIds)
+          const childIdsMap = yield* taskRepo.getChildIdsForMany(candidateIds)
+
+          const allBlockerIds = new Set<string>()
+          for (const blockerIds of blockerIdsMap.values()) {
+            for (const id of blockerIds) {
+              allBlockerIds.add(id)
+            }
+          }
+
+          const blockerTasks = allBlockerIds.size > 0
+            ? yield* taskRepo.findByIds([...allBlockerIds])
+            : []
+          const blockerStatusMap = new Map(blockerTasks.map(t => [t.id, t.status]))
+
+          for (const task of candidates) {
+            const blockerIds = blockerIdsMap.get(task.id) ?? []
+            const blockingIds = blockingIdsMap.get(task.id) ?? []
+            const childIds = childIdsMap.get(task.id) ?? []
+
+            const allDone = blockerIds.length === 0 ||
+              blockerIds.every(id => blockerStatusMap.get(id) === "done")
+
+            if (allDone) {
+              ready.push({
+                ...task,
+                blockedBy: blockerIds as TaskId[],
+                blocks: blockingIds as TaskId[],
+                children: childIds as TaskId[],
+                isReady: true,
+                groupContext: null,
+                effectiveGroupContext: null,
+                effectiveGroupContextSourceTaskId: null
+              })
+            }
+          }
+
+          const lastCandidate = candidates[candidates.length - 1]
+          if (!lastCandidate) {
+            break
+          }
+          cursor = { score: lastCandidate.score, id: lastCandidate.id }
+
+          if (candidates.length < pageSize) {
+            break
+          }
+        }
+
+        ready.sort((a, b) => b.score - a.score)
+        const limited = ready.slice(0, safeLimit)
+        if (limited.length === 0) {
+          return limited
+        }
+
+        // Resolve context only for the final response set to avoid expensive
+        // graph traversal across the full candidate backlog.
+        const limitedIds = limited.map(task => task.id)
+        const directContextMap = yield* taskRepo.getGroupContextForMany(limitedIds)
+        const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany(limitedIds)
+
+        return limited.map((task) => {
+          const effective = effectiveContextMap.get(task.id)
+          return {
+            ...task,
+            groupContext: directContextMap.get(task.id) ?? null,
+            effectiveGroupContext: effective?.context ?? null,
+            effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
+          }
+        })
+      })
 
     return {
-      getReady: (limit = 100, options) =>
-        Effect.gen(function* () {
-          const safeLimit = Math.max(0, Math.floor(limit))
-          if (safeLimit === 0) {
-            return [] as TaskWithDeps[]
-          }
-
-          // Page through candidates ordered by score/id to avoid loading the
-          // entire backlog when only a small ready set is requested.
-          const ready: TaskWithDeps[] = []
-          let cursor: { score: number; id: string } | undefined
-
-          while (ready.length < safeLimit) {
-            const remaining = safeLimit - ready.length
-            const pageSize = Math.min(Math.max(remaining * 4, 200), 1000)
-
-            const candidates = yield* taskRepo.findAll({
-              status: ["backlog", "ready", "planning"],
-              excludeClaimed: true,
-              cursor,
-              limit: pageSize,
-              labels: options?.labels,
-              excludeLabels: options?.excludeLabels,
-            })
-
-            if (candidates.length === 0) {
-              break
-            }
-
-            const candidateIds = candidates.map(t => t.id)
-
-            // Batch dependency lookups for each page.
-            const blockerIdsMap = yield* depRepo.getBlockerIdsForMany(candidateIds)
-            const blockingIdsMap = yield* depRepo.getBlockingIdsForMany(candidateIds)
-            const childIdsMap = yield* taskRepo.getChildIdsForMany(candidateIds)
-
-            const allBlockerIds = new Set<string>()
-            for (const blockerIds of blockerIdsMap.values()) {
-              for (const id of blockerIds) {
-                allBlockerIds.add(id)
-              }
-            }
-
-            const blockerTasks = allBlockerIds.size > 0
-              ? yield* taskRepo.findByIds([...allBlockerIds])
-              : []
-            const blockerStatusMap = new Map(blockerTasks.map(t => [t.id, t.status]))
-
-            for (const task of candidates) {
-              const blockerIds = blockerIdsMap.get(task.id) ?? []
-              const blockingIds = blockingIdsMap.get(task.id) ?? []
-              const childIds = childIdsMap.get(task.id) ?? []
-
-              const allDone = blockerIds.length === 0 ||
-                blockerIds.every(id => blockerStatusMap.get(id) === "done")
-
-              if (allDone) {
-                ready.push({
-                  ...task,
-                  blockedBy: blockerIds as TaskId[],
-                  blocks: blockingIds as TaskId[],
-                  children: childIds as TaskId[],
-                  isReady: true,
-                  groupContext: null,
-                  effectiveGroupContext: null,
-                  effectiveGroupContextSourceTaskId: null
-                })
-              }
-            }
-
-            const lastCandidate = candidates[candidates.length - 1]
-            if (!lastCandidate) {
-              break
-            }
-            cursor = { score: lastCandidate.score, id: lastCandidate.id }
-
-            if (candidates.length < pageSize) {
-              break
-            }
-          }
-
-          ready.sort((a, b) => b.score - a.score)
-          const limited = ready.slice(0, safeLimit)
-          if (limited.length === 0) {
-            return limited
-          }
-
-          // Resolve context only for the final response set to avoid expensive
-          // graph traversal across the full candidate backlog.
-          const limitedIds = limited.map(task => task.id)
-          const directContextMap = yield* taskRepo.getGroupContextForMany(limitedIds)
-          const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany(limitedIds)
-
-          return limited.map((task) => {
-            const effective = effectiveContextMap.get(task.id)
-            return {
-              ...task,
-              groupContext: directContextMap.get(task.id) ?? null,
-              effectiveGroupContext: effective?.context ?? null,
-              effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
-            }
-          })
-        }),
+      getReady: getReadyImpl,
 
       isReady: (id) =>
         Effect.gen(function* () {
@@ -170,6 +185,24 @@ export const ReadyServiceLive = Layer.effect(
           const blockingIds = yield* depRepo.getBlockingIds(id)
           if (blockingIds.length === 0) return [] as Task[]
           return yield* taskRepo.findByIds(blockingIds)
+        }),
+
+      readyAndClaim: (workerId, leaseDurationMinutes, options) =>
+        Effect.gen(function* () {
+          // Fetch a small batch of candidates to try claiming
+          const candidates = yield* getReadyImpl(5, options)
+          if (candidates.length === 0) return null
+
+          // Try to claim each candidate in priority order
+          for (const task of candidates) {
+            const claimResult = yield* claimService.claim(task.id, workerId, leaseDurationMinutes).pipe(
+              Effect.map((claim) => ({ task, claim }) satisfies ReadyAndClaimResult),
+              Effect.catchTag("AlreadyClaimedError", () => Effect.succeed(null)),
+              Effect.catchTag("TaskNotFoundError", () => Effect.succeed(null))
+            )
+            if (claimResult !== null) return claimResult
+          }
+          return null
         })
     }
   })

@@ -80,7 +80,7 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx done <id>` | Complete task, potentially unblocking others |
 | `tx block <id> <blocker>` | Declare dependencies |
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
-| `tx learning:add` | Record knowledge for future agents |
+| `tx learning add` | Record knowledge for future agents |
 | `tx send <channel> <content>` | Send a message to an agent channel |
 | `tx inbox <channel>` | Read messages (read-only, cursor-based) |
 | `tx ack <id>` | Acknowledge a message |
@@ -148,6 +148,10 @@ The moat is the **knowledge layer**:
 - Context that transfers across projects and sessions
 
 This compounds. Agents get smarter over time.
+
+### The Spec-Driven Development Triangle
+
+Spec-driven development is not a one-way equation (spec + tests + agent = code) — it's a feedback loop where implementing code generates decisions that must feed back into the spec and tests. tx is the control plane that keeps these three nodes in sync as agents work: tasks define what to build, learnings and traces capture the decisions made during implementation, and `tx done` is a checkpoint — not a suggestion — that closes the loop. The answer to AI coding's volume problem (waterfall output at agile cadence) is not more complex orchestration but lightweight process, so that moving fast doesn't require abandoning intent tracking. Decisions made during implementation, whether by humans or agents, are first-class artifacts that compound in the knowledge layer.
 
 ---
 
@@ -481,11 +485,11 @@ tx try <id> <approach>     # Record an attempt (--failed|--succeeded)
 tx attempts <id>           # List attempts
 
 # Memory & Learnings
-tx learning:add <content>  # Add a learning
-tx learning:search <q>     # Search (BM25 + recency)
-tx learning:recent         # Recent learnings
-tx learning:helpful <id>   # Record helpfulness
-tx learning:embed          # Compute vector embeddings
+tx learning add <content>  # Add a learning
+tx learning search <q>     # Search (BM25 + recency)
+tx learning recent         # Recent learnings
+tx learning helpful <id>   # Record helpfulness
+tx learning embed          # Compute vector embeddings
 tx context <task-id>       # Contextual learnings for a task
 tx learn <path> <note>     # Attach learning to file/glob
 tx recall [path]           # Query file learnings
@@ -494,9 +498,9 @@ tx recall [path]           # Query file learnings
 tx send <channel> <msg>    # Send to channel
 tx inbox <channel>         # Read messages
 tx ack <id>                # Acknowledge message
-tx ack:all <channel>       # Acknowledge all on channel
-tx outbox:pending <ch>     # Count pending messages
-tx outbox:gc               # Garbage collect old messages
+tx ack all <channel>       # Acknowledge all on channel
+tx outbox pending <ch>     # Count pending messages
+tx outbox gc               # Garbage collect old messages
 
 # Docs & Invariants
 tx doc <sub>               # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
@@ -504,8 +508,8 @@ tx invariant <sub>         # list, show, record, sync
 
 # Claims (Worker Leasing)
 tx claim <task> <worker>   # Claim with lease (--lease minutes)
-tx claim:release <t> <w>   # Release claim
-tx claim:renew <t> <w>     # Renew lease
+tx claim release <t> <w>   # Release claim
+tx claim renew <t> <w>     # Renew lease
 
 # Traces (Run Debugging)
 tx trace list              # Recent runs
@@ -887,8 +891,8 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx add <title>` | Create a new task (`--parent`, `--score`, `--description`) |
 | `tx show <id>` | Show task details with dependencies |
 | `tx block <id> <blocker>` | Declare task dependencies |
-| `tx group-context:set <id> <context>` | Attach shared task-group context for related tasks |
-| `tx group-context:clear <id>` | Clear task-group context from a task |
+| `tx group-context set <id> <context>` | Attach shared task-group context for related tasks |
+| `tx group-context clear <id>` | Clear task-group context from a task |
 | `tx context <id>` | Get relevant learnings + history |
 | `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
 
@@ -909,8 +913,8 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 
 | Command | Purpose |
 |---------|---------|
-| `tx learning:add <content>` | Record knowledge for future agents |
-| `tx learning:search <q>` | Search learnings (BM25 + recency) |
+| `tx learning add <content>` | Record knowledge for future agents |
+| `tx learning search <q>` | Search learnings (BM25 + recency) |
 | `tx learn <path> <note>` | Attach a learning to a file path or glob |
 | `tx recall [path]` | Query file-specific learnings by path |
 
@@ -927,8 +931,8 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | Command | Purpose |
 |---------|---------|
 | `tx claim <id> <worker>` | Claim a task with a lease |
-| `tx claim:release <id> <w>` | Release a claim |
-| `tx claim:renew <id> <w>` | Renew a lease |
+| `tx claim release <id> <w>` | Release a claim |
+| `tx claim renew <id> <w>` | Renew a lease |
 
 ### Sync
 
@@ -972,11 +976,12 @@ read -p "Approve? [y/n] " answer
 
 Do not bypass hooks in this workflow. Keep git verification enabled for commits and pushes.
 
-If related tasks share rollout/migration notes, set them once via `tx group-context:set <id> "<context>"` so descendants/ancestors inherit the same context.
+If related tasks share rollout/migration notes, set them once via `tx group-context set <id> "<context>"` so descendants/ancestors inherit the same context.
 
-## EARS-First Requirements
+## EARS Requirements (Mandatory)
 
-- For new PRDs, prefer `ears_requirements` over plain `requirements`.
+- All PRDs MUST include `ears_requirements`. This is a hard requirement, not configurable.
+- PRDs with legacy `requirements` MUST also define a non-empty `ears_requirements` array.
 - Use deterministic IDs in the form `EARS-<AREA>-NNN` (example: `EARS-API-001`).
 - Use valid patterns only: `ubiquitous`, `event_driven`, `state_driven`, `optional`, `unwanted`, `complex`.
 - Run `tx doc lint-ears <doc-name-or-yaml-path>` before implementation and before review.
@@ -991,7 +996,7 @@ If related tasks share rollout/migration notes, set them once via `tx group-cont
 | Design Doc | `docs/design/` | `DD-NNN` | Implementation design |
 | System Design | `docs/system-design/` | `SD-NNN` | Shared architecture constraints |
 
-- `tx doc` currently scaffolds `overview`, `prd`, and `design` docs; REQ/SD are manual markdown conventions.
+- `tx doc` scaffolds all 5 doc kinds: `overview`, `prd`, `design`, `requirement`, and `system_design`.
 - Create docs for non-trivial features and plans; formalize behavior, scope, design, and SD when cross-cutting.
 - Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
 - Link docs as a chain: `REQ -> PRD -> DD`, and include `SD` when constraints span multiple features.

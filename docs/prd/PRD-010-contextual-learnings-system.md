@@ -73,12 +73,12 @@ Create → Index (FTS5 + optional vector) → Retrieve → Use → Track Outcome
 
 | ID | Requirement | CLI Command |
 |----|-------------|-------------|
-| CL-001 | Add learning manually | `tx learning:add "content" [-c category]` |
-| CL-002 | Search learnings | `tx learning:search "query" [-n limit]` |
-| CL-003 | List recent learnings | `tx learning:recent [-n limit]` |
-| CL-004 | Record outcome feedback | `tx learning:helpful <id> [--score 0.8]` |
+| CL-001 | Add learning manually | `tx learning add "content" [-c category]` |
+| CL-002 | Search learnings | `tx learning search "query" [-n limit]` |
+| CL-003 | List recent learnings | `tx learning recent [-n limit]` |
+| CL-004 | Record outcome feedback | `tx learning helpful <id> [--score 0.8]` |
 | CL-005 | Import from CLAUDE.md | `tx learning:import [file]` |
-| CL-006 | Generate embeddings | `tx learning:embed` |
+| CL-006 | Generate embeddings | `tx learning embed` |
 | CL-025 | View single learning by ID | `tx learning:show <id> [--json]` |
 
 ### Task Context Retrieval
@@ -190,14 +190,14 @@ interface ContextResult {
 ### Add Learning
 
 ```bash
-$ tx learning:add "Always use transactions for multi-step DB operations" -c database
+$ tx learning add "Always use transactions for multi-step DB operations" -c database
 Added learning #42 (category: database)
 ```
 
 ### Search Learnings
 
 ```bash
-$ tx learning:search "database transactions" -n 5
+$ tx learning search "database transactions" -n 5
 5 results:
 
 [92%] [database] Always use transactions for multi-step DB operations
@@ -254,7 +254,7 @@ $ cat .tx/context.md
 ### Record Outcome
 
 ```bash
-$ tx learning:helpful 42 --score 0.9
+$ tx learning helpful 42 --score 0.9
 Updated learning #42 outcome score to 0.9
 ```
 
@@ -307,14 +307,14 @@ This enables answering: "What context did we give the agent that made it succeed
 ### Without Embeddings
 
 - BM25 search works normally
-- `tx learning:embed` prints: "No embedding model configured"
+- `tx learning embed` prints: "No embedding model configured"
 - Vector search falls back to BM25-only
 - All other commands work
 
 ### Without Any Learnings
 
 - `tx context <task-id>` returns empty list
-- `tx learning:search` returns empty list
+- `tx learning search` returns empty list
 - No errors, just no results
 
 ---

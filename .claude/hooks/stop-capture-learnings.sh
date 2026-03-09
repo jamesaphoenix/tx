@@ -45,7 +45,7 @@ Extract all key learnings — things that would help a future agent working on t
 - Tool/API quirks encountered
 
 For each learning, record it with:
-  bun $PROJECT_DIR/apps/cli/src/cli.ts learning:add \"<learning>\"
+  bun $PROJECT_DIR/apps/cli/src/cli.ts learning add \"<learning>\"
 
 Skip obvious or generic observations. Only record insights specific to this project." \
   2>/dev/null &

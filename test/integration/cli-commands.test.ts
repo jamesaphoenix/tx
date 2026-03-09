@@ -688,7 +688,7 @@ describe("CLI sync claude command", () => {
 })
 
 // =============================================================================
-// tx group-context:* Command Tests
+// tx group-context * Command Tests
 // =============================================================================
 
 describe("CLI group-context commands", { timeout: CLI_TIMEOUT }, () => {
@@ -715,7 +715,7 @@ describe("CLI group-context commands", { timeout: CLI_TIMEOUT }, () => {
   it("set stores direct context and show/ready expose inherited effective context", () => {
     const context = "Shared auth rollout context"
 
-    const setResult = runTxArgs(["group-context:set", parentId, context, "--json"], dbPath)
+    const setResult = runTxArgs(["group-context", "set", parentId, context, "--json"], dbPath)
     expect(setResult.status).toBe(0)
     const setTask = JSON.parse(setResult.stdout)
     expect(setTask.groupContext).toBe(context)
@@ -744,10 +744,10 @@ describe("CLI group-context commands", { timeout: CLI_TIMEOUT }, () => {
 
   it("clear removes direct and inherited effective context", () => {
     const context = "Temporary group context"
-    const setResult = runTxArgs(["group-context:set", parentId, context], dbPath)
+    const setResult = runTxArgs(["group-context", "set", parentId, context], dbPath)
     expect(setResult.status).toBe(0)
 
-    const clearResult = runTxArgs(["group-context:clear", parentId, "--json"], dbPath)
+    const clearResult = runTxArgs(["group-context", "clear", parentId, "--json"], dbPath)
     expect(clearResult.status).toBe(0)
     const cleared = JSON.parse(clearResult.stdout)
     expect(cleared.groupContext).toBeNull()
@@ -766,7 +766,7 @@ describe("CLI group-context commands", { timeout: CLI_TIMEOUT }, () => {
     const grandChildId = JSON.parse(runTxArgs(["add", "Grandchild task", "--parent", childId, "--json"], dbPath).stdout).id
     const context = "Child-specific rollout context"
 
-    const setResult = runTxArgs(["group-context:set", childId, context, "--json"], dbPath)
+    const setResult = runTxArgs(["group-context", "set", childId, context, "--json"], dbPath)
     expect(setResult.status).toBe(0)
 
     const showParent = JSON.parse(runTxArgs(["show", parentId, "--json"], dbPath).stdout)
@@ -784,20 +784,20 @@ describe("CLI group-context commands", { timeout: CLI_TIMEOUT }, () => {
   })
 
   it("set shows usage error when arguments are missing", () => {
-    const result = runTxArgs(["group-context:set", parentId], dbPath)
+    const result = runTxArgs(["group-context", "set", parentId], dbPath)
     expect(result.status).toBe(1)
-    expect(result.stderr).toContain("Usage: tx group-context:set")
+    expect(result.stderr).toContain("Usage: tx group-context set")
   })
 
   it("clear shows usage error when task id is missing", () => {
-    const result = runTxArgs(["group-context:clear"], dbPath)
+    const result = runTxArgs(["group-context", "clear"], dbPath)
     expect(result.status).toBe(1)
-    expect(result.stderr).toContain("Usage: tx group-context:clear")
+    expect(result.stderr).toContain("Usage: tx group-context clear")
   })
 
   it("rejects oversized group context payloads", () => {
     const oversized = "x".repeat(20001)
-    const result = runTxArgs(["group-context:set", parentId, oversized], dbPath)
+    const result = runTxArgs(["group-context", "set", parentId, oversized], dbPath)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("at most 20000 characters")
   })

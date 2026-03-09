@@ -113,8 +113,7 @@ const docAdd = (pos: string[], flags: Flags) =>
     const yamlContent = generateTemplate(
       kind as DocKind,
       name,
-      title,
-      readTxConfig().docs.requireEars
+      title
     )
 
     const svc = yield* DocService
@@ -383,7 +382,6 @@ const docLintEars = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const target = pos[0]
     const jsonMode = flag(flags, "json")
-    const requireEars = readTxConfig().docs.requireEars
     if (!target) {
       console.error("Usage: tx doc lint-ears <doc-name-or-yaml-path> [--json]")
       throw new CliExitError(1)
@@ -470,11 +468,10 @@ const docLintEars = (pos: string[], flags: Flags) =>
 
     const earsRequirements = parsedRecord.ears_requirements
     if (earsRequirements === undefined) {
-      if (requireEars && usesLegacyRequirements) {
+      if (usesLegacyRequirements) {
         const message =
           "PRDs with legacy 'requirements' must also define a non-empty " +
-          "'ears_requirements' array while [docs].require_ears = true. " +
-          "Set [docs].require_ears = false to opt out."
+          "'ears_requirements' array. EARS-structured requirements are mandatory for all PRDs."
         if (jsonMode) {
           console.log(
             toJson({
@@ -525,11 +522,10 @@ const docLintEars = (pos: string[], flags: Flags) =>
       throw new CliExitError(1)
     }
 
-    if (requireEars && usesLegacyRequirements && earsRequirements.length === 0) {
+    if (usesLegacyRequirements && earsRequirements.length === 0) {
       const message =
         "PRDs with legacy 'requirements' must also define a non-empty " +
-        "'ears_requirements' array while [docs].require_ears = true. " +
-        "Set [docs].require_ears = false to opt out."
+        "'ears_requirements' array. EARS-structured requirements are mandatory for all PRDs."
       if (jsonMode) {
         console.log(
           toJson({
@@ -576,8 +572,7 @@ const docLintEars = (pos: string[], flags: Flags) =>
 function generateTemplate(
   kind: DocKind,
   name: string,
-  title: string,
-  requireEars: boolean
+  title: string
 ): string {
   switch (kind) {
     case "overview":
@@ -618,41 +613,8 @@ function generateTemplate(
         `  - Retained indefinitely`,
         ``,
       ].join("\n")
-    case "prd":
-      if (requireEars) {
-        const earsArea = toEarsAreaSegment(name)
-        return [
-          `kind: prd`,
-          `name: ${name}`,
-          `title: "${title}"`,
-          `status: changing`,
-          ``,
-          `problem: |`,
-          `  Describe the problem.`,
-          ``,
-          `solution: |`,
-          `  Describe the solution approach.`,
-          ``,
-          `ears_requirements:`,
-          `  - id: EARS-${earsArea}-001`,
-          `    pattern: ubiquitous`,
-          `    system: the system`,
-          `    response: do something important`,
-          `    priority: must`,
-          ``,
-          `# Optional legacy requirements list (kept for backward compatibility)`,
-          `# requirements:`,
-          `#   - Requirement 1`,
-          ``,
-          `acceptance_criteria:`,
-          `  - Criterion 1`,
-          ``,
-          `out_of_scope:`,
-          `  - Item 1`,
-          ``,
-        ].join("\n")
-      }
-
+    case "prd": {
+      const earsArea = toEarsAreaSegment(name)
       return [
         `kind: prd`,
         `name: ${name}`,
@@ -665,17 +627,16 @@ function generateTemplate(
         `solution: |`,
         `  Describe the solution approach.`,
         ``,
-        `requirements:`,
-        `  - Requirement 1`,
+        `ears_requirements:`,
+        `  - id: EARS-${earsArea}-001`,
+        `    pattern: ubiquitous`,
+        `    system: the system`,
+        `    response: do something important`,
+        `    priority: must`,
         ``,
-        `# Structured requirements using EARS notation (enabled by default;`,
-        `# set [docs].require_ears = false in .tx/config.toml to keep optional)`,
-        `# ears_requirements:`,
-        `#   - id: EARS-XXX-001`,
-        `#     pattern: ubiquitous`,
-        `#     system: the system`,
-        `#     response: do something`,
-        `#     priority: must`,
+        `# Optional legacy requirements list (kept for backward compatibility)`,
+        `# requirements:`,
+        `#   - Requirement 1`,
         ``,
         `acceptance_criteria:`,
         `  - Criterion 1`,
@@ -684,6 +645,7 @@ function generateTemplate(
         `  - Item 1`,
         ``,
       ].join("\n")
+    }
     case "design":
       return [
         `kind: design`,
@@ -757,6 +719,65 @@ function generateTemplate(
         `  - Latency target:`,
         `  - Throughput target:`,
         `  - Memory limits:`,
+        ``,
+      ].join("\n")
+    case "requirement":
+      return [
+        `kind: requirement`,
+        `name: ${name}`,
+        `title: "${title}"`,
+        `status: changing`,
+        ``,
+        `overview: |`,
+        `  One-sentence behavioral description.`,
+        ``,
+        `actors:`,
+        `  - name: User`,
+        `    description: Primary user of the system`,
+        ``,
+        `use_cases:`,
+        `  - id: UC-001`,
+        `    title: Example Use Case`,
+        `    trigger: User initiates action`,
+        `    preconditions: System is running`,
+        `    flow:`,
+        `      - Step 1`,
+        `      - Step 2`,
+        `    postconditions: Action completed`,
+        `    exceptions: None`,
+        ``,
+        `invariants: []`,
+        ``,
+        `non_functional_requirements: []`,
+        ``,
+        `traceability:`,
+        `  scoped_by: null`,
+        `  designed_in: null`,
+        ``,
+      ].join("\n")
+    case "system_design":
+      return [
+        `kind: system_design`,
+        `name: ${name}`,
+        `title: "${title}"`,
+        `status: changing`,
+        ``,
+        `overview: |`,
+        `  What cross-cutting concern this describes.`,
+        ``,
+        `scope: |`,
+        `  Which features/subsystems this applies to.`,
+        ``,
+        `constraints: []`,
+        ``,
+        `design: |`,
+        `  Architecture, patterns, data flow, service boundaries.`,
+        ``,
+        `invariants: []`,
+        ``,
+        `applies_to: []`,
+        ``,
+        `decision_log: []`,
         ``,
       ].join("\n")
   }

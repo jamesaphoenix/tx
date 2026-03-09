@@ -107,6 +107,32 @@ const HeartbeatSchema = Schema.Struct({
 export { HeartbeatSchema as Heartbeat }
 export type Heartbeat = typeof HeartbeatSchema.Type
 
+// ----- Process Registry Schemas -----
+
+export const ProcessRoleSchema = Schema.Literal(
+  "orchestrator",
+  "worker",
+  "agent",
+  "tool",
+  "renewal"
+)
+export type ProcessRole = typeof ProcessRoleSchema.Type
+
+const ProcessEntrySchema = Schema.Struct({
+  id: Schema.Number.pipe(Schema.int()),
+  pid: Schema.Number.pipe(Schema.int()),
+  parentPid: Schema.NullOr(Schema.Number.pipe(Schema.int())),
+  workerId: Schema.NullOr(Schema.String),
+  runId: Schema.NullOr(Schema.String),
+  role: ProcessRoleSchema,
+  startedAt: Schema.Date,
+  endedAt: Schema.NullOr(Schema.Date),
+  lastHeartbeatAt: Schema.Date,
+  commandHint: Schema.NullOr(Schema.String)
+})
+export { ProcessEntrySchema as ProcessEntry }
+export type ProcessEntry = typeof ProcessEntrySchema.Type
+
 // ----- Reconciliation Schema -----
 
 // ReconciliationResult schema

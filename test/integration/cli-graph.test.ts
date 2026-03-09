@@ -46,7 +46,7 @@ describe("CLI graph:link", () => {
     // Initialize the database
     runTx(["init"], dbPath)
     // Create a learning to link
-    const result = runTx(["learning:add", "Always use transactions for database operations", "--json"], dbPath)
+    const result = runTx(["learning", "add", "Always use transactions for database operations", "--json"], dbPath)
     const json = JSON.parse(result.stdout)
     learningId = json.id
   })
@@ -189,7 +189,7 @@ describe("CLI graph:show", () => {
     dbPath = join(tmpDir, "test.db")
     runTx(["init"], dbPath)
     // Create a learning
-    const result = runTx(["learning:add", "Test learning for graph operations", "--json"], dbPath)
+    const result = runTx(["learning", "add", "Test learning for graph operations", "--json"], dbPath)
     const json = JSON.parse(result.stdout)
     learningId = json.id
     // Create an anchor for the learning
@@ -213,7 +213,7 @@ describe("CLI graph:show", () => {
 
   it("shows no anchors message when learning has no anchors", () => {
     // Create a new learning without anchors
-    const addResult = runTx(["learning:add", "Learning without anchors", "--json"], dbPath)
+    const addResult = runTx(["learning", "add", "Learning without anchors", "--json"], dbPath)
     const json = JSON.parse(addResult.stdout)
     const newLearningId = json.id
 
@@ -278,7 +278,7 @@ describe("CLI graph:neighbors", () => {
     dbPath = join(tmpDir, "test.db")
     runTx(["init"], dbPath)
     // Create learnings with anchors to create a graph
-    const result = runTx(["learning:add", "Database operations require transactions", "--json"], dbPath)
+    const result = runTx(["learning", "add", "Database operations require transactions", "--json"], dbPath)
     const json = JSON.parse(result.stdout)
     learningId = json.id
     // Create anchors to establish relationships
@@ -352,7 +352,7 @@ describe("CLI graph:neighbors", () => {
 
   it("shows no neighbors message when none found", () => {
     // Create a learning without any graph connections
-    const addResult = runTx(["learning:add", "Isolated learning", "--json"], dbPath)
+    const addResult = runTx(["learning", "add", "Isolated learning", "--json"], dbPath)
     const json = JSON.parse(addResult.stdout)
     const isolatedId = json.id
 

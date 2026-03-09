@@ -29,8 +29,8 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx add <title>` | Create a new task (`--parent`, `--score`, `--description`) |
 | `tx show <id>` | Show task details with dependencies |
 | `tx block <id> <blocker>` | Declare task dependencies |
-| `tx group-context:set <id> <context>` | Attach shared task-group context for related tasks |
-| `tx group-context:clear <id>` | Clear task-group context from a task |
+| `tx group-context set <id> <context>` | Attach shared task-group context for related tasks |
+| `tx group-context clear <id>` | Clear task-group context from a task |
 | `tx context <id>` | Get relevant learnings + history for prompt injection |
 | `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
 
@@ -53,8 +53,8 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | Command | Purpose |
 |---------|---------|
 | `tx memory search --query <text>` | Search filesystem memory docs |
-| `tx learning:add <content>` | Record knowledge for future agents |
-| `tx learning:search <q>` | Search learnings (BM25 + recency) |
+| `tx learning add <content>` | Record knowledge for future agents |
+| `tx learning search <q>` | Search learnings (BM25 + recency) |
 | `tx learn <path> <note>` | Attach a learning to a file path or glob |
 | `tx recall [path]` | Query file-specific learnings by path |
 | `tx pin set <id> <content>` | Persist a context pin (shared with agents) |
@@ -72,8 +72,8 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | Command | Purpose |
 |---------|---------|
 | `tx claim <id> <worker>` | Claim a task with a lease |
-| `tx claim:release <id> <w>` | Release a claim |
-| `tx claim:renew <id> <w>` | Renew a lease |
+| `tx claim release <id> <w>` | Release a claim |
+| `tx claim renew <id> <w>` | Renew a lease |
 
 ### Inspection & Specs
 
@@ -82,6 +82,9 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx attempts <id>` | Review recorded attempts for a task |
 | `tx trace list` | Inspect recent run traces |
 | `tx invariant list` | Inspect invariant registry and status |
+| `tx decision list` | List captured decisions and their review status |
+| `tx decision pending` | Show decisions awaiting review |
+| `tx triangle` | View spec-driven development health (decisions + docs + tests) |
 | `tx spec status` | Inspect requirement/spec/test traceability status |
 
 ### Sync & Data
@@ -126,7 +129,7 @@ read -p "Approve? [y/n] " answer
 
 Do not bypass hooks in this workflow. Keep git verification enabled for commits and pushes.
 
-If related tasks share rollout/migration notes, set them once via `tx group-context:set <id> "<context>"` so descendants/ancestors inherit the same context.
+If related tasks share rollout/migration notes, set them once via `tx group-context set <id> "<context>"` so descendants/ancestors inherit the same context.
 
 ### Fresh agent per task (prevents context pollution)
 
@@ -156,7 +159,7 @@ done
 | Design Doc | `docs/design/` | `DD-NNN` | Implementation design |
 | System Design | `docs/system-design/` | `SD-NNN` | Shared architecture constraints |
 
-- `tx doc` currently scaffolds `overview`, `prd`, and `design` docs; REQ/SD are manual markdown conventions.
+- `tx doc` scaffolds all 5 doc kinds: `overview`, `requirement`, `prd`, `design`, and `system_design`.
 - Create docs for non-trivial features and plans; formalize behavior, scope, design, and SD when cross-cutting.
 - Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
 - Link docs as a chain: `REQ -> PRD -> DD`, and include `SD` when constraints span multiple features.

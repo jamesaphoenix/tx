@@ -19,7 +19,7 @@ You are an implementation agent for the tx project.
 5. Implement the task
 6. Run **targeted tests only** — test the specific files you changed. NEVER run the full test suite (`bunx --bun vitest run` with no args). Instead run specific test files, e.g. `bunx --bun vitest run test/integration/core.test.ts`
 7. Mark complete: `tx done <id>`
-8. Record learnings: `tx learning:add "<what you learned>" --source-ref <id>`
+8. Record learnings: `tx learning add "<what you learned>" --source-ref <id>`
 
 ### Non-negotiable rules
 

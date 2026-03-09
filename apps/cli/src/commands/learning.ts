@@ -1,23 +1,81 @@
 /**
- * Learning commands: learning:add, learning:search, learning:recent, learning:helpful, context, learn, recall
+ * Learning commands: learning add, learning search, learning recent, learning helpful, context, learn, recall
+ *
+ * Learnings are thin wrappers around the Memory system. Each learning is a .md file
+ * in docs/learnings/ tagged with "learning". File-associated learnings use a
+ * file_pattern property in frontmatter.
  */
 
-import { Effect, Layer } from "effect"
-import { writeFileSync, existsSync, mkdirSync } from "node:fs"
-import { resolve, dirname } from "node:path"
-import { pathToFileURL } from "node:url"
-import { LearningService, FileLearningService, RetrieverService, TaskService, RetrievalError } from "@jamesaphoenix/tx-core"
-import { LEARNING_SOURCE_TYPES, EDGE_TYPES } from "@jamesaphoenix/tx-types"
-import type { LearningSourceType, EdgeType } from "@jamesaphoenix/tx-types"
-import { toJson, formatContextMarkdown } from "../output.js"
+import { Effect } from "effect"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { resolve } from "node:path"
+import { randomBytes } from "node:crypto"
+import { MemoryService, MemoryRetrieverService, TaskService, LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
+import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+import type { LearningSourceType } from "@jamesaphoenix/tx-types"
+import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, opt, parseIntOpt, parseFloatOpt, parseTaskId } from "../utils/parse.js"
+
+/**
+ * Extract the actual learning body from a memory document's content.
+ * Strips frontmatter and the auto-generated title heading.
+ */
+const extractBody = (content: string): string => {
+  // Strip frontmatter block
+  const fmMatch = content.match(/^---\n[\s\S]*?\n---\n+/)
+  const body = fmMatch ? content.slice(fmMatch[0].length) : content
+  // Strip title heading (# ...)
+  const titleMatch = body.match(/^#[^\n]*\n+/)
+  return (titleMatch ? body.slice(titleMatch[0].length) : body).trim()
+}
+
+/** Relative path (from cwd) where learning .md files live */
+const LEARNINGS_DIR = "docs/learnings"
+/** Parent directory to register as a memory source */
+const DOCS_DIR = "docs"
+
+/**
+ * Ensure docs/learnings/ exists and docs/ is registered as a memory source.
+ * Called before any learning write operation.
+ */
+const ensureLearningsDir = () =>
+  Effect.gen(function* () {
+    const learningsDir = resolve(process.cwd(), LEARNINGS_DIR)
+    const docsDir = resolve(process.cwd(), DOCS_DIR)
+
+    // Ensure the directories exist on disk
+    mkdirSync(learningsDir, { recursive: true })
+
+    // Ensure docs/ is registered as a memory source
+    const memSvc = yield* MemoryService
+    const sources = yield* memSvc.listSources()
+    const docsRegistered = sources.some(s => s.rootDir === docsDir)
+    if (!docsRegistered) {
+      yield* memSvc.addSource(docsDir, "docs")
+    }
+  })
+
+/**
+ * Generate a learning document title from content.
+ * Produces a slug-friendly title like "always-use-effect-gen-a1b2c3".
+ */
+const learningTitle = (content: string): string => {
+  const words = content
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .split(/\s+/)
+    .filter(w => w.length > 0)
+    .slice(0, 6)
+    .join(" ")
+  const suffix = randomBytes(3).toString("hex")
+  return words.length > 0 ? `${words} ${suffix}` : `learning ${suffix}`
+}
 
 export const learningAdd = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const content = pos[0]
     if (!content) {
-      console.error("Usage: tx learning:add <content> [-c category] [--source-ref ref] [--json]")
+      console.error("Usage: tx learning add <content> [-c category] [--source-ref ref] [--json]")
       process.exit(1)
     }
 
@@ -31,75 +89,79 @@ export const learningAdd = (pos: string[], flags: Flags) =>
       sourceType = sourceTypeArg as LearningSourceType
     }
 
-    const svc = yield* LearningService
-    const learning = yield* svc.create({
+    yield* ensureLearningsDir()
+    const memSvc = yield* MemoryService
+
+    // Build properties from flags
+    const properties: Record<string, string> = { source_type: sourceType }
+    const category = opt(flags, "category", "c")
+    if (category) properties.category = category
+    const sourceRef = opt(flags, "source-ref")
+    if (sourceRef) properties.source_ref = sourceRef
+
+    const doc = yield* memSvc.createDocument({
+      title: learningTitle(content),
       content,
-      category: opt(flags, "category", "c") ?? undefined,
-      sourceRef: opt(flags, "source-ref") ?? undefined,
-      sourceType
+      tags: ["learning"],
+      dir: resolve(process.cwd(), LEARNINGS_DIR),
+      properties
     })
 
     if (flag(flags, "json")) {
-      console.log(toJson(learning))
+      console.log(toJson({
+        id: doc.id,
+        content,
+        category: category ?? null,
+        sourceRef: sourceRef ?? null,
+        sourceType,
+        filePath: doc.filePath,
+      }))
     } else {
-      console.log(`Created learning: #${learning.id}`)
-      console.log(`  Content: ${learning.content.slice(0, 80)}${learning.content.length > 80 ? "..." : ""}`)
-      if (learning.category) console.log(`  Category: ${learning.category}`)
-      if (learning.sourceRef) console.log(`  Source: ${learning.sourceRef}`)
+      console.log(`Created learning: ${doc.id}`)
+      console.log(`  Content: ${content.slice(0, 80)}${content.length > 80 ? "..." : ""}`)
+      if (category) console.log(`  Category: ${category}`)
+      if (sourceRef) console.log(`  Source: ${sourceRef}`)
     }
   })
-
-/**
- * Parse edge types from comma-separated string.
- */
-const parseEdgeTypes = (edgeTypesStr: string | undefined): EdgeType[] | undefined => {
-  if (!edgeTypesStr) return undefined
-  const types = edgeTypesStr.split(",").map(s => s.trim()).filter(s => s.length > 0)
-  for (const t of types) {
-    if (!(EDGE_TYPES as readonly string[]).includes(t)) {
-      console.error(`Error: Invalid edge type "${t}". Valid types: ${EDGE_TYPES.join(", ")}`)
-      process.exit(1)
-    }
-  }
-  return types as EdgeType[]
-}
 
 export const learningSearch = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const query = pos[0]
     if (!query) {
-      console.error("Usage: tx learning:search <query> [-n limit] [--expand] [--depth N] [--edge-types TYPES] [--json]")
+      console.error("Usage: tx learning search <query> [-n limit] [--json]")
       process.exit(1)
     }
 
-    const svc = yield* LearningService
+    const retriever = yield* MemoryRetrieverService
     const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
     const minScore = parseFloatOpt(flags, "min-score", "min-score") ?? 0.3
 
-    // Graph expansion options
-    const expand = flag(flags, "expand")
-    const depth = parseIntOpt(flags, "depth", "depth") ?? 2
-    const edgeTypes = parseEdgeTypes(opt(flags, "edge-types"))
-
-    const graphExpansion = expand
-      ? { enabled: true, depth, edgeTypes }
-      : undefined
-
-    const results = yield* svc.search({ query, limit, minScore, graphExpansion })
+    const results = yield* retriever.search(query, {
+      limit,
+      minScore,
+      tags: ["learning"],
+    })
 
     if (flag(flags, "json")) {
-      console.log(toJson(results))
+      console.log(toJson(results.map(r => ({
+        id: r.id,
+        content: extractBody(r.content),
+        title: r.title,
+        relevanceScore: r.relevanceScore,
+        tags: r.tags,
+        filePath: r.filePath,
+      }))))
     } else {
       if (results.length === 0) {
         console.log("No learnings found")
       } else {
-        const expandInfo = expand ? " (with graph expansion)" : ""
-        console.log(`${results.length} learning(s) found${expandInfo}:`)
+        console.log(`${results.length} learning(s) found:`)
         for (const r of results) {
           const score = (r.relevanceScore * 100).toFixed(0)
-          const category = r.category ? ` [${r.category}]` : ""
-          const hops = r.expansionHops !== undefined && r.expansionHops > 0 ? ` [+${r.expansionHops} hops]` : ""
-          console.log(`  #${r.id} (${score}%)${category}${hops} ${r.content.slice(0, 60)}${r.content.length > 60 ? "..." : ""}`)
+          const fm = r.frontmatter ? JSON.parse(r.frontmatter) : null
+          const category = fm?.category ? ` [${fm.category}]` : ""
+          const body = extractBody(r.content)
+          console.log(`  ${r.id} (${score}%)${category} ${body.slice(0, 60)}${body.length > 60 ? "..." : ""}`)
         }
       }
     }
@@ -107,22 +169,36 @@ export const learningSearch = (pos: string[], flags: Flags) =>
 
 export const learningRecent = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const svc = yield* LearningService
+    const memSvc = yield* MemoryService
     const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
 
-    const learnings = yield* svc.getRecent(limit)
+    const docs = yield* memSvc.listDocuments({ tags: ["learning"] })
+
+    // Sort by mtime descending (most recent first), then limit
+    const sorted = [...docs]
+      .sort((a, b) => new Date(b.fileMtime).getTime() - new Date(a.fileMtime).getTime())
+      .slice(0, limit)
 
     if (flag(flags, "json")) {
-      console.log(toJson(learnings))
+      console.log(toJson(sorted.map(d => ({
+        id: d.id,
+        content: extractBody(d.content),
+        title: d.title,
+        filePath: d.filePath,
+        fileMtime: d.fileMtime,
+        tags: d.tags,
+      }))))
     } else {
-      if (learnings.length === 0) {
+      if (sorted.length === 0) {
         console.log("No learnings found")
       } else {
-        console.log(`${learnings.length} recent learning(s):`)
-        for (const l of learnings) {
-          const category = l.category ? ` [${l.category}]` : ""
-          const source = l.sourceType !== "manual" ? ` (${l.sourceType})` : ""
-          console.log(`  #${l.id}${category}${source} ${l.content.slice(0, 60)}${l.content.length > 60 ? "..." : ""}`)
+        console.log(`${sorted.length} recent learning(s):`)
+        for (const d of sorted) {
+          const fm = d.frontmatter ? JSON.parse(d.frontmatter) : null
+          const category = fm?.category ? ` [${fm.category}]` : ""
+          const sourceType = fm?.source_type && fm.source_type !== "manual" ? ` (${fm.source_type})` : ""
+          const body = extractBody(d.content)
+          console.log(`  ${d.id}${category}${sourceType} ${body.slice(0, 60)}${body.length > 60 ? "..." : ""}`)
         }
       }
     }
@@ -130,169 +206,145 @@ export const learningRecent = (_pos: string[], flags: Flags) =>
 
 export const learningHelpful = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const idStr = pos[0]
-    if (!idStr) {
-      console.error("Usage: tx learning:helpful <id> [--score 0.8] [--json]")
+    const id = pos[0]
+    if (!id) {
+      console.error("Usage: tx learning helpful <id> [--score 0.8] [--json]")
       process.exit(1)
     }
 
-    const id = parseInt(idStr, 10)
-    if (isNaN(id)) {
-      console.error("Error: Learning ID must be a number")
-      process.exit(1)
-    }
-
-    const svc = yield* LearningService
+    const memSvc = yield* MemoryService
     const score = parseFloatOpt(flags, "score", "score") ?? 1.0
 
-    yield* svc.updateOutcome(id, score)
-    const learning = yield* svc.get(id)
+    if (score < 0 || score > 1) {
+      console.error("Error: Score must be between 0 and 1")
+      process.exit(1)
+    }
+
+    yield* memSvc.setProperty(id, "outcome_score", String(score))
+    const doc = yield* memSvc.getDocument(id)
 
     if (flag(flags, "json")) {
-      console.log(toJson({ success: true, learning }))
+      console.log(toJson({ success: true, id, score }))
     } else {
-      console.log(`Recorded helpfulness for learning #${id}`)
+      const body = extractBody(doc.content)
+      console.log(`Recorded helpfulness for learning ${id}`)
       console.log(`  Score: ${(score * 100).toFixed(0)}%`)
-      console.log(`  Content: ${learning.content.slice(0, 60)}${learning.content.length > 60 ? "..." : ""}`)
+      console.log(`  Content: ${body.slice(0, 60)}${body.length > 60 ? "..." : ""}`)
     }
   })
 
-/**
- * Load a custom retriever module from a file path.
- * The module should export a default Layer that provides RetrieverService.
- */
-const loadCustomRetriever = (retrieverPath: string) =>
+export const learningEmbed = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const absolutePath = resolve(process.cwd(), retrieverPath)
+    const memSvc = yield* MemoryService
 
-    if (!existsSync(absolutePath)) {
-      console.error(`Error: Retriever module not found: ${absolutePath}`)
-      process.exit(1)
+    if (flag(flags, "status")) {
+      const status = yield* memSvc.indexStatus()
+      if (flag(flags, "json")) {
+        console.log(toJson(status))
+      } else {
+        console.log("Embedding Status:")
+        console.log(`  Total documents: ${status.totalFiles}`)
+        console.log(`  Indexed: ${status.indexed}`)
+        console.log(`  With embeddings: ${status.embedded}`)
+        console.log(`  Sources: ${status.sources}`)
+      }
+      return
     }
 
-    // Dynamic import of the custom retriever module
-    const moduleUrl = pathToFileURL(absolutePath).href
-    const retrieverModule = yield* Effect.tryPromise({
-      try: async () => {
-        // eslint-disable-next-line no-restricted-syntax -- plugin path is user-provided at runtime
-        const mod = await import(moduleUrl)
-        return mod.default as Layer.Layer<RetrieverService>
-      },
-      catch: (e) => new RetrievalError({ reason: `Failed to load retriever module: ${String(e)}` })
-    })
+    // Run incremental index (will compute embeddings if EmbeddingService is available)
+    const result = yield* memSvc.index({ incremental: true })
 
-    return retrieverModule
+    if (flag(flags, "json")) {
+      console.log(toJson(result))
+    } else {
+      console.log("Index/embedding complete:")
+      console.log(`  Indexed: ${result.indexed}`)
+      console.log(`  Skipped: ${result.skipped}`)
+      console.log(`  Removed: ${result.removed}`)
+    }
   })
 
 export const context = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const rawTaskId = pos[0]
     if (!rawTaskId) {
-      console.error("Usage: tx context <task-id> [--json] [--inject] [--expand] [--depth N] [--edge-types TYPES] [--retriever <path>]")
+      console.error("Usage: tx context <task-id> [--json] [--inject] [--expand] [--semantic]")
       process.exit(1)
     }
     const taskId = parseTaskId(rawTaskId)
 
-    const retrieverPath = opt(flags, "retriever")
+    const taskSvc = yield* TaskService
+    const retriever = yield* MemoryRetrieverService
+    const startTime = Date.now()
 
-    // Graph expansion options
-    const expand = flag(flags, "expand")
-    const depth = parseIntOpt(flags, "depth", "depth") ?? 2
-    const edgeTypes = parseEdgeTypes(opt(flags, "edge-types"))
+    // Get task to build search query
+    const task = yield* taskSvc.get(taskId)
+    const searchQuery = `${task.title} ${task.description}`.trim()
 
-    // If custom retriever is specified, load it and use it for direct search
-    if (retrieverPath) {
-      const customRetrieverLayer = yield* loadCustomRetriever(retrieverPath)
-      const taskSvc = yield* TaskService
-      const startTime = Date.now()
+    const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
+    const useSemantic = flag(flags, "semantic")
+    const useExpand = flag(flags, "expand")
 
-      // Get task to build search query
-      const task = yield* taskSvc.get(taskId)
+    // Search all memory (not just learnings) — learning-tagged docs appear naturally
+    const results = yield* retriever.search(searchQuery, {
+      limit,
+      minScore: 0.05,
+      semantic: useSemantic,
+      expand: useExpand,
+    })
 
-      // Build search query from task content
-      const searchQuery = `${task.title} ${task.description}`.trim()
-
-      // Build retrieval options with optional graph expansion
-      const retrievalOptions = {
-        limit: 10,
-        minScore: 0.05,
-        graphExpansion: expand
-          ? { enabled: true, depth, edgeTypes }
-          : undefined
-      }
-
-      // Use custom retriever for search
-      const searchEffect = Effect.gen(function* () {
-        const retriever = yield* RetrieverService
-        return yield* retriever.search(searchQuery, retrievalOptions)
-      })
-
-      const learnings = yield* Effect.provide(searchEffect, customRetrieverLayer)
-
-      const result = {
-        taskId,
-        taskTitle: task.title,
-        learnings,
-        searchQuery,
-        searchDuration: Date.now() - startTime
-      }
-
-      if (flag(flags, "inject")) {
-        const contextMd = formatContextMarkdown(result)
-        const contextPath = resolve(process.cwd(), ".tx", "context.md")
-        mkdirSync(dirname(contextPath), { recursive: true })
-        writeFileSync(contextPath, contextMd)
-        console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath} (custom retriever)`)
-      } else if (flag(flags, "json")) {
-        console.log(toJson(result))
-      } else {
-        const expandInfo = expand ? " (with graph expansion)" : ""
-        console.log(`Context for: ${result.taskId} - ${result.taskTitle} (custom retriever)${expandInfo}`)
-        console.log(`  Search query: ${result.searchQuery.slice(0, 50)}...`)
-        console.log(`  Search duration: ${result.searchDuration}ms`)
-        console.log(`  ${result.learnings.length} relevant learning(s):`)
-        for (const l of result.learnings) {
-          const score = (l.relevanceScore * 100).toFixed(0)
-          const hops = l.expansionHops !== undefined && l.expansionHops > 0 ? ` [+${l.expansionHops} hops]` : ""
-          console.log(`    #${l.id} (${score}%)${hops} ${l.content}`)
-        }
-      }
-      return
-    }
-
-    // Default path: use LearningService with built-in retriever
-    const svc = yield* LearningService
-
-    // Build context options with graph expansion if enabled
-    const contextOptions = expand
-      ? { useGraph: true, expansionDepth: depth, edgeTypes }
-      : undefined
-
-    const result = yield* svc.getContextForTask(taskId, contextOptions)
+    const searchDuration = Date.now() - startTime
 
     if (flag(flags, "inject")) {
-      // Write to .tx/context.md for injection
-      const contextMd = formatContextMarkdown(result)
+      // Write context to .tx/context.md for injection
       const contextPath = resolve(process.cwd(), ".tx", "context.md")
-      mkdirSync(dirname(contextPath), { recursive: true })
-      writeFileSync(contextPath, contextMd)
-      const expandInfo = expand ? " (with graph expansion)" : ""
-      console.log(`Wrote ${result.learnings.length} learning(s) to ${contextPath}${expandInfo}`)
-    } else if (flag(flags, "json")) {
-      console.log(toJson(result))
-    } else {
-      const expandInfo = expand ? " (with graph expansion)" : ""
-      console.log(`Context for: ${result.taskId} - ${result.taskTitle}${expandInfo}`)
-      console.log(`  Search query: ${result.searchQuery.slice(0, 50)}...`)
-      console.log(`  Search duration: ${result.searchDuration}ms`)
-      if (result.graphExpansion) {
-        console.log(`  Graph expansion: ${result.graphExpansion.seedCount} seeds, ${result.graphExpansion.expandedCount} expanded, max depth ${result.graphExpansion.maxDepthReached}`)
+      mkdirSync(resolve(process.cwd(), ".tx"), { recursive: true })
+      const lines = [
+        `# Context for ${taskId} — ${task.title}`,
+        "",
+        `Search: ${searchQuery.slice(0, 100)}`,
+        `Duration: ${searchDuration}ms`,
+        "",
+      ]
+      for (const r of results) {
+        const score = (r.relevanceScore * 100).toFixed(0)
+        const tagInfo = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : ""
+        lines.push(`## ${r.id} (${score}%)${tagInfo}`)
+        lines.push("")
+        lines.push(r.content)
+        lines.push("")
       }
-      console.log(`  ${result.learnings.length} relevant learning(s):`)
-      for (const l of result.learnings) {
-        const score = (l.relevanceScore * 100).toFixed(0)
-        const hops = l.expansionHops !== undefined && l.expansionHops > 0 ? ` [+${l.expansionHops} hops]` : ""
-        console.log(`    #${l.id} (${score}%)${hops} ${l.content}`)
+      writeFileSync(contextPath, lines.join("\n"))
+      const expandInfo = useExpand ? " (with graph expansion)" : ""
+      console.log(`Wrote ${results.length} result(s) to ${contextPath}${expandInfo}`)
+    } else if (flag(flags, "json")) {
+      console.log(toJson({
+        taskId,
+        taskTitle: task.title,
+        results: results.map(r => ({
+          id: r.id,
+          title: r.title,
+          content: r.content,
+          relevanceScore: r.relevanceScore,
+          tags: r.tags,
+          filePath: r.filePath,
+          expansionHops: r.expansionHops,
+        })),
+        searchQuery,
+        searchDuration,
+      }))
+    } else {
+      const expandInfo = useExpand ? " (with graph expansion)" : ""
+      console.log(`Context for: ${taskId} - ${task.title}${expandInfo}`)
+      console.log(`  Search query: ${searchQuery.slice(0, 50)}${searchQuery.length > 50 ? "..." : ""}`)
+      console.log(`  Search duration: ${searchDuration}ms`)
+      console.log(`  ${results.length} relevant result(s):`)
+      for (const r of results) {
+        const score = (r.relevanceScore * 100).toFixed(0)
+        const hops = r.expansionHops !== undefined && r.expansionHops > 0 ? ` [+${r.expansionHops} hops]` : ""
+        const isLearning = r.tags.includes("learning") ? " [learning]" : ""
+        const body = extractBody(r.content)
+        console.log(`    ${r.id} (${score}%)${isLearning}${hops} ${body.slice(0, 60)}${body.length > 60 ? "..." : ""}`)
       }
     }
   })
@@ -306,145 +358,267 @@ export const learn = (pos: string[], flags: Flags) =>
       process.exit(1)
     }
 
-    const svc = yield* FileLearningService
-    const learning = yield* svc.create({
-      filePattern: pattern,
-      note,
-      taskId: opt(flags, "task") ?? undefined
+    yield* ensureLearningsDir()
+    const memSvc = yield* MemoryService
+
+    // Build properties
+    const properties: Record<string, string> = {
+      file_pattern: pattern,
+      source_type: "manual",
+    }
+    const taskId = opt(flags, "task")
+    if (taskId) properties.task_id = taskId
+
+    const doc = yield* memSvc.createDocument({
+      title: learningTitle(note),
+      content: note,
+      tags: ["learning"],
+      dir: resolve(process.cwd(), LEARNINGS_DIR),
+      properties,
     })
 
     if (flag(flags, "json")) {
-      console.log(toJson(learning))
+      console.log(toJson({
+        id: doc.id,
+        filePattern: pattern,
+        note,
+        taskId: taskId ?? null,
+        filePath: doc.filePath,
+      }))
     } else {
-      console.log(`Created file learning: #${learning.id}`)
-      console.log(`  Pattern: ${learning.filePattern}`)
-      console.log(`  Note: ${learning.note.slice(0, 80)}${learning.note.length > 80 ? "..." : ""}`)
-      if (learning.taskId) console.log(`  Task: ${learning.taskId}`)
+      console.log(`Created file learning: ${doc.id}`)
+      console.log(`  Pattern: ${pattern}`)
+      console.log(`  Note: ${note.slice(0, 80)}${note.length > 80 ? "..." : ""}`)
+      if (taskId) console.log(`  Task: ${taskId}`)
     }
   })
 
 export const recall = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const path = pos[0]
-    const svc = yield* FileLearningService
+    const memSvc = yield* MemoryService
+
+    // List all learning docs
+    const docs = yield* memSvc.listDocuments({ tags: ["learning"] })
 
     if (path) {
-      // Recall learnings for specific path
-      const learnings = yield* svc.recall(path)
+      // Filter by file_pattern property — check frontmatter for file_pattern match
+      const matching = docs.filter(d => {
+        if (!d.frontmatter) return false
+        try {
+          const fm = JSON.parse(d.frontmatter)
+          if (!fm.file_pattern) return false
+          // Simple glob matching: check if path matches or contains the pattern
+          const fp: string = fm.file_pattern
+          if (fp === path) return true
+          // Check if the pattern is a prefix/suffix match
+          if (fp.includes("*")) {
+            // Convert simple glob to regex: *.ts → .*\.ts, src/**/*.ts → src/.*\.ts
+            const regex = new RegExp("^" + fp.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\./g, "\\.") + "$")
+            return regex.test(path)
+          }
+          // Check if path contains the pattern
+          return path.includes(fp) || fp.includes(path)
+        } catch {
+          return false
+        }
+      })
 
       if (flag(flags, "json")) {
-        console.log(toJson(learnings))
+        console.log(toJson(matching.map(d => {
+          const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+          return {
+            id: d.id,
+            filePattern: fm.file_pattern,
+            note: extractBody(d.content),
+            taskId: fm.task_id ?? null,
+            filePath: d.filePath,
+          }
+        })))
       } else {
-        if (learnings.length === 0) {
+        if (matching.length === 0) {
           console.log(`No learnings found for: ${path}`)
         } else {
-          console.log(`${learnings.length} learning(s) for ${path}:`)
-          for (const l of learnings) {
-            const taskInfo = l.taskId ? ` [${l.taskId}]` : ""
-            console.log(`  #${l.id}${taskInfo} (${l.filePattern})`)
-            console.log(`    ${l.note}`)
+          console.log(`${matching.length} learning(s) for ${path}:`)
+          for (const d of matching) {
+            const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+            const taskInfo = fm.task_id ? ` [${fm.task_id}]` : ""
+            console.log(`  ${d.id}${taskInfo} (${fm.file_pattern})`)
+            console.log(`    ${extractBody(d.content)}`)
           }
         }
       }
     } else {
-      // List all learnings
-      const learnings = yield* svc.getAll()
+      // List all file learnings (those with file_pattern property)
+      const fileLearnings = docs.filter(d => {
+        if (!d.frontmatter) return false
+        try {
+          const fm = JSON.parse(d.frontmatter)
+          return !!fm.file_pattern
+        } catch {
+          return false
+        }
+      })
 
       if (flag(flags, "json")) {
-        console.log(toJson(learnings))
+        console.log(toJson(fileLearnings.map(d => {
+          const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+          return {
+            id: d.id,
+            filePattern: fm.file_pattern,
+            note: extractBody(d.content),
+            taskId: fm.task_id ?? null,
+            filePath: d.filePath,
+          }
+        })))
       } else {
-        if (learnings.length === 0) {
+        if (fileLearnings.length === 0) {
           console.log("No file learnings found")
         } else {
-          console.log(`${learnings.length} file learning(s):`)
-          for (const l of learnings) {
-            const taskInfo = l.taskId ? ` [${l.taskId}]` : ""
-            console.log(`  #${l.id}${taskInfo} ${l.filePattern}`)
-            console.log(`    ${l.note.slice(0, 60)}${l.note.length > 60 ? "..." : ""}`)
+          console.log(`${fileLearnings.length} file learning(s):`)
+          for (const d of fileLearnings) {
+            const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+            const taskInfo = fm.task_id ? ` [${fm.task_id}]` : ""
+            const body = extractBody(d.content)
+            console.log(`  ${d.id}${taskInfo} ${fm.file_pattern}`)
+            console.log(`    ${body.slice(0, 60)}${body.length > 60 ? "..." : ""}`)
           }
         }
       }
     }
   })
 
-const VALID_EMBEDDERS = ["auto", "openai", "local", "noop"] as const
-type EmbedderType = typeof VALID_EMBEDDERS[number]
+/**
+ * Learning dispatcher: routes `tx learning <subcommand>` to the appropriate handler.
+ */
+export const learning = (pos: string[], flags: Flags) => {
+  const sub = pos[0]
+  switch (sub) {
+    case "add": return learningAdd(pos.slice(1), flags)
+    case "search": return learningSearch(pos.slice(1), flags)
+    case "recent": return learningRecent(pos.slice(1), flags)
+    case "helpful": return learningHelpful(pos.slice(1), flags)
+    case "embed": return learningEmbed(pos.slice(1), flags)
+    case "migrate": return learningMigrate(pos.slice(1), flags)
+    default: return learningHelp(sub ?? "")
+  }
+}
 
-export const learningEmbed = (_pos: string[], flags: Flags) =>
+/**
+ * Migrate old learnings from SQLite tables to memory .md files.
+ */
+export const learningMigrate = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    // Parse --embedder flag (overrides TX_EMBEDDER env var)
-    const embedderArg = opt(flags, "embedder")
-    let selectedEmbedder: EmbedderType = "auto"
+    const dryRun = flag(flags, "dry-run")
 
-    if (embedderArg) {
-      const normalized = embedderArg.toLowerCase().trim()
-      if (!VALID_EMBEDDERS.includes(normalized as EmbedderType)) {
-        console.error(`Error: Invalid --embedder value "${embedderArg}"`)
-        console.error(`Valid values: ${VALID_EMBEDDERS.join(", ")}`)
-        process.exit(1)
-      }
-      selectedEmbedder = normalized as EmbedderType
-      // Set environment variable for EmbeddingServiceAuto to pick up
-      if (selectedEmbedder !== "auto") {
-        process.env.TX_EMBEDDER = selectedEmbedder
-      }
+    // Read from old SQLite-backed services (may fail if tables already dropped)
+    const oldLearningSvc = yield* LearningService
+    const oldFileSvc = yield* FileLearningService
+
+    const oldLearningResult = yield* Effect.either(oldLearningSvc.getRecent(1000))
+    const oldFileLearningResult = yield* Effect.either(oldFileSvc.getAll())
+
+    const oldLearnings = oldLearningResult._tag === "Right" ? [...oldLearningResult.right] : []
+    const oldFileLearnings = oldFileLearningResult._tag === "Right" ? [...oldFileLearningResult.right] : []
+
+    if (oldLearnings.length === 0 && oldFileLearnings.length === 0) {
+      console.log("No old learnings to migrate.")
+      return
     }
 
-    const svc = yield* LearningService
+    console.log(`Found ${oldLearnings.length} learnings and ${oldFileLearnings.length} file learnings to migrate.`)
 
-    // Status check doesn't require embeddings to be enabled
-    if (flag(flags, "status")) {
-      const status = yield* svc.embeddingStatus()
-
-      if (flag(flags, "json")) {
-        console.log(toJson({ ...status, embedder: selectedEmbedder }))
-      } else {
-        console.log("Embedding Status:")
-        console.log(`  Embedder: ${selectedEmbedder}`)
-        console.log(`  Total learnings: ${status.total}`)
-        console.log(`  With embeddings: ${status.withEmbeddings}`)
-        console.log(`  Without embeddings: ${status.withoutEmbeddings}`)
-        console.log(`  Coverage: ${status.coveragePercent.toFixed(1)}%`)
+    if (dryRun) {
+      console.log("\n[dry-run] Would migrate:")
+      for (const l of oldLearnings) {
+        console.log(`  Learning #${l.id}: ${l.content.slice(0, 60)}...`)
+      }
+      for (const fl of oldFileLearnings) {
+        console.log(`  File learning #${fl.id}: ${fl.filePattern} — ${fl.note.slice(0, 40)}...`)
       }
       return
     }
 
-    // Check if embeddings are enabled
-    if (process.env.TX_EMBEDDINGS !== "1") {
-      console.error("Error: Embeddings not enabled. Set TX_EMBEDDINGS=1 to enable.")
-      console.error("Example: TX_EMBEDDINGS=1 tx learning:embed")
-      process.exit(1)
+    yield* ensureLearningsDir()
+    const memSvc = yield* MemoryService
+
+    let migrated = 0
+    let skipped = 0
+
+    // Migrate regular learnings
+    for (const l of oldLearnings) {
+      const properties: Record<string, string> = {
+        source_type: l.sourceType ?? "manual",
+        migrated_from: `learning:${l.id}`,
+      }
+      if (l.category) properties.category = l.category
+      if (l.sourceRef) properties.source_ref = l.sourceRef
+      if (l.outcomeScore !== null) properties.outcome_score = String(l.outcomeScore)
+
+      const result = yield* Effect.either(memSvc.createDocument({
+        title: learningTitle(l.content),
+        content: l.content,
+        tags: ["learning"],
+        dir: resolve(process.cwd(), LEARNINGS_DIR),
+        properties,
+      }))
+
+      if (result._tag === "Right") {
+        migrated++
+      } else {
+        skipped++
+      }
     }
 
-    const forceAll = flag(flags, "all")
-    const result = yield* svc.embedAll(forceAll)
+    // Migrate file learnings
+    for (const fl of oldFileLearnings) {
+      const properties: Record<string, string> = {
+        file_pattern: fl.filePattern,
+        source_type: "manual",
+        migrated_from: `file_learning:${fl.id}`,
+      }
+      if (fl.taskId) properties.task_id = fl.taskId
 
-    if (flag(flags, "json")) {
-      console.log(toJson({ ...result, embedder: selectedEmbedder }))
-    } else {
-      console.log("Embedding complete:")
-      console.log(`  Embedder: ${selectedEmbedder}`)
-      console.log(`  Processed: ${result.processed}`)
-      console.log(`  Skipped: ${result.skipped}`)
-      console.log(`  Failed: ${result.failed}`)
-      console.log(`  Total: ${result.total}`)
+      const result = yield* Effect.either(memSvc.createDocument({
+        title: learningTitle(fl.note),
+        content: fl.note,
+        tags: ["learning"],
+        dir: resolve(process.cwd(), LEARNINGS_DIR),
+        properties,
+      }))
+
+      if (result._tag === "Right") {
+        migrated++
+      } else {
+        skipped++
+      }
     }
+
+    // Re-index to pick up the new files
+    yield* memSvc.index({ incremental: true })
+
+    console.log(`Migration complete:`)
+    console.log(`  Migrated: ${migrated}`)
+    console.log(`  Skipped: ${skipped} (likely already exists)`)
+    console.log(`  Total: ${oldLearnings.length + oldFileLearnings.length}`)
+    console.log(`\nLearnings are now in ${LEARNINGS_DIR}/`)
   })
 
 // Help command handler for learning subcommands
 export const learningHelp = (subcommand: string) =>
   Effect.sync(() => {
-    const helpKey = `learning:${subcommand}`
+    const helpKey = `learning ${subcommand}`
     if (commandHelp[helpKey]) {
       console.log(commandHelp[helpKey])
     } else {
       console.log("Learning commands:")
-      console.log("  tx learning:add <content>     Add a learning")
-      console.log("  tx learning:search <query>    Search learnings")
-      console.log("  tx learning:recent            List recent learnings")
-      console.log("  tx learning:helpful <id>      Record helpfulness")
-      console.log("  tx learning:embed             Compute embeddings for learnings")
+      console.log("  tx learning add <content>     Add a learning")
+      console.log("  tx learning search <query>    Search learnings")
+      console.log("  tx learning recent            List recent learnings")
+      console.log("  tx learning helpful <id>      Record helpfulness")
+      console.log("  tx learning embed             Index and embed learnings")
+      console.log("  tx learning migrate           Migrate old learnings to memory system")
       console.log("")
-      console.log("Run 'tx learning:<command> --help' for command-specific help.")
+      console.log("Run 'tx learning <command> --help' for command-specific help.")
     }
   })

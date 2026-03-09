@@ -15,12 +15,12 @@ description: Guide for working with tx task management. Use when picking up task
 
 1. Understand the task requirements from `tx show`
 2. Check for relevant learnings with `tx context <id>` or `tx recall <file-path>`
-3. If related tasks share context, set it once with `tx group-context:set <id> "<shared context>"`
+3. If related tasks share context, set it once with `tx group-context set <id> "<shared context>"`
 4. If PRD docs are in scope, prefer `ears_requirements` and validate with `tx doc lint-ears <doc-name-or-yaml-path>`
 5. Implement the changes
 6. Add or update integration tests for critical flows (happy path + failure path)
 7. If telemetry code changed, verify OTEL remains non-blocking (noop/configured/exporter-failure paths)
-8. Record anything you learned: `tx learning:add "what you discovered"`
+8. Record anything you learned: `tx learning add "what you discovered"`
 
 ## Completing a Task
 
@@ -51,7 +51,7 @@ tx unblock <task-B-id> <task-A-id>
 
 ```bash
 # General learning
-tx learning:add "Effect.try catch handler puts errors in the error channel, not success"
+tx learning add "Effect.try catch handler puts errors in the error channel, not success"
 
 # File-specific learning
 tx learn "src/auth/*.ts" "Auth tokens expire after 24h, refresh logic is in token-service.ts"
