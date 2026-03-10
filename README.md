@@ -48,7 +48,7 @@ Composable primitives that handle the hard parts. You keep control of the orches
 ├─────────────────────────────────────────────────────────┤
 │  tx primitives                                          │
 │                                                         │
-│   tx ready     tx done      tx context    tx memory     │
+│   tx ready     tx done      tx memory     tx pin         │
 │   tx claim     tx block     tx sync       tx trace      │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -89,15 +89,15 @@ Structured insights that attach to tasks and file paths.
 
 ```bash
 # Store knowledge
-tx learning add "Use bcrypt for passwords, not SHA256"
+tx memory add "Use bcrypt for passwords" --tags security
 
 # Attach learnings to file paths
-tx learn "src/auth/*.ts" "Services must use Effect-TS patterns"
+tx memory learn "src/auth/*.ts" "Services must use Effect-TS patterns"
 
 # Retrieve via search or task context
-tx learning search "authentication"
-tx context tx-abc123  # Get relevant learnings for a task
-tx recall "src/auth/hash.ts"  # Recall learnings for a file
+tx memory search "authentication"
+tx memory context tx-abc123  # Get relevant memory for a task
+tx memory recall "src/auth/hash.ts"  # Recall learnings for a file
 ```
 
 Hybrid search (BM25 + vector with RRF fusion) finds relevant knowledge.
@@ -128,16 +128,6 @@ tx claim tx-abc123 worker-1          # Claim with 30-min lease
 tx claim tx-abc123 worker-1 --lease 60  # Custom lease duration
 tx claim renew tx-abc123 worker-1    # Extend lease
 tx claim release tx-abc123 worker-1  # Release early
-```
-
-### Attempts
-
-Track what approaches have been tried on a task.
-
-```bash
-tx try tx-abc123 "Used Redux" --failed "Too complex for this use case"
-tx try tx-abc123 "Used Zustand" --succeeded
-tx attempts tx-abc123  # See all attempts
 ```
 
 ### Docs
@@ -323,22 +313,18 @@ tx memory backlinks <id>    # Incoming links
 tx memory list              # List documents (--source, --tags)
 tx memory link <src> <tgt>  # Create explicit edge
 
-# Context & Learnings
-tx learning add <content>   # Store knowledge
-tx learning search <query>  # Search learnings
-tx learning recent          # Recent learnings
-tx learning helpful         # Mark as helpful
-tx learning embed           # Generate embeddings
-tx context <task-id>        # Contextual retrieval
-tx learn <path> <note>      # Attach to file
-tx recall [path]            # Query by file
+# Memory
+tx memory add <title>       # Create .md knowledge file
+tx memory search <query>    # BM25 search (--semantic, --expand)
+tx memory context <id>      # Task-relevant memory retrieval
+tx memory learn <p> <note>  # Attach learning to file path/glob
+tx memory recall [path]     # Query file-specific learnings
+tx memory index             # Index all sources
 
 # Coordination
 tx claim <id> <worker>      # Lease-based claim
 tx claim renew <id> <worker>  # Extend lease
 tx claim release <id> <worker>  # Release early
-tx try <id> <approach>      # Record attempt
-tx attempts <id>            # List attempts
 
 # Docs
 tx doc add <type> <slug>    # Create doc

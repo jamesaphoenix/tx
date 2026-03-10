@@ -1,13 +1,11 @@
 ---
 title: tx memory
-description: Headless search over markdown directories — index, search, tag, and navigate your knowledge graph
+description: "Headless search over markdown directories: index, search, tag, and navigate your knowledge graph"
 ---
-
-import { MemoryVsLearningsFigure } from '@/components/memory-figures'
 
 ## Purpose
 
-Memory provides filesystem-backed document search over markdown directories. Unlike [learnings](/docs/primitives/learning) (which are structured records stored in SQLite), memory indexes **your existing `.md` files** — project notes, design docs, meeting notes, wikis — and makes them searchable via BM25 keyword search, vector similarity, and graph expansion through wikilinks and frontmatter relationships.
+Memory provides filesystem-backed document search over markdown directories. It indexes **your existing `.md` files** — project notes, design docs, meeting notes, learnings, and wikis — then makes them searchable via BM25 keyword search, vector similarity, and graph expansion through wikilinks and frontmatter relationships.
 
 Documents are regular `.md` files with YAML frontmatter. tx indexes them; it does not own them. Your files stay where they are.
 
@@ -35,7 +33,6 @@ Documents are regular `.md` files with YAML frontmatter. tx indexes them; it doe
   `}
 />
 
-<MemoryVsLearningsFigure />
 ## Commands
 
 ### Source Management
@@ -79,6 +76,14 @@ Documents are regular `.md` files with YAML frontmatter. tx indexes them; it doe
 | `tx memory links <id>` | Outgoing wikilinks + explicit edges |
 | `tx memory backlinks <id>` | Incoming links |
 | `tx memory link <source-id> <target-ref>` | Create an explicit edge |
+
+### Task Context & File Learnings
+
+| Command | Description |
+|---------|-------------|
+| `tx memory context <task-id>` | Get task-relevant memory for prompt injection |
+| `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
+| `tx memory recall [path]` | Query file-specific learnings by path |
 
 ---
 
@@ -1650,7 +1655,7 @@ CONTEXT=$(tx memory search "$TITLE" --semantic --expand --json)
 
 # Feed context into the agent prompt
 claude --print "
-Task: $TASK — $TITLE
+Task: $TASK | $TITLE
 Relevant docs: $CONTEXT
 Read CLAUDE.md, implement the task, then run tx done $TASK
 "
@@ -1661,20 +1666,6 @@ tx memory add "Implementation Notes: $TITLE" \
   -t implementation "$(echo "$TITLE" | tr ' ' '-')"
 ```
 
-## Memory vs Learnings
-
-| Feature | `tx memory` | `tx learning` |
-|---------|------------|---------------|
-| Storage | Filesystem (`.md` files) | SQLite database |
-| Ownership | Your files, tx indexes them | tx owns the records |
-| Structure | YAML frontmatter + markdown body | Flat text with category |
-| Navigation | Graph (wikilinks, related, edges) | Flat list |
-| Search | BM25 + vector + graph expansion | BM25 + vector + recency |
-| Best for | Project docs, notes, wikis | Short insights, patterns, mistakes |
-
-Use **memory** for rich, structured documents with relationships. Use **learnings** for quick insights that should surface in `tx context`.
-
 ## Related Commands
 
-- [`tx learning`](/docs/primitives/learning) - Record and search structured knowledge
-- [`tx context`](/docs/primitives/context) - Get learnings relevant to a task
+- [`tx pin`](/docs/primitives/pin) - Pin always-on metadata to `CLAUDE.md` or `AGENTS.md`

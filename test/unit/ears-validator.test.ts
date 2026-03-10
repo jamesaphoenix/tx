@@ -7,14 +7,14 @@ describe("EARS validator", () => {
       {
         id: "EARS-FL-001",
         pattern: "ubiquitous",
-        system: "tx learn command",
+        system: "tx memory learn command",
         response: "persist learnings",
         priority: "must",
       },
       {
         id: "EARS-FL-002",
         pattern: "event_driven",
-        trigger: "a user runs tx recall",
+        trigger: "a user runs tx memory recall",
         system: "recall service",
         response: "return matching learnings",
       },

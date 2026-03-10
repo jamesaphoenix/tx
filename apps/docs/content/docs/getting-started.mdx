@@ -6,7 +6,7 @@ description: Install tx and run your first agent loop
 import { WorkLoopFigure } from "@/components/getting-started-figures"
 import { Callout } from "fumadocs-ui/components/callout"
 
-Get up and running with tx in minutes. tx provides four interfaces -- pick whichever fits your workflow.
+Get up and running with tx in minutes. tx provides four interfaces. Pick the one that fits your workflow.
 
 | Interface | Package | Best For |
 |-----------|---------|----------|
@@ -66,8 +66,8 @@ npm install @jamesaphoenix/tx-agent-sdk
 ```
 
 The SDK supports two modes:
-- **HTTP mode** -- connects to the API server (recommended for distributed agents)
-- **Direct mode** -- reads SQLite directly (for local, single-process agents)
+- **HTTP mode**: connects to the API server (recommended for distributed agents)
+- **Direct mode**: reads SQLite directly (for local, single-process agents)
 
 </Tab>
 <Tab value="MCP">
@@ -85,7 +85,7 @@ Add the MCP server to your Claude Desktop or IDE configuration:
 }
 ```
 
-No separate API server is needed -- the MCP server accesses the SQLite database directly.
+No separate API server is needed. The MCP server accesses the SQLite database directly.
 
 </Tab>
 <Tab value="REST API">
@@ -278,7 +278,7 @@ Once configured, your AI assistant has access to these tools:
 | `tx_group_context_set` | Set task-group context |
 | `tx_group_context_clear` | Clear task-group context |
 | `tx_show` | View task details |
-| `tx_context` | Get relevant learnings |
+| `tx_memory_context` | Get relevant memory for a task |
 | `tx_memory_search` | Search memory documents |
 | `tx_memory_source_add` | Register directory for indexing |
 | `tx_memory_index` | Index all sources |
@@ -355,7 +355,7 @@ The server binds to `http://localhost:3456` by default. Available options:
 | `--port`, `-p` | `TX_API_PORT` | `3456` | Port to listen on |
 | `--host` | `TX_API_HOST` | `127.0.0.1` | Hostname to bind to |
 | `--db` | `TX_DB_PATH` | `.tx/tasks.db` | Path to SQLite database |
-| -- | `TX_API_KEY` | -- | API key for authentication (optional) |
+| n/a | `TX_API_KEY` | n/a | API key for authentication (optional) |
 
 For REST task updates and completion:
 - Use `x-tx-actor: agent` for automated clients.
@@ -443,7 +443,7 @@ The memory system is perfect for:
 - Semantic search across your knowledge base
 - Automatic context injection for related tasks
 
-Memory and learnings are complementary: **learnings** capture task-specific insights; **memory** surfaces file-based knowledge across your entire project.
+The memory system captures both file-based knowledge across your project and task-specific insights.
 
 ## Your First Agent Loop
 
@@ -491,20 +491,20 @@ done
 tx reflect --json | jq '.signals'
 ```
 
-## Store and Retrieve Learnings
+## Store and Retrieve Knowledge
 
 As you work, capture knowledge that should persist:
 
 ```bash
 # Store a learning
-tx learning add "Use bcrypt for password hashing, not SHA256"
-tx learning add "The auth service requires Redis for session storage"
+tx memory add "Use bcrypt for password hashing, not SHA256" -t learning
+tx memory add "The auth service requires Redis for session storage" -t learning
 
 # Search learnings
-tx learning search "authentication"
+tx memory search "authentication" -t learning
 
-# Get context for a specific task (relevant learnings auto-selected)
-tx context tx-abc123
+# Get context for a specific task (relevant memory auto-selected)
+tx memory context tx-abc123
 ```
 
 ## Sync with Git
@@ -561,7 +561,7 @@ tx done $task
 
 ### File-Based
 
-Export tasks to a markdown file and let the agent read it directly — no CLI polling needed:
+Export tasks to a markdown file and let the agent read it directly. No CLI polling needed:
 
 ```bash
 AGENT_CMD=${AGENT_CMD:-claude}  # or: codex
@@ -571,7 +571,7 @@ while true; do
 done
 ```
 
-Options: `--watch` for auto-regeneration, `--include-context` to enrich with learnings, `--filter all` to include every status.
+Options: `--watch` for auto-regeneration, `--include-context` to enrich with memory, `--filter all` to include every status.
 
 ## Project Structure
 
@@ -593,22 +593,21 @@ your-project/
 
 You now have tx running. Keep moving in this order so each step builds on the last one:
 
-1. **[Primitives](/docs/primitives)** -- learn the core building blocks (`ready`, `done`, `block`, `context`, `sync`).
-2. **[Bounded Autonomy](/docs/primitives/label)** -- prevent runaway agents with `label`, `guard`, `verify`, `reflect`, and `gate`.
-3. **[Headful Experience](/docs/headful)** -- apply the same primitives visually with dashboard workflows.
-4. **[Watchdog Runbook](/docs/watchdog-runbook)** -- final, advanced step for detached supervision and recovery.
+1. **[Primitives](/docs/primitives)** learn the core building blocks (`ready`, `done`, `block`, `memory`, `sync`).
+2. **[Bounded Autonomy](/docs/primitives/label)** prevent runaway agents with `label`, `guard`, `verify`, `reflect`, and `gate`.
+3. **[Headful Experience](/docs/headful)** apply the same primitives visually with dashboard workflows.
+4. **[Watchdog Runbook](/docs/watchdog-runbook)** final, advanced step for detached supervision and recovery.
 
 Interface-specific deep dives:
 
-- **[Agent SDK](/docs/agent-sdk)** -- build your own TypeScript agents.
-- **[tx ready](/docs/primitives/ready)** -- readiness detection details.
-- **[tx context](/docs/primitives/context)** -- contextual learning retrieval.
-- **[tx label](/docs/primitives/label)** -- ready queue scoping by phase.
-- **[tx guard](/docs/primitives/guard)** -- task creation limits.
-- **[tx verify](/docs/primitives/verify)** -- machine-checkable done criteria.
-- **[tx reflect](/docs/primitives/reflect)** -- session retrospective and signals.
-- **[tx gate](/docs/primitives/gate)** -- human-in-the-loop phase approvals.
-- **[tx sync](/docs/primitives/sync)** -- git synchronization behavior.
+- **[Agent SDK](/docs/agent-sdk)**: build your own TypeScript agents.
+- **[tx ready](/docs/primitives/ready)**: readiness detection details.
+- **[tx label](/docs/primitives/label)**: ready queue scoping by phase.
+- **[tx guard](/docs/primitives/guard)**: task creation limits.
+- **[tx verify](/docs/primitives/verify)**: machine-checkable done criteria.
+- **[tx reflect](/docs/primitives/reflect)**: session retrospective and signals.
+- **[tx gate](/docs/primitives/gate)**: human-in-the-loop phase approvals.
+- **[tx sync](/docs/primitives/sync)**: git synchronization behavior.
 
 ## Quick Reference
 
@@ -628,9 +627,9 @@ tx group-context clear <id>           # Clear shared task-group context
 tx memory source add <dir>  # Register markdown directory
 tx memory index             # Index all sources
 tx memory search <query>    # Search documents
-tx learning add <content>   # Store task learning
-tx learning search <query>  # Find learnings
-tx context <task-id>        # Get relevant context
+tx memory add <content>        # Store a learning
+tx memory search <query>       # Search memory
+tx memory context <task-id>    # Get relevant context
 
 # Bounded Autonomy
 tx label add "phase:discovery"      # Create a label

@@ -14,12 +14,12 @@ You are an implementation agent for the tx project.
 
 1. Read AGENTS.md — especially the 7 doctrine rules
 2. Run `tx show <id>` for the assigned task
-3. Run `tx context <id>` to get relevant learnings before starting
+3. Run `tx memory context <id>` to get relevant learnings before starting
 4. Read existing code to match patterns exactly
 5. Implement the task
 6. Run **targeted tests only** — test the specific files you changed. NEVER run the full test suite (`bunx --bun vitest run` with no args). Instead run specific test files, e.g. `bunx --bun vitest run test/integration/core.test.ts`
 7. Mark complete: `tx done <id>`
-8. Record learnings: `tx learning add "<what you learned>" --source-ref <id>`
+8. Record learnings: `tx memory add "<what you learned>" --source-ref <id>`
 
 ### Non-negotiable rules
 

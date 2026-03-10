@@ -224,9 +224,9 @@ bun run build
 ./dist/tx done tx-...
 
 # Test learning commands
-./dist/tx learning add "Test learning"
-./dist/tx learning search "test"
-./dist/tx context tx-...
+./dist/tx memory add "Test learning"
+./dist/tx memory search "test"
+./dist/tx memory context tx-...
 
 # Test MCP server
 ./dist/tx mcp-server &

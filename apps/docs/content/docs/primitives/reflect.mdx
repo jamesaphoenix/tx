@@ -11,7 +11,7 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
 
 Two tiers:
 - **Data tier (default)**: SQL queries produce structured metrics. No LLM required.
-- **Analysis tier (`--analyze`)**: Feeds metrics to an LLM for synthesis and recommendations.
+- **Analysis tier (`--analyze`)**: Feeds metrics to an LLM backend for synthesis and recommendations.
 
 ## Usage
 
@@ -61,6 +61,13 @@ const result = await tx.reflect.run({ sessions: 5 })
 //   signals: [...],
 //   analysis: null
 // }
+
+const analyzed = await tx.reflect.run({
+  sessions: 5,
+  analyze: true,
+})
+// analysis is populated when Claude Agent SDK is available
+// or when ANTHROPIC_API_KEY is configured as the fallback backend
 ```
 
 </Tab>
@@ -84,7 +91,7 @@ const result = await tx.reflect.run({ sessions: 5 })
 |-----|------|----------|-------------|
 | `sessions` | `number` | No | Number of recent sessions (default: 10) |
 | `hours` | `number` | No | Time window in hours |
-| `analyze` | `boolean` | No | Enable LLM analysis (requires `ANTHROPIC_API_KEY`) |
+| `analyze` | `boolean` | No | Enable LLM analysis when Claude Agent SDK or `ANTHROPIC_API_KEY` fallback is available |
 
 </Tab>
 
@@ -144,11 +151,11 @@ fi
 default_sessions = 10
 ```
 
-The `--analyze` flag requires `ANTHROPIC_API_KEY` to be set. Without it, only the data tier (structured metrics) is available.
+`--analyze` uses any available LLM backend. In Claude Code environments it can run through Claude Agent SDK without an API key. In other environments it falls back to `ANTHROPIC_API_KEY`. If no LLM backend is available, tx still returns the data tier.
 
 ## Related Commands
 
-- [`tx guard`](/docs/primitives/guard) — Set task creation limits (tune with reflect signals)
-- [`tx verify`](/docs/primitives/verify) — Attach machine-checkable done criteria
-- [`tx label`](/docs/primitives/label) — Scope ready queue by phase
-- [`tx compact`](/docs/primitives/compact) — Archive completed tasks
+- [`tx guard`](/docs/primitives/guard): Set task creation limits and tune them with reflect signals
+- [`tx verify`](/docs/primitives/verify): Attach machine-checkable done criteria
+- [`tx label`](/docs/primitives/label): Scope the ready queue by phase
+- [`tx compact`](/docs/primitives/compact): Archive completed tasks

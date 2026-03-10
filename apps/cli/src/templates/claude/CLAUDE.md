@@ -31,7 +31,7 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx block <id> <blocker>` | Declare task dependencies |
 | `tx group-context set <id> <context>` | Attach shared task-group context for related tasks |
 | `tx group-context clear <id>` | Clear task-group context from a task |
-| `tx context <id>` | Get relevant learnings + history for prompt injection |
+| `tx memory context <id>` | Get relevant memory + history for prompt injection |
 | `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
 
 ### Bounded Autonomy
@@ -53,10 +53,10 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | Command | Purpose |
 |---------|---------|
 | `tx memory search --query <text>` | Search filesystem memory docs |
-| `tx learning add <content>` | Record knowledge for future agents |
-| `tx learning search <q>` | Search learnings (BM25 + recency) |
-| `tx learn <path> <note>` | Attach a learning to a file path or glob |
-| `tx recall [path]` | Query file-specific learnings by path |
+| `tx memory add <content>` | Record knowledge for future agents |
+| `tx memory search <q>` | Search memory (BM25 + semantic + graph) |
+| `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
+| `tx memory recall [path]` | Query file-specific learnings by path |
 | `tx pin set <id> <content>` | Persist a context pin (shared with agents) |
 
 ### Messaging (Agent Outbox)
@@ -79,7 +79,6 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 
 | Command | Purpose |
 |---------|---------|
-| `tx attempts <id>` | Review recorded attempts for a task |
 | `tx trace list` | Inspect recent run traces |
 | `tx invariant list` | Inspect invariant registry and status |
 | `tx decision list` | List captured decisions and their review status |

@@ -9,7 +9,7 @@ Background service that watches Claude Code transcripts (`~/.claude/projects/`),
 - Claude Code sessions generate valuable insights in JSONL transcripts
 - These are lost after session ends
 - No automated extraction of learnings
-- Manual `tx learning add` is tedious
+- Manual `tx memory add` is tedious
 - Need pipeline from raw telemetry to curated knowledge
 
 ## Solution: Telemetry → Knowledge Pipeline

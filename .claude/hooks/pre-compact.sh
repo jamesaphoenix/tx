@@ -36,7 +36,7 @@ if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" 
   cp "$TRANSCRIPT_PATH" "$ARCHIVE_DIR/transcript.jsonl" 2>/dev/null || true
 
   # Export recent learnings
-  tx_cmd learning recent -n 10 --json > "$ARCHIVE_DIR/recent-learnings.json" 2>/dev/null || true
+  tx_cmd memory list --tags learning --json > "$ARCHIVE_DIR/recent-learnings.json" 2>/dev/null || true
 
   # Record archive time
   echo "{\"archived_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"session_id\": \"$SESSION_ID\"}" > "$ARCHIVE_DIR/metadata.json"

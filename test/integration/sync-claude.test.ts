@@ -242,7 +242,7 @@ describe("buildClaudeTaskFiles", () => {
     expect(result.files[3].subject).toBe("Blocked high score")
   })
 
-  it("includes tx context and done hints in description", async () => {
+  it("includes tx memory context and done hints in description", async () => {
     const db = shared.getDb()
     insertTask(db, FX.CTX_TASK, "Test task", { description: "Some work" })
 
@@ -256,7 +256,7 @@ describe("buildClaudeTaskFiles", () => {
 
     const file = result.files[0]
     expect(file.description).toContain("Some work")
-    expect(file.description).toContain(`tx context ${FX.CTX_TASK}`)
+    expect(file.description).toContain(`tx memory context ${FX.CTX_TASK}`)
     expect(file.description).toContain(`tx done ${FX.CTX_TASK}`)
   })
 
@@ -319,7 +319,7 @@ describe("buildClaudeTaskFiles", () => {
     const file = result.files[0]
     // Should NOT start with a blank line — description starts with separator
     expect(file.description).toMatch(/^---\n/)
-    expect(file.description).toContain("tx context")
+    expect(file.description).toContain("tx memory context")
     expect(file.description).toContain("tx done")
   })
 

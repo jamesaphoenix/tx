@@ -388,7 +388,7 @@ test_patterns = [
 # Filesystem-backed markdown search over your project's documentation.
 # Index directories with \`tx memory source add <dir>\`, then search
 # with \`tx memory search <query>\` (BM25) or \`--semantic\` (vector).
-# Docs: https://txdocs.dev/docs/primitives/learning
+# Docs: https://txdocs.dev/docs/primitives/memory
 [memory]
 
 # Default directory used by \`tx memory add\` when no source is registered.

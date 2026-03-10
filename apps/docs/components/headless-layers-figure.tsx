@@ -75,7 +75,7 @@ export function HeadlessLayersFigure() {
         />
         <LayerCard
           title="Context and memory"
-          items={["tx context", "tx learn", "tx learning:*", "tx handoff"]}
+          items={["tx pin", "tx memory"]}
           tone="emerald"
         />
         <LayerCard

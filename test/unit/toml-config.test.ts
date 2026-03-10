@@ -285,7 +285,7 @@ describe("scaffoldConfigToml", () => {
     expect(raw).toContain("[spec]");
     expect(raw).toContain("tx spec discover");
     expect(raw).toContain("[memory]");
-    expect(raw).toContain("https://txdocs.dev/docs/primitives/learning");
+    expect(raw).toContain("https://txdocs.dev/docs/primitives/memory");
     expect(raw).toContain('default_dir = "docs"');
     expect(raw).toContain("[cycles]");
     expect(raw).toContain("https://txdocs.dev/docs/headful/docs-runs-cycles");

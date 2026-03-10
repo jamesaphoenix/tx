@@ -34,10 +34,10 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 
 Follow the docs in this order:
 
-1. **[Getting Started](/docs/getting-started)** -- install tx and run your first working loop.
-2. **[Primitives](/docs/primitives)** -- learn the core commands that power every interface.
-3. **[Headful Experience](/docs/headful)** -- use the dashboard and keyboard workflows.
-4. **[Watchdog Runbook](/docs/watchdog-runbook)** -- advanced, opt-in detached supervision.
+1. **[Getting Started](/docs/getting-started)** install tx and run your first working loop.
+2. **[Primitives](/docs/primitives)** learn the core commands that power every interface.
+3. **[Headful Experience](/docs/headful)** use the dashboard and keyboard workflows.
+4. **[Watchdog Runbook](/docs/watchdog-runbook)** advanced, opt-in detached supervision.
 
 ## Core Primitives
 
@@ -47,16 +47,25 @@ Follow the docs in this order:
 | [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others |
 | [`tx block`](/docs/primitives/block) | Declare dependencies between tasks |
 | [`tx claim`](/docs/primitives/claim) | Mark task as being worked by an agent |
-| [`tx pin`](/docs/primitives/pin) | Attach key-value metadata to tasks |
+| [`tx pin`](/docs/primitives/pin) | Pin key-value metadata to CLAUDE.md / AGENTS.md files |
 | [`tx memory`](/docs/primitives/memory) | Filesystem-backed knowledge search |
-| [`tx learning:*`](/docs/primitives/learning) | Record and search session learnings |
-| [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection |
 | [`tx label`](/docs/primitives/label) | Organize tasks with labels for phase scoping |
 | [`tx guard`](/docs/primitives/guard) | Set task creation limits (bounded autonomy) |
 | [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria |
 | [`tx reflect`](/docs/primitives/reflect) | Session retrospective with actionable signals |
 | [`tx gate`](/docs/primitives/gate) | Human approval checkpoints between phases |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs |
+
+### Quick CLI Examples
+
+```bash
+tx pin set coding-standards --file ./standards.md
+tx memory search "auth flow" --semantic
+tx memory add "Retry 429s with backoff" -t learning
+tx memory context tx-abc123
+tx verify set tx-abc123 "bun test"
+tx verify run tx-abc123
+```
 
 ## Structured Requirements (EARS)
 
@@ -72,9 +81,9 @@ Start in [`tx doc`](/docs/primitives/docs) for syntax and examples.
 
 ## Spec-Driven Development
 
-Spec-driven development is not a one-way equation (spec + tests + agent = code) — it's a feedback loop. Implementing code generates decisions that must feed back into specs and tests. tx is the control plane that keeps these three nodes in sync: tasks define what to build, [learnings](/docs/primitives/learning) and [decisions](/docs/primitives/decision) capture the choices made during implementation, and [`tx done`](/docs/primitives/done) is a checkpoint that closes the loop.
+Spec-driven development is not a one-way equation. It is a feedback loop. Implementing code generates decisions that must feed back into specs and tests. tx keeps the loop in sync: tasks define what to build, [memory](/docs/primitives/memory) and [decisions](/docs/primitives/decision) capture what changed during implementation, and [`tx done`](/docs/primitives/done) closes the loop.
 
-The answer to AI coding's volume problem — waterfall output at agile cadence — is not more complex orchestration but lightweight process, so that moving fast doesn't require abandoning intent tracking. Use [`tx spec health`](/docs/primitives/decision) to monitor the health of your spec-code-test cycle.
+The answer to AI coding's volume problem is not more orchestration. It is lightweight process that keeps intent, code, and tests aligned at speed. Use [`tx spec health`](/docs/primitives/decision) to monitor the spec-code-test cycle.
 
 ## Your First Step
 

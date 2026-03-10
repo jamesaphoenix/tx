@@ -231,13 +231,13 @@ interface LearningWithScore extends Learning {
 
 ```bash
 # Search with graph expansion
-tx learning search "authentication" --expand --depth 2
+tx memory search "authentication" --expand --depth 2
 
 # Get context with expansion for specific files
-tx context <task-id> --expand --files src/auth.ts,src/jwt.ts
+tx memory context <task-id> --expand --files src/auth.ts,src/jwt.ts
 
 # Show expansion details
-tx learning search "auth" --expand --verbose
+tx memory search "auth" --expand --verbose
 ```
 
 ## Diversification (MMR)
@@ -328,8 +328,8 @@ const diversify = (candidates: LearningWithScore[], limit: number, lambda = 0.7)
 Use glob patterns for file matching. More familiar, less error-prone.
 
 ```bash
-tx context tx-abc --expand --files "src/auth/**/*.ts"
-tx context tx-abc --expand --files "src/auth.ts,src/jwt.ts"
+tx memory context tx-abc --expand --files "src/auth/**/*.ts"
+tx memory context tx-abc --expand --files "src/auth.ts,src/jwt.ts"
 ```
 
 Use `fast-glob` or `picomatch` under the hood. Regex is overkill for file paths.

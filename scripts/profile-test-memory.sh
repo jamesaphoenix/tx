@@ -232,7 +232,7 @@ if $RUN_ROOT; then
         "bunx --bun vitest run test/integration/mcp.test.ts test/integration/interface-parity.test.ts 2>&1"
 
     profile_command "group/cli-tests" \
-        "bunx --bun vitest run test/integration/cli-commands.test.ts test/integration/cli-graph.test.ts test/integration/cli-learning.test.ts test/integration/cli-test-cache.test.ts test/integration/cli-try.test.ts test/integration/hooks.test.ts 2>&1"
+        "bunx --bun vitest run test/integration/cli-commands.test.ts test/integration/cli-graph.test.ts test/integration/cli-memory-subcommands.test.ts test/integration/cli-test-cache.test.ts test/integration/hooks.test.ts 2>&1"
 
     profile_command "group/chaos" \
         "bunx --bun vitest run test/chaos/ 2>&1"

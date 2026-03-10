@@ -26,14 +26,14 @@ TASK_ID=$(echo "$PROMPT" | grep -oE 'tx-[a-z0-9]{6,12}' | head -1 || true)
 
 if [ -n "$TASK_ID" ]; then
   # Get contextual learnings for the specific task
-  CONTEXT=$(tx_cmd context "$TASK_ID" --json 2>/dev/null || echo "")
+  CONTEXT=$(tx_cmd memory context "$TASK_ID" --json 2>/dev/null || echo "")
 
   if [ -n "$CONTEXT" ]; then
-    LEARNING_COUNT=$(echo "$CONTEXT" | jq '.learnings | length' 2>/dev/null || echo "0")
+    RESULT_COUNT=$(echo "$CONTEXT" | jq '.results | length' 2>/dev/null || echo "0")
 
-    if [ "$LEARNING_COUNT" -gt 0 ]; then
+    if [ "$RESULT_COUNT" -gt 0 ]; then
       FORMATTED=$(echo "$CONTEXT" | jq -r '
-        .learnings[] | "- [\(.sourceType // "manual")] (score: \((.relevanceScore * 100) | floor)%) \(.content)"
+        .results[] | "- [\(.tags | join(","))] (score: \((.relevanceScore * 100) | floor)%) \(.content)"
       ')
 
       # Escape for JSON (strip surrounding quotes from jq -Rs output)
@@ -59,7 +59,7 @@ fi
 # Fallback: search learnings based on prompt keywords
 # Extract first 100 chars of prompt for search
 SEARCH_QUERY=$(echo "$PROMPT" | head -c 100 | tr -d '"' | tr '\n' ' ')
-SEARCH_RESULTS=$(tx_cmd learning search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
+SEARCH_RESULTS=$(tx_cmd memory search "$SEARCH_QUERY" --tags learning -n 3 --json 2>/dev/null || echo "[]")
 
 if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
   FORMATTED=$(echo "$SEARCH_RESULTS" | jq -r '.[] | "- \(.content)"' 2>/dev/null || true)

@@ -28,20 +28,6 @@
     "sdk": "apps/agent-sdk/src/client.ts",
     "required": ["cli", "mcp", "api", "sdk"]
   },
-  "context": {
-    "cli": "apps/cli/src/commands/group-context.ts",
-    "mcp": "apps/mcp-server/src/tools/task.ts",
-    "api": "apps/api-server/src/routes/tasks.ts",
-    "sdk": "apps/agent-sdk/src/client.ts",
-    "required": ["cli", "mcp", "api", "sdk"]
-  },
-  "learning": {
-    "cli": "apps/cli/src/commands/learning.ts",
-    "mcp": "apps/mcp-server/src/tools/learning.ts",
-    "api": "apps/api-server/src/routes/learnings.ts",
-    "sdk": "apps/agent-sdk/src/client.ts",
-    "required": ["cli", "mcp", "api", "sdk"]
-  },
   "memory": {
     "cli": "apps/cli/src/commands/memory.ts",
     "mcp": "apps/mcp-server/src/tools/memory.ts",
@@ -81,13 +67,6 @@
     "cli": "apps/cli/src/commands/outbox.ts",
     "mcp": "apps/mcp-server/src/tools/message.ts",
     "api": "apps/api-server/src/routes/messages.ts",
-    "sdk": "apps/agent-sdk/src/client.ts",
-    "required": ["cli", "mcp", "api", "sdk"]
-  },
-  "attempts": {
-    "cli": "apps/cli/src/commands/attempt.ts",
-    "mcp": "apps/mcp-server/src/tools/task.ts",
-    "api": "apps/api-server/src/routes/tasks.ts",
     "sdk": "apps/agent-sdk/src/client.ts",
     "required": ["cli", "mcp", "api", "sdk"]
   },
@@ -146,13 +125,5 @@
     "api": "apps/api-server/src/routes/decisions.ts",
     "sdk": "apps/agent-sdk/src/client.ts",
     "required": ["cli", "mcp", "api", "sdk"]
-  },
-  "checkpoint": {
-    "planned": true,
-    "required": []
-  },
-  "handoff": {
-    "planned": true,
-    "required": []
   }
 }

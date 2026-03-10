@@ -58,7 +58,7 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 ├─────────────────────────────────────────────────────────┤
 │  tx primitives                                          │
 │                                                         │
-│   tx ready     tx done      tx context    tx learn      │
+│   tx ready     tx done      tx memory     tx pin        │
 │   tx send      tx block     tx inbox      tx sync       │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -79,17 +79,16 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx ready` | Get next workable task (unblocked, highest priority) |
 | `tx done <id>` | Complete task, potentially unblocking others |
 | `tx block <id> <blocker>` | Declare dependencies |
-| `tx context <id>` | Get relevant learnings + history for prompt injection |
-| `tx learning add` | Record knowledge for future agents |
+| `tx memory context <id>` | Get relevant memory + learnings for prompt injection |
+| `tx memory add` | Record knowledge for future agents |
 | `tx send <channel> <content>` | Send a message to an agent channel |
 | `tx inbox <channel>` | Read messages (read-only, cursor-based) |
 | `tx ack <id>` | Acknowledge a message |
-| `tx try <id> <approach>` | Record an attempt on a task |
 | `tx claim <id> <worker>` | Claim a task with a lease for worker coordination |
-| `tx learn <path> <note>` | Attach a learning to a file path or glob |
-| `tx recall [path]` | Query file-specific learnings by path |
+| `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
+| `tx memory recall [path]` | Query file-specific learnings by path |
 | `tx sync export` | Persist to git-friendly JSONL |
-| `tx sync codex` | One-way push tasks to Codex team directory |
+| `tx sync claude` | One-way push tasks to Claude Code team directory |
 
 ### Example Loops (not THE loop)
 
@@ -132,7 +131,7 @@ tx done $task
 ├─────────────────────────────────────────┤
 │  Task Management                        │  ← tx core (ready, block, done)
 ├─────────────────────────────────────────┤
-│  Memory                                 │  ← tx learnings + context
+│  Memory                                 │  ← tx memory (learnings, context, recall)
 ├─────────────────────────────────────────┤
 │  Storage (Git + SQLite)                 │  ← Persistence layer
 └─────────────────────────────────────────┘
@@ -480,19 +479,17 @@ tx unblock <id> <blocker>  # Remove dependency
 tx children <id>           # List child tasks
 tx tree <id>               # Show task subtree
 
-# Attempts
-tx try <id> <approach>     # Record an attempt (--failed|--succeeded)
-tx attempts <id>           # List attempts
-
-# Memory & Learnings
-tx learning add <content>  # Add a learning
-tx learning search <q>     # Search (BM25 + recency)
-tx learning recent         # Recent learnings
-tx learning helpful <id>   # Record helpfulness
-tx learning embed          # Compute vector embeddings
-tx context <task-id>       # Contextual learnings for a task
-tx learn <path> <note>     # Attach learning to file/glob
-tx recall [path]           # Query file learnings
+# Memory (filesystem-backed .md search)
+tx memory source add <dir> # Register directory for indexing
+tx memory source rm <dir>  # Unregister directory
+tx memory source list      # Show registered directories
+tx memory add <title>      # Create .md file (--content, --tags, --dir)
+tx memory index            # Index all sources (--incremental, --status)
+tx memory search <query>   # BM25 search (--semantic, --expand, --tags, --prop)
+tx memory show <id>        # Display document
+tx memory context <id>     # Task-relevant memory for prompt injection
+tx memory learn <p> <note> # Attach learning to file path/glob
+tx memory recall [path]    # Query file-specific learnings
 
 # Messages (Agent Outbox)
 tx send <channel> <msg>    # Send to channel
@@ -860,178 +857,3 @@ The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
 - **Source PRDs/DDs**: `docs/` directory — internal design artifacts, linked from AGENTS.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
-
-
-# tx — Headless, Local Infra for AI Agents
-
-## IMPORTANT: tx Is Canonical, Native Task List Is Allowed
-
-Codex native task tools (TaskCreate, TaskUpdate, TaskList, etc.) may be used as a local working list.
-
-Task-layer source of truth policy:
-- `tx` is the **primary canonical source of truth** for task state.
-- Native task lists are convenience views only.
-- If pulling work from a queue, use `tx ready` as the primary place to get work.
-- Every create/update/complete/block action in native tasks **must be mirrored back to `tx`**.
-
-Required sync behavior:
-- Mirror native creates to `tx add` (use `--parent` for subtasks).
-- Mirror native state updates to `tx update`, `tx block`, `tx unblock`, `tx done`, or `tx reset`.
-- Before handoff, commit, or session end, run `tx sync export`.
-- If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
-
-The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to git via `tx sync export`.
-
-### Core Commands
-
-| Command | Purpose |
-|---------|---------|
-| `tx ready` | Get next workable task (unblocked, highest priority) |
-| `tx done <id>` | Complete task, potentially unblocking others |
-| `tx add <title>` | Create a new task (`--parent`, `--score`, `--description`) |
-| `tx show <id>` | Show task details with dependencies |
-| `tx block <id> <blocker>` | Declare task dependencies |
-| `tx group-context set <id> <context>` | Attach shared task-group context for related tasks |
-| `tx group-context clear <id>` | Clear task-group context from a task |
-| `tx context <id>` | Get relevant learnings + history |
-| `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
-
-### Bounded Autonomy
-
-| Command | Purpose |
-|---------|---------|
-| `tx guard set` | Set task creation limits (`--max-pending`, `--max-children`, `--max-depth`, `--enforce`) |
-| `tx guard show` | Show current guard configuration |
-| `tx verify set <id> <cmd>` | Attach a shell verification command to a task |
-| `tx verify run <id>` | Run verification (exit 0 = pass) |
-| `tx label add <name>` | Create a label for scoping the ready queue |
-| `tx label assign <id> <name>` | Assign a label to a task |
-| `tx ready --label <name>` | Filter ready queue by label |
-| `tx reflect` | Session retrospective (throughput, signals, stuck tasks) |
-
-### Memory & Learnings
-
-| Command | Purpose |
-|---------|---------|
-| `tx learning add <content>` | Record knowledge for future agents |
-| `tx learning search <q>` | Search learnings (BM25 + recency) |
-| `tx learn <path> <note>` | Attach a learning to a file path or glob |
-| `tx recall [path]` | Query file-specific learnings by path |
-
-### Messaging
-
-| Command | Purpose |
-|---------|---------|
-| `tx send <channel> <msg>` | Send a message to an agent channel |
-| `tx inbox <channel>` | Read messages |
-| `tx ack <id>` | Acknowledge a message |
-
-### Worker Coordination
-
-| Command | Purpose |
-|---------|---------|
-| `tx claim <id> <worker>` | Claim a task with a lease |
-| `tx claim release <id> <w>` | Release a claim |
-| `tx claim renew <id> <w>` | Renew a lease |
-
-### Sync
-
-| Command | Purpose |
-|---------|---------|
-| `tx sync export` | SQLite to git-friendly JSONL |
-| `tx sync import` | JSONL to SQLite |
-| `tx compact` | Compact done tasks + export learnings |
-
-## Example Orchestration
-
-### Simple: one task at a time
-
-```bash
-while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
-  [ "$task" = "null" ] && break
-  codex "Work on task $task. Run tx show $task first, implement it, then tx done $task"
-done
-```
-
-### Parallel: N agents pulling from a shared queue
-
-```bash
-for i in {1..5}; do
-  (while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
-    [ "$task" = "null" ] && break
-    codex "Complete $task" && tx done $task
-  done) &
-done
-wait
-```
-
-### Human-in-the-loop
-
-```bash
-task=$(tx ready --limit 1 --json | jq -r '.[0].id')
-codex "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " answer
-[ "$answer" = "y" ] && codex "Execute plan.md" && tx done $task
-```
-
-Do not bypass hooks in this workflow. Keep git verification enabled for commits and pushes.
-
-If related tasks share rollout/migration notes, set them once via `tx group-context set <id> "<context>"` so descendants/ancestors inherit the same context.
-
-## EARS Requirements (Mandatory)
-
-- All PRDs MUST include `ears_requirements`. This is a hard requirement, not configurable.
-- PRDs with legacy `requirements` MUST also define a non-empty `ears_requirements` array.
-- Use deterministic IDs in the form `EARS-<AREA>-NNN` (example: `EARS-API-001`).
-- Use valid patterns only: `ubiquitous`, `event_driven`, `state_driven`, `optional`, `unwanted`, `complex`.
-- Run `tx doc lint-ears <doc-name-or-yaml-path>` before implementation and before review.
-- Keep legacy `requirements` only for backward compatibility or migration.
-
-## Documentation Structure (4-Tier Convention)
-
-| Tier | Directory | Prefix | Focus |
-|------|-----------|--------|-------|
-| Requirements | `docs/requirements/` | `REQ-NNN` | Use-cases and behavior |
-| PRD | `docs/prd/` | `PRD-NNN` | Scope and acceptance criteria |
-| Design Doc | `docs/design/` | `DD-NNN` | Implementation design |
-| System Design | `docs/system-design/` | `SD-NNN` | Shared architecture constraints |
-
-- `tx doc` scaffolds all 5 doc kinds: `overview`, `prd`, `design`, `requirement`, and `system_design`.
-- Create docs for non-trivial features and plans; formalize behavior, scope, design, and SD when cross-cutting.
-- Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
-- Link docs as a chain: `REQ -> PRD -> DD`, and include `SD` when constraints span multiple features.
-
-## Testing + OTEL Quality Bar
-
-- Treat integration tests as the default for behavior changes; unit tests alone are not enough.
-- Cover critical flows with happy path plus failure path assertions (timeouts, malformed input, partial failure, retries/idempotency where relevant).
-- Integration tests must use `getSharedTestLayer()` and `fixtureId(name)`. Never create a DB per test.
-- If telemetry-related code changes, test all three modes: no OTEL config (noop), OTEL configured, and exporter failure.
-- Telemetry failures must be caught/logged and never block core operations.
-
-## Design Doc Testing Strategy Quality Bar
-
-For `docs/design/DD-*.md`, the `## Testing Strategy` section must be concrete and testable.
-
-- Include requirement-to-test traceability (every requirement maps to one or more tests).
-- When PRDs use EARS, map each `EARS-*` ID to one or more tests in the traceability matrix.
-- Include at least 8 numbered integration scenarios with setup, action, and assertions.
-- Include failure-path testing (timeouts, malformed input, partial failures, retries/idempotency where relevant).
-- Include OTEL/non-OTEL behavior assertions when observability paths are touched.
-- Name exact test files to add or update.
-- Use concrete expected outcomes (DB rows, API responses, emitted events/metrics, task state transitions).
-- Do not write vague bullets like "add tests" or "cover edge cases".
-
-Use this prompt pattern when drafting:
-
-```text
-Write ONLY the "Testing Strategy" section for <DD-NNN>.
-1) Add a traceability matrix:
-   Requirement | Test Type | Test Name | Assertions | File Path
-2) Include Unit, Integration, Edge Cases, Failure Injection, Performance.
-3) Integration tests must use getSharedTestLayer() and fixtureId(name).
-4) Provide at least 8 numbered integration scenarios with Setup / Action / Assert.
-5) If the PRD uses EARS, include EARS requirement IDs in traceability rows.
-6) If telemetry is in scope, include noop/configured/exporter-failure assertions.
-7) Use specific files, inputs, and expected outcomes; no vague statements.
-```

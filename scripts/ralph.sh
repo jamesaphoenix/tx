@@ -1564,12 +1564,12 @@ Task title: $task_title
 Follow the profile instructions first.
 Helpful commands if needed:
 - \`tx show $task_id\` for full task details
-- \`tx context $task_id\` for related learnings
+- \`tx memory context $task_id\` for related learnings
 
 When complete, run \`tx done $task_id\`.
 If you discover new work, create subtasks with \`tx add\`.
 If blocked, run \`tx update $task_id --status blocked\`.
-Optionally record useful insights with \`tx learning add \"<what you learned>\" --source-ref $task_id\`."
+Optionally record useful insights with \`tx memory add \"<what you learned>\" --source-ref $task_id\`."
 
   log "Dispatching to $ACTIVE_RUNTIME_LABEL..."
 
@@ -2194,7 +2194,7 @@ Extract all key learnings — things that would help a future agent working on t
 - Tool/API quirks encountered
 
 For each learning, record it with:
-  tx learning add \"<learning>\" --source-ref $TASK_ID
+  tx memory add \"<learning>\" --source-ref $TASK_ID
 
 Skip obvious or generic observations. Only record insights specific to this project." \
         "$LEARNINGS_TIMEOUT" \

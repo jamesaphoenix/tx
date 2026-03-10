@@ -52,7 +52,7 @@ if ! command -v tx &> /dev/null; then
 fi
 
 # Get recent learnings (last 5)
-LEARNINGS=$(tx learning recent -n 5 --json 2>/dev/null || echo "[]")
+LEARNINGS=$(tx memory recent -n 5 --json 2>/dev/null || echo "[]")
 
 if [ "$LEARNINGS" = "[]" ] || [ -z "$LEARNINGS" ]; then
   exit 0
@@ -113,7 +113,7 @@ TASK_ID=$(echo "$PROMPT" | grep -oE 'tx-[a-z0-9]{6,8}' | head -1)
 
 if [ -n "$TASK_ID" ]; then
   # Get contextual learnings for the specific task
-  CONTEXT=$(tx context "$TASK_ID" --json 2>/dev/null || echo "")
+  CONTEXT=$(tx memory context "$TASK_ID" --json 2>/dev/null || echo "")
 
   if [ -n "$CONTEXT" ]; then
     LEARNING_COUNT=$(echo "$CONTEXT" | jq '.learnings | length' 2>/dev/null || echo "0")
@@ -139,7 +139,7 @@ fi
 # Fallback: search learnings based on prompt keywords
 # Extract first 100 chars of prompt for search
 SEARCH_QUERY=$(echo "$PROMPT" | head -c 100 | tr -d '"' | tr '\n' ' ')
-SEARCH_RESULTS=$(tx learning search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
+SEARCH_RESULTS=$(tx memory search "$SEARCH_QUERY" -n 3 --json 2>/dev/null || echo "[]")
 
 if [ "$SEARCH_RESULTS" != "[]" ] && [ -n "$SEARCH_RESULTS" ]; then
   FORMATTED=$(echo "$SEARCH_RESULTS" | jq -r '.[] | "- \(.content)"' 2>/dev/null)
@@ -227,7 +227,7 @@ if [ -f ".tx/current-task" ]; then
     cat << EOF
 {
   "decision": "block",
-  "reason": "Before finishing, please consider capturing any learnings from this session.\n\nIf you learned something useful that would help with similar tasks in the future, run:\n\n  tx learning add \"your learning here\" --source-ref $TASK_ID\n\nIf no new learnings to capture, you can proceed to finish."
+  "reason": "Before finishing, please consider capturing any learnings from this session.\n\nIf you learned something useful that would help with similar tasks in the future, run:\n\n  tx memory add \"your learning here\" --source-ref $TASK_ID\n\nIf no new learnings to capture, you can proceed to finish."
 }
 EOF
 
@@ -279,7 +279,7 @@ if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" 
   cp "$TRANSCRIPT_PATH" "$ARCHIVE_DIR/transcript.jsonl" 2>/dev/null || true
 
   # Export recent learnings
-  tx learning recent -n 10 --json > "$ARCHIVE_DIR/recent-learnings.json" 2>/dev/null || true
+  tx memory recent -n 10 --json > "$ARCHIVE_DIR/recent-learnings.json" 2>/dev/null || true
 
   # Record archive time
   echo "{\"archived_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"session_id\": \"$SESSION_ID\"}" > "$ARCHIVE_DIR/metadata.json"
@@ -374,7 +374,7 @@ For more intelligent learning capture using LLM evaluation:
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Evaluate if Claude should stop working. Context: $ARGUMENTS\n\nAnalyze the conversation and determine if:\n1. All user-requested tasks are complete\n2. Any new learnings should be captured (insights, gotchas, patterns discovered)\n3. The learning system should be updated with `tx learning add`\n\nIf learnings should be captured, return:\n{\"ok\": false, \"reason\": \"Please capture any learnings with: tx learning add 'your learning' --source-ref <task-id>\"}\n\nIf work is complete and no learnings needed, return:\n{\"ok\": true}",
+            "prompt": "Evaluate if Claude should stop working. Context: $ARGUMENTS\n\nAnalyze the conversation and determine if:\n1. All user-requested tasks are complete\n2. Any new learnings should be captured (insights, gotchas, patterns discovered)\n3. The learning system should be updated with `tx memory add`\n\nIf learnings should be captured, return:\n{\"ok\": false, \"reason\": \"Please capture any learnings with: tx memory add 'your learning' --source-ref <task-id>\"}\n\nIf work is complete and no learnings needed, return:\n{\"ok\": true}",
             "timeout": 30
           }
         ]
@@ -392,7 +392,7 @@ For more intelligent learning capture using LLM evaluation:
 
 ```bash
 #!/bin/bash
-# Install Claude Code hooks for tx learnings integration
+# Install Claude Code hooks for tx memory integration
 
 set -e
 

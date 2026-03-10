@@ -2,7 +2,7 @@
 
 ## Problem
 
-tx supports contextual learnings (`tx context`) but does not support reusable context attached to a task group. Teams need to attach shared context once and have it available when working related tasks.
+tx supports contextual learnings (`tx memory context`) but does not support reusable context attached to a task group. Teams need to attach shared context once and have it available when working related tasks.
 
 Current gap:
 
@@ -51,7 +51,7 @@ Inheritance resolution:
 
 ## Out of Scope
 
-- Learning retrieval (`tx context`) ranking changes.
+- Learning retrieval (`tx memory context`) ranking changes.
 - Label/tag-based inheritance semantics.
 - Cross-project context sharing.
 - Dashboard-specific UX for editing group context.

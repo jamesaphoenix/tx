@@ -47,8 +47,6 @@ export default defineConfig({
       "test/integration/daemon-cli.test.ts",
       "test/integration/cli-graph.test.ts",
       "test/integration/cli-test-cache.test.ts",
-      // Timeout-prone due to retriever pipeline complexity in CI
-      "test/integration/cli-learning.test.ts",
       // npm binary distribution test: slow (npm pack + install), run explicitly
       "test/integration/cli-npm-binary.test.ts",
       // install script test: requires network access to GitHub

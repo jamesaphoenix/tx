@@ -7,7 +7,9 @@
 import { Effect } from "effect"
 import { resolve } from "node:path"
 import { homedir } from "node:os"
-import { MemoryService, MemoryRetrieverService } from "@jamesaphoenix/tx-core"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { randomBytes } from "node:crypto"
+import { MemoryService, MemoryRetrieverService, TaskService } from "@jamesaphoenix/tx-core"
 
 /**
  * Expand tilde (~) to the user's home directory.
@@ -17,7 +19,7 @@ const expandTilde = (p: string): string =>
   p.startsWith("~") ? p.replace(/^~/, homedir()) : p
 import { toJson, truncate } from "../output.js"
 import { commandHelp } from "../help.js"
-import { type Flags, flag, opt, parseIntOpt, parseFloatOpt } from "../utils/parse.js"
+import { type Flags, flag, opt, parseIntOpt, parseFloatOpt, parseTaskId } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"
 
 // =============================================================================
@@ -531,6 +533,327 @@ const memoryLink = (pos: string[], flags: Flags) =>
   })
 
 // =============================================================================
+// Helpers for context/learn/recall (moved from learning.ts)
+// =============================================================================
+
+/**
+ * Extract the actual learning body from a memory document's content.
+ * Strips frontmatter and the auto-generated title heading.
+ */
+const extractBody = (content: string): string => {
+  // Strip frontmatter block (handle both LF and CRLF line endings)
+  const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n+/)
+  const body = fmMatch ? content.slice(fmMatch[0].length) : content
+  // Strip title heading (# ...)
+  const titleMatch = body.match(/^#[^\r\n]*\r?\n+/)
+  return (titleMatch ? body.slice(titleMatch[0].length) : body).trim()
+}
+
+/** Relative path (from cwd) where learning .md files live */
+const LEARNINGS_DIR = "docs/learnings"
+/** Parent directory to register as a memory source */
+const DOCS_DIR = "docs"
+
+/**
+ * Ensure docs/learnings/ exists and docs/ is registered as a memory source.
+ * Called before any learning write operation.
+ */
+const ensureLearningsDir = () =>
+  Effect.gen(function* () {
+    const learningsDir = resolve(process.cwd(), LEARNINGS_DIR)
+    const docsDir = resolve(process.cwd(), DOCS_DIR)
+
+    // Ensure the directories exist on disk
+    yield* Effect.try({
+      try: () => mkdirSync(learningsDir, { recursive: true }),
+      catch: (e) => {
+        console.error(`Failed to create learnings directory: ${(e as Error).message}`)
+        return new CliExitError(1)
+      },
+    })
+
+    // Ensure docs/ is registered as a memory source
+    const memSvc = yield* MemoryService
+    const sources = yield* memSvc.listSources()
+    const docsRegistered = sources.some(s => s.rootDir === docsDir)
+    if (!docsRegistered) {
+      yield* memSvc.addSource(docsDir, "docs")
+    }
+  })
+
+/**
+ * Generate a learning document title from content.
+ * Produces a slug-friendly title like "always-use-effect-gen-a1b2c3".
+ */
+const learningTitle = (content: string): string => {
+  const words = content
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .split(/\s+/)
+    .filter(w => w.length > 0)
+    .slice(0, 6)
+    .join(" ")
+  const suffix = randomBytes(3).toString("hex")
+  return words.length > 0 ? `${words} ${suffix}` : `learning ${suffix}`
+}
+
+// =============================================================================
+// context subcommand (moved from learning.ts)
+// =============================================================================
+
+const memoryContext = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const rawTaskId = pos[0]
+    if (!rawTaskId) {
+      console.error("Usage: tx memory context <task-id> [--json] [--inject] [--expand] [--semantic]")
+      throw new CliExitError(1)
+    }
+    const taskId = parseTaskId(rawTaskId)
+
+    const taskSvc = yield* TaskService
+    const retriever = yield* MemoryRetrieverService
+    const startTime = Date.now()
+
+    // Get task to build search query
+    const task = yield* taskSvc.get(taskId)
+    const searchQuery = `${task.title} ${task.description}`.trim()
+
+    const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
+    const useSemantic = flag(flags, "semantic")
+    const useExpand = flag(flags, "expand")
+
+    // Search all memory (not just learnings) — learning-tagged docs appear naturally
+    const results = yield* retriever.search(searchQuery, {
+      limit,
+      minScore: 0.05,
+      semantic: useSemantic,
+      expand: useExpand,
+    })
+
+    const searchDuration = Date.now() - startTime
+
+    if (flag(flags, "inject")) {
+      // Write context to .tx/context.md for injection
+      const contextPath = resolve(process.cwd(), ".tx", "context.md")
+      yield* Effect.try({
+        try: () => mkdirSync(resolve(process.cwd(), ".tx"), { recursive: true }),
+        catch: (e) => {
+          console.error(`Failed to create .tx directory: ${(e as Error).message}`)
+          return new CliExitError(1)
+        },
+      })
+      const lines = [
+        `# Context for ${taskId} — ${task.title}`,
+        "",
+        `Search: ${searchQuery.slice(0, 100)}`,
+        `Duration: ${searchDuration}ms`,
+        "",
+      ]
+      for (const r of results) {
+        const score = (r.relevanceScore * 100).toFixed(0)
+        const tagInfo = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : ""
+        lines.push(`## ${r.id} (${score}%)${tagInfo}`)
+        lines.push("")
+        lines.push(r.content)
+        lines.push("")
+      }
+      yield* Effect.try({
+        try: () => writeFileSync(contextPath, lines.join("\n"), "utf-8"),
+        catch: (e) => {
+          console.error(`Failed to write context to ${contextPath}: ${(e as Error).message}`)
+          return new CliExitError(1)
+        },
+      })
+      const expandInfo = useExpand ? " (with graph expansion)" : ""
+      console.log(`Wrote ${results.length} result(s) to ${contextPath}${expandInfo}`)
+    } else if (flag(flags, "json")) {
+      console.log(toJson({
+        taskId,
+        taskTitle: task.title,
+        results: results.map(r => ({
+          id: r.id,
+          title: r.title,
+          content: r.content,
+          relevanceScore: r.relevanceScore,
+          tags: r.tags,
+          filePath: r.filePath,
+          expansionHops: r.expansionHops,
+        })),
+        searchQuery,
+        searchDuration,
+      }))
+    } else {
+      const expandInfo = useExpand ? " (with graph expansion)" : ""
+      console.log(`Context for: ${taskId} - ${task.title}${expandInfo}`)
+      console.log(`  Search query: ${searchQuery.slice(0, 50)}${searchQuery.length > 50 ? "..." : ""}`)
+      console.log(`  Search duration: ${searchDuration}ms`)
+      console.log(`  ${results.length} relevant result(s):`)
+      for (const r of results) {
+        const score = (r.relevanceScore * 100).toFixed(0)
+        const hops = r.expansionHops !== undefined && r.expansionHops > 0 ? ` [+${r.expansionHops} hops]` : ""
+        const isLearning = r.tags.includes("learning") ? " [learning]" : ""
+        const body = extractBody(r.content)
+        console.log(`    ${r.id} (${score}%)${isLearning}${hops} ${body.slice(0, 60)}${body.length > 60 ? "..." : ""}`)
+      }
+    }
+  })
+
+// =============================================================================
+// learn subcommand (moved from learning.ts)
+// =============================================================================
+
+const memoryLearn = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const pattern = pos[0]
+    const note = pos[1]
+    if (!pattern || !note) {
+      console.error("Usage: tx memory learn <path> <note> [--task <id>] [--json]")
+      throw new CliExitError(1)
+    }
+
+    yield* ensureLearningsDir()
+    const memSvc = yield* MemoryService
+
+    // Build properties
+    const properties: Record<string, string> = {
+      file_pattern: pattern,
+      source_type: "manual",
+    }
+    const taskId = opt(flags, "task")
+    if (taskId) properties.task_id = taskId
+
+    const doc = yield* memSvc.createDocument({
+      title: learningTitle(note),
+      content: note,
+      tags: ["learning"],
+      dir: resolve(process.cwd(), LEARNINGS_DIR),
+      properties,
+    })
+
+    if (flag(flags, "json")) {
+      console.log(toJson({
+        id: doc.id,
+        filePattern: pattern,
+        note,
+        taskId: taskId ?? null,
+        filePath: doc.filePath,
+      }))
+    } else {
+      console.log(`Created file learning: ${doc.id}`)
+      console.log(`  Pattern: ${pattern}`)
+      console.log(`  Note: ${note.slice(0, 80)}${note.length > 80 ? "..." : ""}`)
+      if (taskId) console.log(`  Task: ${taskId}`)
+    }
+  })
+
+// =============================================================================
+// recall subcommand (moved from learning.ts)
+// =============================================================================
+
+const memoryRecall = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const path = pos[0]
+    const memSvc = yield* MemoryService
+
+    // List all learning docs
+    const docs = yield* memSvc.listDocuments({ tags: ["learning"] })
+
+    if (path) {
+      // Filter by file_pattern property — check frontmatter for file_pattern match
+      const matching = docs.filter(d => {
+        if (!d.frontmatter) return false
+        try {
+          const fm = JSON.parse(d.frontmatter)
+          if (!fm.file_pattern) return false
+          // Simple glob matching: check if path matches or contains the pattern
+          const fp: string = fm.file_pattern
+          if (fp === path) return true
+          // Check if the pattern uses glob wildcards
+          if (fp.includes("*") || fp.includes("?")) {
+            // Convert glob to regex: escape regex specials (not * or ?), then expand wildcards
+            const regex = new RegExp(
+              "^" +
+              fp
+                .replace(/[\\^$+.()|[\]{}]/g, "\\$&")    // escape regex metacharacters (not * or ?)
+                .replace(/\?/g, "[^/]")                    // ? → single non-separator char
+                .replace(/\*\*/g, "\0")                    // placeholder for ** (globstar)
+                .replace(/\*/g, "[^/]*")                   // * → single-segment match
+                .replace(/\0/g, ".*")                      // ** → multi-segment match
+              + "$"
+            )
+            return regex.test(path)
+          }
+          // Check if path contains the pattern
+          return path.includes(fp) || fp.includes(path)
+        } catch {
+          return false
+        }
+      })
+
+      if (flag(flags, "json")) {
+        console.log(toJson(matching.map(d => {
+          const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+          return {
+            id: d.id,
+            filePattern: fm.file_pattern,
+            note: extractBody(d.content),
+            taskId: fm.task_id ?? null,
+            filePath: d.filePath,
+          }
+        })))
+      } else {
+        if (matching.length === 0) {
+          console.log(`No learnings found for: ${path}`)
+        } else {
+          console.log(`${matching.length} learning(s) for ${path}:`)
+          for (const d of matching) {
+            const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+            const taskInfo = fm.task_id ? ` [${fm.task_id}]` : ""
+            console.log(`  ${d.id}${taskInfo} (${fm.file_pattern})`)
+            console.log(`    ${extractBody(d.content)}`)
+          }
+        }
+      }
+    } else {
+      // List all file learnings (those with file_pattern property)
+      const fileLearnings = docs.filter(d => {
+        if (!d.frontmatter) return false
+        try {
+          const fm = JSON.parse(d.frontmatter)
+          return !!fm.file_pattern
+        } catch {
+          return false
+        }
+      })
+
+      if (flag(flags, "json")) {
+        console.log(toJson(fileLearnings.map(d => {
+          const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+          return {
+            id: d.id,
+            filePattern: fm.file_pattern,
+            note: extractBody(d.content),
+            taskId: fm.task_id ?? null,
+            filePath: d.filePath,
+          }
+        })))
+      } else {
+        if (fileLearnings.length === 0) {
+          console.log("No file learnings found")
+        } else {
+          console.log(`${fileLearnings.length} file learning(s):`)
+          for (const d of fileLearnings) {
+            const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+            const taskInfo = fm.task_id ? ` [${fm.task_id}]` : ""
+            const body = extractBody(d.content)
+            console.log(`  ${d.id}${taskInfo} ${fm.file_pattern}`)
+            console.log(`    ${body.slice(0, 60)}${body.length > 60 ? "..." : ""}`)
+          }
+        }
+      }
+    }
+  })
+
+// =============================================================================
 // Top-level dispatcher
 // =============================================================================
 
@@ -575,6 +898,12 @@ export const memory = (pos: string[], flags: Flags) =>
         return yield* memoryList(pos.slice(1), flags)
       case "link":
         return yield* memoryLink(pos.slice(1), flags)
+      case "context":
+        return yield* memoryContext(pos.slice(1), flags)
+      case "learn":
+        return yield* memoryLearn(pos.slice(1), flags)
+      case "recall":
+        return yield* memoryRecall(pos.slice(1), flags)
       default:
         console.error(`Unknown subcommand: memory ${sub}`)
         console.error("Run 'tx memory help' for usage.")

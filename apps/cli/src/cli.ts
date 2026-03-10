@@ -18,8 +18,6 @@ import { add, list, ready, show, update, done, deleteTask, reset } from "./comma
 import { block, unblock } from "./commands/dep.js"
 import { children, tree } from "./commands/hierarchy.js"
 import { sync } from "./commands/sync.js"
-import { learning, context, learn, recall } from "./commands/learning.js"
-import { tryAttempt, attempts } from "./commands/attempt.js"
 import { migrate } from "./commands/migrate.js"
 import { cycle } from "./commands/cycle.js"
 import { trace } from "./commands/trace.js"
@@ -185,17 +183,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   tree,
   sync,
   migrate,
-  context,
-  learn,
-  recall,
   "group-context": groupContext,
-
-  // Attempt commands
-  try: tryAttempt,
-  attempts,
-
-  // Learning commands (space-dispatched)
-  learning,
 
   // Cycle scan (PRD-023)
   cycle,
@@ -261,11 +249,6 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   reflect,
 
   // --- Deprecated colon-style aliases (emit warning, delegate to new syntax) ---
-  "learning:add": deprecatedAlias("learning add", (pos, flags) => learning(["add", ...pos], flags)),
-  "learning:search": deprecatedAlias("learning search", (pos, flags) => learning(["search", ...pos], flags)),
-  "learning:recent": deprecatedAlias("learning recent", (pos, flags) => learning(["recent", ...pos], flags)),
-  "learning:helpful": deprecatedAlias("learning helpful", (pos, flags) => learning(["helpful", ...pos], flags)),
-  "learning:embed": deprecatedAlias("learning embed", (pos, flags) => learning(["embed", ...pos], flags)),
   "claim:release": deprecatedAlias("claim release", (pos, flags) => claim(["release", ...pos], flags)),
   "claim:renew": deprecatedAlias("claim renew", (pos, flags) => claim(["renew", ...pos], flags)),
   "group-context:set": deprecatedAlias("group-context set", (pos, flags) => groupContext(["set", ...pos], flags)),
@@ -285,7 +268,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       // Check for compound command help (e.g., tx help sync export)
       const compoundParents = [
         "sync", "utils", "pin", "guard", "gate", "verify", "label", "spec",
-        "learning", "claim", "outbox", "group-context", "ack"
+        "memory", "claim", "outbox", "group-context", "ack"
       ]
       if (pos[1] && compoundParents.includes(subcommand ?? "")) {
         const subcommandKey = `${subcommand} ${pos[1]}`
@@ -311,7 +294,7 @@ if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
 // Commands that support compound help (e.g., tx sync export --help, tx help learning add)
 const compoundHelpParents = [
   "sync", "trace", "bulk", "doc", "invariant", "spec", "memory", "utils", "pin",
-  "guard", "gate", "verify", "label", "learning", "claim", "outbox", "group-context", "ack"
+  "guard", "gate", "verify", "label", "claim", "outbox", "group-context", "ack"
 ]
 
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)

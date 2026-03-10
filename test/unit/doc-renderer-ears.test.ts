@@ -14,11 +14,11 @@ describe("EARS sentence composition", () => {
     expect(
       composeEarsSentence({
         pattern: "event_driven",
-        trigger: "a user runs tx recall",
+        trigger: "a user runs tx memory recall",
         system: "recall service",
         response: "return results",
       })
-    ).toBe("When a user runs tx recall, the recall service shall return results.")
+    ).toBe("When a user runs tx memory recall, the recall service shall return results.")
 
     expect(
       composeEarsSentence({
@@ -73,7 +73,7 @@ describe("EARS rendering in PRDs", () => {
           {
             id: "EARS-FL-001",
             pattern: "ubiquitous",
-            system: "tx learn command",
+            system: "tx memory learn command",
             response: "persist a learning entry",
             priority: "must",
             rationale: "Core primitive",
@@ -82,7 +82,7 @@ describe("EARS rendering in PRDs", () => {
           {
             id: "EARS-FL-002",
             pattern: "event_driven",
-            trigger: "a user runs tx recall",
+            trigger: "a user runs tx memory recall",
             system: "recall service",
             response: "return matching learnings",
           },
@@ -94,10 +94,10 @@ describe("EARS rendering in PRDs", () => {
     expect(markdown).toContain("## Structured Requirements (EARS)")
     expect(markdown).toContain("| ID | Pattern | Requirement | Priority |")
     expect(markdown).toContain(
-      "| EARS-FL-001 | ubiquitous | The tx learn command shall persist a learning entry. | must |"
+      "| EARS-FL-001 | ubiquitous | The tx memory learn command shall persist a learning entry. | must |"
     )
     expect(markdown).toContain(
-      "| EARS-FL-002 | event_driven | When a user runs tx recall, the recall service shall return matching learnings. | - |"
+      "| EARS-FL-002 | event_driven | When a user runs tx memory recall, the recall service shall return matching learnings. | - |"
     )
     expect(markdown).toContain("### EARS-FL-001")
     expect(markdown).toContain("**Rationale**: Core primitive")

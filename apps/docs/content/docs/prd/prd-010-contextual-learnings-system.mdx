@@ -76,22 +76,22 @@ Create → Index (FTS5 + optional vector) → Retrieve → Use → Track Outcome
 
 | ID | Requirement | CLI Command |
 |----|-------------|-------------|
-| CL-001 | Add learning manually | `tx learning add "content" [-c category]` |
-| CL-002 | Search learnings | `tx learning search "query" [-n limit]` |
-| CL-003 | List recent learnings | `tx learning recent [-n limit]` |
-| CL-004 | Record outcome feedback | `tx learning helpful <id> [--score 0.8]` |
-| CL-005 | Import from CLAUDE.md | `tx learning:import [file]` |
-| CL-006 | Generate embeddings | `tx learning embed` |
-| CL-025 | View single learning by ID | `tx learning:show <id> [--json]` |
+| CL-001 | Add learning manually | `tx memory add "content" [-c category]` |
+| CL-002 | Search learnings | `tx memory search "query" [-n limit]` |
+| CL-003 | List recent learnings | `tx memory list --sort recent [-n limit]` |
+| CL-004 | Record outcome feedback | `tx memory set <id> [--score 0.8]` |
+| CL-005 | Import from CLAUDE.md | `tx memory index [file]` |
+| CL-006 | Generate embeddings | `tx memory index` |
+| CL-025 | View single learning by ID | `tx memory show <id> [--json]` |
 
 ### Task Context Retrieval
 
 | ID | Requirement | CLI Command |
 |----|-------------|-------------|
-| CL-007 | Get learnings for task | `tx context <task-id>` |
-| CL-008 | JSON output | `tx context <task-id> --json` |
-| CL-009 | Inject to temp file | `tx context <task-id> --inject` |
-| CL-010 | Token budget limit | `tx context <task-id> --max-tokens 2000` |
+| CL-007 | Get learnings for task | `tx memory context <task-id>` |
+| CL-008 | JSON output | `tx memory context <task-id> --json` |
+| CL-009 | Inject to temp file | `tx memory context <task-id> --inject` |
+| CL-010 | Token budget limit | `tx memory context <task-id> --max-tokens 2000` |
 
 ### Search Capabilities
 
@@ -193,14 +193,14 @@ interface ContextResult {
 ### Add Learning
 
 ```bash
-$ tx learning add "Always use transactions for multi-step DB operations" -c database
+$ tx memory add "Always use transactions for multi-step DB operations" -c database
 Added learning #42 (category: database)
 ```
 
 ### Search Learnings
 
 ```bash
-$ tx learning search "database transactions" -n 5
+$ tx memory search "database transactions" -n 5
 5 results:
 
 [92%] [database] Always use transactions for multi-step DB operations
@@ -215,7 +215,7 @@ $ tx learning search "database transactions" -n 5
 When hooks show truncated previews (200 chars), agents can expand specific learnings:
 
 ```bash
-$ tx learning:show 42
+$ tx memory show 42
 Learning #42
   Content: Always use transactions for multi-step DB operations. This prevents partial updates when errors occur mid-operation. Use BEGIN/COMMIT/ROLLBACK explicitly rather than relying on auto-commit.
   Category: database
@@ -228,7 +228,7 @@ Learning #42
 ### Get Task Context
 
 ```bash
-$ tx context tx-a1b2c3d4
+$ tx memory context tx-a1b2c3d4
 Context for task tx-a1b2c3d4: "Implement database migration"
 
 Found 4 relevant learnings (23ms):
@@ -242,7 +242,7 @@ Found 4 relevant learnings (23ms):
 ### Inject Context
 
 ```bash
-$ tx context tx-a1b2c3d4 --inject
+$ tx memory context tx-a1b2c3d4 --inject
 Injected 4 learnings to .tx/context.md (estimated 450 tokens)
 
 $ cat .tx/context.md
@@ -257,7 +257,7 @@ $ cat .tx/context.md
 ### Record Outcome
 
 ```bash
-$ tx learning helpful 42 --score 0.9
+$ tx memory set 42 --score 0.9
 Updated learning #42 outcome score to 0.9
 ```
 
@@ -310,14 +310,14 @@ This enables answering: "What context did we give the agent that made it succeed
 ### Without Embeddings
 
 - BM25 search works normally
-- `tx learning embed` prints: "No embedding model configured"
+- `tx memory index` prints: "No embedding model configured"
 - Vector search falls back to BM25-only
 - All other commands work
 
 ### Without Any Learnings
 
-- `tx context <task-id>` returns empty list
-- `tx learning search` returns empty list
+- `tx memory context <task-id>` returns empty list
+- `tx memory search` returns empty list
 - No errors, just no results
 
 ---

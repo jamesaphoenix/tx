@@ -1,11 +1,11 @@
 ---
 title: tx pin
-description: Persistent named content blocks synced to agent context files
+description: Pin key-value metadata to CLAUDE.md / AGENTS.md files
 ---
 
 ## Purpose
 
-`tx pin` manages named content blocks ("pins") that are automatically synchronized to agent context files like `CLAUDE.md` or `AGENTS.md`. Each pin is stored in the database and rendered as an XML-tagged block in target files:
+`tx pin` manages named content blocks ("pins") that sync project metadata into agent context files such as `CLAUDE.md` or `AGENTS.md`. Each pin is stored in the database and rendered as an XML-tagged block in target files:
 
 ```xml
 <tx-pin id="auth-patterns">
@@ -400,7 +400,7 @@ curl http://localhost:3456/api/pins
 
 ## Sync Pins to Files
 
-Re-synchronize all pins to target files. This is idempotent -- running it multiple times produces the same result. Sync adds missing pins, updates changed pins, and removes blocks for deleted pins.
+Re-synchronize all pins to target files. This is idempotent. Running it multiple times produces the same result. Sync adds missing pins, updates changed pins, and removes blocks for deleted pins.
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
@@ -675,6 +675,5 @@ tx pin sync
 
 ## Related Commands
 
-- [`tx context`](/docs/primitives/context) - Get relevant learnings for prompt injection
-- [`tx learning:*`](/docs/primitives/learning) - Record and search knowledge
+- [`tx memory`](/docs/primitives/memory) - Search and manage knowledge
 - [`tx sync`](/docs/primitives/sync) - Git-backed synchronization

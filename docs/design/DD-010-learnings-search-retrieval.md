@@ -39,7 +39,7 @@ This document describes **how** tx implements the contextual learnings system: h
 
 ## Single Learning Retrieval
 
-The `tx learning:show <id>` command provides direct access to a learning's full content.
+The `tx memory show <id>` command provides direct access to a learning's full content.
 
 ### Use Case
 
@@ -48,7 +48,7 @@ Claude Code hooks inject learnings truncated to 200 characters to conserve conte
 ```bash
 # Hook shows: "#218 (81%) Daemon service file generators (launchd plist, systemd..."
 
-$ tx learning:show 218
+$ tx memory show 218
 Learning #218
   Content: Daemon service file generators (launchd plist, systemd unit) follow a consistent pattern in daemon-service.ts: export a PATH constant for install location, define an Options interface with label/executablePath/logPath, and implement a pure generate function returning string XML/INI content. Include XML/special character escaping and expand ~ to homedir() for paths.
   Category: (none)

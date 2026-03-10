@@ -58,7 +58,7 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 ├─────────────────────────────────────────────────────────┤
 │  tx primitives                                          │
 │                                                         │
-│   tx ready     tx done      tx context    tx learn      │
+│   tx ready     tx done      tx memory     tx pin        │
 │   tx send      tx block     tx inbox      tx sync       │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -79,15 +79,14 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 | `tx ready` | Get next workable task (unblocked, highest priority) |
 | `tx done <id>` | Complete task, potentially unblocking others |
 | `tx block <id> <blocker>` | Declare dependencies |
-| `tx context <id>` | Get relevant learnings + history for prompt injection |
-| `tx learning add` | Record knowledge for future agents |
+| `tx memory context <id>` | Get relevant memory + learnings for prompt injection |
+| `tx memory add` | Record knowledge for future agents |
 | `tx send <channel> <content>` | Send a message to an agent channel |
 | `tx inbox <channel>` | Read messages (read-only, cursor-based) |
 | `tx ack <id>` | Acknowledge a message |
-| `tx try <id> <approach>` | Record an attempt on a task |
 | `tx claim <id> <worker>` | Claim a task with a lease for worker coordination |
-| `tx learn <path> <note>` | Attach a learning to a file path or glob |
-| `tx recall [path]` | Query file-specific learnings by path |
+| `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
+| `tx memory recall [path]` | Query file-specific learnings by path |
 | `tx sync export` | Persist to git-friendly JSONL |
 | `tx sync claude` | One-way push tasks to Claude Code team directory |
 
@@ -140,7 +139,7 @@ done
 ├─────────────────────────────────────────┤
 │  Task Management                        │  ← tx core (ready, block, done)
 ├─────────────────────────────────────────┤
-│  Memory                                 │  ← tx learnings + context
+│  Memory                                 │  ← tx memory (learnings, context, recall)
 ├─────────────────────────────────────────┤
 │  Storage (Git + SQLite)                 │  ← Persistence layer
 └─────────────────────────────────────────┘
@@ -489,20 +488,6 @@ tx unblock <id> <blocker>  # Remove dependency
 tx children <id>           # List child tasks
 tx tree <id>               # Show task subtree
 
-# Attempts
-tx try <id> <approach>     # Record an attempt (--failed|--succeeded)
-tx attempts <id>           # List attempts
-
-# Learnings
-tx learning add <content>  # Add a learning
-tx learning search <q>     # Search (BM25 + recency)
-tx learning recent         # Recent learnings
-tx learning helpful <id>   # Record helpfulness
-tx learning embed          # Compute vector embeddings
-tx context <task-id>       # Contextual learnings for a task
-tx learn <path> <note>     # Attach learning to file/glob
-tx recall [path]           # Query file learnings
-
 # Memory (filesystem-backed .md search)
 tx memory source add <dir> # Register directory for indexing
 tx memory source rm <dir>  # Unregister directory
@@ -521,6 +506,9 @@ tx memory links <id>       # Outgoing wikilinks + edges
 tx memory backlinks <id>   # Incoming links
 tx memory list             # List documents (--source, --tags)
 tx memory link <src> <tgt> # Create explicit edge
+tx memory context <id>     # Task-relevant memory for prompt injection
+tx memory learn <p> <note> # Attach learning to file path/glob
+tx memory recall [path]    # Query file-specific learnings
 
 # Messages (Agent Outbox)
 tx send <channel> <msg>    # Send to channel

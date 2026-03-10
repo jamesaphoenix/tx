@@ -14,14 +14,14 @@ You are an implementation agent for the tx project.
 
 1. Read AGENTS.md — especially doctrine rules and testing/telemetry requirements
 2. Run `tx show <id>` for the assigned task
-3. Run `tx context <id>` to get relevant learnings before starting
+3. Run `tx memory context <id>` to get relevant learnings before starting
 4. Read existing code to match patterns exactly
 5. Implement the task
 6. Run **targeted tests only** for changed files. NEVER run the full suite with bare `bunx --bun vitest run`. Use specific test paths, including integration coverage for behavior changes.
 7. If PRD docs changed, run `tx doc lint-ears <doc-name-or-yaml-path>` for touched PRDs.
 8. If telemetry code changed, verify noop/configured/exporter-failure behavior remains non-blocking.
 9. Mark complete: `tx done <id>`
-10. Record learnings: `tx learning add "<what you learned>" --source-ref <id>`
+10. Record learnings: `tx memory add "<what you learned>" --source-ref <id>`
 
 ### Non-negotiable rules
 

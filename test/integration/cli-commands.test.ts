@@ -585,14 +585,14 @@ describe("CLI sync claude command", () => {
     expect(file2.blockedBy).toContain("1")
   })
 
-  it("includes tx context and done hints in description", () => {
+  it("includes tx memory context and done hints in description", () => {
     const task = JSON.parse(runTxArgs(["add", "Implement feature", "--description", "Build the thing", "--json"], dbPath).stdout)
 
     runTxArgs(["sync", "claude", "--dir", targetDir], dbPath)
 
     const file = JSON.parse(readFileSync(join(targetDir, "1.json"), "utf-8"))
     expect(file.description).toContain("Build the thing")
-    expect(file.description).toContain(`tx context ${task.id}`)
+    expect(file.description).toContain(`tx memory context ${task.id}`)
     expect(file.description).toContain(`tx done ${task.id}`)
     expect(file.activeForm).toContain(task.id)
   })

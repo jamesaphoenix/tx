@@ -11,7 +11,7 @@ Key properties:
 
 - **Channel-based**: Messages are organized into named channels (e.g., agent ID, topic, `task:tx-abc123`)
 - **Cursor-based fan-out**: Multiple consumers read from the same channel using `afterId` cursors
-- **Read-only inbox**: Reading messages has no side effects -- explicit `tx ack` is required
+- **Read-only inbox**: Reading messages has no side effects. Explicit `tx ack` is required.
 - **TTL support**: Messages can auto-expire after a configurable duration
 - **Correlation IDs**: Request/reply patterns via `correlationId` matching
 
@@ -191,7 +191,7 @@ curl -X POST http://localhost:3456/api/messages \
 
 ## Read Inbox
 
-Read messages from a channel. This is a **pure read** with no side effects -- messages are not marked as read or consumed.
+Read messages from a channel. This is a **pure read** with no side effects. Messages are not marked as read or consumed.
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">

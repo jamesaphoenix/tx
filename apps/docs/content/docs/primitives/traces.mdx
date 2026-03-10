@@ -9,9 +9,9 @@ import { Tab, Tabs } from "fumadocs-ui/components/tabs"
 
 `tx trace` provides execution tracing for debugging agent run failures. It combines three primitives:
 
-1. **IO Capture** -- File paths to transcripts, stderr, and stdout stored on run records
-2. **Metrics Events** -- Operational spans and metrics written to the `events` table
-3. **Run Heartbeat** -- Stall detection/reaping based on transcript/log progress samples
+1. **IO Capture**: File paths to transcripts, stderr, and stdout stored on run records
+2. **Metrics Events**: Operational spans and metrics written to the `events` table
+3. **Run Heartbeat**: Stall detection and reaping based on transcript or log progress samples
 
 Traces help answer "why did this run fail?" by correlating internal service timing with agent tool calls.
 
@@ -537,9 +537,9 @@ tx trace errors
 ```
 
 Aggregates errors from three sources:
-- **Failed runs** -- runs with `status = 'failed'`
-- **Error spans** -- spans with `status = 'error'` in metadata
-- **Error events** -- events with `event_type = 'error'`
+- **Failed runs**: runs with `status = 'failed'`
+- **Error spans**: spans with `status = 'error'` in metadata
+- **Error events**: events with `event_type = 'error'`
 
 </Tab>
 <Tab value="TypeScript SDK">
@@ -700,14 +700,13 @@ curl -X PATCH "http://localhost:3456/api/runs/$RUN_ID" \
 
 Different LLM tools produce different transcript formats. tx includes adapters for parsing:
 
-- **ClaudeCodeAdapter** -- Parses Claude's `--output-format stream-json` JSONL
-- **GenericJSONLAdapter** -- Fallback for other JSONL-producing tools
+- **ClaudeCodeAdapter**: Parses Claude's `--output-format stream-json` JSONL
+- **GenericJSONLAdapter**: Fallback for other JSONL-producing tools
 
 The adapter is selected automatically based on the agent type stored in the run record.
 
 ## Related Commands
 
-- [`tx ready`](/docs/primitives/ready) -- List tasks available to work on
-- [`tx done`](/docs/primitives/done) -- Complete a task (ends the logical work unit)
-- [`tx attempts`](/docs/primitives/attempts) -- Record what approaches were tried
-- [`tx sync`](/docs/primitives/sync) -- Export and import append-only stream events
+- [`tx ready`](/docs/primitives/ready): List tasks available to work on
+- [`tx done`](/docs/primitives/done): Complete a task and end the logical work unit
+- [`tx sync`](/docs/primitives/sync): Export and import append-only stream events

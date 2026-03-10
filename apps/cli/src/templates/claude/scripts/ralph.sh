@@ -193,7 +193,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
   tx update "$TASK_ID" --status active 2>/dev/null || true
 
   # Fetch context
-  CONTEXT=$(tx context "$TASK_ID" 2>/dev/null || echo "")
+  CONTEXT=$(tx memory context "$TASK_ID" 2>/dev/null || echo "")
   CONTEXT_BLOCK=""
   if [ -n "$CONTEXT" ]; then
     CONTEXT_BLOCK="

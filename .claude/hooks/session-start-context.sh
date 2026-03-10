@@ -50,14 +50,14 @@ fi
 
 # 2. Get relevant learnings for the task
 if [ -n "$TASK_ID" ]; then
-  TASK_CONTEXT=$(tx_cmd context "$TASK_ID" --json 2>/dev/null || echo "")
+  TASK_CONTEXT=$(tx_cmd memory context "$TASK_ID" --json 2>/dev/null || echo "")
 
   if [ -n "$TASK_CONTEXT" ]; then
-    LEARNING_COUNT=$(echo "$TASK_CONTEXT" | jq '.learnings | length' 2>/dev/null || echo "0")
+    RESULT_COUNT=$(echo "$TASK_CONTEXT" | jq '.results | length' 2>/dev/null || echo "0")
 
-    if [ "$LEARNING_COUNT" -gt 0 ]; then
+    if [ "$RESULT_COUNT" -gt 0 ]; then
       LEARNINGS=$(echo "$TASK_CONTEXT" | jq -r '
-        .learnings[:15] | .[] | "- [\(.sourceType // "manual")] \(.content)"
+        .results[:15] | .[] | "- [\(.tags | join(","))] \(.content)"
       ' 2>/dev/null || true)
 
       if [ -n "$LEARNINGS" ]; then

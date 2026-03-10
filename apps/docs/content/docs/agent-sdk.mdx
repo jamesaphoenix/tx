@@ -383,6 +383,10 @@ console.log(`${tree.length} tasks in tree`)
 
 ### Learnings
 
+<Callout type="info" title="Unified Memory Primitive">
+The `tx.learnings.*` and `tx.context.*` SDK methods map to the unified [`tx memory`](/docs/primitives/memory) primitive. The SDK API names are unchanged for backwards compatibility, but the underlying functionality is part of the memory system. Use `tx memory add` with `-t learning` tags at the CLI level for the equivalent workflow.
+</Callout>
+
 #### `tx.learnings.search(options?)`
 
 Search learnings using BM25 text search. Returns results with relevance scores.
@@ -417,7 +421,7 @@ const practices = await tx.learnings.search({
 <Tab value="CLI">
 
 ```bash
-tx learning search "authentication"
+tx memory search "authentication"
 ```
 
 </Tab>
@@ -474,7 +478,7 @@ await tx.learnings.add({
 <Tab value="CLI">
 
 ```bash
-tx learning add "Use bcrypt for password hashing, not SHA256"
+tx memory add "Use bcrypt for password hashing, not SHA256"
 ```
 
 </Tab>
@@ -552,7 +556,7 @@ for (const l of ctx.learnings) {
 <Tab value="CLI">
 
 ```bash
-tx context tx-abc123
+tx memory context tx-abc123
 ```
 
 </Tab>
@@ -1013,10 +1017,12 @@ console.log(result.throughput)    // { created: 20, completed: 8, net: 12, compl
 console.log(result.signals)       // [{ type: 'HIGH_PROLIFERATION', ... }]
 console.log(result.stuckTasks)    // [{ id: 'tx-abc123', title: '...', attempts: 4 }]
 
-// With LLM analysis (requires ANTHROPIC_API_KEY)
+// Enable analysis when an LLM backend is available
 const analyzed = await tx.reflect.run({ sessions: 5, analyze: true })
 console.log(analyzed.analysis)    // "Proliferation driven by..."
 ```
+
+`analyze: true` uses Claude Agent SDK when it is available. If not, tx falls back to `ANTHROPIC_API_KEY`. Without either backend, you still get the structured data tier.
 
 **Options:**
 
@@ -1172,7 +1178,7 @@ agentLoop()
 - [Getting Started](/docs/getting-started) - Install tx and run your first agent loop
 - [tx ready](/docs/primitives/ready) - Task readiness detection
 - [tx done](/docs/primitives/done) - Task completion
-- [tx context](/docs/primitives/context) - Contextual learning retrieval
+- [tx memory](/docs/primitives/memory) - Memory and contextual retrieval
 - [tx send / tx inbox](/docs/primitives/inbox) - Agent-to-agent messaging
 - [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents
 - [tx label](/docs/primitives/label) - Ready queue scoping by phase

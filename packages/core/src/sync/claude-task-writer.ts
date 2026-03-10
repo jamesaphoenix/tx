@@ -94,7 +94,7 @@ function buildClaudeDescription(
   }
 
   lines.push("")
-  lines.push(`Run \`tx context ${task.id}\` for relevant learnings before starting.`)
+  lines.push(`Run \`tx memory context ${task.id}\` for relevant memory before starting.`)
   lines.push(`Run \`tx done ${task.id}\` when complete.`)
 
   return lines.join("\n")

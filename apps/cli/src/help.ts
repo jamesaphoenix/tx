@@ -18,28 +18,14 @@ Tasks:
   reset <id>              Reset task to ready
   delete <id>             Delete task
   md-export               Export tasks to markdown file
+  group-context set       Set task-group context on a task
+  group-context clear     Clear task-group context on a task
 
 Dependencies & Hierarchy:
   block <id> <blocker>    Add blocking dependency
   unblock <id> <blocker>  Remove blocking dependency
   children <id>           List child tasks
   tree <id>               Show task subtree
-
-Attempts:
-  try <id> <approach>     Record an attempt on a task
-  attempts <id>           List attempts for a task
-
-Learnings:
-  learning add            Add a learning
-  learning search         Search learnings
-  learning recent         List recent learnings
-  learning helpful        Record learning helpfulness
-  learning embed          Compute embeddings for learnings
-  context                 Get contextual learnings for a task
-  group-context set       Set task-group context on a task
-  group-context clear     Clear task-group context on a task
-  learn                   Attach a learning to file/glob pattern
-  recall                  Query learnings for a path
 
 Memory (filesystem-backed .md search):
   memory source           Manage indexed directories (add, rm, list)
@@ -53,6 +39,9 @@ Memory (filesystem-backed .md search):
   memory list             List indexed documents
   memory link             Create explicit edge between documents
   memory relate           Add to frontmatter.related
+  memory context          Get task-relevant memory for prompt injection
+  memory learn            Attach a learning to a file/glob pattern
+  memory recall           Query file-specific learnings by path
 
 Messages:
   send                    Send a message to a channel
@@ -445,51 +434,6 @@ Examples:
   tx tree tx-a1b2c3d4
   tx tree tx-a1b2c3d4 --json`,
 
-  try: `tx try - Record an attempt on a task
-
-Usage: tx try <task-id> <approach> --failed|--succeeded [reason]
-
-Records an attempt made on a task. Useful for tracking what approaches
-have been tried and their outcomes. Helps agents avoid repeating
-failed approaches.
-
-Arguments:
-  <task-id>    Required. Task ID (e.g., tx-a1b2c3d4)
-  <approach>   Required. Description of the approach tried
-
-Flags (mutually exclusive, one required):
-  --failed     Mark the attempt as failed
-  --succeeded  Mark the attempt as succeeded
-
-Options:
-  [reason]     Optional reason/explanation after the flag
-  --json       Output as JSON
-  --help       Show this help
-
-Examples:
-  tx try tx-abc123 "Used Redux" --failed "Too complex for this use case"
-  tx try tx-abc123 "Used Zustand" --succeeded
-  tx try tx-abc123 "Direct state prop drilling" --failed --json`,
-
-  attempts: `tx attempts - List attempts for a task
-
-Usage: tx attempts <task-id> [--json]
-
-Lists all attempts recorded for a task, sorted by most recent first.
-Shows the approach tried, outcome (success/failure), reason if any,
-and timestamp.
-
-Arguments:
-  <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
-
-Options:
-  --json     Output as JSON (full attempt array)
-  --help     Show this help
-
-Examples:
-  tx attempts tx-abc123
-  tx attempts tx-abc123 --json`,
-
   "mcp-server": `tx mcp-server - Start MCP server
 
 Usage: tx mcp-server [options]
@@ -677,143 +621,6 @@ Examples:
   tx migrate status
   tx migrate status --json`,
 
-  "learning add": `tx learning add - Add a learning
-
-Usage: tx learning add <content> [options]
-
-Creates a new learning entry. Learnings are pieces of knowledge that can
-be retrieved based on task context.
-
-Arguments:
-  <content>  Required. The learning content/insight to store
-
-Options:
-  -c, --category <cat>     Category tag (e.g., database, auth, api)
-  --source-ref <ref>       Reference to source (e.g., task ID, file path)
-  --source-type <type>     Source type: manual, compaction, run, claude_md (default: manual)
-  --json                   Output as JSON
-  --help                   Show this help
-
-Examples:
-  tx learning add "Always use transactions for multi-step DB operations"
-  tx learning add "Rate limit is 100 req/min" -c api
-  tx learning add "Migration requires downtime" --source-ref tx-abc123`,
-
-  "learning search": `tx learning search - Search learnings
-
-Usage: tx learning search <query> [options]
-
-Searches learnings using BM25 full-text search. Returns results ranked by
-relevance (BM25 score) and recency. Supports graph expansion to discover
-related learnings through the knowledge graph.
-
-Arguments:
-  <query>  Required. Search query (keywords or phrase)
-
-Options:
-  -n, --limit <n>      Maximum results (default: 10)
-  --min-score <n>      Minimum relevance score 0-1 (default: 0.3)
-  --expand             Enable graph expansion to find related learnings
-  --depth <n>          Graph expansion depth (default: 2)
-  --edge-types <types> Comma-separated edge types to traverse
-  --json               Output as JSON
-  --help               Show this help
-
-Examples:
-  tx learning search "database transactions"
-  tx learning search "authentication" -n 5 --json
-  tx learning search "auth" --expand --depth 3`,
-
-  "learning recent": `tx learning recent - List recent learnings
-
-Usage: tx learning recent [options]
-
-Lists the most recently created learnings.
-
-Options:
-  -n, --limit <n>  Maximum results (default: 10)
-  --json           Output as JSON
-  --help           Show this help
-
-Examples:
-  tx learning recent
-  tx learning recent -n 5 --json`,
-
-  "learning helpful": `tx learning helpful - Record learning helpfulness
-
-Usage: tx learning helpful <id> [options]
-
-Records whether a learning was helpful (outcome feedback). This improves
-future retrieval by boosting helpful learnings in search results.
-
-Arguments:
-  <id>  Required. Learning ID (number)
-
-Options:
-  --score <n>  Helpfulness score 0-1 (default: 1.0)
-  --json       Output as JSON
-  --help       Show this help
-
-Examples:
-  tx learning helpful 42
-  tx learning helpful 42 --score 0.8`,
-
-  "learning embed": `tx learning embed - Index and embed learning documents
-
-Usage: tx learning embed [options]
-
-Runs incremental indexing on memory sources (including docs/learnings/).
-Embeddings are computed automatically when EmbeddingService is available.
-
-Options:
-  --status           Show index/embedding coverage status
-  --json             Output as JSON
-  --help             Show this help
-
-Examples:
-  tx learning embed              # Incremental index
-  tx learning embed --status     # Show coverage`,
-
-  "learning migrate": `tx learning migrate - Migrate old learnings to memory system
-
-Usage: tx learning migrate [options]
-
-Exports learnings from the old SQLite tables to docs/learnings/ as .md files
-backed by the memory system. This is a one-time migration command.
-
-Options:
-  --dry-run  Preview what would be migrated without writing files
-  --help     Show this help
-
-Examples:
-  tx learning migrate --dry-run  # Preview migration
-  tx learning migrate            # Run migration`,
-
-  context: `tx context - Get contextual memory for a task
-
-Usage: tx context <task-id> [options]
-
-Retrieves context relevant to a specific task by searching all memory
-documents (including learnings). Uses hybrid BM25 + recency scoring.
-Supports graph expansion to discover related documents through links.
-
-Arguments:
-  <task-id>  Required. Task ID (e.g., tx-a1b2c3d4)
-
-Options:
-  --json               Output as JSON
-  --inject             Write to .tx/context.md for injection
-  --expand             Enable graph expansion to find related documents
-  --semantic           Enable vector similarity search
-  -n, --limit <n>      Maximum results (default: 10)
-  --help               Show this help
-
-Examples:
-  tx context tx-a1b2c3d4
-  tx context tx-a1b2c3d4 --json
-  tx context tx-a1b2c3d4 --inject
-  tx context tx-a1b2c3d4 --expand --semantic`,
-
   "group-context set": `tx group-context set - Set task-group context on a task
 
 Usage: tx group-context set <task-id> <context> [options]
@@ -850,47 +657,6 @@ Options:
 Examples:
   tx group-context clear tx-a1b2c3d4
   tx group-context clear tx-a1b2c3d4 --json`,
-
-  learn: `tx learn - Attach a learning to a file path or glob pattern
-
-Usage: tx learn <path> <note> [options]
-
-Stores a file-specific note that can be recalled when working on matching files.
-Supports glob patterns for matching multiple files.
-
-Arguments:
-  <path>    Required. File path or glob pattern (e.g., src/services/*.ts)
-  <note>    Required. The note/learning to attach
-
-Options:
-  --task <id>   Associate with a task ID
-  --json        Output as JSON
-  --help        Show this help
-
-Examples:
-  tx learn "src/db.ts" "Always run migrations in a transaction"
-  tx learn "src/services/*.ts" "Services must use Effect-TS patterns"
-  tx learn "*.test.ts" "Use vitest describe/it syntax" --task tx-abc123`,
-
-  recall: `tx recall - Query file learnings by path
-
-Usage: tx recall [path] [options]
-
-Retrieves file-specific learnings. If a path is provided, returns learnings
-matching that path (using glob patterns). Without a path, returns all learnings.
-
-Arguments:
-  [path]    Optional. File path to match against stored patterns
-
-Options:
-  --json    Output as JSON
-  --help    Show this help
-
-Examples:
-  tx recall                           # List all file learnings
-  tx recall "src/db.ts"               # Learnings for specific file
-  tx recall "src/services/task.ts"    # Matches patterns like src/services/*.ts
-  tx recall --json`,
 
   help: `tx help - Show help
 
@@ -2530,6 +2296,9 @@ Subcommands:
   backlinks <id>          Show incoming links
   list                    List all indexed documents
   link <src> <target>     Create explicit edge
+  context <task-id>       Get task-relevant memory for prompt injection
+  learn <path> <note>     Attach a learning to a file/glob pattern
+  recall [path]           Query file-specific learnings by path
 
 Run 'tx memory <subcommand> --help' for subcommand-specific help.
 
@@ -2538,7 +2307,10 @@ Examples:
   tx memory index
   tx memory search "authentication patterns"
   tx memory add "JWT Best Practices" --tags auth,security
-  tx memory tag mem-a7f3bc12 production`,
+  tx memory tag mem-a7f3bc12 production
+  tx memory context tx-a1b2c3d4
+  tx memory learn "src/db.ts" "Always use transactions"
+  tx memory recall "src/db.ts"`,
 
   "memory source": `tx memory source - Manage indexed directories
 
@@ -2735,6 +2507,67 @@ Links are tracked in the graph for --expand search.
 Examples:
   tx memory relate mem-a7f3bc12 "JWT Auth Patterns"
   tx memory relate mem-a7f3bc12 mem-b8e4cd56`,
+
+  "memory context": `tx memory context - Get task-relevant memory for prompt injection
+
+Usage: tx memory context <task-id> [options]
+
+Retrieves context relevant to a specific task by searching all memory
+documents (including learnings). Uses hybrid BM25 + recency scoring.
+
+Arguments:
+  <task-id>  Required. The task to get context for
+
+Options:
+  -n, --limit <n>      Maximum results (default: 10)
+  --semantic            Enable vector similarity search
+  --expand              Enable graph expansion via wikilinks
+  --inject              Write to .tx/context.md for injection
+  --json                Output as JSON
+
+Examples:
+  tx memory context tx-a1b2c3d4
+  tx memory context tx-a1b2c3d4 --json
+  tx memory context tx-a1b2c3d4 --inject
+  tx memory context tx-a1b2c3d4 --expand --semantic`,
+
+  "memory learn": `tx memory learn - Attach a learning to a file path or glob pattern
+
+Usage: tx memory learn <path> <note> [options]
+
+Stores a file-specific note that can be recalled when working on matching files.
+
+Arguments:
+  <path>    Required. File path or glob pattern (e.g., "src/db.ts", "*.test.ts")
+  <note>    Required. The note/learning to attach
+
+Options:
+  --task <id>   Associate with a task
+  --json        Output as JSON
+
+Examples:
+  tx memory learn "src/db.ts" "Always run migrations in a transaction"
+  tx memory learn "src/services/*.ts" "Services must use Effect-TS patterns"
+  tx memory learn "*.test.ts" "Use vitest describe/it syntax" --task tx-abc123`,
+
+  "memory recall": `tx memory recall - Query file learnings by path
+
+Usage: tx memory recall [path] [options]
+
+Retrieves file-specific learnings. If a path is provided, returns learnings
+matching that path (using glob patterns). Without a path, returns all learnings.
+
+Arguments:
+  [path]    Optional. File path to match against stored patterns
+
+Options:
+  --json    Output as JSON
+
+Examples:
+  tx memory recall                           # List all file learnings
+  tx memory recall "src/db.ts"               # Learnings for specific file
+  tx memory recall "src/services/task.ts"    # Matches patterns like src/services/*.ts
+  tx memory recall --json`,
 
   // Pin commands (context pins for agent memory injection)
   pin: `tx pin - Context pins for agent memory injection

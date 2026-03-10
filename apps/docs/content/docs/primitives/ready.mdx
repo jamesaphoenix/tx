@@ -215,7 +215,7 @@ The `--claim` flag:
 3. Returns the first successfully claimed task
 4. Returns `null` if no tasks could be claimed (all taken by other workers)
 
-This is the recommended approach for parallel agent loops — see [tx claim](/docs/primitives/claim) for more on the claim lifecycle.
+This is the recommended approach for parallel agent loops. See [tx claim](/docs/primitives/claim) for more on the claim lifecycle.
 
 ## Agent Loop Pattern
 
@@ -261,4 +261,4 @@ done
 
 - [`tx done`](/docs/primitives/done) - Mark a task as complete
 - [`tx block`](/docs/primitives/block) - Add dependencies between tasks
-- [`tx context`](/docs/primitives/context) - Get learnings relevant to a task
+- [`tx memory context`](/docs/primitives/memory) - Get memory relevant to a task

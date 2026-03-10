@@ -85,14 +85,14 @@ curl http://localhost:3456/api/broken
 </Tabs>`
 
 const PLACEHOLDER_MDX = `---
-title: tx attempts
+title: tx memory
 ---
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
 <Tab value="CLI">
 
 \`\`\`bash
-tx try tx-abc123 "approach"
+tx memory context tx-abc123
 \`\`\`
 
 </Tab>
@@ -238,7 +238,7 @@ title: tx checkpoint
 Checkpoint allows saving progress on long-running tasks.`
 
 const CORE_IMPORT_IN_CLI_TAB_MDX = `---
-title: tx context
+title: tx memory
 ---
 
 <Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
@@ -247,7 +247,7 @@ title: tx context
 For Effect-based access, use RetrieverService from @jamesaphoenix/tx-core directly.
 
 \`\`\`bash
-tx context tx-abc123
+tx memory context tx-abc123
 \`\`\`
 
 </Tab>

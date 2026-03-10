@@ -190,7 +190,7 @@ Scenarios:
 
 - [ ] Should dashboard task-edit UI expose group context in this milestone or a follow-up?
 - [ ] Do we need a max persisted context length guard at schema/service level?
-- [ ] Should `tx context` (learning retrieval) also incorporate effective group context text into query expansion in a future iteration?
+- [ ] Should `tx memory context` (learning retrieval) also incorporate effective group context text into query expansion in a future iteration?
 
 ## Migration
 

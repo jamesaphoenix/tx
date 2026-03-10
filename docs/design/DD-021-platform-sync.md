@@ -93,7 +93,7 @@ Each task's description is enriched with tx metadata and instructions:
 **tx ID**: tx-abc123 | **Priority**: 800 | **Status**: ready
 **Blocked by**: tx-def456, tx-ghi789
 
-Run `tx context tx-abc123` for relevant learnings before starting.
+Run `tx memory context tx-abc123` for relevant learnings before starting.
 Run `tx done tx-abc123` when complete.
 ```
 

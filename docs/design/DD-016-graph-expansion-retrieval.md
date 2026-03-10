@@ -1102,8 +1102,8 @@ const tx = createTx({
 Use glob patterns for file matching. More familiar, less error-prone.
 
 ```bash
-tx context tx-abc --expand --files "src/auth/**/*.ts"
-tx context tx-abc --expand --files "src/auth.ts,src/jwt.ts"
+tx memory context tx-abc --expand --files "src/auth/**/*.ts"
+tx memory context tx-abc --expand --files "src/auth.ts,src/jwt.ts"
 ```
 
 Use `fast-glob` or `picomatch` under the hood. Regex is overkill for file paths.

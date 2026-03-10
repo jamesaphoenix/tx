@@ -7,7 +7,7 @@ import { HeadlessLayersFigure } from "@/components/headless-layers-figure"
 
 ## Overview
 
-tx provides a set of composable primitives for managing tasks, dependencies, learnings, and stream-log synchronization. These primitives are the building blocks for any agent orchestration pattern.
+tx provides a set of composable primitives for managing tasks, dependencies, memory, and stream-log synchronization. These primitives are the building blocks for any agent orchestration pattern.
 
 ## Philosophy
 
@@ -44,7 +44,7 @@ const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
 
 const ready = await tx.tasks.ready({ limit: 5 })
 const { task, nowReady } = await tx.tasks.done(ready[0].id)
-await tx.learnings.add({ content: 'Use retry logic for flaky calls' })
+await tx.memory.add({ title: 'Use retry logic for flaky calls', tags: ['learning'] })
 ```
 
 Best for: TypeScript/JavaScript agents, custom orchestrators, programmatic workflows.
@@ -65,7 +65,7 @@ Use tx as an MCP server for Claude, Cursor, or any MCP-compatible client:
 }
 ```
 
-Tools: `tx_ready`, `tx_done`, `tx_block`, `tx_add`, `tx_context`, `tx_learning_add`, etc.
+Tools: `tx_ready`, `tx_done`, `tx_block`, `tx_add`, `tx_memory_search`, `tx_memory_context`, etc.
 
 Best for: AI assistants, Claude Code, Cursor, IDE integrations.
 
@@ -109,11 +109,9 @@ See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) fo
 | [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | CLI, SDK, MCP, API | Available |
 | [`tx group-context:*`](/docs/primitives/ready#task-group-context-inheritance) | Attach shared task-group context inherited by related tasks | CLI, SDK, MCP, API | Available |
 | [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | CLI, SDK, MCP, API | Available |
-| [`tx context`](/docs/primitives/context) | Get relevant learnings for prompt injection | CLI, SDK, MCP, API | Available |
-| [`tx learning:*`](/docs/primitives/learning) | Record and search knowledge | CLI, SDK, MCP, API | Available |
-| [`tx pin`](/docs/primitives/pin) | Persistent named content blocks synced to context files | CLI, SDK, MCP, API | Available |
+| [`tx pin`](/docs/primitives/pin) | Pin key-value metadata to `CLAUDE.md` / `AGENTS.md` files | CLI, SDK, MCP, API | Available |
+| [`tx memory`](/docs/primitives/memory) | Search markdown knowledge across registered directories | CLI, SDK, MCP, API | Available |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs | CLI, SDK, MCP, API | Available |
-| [`tx try` / `tx attempts`](/docs/primitives/attempts) | Record and track implementation attempts | CLI, SDK, MCP, API | Available |
 | [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation and EARS linting (`tx doc lint-ears`) | CLI, SDK, MCP, API | Available |
 | [`tx invariant *`](/docs/primitives/invariants) | Machine-checkable system rules with enforcement tracking | CLI, SDK, MCP, API | Available |
 | [`tx spec *`](/docs/primitives/spec-trace) | Spec-to-test traceability, multi-language discovery, and FCI phase scoring | CLI, Core, MCP, API | Available |
@@ -128,6 +126,17 @@ See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) fo
 | [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria to tasks | CLI, SDK, MCP, API | Available |
 | [`tx reflect`](/docs/primitives/reflect) | Session retrospective with structured signals | CLI, SDK, MCP, API | Available |
 | [`tx gate`](/docs/primitives/gate) | Human approval checkpoints for phase transitions | CLI, SDK (via `tx.pins`), API (via `/api/pins`) | Available |
+
+### Quick CLI Examples
+
+```bash
+tx pin set coding-standards --file ./standards.md
+tx memory search "database schema" --semantic
+tx memory add "Use WAL mode for SQLite" -t learning
+tx memory context tx-abc123
+tx verify set tx-abc123 "bun test"
+tx verify run tx-abc123
+```
 
 ## Example Orchestration Patterns
 

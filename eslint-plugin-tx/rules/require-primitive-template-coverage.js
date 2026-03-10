@@ -52,8 +52,6 @@ function isDividerOrIndexPage(page) {
 
 function primitiveRegex(primitive) {
   switch (primitive) {
-    case "learning":
-      return /\btx\s+learning\s/i
     case "docs":
       return /\btx\s+doc\b/i
     case "invariants":
@@ -62,8 +60,6 @@ function primitiveRegex(primitive) {
       return /\btx\s+spec\b/i
     case "traces":
       return /\btx\s+trace\b/i
-    case "attempts":
-      return /\btx\s+(attempts|try)\b/i
     default:
       return new RegExp(`\\btx\\s+${primitive.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i")
   }
@@ -79,10 +75,6 @@ function expectedCommand(primitive) {
       return "tx spec"
     case "traces":
       return "tx trace"
-    case "learning":
-      return "tx learning *"
-    case "attempts":
-      return "tx attempts (or tx try)"
     default:
       return `tx ${primitive}`
   }

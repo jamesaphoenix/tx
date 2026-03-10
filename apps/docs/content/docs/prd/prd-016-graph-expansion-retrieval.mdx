@@ -191,13 +191,13 @@ interface LearningQuery {
 
 ```bash
 # Search with graph expansion
-tx learning search "authentication" --expand --depth 2
+tx memory search "authentication" --expand --depth 2
 
 # Get context with expansion for specific files
-tx context <task-id> --expand --files src/auth.ts,src/jwt.ts
+tx memory context <task-id> --expand --files src/auth.ts,src/jwt.ts
 
 # Show expansion details
-tx learning search "auth" --expand --verbose
+tx memory search "auth" --expand --verbose
 ```
 
 ## Diversification (MMR)
