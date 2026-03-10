@@ -57,8 +57,8 @@ const primitives = [
   { name: 'tx claim', desc: 'Prevent collisions' },
   { name: 'tx done', desc: 'Complete task' },
   { name: 'tx block', desc: 'Declare dependencies' },
-  { name: 'tx handoff', desc: 'Transfer with context' },
-  { name: 'tx context', desc: 'Get relevant learnings' },
+  { name: 'tx memory', desc: 'Persist knowledge across sessions' },
+  { name: 'tx spec', desc: 'Spec-driven development' },
 ];
 
 export default function HomePage() {
