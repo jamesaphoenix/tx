@@ -89,14 +89,14 @@ Structured insights that attach to tasks and file paths.
 
 ```bash
 # Store knowledge
-tx memory add "Use bcrypt for passwords" --tags security
+tx memory add "Use bcrypt for passwords, not SHA256"
 
 # Attach learnings to file paths
 tx memory learn "src/auth/*.ts" "Services must use Effect-TS patterns"
 
 # Retrieve via search or task context
 tx memory search "authentication"
-tx memory context tx-abc123  # Get relevant memory for a task
+tx memory context tx-abc123  # Get relevant learnings for a task
 tx memory recall "src/auth/hash.ts"  # Recall learnings for a file
 ```
 
@@ -126,8 +126,8 @@ Lease-based claims prevent parallel agents from colliding.
 ```bash
 tx claim tx-abc123 worker-1          # Claim with 30-min lease
 tx claim tx-abc123 worker-1 --lease 60  # Custom lease duration
-tx claim renew tx-abc123 worker-1    # Extend lease
-tx claim release tx-abc123 worker-1  # Release early
+tx claim:renew tx-abc123 worker-1    # Extend lease
+tx claim:release tx-abc123 worker-1  # Release early
 ```
 
 ### Docs
@@ -313,18 +313,17 @@ tx memory backlinks <id>    # Incoming links
 tx memory list              # List documents (--source, --tags)
 tx memory link <src> <tgt>  # Create explicit edge
 
-# Memory
-tx memory add <title>       # Create .md knowledge file
-tx memory search <query>    # BM25 search (--semantic, --expand)
-tx memory context <id>      # Task-relevant memory retrieval
-tx memory learn <p> <note>  # Attach learning to file path/glob
-tx memory recall [path]     # Query file-specific learnings
-tx memory index             # Index all sources
+# Memory (context, learnings, recall)
+tx memory add <title>       # Store knowledge (--content, --tags)
+tx memory search <query>    # Search (--semantic, --expand)
+tx memory context <task-id> # Contextual retrieval
+tx memory learn <path> <note>  # Attach to file
+tx memory recall [path]     # Query by file
 
 # Coordination
 tx claim <id> <worker>      # Lease-based claim
-tx claim renew <id> <worker>  # Extend lease
-tx claim release <id> <worker>  # Release early
+tx claim:renew <id> <worker>  # Extend lease
+tx claim:release <id> <worker>  # Release early
 
 # Docs
 tx doc add <type> <slug>    # Create doc
