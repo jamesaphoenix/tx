@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-types",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Shared TypeScript types for tx - Effect Schema definitions",
   "type": "module",
   "main": "./dist/index.js",
