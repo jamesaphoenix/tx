@@ -1488,6 +1488,13 @@ const SpecStatusResultSchema = Schema.Struct({
   fci: Schema.Number,
   gaps: Schema.Number.pipe(Schema.int()),
   total: Schema.Number.pipe(Schema.int()),
+  covered: Schema.Number.pipe(Schema.int()),
+  uncovered: Schema.Number.pipe(Schema.int()),
+  passing: Schema.Number.pipe(Schema.int()),
+  failing: Schema.Number.pipe(Schema.int()),
+  untested: Schema.Number.pipe(Schema.int()),
+  signedOff: Schema.Boolean,
+  blockers: Schema.Array(Schema.String),
 })
 
 const SpecSignoffSerializedSchema = Schema.Struct({

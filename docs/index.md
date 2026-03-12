@@ -1,6 +1,15 @@
 # tx Documentation Index
 
-A lean task management system for AI agents and humans, built with Effect-TS.
+Internal PRD and design-doc index for tx.
+
+For the public product journey, use:
+
+1. Task Management
+2. Spec-Driven Development
+3. Memory & Context
+4. Bounded Autonomy
+5. Coordination
+6. Observability
 
 ## EARS Adoption
 

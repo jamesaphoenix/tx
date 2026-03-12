@@ -1,425 +1,170 @@
 # tx
 
-**Primitives, not frameworks.** Headless infrastructure for AI agents.
+**Primitives, not frameworks.** Headless, local infrastructure for AI agents.
 
-Memory, tasks, and orchestration. You own the loop.
+tx gives you a small set of reusable primitives for task state, docs-first specs, memory, coordination, and observability. You keep the orchestration loop.
+
+## Install
 
 ```bash
-# Standalone binary (recommended — no runtime needed)
+# Standalone binary (recommended)
 curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh
 
 # Or via npm (requires bun)
 npm install -g @jamesaphoenix/tx-cli
 ```
 
-```bash
-tx init
-```
+## Start Small
 
-Agent onboarding (optional, both supported):
+The recommended first path is:
 
-```bash
-tx init --claude            # CLAUDE.md + .claude/skills
-tx init --codex             # AGENTS.md + .codex/agents
-tx init --claude --codex    # scaffold both
-```
+1. Task Management
+2. Spec-Driven Development
+3. Memory & Context
+4. Bounded Autonomy
+5. Coordination
+6. Observability
 
-Watchdog onboarding (optional, default off):
+Most users should start with just the first two.
 
-```bash
-tx init --watchdog                         # scaffold watchdog assets with runtime auto-detect
-tx init --watchdog --watchdog-runtime codex
-tx init --watchdog --watchdog-runtime both
-```
-
----
-
-## The Problem
-
-Your agents lose context between sessions. Tasks collide when multiple agents work in parallel. Learnings vanish into conversation history. You're rebuilding the same infrastructure every project.
-
-## The Solution
-
-Composable primitives that handle the hard parts. You keep control of the orchestration.
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Your Orchestration (your code, your rules)             │
-├─────────────────────────────────────────────────────────┤
-│  tx primitives                                          │
-│                                                         │
-│   tx ready     tx done      tx memory     tx pin        │
-│   tx claim     tx block     tx sync       tx trace      │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-## Primitives
-
-### Memory
-
-Filesystem-backed knowledge that persists, links, and surfaces when relevant.
+### Day 1: Task Management
 
 ```bash
-# Register a directory of markdown files
-tx memory source add ./docs
-
-# Index and search your knowledge
-tx memory index
-tx memory search "authentication patterns"
-tx memory search "auth" --semantic --expand   # BM25 + vector + graph
-
-# Create, tag, and link documents
-tx memory add "JWT Guide" --tags auth,security
-tx memory tag mem-a7f3bc12 reviewed
-tx memory link mem-a7f3bc12 mem-b8e4cd56
-
-# Navigate the knowledge graph
-tx memory links mem-a7f3bc12       # Outgoing wikilinks + edges
-tx memory backlinks mem-a7f3bc12   # What links to this?
+tx init --codex                  # or: --claude, or plain tx init
+tx add "Write auth PRD" --json
+tx add "Implement auth flow" --json
+tx block <implement-task-id> <prd-task-id>
+tx ready
+tx show <prd-task-id>
+tx done <prd-task-id>
+tx ready
+tx sync export
 ```
 
-Three search modes: BM25 keyword search, vector similarity (`--semantic`), and graph expansion (`--expand`) via wikilinks and `frontmatter.related`. Combined with RRF fusion for best results.
+This proves the basic loop:
 
-### Learnings
+- the queue works
+- dependencies affect readiness
+- completion advances the queue
+- state exports cleanly to `.tx/streams`
 
-Structured insights that attach to tasks and file paths.
+### Day 2: Spec-Driven Development
 
 ```bash
-# Store knowledge
-tx memory add "Use bcrypt for passwords" --tags security
-
-# Attach learnings to file paths
-tx memory learn "src/auth/*.ts" "Services must use Effect-TS patterns"
-
-# Retrieve via search or task context
-tx memory search "authentication"
-tx memory context tx-abc123  # Get relevant memory for a task
-tx memory recall "src/auth/hash.ts"  # Recall learnings for a file
+tx doc add prd auth-flow --title "Auth Flow"
+# add or update tests with [INV-*], _INV_*, @spec, or .tx/spec-tests.yml
+tx spec discover
+tx spec status --doc auth-flow
+vitest run --reporter=json | tx spec batch --from vitest
+tx spec complete --doc auth-flow --by you
 ```
 
-Hybrid search (BM25 + vector with RRF fusion) finds relevant knowledge.
+Use the spec primitives like this:
 
-### Tasks
+- `tx spec fci`: compact machine score for agents and automation
+- `tx spec status`: human-readable blocker view for one scope
+- `tx spec health`: repo rollup, not part of the minimum day-1 loop
 
-Dependency-aware task management. Agents only see work they can actually do.
+## The Six Layers
 
-```bash
-# Create with dependencies
-tx add "Implement auth service" --score 800
-tx add "Design auth schema" --score 900
-tx block tx-impl tx-schema  # impl waits for schema
+### 1. Task Management
 
-# Work on what's ready
-tx ready                    # Only unblocked tasks
-tx done tx-schema           # Completes → unblocks dependents
-```
+Core queue and persistence:
 
-Full hierarchy support. Epics contain milestones contain tasks contain subtasks.
+- `tx init`
+- `tx add`
+- `tx ready`
+- `tx show`
+- `tx done`
+- `tx block`
+- `tx sync`
 
-### Coordination
+### 2. Spec-Driven Development
 
-Lease-based claims prevent parallel agents from colliding.
+Docs-first intent and closure:
 
-```bash
-tx claim tx-abc123 worker-1          # Claim with 30-min lease
-tx claim tx-abc123 worker-1 --lease 60  # Custom lease duration
-tx claim renew tx-abc123 worker-1    # Extend lease
-tx claim release tx-abc123 worker-1  # Release early
-```
+- `tx doc`
+- `tx spec`
+- `tx decision`
 
-### Docs
+### 3. Memory & Context
 
-Structured documentation as primitives. YAML-based with versioning, locking, and linking.
+Durable knowledge and prompt context:
 
-```bash
-tx doc add prd auth-system --title "Auth System PRD"
-tx doc render           # Generate markdown from YAML
-tx doc lock auth-system # Lock doc (immutable)
-tx doc link auth-prd auth-dd  # Link PRD to DD
-tx doc drift            # Detect stale docs
-```
+- `tx memory`
+- `tx pin`
 
-### Invariants
+### 4. Bounded Autonomy
 
-Track and verify project invariants across sessions.
+Controls for agents with more freedom:
 
-```bash
-tx invariant list                          # List all invariants
-tx invariant show INV-001                  # Show details
-tx invariant record INV-001 --passed       # Record check result
-tx invariant sync                          # Sync from CLAUDE.md
-```
+- `tx label`
+- `tx guard`
+- `tx verify`
+- `tx reflect`
+- `tx gate`
 
-### Cycle Scan
+### 5. Coordination
 
-Sub-agent swarm scanning for codebase analysis.
+Multi-worker and multi-actor primitives:
 
-```bash
-tx cycle --task-prompt "Review auth" --scan-prompt "Find bugs"
-```
+- `tx claim`
+- `tx send` / `tx inbox`
+- `tx group-context`
 
----
+### 6. Observability
 
-## Your Loop, Your Rules
+Operational visibility once the earlier layers are in place:
 
-We ship **example loops**, not **the loop**:
+- `tx trace`
+- `tx spec health`
+- `tx stats`
+- dashboard
 
-```bash
-# Simple: one agent, one task
-AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
-while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
-  "$AGENT_CMD" "Work on task $task, then run: tx done $task"
-done
-```
+## Interfaces
 
-```bash
-# Parallel: N agents with claims
-AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
-for i in {1..5}; do
-  (while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
-    [ -z "$task" ] && break
-    tx claim "$task" "worker-$i" || continue
-    "$AGENT_CMD" "Complete $task" && tx done "$task"
-  done) &
-done
-wait
-```
+| Interface | Best For |
+|-----------|----------|
+| CLI | Shell scripts, human operators, local loops |
+| MCP Server | Claude Code, Cursor, IDE integrations |
+| TypeScript SDK | Custom Node/Bun agents |
+| REST API | Language-agnostic HTTP clients |
+| Dashboard | Visual monitoring and management |
 
-```bash
-# Human-in-loop: agent proposes, human approves
-AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
-task=$(tx ready --json --limit 1 | jq -r '.[0].id')
-"$AGENT_CMD" "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " && "$AGENT_CMD" "Execute plan.md"
-tx done $task
-```
+## Optional Later
 
-```bash
-# File-based: agent reads markdown, no CLI polling needed
-AGENT_CMD=${AGENT_CMD:-claude}  # or: codex
-while true; do
-  tx md-export                    # materialize ready tasks to .tx/tasks.md
-  "$AGENT_CMD" "Read .tx/tasks.md and complete the highest priority task. When done, run: tx done <id>"
-done
-```
+Watchdog is intentionally not part of the main getting-started path.
 
-**The flow is yours.** Serial, parallel, swarm, human-in-loop, file-based. Your call.
-
----
-
-## Watchdog (Opt-In)
-
-Use watchdog when you want detached, self-healing RALPH loops that can survive terminal closes and reconcile stale runs/tasks automatically.
-
-Use it for:
-- Long-running unattended execution
-- Automatic stalled-run reaping and orphan task reset
-- Background supervision through launchd/systemd
-
-Skip it for:
-- Short interactive sessions
-- One-off local runs you supervise manually
-
-Quick start:
+Use it only if you need detached, long-running supervision:
 
 ```bash
 tx init --watchdog --watchdog-runtime auto
 ./scripts/watchdog-launcher.sh start
-./scripts/watchdog-launcher.sh status
 ```
 
-Detailed rollout, detached service setup, rollback, and troubleshooting:
+Runbook:
+
 - [Watchdog Runbook](https://txdocs.dev/docs/watchdog-runbook)
 
-## Why tx?
+## Why tx
 
-|  | Native Tasks | CLAUDE.md | tx |
+|  | Native Tasks | Static Agent Docs | tx |
 |---|---|---|---|
-| **Persistence** | Session-scoped | File grows forever | Git-native, branch-aware |
-| **Multi-agent** | Collisions | Manual coordination | Claim with lease expiry |
-| **Knowledge** | Lost each session | Static dump | Filesystem memory, hybrid search, graph links |
-| **Orchestration** | None | None | Primitives for any pattern |
+| Persistence | Session-scoped | Manual file edits | SQLite + git-backed streams |
+| Multi-agent safety | Easy collisions | Manual coordination | Claims, dependencies, messaging |
+| Intent tracking | Weak | Weak | Docs-first specs + decision capture |
+| Knowledge reuse | Lost each session | Static dump | Searchable memory + pins |
+| Orchestration | Fixed by tool | None | You own the loop |
 
----
+## Docs
 
-## Design Principles
+- [Getting Started](https://txdocs.dev/docs/getting-started)
+- [Primitives](https://txdocs.dev/docs/primitives)
+- [Agent SDK](https://txdocs.dev/docs/agent-sdk)
+- [PRDs and Design Docs](https://txdocs.dev/docs/prd)
 
-- **No opinions on orchestration.** Serial, parallel, swarm, human-in-loop. Your call.
-- **Powerful defaults.** `tx ready` just works. So does dependency resolution.
-- **Escape hatches everywhere.** Raw SQL access, JSONL export, custom scoring.
-- **Framework agnostic.** CLI, MCP, REST API, TypeScript SDK. Use what fits.
-- **Local-first.** SQLite + git. No server required. Works offline.
+## Principle
 
----
+tx should stay small.
 
-## Non-Goals
-
-- **Not an agent framework.** You bring your own orchestration.
-- **Not a hosted memory product.** Local-first, your data stays yours.
-- **Not a prompt library.** Primitives, not templates.
-- **Not a replacement for your issue tracker.** (Unless you want it to be.)
-
----
-
-## Interfaces
-
-| Interface | Use Case |
-|-----------|----------|
-| **CLI** | Scripts, terminal workflows, agent loops |
-| **MCP Server** | Claude Code integration (42 tools) |
-| **REST API** | Custom dashboards, external integrations |
-| **TypeScript SDK** | Programmatic access from your agents |
-| **Dashboard** | Visual monitoring and management |
-
----
-
-## Quick Reference
-
-```bash
-# Tasks
-tx add <title>              # Create task
-tx list                     # List all tasks
-tx ready                    # List unblocked tasks
-tx show <id>                # View details
-tx update <id>              # Update task fields
-tx done <id>                # Complete task
-tx reset <id>               # Reset to backlog
-tx delete <id>              # Delete task
-tx md-export                # Export tasks to markdown file (.tx/tasks.md)
-tx block <id> <blocker>     # Add dependency
-tx unblock <id> <blocker>   # Remove dependency
-tx children <id>            # List child tasks
-tx tree <id>                # Show hierarchy
-
-# Memory (filesystem-backed .md search)
-tx memory source add <dir>  # Register directory
-tx memory source rm <dir>   # Unregister directory
-tx memory source list       # Show registered directories
-tx memory add <title>       # Create .md file (--content, --tags, --dir)
-tx memory index             # Index all sources (--incremental, --status)
-tx memory search <query>    # BM25 search (--semantic, --expand, --tags, --prop)
-tx memory show <id>         # Display document
-tx memory tag <id> <tags>   # Add tags to frontmatter
-tx memory untag <id> <t>    # Remove tags
-tx memory relate <id> <t>   # Add to frontmatter.related
-tx memory set <id> <k> <v>  # Set property
-tx memory unset <id> <k>    # Remove property
-tx memory props <id>        # Show properties
-tx memory links <id>        # Outgoing wikilinks + edges
-tx memory backlinks <id>    # Incoming links
-tx memory list              # List documents (--source, --tags)
-tx memory link <src> <tgt>  # Create explicit edge
-
-# Memory
-tx memory add <title>       # Create .md knowledge file
-tx memory search <query>    # BM25 search (--semantic, --expand)
-tx memory context <id>      # Task-relevant memory retrieval
-tx memory learn <p> <note>  # Attach learning to file path/glob
-tx memory recall [path]     # Query file-specific learnings
-tx memory index             # Index all sources
-
-# Coordination
-tx claim <id> <worker>      # Lease-based claim
-tx claim renew <id> <worker>  # Extend lease
-tx claim release <id> <worker>  # Release early
-
-# Docs
-tx doc add <type> <slug>    # Create doc
-tx doc edit <slug>          # Edit doc
-tx doc show <slug>          # Show doc
-tx doc list                 # List docs
-tx doc render               # Generate markdown
-tx doc lock <slug>          # Lock (immutable)
-tx doc version <slug>       # Create version
-tx doc link <from> <to>     # Link docs
-tx doc attach <slug> <task> # Attach to task
-tx doc patch <slug>         # Apply patch
-tx doc validate             # Validate all docs
-tx doc drift                # Detect stale docs
-
-# Invariants
-tx invariant list           # List invariants
-tx invariant show <id>      # Show details
-tx invariant record <id>    # Record check result
-tx invariant sync           # Sync from CLAUDE.md
-
-# Sync
-tx sync export              # SQLite → JSONL (git-friendly)
-tx sync import              # JSONL → SQLite
-tx sync status              # Show sync status
-tx sync auto                # Auto-sync on change
-tx sync compact             # Compact JSONL files
-tx sync claude --team <name>  # Push to Claude Code team
-tx sync codex               # Push to Codex
-
-# Traces
-tx trace list               # Recent runs
-tx trace show <id>          # Show trace details
-tx trace transcript <id>    # View transcript
-tx trace stderr <id>        # View stderr
-tx trace errors             # Recent errors
-
-# Bulk
-tx bulk done <ids...>       # Complete multiple tasks
-tx bulk score <ids...>      # Score multiple tasks
-tx bulk reset <ids...>      # Reset multiple tasks
-tx bulk delete <ids...>     # Delete multiple tasks
-
-# Cycle
-tx cycle                    # Sub-agent swarm scan
-
-# Utilities
-tx stats                    # Queue metrics
-tx validate                 # Database health checks
-tx migrate status           # Migration status
-tx doctor                   # System diagnostics
-tx dashboard                # Launch dashboard
-tx mcp-server               # Start MCP server
-```
-
----
-
-## Storage
-
-```
-.tx/
-├── tasks.db           # SQLite (gitignored)
-├── tasks.jsonl        # Git-tracked
-├── learnings.jsonl    # Git-tracked
-├── runs.jsonl         # Git-tracked
-└── docs/              # YAML doc sources
-```
-
-Local SQLite for speed. JSONL for git sync. Branch your knowledge with your code.
-
----
-
-## Packages
-
-| Package | Description |
-|---------|-------------|
-| [`@jamesaphoenix/tx`](https://www.npmjs.com/package/@jamesaphoenix/tx) | Public SDK |
-| [`@jamesaphoenix/tx-cli`](https://www.npmjs.com/package/@jamesaphoenix/tx-cli) | CLI |
-| [`@jamesaphoenix/tx-core`](https://www.npmjs.com/package/@jamesaphoenix/tx-core) | Core service layer (Effect-TS) |
-| [`@jamesaphoenix/tx-types`](https://www.npmjs.com/package/@jamesaphoenix/tx-types) | Shared type definitions |
-| [`@jamesaphoenix/tx-agent-sdk`](https://www.npmjs.com/package/@jamesaphoenix/tx-agent-sdk) | TypeScript Agent SDK |
-| [`@jamesaphoenix/tx-mcp-server`](https://www.npmjs.com/package/@jamesaphoenix/tx-mcp-server) | MCP server (42 tools) |
-| [`@jamesaphoenix/tx-api-server`](https://www.npmjs.com/package/@jamesaphoenix/tx-api-server) | REST API server |
-
----
-
-## Documentation
-
-- **[txdocs.dev](https://txdocs.dev)**: Documentation
-- **[CLAUDE.md](https://github.com/jamesaphoenix/tx/blob/main/CLAUDE.md)**: Doctrine and quick reference
-- **[AGENTS.md](https://github.com/jamesaphoenix/tx/blob/main/AGENTS.md)**: Codex onboarding and quick reference
-- **[PRDs](https://txdocs.dev/docs/prd)** and **[Design Docs](https://txdocs.dev/docs/design)**: Product and architecture specs
-
----
-
-## License
-
-MIT
+It is not an agent framework, not a hosted memory product, and not a prescribed workflow. It is a local set of primitives you can compose into your own loop.

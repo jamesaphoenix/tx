@@ -63,18 +63,23 @@ export function HeadlessLayersFigure() {
   return (
     <DiagramFrame
       title="Headless Layers"
-      caption="tx stays below your orchestration layer. You keep the loop design; tx provides reusable primitives underneath it."
+      caption="tx stays below your orchestration layer. You keep the loop design; tx provides reusable primitives underneath it, and you can adopt them in stages."
     >
       <OrchestrationBanner />
       <Connector />
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <LayerCard
-          title="Queue and coordination"
-          items={["tx ready", "tx done", "tx block", "tx claim"]}
+          title="Task management"
+          items={["tx ready", "tx done", "tx block", "tx sync"]}
           tone="blue"
         />
         <LayerCard
-          title="Context and memory"
+          title="Spec-driven development"
+          items={["tx doc", "tx spec", "tx decision"]}
+          tone="slate"
+        />
+        <LayerCard
+          title="Memory & context"
           items={["tx pin", "tx memory"]}
           tone="emerald"
         />
@@ -84,8 +89,13 @@ export function HeadlessLayersFigure() {
           tone="amber"
         />
         <LayerCard
-          title="Docs and observability"
-          items={["tx doc", "tx invariant", "tx spec", "tx trace"]}
+          title="Coordination"
+          items={["tx claim", "tx inbox", "tx group-context"]}
+          tone="blue"
+        />
+        <LayerCard
+          title="Observability"
+          items={["tx trace", "tx spec health", "tx stats"]}
           tone="slate"
         />
       </div>

@@ -218,6 +218,8 @@ describe("API + SDK spec traceability integration", () => {
 
     const status = await tx.spec.status({ doc: docName })
     expect(status.phase).toBe("HARDEN")
+    expect(status.blockers).toEqual(["Human COMPLETE sign-off not recorded"])
+    expect(status.signedOff).toBe(false)
 
     const matrix = await tx.spec.matrix({ doc: docName })
     expect(matrix).toHaveLength(2)

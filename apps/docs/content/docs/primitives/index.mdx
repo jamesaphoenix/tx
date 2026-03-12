@@ -9,6 +9,15 @@ import { HeadlessLayersFigure } from "@/components/headless-layers-figure"
 
 tx provides a set of composable primitives for managing tasks, dependencies, memory, and stream-log synchronization. These primitives are the building blocks for any agent orchestration pattern.
 
+If you are new to tx, do not try to learn everything at once. Use this order:
+
+1. Task Management
+2. Spec-Driven Development
+3. Memory & Context
+4. Bounded Autonomy
+5. Coordination
+6. Observability
+
 ## Philosophy
 
 tx is about **primitives, not frameworks**. We don't dictate how you orchestrate your agents. Instead, we provide headless infrastructure that you compose however you need.
@@ -100,24 +109,42 @@ Task update and completion flows can behave differently for agents and humans.
 
 See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) for the concrete completion rules.
 
-## Core Primitives
+## Recommended Learning Order
+
+### 1. Task Management
 
 | Primitive | Purpose | Interfaces | Status |
 |-----------|---------|------------|--------|
+| [`tx init`](/docs/getting-started) | Initialize `.tx/` and optional agent scaffolds | CLI | Available |
+| [`tx add`](/docs/getting-started) | Create work items to pull from the queue | CLI, SDK, MCP, API | Available |
 | [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) | CLI, SDK, MCP, API | Available |
+| [`tx show`](/docs/getting-started) | Inspect one task before an agent or human works it | CLI, SDK, MCP, API | Available |
 | [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others | CLI, SDK, MCP, API | Available |
 | [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | CLI, SDK, MCP, API | Available |
-| [`tx group-context:*`](/docs/primitives/ready#task-group-context-inheritance) | Attach shared task-group context inherited by related tasks | CLI, SDK, MCP, API | Available |
-| [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | CLI, SDK, MCP, API | Available |
+| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs | CLI, SDK, MCP, API | Available |
+
+Start here if you are evaluating tx. This is the smallest loop that proves queueing, dependencies, and persistence.
+
+### 2. Spec-Driven Development
+
+| Primitive | Purpose | Interfaces | Status |
+|-----------|---------|------------|--------|
+| [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation and EARS linting (`tx doc lint-ears`) | CLI, SDK, MCP, API | Available |
+| [`tx spec *`](/docs/primitives/spec-trace) | Spec-to-test traceability, multi-language discovery, and FCI phase scoring | CLI, Core, MCP, API | Available |
+| [`tx decision`](/docs/primitives/decision) | Capture implementation decisions and review state as first-class artifacts | CLI, SDK, MCP, API | Available |
+
+Add this once the task loop feels natural and you want intent, tests, and closure to stay aligned.
+
+### 3. Memory & Context
+
+| Primitive | Purpose | Interfaces | Status |
+|-----------|---------|------------|--------|
 | [`tx pin`](/docs/primitives/pin) | Pin key-value metadata to `CLAUDE.md` / `AGENTS.md` files | CLI, SDK, MCP, API | Available |
 | [`tx memory`](/docs/primitives/memory) | Search markdown knowledge across registered directories | CLI, SDK, MCP, API | Available |
-| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs | CLI, SDK, MCP, API | Available |
-| [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation and EARS linting (`tx doc lint-ears`) | CLI, SDK, MCP, API | Available |
-| [`tx invariant *`](/docs/primitives/invariants) | Machine-checkable system rules with enforcement tracking | CLI, SDK, MCP, API | Available |
-| [`tx spec *`](/docs/primitives/spec-trace) | Spec-to-test traceability, multi-language discovery, and FCI phase scoring | CLI, Core, MCP, API | Available |
-| [`tx trace *`](/docs/primitives/traces) | Execution tracing and run observability | CLI, SDK, MCP, API | Available |
 
-### Bounded Autonomy
+Bring this in once you want durable context, reusable learnings, and automatic prompt enrichment.
+
+### 4. Bounded Autonomy
 
 | Primitive | Purpose | Interfaces | Status |
 |-----------|---------|------------|--------|
@@ -126,6 +153,27 @@ See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) fo
 | [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria to tasks | CLI, SDK, MCP, API | Available |
 | [`tx reflect`](/docs/primitives/reflect) | Session retrospective with structured signals | CLI, SDK, MCP, API | Available |
 | [`tx gate`](/docs/primitives/gate) | Human approval checkpoints for phase transitions | CLI, SDK (via `tx.pins`), API (via `/api/pins`) | Available |
+
+Use these when agents start doing enough work that you need boundaries, checks, and human checkpoints.
+
+### 5. Coordination
+
+| Primitive | Purpose | Interfaces | Status |
+|-----------|---------|------------|--------|
+| [`tx group-context:*`](/docs/primitives/ready#task-group-context-inheritance) | Attach shared task-group context inherited by related tasks | CLI, SDK, MCP, API | Available |
+| [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | CLI, SDK, MCP, API | Available |
+| [`tx inbox`](/docs/primitives/inbox) | Send, read, and acknowledge agent messages on channels | CLI, SDK, MCP, API | Available |
+
+Reach for coordination once more than one worker, operator, or long-lived channel is involved.
+
+### 6. Observability
+
+| Primitive | Purpose | Interfaces | Status |
+|-----------|---------|------------|--------|
+| [`tx trace *`](/docs/primitives/traces) | Execution tracing and run observability | CLI, SDK, MCP, API | Available |
+| [`tx spec health`](/docs/primitives/decision) | Repo rollup for docs, tests, decisions, and drift | CLI | Available |
+
+Use observability after the earlier layers are in place and you need to understand what is drifting, failing, or stuck.
 
 ### Quick CLI Examples
 

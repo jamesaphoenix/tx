@@ -312,6 +312,12 @@ describe("Decision commands (Phase 2)", () => {
     expect(health.specTest).toBeDefined()
     expect(health.decisions).toBeDefined()
     expect(health.docDrift).toBeDefined()
+    expect(health.specTest.passing).toBeDefined()
+    expect(health.specTest.failing).toBeDefined()
+    expect(health.specTest.untested).toBeDefined()
+    expect(health.specTest.docsComplete).toBeDefined()
+    expect(health.specTest.docsHarden).toBeDefined()
+    expect(health.specTest.docsBuild).toBeDefined()
     expect(["synced", "drifting", "broken"]).toContain(health.status)
   })
 

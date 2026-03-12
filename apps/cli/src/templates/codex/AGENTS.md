@@ -18,6 +18,27 @@ Required sync behavior:
 
 The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to git via `tx sync export`.
 
+## Start Here
+
+Use this loop before reaching for the rest of the surface area:
+
+```bash
+tx add "First task"
+tx ready
+tx show <id>
+tx done <id>
+tx sync export
+```
+
+When you are ready to add docs-first specs:
+
+```bash
+tx doc add prd auth-flow --title "Auth Flow"
+tx spec discover
+tx spec status --doc auth-flow
+tx spec complete --doc auth-flow --by <human>
+```
+
 ### Core Commands
 
 | Command | Purpose |
@@ -81,16 +102,24 @@ The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to 
 | `tx sync import` | JSONL to SQLite |
 | `tx compact` | Compact done tasks + export learnings |
 
-### Inspection & Specs
+### Docs-First Specs
+
+| Command | Purpose |
+|---------|---------|
+| `tx spec discover` | Refresh doc-derived invariants and test mappings |
+| `tx spec status` | Inspect docs-first closure state with blocker reasons |
+| `tx spec fci` | Get compact machine-readable completion state |
+| `tx spec complete` | Record human COMPLETE sign-off |
+| `tx spec health` | Repo rollup for docs, tests, decisions, and drift |
+
+### Advanced Inspection
 
 | Command | Purpose |
 |---------|---------|
 | `tx trace list` | Inspect recent run traces |
-| `tx invariant list` | Inspect invariant registry and status |
 | `tx decision list` | List captured decisions and their review status |
 | `tx decision pending` | Show decisions awaiting review |
-| `tx spec health` | View spec-driven development health (decisions + docs + tests) |
-| `tx spec status` | Inspect requirement/spec/test traceability status |
+| `tx invariant list` | Advanced derived-invariant inspection and repair |
 
 ## Example Orchestration
 

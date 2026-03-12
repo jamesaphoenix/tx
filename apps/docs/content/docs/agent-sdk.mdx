@@ -667,11 +667,11 @@ const reaped = await tx.runs.reap({
 
 ### Spec
 
-Spec traceability primitives bridge docs, invariants, tests, and FCI.
+Spec traceability primitives bridge docs, tests, and FCI.
 
 #### `tx.spec.discover(options?)`
 
-Sync invariants from docs and discover mappings from tags, comments, and manifest entries.
+Refresh doc-derived rules from docs and discover mappings from tags, comments, and manifest entries.
 
 ```typescript
 const discover = await tx.spec.discover({
@@ -694,7 +694,7 @@ await tx.spec.link(
 
 #### `tx.spec.status(options?)`
 
-Get current FCI phase and uncovered-gap count.
+Get current closure state, including phase, FCI, coverage counts, and blocker reasons.
 
 ```typescript
 const status = await tx.spec.status({
@@ -1178,12 +1178,15 @@ agentLoop()
 - [Getting Started](/docs/getting-started) - Install tx and run your first agent loop
 - [tx ready](/docs/primitives/ready) - Task readiness detection
 - [tx done](/docs/primitives/done) - Task completion
+- [tx doc](/docs/primitives/docs) - Docs-first authoring
+- [tx spec](/docs/primitives/spec-trace) - Spec discovery, scoring, and closure
 - [tx memory](/docs/primitives/memory) - Memory and contextual retrieval
-- [tx send / tx inbox](/docs/primitives/inbox) - Agent-to-agent messaging
-- [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents
 - [tx label](/docs/primitives/label) - Ready queue scoping by phase
 - [tx guard](/docs/primitives/guard) - Task creation limits (bounded autonomy)
 - [tx verify](/docs/primitives/verify) - Machine-checkable done criteria
 - [tx reflect](/docs/primitives/reflect) - Session retrospective and signals
 - [tx gate](/docs/primitives/gate) - Human-in-the-loop phase approvals
+- [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents
+- [tx send / tx inbox](/docs/primitives/inbox) - Agent-to-agent messaging
 - [tx sync](/docs/primitives/sync) - Stream-based event sync
+- [tx trace](/docs/primitives/traces) - Run and failure observability

@@ -789,6 +789,13 @@ export interface SpecStatusResult {
   fci: number
   gaps: number
   total: number
+  covered: number
+  uncovered: number
+  passing: number
+  failing: number
+  untested: number
+  signedOff: boolean
+  blockers: string[]
 }
 
 export interface SerializedTraceabilityMatrixLatestRun {

@@ -5,7 +5,7 @@ description: "Decisions as first-class artifacts: capture, review, and sync to s
 
 ## Purpose
 
-Decisions are first-class artifacts in tx. When agents or developers make implementation choices, those decisions are captured, reviewed, and optionally synced back to design docs as invariants. This closes the spec-driven development loop: code changes produce decisions, which feed back to update specs and tests.
+Decisions are first-class artifacts in tx. When agents or developers make implementation choices, those decisions are captured, reviewed, and optionally synced back to docs. This closes the spec-driven development loop: code changes produce decisions, which feed back to update docs and tests.
 
 ## Decision Lifecycle
 
@@ -55,7 +55,7 @@ tx decision edit dec-abc123def456 "Use WAL mode with 64MB cache" --reviewer jame
 # Shorthand for pending decisions
 tx decision pending
 
-# Spec health (aggregates decisions + docs + invariants)
+# Spec health (aggregates decisions + docs + tests)
 tx spec health
 tx spec health --json
 ```
@@ -185,19 +185,18 @@ $ tx spec health
 
 Spec Health: DRIFTING
 
-  Decisions:    3 pending, 1 approved-unsynced
-  Doc Drift:    0 docs with hash mismatch
-  Invariants:   21 active
-
-  Action items:
-    - Review 3 pending decisions
-    - Sync 1 approved decision to docs
+  Spec -> Test:  18/21 invariants have tests (86%)
+  Spec State:    14 passing, 1 failing, 3 untested, 3 uncovered
+  Doc Closure:   2 COMPLETE, 1 HARDEN, 1 BUILD
+  Decisions:     3 pending, 1 approved-unsynced
+  Doc Drift:     0 of 4 docs with hash mismatch
 ```
 
-The `spec health` command aggregates decision status, doc drift, and invariant coverage into a single health view.
+The `spec health` command aggregates decision status, doc drift, and spec/test coverage into a single health view.
+Treat it as a portfolio rollup over the repo, not as a required step in the core `discover -> run -> fci/status -> complete` loop.
+It also shows spec execution state and doc-level closure, so `synced` means the docs with active invariants are actually closed, not merely linked.
 
 ## Related Commands
 
 - [`tx doc`](/docs/primitives/docs) - Manage documentation (all 4 tiers)
-- [`tx invariant`](/docs/primitives/invariants) - Machine-checkable rules with provenance
 - [`tx spec gaps`](/docs/primitives/spec-trace) - Find invariants missing tests

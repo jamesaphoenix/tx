@@ -34,27 +34,43 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 
 Follow the docs in this order:
 
-1. **[Getting Started](/docs/getting-started)** install tx and run your first working loop.
-2. **[Primitives](/docs/primitives)** learn the core commands that power every interface.
-3. **[Headful Experience](/docs/headful)** use the dashboard and keyboard workflows.
-4. **[Watchdog Runbook](/docs/watchdog-runbook)** advanced, opt-in detached supervision.
+1. **Task Management**: start with [Getting Started](/docs/getting-started), then the task primitives.
+2. **Spec-Driven Development**: add docs, specs, and closure after the task loop works.
+3. **Memory & Context**: add durable knowledge and prompt context once the basics are stable.
+4. **Bounded Autonomy**: add limits, verification, and gates when agents have more freedom.
+5. **Coordination**: add worker coordination and messaging when multiple actors are involved.
+6. **Observability**: add traces, health views, and dashboards once you need operational visibility.
 
-## Core Primitives
+Only add the **[Watchdog Runbook](/docs/watchdog-runbook)** later if you need detached, long-running supervision.
 
-| Primitive | Purpose |
-|-----------|---------|
-| [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) |
-| [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others |
-| [`tx block`](/docs/primitives/block) | Declare dependencies between tasks |
-| [`tx claim`](/docs/primitives/claim) | Mark task as being worked by an agent |
-| [`tx pin`](/docs/primitives/pin) | Pin key-value metadata to CLAUDE.md / AGENTS.md files |
-| [`tx memory`](/docs/primitives/memory) | Filesystem-backed knowledge search |
-| [`tx label`](/docs/primitives/label) | Organize tasks with labels for phase scoping |
-| [`tx guard`](/docs/primitives/guard) | Set task creation limits (bounded autonomy) |
-| [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria |
-| [`tx reflect`](/docs/primitives/reflect) | Session retrospective with actionable signals |
-| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints between phases |
-| [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs |
+## Recommended Start
+
+If you are evaluating tx, keep the first pass small:
+
+1. `tx init`
+2. `tx add`
+3. `tx ready`
+4. `tx show`
+5. `tx done`
+6. `tx sync export`
+
+After that, follow the same maturity ladder:
+
+1. `Task Management`
+2. `Spec-Driven Development`
+3. `Memory & Context`
+4. `Bounded Autonomy`
+5. `Coordination`
+6. `Observability`
+
+## The Layers
+
+- **Task Management**: [`tx ready`](/docs/primitives/ready), [`tx done`](/docs/primitives/done), [`tx block`](/docs/primitives/block), [`tx sync`](/docs/primitives/sync)
+- **Spec-Driven Development**: [`tx doc`](/docs/primitives/docs), [`tx spec`](/docs/primitives/spec-trace), [`tx decision`](/docs/primitives/decision)
+- **Memory & Context**: [`tx memory`](/docs/primitives/memory), [`tx pin`](/docs/primitives/pin)
+- **Bounded Autonomy**: [`tx label`](/docs/primitives/label), [`tx guard`](/docs/primitives/guard), [`tx verify`](/docs/primitives/verify), [`tx reflect`](/docs/primitives/reflect), [`tx gate`](/docs/primitives/gate)
+- **Coordination**: [`tx claim`](/docs/primitives/claim), [`tx inbox`](/docs/primitives/inbox), task-group context
+- **Observability**: [`tx trace`](/docs/primitives/traces), [`tx spec health`](/docs/primitives/decision), dashboard
 
 ### Quick CLI Examples
 
@@ -83,11 +99,11 @@ Start in [`tx doc`](/docs/primitives/docs) for syntax and examples.
 
 Spec-driven development is not a one-way equation. It is a feedback loop. Implementing code generates decisions that must feed back into specs and tests. tx keeps the loop in sync: tasks define what to build, [memory](/docs/primitives/memory) and [decisions](/docs/primitives/decision) capture what changed during implementation, and [`tx done`](/docs/primitives/done) closes the loop.
 
-The answer to AI coding's volume problem is not more orchestration. It is lightweight process that keeps intent, code, and tests aligned at speed. Use [`tx spec health`](/docs/primitives/decision) to monitor the spec-code-test cycle.
+The answer to AI coding's volume problem is not more orchestration. It is lightweight process that keeps intent, code, and tests aligned at speed. Use [`tx spec status`](/docs/primitives/spec-trace) and [`tx spec fci`](/docs/primitives/spec-trace) for scoped closure, and [`tx spec health`](/docs/primitives/decision) as the repo-level rollup.
 
 ## Your First Step
 
-Start with [Getting Started](/docs/getting-started), then continue in order through Primitives, Headful Experience, and Watchdog.
+Start with [Getting Started](/docs/getting-started), then continue through Primitives and Headful Experience. Add Watchdog only if you later need detached supervision.
 
 ## Design Principles
 

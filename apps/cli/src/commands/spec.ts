@@ -342,5 +342,16 @@ const specStatus = (_pos: string[], flags: Flags) =>
 
     console.log(`Phase: ${status.phase}`)
     console.log(`FCI: ${status.fci}%`)
-    console.log(`Gaps: ${status.gaps}/${status.total}`)
+    console.log(`Coverage: ${status.covered}/${status.total}`)
+    console.log(
+      `State: ${status.passing} passing, ${status.failing} failing, ${status.untested} untested, ${status.uncovered} uncovered`
+    )
+    if (status.blockers.length > 0) {
+      console.log("Blockers:")
+      for (const blocker of status.blockers) {
+        console.log(`  - ${blocker}`)
+      }
+    } else {
+      console.log("Blockers: none")
+    }
   })

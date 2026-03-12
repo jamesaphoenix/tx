@@ -4,8 +4,7 @@
  */
 
 import { Effect } from "effect"
-import { DecisionService, DocService } from "@jamesaphoenix/tx-core"
-import type { Invariant } from "@jamesaphoenix/tx-types"
+import { DecisionService, DocService, SpecTraceService } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { type Flags, flag } from "../utils/parse.js"
 
@@ -16,6 +15,12 @@ type TriangleHealth = {
     covered: number
     uncovered: number
     coveragePercent: number
+    passing: number
+    failing: number
+    untested: number
+    docsComplete: number
+    docsHarden: number
+    docsBuild: number
   }
   decisions: {
     pending: number
@@ -32,6 +37,7 @@ export const triangle = (_pos: string[], flags: Flags): Effect.Effect<void, unkn
   Effect.gen(function* () {
     const decisionSvc = yield* DecisionService
     const docSvc = yield* DocService
+    const specTraceSvc = yield* SpecTraceService
 
     // 1. Decision status
     const allDecisions = yield* decisionSvc.list({})
@@ -42,6 +48,9 @@ export const triangle = (_pos: string[], flags: Flags): Effect.Effect<void, unkn
 
     // 2. Doc drift — count docs with hash mismatch
     const docs = yield* docSvc.list()
+    const invariants = yield* docSvc.listInvariants({}).pipe(
+      Effect.catchTag("DatabaseError", () => Effect.succeed([]))
+    )
     let driftedDocs = 0
     for (const doc of docs) {
       const driftDetails = yield* docSvc.detectDrift(doc.name).pipe(
@@ -53,18 +62,58 @@ export const triangle = (_pos: string[], flags: Flags): Effect.Effect<void, unkn
       }
     }
 
-    // 3. Spec-test coverage via active invariants (exclude deprecated)
-    const allInvariants = yield* docSvc.listInvariants({}).pipe(
-      Effect.catchTag("DatabaseError", () => Effect.succeed([] as Invariant[]))
+    // 3. Spec-test coverage via spec trace mappings
+    const specCoverage = yield* specTraceSvc.fci().pipe(
+      Effect.map((summary) => ({
+        total: summary.total,
+        covered: summary.covered,
+        uncovered: summary.uncovered,
+        passing: summary.passing,
+        failing: summary.failing,
+        untested: summary.untested,
+      })),
+      Effect.catchTag("DatabaseError", () => Effect.succeed({
+        total: 0,
+        covered: 0,
+        uncovered: 0,
+        passing: 0,
+        failing: 0,
+        untested: 0,
+      }))
     )
-    const invariants = allInvariants.filter(
-      (inv: { status: string }) => inv.status === "active"
+    const docsWithActiveInvariants = new Set(
+      invariants
+        .filter((inv) => inv.status === "active")
+        .map((inv) => inv.docId)
     )
-    const totalInvariants = invariants.length
-    // Count invariants that have a testRef (linked to a test)
-    const coveredInvariants = invariants.filter(
-      (inv: { testRef: string | null }) => inv.testRef != null && inv.testRef !== ""
-    ).length
+
+    let docsComplete = 0
+    let docsHarden = 0
+    let docsBuild = 0
+    for (const doc of docs) {
+      if (!docsWithActiveInvariants.has(doc.id)) continue
+
+      const docStatus = yield* specTraceSvc.status({ doc: doc.name }).pipe(
+        Effect.catchTag("DatabaseError", () =>
+          Effect.succeed({
+            phase: "BUILD" as const,
+            fci: 0,
+            gaps: 0,
+            total: 0,
+          })
+        )
+      )
+
+      if (docStatus.phase === "COMPLETE") {
+        docsComplete += 1
+      } else if (docStatus.phase === "HARDEN") {
+        docsHarden += 1
+      } else {
+        docsBuild += 1
+      }
+    }
+    const totalInvariants = specCoverage.total
+    const coveredInvariants = specCoverage.covered
 
     const coveragePercent = totalInvariants > 0
       ? Math.round((coveredInvariants / totalInvariants) * 100)
@@ -72,11 +121,11 @@ export const triangle = (_pos: string[], flags: Flags): Effect.Effect<void, unkn
 
     // 4. Determine overall status
     let status: TriangleHealth["status"] = "synced"
-    if (pending > 0 || approvedUnsynced > 0 || driftedDocs > 0 || coveragePercent < 100) {
-      status = "drifting"
-    }
-    if (driftedDocs > docs.length / 2 || (totalInvariants > 0 && coveragePercent < 50)) {
+    const allSpecDocsClosed = docsBuild === 0 && docsHarden === 0
+    if (specCoverage.failing > 0 || driftedDocs > docs.length / 2) {
       status = "broken"
+    } else if (pending > 0 || approvedUnsynced > 0 || driftedDocs > 0 || !allSpecDocsClosed) {
+      status = "drifting"
     }
 
     const health: TriangleHealth = {
@@ -84,8 +133,14 @@ export const triangle = (_pos: string[], flags: Flags): Effect.Effect<void, unkn
       specTest: {
         total: totalInvariants,
         covered: coveredInvariants,
-        uncovered: totalInvariants - coveredInvariants,
+        uncovered: specCoverage.uncovered,
         coveragePercent,
+        passing: specCoverage.passing,
+        failing: specCoverage.failing,
+        untested: specCoverage.untested,
+        docsComplete,
+        docsHarden,
+        docsBuild,
       },
       decisions: {
         pending,
@@ -112,6 +167,12 @@ export const triangle = (_pos: string[], flags: Flags): Effect.Effect<void, unkn
     if (totalInvariants > 0) {
       console.log(
         `  Spec -> Test:  ${coveredInvariants}/${totalInvariants} invariants have tests (${coveragePercent}%)`
+      )
+      console.log(
+        `  Spec State:   ${specCoverage.passing} passing, ${specCoverage.failing} failing, ${specCoverage.untested} untested, ${specCoverage.uncovered} uncovered`
+      )
+      console.log(
+        `  Doc Closure:  ${docsComplete} COMPLETE, ${docsHarden} HARDEN, ${docsBuild} BUILD`
       )
     } else {
       console.log("  Spec -> Test:  No invariants defined")

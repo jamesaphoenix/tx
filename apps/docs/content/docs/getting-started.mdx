@@ -1,12 +1,18 @@
 ---
 title: Getting Started
-description: Install tx and run your first agent loop
+description: Install tx, finish your first task loop, then add docs-first specs
 ---
 
 import { WorkLoopFigure } from "@/components/getting-started-figures"
 import { Callout } from "fumadocs-ui/components/callout"
 
-Get up and running with tx in minutes. tx provides four interfaces. Pick the one that fits your workflow.
+Get up and running with tx in minutes. The recommended path is simple:
+
+1. Start with the CLI and finish one task loop.
+2. Add docs-first spec tracing once the task loop feels natural.
+3. Layer on MCP, SDK, API, and the heavier controls only when you need them.
+
+tx provides four interfaces. You can add the others after the CLI path is working.
 
 | Interface | Package | Best For |
 |-----------|---------|----------|
@@ -133,7 +139,7 @@ Optional agent onboarding scaffolds:
 tx init --claude            # CLAUDE.md + .claude/skills
 tx init --codex             # AGENTS.md + .codex/agents
 tx init --claude --codex    # scaffold both
-tx init --watchdog          # watchdog scripts + launcher + service templates (opt-in)
+tx init --watchdog          # later only: watchdog scripts + launcher + service templates
 tx init --watchdog --watchdog-runtime codex
 ```
 
@@ -172,9 +178,62 @@ block_agent_done_when_task_id_present = true  # Block agent completion for pin-l
 
 See the generated file for full documentation on each setting, or the relevant primitive docs linked in the comments.
 
-## Watchdog Onboarding (Opt-In)
+## Recommended First Path
 
-Watchdog onboarding is explicit opt-in and default-off. `tx init` alone does not enable detached supervision.
+If you are new to tx, start with the CLI even if you eventually want MCP, SDK, or API usage. The goal is to get one clean loop working before you absorb the rest of the surface area.
+
+### Day 1: Finish One Task Loop
+
+```bash
+tx init --codex                  # or: tx init --claude, or plain tx init
+tx add "Write auth PRD" --json
+tx add "Implement auth flow" --json
+tx block <implement-task-id> <prd-task-id>
+tx ready
+tx show <prd-task-id>
+tx done <prd-task-id>
+tx ready
+tx sync export
+```
+
+This proves the core of tx is working:
+
+- state lives in `.tx/tasks.db`
+- dependencies affect `tx ready`
+- `tx done` advances the queue
+- `tx sync export` materializes git-friendly stream logs
+
+### Day 2: Add The Docs-First Spec Loop
+
+Once the task loop feels normal, add the spec loop:
+
+```bash
+tx doc add prd auth-flow --title "Auth Flow"
+# add or update tests in your repo with [INV-*], _INV_*, @spec, or .tx/spec-tests.yml mappings
+tx spec discover
+tx spec status --doc auth-flow
+vitest run --reporter=json | tx spec batch --from vitest
+tx spec complete --doc auth-flow --by you
+```
+
+Use the spec primitives like this:
+
+- `tx spec fci`: compact machine score for agents and automation
+- `tx spec status`: human-readable blocker view for one scope
+- `tx spec health`: repo rollup, not part of the minimum day-1 loop
+
+### Add More Surface Area Later
+
+After the two loops above are working, then decide whether you actually need:
+
+- MCP or Agent SDK integration
+- `claim` for parallel workers
+- `guard`, `verify`, `label`, `gate`, and `reflect`
+- optional watchdog supervision only if you need unattended long-running loops
+
+## Optional: Watchdog Later
+
+Most users should skip this on their first pass. Watchdog onboarding is explicit opt-in and default-off. `tx init` alone does not enable detached supervision.
 
 Use watchdog when you need:
 - Long-running unattended RALPH loops
@@ -593,10 +652,14 @@ your-project/
 
 You now have tx running. Keep moving in this order so each step builds on the last one:
 
-1. **[Primitives](/docs/primitives)** learn the core building blocks (`ready`, `done`, `block`, `memory`, `sync`).
-2. **[Bounded Autonomy](/docs/primitives/label)** prevent runaway agents with `label`, `guard`, `verify`, `reflect`, and `gate`.
-3. **[Headful Experience](/docs/headful)** apply the same primitives visually with dashboard workflows.
-4. **[Watchdog Runbook](/docs/watchdog-runbook)** final, advanced step for detached supervision and recovery.
+1. **Task Management**: stay with [Primitives](/docs/primitives) and focus on `ready`, `done`, `block`, `show`, and `sync`.
+2. **Spec-Driven Development**: continue into [`tx doc`](/docs/primitives/docs), [`tx spec`](/docs/primitives/spec-trace), and [`tx decision`](/docs/primitives/decision).
+3. **Memory & Context**: add [`tx memory`](/docs/primitives/memory) and [`tx pin`](/docs/primitives/pin) once you want durable context.
+4. **Bounded Autonomy**: add [`tx label`](/docs/primitives/label), [`tx guard`](/docs/primitives/guard), [`tx verify`](/docs/primitives/verify), [`tx reflect`](/docs/primitives/reflect), and [`tx gate`](/docs/primitives/gate).
+5. **Coordination**: add [`tx claim`](/docs/primitives/claim), channel messaging via [`tx inbox`](/docs/primitives/inbox), and shared group context when multiple actors are involved.
+6. **Observability**: add [`tx trace`](/docs/primitives/traces), [`tx spec health`](/docs/primitives/decision), and the [Headful Experience](/docs/headful) when you need repo-level visibility.
+
+If you later need detached supervision and recovery playbooks, use the **[Watchdog Runbook](/docs/watchdog-runbook)**.
 
 Interface-specific deep dives:
 

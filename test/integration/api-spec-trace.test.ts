@@ -172,6 +172,8 @@ describe("API Spec Trace Integration", () => {
     expect(payload.status.fci).toBe(100)
     expect(payload.status.gaps).toBe(0)
     expect(payload.status.total).toBe(1)
+    expect(payload.status.blockers).toEqual([])
+    expect(payload.status.signedOff).toBe(true)
   })
 
   it("ingests vitest batch payloads and returns matrix/latest-run values for API responses", async () => {
@@ -344,5 +346,7 @@ describe("API Spec Trace Integration", () => {
     expect(payload.status.phase).toBe("BUILD")
     expect(payload.status.total).toBe(2)
     expect(payload.status.gaps).toBe(1)
+    expect(payload.status.blockers).toEqual(["1 uncovered invariant(s)", "1 untested invariant(s)"])
+    expect(payload.status.signedOff).toBe(false)
   })
 })

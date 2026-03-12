@@ -259,6 +259,7 @@ describe("SpecTraceService Integration", () => {
         )
 
         const build = yield* spec.fci({ doc: "spec-phase-doc" })
+        const buildStatus = yield* spec.status({ doc: "spec-phase-doc" })
 
         const passBatch: readonly BatchRunInput[] = [
           { testId: first.testId, passed: true, durationMs: 12 },
@@ -267,6 +268,7 @@ describe("SpecTraceService Integration", () => {
         const batchResult = yield* spec.recordBatchRun(passBatch)
 
         const harden = yield* spec.fci({ doc: "spec-phase-doc" })
+        const hardenStatus = yield* spec.status({ doc: "spec-phase-doc" })
         const signoff = yield* spec.complete({ doc: "spec-phase-doc" }, "qa@example.com", "approved")
         const complete = yield* spec.status({ doc: "spec-phase-doc" })
 
@@ -277,8 +279,10 @@ describe("SpecTraceService Integration", () => {
 
         return {
           build,
+          buildStatus,
           batchResult,
           harden,
+          hardenStatus,
           signoff,
           complete,
           regressed,
@@ -292,6 +296,8 @@ describe("SpecTraceService Integration", () => {
     expect(result.build.total).toBe(2)
     expect(result.build.covered).toBe(2)
     expect(result.build.untested).toBe(2)
+    expect(result.buildStatus.blockers).toEqual(["2 untested invariant(s)"])
+    expect(result.buildStatus.signedOff).toBe(false)
 
     expect(result.batchResult.received).toBe(2)
     expect(result.batchResult.recorded).toBe(2)
@@ -300,6 +306,8 @@ describe("SpecTraceService Integration", () => {
     expect(result.harden.phase).toBe("HARDEN")
     expect(result.harden.fci).toBe(100)
     expect(result.harden.passing).toBe(2)
+    expect(result.hardenStatus.blockers).toEqual(["Human COMPLETE sign-off not recorded"])
+    expect(result.hardenStatus.signedOff).toBe(false)
 
     expect(result.signoff.scopeType).toBe("doc")
     expect(result.signoff.scopeValue).toBe("spec-phase-doc")
@@ -308,6 +316,8 @@ describe("SpecTraceService Integration", () => {
     expect(result.complete.phase).toBe("COMPLETE")
     expect(result.complete.fci).toBe(100)
     expect(result.complete.gaps).toBe(0)
+    expect(result.complete.blockers).toEqual([])
+    expect(result.complete.signedOff).toBe(true)
 
     expect(result.regressed.phase).toBe("BUILD")
     expect(result.regressed.fci).toBe(50)
@@ -316,6 +326,31 @@ describe("SpecTraceService Integration", () => {
 
     expect(result.blockedComplete._tag).toBe("ValidationError")
     expect(result.blockedComplete.message).toContain("Cannot complete scope while phase is BUILD")
+  })
+
+  it("rejects ambiguous test-name fallback when recordRun cannot resolve a unique mapping", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        yield* createDocWithInvariants("spec-ambiguous-run-doc", [
+          { id: "INV-SPEC-AMBIG-001", rule: "first ambiguous mapping" },
+          { id: "INV-SPEC-AMBIG-002", rule: "second ambiguous mapping" },
+        ])
+
+        const spec = yield* SpecTraceService
+        yield* spec.link("INV-SPEC-AMBIG-001", "test/spec/ambiguous-a.test.ts", "shared fallback name", "vitest")
+        yield* spec.link("INV-SPEC-AMBIG-002", "test/spec/ambiguous-b.test.ts", "shared fallback name", "vitest")
+
+        const error = yield* spec.recordRun("test/spec/unknown.test.ts::shared fallback name", true).pipe(Effect.flip)
+        const status = yield* spec.status({ doc: "spec-ambiguous-run-doc" })
+
+        return { error, status }
+      })
+    )
+
+    expect(result.error._tag).toBe("ValidationError")
+    expect(result.error.message).toContain("No spec test mapping found")
+    expect(result.status.phase).toBe("BUILD")
+    expect(result.status.blockers).toEqual(["2 untested invariant(s)"])
   })
 
   it("records framework-adapter batch imports and tracks unmatched IDs", async () => {

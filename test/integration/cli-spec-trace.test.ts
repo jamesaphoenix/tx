@@ -120,11 +120,13 @@ describe("CLI spec traceability", () => {
 
     const status = runTx(cwd, dbPath, ["spec", "status", "--doc", "spec-cli-a", "--json"])
     expect(status.status).toBe(0)
-    const statusJson = JSON.parse(status.stdout) as { phase: string; fci: number; gaps: number; total: number }
+    const statusJson = JSON.parse(status.stdout) as { phase: string; fci: number; gaps: number; total: number; blockers: string[]; signedOff: boolean }
     expect(statusJson.phase).toBe("BUILD")
     expect(statusJson.fci).toBe(0)
     expect(statusJson.gaps).toBe(1)
     expect(statusJson.total).toBe(2)
+    expect(statusJson.blockers).toEqual(["1 uncovered invariant(s)", "1 untested invariant(s)"])
+    expect(statusJson.signedOff).toBe(false)
   })
 
   it("transitions HARDEN -> COMPLETE via spec run and complete", { timeout: 120_000 }, () => {
@@ -176,9 +178,11 @@ describe("CLI spec traceability", () => {
 
     const status = runTx(cwd, dbPath, ["spec", "status", "--doc", "spec-cli-b", "--json"])
     expect(status.status).toBe(0)
-    const statusJson = JSON.parse(status.stdout) as { phase: string; fci: number }
+    const statusJson = JSON.parse(status.stdout) as { phase: string; fci: number; blockers: string[]; signedOff: boolean }
     expect(statusJson.phase).toBe("COMPLETE")
     expect(statusJson.fci).toBe(100)
+    expect(statusJson.blockers).toEqual([])
+    expect(statusJson.signedOff).toBe(true)
   })
 
   it("supports link/tests/unlink + batch ingestion and blocks premature complete", { timeout: 120_000 }, () => {

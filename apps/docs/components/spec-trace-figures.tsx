@@ -133,8 +133,8 @@ export function SpecPipelineFigure() {
         <div className="grid gap-4 md:grid-cols-2">
           <StageCard
             eyebrow="Source"
-            title="Docs and invariants"
-            chips={["tx docs", "tx invariant sync"]}
+            title="Docs"
+            chips={["tx docs", "tx spec discover"]}
             tone="blue"
             step="A"
           />

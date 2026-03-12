@@ -160,13 +160,13 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
           }
         }
         if (results.length > 0) p.note(results.join("\n"), "Files")
-        p.outro("Done! Run tx ready to get started.")
+        p.outro('Done! Start with: tx add "First task" && tx ready')
         return
       }
 
       // Interactive mode
       yield* Effect.tryPromise(() => interactiveScaffold(projectDir, { watchdogRuntimeMode }))
-      p.outro("Done! Run tx ready to get started.")
+      p.outro('Done! Start with: tx add "First task" && tx ready')
     }),
 
   add,

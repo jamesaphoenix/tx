@@ -7,7 +7,21 @@ export const HELP_TEXT = `tx v${CLI_VERSION} - Task management for AI agents and
 
 Usage: tx <command> [arguments] [options]
 
-Tasks:
+Start Here (recommended first pass):
+  tx init [--codex|--claude]
+  tx add <title>
+  tx ready
+  tx show <id>
+  tx done <id>
+  tx sync export
+
+When you are ready to add docs-first specs:
+  tx doc add prd <name> --title <title>
+  tx spec discover
+  tx spec status
+  tx spec complete --doc <name> --by <human>
+
+Core Workflow:
   init                    Initialize task database
   add <title>             Create a new task
   list                    List tasks
@@ -59,10 +73,10 @@ Context Pins:
   pin sync                Sync pins to target files
   pin targets [files...]  Show/set target files
 
-Docs:
+Docs-First Specs:
   doc <subcommand>        Manage docs (add, edit, show, list, render, lock, version, link, attach, patch, validate, drift, lint-ears)
-  invariant <subcommand>  Manage invariants (list, show, record, sync)
-  spec <subcommand>       Spec traceability (discover, link, unlink, tests, gaps, fci, matrix, run, batch, complete, status)
+  spec <subcommand>       Spec traceability (discover, run/batch, fci, status, complete, health)
+  invariant <subcommand>  Advanced invariant inspection/repair tooling
 
 Cycle Scan:
   cycle                   Run cycle-based issue discovery with sub-agent swarms
@@ -84,7 +98,7 @@ Bulk Operations:
   bulk reset <id...>      Reset multiple tasks to ready
   bulk delete <id...>     Delete multiple tasks
 
-Tools:
+Diagnostics & Rollups:
   stats                   Show queue metrics and health overview
   validate                Run pre-flight database health checks
   doctor                  Run system diagnostics
@@ -134,7 +148,10 @@ Examples:
   tx list --status backlog,ready
   tx ready --json
   tx block <task-id> <blocker-id>
-  tx done <task-id>`
+  tx done <task-id>
+  tx doc add prd auth-flow --title "Auth Flow"
+  tx spec discover
+  tx spec status --doc auth-flow`
 
 export const commandHelp: Record<string, string> = {
   init: `tx init - Initialize task database
@@ -148,7 +165,7 @@ Options:
   --db <path>   Database path (default: .tx/tasks.db)
   --claude      Scaffold Claude Code integration (CLAUDE.md + .claude/skills/)
   --codex       Scaffold Codex integration (AGENTS.md + .codex/agents + .codex/rules)
-  --watchdog    Scaffold watchdog launcher/scripts/assets (default off)
+  --watchdog    Scaffold watchdog launcher/scripts/assets (optional later)
   --watchdog-runtime <mode>
                 Runtime mode for watchdog: auto|codex|claude|both (default: auto, requires --watchdog)
   --help        Show this help
@@ -158,7 +175,7 @@ Examples:
   tx init --claude            # Database + Claude Code skills & CLAUDE.md
   tx init --codex             # Database + Codex AGENTS.md + agent profiles + rules
   tx init --claude --codex    # Database + both integrations
-  tx init --watchdog          # Database + watchdog scaffolding (runtime auto-detect)
+  tx init --watchdog          # Optional later: watchdog scaffolding (runtime auto-detect)
   tx init --watchdog --watchdog-runtime both
                               # Require both codex and claude runtimes for watchdog
   tx init --db ~/my-tasks.db  # Use custom path`,
@@ -1992,7 +2009,7 @@ Examples:
   tx doc lint-ears .tx/docs/prd/PRD-031-ears-requirements.yml
   tx doc lint-ears PRD-031-ears-requirements --json`,
 
-  invariant: `tx invariant - Manage machine-checkable invariants
+  invariant: `tx invariant - Advanced tooling for doc-derived invariants
 
 Usage: tx invariant <subcommand> [options]
 
@@ -2001,6 +2018,10 @@ Subcommands:
   show <id>           Show invariant details
   record <id>         Record a check result (--passed or --failed)
   sync                Sync invariants from doc YAML files into DB
+
+Use this when you need to inspect, repair, or directly record checks for
+derived invariants. Normal docs-first workflows usually start with
+\`tx spec discover\`.
 
 Run 'tx invariant <subcommand> --help' for subcommand-specific help.
 
@@ -2071,7 +2092,7 @@ Examples:
   tx invariant record INV-AUTH-001 --failed --details "Missing null check"
   tx invariant record INV-AUTH-001 --passed --json`,
 
-  "invariant sync": `tx invariant sync - Sync invariants from YAML
+  "invariant sync": `tx invariant sync - Sync doc-derived invariants from YAML
 
 Usage: tx invariant sync [--doc <name>] [--json]
 
@@ -2080,6 +2101,9 @@ Syncs invariants from doc YAML files into the database. Sources include:
 - PRD \`ears_requirements\` and \`requirements\`
 - design \`goals\`
 If a doc name is given, syncs only that doc's invariants. Otherwise syncs all docs.
+
+Most users do not need to run this directly: \`tx spec discover\` refreshes
+doc-derived invariants automatically before scanning tests.
 
 Options:
   --doc <name>  Sync invariants from a specific doc only
@@ -2091,28 +2115,29 @@ Examples:
   tx invariant sync --doc auth-flow  # Sync specific doc
   tx invariant sync --json`,
 
-  spec: `tx spec - Spec-to-test traceability primitives
+  spec: `tx spec - Docs-first spec-to-test traceability primitives
 
 Usage: tx spec <subcommand> [options]
 
 Subcommands:
-  discover                     Discover invariant/test mappings from source + manifest
+  discover                     Refresh doc-derived invariants and discover test mappings
+  run <test-id>                Record pass/fail run result for mapped test id
+  batch                        Import batch run results from stdin JSON
+  fci                          Compute Feature Completion Index
+  status                       Quick phase + blocker summary
+  complete                     Record human sign-off (HARDEN -> COMPLETE)
+  health                       Repo rollup for closure, decisions, and drift
   link <inv-id> <file> [name]  Manually link invariant to test
   unlink <inv-id> <test-id>    Remove invariant/test link
   tests <inv-id>               List tests linked to an invariant
   gaps                         List uncovered invariants
-  fci                          Compute Feature Completion Index
   matrix                       Show full traceability matrix
-  run <test-id>                Record pass/fail run result for mapped test id
-  batch                        Import batch run results from stdin JSON
-  complete                     Record human sign-off (HARDEN -> COMPLETE)
-  status                       Quick phase + FCI + gaps summary
-  health                       Spec-driven development health (decisions + drift + coverage)
 
 Run 'tx spec <subcommand> --help' for subcommand-specific help.
 
 Examples:
   tx spec discover
+  tx spec discover --doc PRD-033-spec-test-traceability
   tx spec gaps --doc PRD-033-spec-test-traceability
   tx spec fci --doc PRD-033-spec-test-traceability
   tx spec run test/core.test.ts::"ready returns unblocked" --passed
@@ -2120,17 +2145,26 @@ Examples:
   tx spec complete --doc PRD-033-spec-test-traceability --by james
   tx spec health`,
 
-  "spec discover": `tx spec discover - Scan and upsert invariant/test mappings
+  "spec discover": `tx spec discover - Refresh doc-derived invariants and upsert test mappings
 
 Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--json]
 
-Runs invariant sync first, then scans configured test patterns for [INV-*], _INV_*, and @spec annotations.
-Also imports .tx/spec-tests.yml manifest mappings.
+Refreshes derived invariants from docs first, then scans configured test
+patterns for [INV-*], _INV_*, and @spec annotations. Also imports
+.tx/spec-tests.yml manifest mappings.
+
+Without \`--doc\`, refreshes all docs before scanning. With \`--doc\`,
+refreshes and discovers for that doc scope.
 
 Options:
   --doc <name>                 Sync/discover with doc focus
   --patterns, -p <csv>         Override pattern list for this run
-  --json                       Output as JSON`,
+  --json                       Output as JSON
+
+Examples:
+  tx spec discover
+  tx spec discover --doc auth-flow
+  tx spec discover --patterns "test/**/*.test.ts,spec/**/*.py" --json`,
 
   "spec link": `tx spec link - Manually link an invariant to a test
 
@@ -2228,12 +2262,18 @@ Options:
   --notes <text>               Optional sign-off notes
   --json                       Output as JSON`,
 
-  "spec status": `tx spec status - Quick phase summary
+  "spec status": `tx spec status - Explain scope closure state
 
 Usage: tx spec status [--doc <name>] [--sub <name>] [--json]
 
 Returns:
-  phase, fci, gaps, total`,
+  phase, fci, total, covered, uncovered, passing, failing, untested,
+  signedOff, blockers
+
+Examples:
+  tx spec status
+  tx spec status --doc auth-flow
+  tx spec status --json`,
 
   cycle: `tx cycle - Cycle-based issue discovery with sub-agent swarms
 
@@ -3069,15 +3109,18 @@ Examples:
   tx decision edit dec-abc123 "Use WAL mode with 64MB cache"
   tx decision pending`,
 
-  "spec health": `tx spec health - Spec-driven development health check
+  "spec health": `tx spec health - Repo-level spec-driven development rollup
 
 Usage: tx spec health [--json]
 
-Aggregates spec-test coverage, decision status, and doc drift into a
+Aggregates spec trace closure, decision status, and doc drift into a
 single health view. Shows overall status: SYNCED, DRIFTING, or BROKEN.
+This is an operations view for the repo, not part of the minimum day-1 loop.
 
 Dimensions:
-  Spec -> Test    How many invariants have linked tests
+  Spec -> Test    Linked coverage across active invariants
+  Spec State      Passing, failing, untested, uncovered invariants
+  Doc Closure     COMPLETE vs HARDEN vs BUILD across docs with invariants
   Decisions       Pending and approved-but-unsynced decisions
   Doc Drift       Docs with YAML hash mismatches
   Doc hierarchy   Count of docs by tier (REQ, PRD, DD, SD)

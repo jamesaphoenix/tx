@@ -32,6 +32,13 @@ export type SpecTraceStatus = {
   readonly fci: number
   readonly gaps: number
   readonly total: number
+  readonly covered: number
+  readonly uncovered: number
+  readonly passing: number
+  readonly failing: number
+  readonly untested: number
+  readonly signedOff: boolean
+  readonly blockers: readonly string[]
 }
 
 const MAX_RUN_DETAILS_LENGTH = 20_000
@@ -470,11 +477,38 @@ export const SpecTraceServiceLive = Layer.effect(
       status: (filter) =>
         Effect.gen(function* () {
           const fci = yield* computeFci(filter)
+          const blockers: string[] = []
+
+          if (fci.total === 0) {
+            blockers.push("No active invariants in scope")
+          } else {
+            if (fci.uncovered > 0) {
+              blockers.push(`${fci.uncovered} uncovered invariant(s)`)
+            }
+            if (fci.failing > 0) {
+              blockers.push(`${fci.failing} failing invariant(s)`)
+            }
+            if (fci.untested > 0) {
+              blockers.push(`${fci.untested} untested invariant(s)`)
+            }
+          }
+
+          if (fci.phase === "HARDEN") {
+            blockers.push("Human COMPLETE sign-off not recorded")
+          }
+
           return {
             phase: fci.phase,
             fci: fci.fci,
             gaps: fci.uncovered,
             total: fci.total,
+            covered: fci.covered,
+            uncovered: fci.uncovered,
+            passing: fci.passing,
+            failing: fci.failing,
+            untested: fci.untested,
+            signedOff: fci.phase === "COMPLETE",
+            blockers,
           }
         }),
     }
