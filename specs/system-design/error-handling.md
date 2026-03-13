@@ -14,11 +14,3 @@ Which features/subsystems this applies to.
 ## Design
 
 Architecture, patterns, data flow, service boundaries.
-
-## Applies To
-
-
-
-## Decision Log
-
-

@@ -137,7 +137,7 @@ export type CreateDocInput = typeof CreateDocInputSchema.Type
 // SCHEMAS & TYPES — EARS Requirements (PRD layer)
 // =============================================================================
 
-/** EARS requirement patterns. */
+/** EARS requirement patterns (kept for backward compat with legacy decomposed EARS). */
 export const EARS_PATTERNS = [
   "ubiquitous",
   "event_driven",
@@ -160,6 +160,24 @@ export const EarsRequirementIdSchema = Schema.String.pipe(
 )
 export type EarsRequirementId = typeof EarsRequirementIdSchema.Type
 
+/**
+ * Simplified EARS requirement: id + statement (single string).
+ * This is the canonical schema per DOC_SCHEMA_SPEC.
+ * Legacy decomposed fields (pattern/trigger/state/condition/system/response)
+ * are accepted at runtime for backward compat but not part of the new schema.
+ */
+export const YamlEarsRequirementSchema = Schema.Struct({
+  id: Schema.String,
+  statement: Schema.String,
+  category: Schema.optional(Schema.String),
+  rationale: Schema.optional(Schema.String),
+})
+export type YamlEarsRequirement = typeof YamlEarsRequirementSchema.Type
+
+/**
+ * Legacy decomposed EARS requirement schema (backward compat).
+ * New specs should use YamlEarsRequirementSchema instead.
+ */
 export const EarsRequirementSchema = Schema.Struct({
   id: EarsRequirementIdSchema,
   pattern: EarsPatternSchema,
@@ -204,6 +222,184 @@ export const renderEarsRule = (opts: {
     }
   }
 }
+
+// =============================================================================
+// SCHEMAS & TYPES — YAML Content Schemas (DOC_SCHEMA_SPEC)
+// =============================================================================
+
+/** Traceability row — links a requirement to a verification method. */
+export const TRACEABILITY_LEVELS = ["unit", "integration", "e2e"] as const
+export const TraceabilityLevelSchema = Schema.Literal(...TRACEABILITY_LEVELS)
+export type TraceabilityLevel = typeof TraceabilityLevelSchema.Type
+
+export const TraceabilityRowSchema = Schema.Struct({
+  requirement_id: Schema.String,
+  level: TraceabilityLevelSchema,
+  verification: Schema.String,
+  success_criteria: Schema.String,
+})
+export type TraceabilityRow = typeof TraceabilityRowSchema.Type
+
+/** Invariant (YAML content shape — lighter than DB InvariantSchema). */
+export const YamlInvariantSchema = Schema.Struct({
+  id: Schema.String,
+  statement: Schema.String,
+  rationale: Schema.optional(Schema.String),
+})
+export type YamlInvariant = typeof YamlInvariantSchema.Type
+
+/** Failure mode. */
+export const FailureModeSchema = Schema.Struct({
+  condition: Schema.String,
+  impact: Schema.String,
+  handling: Schema.String,
+})
+export type FailureMode = typeof FailureModeSchema.Type
+
+/** Edge case. */
+export const EdgeCaseSchema = Schema.Struct({
+  condition: Schema.String,
+  expected_behavior: Schema.String,
+})
+export type EdgeCase = typeof EdgeCaseSchema.Type
+
+/** Actor (requirement kind). */
+export const ActorSchema = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+})
+export type Actor = typeof ActorSchema.Type
+
+/** Use case (requirement kind). */
+export const UseCaseSchema = Schema.Struct({
+  id: Schema.String,
+  actor: Schema.String,
+  trigger: Schema.String,
+  outcome: Schema.String,
+})
+export type UseCase = typeof UseCaseSchema.Type
+
+/** Applies-to entry (system_design kind). */
+export const AppliesToSchema = Schema.Struct({
+  target: Schema.String,
+  reason: Schema.String,
+})
+export type AppliesTo = typeof AppliesToSchema.Type
+
+/** Decision log entry (system_design kind). */
+export const DecisionLogEntrySchema = Schema.Struct({
+  decision: Schema.String,
+  rationale: Schema.String,
+  date: Schema.optional(Schema.String),
+  consequence: Schema.optional(Schema.String),
+})
+export type DecisionLogEntry = typeof DecisionLogEntrySchema.Type
+
+// --- Per-kind YAML content schemas ---
+
+/** Common header fields shared by all doc kinds. */
+const YamlHeaderFields = {
+  kind: DocKindSchema,
+  name: Schema.String,
+  title: Schema.String,
+}
+
+/** Overview doc YAML content. */
+export const OverviewContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("overview"),
+  problem_definition: Schema.String,
+  subsystems: Schema.String,
+  object_model: Schema.optional(Schema.String),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  failure_modes: Schema.optional(Schema.Array(FailureModeSchema)),
+  edge_cases: Schema.optional(Schema.Array(EdgeCaseSchema)),
+  constraints: Schema.optional(Schema.Array(Schema.String)),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type OverviewContent = typeof OverviewContentSchema.Type
+
+/** PRD doc YAML content. */
+export const PrdContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("prd"),
+  status: DocStatusSchema,
+  problem: Schema.String,
+  solution: Schema.String,
+  ears_requirements: Schema.Array(YamlEarsRequirementSchema).pipe(Schema.minItems(1)),
+  acceptance_criteria: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+  non_goals: Schema.optional(Schema.Array(Schema.String)),
+  user_specific_content: Schema.optional(Schema.String),
+  // Deprecated fields (accepted, not required)
+  requirements: Schema.optional(Schema.Array(Schema.String)),
+  out_of_scope: Schema.optional(Schema.Array(Schema.String)),
+})
+export type PrdContent = typeof PrdContentSchema.Type
+
+/** Design doc YAML content. */
+export const DesignContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("design"),
+  status: DocStatusSchema,
+  version: Schema.Number.pipe(Schema.int()),
+  problem_definition: Schema.String,
+  architecture: Schema.String,
+  testing_strategy: Schema.Array(TraceabilityRowSchema).pipe(Schema.minItems(1)),
+  goals: Schema.optional(Schema.Array(Schema.String)),
+  data_model: Schema.optional(Schema.String),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  failure_modes: Schema.optional(Schema.Array(FailureModeSchema)),
+  edge_cases: Schema.optional(Schema.Array(EdgeCaseSchema)),
+  non_goals: Schema.optional(Schema.Array(Schema.String)),
+  open_questions: Schema.optional(Schema.String),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type DesignContent = typeof DesignContentSchema.Type
+
+/**
+ * Requirement doc YAML content (DEPRECATED — use prd + design).
+ * At least one of functional_requirements or ears_requirements must be present.
+ */
+export const RequirementContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("requirement"),
+  status: DocStatusSchema,
+  overview: Schema.String,
+  actors: Schema.optional(Schema.Array(ActorSchema)),
+  use_cases: Schema.optional(Schema.Array(UseCaseSchema)),
+  functional_requirements: Schema.optional(Schema.String),
+  ears_requirements: Schema.optional(Schema.Array(YamlEarsRequirementSchema)),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  non_functional_requirements: Schema.optional(Schema.Array(Schema.String)),
+  traceability: Schema.optional(Schema.Array(TraceabilityRowSchema)),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type RequirementContent = typeof RequirementContentSchema.Type
+
+/** System design doc YAML content. */
+export const SystemDesignContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("system_design"),
+  status: DocStatusSchema,
+  overview: Schema.String,
+  scope: Schema.String,
+  design: Schema.String,
+  constraints: Schema.optional(Schema.Array(Schema.String)),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  applies_to: Schema.optional(Schema.Array(AppliesToSchema)),
+  decision_log: Schema.optional(Schema.Array(DecisionLogEntrySchema)),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type SystemDesignContent = typeof SystemDesignContentSchema.Type
+
+/** Map from doc kind to its content schema. */
+export const DOC_CONTENT_SCHEMAS = {
+  overview: OverviewContentSchema,
+  prd: PrdContentSchema,
+  design: DesignContentSchema,
+  requirement: RequirementContentSchema,
+  system_design: SystemDesignContentSchema,
+} as const
 
 // =============================================================================
 // SCHEMAS & TYPES — Invariants

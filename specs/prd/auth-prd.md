@@ -21,6 +21,6 @@ Describe the solution approach.
 
 - Criterion 1
 
-## Out of Scope
+## Non-Goals
 
 - Item 1

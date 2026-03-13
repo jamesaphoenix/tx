@@ -424,23 +424,27 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
     queryKey: ["doc", docName],
     queryFn: () => fetchers.docDetail(docName),
     enabled: !!docName,
+    refetchInterval: 5000,
   })
 
   const { data: renderData, isLoading: renderLoading } = useQuery({
     queryKey: ["doc-render", docName],
     queryFn: () => fetchers.docRender(docName),
     enabled: !!docName,
+    refetchInterval: 5000,
   })
 
   const { data: allDocsData } = useQuery({
     queryKey: ["docs"],
     queryFn: () => fetchers.docs(),
+    refetchInterval: 5000,
   })
 
   const { data: sourceData, isLoading: sourceLoading } = useQuery({
     queryKey: ["doc-source", docName],
     queryFn: () => fetchers.docSource(docName),
     enabled: !!docName,
+    refetchInterval: 5000,
   })
 
   const allDocs = allDocsData?.docs ?? []

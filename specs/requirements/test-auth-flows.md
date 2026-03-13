@@ -9,16 +9,19 @@ One-sentence behavioral description.
 
 ## Actors
 
-[object Object]
+| Name | Description |
+|------|-------------|
+| User | Primary user of the system |
 
 ## Use Cases
 
-[object Object]
+### UC-001: Example Use Case
 
-## Non-Functional Requirements
+**Trigger**: User initiates action
+**Preconditions**: System is running
+**Postconditions**: Action completed
+**Exceptions**: None
 
-
-
-## Traceability
-
-[object Object]
+**Flow**:
+1. Step 1
+1. Step 2
