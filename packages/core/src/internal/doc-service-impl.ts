@@ -14,7 +14,7 @@ import {
   unlinkSync,
 } from "node:fs"
 import { resolve, dirname, join } from "node:path"
-import { Cause, Context, Effect, Layer, Option } from "effect"
+import { Cause, Context, Effect, Either, Layer, Option, Schema } from "effect"
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import { DocRepository } from "../repo/doc-repo.js"
 import {
@@ -38,6 +38,7 @@ import { readTxConfig } from "../utils/toml-config.js"
 import { resolvePathWithin } from "../utils/file-path.js"
 import {
   DOC_KINDS,
+  DOC_CONTENT_SCHEMAS,
   INVARIANT_ENFORCEMENT_TYPES,
   EARS_PATTERNS,
   renderEarsRule,
@@ -159,12 +160,166 @@ const collectLegacyRequirements = (value: unknown): string[] => {
 /** EARS is a hard requirement for PRDs — not configurable. */
 const isEarsRequiredForLegacyPrds = (): boolean => true
 
+type YamlValidationResult = {
+  parsed: Record<string, unknown>
+  warnings: string[]
+}
+
+type ValidateYamlOptions = {
+  enforceContentSchema?: boolean
+}
+
+const nullableYamlStringKeys = new Set<string>([
+  "name",
+  "title",
+  "problem_definition",
+  "subsystems",
+  "object_model",
+  "user_specific_content",
+  "problem",
+  "solution",
+  "overview",
+  "scope",
+  "design",
+  "architecture",
+  "data_model",
+  "open_questions",
+  "functional_requirements",
+  "id",
+  "statement",
+  "category",
+  "rationale",
+  "condition",
+  "impact",
+  "handling",
+  "expected_behavior",
+  "description",
+  "actor",
+  "trigger",
+  "outcome",
+  "target",
+  "reason",
+  "decision",
+  "consequence",
+  "requirement_id",
+  "verification",
+  "success_criteria",
+  "system",
+  "response",
+  "feature",
+  "state",
+  "test_hint",
+  "constraints",
+  "acceptance_criteria",
+  "non_goals",
+  "requirements",
+  "out_of_scope",
+  "goals",
+  "non_functional_requirements",
+])
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const normalizeNullYamlStrings = (
+  value: unknown,
+  currentKey?: string
+): unknown => {
+  if (value === null) {
+    return currentKey && nullableYamlStringKeys.has(currentKey) ? "" : value
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeNullYamlStrings(item, currentKey))
+  }
+
+  if (!isRecord(value)) {
+    return value
+  }
+
+  const normalized: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    normalized[key] = normalizeNullYamlStrings(entry, key)
+  }
+  return normalized
+}
+
+const normalizeLegacyEarsRequirements = (
+  parsed: Record<string, unknown>
+): void => {
+  const raw = parsed.ears_requirements
+  if (!Array.isArray(raw)) return
+
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue
+
+    if (typeof entry.statement === "string" && entry.statement.trim().length > 0) {
+      continue
+    }
+
+    const patternValue = entry.pattern
+    const systemValue = entry.system
+    const responseValue = entry.response
+    if (
+      typeof patternValue !== "string" ||
+      !EARS_PATTERNS.includes(patternValue as EarsPattern) ||
+      typeof systemValue !== "string" ||
+      typeof responseValue !== "string"
+    ) {
+      continue
+    }
+
+    entry.statement = renderEarsRule({
+      pattern: patternValue as EarsPattern,
+      system: systemValue,
+      response: responseValue,
+      trigger: typeof entry.trigger === "string" ? entry.trigger : undefined,
+      state: typeof entry.state === "string" ? entry.state : undefined,
+      condition: typeof entry.condition === "string" ? entry.condition : undefined,
+      feature: typeof entry.feature === "string" ? entry.feature : undefined,
+    })
+  }
+}
+
+const normalizeForSchemaValidation = (
+  kind: DocKind,
+  parsed: Record<string, unknown>
+): Record<string, unknown> => {
+  const normalized = normalizeNullYamlStrings(parsed) as Record<string, unknown>
+  if (kind === "prd" || kind === "requirement") {
+    normalizeLegacyEarsRequirements(normalized)
+  }
+  return normalized
+}
+
+const collectSchemaWarnings = (
+  kind: DocKind | null | undefined,
+  parsed: Record<string, unknown>
+): string[] => {
+  if (kind !== "prd") return []
+
+  const warnings: string[] = []
+  if (parsed.requirements !== undefined) {
+    warnings.push(
+      "Deprecated field 'requirements' detected in PRD YAML; use 'ears_requirements' instead."
+    )
+  }
+  if (parsed.out_of_scope !== undefined) {
+    warnings.push(
+      "Deprecated field 'out_of_scope' detected in PRD YAML; use 'non_goals' instead."
+    )
+  }
+  return warnings
+}
+
 /** Validate YAML content and return parsed object. */
 const validateYaml = (
   name: string,
   content: string,
-  expectedKind?: DocKind
-): Record<string, unknown> => {
+  expectedKind?: DocKind,
+  options?: ValidateYamlOptions
+): YamlValidationResult => {
+  const enforceContentSchema = options?.enforceContentSchema === true
   let parsed: unknown
   try {
     parsed = parseYaml(content)
@@ -186,6 +341,32 @@ const validateYaml = (
       ? (parsedObject.kind as DocKind)
       : null
   const effectiveKind = expectedKind ?? yamlKind
+  const warnings = collectSchemaWarnings(effectiveKind, parsedObject)
+
+  if (enforceContentSchema && effectiveKind) {
+    const contentSchema = DOC_CONTENT_SCHEMAS[
+      effectiveKind
+    ] as Schema.Schema<unknown, unknown, never>
+    const normalizedForDecode = normalizeForSchemaValidation(
+      effectiveKind,
+      parsedObject
+    )
+    const decoded = Schema.decodeUnknownEither(contentSchema)(normalizedForDecode)
+    if (Either.isLeft(decoded)) {
+      const detail =
+        typeof decoded.left === "object" &&
+        decoded.left !== null &&
+        "message" in decoded.left &&
+        typeof decoded.left.message === "string"
+          ? decoded.left.message
+          : String(decoded.left)
+
+      throw new InvalidDocYamlError({
+        name,
+        reason: `YAML schema validation failed for kind '${effectiveKind}': ${detail}`,
+      })
+    }
+  }
 
   if (effectiveKind === "prd" && parsedObject.ears_requirements !== undefined) {
     if (!Array.isArray(parsedObject.ears_requirements)) {
@@ -216,10 +397,10 @@ const validateYaml = (
       reason:
         "EARS: PRDs with legacy 'requirements' must also define a non-empty " +
         "'ears_requirements' array. EARS-structured requirements are mandatory for all PRDs.",
-    })
+      })
   }
 
-  return parsedObject
+  return { parsed: parsedObject, warnings }
 }
 
 /** Validate doc kind from YAML. */
@@ -520,7 +701,7 @@ export const DocServiceLive = Layer.effect(
         throw new DocNotFoundError({ name: doc.name })
       }
       const yamlContent = readFileSync(yamlPath, "utf8")
-      const parsed = validateYaml(doc.name, yamlContent, doc.kind)
+      const { parsed } = validateYaml(doc.name, yamlContent, doc.kind)
       const md = renderDocToMarkdown(parsed, doc.kind)
       const mdPath = resolveMdPath(docsPath, doc.kind, doc.name)
       ensureDir(mdPath)
@@ -667,7 +848,7 @@ export const DocServiceLive = Layer.effect(
           return []
         }
         const yamlContent = readFileSync(yamlPath, "utf8")
-        const parsed = validateYaml(doc.name, yamlContent, doc.kind)
+        const { parsed } = validateYaml(doc.name, yamlContent, doc.kind)
         const explicit = extractExplicitInvariants(parsed.invariants)
         const derived = [
           ...deriveEarsInvariants(doc, parsed),
@@ -739,7 +920,9 @@ export const DocServiceLive = Layer.effect(
               })
             )
           }
-          const parsed = validateYaml(name, yamlContent, kind)
+          const { parsed } = validateYaml(name, yamlContent, kind, {
+            enforceContentSchema: true,
+          })
           validateKind(name, parsed, kind)
 
           const existing = yield* docRepo.findByName(name)
@@ -800,7 +983,9 @@ export const DocServiceLive = Layer.effect(
               new DocLockedError({ name, version: doc.version })
             )
           }
-          const parsed = validateYaml(name, yamlContent, doc.kind)
+          const { parsed } = validateYaml(name, yamlContent, doc.kind, {
+            enforceContentSchema: true,
+          })
           validateKind(name, parsed, doc.kind)
 
           const hash = computeDocHash(yamlContent)
