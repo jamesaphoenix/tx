@@ -9,10 +9,12 @@ interface DocGraphProps {
 }
 
 const KIND_COLORS: Record<string, string> = {
-  overview: "#60A5FA", // blue-400
-  prd: "#34D399",      // green-400
-  design: "#A78BFA",   // purple-400
-  task: "#FBBF24",     // yellow-400
+  overview: "#60A5FA",       // blue-400
+  prd: "#34D399",            // green-400
+  design: "#A78BFA",         // purple-400
+  requirement: "#F472B6",    // pink-400
+  system_design: "#FB923C",  // orange-400
+  task: "#FBBF24",           // yellow-400
 }
 
 interface PositionedNode extends DocGraphNode {
@@ -28,21 +30,21 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], canvasWidth 
   if (nodes.length === 0) return []
 
   // Group by kind for vertical layering
-  const layers: Record<string, DocGraphNode[]> = { overview: [], prd: [], design: [], task: [] }
+  const layers: Record<string, DocGraphNode[]> = { overview: [], requirement: [], prd: [], design: [], system_design: [], task: [] }
   for (const node of nodes) {
     const kind = node.kind in layers ? node.kind : "task"
     layers[kind].push(node)
   }
 
   const positioned: PositionedNode[] = []
-  const layerOrder = ["overview", "prd", "design", "task"]
-  const yStep = canvasHeight / 5
-  const layerY: Record<string, number> = {
-    overview: yStep,
-    prd: yStep * 2,
-    design: yStep * 3,
-    task: yStep * 4,
-  }
+  const layerOrder = ["overview", "requirement", "prd", "system_design", "design", "task"]
+  // Filter to only layers that have nodes, then space them evenly
+  const activeLayers = layerOrder.filter((kind) => layers[kind].length > 0)
+  const yStep = canvasHeight / (activeLayers.length + 1)
+  const layerY: Record<string, number> = {}
+  activeLayers.forEach((kind, i) => {
+    layerY[kind] = yStep * (i + 1)
+  })
 
   for (const kind of layerOrder) {
     const layerNodes = layers[kind]
@@ -180,6 +182,8 @@ export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphPro
             <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.overview }} /> Overview</div>
             <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.prd }} /> PRD</div>
             <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.design }} /> Design</div>
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.requirement }} /> Requirement</div>
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.system_design }} /> System Design</div>
             <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KIND_COLORS.task }} /> Task</div>
           </div>
         </div>

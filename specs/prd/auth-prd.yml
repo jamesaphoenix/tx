@@ -1,0 +1,27 @@
+kind: prd
+name: auth-prd
+title: "Auth PRD"
+status: changing
+
+problem: |
+  Describe the problem.
+
+solution: |
+  Describe the solution approach.
+
+ears_requirements:
+  - id: EARS-AUTHPRD-001
+    pattern: ubiquitous
+    system: the system
+    response: do something important
+    priority: must
+
+# Optional legacy requirements list (kept for backward compatibility)
+# requirements:
+#   - Requirement 1
+
+acceptance_criteria:
+  - Criterion 1
+
+out_of_scope:
+  - Item 1

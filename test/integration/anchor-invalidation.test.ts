@@ -20,8 +20,8 @@
  * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
  * Previously created a new database per test, now creates 1 per describe block.
  *
- * @see docs/prd/PRD-017-invalidation-maintenance.md
- * @see docs/design/DD-017-invalidation-maintenance.md
+ * @see specs/prd/PRD-017-invalidation-maintenance.md
+ * @see specs/design/DD-017-invalidation-maintenance.md
  */
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"

@@ -2,7 +2,7 @@
 
 **Headless, Local Infra for AI Agents.** Primitives, not frameworks.
 
-**Full documentation**: [docs/index.md](docs/index.md) | **Published docs**: [apps/docs/](apps/docs/)
+**Full documentation**: [specs/index.md](specs/index.md) | **Published docs**: [apps/docs/](apps/docs/)
 
 ---
 
@@ -181,7 +181,7 @@ interface TaskWithDeps extends Task {
 
 **NEVER** return a bare `Task` to external consumers. Hardcoding `blocks: []` is a bug.
 
-→ [DD-005](docs/design/DD-005-mcp-agent-sdk-integration.md), [PRD-007](docs/prd/PRD-007-multi-interface-integration.md)
+→ [DD-005](specs/design/DD-005-mcp-agent-sdk-integration.md), [PRD-007](specs/prd/PRD-007-multi-interface-integration.md)
 
 ### RULE 2: Compaction MUST export learnings to a file agents can read
 
@@ -193,7 +193,7 @@ interface TaskWithDeps extends Task {
 - Learning bullet point 2
 ```
 
-→ [PRD-006](docs/prd/PRD-006-task-compaction-learnings.md), [DD-006](docs/design/DD-006-llm-integration.md)
+→ [PRD-006](specs/prd/PRD-006-task-compaction-learnings.md), [DD-006](specs/design/DD-006-llm-integration.md)
 
 ### RULE 3: All core paths MUST have integration tests with SHA256 fixtures
 
@@ -202,7 +202,7 @@ Unit tests are insufficient. Integration tests MUST use:
 - Deterministic SHA256-based IDs via `fixtureId(name)`
 - Coverage: CRUD, ready detection, dependencies, hierarchy, MCP tools
 
-→ [DD-007](docs/design/DD-007-testing-strategy.md)
+→ [DD-007](specs/design/DD-007-testing-strategy.md)
 
 ### RULE 4: No circular dependencies, no self-blocking
 
@@ -210,7 +210,7 @@ Enforce at database level:
 - `CHECK (blocker_id != blocked_id)` — no self-blocking
 - BFS cycle detection at insert time — no A→B→A chains
 
-→ [DD-004](docs/design/DD-004-ready-detection-algorithm.md), [PRD-003](docs/prd/PRD-003-dependency-blocking-system.md)
+→ [DD-004](specs/design/DD-004-ready-detection-algorithm.md), [PRD-003](specs/prd/PRD-003-dependency-blocking-system.md)
 
 ### RULE 5: Effect-TS patterns are mandatory
 
@@ -220,7 +220,7 @@ All business logic MUST use Effect-TS:
 - Operations: return `Effect<T, E>`
 - No raw try/catch or untyped Promises in service code
 
-→ [DD-002](docs/design/DD-002-effect-ts-service-layer.md)
+→ [DD-002](specs/design/DD-002-effect-ts-service-layer.md)
 
 ### RULE 6: Telemetry MUST NOT block operations
 
@@ -229,7 +229,7 @@ All business logic MUST use Effect-TS:
 - No config → `TelemetryNoop` (zero overhead)
 - Telemetry errors: catch and log, never propagate
 
-→ [PRD-008](docs/prd/PRD-008-observability-opentelemetry.md), [DD-008](docs/design/DD-008-opentelemetry-integration.md)
+→ [PRD-008](specs/prd/PRD-008-observability-opentelemetry.md), [DD-008](specs/design/DD-008-opentelemetry-integration.md)
 
 ### RULE 7: ANTHROPIC_API_KEY is optional for core commands
 
@@ -240,7 +240,7 @@ LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Cor
 | `AppMinimalLive` | No | CLI core, MCP, Agent SDK |
 | `AppLive` | Yes | dedupe, compact, reprioritize |
 
-→ [DD-002](docs/design/DD-002-effect-ts-service-layer.md), [DD-006](docs/design/DD-006-llm-integration.md)
+→ [DD-002](specs/design/DD-002-effect-ts-service-layer.md), [DD-006](specs/design/DD-006-llm-integration.md)
 
 ### RULE 8: Tests use singleton database - NEVER create DB per test
 
@@ -455,15 +455,30 @@ A task is **ready** when: status is workable AND all blockers have status `done`
 
 | Decision | Choice | Doc |
 |----------|--------|-----|
-| Storage | SQLite (better-sqlite3, WAL) | [DD-001](docs/design/DD-001-data-model-storage.md) |
-| Sync | JSONL git-backed | [DD-009](docs/design/DD-009-jsonl-git-sync.md) |
-| Framework | Effect-TS | [DD-002](docs/design/DD-002-effect-ts-service-layer.md) |
-| CLI | @effect/cli | [DD-003](docs/design/DD-003-cli-implementation.md) |
-| MCP | @modelcontextprotocol/sdk | [DD-005](docs/design/DD-005-mcp-agent-sdk-integration.md) |
-| IDs | SHA256-based `tx-[a-z0-9]{6,8}` | [DD-001](docs/design/DD-001-data-model-storage.md) |
-| Testing | Vitest + SHA256 fixtures | [DD-007](docs/design/DD-007-testing-strategy.md) |
+| Storage | SQLite (better-sqlite3, WAL) | [DD-001](specs/design/DD-001-data-model-storage.md) |
+| Sync | JSONL git-backed | [DD-009](specs/design/DD-009-jsonl-git-sync.md) |
+| Framework | Effect-TS | [DD-002](specs/design/DD-002-effect-ts-service-layer.md) |
+| CLI | @effect/cli | [DD-003](specs/design/DD-003-cli-implementation.md) |
+| MCP | @modelcontextprotocol/sdk | [DD-005](specs/design/DD-005-mcp-agent-sdk-integration.md) |
+| IDs | SHA256-based `tx-[a-z0-9]{6,8}` | [DD-001](specs/design/DD-001-data-model-storage.md) |
+| Testing | Vitest + SHA256 fixtures | [DD-007](specs/design/DD-007-testing-strategy.md) |
 | Dashboard | Vite + React | `apps/dashboard` |
 | Docs Site | Next.js + Fumadocs | `apps/docs` |
+
+### Orchestration Status
+
+Orchestration status is a computed second layer alongside workflow status, derived from `task_claims` at enrichment time:
+
+| Status | Meaning |
+|--------|---------|
+| `null` | No claims system in use (single-agent workflows) |
+| `unclaimed` | No active claim on the task |
+| `claimed` | Worker has reserved the task via `tx claim` |
+| `running` | Claimed + task status is `active` |
+| `lease_expired` | Claim lease has expired |
+| `released` | Claim was explicitly released |
+
+Visible in `tx show`, `tx list`, and all API responses via the `orchestrationStatus`, `claimedBy`, `claimExpiresAt`, and `failedAttempts` fields on `TaskWithDeps`.
 
 ### CLI Commands
 
@@ -704,10 +719,10 @@ Do not bypass hooks in this workflow. Commits and pushes must run with verificat
 
 | Tier | Directory | Prefix | Focus |
 |------|-----------|--------|-------|
-| Requirements / Use Cases | `docs/requirements/` | `REQ-NNN` | Behavioral requirements and use-case flows |
-| Product Requirements Document | `docs/prd/` | `PRD-NNN` | Scope, success criteria, and rollout boundaries |
-| Design Document | `docs/design/` | `DD-NNN` | Technical implementation approach |
-| System Design | `docs/system-design/` | `SD-NNN` | Cross-cutting architecture constraints and patterns |
+| Requirements / Use Cases | `specs/requirements/` | `REQ-NNN` | Behavioral requirements and use-case flows |
+| Product Requirements Document | `specs/prd/` | `PRD-NNN` | Scope, success criteria, and rollout boundaries |
+| Design Document | `specs/design/` | `DD-NNN` | Technical implementation approach |
+| System Design | `specs/system-design/` | `SD-NNN` | Cross-cutting architecture constraints and patterns |
 
 `tx doc` currently scaffolds `overview`, `prd`, and `design` docs. REQ/SD are documentation conventions managed as markdown files.
 
@@ -743,7 +758,7 @@ MUST be formalized into the appropriate documentation layers, not left as a stan
 
 **Do NOT** leave plans as standalone `plan.md` files.
 
-### REQ Structure (docs/requirements/REQ-NNN-*.md)
+### REQ Structure (specs/requirements/REQ-NNN-*.md)
 
 ```markdown
 # REQ-NNN: Feature Name
@@ -776,7 +791,7 @@ One-sentence behavioral description.
 - Designed in: DD-NNN
 ```
 
-### PRD Structure (docs/prd/PRD-NNN-*.md)
+### PRD Structure (specs/prd/PRD-NNN-*.md)
 
 ```markdown
 # PRD-NNN: Feature Name
@@ -800,7 +815,7 @@ How do we know it is done?
 ## Out of Scope
 ```
 
-### DD Structure (docs/design/DD-NNN-*.md)
+### DD Structure (specs/design/DD-NNN-*.md)
 
 ```markdown
 # DD-NNN: Feature Name
@@ -885,12 +900,12 @@ How existing data/users transition
 
 ## References (optional)
 - Plan file: `plan.md` or `codex-plan.md` (if originated from a planning session)
-- REQ: `docs/requirements/REQ-NNN-*.md` (when available)
-- SD: `docs/system-design/SD-NNN-*.md` (when relevant)
+- REQ: `specs/requirements/REQ-NNN-*.md` (when available)
+- SD: `specs/system-design/SD-NNN-*.md` (when relevant)
 - CLAUDE.md section: Link to relevant DOCTRINE rules
 ```
 
-### SD Structure (docs/system-design/SD-NNN-*.md)
+### SD Structure (specs/system-design/SD-NNN-*.md)
 
 ```markdown
 # SD-NNN: Pattern Name
@@ -917,8 +932,8 @@ Architecture, patterns, data flow, service boundaries.
 
 ### Linking Convention
 
-- REQs reference scoped PRDs: `→ [PRD-NNN](docs/prd/PRD-NNN-*.md)`
-- PRDs reference REQ + DD: `→ [REQ-NNN](docs/requirements/REQ-NNN-*.md)`, `→ [DD-NNN](docs/design/DD-NNN-*.md)`
+- REQs reference scoped PRDs: `→ [PRD-NNN](specs/prd/PRD-NNN-*.md)`
+- PRDs reference REQ + DD: `→ [REQ-NNN](specs/requirements/REQ-NNN-*.md)`, `→ [DD-NNN](specs/design/DD-NNN-*.md)`
 - DDs reference PRD and relevant REQ/SD documents
 - SDs reference all applicable REQ/PRD/DD documents in `## Applies To`
 - CLAUDE.md DOCTRINE rules should link to relevant PRD/DD (and REQ/SD when applicable)
@@ -946,17 +961,17 @@ Existing PRDs are not retroactively migrated; apply the 4-tier model to new work
 
 ### Internal Documentation (4 Tiers)
 
-- **Requirements / Use Cases (REQs)**: [docs/requirements/](docs/requirements/)
-- **Product Requirements Docs (PRDs)**: [docs/prd/](docs/prd/)
-- **Design Docs (DDs)**: [docs/design/](docs/design/)
-- **System Design (SDs)**: [docs/system-design/](docs/system-design/)
-- **Full index**: [docs/index.md](docs/index.md)
+- **Requirements / Use Cases (REQs)**: [specs/requirements/](specs/requirements/)
+- **Product Requirements Docs (PRDs)**: [specs/prd/](specs/prd/)
+- **Design Docs (DDs)**: [specs/design/](specs/design/)
+- **System Design (SDs)**: [specs/system-design/](specs/system-design/)
+- **Full index**: [specs/index.md](specs/index.md)
 
 ### Published User Docs
 
 The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
-- **Source REQ/PRD/DD/SD docs**: `docs/` directory — internal artifacts linked from CLAUDE.md
+- **Source REQ/PRD/DD/SD docs**: `specs/` directory — internal artifacts linked from CLAUDE.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
 
 <tx-pin id="gate.docs-to-build">

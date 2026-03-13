@@ -27,7 +27,14 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: false,
+    groupContext: null,
+    effectiveGroupContext: null,
+    effectiveGroupContextSourceTaskId: null,
     labels: [],
+    orchestrationStatus: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    failedAttempts: 0,
     ...overrides,
   }
 }
@@ -329,9 +336,9 @@ describe("Task CMD+K operations", () => {
     })
 
     await runCommand("Set status: Backlog")
-    await runCommand("Set status: In Progress")
+    await runCommand("Set status: Active")
     await runCommand("Set status: Done")
-    await runCommand("Cycle status (Backlog → In Progress → Done)")
+    await runCommand("Cycle status (Backlog → Ready → … → Done)")
 
     await waitFor(() => {
       const statuses = patchPayloads.filter((payload) => payload.id === "tx-parent-cmdk").map((payload) => payload.status)
@@ -373,7 +380,7 @@ describe("Task CMD+K operations", () => {
     })
 
     await runCommand("Set selected child tasks to Backlog")
-    await runCommand("Set selected child tasks to In Progress")
+    await runCommand("Set selected child tasks to Active")
     await runCommand("Set selected child tasks to Done")
 
     await runCommand("Open child: Child CMDK A")
@@ -612,7 +619,7 @@ describe("Task CMD+K operations", () => {
     expect(screen.getByRole("checkbox")).not.toBeChecked()
 
     await runCommand("Set status: Backlog")
-    await runCommand("Set status: In Progress")
+    await runCommand("Set status: Active")
     await runCommand("Set status: Done")
 
     await runCommand("Add label: Bug")
@@ -763,7 +770,7 @@ describe("Task CMD+K operations", () => {
     expect(writeText).toHaveBeenCalled()
 
     await runCommand("Set selected tasks to Backlog")
-    await runCommand("Set selected tasks to In Progress")
+    await runCommand("Set selected tasks to Active")
     await runCommand("Set selected tasks to Done")
 
     await waitFor(() => {

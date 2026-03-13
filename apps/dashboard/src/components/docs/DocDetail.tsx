@@ -11,6 +11,8 @@ const KIND_LABELS: Record<string, string> = {
   overview: "OVERVIEW DOCUMENT",
   prd: "PRODUCT REQUIREMENTS",
   design: "DESIGN DOCUMENT",
+  requirement: "REQUIREMENT",
+  system_design: "SYSTEM DESIGN",
 }
 
 function StatusBadge({ status }: { status: string }) {

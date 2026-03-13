@@ -33,6 +33,19 @@ export const TASK_STATUSES = [
 export const TASK_ASSIGNEE_TYPES = ["human", "agent"] as const;
 
 /**
+ * Orchestration status values derived from task_claims.
+ * This is a computed second layer alongside the workflow status.
+ * Not stored in the database — derived at enrichment time from claim state.
+ */
+export const ORCHESTRATION_STATUSES = [
+  "unclaimed",      // No active claim
+  "claimed",        // Claim exists, worker reserved
+  "running",        // Claim active + task status is "active"
+  "lease_expired",  // Claim was active but lease has expired
+  "released",       // Claim explicitly released
+] as const;
+
+/**
  * Regex pattern for valid task IDs.
  */
 export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,12}$/;
@@ -63,6 +76,10 @@ export type TaskStatus = typeof TaskStatusSchema.Type
 /** Task assignment intent type. */
 export const TaskAssigneeTypeSchema = Schema.Literal(...TASK_ASSIGNEE_TYPES)
 export type TaskAssigneeType = typeof TaskAssigneeTypeSchema.Type
+
+/** Orchestration status — derived from claim state, not stored directly. */
+export const OrchestrationStatusSchema = Schema.Literal(...ORCHESTRATION_STATUSES)
+export type OrchestrationStatus = typeof OrchestrationStatusSchema.Type
 
 /** Task ID - branded string matching tx-[a-z0-9]{6,12}. */
 export const TaskIdSchema = Schema.String.pipe(
@@ -114,6 +131,14 @@ export const TaskWithDepsSchema = Schema.Struct({
   effectiveGroupContext: Schema.NullOr(Schema.String),
   /** Source task ID that provided effectiveGroupContext */
   effectiveGroupContextSourceTaskId: Schema.NullOr(TaskIdSchema),
+  /** Orchestration status derived from claims (null when claims not in use) */
+  orchestrationStatus: Schema.NullOr(OrchestrationStatusSchema),
+  /** Worker ID holding the active claim (null when no claim) */
+  claimedBy: Schema.NullOr(Schema.String),
+  /** Lease expiry time for the active claim (null when no claim) */
+  claimExpiresAt: Schema.NullOr(Schema.DateFromSelf),
+  /** Number of failed attempts for this task */
+  failedAttempts: Schema.Number.pipe(Schema.int()),
 })
 export type TaskWithDeps = typeof TaskWithDepsSchema.Type
 

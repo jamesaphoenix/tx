@@ -59,7 +59,7 @@ describe("CLI golden path", () => {
 
     writeRelative(cwd, ".tx/config.toml", [
       "[docs]",
-      'path = ".tx/docs"',
+      'path = "specs"',
       "require_ears = false",
       "",
       "[spec]",
@@ -95,7 +95,7 @@ describe("CLI golden path", () => {
     expect(readyAfter.map((task) => task.id)).toContain(implementTask.id)
 
     expectOk(runTx(cwd, ["doc", "add", "prd", "auth-flow", "--title", "Auth Flow"]), "tx doc add prd auth-flow")
-    writeRelative(cwd, ".tx/docs/prd/auth-flow.yml", [
+    writeRelative(cwd, "specs/prd/auth-flow.yml", [
       "kind: prd",
       "name: auth-flow",
       'title: "Auth Flow"',

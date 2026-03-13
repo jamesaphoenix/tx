@@ -86,6 +86,14 @@ export class ClaimService extends Context.Tag("ClaimService")<
     ) => Effect.Effect<TaskClaim | null, DatabaseError>
 
     /**
+     * Batch-fetch active claims for multiple task IDs.
+     * Returns a map of taskId → TaskClaim for tasks that have active claims.
+     */
+    readonly getActiveClaimsForTasks: (
+      taskIds: readonly string[]
+    ) => Effect.Effect<Map<string, TaskClaim>, DatabaseError>
+
+    /**
      * Get active claims on tasks that are not in 'active' status.
      * These are orphaned claims left behind when claim release fails
      * after task completion.
@@ -251,6 +259,11 @@ export const ClaimServiceLive = Layer.effect(
       getActiveClaim: (taskId) =>
         Effect.gen(function* () {
           return yield* claimRepo.findActiveByTaskId(taskId)
+        }),
+
+      getActiveClaimsForTasks: (taskIds) =>
+        Effect.gen(function* () {
+          return yield* claimRepo.findActiveByTaskIds(taskIds)
         }),
 
       getOrphanedClaims: () =>

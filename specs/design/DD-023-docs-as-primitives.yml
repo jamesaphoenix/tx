@@ -1,0 +1,599 @@
+kind: design
+name: DD-023-docs-as-primitives
+title: "Docs as Primitives Design"
+status: changing
+version: 1
+implements: PRD-023-docs-as-primitives
+
+problem_definition: |
+  tx needs a structured document layer where PRDs, design docs, and system overviews
+  are machine-queryable primitives rather than opaque markdown files. This enables
+  agents to discover relevant design context, trace tasks to requirements, and
+  enforce invariants programmatically.
+
+goals:
+  - YAML source of truth with database metadata layer
+  - Typed doc-doc links forming overview->prd->design DAG
+  - Task-doc links connecting implementation to requirements
+  - First-class invariants extracted from YAML and stored in DB
+  - Deterministic rendering (YAML to markdown) on every mutation
+  - Dashboard visualization with interactive doc graph
+
+architecture: |
+  ## Three-Layer Architecture
+
+  ```
+  CLI Commands (tx doc add/edit/render/lock/link/attach)
+       |
+  DocService (business logic, file I/O, rendering)
+       |
+  DocRepository (SQLite CRUD, links, invariants)
+       |
+  SQLite (docs, doc_links, task_doc_links, invariants tables)
+  ```
+
+  ## Disk-First Storage
+
+  YAML files in `specs/` are the source of truth:
+  - Overview docs: `specs/{name}.yml` (root level)
+  - PRD docs: `specs/prd/{name}.yml`
+  - Design docs: `specs/design/{name}.yml`
+
+  Database stores only metadata (hash, title, status, version) and relationships
+  (doc links, task links, invariants). Content lives on disk.
+
+  ## Auto-Render Pipeline
+
+  Every mutation (create/update/lock/version/patch) triggers:
+  1. Write YAML to disk
+  2. Insert/update DB metadata
+  3. Render YAML to `.md` (non-fatal on error)
+  4. Regenerate `index.yml` + `index.md`
+
+  ## Doc Graph
+
+  Dashboard fetches graph data via `getDocGraph()`:
+  - Nodes: `doc:{id}` (with kind, status, label) and `task:{id}`
+  - Edges: doc-doc links (overview_to_prd, prd_to_design, design_patch)
+    and task-doc links (implements, references)
+
+interfaces: |
+  ## Types (packages/types/src/doc.ts)
+
+  All domain types use Effect Schema (DOCTRINE Rule 10):
+
+  ```typescript
+  // Core enums
+  const DOC_KINDS = ["overview", "prd", "design"] as const
+  const DOC_STATUSES = ["changing", "locked"] as const
+  const DOC_LINK_TYPES = ["overview_to_prd", "prd_to_design", "design_patch", "related"] as const
+  const TASK_DOC_LINK_TYPES = ["implements", "references"] as const
+  const INVARIANT_ENFORCEMENT_TYPES = ["integration_test", "linter", "llm_as_judge"] as const
+
+  // Branded types via Effect Schema
+  type DocId = number & Brand<"DocId">        // Schema.Number.pipe(Schema.brand("DocId"))
+  type DocKind = "overview" | "prd" | "design"
+  type DocStatus = "changing" | "locked"
+  type DocLinkType = "overview_to_prd" | "prd_to_design" | "design_patch" | "related"
+  type InvariantId = string & Brand<"InvariantId">
+
+  // Domain schemas
+  const DocSchema = Schema.Struct({
+    id: DocIdSchema, hash: Schema.String, kind: DocKindSchema,
+    name: Schema.String, title: Schema.String, version: Schema.Number,
+    status: DocStatusSchema, filePath: Schema.String,
+    parentDocId: Schema.NullOr(DocIdSchema),
+    createdAt: Schema.String, lockedAt: Schema.NullOr(Schema.String),
+    metadata: Schema.NullOr(Schema.String),
+  })
+
+  const DocLinkSchema = Schema.Struct({
+    fromDocId: DocIdSchema, toDocId: DocIdSchema,
+    linkType: DocLinkTypeSchema, createdAt: Schema.String,
+  })
+
+  const InvariantSchema = Schema.Struct({
+    id: InvariantIdSchema, rule: Schema.String,
+    enforcement: InvariantEnforcementSchema,
+    docId: DocIdSchema, subsystem: Schema.NullOr(Schema.String),
+    testRef: Schema.NullOr(Schema.String), status: InvariantStatusSchema,
+    createdAt: Schema.String,
+  })
+  ```
+
+  Runtime validators follow the `assertX()` pattern (no unsafe `as` casts):
+
+  ```typescript
+  assertDocKind(kind: string): DocKind     // throws InvalidDocKindError
+  assertDocStatus(status: string): DocStatus
+  assertDocLinkType(linkType: string): DocLinkType
+  ```
+
+  ## DocRepository (packages/core/src/repo/doc-repo.ts)
+
+  Effect-TS service tag with `Context.Tag("DocRepository")`:
+
+  ```typescript
+  // Doc CRUD
+  insert(input: InsertDocInput): Effect<Doc, DatabaseError>
+  findById(id: number): Effect<Doc | null, DatabaseError>
+  findByName(name: string, version?: number): Effect<Doc | null, DatabaseError>
+  findAll(filter?: { kind?: DocKind; status?: DocStatus }): Effect<readonly Doc[], DatabaseError>
+  update(id: number, input: UpdateDocInput): Effect<void, DatabaseError>
+  lock(id: number, lockedAt: string): Effect<void, DatabaseError>
+  remove(id: number): Effect<void, DatabaseError>
+
+  // Doc links
+  createLink(fromDocId: number, toDocId: number, linkType: DocLinkType): Effect<DocLink, DatabaseError>
+  getLinksFrom(docId: number): Effect<readonly DocLink[], DatabaseError>
+  getLinksTo(docId: number): Effect<readonly DocLink[], DatabaseError>
+  getAllLinks(): Effect<readonly DocLink[], DatabaseError>
+
+  // Task-doc links
+  createTaskLink(taskId: string, docId: number, linkType: TaskDocLinkType): Effect<TaskDocLink, DatabaseError>
+  getTaskLinksForDoc(docId: number): Effect<readonly TaskDocLink[], DatabaseError>
+  getDocForTask(taskId: string): Effect<Doc | null, DatabaseError>
+  getUnlinkedTaskIds(): Effect<readonly string[], DatabaseError>
+
+  // Invariants
+  upsertInvariant(input: UpsertInvariantInput): Effect<Invariant, DatabaseError>
+  findInvariantById(id: string): Effect<Invariant | null, DatabaseError>
+  findInvariants(filter?: { docId?: number; subsystem?: string; enforcement?: string }): Effect<readonly Invariant[], DatabaseError>
+  deprecateInvariantsNotIn(docId: number, activeIds: readonly string[]): Effect<void, DatabaseError>
+  insertInvariantCheck(invariantId: string, passed: boolean, details: string | null, durationMs: number | null): Effect<InvariantCheck, DatabaseError>
+  getInvariantChecks(invariantId: string, limit?: number): Effect<readonly InvariantCheck[], DatabaseError>
+  countInvariantsByDoc(docId: number): Effect<number, DatabaseError>
+  ```
+
+  ## DocService (packages/core/src/services/doc-service.ts)
+
+  Effect-TS service tag with `Context.Tag("DocService")`:
+
+  ```typescript
+  // Doc lifecycle
+  create(input: { kind: DocKind; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Effect<Doc, ValidationError | InvalidDocYamlError | DatabaseError>
+  get(name: string, version?: number): Effect<Doc, DocNotFoundError | DatabaseError>
+  update(name: string, yamlContent: string): Effect<Doc, DocNotFoundError | DocLockedError | InvalidDocYamlError | DatabaseError>
+  lock(name: string): Effect<Doc, DocNotFoundError | DatabaseError>
+  list(filter?: { kind?: DocKind; status?: DocStatus }): Effect<readonly Doc[], DatabaseError>
+  remove(name: string): Effect<void, DocNotFoundError | DocLockedError | DatabaseError>
+
+  // Rendering
+  render(name?: string): Effect<readonly string[], DocNotFoundError | InvalidDocYamlError | DatabaseError>
+
+  // Versioning
+  createVersion(name: string): Effect<Doc, DocNotFoundError | ValidationError | DatabaseError>
+
+  // Linking
+  linkDocs(fromName: string, toName: string, linkType?: DocLinkType): Effect<DocLink, DocNotFoundError | ValidationError | DatabaseError>
+  attachTask(taskId: string, docName: string, linkType?: "implements" | "references"): Effect<void, DocNotFoundError | DatabaseError>
+  createPatch(designName: string, patchName: string, patchTitle: string): Effect<Doc, DocNotFoundError | ValidationError | InvalidDocYamlError | DatabaseError>
+
+  // Validation & drift
+  validate(): Effect<readonly string[], DatabaseError>
+  detectDrift(name: string): Effect<readonly string[], DocNotFoundError | DatabaseError>
+
+  // Index
+  generateIndex(): Effect<void, DatabaseError>
+
+  // Invariants
+  syncInvariants(docName?: string): Effect<readonly Invariant[], DocNotFoundError | InvalidDocYamlError | DatabaseError>
+  listInvariants(filter?: { subsystem?: string; enforcement?: string }): Effect<readonly Invariant[], DatabaseError>
+  recordInvariantCheck(id: string, passed: boolean, details?: string, durationMs?: number): Effect<InvariantCheck, InvariantNotFoundError | DatabaseError>
+
+  // Graph data (for dashboard)
+  getDocGraph(): Effect<DocGraph, DatabaseError>
+  ```
+
+  ## Renderer (packages/core/src/utils/doc-renderer.ts)
+
+  Pure functions, no Effect dependency:
+
+  ```typescript
+  renderDocToMarkdown(parsed: ParsedYaml, kind: DocKind): string
+  renderIndexToMarkdown(indexData: { docs: IndexEntry[]; links: LinkEntry[] }): string
+  ```
+
+  Deterministic section ordering per kind:
+  - **overview**: problem_definition, subsystems, object_model, storage_schema, invariants, failure_modes, edge_cases, constraints, cross_cutting, data_retention
+  - **prd**: problem, solution, requirements, acceptance_criteria, out_of_scope
+  - **design**: problem_definition, goals, architecture, interfaces, implementation, data_model, invariants, failure_modes, edge_cases, work_breakdown, retention, testing_strategy, open_questions
+
+  ## Utilities
+
+  ```typescript
+  // packages/core/src/utils/doc-hash.ts
+  computeDocHash(content: string): string  // SHA256 of normalized (trimmed, \r\n -> \n) content
+
+  // packages/core/src/utils/toml-config.ts
+  readTxConfig(cwd?: string): TxConfig  // Reads .tx/config.toml, defaults to { docs: { path: "specs" } }
+  ```
+
+  ## Multi-Interface Surface
+
+  All doc operations are exposed across four interfaces:
+
+  ### CLI (apps/cli/src/commands/doc.ts)
+  - `tx doc add <kind> <name> --title <title>` — create doc with kind-specific YAML template
+  - `tx doc edit <name>` — update doc YAML content
+  - `tx doc show <name>` — display doc detail with rendered content
+  - `tx doc list [--kind] [--status]` — list docs with optional filters
+  - `tx doc render [name]` — render single or all docs to markdown
+  - `tx doc lock <name>` — lock doc (make immutable)
+  - `tx doc version <name>` — create new version from locked doc
+  - `tx doc link <from> <to>` — link two docs (auto-infers link type)
+  - `tx doc attach <taskId> <docName>` — link task to doc
+
+  ### MCP Tools (apps/mcp-server/src/tools/doc.ts)
+  - `tx_doc_list` — list docs with optional kind/status filter
+  - `tx_doc_get` — get doc by name (optional version)
+  - `tx_doc_create` — create doc (kind, name, title, yamlContent)
+  - `tx_doc_update` — update doc YAML content
+  - `tx_doc_lock` — lock doc (make immutable)
+  - `tx_doc_link` — link two docs
+  - `tx_doc_render` — render doc(s) to markdown
+
+  ### REST API (apps/api-server/src/routes/docs.ts)
+  - `GET /api/docs` — list docs with optional kind/status query params
+  - `GET /api/docs/:name` — get doc detail with mdContent, links, invariants
+  - `POST /api/docs` — create doc
+  - `PATCH /api/docs/:name` — update doc YAML
+  - `POST /api/docs/:name/lock` — lock doc
+  - `POST /api/docs/:name/link` — link to another doc
+  - `POST /api/docs/:name/render` — render to markdown
+  - `GET /api/docs/graph` — get graph data (nodes + edges)
+
+  ### Agent SDK (apps/agent-sdk/src/client.ts)
+  ```typescript
+  tx.docs.list(options?: { kind?: string; status?: string }): Promise<Doc[]>
+  tx.docs.get(name: string): Promise<DocDetail>
+  tx.docs.create(input: { kind: string; name: string; title: string; yamlContent: string }): Promise<Doc>
+  tx.docs.update(name: string, yamlContent: string): Promise<Doc>
+  tx.docs.lock(name: string): Promise<Doc>
+  tx.docs.link(from: string, to: string, linkType?: string): Promise<void>
+  tx.docs.render(name?: string): Promise<string[]>
+  ```
+
+implementation: |
+  ## File Locations
+
+  | Layer | Path | Purpose |
+  |-------|------|---------|
+  | Types | `packages/types/src/doc.ts` | Effect Schema types, branded IDs, runtime validators |
+  | Migration | `migrations/022_docs_as_primitives.sql` | CREATE TABLE docs, doc_links, task_doc_links, invariants |
+  | Repository | `packages/core/src/repo/doc-repo.ts` | SQLite CRUD via `@effect/sql-sqlite-bun` |
+  | Service | `packages/core/src/services/doc-service.ts` | Business logic, file I/O, rendering orchestration |
+  | Renderer | `packages/core/src/utils/doc-renderer.ts` | Pure YAML-to-MD rendering, kind-specific section ordering |
+  | Hash | `packages/core/src/utils/doc-hash.ts` | SHA256 content-addressed hashing |
+  | Config | `packages/core/src/utils/toml-config.ts` | `.tx/config.toml` reader for docs path |
+  | CLI | `apps/cli/src/commands/doc.ts` | @effect/cli command definitions |
+  | MCP | `apps/mcp-server/src/tools/doc.ts` | MCP tool handlers (7 tools) |
+  | API routes | `apps/api-server/src/routes/docs.ts` | Hono route handlers |
+  | API schema | `apps/api-server/src/api.ts` | @effect/platform HttpApiEndpoint definitions |
+  | SDK client | `apps/agent-sdk/src/client.ts` | `DocsNamespace` class |
+  | Dashboard | `apps/dashboard/src/components/docs/` | DocsView, DocDetail, DocGraph, DocMinimap, MarkdownContent |
+
+  ## Key Implementation Details
+
+  ### Content-Addressed Hashing
+
+  Every doc mutation computes `SHA256(normalize(yamlContent))` where normalize trims
+  whitespace and converts `\r\n` to `\n`. The hash is stored in the `docs` table and
+  compared during drift detection. Same content always produces the same hash regardless
+  of platform or editor differences.
+
+  ### Link Type Auto-Inference
+
+  `linkDocs(from, to)` infers the link type from the doc kinds:
+  - overview -> prd = `overview_to_prd`
+  - prd -> design = `prd_to_design`
+  - design -> design = `design_patch`
+  - All other combinations = `related`
+
+  Explicit `linkType` parameter overrides inference.
+
+  ### Versioning Chain
+
+  `createVersion(name)` requires a locked source doc. It creates a new doc with:
+  - `version = source.version + 1`
+  - `parentDocId = source.id`
+  - `status = "changing"`
+  - Same name, new YAML content initialized from source
+
+  This creates an immutable chain: v1 (locked) -> v2 (locked) -> v3 (changing).
+
+  ### Auto-Render on Mutation
+
+  Every DocService method that mutates a doc (create, update, lock, createVersion, createPatch)
+  calls `tryAutoRender(doc)` which:
+  1. Reads the YAML file from disk
+  2. Parses YAML to object
+  3. Calls `renderDocToMarkdown(parsed, kind)` for the `.md` file
+  4. Calls `generateIndex()` for `index.yml` + `index.md`
+  5. Wraps in try/catch — render failures are logged but never block the mutation
+
+  ### Dashboard Rendering
+
+  The dashboard server (`apps/dashboard/server/index.ts`) resolves doc file paths with
+  the `specs/` prefix (DB stores relative paths like `prd/PRD-023-docs-as-primitives.yml`).
+  If no pre-rendered `.md` file exists, it parses the YAML and renders on-the-fly using
+  `renderDocToMarkdown()`. The frontend uses a custom `MarkdownContent` component that
+  handles headings, bold, code, tables, lists, and paragraphs without heavy dependencies.
+
+  ### Invariant Sync
+
+  `syncInvariants(docName)` reads the `invariants:` array from a doc's YAML, upserts each
+  invariant into the `invariants` table, then calls `deprecateInvariantsNotIn()` to mark
+  removed invariants as deprecated (rather than deleting them, preserving audit trail).
+
+  ### Error Types
+
+  All operations use `Data.TaggedError` unions (DOCTRINE Rule 5):
+  - `DocNotFoundError` — doc name does not exist in DB
+  - `DocLockedError` — attempted to modify a locked doc
+  - `ValidationError` — invalid input (bad name, duplicate, unlocked for versioning)
+  - `InvalidDocYamlError` — YAML parsing or schema validation failed
+  - `InvariantNotFoundError` — invariant ID does not exist
+  - `DatabaseError` — SQLite operation failed
+
+data_model: |
+  ## docs
+  | Column | Type | Constraints |
+  |--------|------|-------------|
+  | id | INTEGER | PRIMARY KEY AUTOINCREMENT |
+  | hash | TEXT | NOT NULL (SHA256 of YAML content) |
+  | kind | TEXT | CHECK (overview, prd, design) |
+  | name | TEXT | NOT NULL (unique slug) |
+  | title | TEXT | NOT NULL |
+  | version | INTEGER | DEFAULT 1 |
+  | status | TEXT | CHECK (changing, locked) |
+  | file_path | TEXT | NOT NULL (relative path) |
+  | parent_doc_id | INTEGER | FK docs(id) ON DELETE SET NULL |
+  | locked_at | TEXT | Set when locked |
+  | metadata | TEXT | DEFAULT '{}' (JSON) |
+
+  ## doc_links
+  | Column | Type | Constraints |
+  |--------|------|-------------|
+  | from_doc_id | INTEGER | FK docs(id) CASCADE |
+  | to_doc_id | INTEGER | FK docs(id) CASCADE |
+  | link_type | TEXT | CHECK (overview_to_prd, prd_to_design, etc.) |
+  | UNIQUE | | (from_doc_id, to_doc_id) |
+  | CHECK | | from_doc_id != to_doc_id |
+
+  ## task_doc_links
+  | Column | Type | Constraints |
+  |--------|------|-------------|
+  | task_id | TEXT | FK tasks(id) CASCADE |
+  | doc_id | INTEGER | FK docs(id) CASCADE |
+  | link_type | TEXT | CHECK (implements, references) |
+  | UNIQUE | | (task_id, doc_id) |
+
+  ## invariants
+  | Column | Type | Constraints |
+  |--------|------|-------------|
+  | id | TEXT | PRIMARY KEY (INV-xxx format) |
+  | rule | TEXT | NOT NULL |
+  | enforcement | TEXT | CHECK (integration_test, linter, llm_as_judge) |
+  | doc_id | INTEGER | FK docs(id) CASCADE |
+  | subsystem | TEXT | NULL = system-wide |
+  | test_ref | TEXT | File path for integration_test |
+  | status | TEXT | CHECK (active, deprecated) |
+
+  ## invariant_checks
+  | Column | Type | Constraints |
+  |--------|------|-------------|
+  | id | INTEGER | PRIMARY KEY AUTOINCREMENT |
+  | invariant_id | TEXT | FK invariants(id) CASCADE |
+  | passed | INTEGER | NOT NULL (0 or 1) |
+  | details | TEXT | Optional failure detail |
+  | duration_ms | INTEGER | Check execution time |
+  | checked_at | TEXT | DEFAULT CURRENT_TIMESTAMP |
+
+invariants:
+  - id: INV-DOC-001
+    rule: "Auto-render must produce .md file on every doc mutation (create/update/lock/version/patch)"
+    enforcement: integration_test
+    test_ref: test/integration/doc.test.ts
+    subsystem: docs
+  - id: INV-DOC-002
+    rule: "Locked docs cannot be updated or removed"
+    enforcement: integration_test
+    test_ref: test/integration/doc.test.ts
+    subsystem: docs
+  - id: INV-DOC-003
+    rule: "YAML on disk is the source of truth; DB stores metadata only"
+    enforcement: integration_test
+    test_ref: test/integration/doc.test.ts
+    subsystem: docs
+  - id: INV-DOC-004
+    rule: "Doc links form a DAG with no self-links (from_doc_id != to_doc_id)"
+    enforcement: integration_test
+    test_ref: test/integration/doc.test.ts
+    subsystem: docs
+  - id: INV-DOC-005
+    rule: "Content-addressed hash must be deterministic (same content = same hash)"
+    enforcement: integration_test
+    test_ref: test/integration/doc.test.ts
+    subsystem: docs
+  - id: INV-DOC-006
+    rule: "No unsafe 'as' type casts — all branded types use runtime assertX() validators"
+    enforcement: linter
+    subsystem: docs
+
+failure_modes:
+  - id: FM-DOC-001
+    description: "YAML file deleted but DB row persists"
+    mitigation: "detectDrift() reports missing files; render is non-fatal"
+  - id: FM-DOC-002
+    description: "DB hash does not match file hash after manual edit"
+    mitigation: "detectDrift() compares hashes and reports mismatch"
+  - id: FM-DOC-003
+    description: "Auto-render fails silently on malformed YAML"
+    mitigation: "try/catch prevents render errors from blocking mutations; explicit render() surfaces errors"
+  - id: FM-DOC-004
+    description: "Dashboard server resolves wrong path for YAML files"
+    mitigation: "Server prefixes file_path with specs/ directory; auto-renders from YAML if .md missing"
+  - id: FM-DOC-005
+    description: "Concurrent doc mutations cause stale hash in DB"
+    mitigation: "SQLite WAL mode + single-writer guarantees serialized writes; hash recomputed on every mutation"
+
+edge_cases:
+  - id: EC-DOC-001
+    description: "Creating a version of an unlocked doc (rejected with ValidationError)"
+  - id: EC-DOC-002
+    description: "Attaching a task to a locked doc (allowed - task links are additive)"
+  - id: EC-DOC-003
+    description: "Overview singleton constraint (only one active overview doc allowed)"
+  - id: EC-DOC-004
+    description: "Remove deletes .yml, .md, and DB row but rejects locked docs"
+  - id: EC-DOC-005
+    description: "Doc name validation (must match /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/ pattern)"
+  - id: EC-DOC-006
+    description: "readTxConfig falls back to defaults if .tx/config.toml missing or malformed"
+  - id: EC-DOC-007
+    description: "Rendering a doc with no YAML file on disk (returns empty content gracefully)"
+
+work_breakdown:
+  - description: "Migration 022 - create docs, doc_links, task_doc_links, invariants tables"
+  - description: "DocRepository - CRUD, links, invariants with Effect-TS patterns"
+  - description: "DocService - lifecycle, rendering, linking, validation, graph"
+  - description: "Doc renderer - deterministic YAML-to-MD per kind"
+  - description: "CLI commands - tx doc add/edit/show/list/render/lock/version/link/attach"
+  - description: "MCP tools - tx_doc_list/get/create/update/lock/link/render"
+  - description: "REST API - GET/POST/PATCH /api/docs endpoints"
+  - description: "Agent SDK - DocsNamespace with list/get/create/update/lock/link/render"
+  - description: "Dashboard - doc graph visualization, detail panel, map overlay, markdown renderer"
+  - description: "Integration tests - 64 tests covering repo + service + auto-render + drift"
+
+retention: |
+  - All doc versions retained (versioning chain via parentDocId)
+  - Locked docs are immutable and never deleted
+  - Invariant checks stored as audit trail (last 20 per invariant)
+  - YAML files persist on disk; .md files are regeneratable
+  - Deprecated invariants retained (status=deprecated, not deleted)
+
+testing_strategy: |
+  ## Integration Tests (test/integration/doc.test.ts)
+
+  64 integration tests using the shared singleton database layer (DOCTRINE Rule 8).
+  Tests use temp directories for file I/O to avoid polluting the real `specs/` tree.
+
+  ### DocRepository Tests (15 tests)
+
+  Repository-level CRUD and relationship management:
+  - `insert` returns a doc with valid fields and auto-incremented ID
+  - `findByName` returns the doc, returns null for missing, filters by version
+  - `findAll` returns all docs, filters by kind
+  - `update` changes doc fields (hash, title, metadata)
+  - `lock` sets status to locked and records lockedAt timestamp
+  - `createLink` creates doc-doc links; `getAllLinks` returns all links
+  - `createTaskLink` links tasks to docs; `getUnlinkedTaskIds` finds orphan tasks
+  - `upsertInvariant` creates and updates invariants
+  - `findInvariants` filters by subsystem and enforcement type
+  - `deprecateInvariantsNotIn` marks removed invariants as deprecated
+  - `insertInvariantCheck` records pass/fail results; `getInvariantChecks` returns history
+
+  ### DocService Tests (49 tests)
+
+  Service-level business logic with file I/O:
+  - **Lifecycle**: create writes YAML + returns doc, rejects duplicates, rejects invalid YAML, rejects invalid names
+  - **Read**: get returns existing doc, fails for nonexistent
+  - **Update**: changes YAML and hash, rejects locked doc
+  - **Hashing**: same content = same hash, different content = different hash
+  - **Lock**: changes status, is idempotent (locking twice succeeds)
+  - **Versioning**: createVersion from locked doc, rejects unlocked doc
+  - **Linking**: auto-infers link type from kinds, supports explicit type, attachTask works on locked docs
+  - **Patching**: createPatch creates design patch, rejects non-design docs
+  - **Render**: writes .md file, render all renders multiple files
+  - **Validation**: reports unlinked tasks, returns empty for linked tasks
+  - **Drift**: reports hash mismatch, missing file, design with no linked tasks
+  - **Invariants**: syncInvariants parses from YAML, deprecates removed, recordCheck pass/fail
+  - **Graph**: getDocGraph returns correct nodes and edges
+  - **Auto-render**: .md produced on create, update, lock, createVersion, createPatch
+  - **Index**: auto-generates index.yml + index.md on create
+  - **Remove**: deletes DB + .yml + .md, rejects locked, fails for nonexistent, regenerates index
+  - **Config**: reads docs path from .tx/config.toml
+
+  ### MCP Tool Tests (test/integration/mcp.test.ts)
+
+  End-to-end tests via MCP protocol for all 7 doc tools:
+  - `tx_doc_create` + `tx_doc_list` round-trip
+  - `tx_doc_get` with version parameter
+  - `tx_doc_update` modifies content
+  - `tx_doc_lock` makes doc immutable
+  - `tx_doc_link` creates typed relationship
+  - `tx_doc_render` produces .md output
+
+  ### API Endpoint Tests (test/integration/api-contract-validator.test.ts)
+
+  HTTP-level tests for all doc REST endpoints:
+  - `GET /api/docs` returns list with correct shape
+  - `POST /api/docs` creates doc and returns serialized response
+  - `GET /api/docs/:name` includes mdContent, links, invariants
+  - `PATCH /api/docs/:name` updates content
+  - `POST /api/docs/:name/lock` locks doc
+  - `POST /api/docs/:name/link` creates relationship
+
+  ### Agent SDK Tests (apps/agent-sdk/)
+
+  Client-level tests for DocsNamespace:
+  - `tx.docs.list()` returns array of serialized docs
+  - `tx.docs.get(name)` returns detail with content
+  - `tx.docs.create(input)` creates and returns doc
+  - `tx.docs.lock(name)` transitions status
+
+  ## Unit Test Opportunities
+
+  Pure functions suitable for isolated unit tests (no DB, no file I/O):
+  - `computeDocHash()` — deterministic hashing with normalization
+  - `renderDocToMarkdown()` — section ordering, table rendering, free-text passthrough
+  - `renderIndexToMarkdown()` — index file generation
+  - `readTxConfig()` — TOML parsing with fallback defaults
+  - `assertDocKind/assertDocStatus/assertDocLinkType` — runtime type validators
+  - `extractTopicId()` — dashboard doc grouping logic
+
+  These are currently tested implicitly through integration tests but could be
+  extracted into a dedicated `test/unit/doc-renderer.test.ts` for faster feedback loops.
+
+open_questions: |
+  ## Resolved
+
+  - **Q: Should overview docs be singletons?**
+    A: Yes. Only one active overview doc is allowed. Creating a second raises ValidationError.
+    This simplifies the DAG root and ensures a single entry point for agents.
+
+  - **Q: Can task-doc links be added to locked docs?**
+    A: Yes. Task links are additive metadata and do not modify the doc content itself.
+    This allows linking implementation work to finalized specs.
+
+  - **Q: How should link types be inferred?**
+    A: Automatically from doc kinds (overview->prd, prd->design, design->design=patch).
+    Explicit linkType parameter overrides for edge cases like `related`.
+
+  ## Open
+
+  - **Q: Should we support two-way sync (markdown edits -> YAML)?**
+    Currently out of scope. YAML is source of truth. Markdown is a read-only render.
+    Risk: markdown editing could desync from structured YAML fields. Benefit: familiar
+    editing experience for non-technical stakeholders.
+
+  - **Q: Should invariant checks be time-bounded (auto-expire)?**
+    Currently retained indefinitely (last 20 per invariant). If agents run invariant
+    checks frequently, the audit trail could grow. Consider a TTL or max-age policy.
+
+  - **Q: Should the doc graph support cycle detection?**
+    Currently relies on link type semantics (overview->prd->design is naturally acyclic).
+    The `related` link type could theoretically create cycles. No enforcement yet.
+    Consider: BFS cycle check on link creation (like task dependency detection).
+
+  - **Q: How should doc search work?**
+    Agents can list + filter by kind/status, but there's no full-text search across doc
+    content. Options: (a) BM25 search over rendered markdown, (b) embed doc content into
+    the learnings vector space, (c) keep it simple — docs are few enough that list + filter
+    suffices for now.
+
+  - **Q: Should we version invariants independently from docs?**
+    Currently invariants are synced from YAML and tied to a single doc. If an invariant
+    applies across multiple docs, it must be duplicated. Consider a separate invariant
+    registry decoupled from individual docs.

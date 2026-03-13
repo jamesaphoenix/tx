@@ -48,7 +48,7 @@ const handleClaim = async (args: {
     )
     return {
       content: [
-        { type: "text", text: `Task ${args.taskId} claimed by worker ${args.workerId}, expires at ${claim.leaseExpiresAt.toISOString()}` },
+        { type: "text", text: `Task ${args.taskId} claimed by worker ${args.workerId}, expires at ${claim.leaseExpiresAt instanceof Date ? claim.leaseExpiresAt.toISOString() : String(claim.leaseExpiresAt)}` },
         { type: "text", text: JSON.stringify(serializeClaim(claim)) }
       ],
       isError: false
@@ -93,7 +93,7 @@ const handleClaimRenew = async (args: {
     )
     return {
       content: [
-        { type: "text", text: `Claim on task ${args.taskId} renewed, new expiry: ${claim.leaseExpiresAt.toISOString()}` },
+        { type: "text", text: `Claim on task ${args.taskId} renewed, new expiry: ${claim.leaseExpiresAt instanceof Date ? claim.leaseExpiresAt.toISOString() : String(claim.leaseExpiresAt)}` },
         { type: "text", text: JSON.stringify(serializeClaim(claim)) }
       ],
       isError: false
@@ -124,7 +124,7 @@ const handleClaimGet = async (args: {
     }
     return {
       content: [
-        { type: "text", text: `Active claim on task ${args.taskId} by worker ${claim.workerId}, expires at ${claim.leaseExpiresAt.toISOString()}` },
+        { type: "text", text: `Active claim on task ${args.taskId} by worker ${claim.workerId}, expires at ${claim.leaseExpiresAt instanceof Date ? claim.leaseExpiresAt.toISOString() : String(claim.leaseExpiresAt)}` },
         { type: "text", text: JSON.stringify(serializeClaim(claim)) }
       ],
       isError: false
@@ -141,7 +141,7 @@ const handleClaimGet = async (args: {
 export const registerClaimTools = (server: McpServer): void => {
   registerEffectTool(server,
     "tx_claim",
-    "Claim a task for a worker with a lease. Prevents other workers from claiming the same task until the lease expires.",
+    "Claim a task for a worker with a lease. Sets orchestrationStatus to 'claimed'. Prevents other workers from claiming the same task until the lease expires.",
     {
       taskId: z.string().describe("Task ID to claim"),
       workerId: z.string().describe("Worker ID claiming the task"),
@@ -172,7 +172,7 @@ export const registerClaimTools = (server: McpServer): void => {
 
   registerEffectTool(server,
     "tx_claim_get",
-    "Get the active claim for a task, if any. Returns null if no active claim exists.",
+    "Get the active claim for a task, if any. Returns null if no active claim exists. See orchestrationStatus on tx_show for derived status.",
     {
       taskId: z.string().describe("Task ID to check for active claim")
     },

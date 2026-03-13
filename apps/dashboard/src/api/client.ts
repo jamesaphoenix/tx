@@ -55,11 +55,20 @@ export interface TaskMutationPayload {
   metadata?: Record<string, unknown>
 }
 
+export type OrchestrationStatus = "unclaimed" | "claimed" | "running" | "lease_expired" | "released"
+
 export interface TaskWithDeps extends TaskRow {
   blockedBy: string[]
   blocks: string[]
   children: string[]
   isReady: boolean
+  groupContext: string | null
+  effectiveGroupContext: string | null
+  effectiveGroupContextSourceTaskId: string | null
+  orchestrationStatus: OrchestrationStatus | null
+  claimedBy: string | null
+  claimExpiresAt: string | null
+  failedAttempts: number
 }
 
 export interface TasksResponse {
@@ -418,7 +427,7 @@ export interface CycleDetailResponse {
 export interface DocSerialized {
   id: number
   hash: string
-  kind: "overview" | "prd" | "design"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design"
   name: string
   title: string
   version: number
@@ -432,7 +441,7 @@ export interface DocSerialized {
 export interface DocGraphNode {
   id: string
   label: string
-  kind: "overview" | "prd" | "design" | "task"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "task"
   status?: string
 }
 

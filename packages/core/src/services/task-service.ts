@@ -3,6 +3,8 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { GuardRepository } from "../repo/guard-repo.js"
 import { PinRepository } from "../repo/pin-repo.js"
+import { ClaimRepository } from "../repo/claim-repo.js"
+import { AttemptRepository } from "../repo/attempt-repo.js"
 import { TaskNotFoundError, ValidationError, DatabaseError, GuardExceededError, StaleDataError, HasChildrenError } from "../errors.js"
 import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
@@ -67,7 +69,12 @@ export const TaskServiceLive = Layer.effect(
     const depRepo = yield* DependencyRepository
     const guardRepo = yield* GuardRepository
     const pinRepo = yield* PinRepository
+    const claimRepoOption = yield* Effect.serviceOption(ClaimRepository)
+    const attemptRepoOption = yield* Effect.serviceOption(AttemptRepository)
+    const claimRepo = claimRepoOption._tag === "Some" ? claimRepoOption.value : undefined
+    const attemptRepo = attemptRepoOption._tag === "Some" ? attemptRepoOption.value : undefined
     const config = readTxConfig()
+    const enrichDeps = { taskRepo, depRepo, claimRepo, attemptRepo }
     const reconcileDependentStatuses = (blockerId: TaskId) =>
       Effect.gen(function* () {
         const blockedTaskIds = yield* depRepo.getBlockingIds(blockerId)
@@ -170,14 +177,14 @@ export const TaskServiceLive = Layer.effect(
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-          return yield* enrichWithDeps({ taskRepo, depRepo }, task)
+          return yield* enrichWithDeps(enrichDeps, task)
         }),
 
       getWithDepsBatch: (ids) =>
         Effect.gen(function* () {
           if (ids.length === 0) return []
           const tasks = yield* taskRepo.findByIds(ids)
-          return yield* enrichWithDepsBatch({ taskRepo, depRepo }, tasks)
+          return yield* enrichWithDepsBatch(enrichDeps, tasks)
         }),
 
       update: (id, input, options) =>
@@ -346,7 +353,7 @@ export const TaskServiceLive = Layer.effect(
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-          return yield* enrichWithDeps({ taskRepo, depRepo }, task)
+          return yield* enrichWithDeps(enrichDeps, task)
         }),
 
       clearGroupContext: (id) =>
@@ -356,7 +363,7 @@ export const TaskServiceLive = Layer.effect(
           if (!task) {
             return yield* Effect.fail(new TaskNotFoundError({ id }))
           }
-          return yield* enrichWithDeps({ taskRepo, depRepo }, task)
+          return yield* enrichWithDeps(enrichDeps, task)
         }),
 
       forceStatus: (id, status) =>
@@ -429,7 +436,7 @@ export const TaskServiceLive = Layer.effect(
       listWithDeps: (filter) =>
         Effect.gen(function* () {
           const tasks = yield* taskRepo.findAll(filter)
-          return yield* enrichWithDepsBatch({ taskRepo, depRepo }, tasks)
+          return yield* enrichWithDepsBatch(enrichDeps, tasks)
         }),
 
       count: (filter) => taskRepo.count(filter)

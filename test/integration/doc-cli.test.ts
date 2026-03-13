@@ -37,7 +37,7 @@ function runTx(args: string[], cwd: string): ExecResult {
 function writeDocsConfig(cwd: string, requireEars: boolean): void {
   writeFileSync(
     join(cwd, ".tx", "config.toml"),
-    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    ["[docs]", 'path = "specs"', `require_ears = ${requireEars}`].join("\n"),
     "utf-8"
   )
 }
@@ -98,7 +98,7 @@ describe("tx doc command default behavior", () => {
     expect(addDoc.status).toBe(0)
 
     const yaml = readFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "doc-default-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "doc-default-prd.yml"),
       "utf-8"
     )
     expect(yaml).toContain("ears_requirements:")
@@ -165,8 +165,8 @@ describe("tx doc lifecycle coverage", () => {
     expect(render.status).toBe(0)
     expect(render.stdout).toContain("Rendered")
     // After subprocess exits, verify files exist (retry briefly for fs flush)
-    const indexMd = join(tmpProjectDir, ".tx", "docs", "index.md")
-    const indexYml = join(tmpProjectDir, ".tx", "docs", "index.yml")
+    const indexMd = join(tmpProjectDir, "specs", "index.md")
+    const indexYml = join(tmpProjectDir, "specs", "index.yml")
     for (let i = 0; i < 10 && (!existsSync(indexMd) || !existsSync(indexYml)); i++) {
       spawnSync("sleep", ["0.05"])
     }
@@ -212,7 +212,7 @@ describe("tx doc lifecycle coverage", () => {
     const cleanJson = JSON.parse(clean.stdout) as { warnings: string[] }
     expect(cleanJson.warnings).toEqual([])
 
-    const yamlPath = join(tmpProjectDir, ".tx", "docs", "design", "dd-drift.yml")
+    const yamlPath = join(tmpProjectDir, "specs", "design", "dd-drift.yml")
     const original = readFileSync(yamlPath, "utf-8")
     writeFileSync(yamlPath, `${original}\n# manual drift edit\n`, "utf-8")
 
@@ -229,7 +229,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(addPrd.status).toBe(0)
     expect(addDesign.status).toBe(0)
 
-    const prdYamlPath = join(tmpProjectDir, ".tx", "docs", "prd", "invariant-prd.yml")
+    const prdYamlPath = join(tmpProjectDir, "specs", "prd", "invariant-prd.yml")
     writeFileSync(
       prdYamlPath,
       [
@@ -270,7 +270,7 @@ describe("tx doc lifecycle coverage", () => {
       "utf-8"
     )
 
-    const designYamlPath = join(tmpProjectDir, ".tx", "docs", "design", "invariant-design.yml")
+    const designYamlPath = join(tmpProjectDir, "specs", "design", "invariant-design.yml")
     writeFileSync(
       designYamlPath,
       [
@@ -328,7 +328,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(addPrd.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "ears-meta-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "ears-meta-prd.yml"),
       [
         "kind: prd",
         "name: ears-meta-prd",
@@ -392,7 +392,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(addDesign.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "target-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "target-prd.yml"),
       [
         "kind: prd",
         "name: target-prd",
@@ -431,7 +431,7 @@ describe("tx doc lifecycle coverage", () => {
     )
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "design", "target-design.yml"),
+      join(tmpProjectDir, "specs", "design", "target-design.yml"),
       [
         "kind: design",
         "name: target-design",
@@ -487,7 +487,7 @@ describe("tx doc lifecycle coverage", () => {
     const addPrd = runTx(["doc", "add", "prd", "deprecation-prd", "--title", "Deprecation PRD"], tmpProjectDir)
     expect(addPrd.status).toBe(0)
 
-    const prdPath = join(tmpProjectDir, ".tx", "docs", "prd", "deprecation-prd.yml")
+    const prdPath = join(tmpProjectDir, "specs", "prd", "deprecation-prd.yml")
     writeFileSync(
       prdPath,
       [
@@ -583,7 +583,7 @@ describe("tx doc lifecycle coverage", () => {
     const addPrd = runTx(["doc", "add", "prd", "upsert-prd", "--title", "Upsert PRD"], tmpProjectDir)
     expect(addPrd.status).toBe(0)
 
-    const prdPath = join(tmpProjectDir, ".tx", "docs", "prd", "upsert-prd.yml")
+    const prdPath = join(tmpProjectDir, "specs", "prd", "upsert-prd.yml")
     writeFileSync(
       prdPath,
       [
@@ -678,7 +678,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(addDesign.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "scalar-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "scalar-prd.yml"),
       [
         "kind: prd",
         "name: scalar-prd",
@@ -713,7 +713,7 @@ describe("tx doc lifecycle coverage", () => {
     )
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "design", "scalar-design.yml"),
+      join(tmpProjectDir, "specs", "design", "scalar-design.yml"),
       [
         "kind: design",
         "name: scalar-design",
@@ -763,7 +763,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(addPrd.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "record-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "record-prd.yml"),
       [
         "kind: prd",
         "name: record-prd",
@@ -851,7 +851,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(addGood.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "bad-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "bad-prd.yml"),
       [
         "kind: prd",
         "name: bad-prd",
@@ -865,7 +865,7 @@ describe("tx doc lifecycle coverage", () => {
     )
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "good-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "good-prd.yml"),
       [
         "kind: prd",
         "name: good-prd",
@@ -922,7 +922,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(addBad.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, ".tx", "docs", "prd", "bad-only-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "bad-only-prd.yml"),
       [
         "kind: prd",
         "name: bad-only-prd",

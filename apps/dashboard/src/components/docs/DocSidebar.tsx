@@ -24,6 +24,8 @@ const KIND_LABELS: Record<DocSerialized["kind"], string> = {
   overview: "OV",
   prd: "PRD",
   design: "DD",
+  requirement: "REQ",
+  system_design: "SD",
 }
 
 interface DocGroup {
@@ -47,8 +49,8 @@ function groupDocs(docs: DocSerialized[]): { topLevel: DocSerialized[]; groups: 
       continue
     }
 
-    // Extract numeric prefix: PRD-023-... or DD-023-... or prd-023-...
-    const match = doc.name.match(/^(?:PRD|DD|prd|dd)-?(\d{3})/i)
+    // Extract numeric prefix: PRD-023-..., DD-023-..., REQ-033-..., SD-003-...
+    const match = doc.name.match(/^(?:PRD|DD|REQ|SD|prd|dd|req|sd)-?(\d{3})/i)
     if (match) {
       const key = match[1]
       if (!groupMap.has(key)) groupMap.set(key, [])
@@ -274,6 +276,8 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
     overview: filteredDocs.filter((doc) => doc.kind === "overview").length,
     prd: filteredDocs.filter((doc) => doc.kind === "prd").length,
     design: filteredDocs.filter((doc) => doc.kind === "design").length,
+    requirement: filteredDocs.filter((doc) => doc.kind === "requirement").length,
+    system_design: filteredDocs.filter((doc) => doc.kind === "system_design").length,
   }), [filteredDocs])
   const isLoading = docsQuery.isLoading || (viewMode === "hierarchy" && graphQuery.isLoading)
   const loadError = docsQuery.error instanceof Error
@@ -346,6 +350,8 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
           <option value="overview">overview</option>
           <option value="prd">prd</option>
           <option value="design">design</option>
+          <option value="requirement">requirement</option>
+          <option value="system_design">system_design</option>
         </select>
         <select
           value={statusFilter}
@@ -389,7 +395,7 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
         className="mb-3 w-full bg-gray-900 border border-gray-700 text-xs text-gray-200 rounded px-2.5 py-1.5 placeholder:text-gray-500 focus:outline-none focus:border-blue-500"
       />
 
-      <div className="grid grid-cols-4 gap-1.5 mb-3">
+      <div className="grid grid-cols-3 gap-1.5 mb-3">
         <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
           <div className="text-[10px] text-gray-500 uppercase">All</div>
           <div className="text-xs text-gray-100 font-semibold">{kindCounts.all}</div>
@@ -405,6 +411,14 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
         <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
           <div className="text-[10px] text-gray-500 uppercase">DD</div>
           <div className="text-xs text-gray-100 font-semibold">{kindCounts.design}</div>
+        </div>
+        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
+          <div className="text-[10px] text-gray-500 uppercase">REQ</div>
+          <div className="text-xs text-gray-100 font-semibold">{kindCounts.requirement}</div>
+        </div>
+        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
+          <div className="text-[10px] text-gray-500 uppercase">SD</div>
+          <div className="text-xs text-gray-100 font-semibold">{kindCounts.system_design}</div>
         </div>
       </div>
 

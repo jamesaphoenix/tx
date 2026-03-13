@@ -51,7 +51,7 @@ function hasRecoveryStrategy(content) {
 
 const defaultOptions = {
   prdPattern: /^PRD-\d{3}-.+\.md$/,
-  prdDirectory: 'docs/prd',
+  prdDirectory: 'specs/prd',
   requireFailureModes: true,
   requireRecoveryStrategy: false,
 };

@@ -27,6 +27,13 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
+    groupContext: null,
+    effectiveGroupContext: null,
+    effectiveGroupContextSourceTaskId: null,
+    orchestrationStatus: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    failedAttempts: 0,
     ...overrides,
   }
 }
@@ -273,7 +280,9 @@ describe('TaskDetail', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Ready')).toBeInTheDocument()
+        // Both the isReady badge and the status dropdown show "Ready" text
+        const readyElements = screen.getAllByText('Ready')
+        expect(readyElements.length).toBeGreaterThanOrEqual(1)
       })
     })
 
@@ -707,6 +716,196 @@ describe('TaskDetail', () => {
     })
   })
 
+  describe('orchestration status display', () => {
+    it('shows orchestration badge when task is claimed', async () => {
+      const task = createTask({
+        id: 'tx-orch-claimed',
+        orchestrationStatus: 'claimed',
+        claimedBy: 'worker-42',
+        claimExpiresAt: '2026-01-30T13:00:00Z',
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-orch-claimed" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        // The badge in the header and the properties panel
+        const claimedElements = screen.getAllByText('claimed')
+        expect(claimedElements.length).toBeGreaterThanOrEqual(1)
+      })
+
+      // Properties panel shows worker and lease info
+      await waitFor(() => {
+        expect(screen.getByText('worker-42')).toBeInTheDocument()
+        expect(screen.getByText(/Lease expires:/)).toBeInTheDocument()
+      })
+    })
+
+    it('shows running orchestration badge with worker details', async () => {
+      const task = createTask({
+        id: 'tx-orch-running',
+        status: 'active',
+        orchestrationStatus: 'running',
+        claimedBy: 'worker-77',
+        claimExpiresAt: '2026-01-30T14:00:00Z',
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-orch-running" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        const runningElements = screen.getAllByText('running')
+        expect(runningElements.length).toBeGreaterThanOrEqual(1)
+        expect(screen.getByText('worker-77')).toBeInTheDocument()
+      })
+    })
+
+    it('shows lease_expired badge', async () => {
+      const task = createTask({
+        id: 'tx-orch-expired',
+        orchestrationStatus: 'lease_expired',
+        claimedBy: 'worker-dead',
+        claimExpiresAt: '2020-01-01T00:00:00Z',
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-orch-expired" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        const expiredElements = screen.getAllByText('lease expired')
+        expect(expiredElements.length).toBeGreaterThanOrEqual(1)
+        expect(screen.getByText('worker-dead')).toBeInTheDocument()
+      })
+    })
+
+    it('hides orchestration section when status is unclaimed', async () => {
+      const task = createTask({
+        id: 'tx-orch-unclaimed',
+        orchestrationStatus: 'unclaimed',
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-orch-unclaimed" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Test task' })).toBeInTheDocument()
+      })
+
+      // Orchestration section label should not be present
+      expect(screen.queryByText('Orchestration')).not.toBeInTheDocument()
+    })
+
+    it('hides orchestration section when status is null', async () => {
+      const task = createTask({
+        id: 'tx-orch-null',
+        orchestrationStatus: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-orch-null" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Test task' })).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText('Orchestration')).not.toBeInTheDocument()
+    })
+
+    it('shows failed attempts count when non-zero', async () => {
+      const task = createTask({
+        id: 'tx-orch-failed',
+        orchestrationStatus: 'claimed',
+        claimedBy: 'worker-retry',
+        failedAttempts: 3,
+      })
+
+      server.use(
+        http.get('/api/tasks/:id', () => {
+          return HttpResponse.json({
+            task,
+            blockedByTasks: [],
+            blocksTasks: [],
+            childTasks: [],
+          } satisfies TaskDetailResponse)
+        })
+      )
+
+      renderWithProviders(
+        <TaskDetail taskId="tx-orch-failed" onNavigateToTask={vi.fn()} />
+      )
+
+      await waitFor(() => {
+        const claimedElements = screen.getAllByText('claimed')
+        expect(claimedElements.length).toBeGreaterThanOrEqual(1)
+        expect(screen.getByText('Failed attempts: 3')).toBeInTheDocument()
+      })
+    })
+  })
+
   describe('related task cards', () => {
     it('shows status badges on related tasks', async () => {
       const task = createTask({
@@ -771,7 +970,7 @@ describe('TaskDetail', () => {
         <TaskDetail
           taskId="tx-properties"
           onNavigateToTask={vi.fn()}
-          statusStage="in_progress"
+          statusStage="active"
           onChangeStatusStage={onChangeStatusStage}
         />
       )
@@ -785,7 +984,7 @@ describe('TaskDetail', () => {
       fireEvent.keyDown(statusInput as HTMLElement, { key: 'ArrowDown' })
       let doneOption: HTMLElement | null = null
       await waitFor(() => {
-        doneOption = document.getElementById('react-select-task-detail-status-tx-properties-option-2')
+        doneOption = document.getElementById('react-select-task-detail-status-tx-properties-option-7')
         expect(doneOption).not.toBeNull()
       })
       fireEvent.click(doneOption!)

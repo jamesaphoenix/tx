@@ -58,7 +58,7 @@ describe("TaskComposerModal", () => {
 
     const comboboxes = screen.getAllByRole("combobox")
     fireEvent.keyDown(comboboxes[0]!, { key: "ArrowDown" })
-    fireEvent.click(await screen.findByText("In Progress"))
+    fireEvent.click(await screen.findByText("Active"))
 
     fireEvent.keyDown(comboboxes[2]!, { key: "ArrowDown" })
     fireEvent.click(await screen.findByText("Bug"))
@@ -72,7 +72,7 @@ describe("TaskComposerModal", () => {
     expect(onSubmit).toHaveBeenCalledWith({
       title: "Make cmd+k fast",
       description: "Improve palette indexing strategy.",
-      stage: "in_progress",
+      stage: "active",
       parentId: null,
       assigneeType: "human",
       assigneeId: null,

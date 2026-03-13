@@ -18,7 +18,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
-const docsPrdDir = path.join(projectRoot, 'docs/prd');
+const docsPrdDir = path.join(projectRoot, 'specs/prd');
 
 // =============================================================================
 // Unit Tests for Helper Functions
@@ -209,14 +209,14 @@ Fallback to cached data when API is down.
 // =============================================================================
 
 describe('integration with actual PRDs', () => {
-  // Get all PRD-*.md files in docs/prd
+  // Get all PRD-*.md files in specs/prd
   const prdFiles = fs.existsSync(docsPrdDir)
     ? fs.readdirSync(docsPrdDir)
         .filter(f => /^PRD-\d{3}-.+\.md$/.test(f))
         .map(f => path.join(docsPrdDir, f))
     : [];
 
-  it('can find PRDs in docs/prd', () => {
+  it('can find PRDs in specs/prd', () => {
     expect(prdFiles.length).toBeGreaterThan(0);
   });
 
@@ -332,7 +332,7 @@ This is a top-level heading, not a section.
 describe('rule configuration options', () => {
   const defaultOptions = {
     prdPattern: /^PRD-\d{3}-.+\.md$/,
-    prdDirectory: 'docs/prd',
+    prdDirectory: 'specs/prd',
     requireFailureModes: true,
     requireRecoveryStrategy: false,
   };
@@ -345,7 +345,7 @@ describe('rule configuration options', () => {
   });
 
   it('has correct default directory', () => {
-    expect(defaultOptions.prdDirectory).toBe('docs/prd');
+    expect(defaultOptions.prdDirectory).toBe('specs/prd');
   });
 
   it('requires Failure Modes by default', () => {

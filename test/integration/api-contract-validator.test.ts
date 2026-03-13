@@ -92,6 +92,10 @@ interface SerializedTask {
   readonly groupContext: string | null
   readonly effectiveGroupContext: string | null
   readonly effectiveGroupContextSourceTaskId: string | null
+  readonly orchestrationStatus: string | null
+  readonly claimedBy: string | null
+  readonly claimExpiresAt: string | null
+  readonly failedAttempts: number
 }
 
 // =============================================================================
@@ -185,6 +189,27 @@ function validateTaskContract(task: unknown, label: string): string[] {
   // metadata should be an object
   if (typeof t.metadata !== "object" || t.metadata === null || Array.isArray(t.metadata)) {
     errors.push(`${label}: metadata must be an object (got ${typeof t.metadata})`)
+  }
+
+  // Orchestration status fields
+  const validOrchStatuses = ["unclaimed", "claimed", "running", "lease_expired", "released"]
+  if (t.orchestrationStatus !== null && (typeof t.orchestrationStatus !== "string" || !validOrchStatuses.includes(t.orchestrationStatus))) {
+    errors.push(`${label}: orchestrationStatus must be a valid status string or null (got ${JSON.stringify(t.orchestrationStatus)})`)
+  }
+  if (t.claimedBy !== null && typeof t.claimedBy !== "string") {
+    errors.push(`${label}: claimedBy must be string or null (got ${typeof t.claimedBy})`)
+  }
+  if (t.claimExpiresAt !== null && typeof t.claimExpiresAt !== "string") {
+    errors.push(`${label}: claimExpiresAt must be string or null (got ${typeof t.claimExpiresAt})`)
+  } else if (typeof t.claimExpiresAt === "string" && isNaN(Date.parse(t.claimExpiresAt))) {
+    errors.push(`${label}: claimExpiresAt is not a valid ISO date string`)
+  }
+  if (typeof t.failedAttempts !== "number" || !Number.isInteger(t.failedAttempts)) {
+    errors.push(`${label}: failedAttempts must be an integer (got ${typeof t.failedAttempts})`)
+  }
+  // Ensure legacy redundant field is NOT present
+  if ("failedAttemptCount" in t) {
+    errors.push(`${label}: failedAttemptCount should not exist (use failedAttempts instead)`)
   }
 
   return errors

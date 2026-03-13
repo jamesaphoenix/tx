@@ -8,6 +8,8 @@ import { computeDocHash } from "@jamesaphoenix/tx-core"
 
 const CLI_SRC = resolve(__dirname, "../../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 120000 : 60000))
+// Each flow test spawns 10-20+ CLI commands via spawnSync; the default 10s vitest timeout is insufficient in CI.
+const FLOW_TEST_TIMEOUT = process.env.CI ? 120_000 : 60_000
 
 type ExecResult = {
   readonly stdout: string
@@ -76,7 +78,7 @@ const writeRelative = (cwd: string, relativePath: string, content: string): void
 const writeDocsConfig = (cwd: string): void => {
   writeRelative(cwd, ".tx/config.toml", [
     "[docs]",
-    'path = ".tx/docs"',
+    'path = "specs"',
     "require_ears = false",
     "",
     "[spec]",
@@ -117,7 +119,7 @@ const syncPrdYaml = (
   invariants: readonly InvariantInput[],
 ): void => {
   const yaml = renderPrdYaml(name, title, invariants)
-  writeRelative(cwd, `.tx/docs/prd/${name}.yml`, yaml)
+  writeRelative(cwd, `specs/prd/${name}.yml`, yaml)
 
   const db = new Database(dbPath)
   try {
@@ -201,7 +203,7 @@ const specHealth = (cwd: string, dbPath: string) =>
     expectOk(runTx(cwd, dbPath, ["spec", "health", "--json"]), "tx spec health --json"),
   )
 
-describe("Triangle approval flow fixtures", () => {
+describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () => {
   let cwd: string
   let dbPath: string
 
@@ -689,10 +691,10 @@ describe("Triangle approval flow fixtures", () => {
       { id: "INV-TRI-DRIFT-C-001", rule: "doc c remains consistent" },
     ])
 
-    writeRelative(cwd, ".tx/docs/prd/drift-a.yml", `${renderPrdYaml("drift-a", "Drift A", [
+    writeRelative(cwd, "specs/prd/drift-a.yml", `${renderPrdYaml("drift-a", "Drift A", [
       { id: "INV-TRI-DRIFT-A-001", rule: "doc a remains consistent" },
     ])}\n# manual drift\n`)
-    writeRelative(cwd, ".tx/docs/prd/drift-b.yml", `${renderPrdYaml("drift-b", "Drift B", [
+    writeRelative(cwd, "specs/prd/drift-b.yml", `${renderPrdYaml("drift-b", "Drift B", [
       { id: "INV-TRI-DRIFT-B-001", rule: "doc b remains consistent" },
     ])}\n# manual drift\n`)
 

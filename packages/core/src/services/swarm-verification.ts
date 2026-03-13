@@ -6,7 +6,7 @@
  * Aggregates results with majority vote for edge cases.
  * Tracks swarm metrics for observability.
  *
- * @see docs/prd/PRD-017-invalidation-maintenance.md - IM-004: Bulk invalidation via agent swarm
+ * @see specs/prd/PRD-017-invalidation-maintenance.md - IM-004: Bulk invalidation via agent swarm
  */
 
 import { Context, Effect, Layer, Option, Queue, Fiber, Ref } from "effect"

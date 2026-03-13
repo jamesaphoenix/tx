@@ -29,6 +29,13 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
+    groupContext: null,
+    effectiveGroupContext: null,
+    effectiveGroupContextSourceTaskId: null,
+    orchestrationStatus: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    failedAttempts: 0,
     ...overrides,
   }
 }

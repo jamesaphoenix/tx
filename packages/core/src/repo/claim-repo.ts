@@ -4,6 +4,7 @@ import { ClaimIdNotFoundError, DatabaseError, EntityFetchError } from "../errors
 import { rowToClaim, type ClaimRow } from "../mappers/claim.js"
 import type { TaskClaim } from "../schemas/worker.js"
 import { coerceDbResult } from "../utils/db-result.js"
+import { chunkBySqlLimit } from "./task-repo/shared.js"
 
 /**
  * Result of an atomic claim insert attempt.
@@ -56,6 +57,12 @@ export class ClaimRepository extends Context.Tag("ClaimRepository")<
     ) => Effect.Effect<AtomicRenewResult, DatabaseError>
     readonly findById: (id: number) => Effect.Effect<TaskClaim | null, DatabaseError>
     readonly findActiveByTaskId: (taskId: string) => Effect.Effect<TaskClaim | null, DatabaseError>
+    /** Batch-fetch active claims for multiple task IDs. Returns a map of taskId → TaskClaim. */
+    readonly findActiveByTaskIds: (taskIds: readonly string[]) => Effect.Effect<Map<string, TaskClaim>, DatabaseError>
+    /** Find the most recent non-completed claim for a task (any status except 'completed'). Used for orchestration status derivation. */
+    readonly findLatestByTaskId: (taskId: string) => Effect.Effect<TaskClaim | null, DatabaseError>
+    /** Batch-fetch the most recent non-completed claim for multiple tasks. Returns a map of taskId → TaskClaim. */
+    readonly findLatestByTaskIds: (taskIds: readonly string[]) => Effect.Effect<Map<string, TaskClaim>, DatabaseError>
     readonly findExpired: (now: Date) => Effect.Effect<readonly TaskClaim[], DatabaseError>
     readonly releaseAllByWorkerId: (workerId: string) => Effect.Effect<number, DatabaseError>
     /**
@@ -260,6 +267,68 @@ export const ClaimRepositoryLive = Layer.effect(
               "SELECT * FROM task_claims WHERE task_id = ? AND status = 'active' LIMIT 1"
             ).get(taskId))
             return row ? rowToClaim(row) : null
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findActiveByTaskIds: (taskIds) =>
+        Effect.try({
+          try: () => {
+            const result = new Map<string, TaskClaim>()
+            if (taskIds.length === 0) return result
+
+            for (const chunk of chunkBySqlLimit(taskIds)) {
+              const placeholders = chunk.map(() => "?").join(",")
+              const rows = coerceDbResult<ClaimRow[]>(db.prepare(
+                `SELECT * FROM task_claims WHERE task_id IN (${placeholders}) AND status = 'active'`
+              ).all(...chunk))
+              for (const row of rows) {
+                result.set(row.task_id, rowToClaim(row))
+              }
+            }
+            return result
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findLatestByTaskId: (taskId) =>
+        Effect.try({
+          try: () => {
+            // Use ORDER BY id DESC for deterministic results when multiple
+            // claims share the same claimed_at timestamp (common in tests)
+            const row = coerceDbResult<ClaimRow | undefined>(db.prepare(
+              "SELECT * FROM task_claims WHERE task_id = ? AND status != 'completed' ORDER BY id DESC LIMIT 1"
+            ).get(taskId))
+            return row ? rowToClaim(row) : null
+          },
+          catch: (cause) => new DatabaseError({ cause })
+        }),
+
+      findLatestByTaskIds: (taskIds) =>
+        Effect.try({
+          try: () => {
+            const result = new Map<string, TaskClaim>()
+            if (taskIds.length === 0) return result
+
+            for (const chunk of chunkBySqlLimit(taskIds)) {
+              const placeholders = chunk.map(() => "?").join(",")
+              // Get the most recent non-completed claim per task using MAX(id)
+              // for deterministic results (id is monotonically increasing PK,
+              // unlike claimed_at which can have duplicate timestamps)
+              const rows = coerceDbResult<ClaimRow[]>(db.prepare(
+                `SELECT c.* FROM task_claims c
+                 INNER JOIN (
+                   SELECT task_id, MAX(id) AS max_id
+                   FROM task_claims
+                   WHERE task_id IN (${placeholders}) AND status != 'completed'
+                   GROUP BY task_id
+                 ) latest ON c.id = latest.max_id`
+              ).all(...chunk))
+              for (const row of rows) {
+                result.set(row.task_id, rowToClaim(row))
+              }
+            }
+            return result
           },
           catch: (cause) => new DatabaseError({ cause })
         }),

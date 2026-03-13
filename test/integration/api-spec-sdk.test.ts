@@ -128,12 +128,12 @@ describe("API + SDK spec traceability integration", () => {
     db.exec("DELETE FROM invariants")
     db.exec("DELETE FROM doc_links")
     db.exec("DELETE FROM docs")
-    rmSync(join(tmpProjectDir, ".tx", "docs"), { recursive: true, force: true })
-    mkdirSync(join(tmpProjectDir, ".tx", "docs", "prd"), { recursive: true })
-    mkdirSync(join(tmpProjectDir, ".tx", "docs", "design"), { recursive: true })
+    rmSync(join(tmpProjectDir, "specs"), { recursive: true, force: true })
+    mkdirSync(join(tmpProjectDir, "specs", "prd"), { recursive: true })
+    mkdirSync(join(tmpProjectDir, "specs", "design"), { recursive: true })
     writeFileSync(
       join(tmpProjectDir, ".tx", "config.toml"),
-      ['[docs]', 'path = ".tx/docs"', "require_ears = false"].join("\n"),
+      ['[docs]', 'path = "specs"', "require_ears = false"].join("\n"),
       "utf8"
     )
   })

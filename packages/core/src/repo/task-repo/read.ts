@@ -91,10 +91,11 @@ export const createTaskRepositoryReadService = (
           params.push(filter.cursor.score, filter.cursor.score, filter.cursor.id)
         }
 
-        // Exclude tasks with active claims (thundering herd prevention)
-        // Uses idx_claims_active_task partial index for efficient lookup
+        // Exclude tasks with active, non-expired claims (thundering herd prevention).
+        // Also checks lease_expires_at so that tasks with expired leases (where the
+        // sweeper hasn't yet reconciled status) are still returned as workable.
         if (filter?.excludeClaimed) {
-          conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active')")
+          conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active' AND lease_expires_at > datetime('now'))")
         }
 
         // Label filters: include tasks with ALL specified labels
@@ -362,9 +363,9 @@ export const createTaskRepositoryReadService = (
           params.push(searchPattern, searchPattern)
         }
 
-        // Exclude claimed tasks (same as findAll)
+        // Exclude claimed tasks (same as findAll — also checks lease expiry)
         if (filter?.excludeClaimed) {
-          conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active')")
+          conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active' AND lease_expires_at > datetime('now'))")
         }
 
         // Label filters (same as findAll)

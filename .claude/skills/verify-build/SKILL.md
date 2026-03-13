@@ -17,7 +17,7 @@ Ask the user:
    - "All child tasks are completed"
    - "All tests pass with >80% coverage"
    - "No TypeScript errors and build succeeds"
-   - "10+ design docs exist in .tx/docs"
+   - "10+ design docs exist in specs"
    - "API responds to health check"
    - "All children done AND tests pass AND typecheck clean"
 
@@ -110,7 +110,7 @@ ENDJSON
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-DOC_COUNT=$(find .tx/docs -name "*.yaml" -type f | wc -l | tr -d ' ')
+DOC_COUNT=$(find specs -name "*.yaml" -type f | wc -l | tr -d ' ')
 echo "Found $DOC_COUNT docs"
 if [ "$DOC_COUNT" -lt 10 ]; then
   echo "FAIL: Need at least 10 docs, found $DOC_COUNT" >&2

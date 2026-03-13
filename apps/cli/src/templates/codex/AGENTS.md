@@ -169,10 +169,10 @@ If related tasks share rollout/migration notes, set them once via `tx group-cont
 
 | Tier | Directory | Prefix | Focus |
 |------|-----------|--------|-------|
-| Requirements | `docs/requirements/` | `REQ-NNN` | Use-cases and behavior |
-| PRD | `docs/prd/` | `PRD-NNN` | Scope and acceptance criteria |
-| Design Doc | `docs/design/` | `DD-NNN` | Implementation design |
-| System Design | `docs/system-design/` | `SD-NNN` | Shared architecture constraints |
+| Requirements | `specs/requirements/` | `REQ-NNN` | Use-cases and behavior |
+| PRD | `specs/prd/` | `PRD-NNN` | Scope and acceptance criteria |
+| Design Doc | `specs/design/` | `DD-NNN` | Implementation design |
+| System Design | `specs/system-design/` | `SD-NNN` | Shared architecture constraints |
 
 - `tx doc` currently scaffolds `overview`, `prd`, and `design` docs; REQ/SD are manual markdown conventions.
 - Create docs for non-trivial features and plans; formalize behavior, scope, design, and SD when cross-cutting.
@@ -189,7 +189,7 @@ If related tasks share rollout/migration notes, set them once via `tx group-cont
 
 ## Design Doc Testing Strategy Quality Bar
 
-For `docs/design/DD-*.md`, the `## Testing Strategy` section must be concrete and testable.
+For `specs/design/DD-*.md`, the `## Testing Strategy` section must be concrete and testable.
 
 - Include requirement-to-test traceability (every requirement maps to one or more tests).
 - When PRDs use EARS, map each `EARS-*` ID to one or more tests in the traceability matrix.

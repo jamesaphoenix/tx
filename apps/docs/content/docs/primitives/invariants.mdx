@@ -1,0 +1,195 @@
+---
+title: tx invariant
+description: Doc-derived invariants with enforcement levels and check recording
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
+
+## Purpose
+
+`tx invariant` manages invariants that are derived from structured documentation (PRDs and design docs). Invariants are rules extracted from doc YAML files via `tx invariant sync`, each with an enforcement level and optional subsystem ownership.
+
+Invariants enable:
+
+- **Doc-to-test traceability** — each invariant maps to a testable assertion
+- **Enforcement levels** — audit, warn, error, or block
+- **Check recording** — track pass/fail results over time
+- **Subsystem scoping** — filter invariants by owning subsystem
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+
+<Tab value="CLI">
+
+```bash
+tx invariant list [options]
+tx invariant show <id>
+tx invariant record <id> --passed|--failed [--details <text>]
+tx invariant sync [--doc <name>]
+```
+
+```bash
+# Sync invariants from all doc YAML files
+tx invariant sync
+
+# Sync invariants from a specific doc
+tx invariant sync --doc auth-prd
+
+# List all invariants
+tx invariant list
+
+# Filter by subsystem
+tx invariant list --subsystem auth
+
+# Filter by enforcement level
+tx invariant list --enforcement error
+
+# Show a specific invariant
+tx invariant show INV-AUTH-001
+
+# Record a passing check
+tx invariant record INV-AUTH-001 --passed
+
+# Record a failing check with details
+tx invariant record INV-AUTH-001 --failed --details "Token validation skipped"
+```
+
+</Tab>
+
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+
+// List all invariants
+const all = await tx.invariants.list()
+
+// Filter by subsystem or enforcement
+const authInvariants = await tx.invariants.list({
+  subsystem: 'auth',
+  enforcement: 'error',
+})
+
+// Get a specific invariant
+const inv = await tx.invariants.get('INV-AUTH-001')
+
+// Record a check result
+const check = await tx.invariants.record(
+  'INV-AUTH-001',
+  true,           // passed
+  'All tokens validated',  // details (optional)
+  1200,           // durationMs (optional)
+)
+```
+
+</Tab>
+
+<Tab value="MCP">
+
+**Tool name:** `tx_invariant_list`
+
+```json
+{
+  "name": "tx_invariant_list",
+  "arguments": {
+    "subsystem": "auth",
+    "enforcement": "error"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `subsystem` | `string` | No | Filter by subsystem |
+| `enforcement` | `string` | No | Filter by enforcement level |
+
+**Tool name:** `tx_invariant_get`
+
+```json
+{
+  "name": "tx_invariant_get",
+  "arguments": {
+    "id": "INV-AUTH-001"
+  }
+}
+```
+
+**Tool name:** `tx_invariant_record`
+
+```json
+{
+  "name": "tx_invariant_record",
+  "arguments": {
+    "invariantId": "INV-AUTH-001",
+    "passed": true,
+    "details": "All tokens validated",
+    "durationMs": 1200
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `invariantId` | `string` | Yes | Invariant ID to record against |
+| `passed` | `boolean` | Yes | Whether the check passed |
+| `details` | `string` | No | Descriptive text (max 10000 chars) |
+| `durationMs` | `number` | No | Check duration in milliseconds |
+
+</Tab>
+
+<Tab value="REST API">
+
+```
+GET  /api/invariants
+GET  /api/invariants/:id
+POST /api/invariants/:id/check
+```
+
+**Example:**
+
+```bash
+# List all invariants
+curl http://localhost:3456/api/invariants
+
+# Filter by subsystem
+curl http://localhost:3456/api/invariants?subsystem=auth
+
+# Get a specific invariant
+curl http://localhost:3456/api/invariants/INV-AUTH-001
+
+# Record a check result
+curl -X POST http://localhost:3456/api/invariants/INV-AUTH-001/check \
+  -H 'Content-Type: application/json' \
+  -d '{"passed": true, "details": "All tokens validated"}'
+```
+
+</Tab>
+
+</Tabs>
+
+## Enforcement Levels
+
+| Level | Behavior |
+|-------|----------|
+| `audit` | Recorded but no action taken |
+| `warn` | Warning emitted on failure |
+| `error` | Error reported on failure |
+| `block` | Blocks downstream operations on failure |
+
+## Invariant Lifecycle
+
+Invariants are derived from doc YAML, not created manually:
+
+1. Define invariants in a PRD or design doc YAML file
+2. Run `tx invariant sync` to extract them into the database
+3. Run `tx invariant record` to track pass/fail results
+4. If an invariant is removed from the YAML, re-sync marks it as deprecated
+
+## Related Commands
+
+- [`tx doc`](/docs/primitives/docs): Manage the structured docs that invariants are derived from
+- [`tx spec`](/docs/primitives/spec-trace): Spec-to-test traceability built on top of invariants
+- [`tx verify`](/docs/primitives/verify): Attach machine-checkable done criteria to tasks

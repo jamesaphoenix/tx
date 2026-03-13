@@ -1,0 +1,112 @@
+kind: prd
+name: PRD-033-spec-test-traceability
+title: "PRD-033: Spec-to-Test Traceability"
+status: changing
+
+problem: |
+  tx already supports invariant extraction and task-level verification, but there is
+  no first-class way to map tests to invariants, quantify coverage completeness, or
+  gate feature lifecycle transitions from implementation to hardening and completion.
+
+solution: |
+  Add composable spec-traceability primitives that connect docs -> invariants ->
+  discovered tests -> run outcomes -> Feature Completion Index (FCI). Keep tx
+  headless: tx stores mappings and ingests test results, but does not run tests.
+
+requirements:
+  - Persist many-to-many invariant-to-test mappings as authoritative traceability data.
+  - Persist append-only run outcomes per mapped test.
+  - Persist human sign-off metadata for HARDEN -> COMPLETE transitions.
+  - Support language-agnostic discovery from configurable test file patterns.
+  - Support annotation discovery from test names and comments.
+  - Support manifest mapping via .tx/spec-tests.yml for non-annotatable tests.
+  - Expose tx spec primitives in CLI, MCP, and REST with equivalent behavior.
+  - Compute scope-level FCI and lifecycle phase (BUILD|HARDEN|COMPLETE).
+  - Reject completion when FCI is below 100.
+
+ears_requirements:
+  - id: EARS-SPEC-001
+    pattern: ubiquitous
+    system: tx
+    response: maintain a many-to-many mapping between active invariants and discovered tests
+    priority: must
+  - id: EARS-SPEC-002
+    pattern: event_driven
+    trigger: tx spec discover is executed
+    system: tx
+    response: scan configured test patterns, parse annotations and manifest mappings, and upsert normalized links
+    priority: must
+  - id: EARS-SPEC-003
+    pattern: event_driven
+    trigger: a test run result is recorded
+    system: tx
+    response: append a run record linked to the mapped spec-test entry
+    priority: must
+  - id: EARS-SPEC-004
+    pattern: state_driven
+    state: computing FCI for a scope
+    system: tx
+    response: classify each active invariant as passing, failing, untested, or uncovered
+    priority: must
+  - id: EARS-SPEC-005
+    pattern: state_driven
+    state: FCI is below 100
+    system: tx
+    response: report phase BUILD
+    priority: must
+  - id: EARS-SPEC-006
+    pattern: state_driven
+    state: FCI equals 100 and no sign-off exists
+    system: tx
+    response: report phase HARDEN
+    priority: must
+  - id: EARS-SPEC-007
+    pattern: event_driven
+    trigger: a human records sign-off for a HARDEN scope
+    system: tx
+    response: transition that scope to COMPLETE
+    priority: must
+  - id: EARS-SPEC-008
+    pattern: unwanted
+    condition: sign-off is requested while phase is BUILD
+    system: tx
+    response: reject the request with a typed validation error
+    priority: must
+  - id: EARS-SPEC-009
+    pattern: optional
+    feature: source annotations
+    system: tx
+    response: support declarative fallback mappings via .tx/spec-tests.yml
+    priority: should
+  - id: EARS-SPEC-010
+    pattern: ubiquitous
+    system: tx
+    response: keep discovery language-agnostic via shared text scanning conventions
+    priority: must
+  - id: EARS-SPEC-011
+    pattern: event_driven
+    trigger: tx spec batch receives framework output
+    system: tx
+    response: normalize records into generic test-result entries
+    priority: must
+  - id: EARS-SPEC-012
+    pattern: ubiquitous
+    system: tx
+    response: expose equivalent spec-trace operations across CLI, REST, and MCP
+    priority: must
+
+acceptance_criteria:
+  - tx spec discover upserts links from annotations and manifest entries.
+  - tx spec gaps lists active invariants with zero linked tests in selected scope.
+  - tx spec batch accepts generic JSON and framework adapter modes (vitest, pytest, go).
+  - tx spec fci returns deterministic counters and phase for global/doc/subsystem scopes.
+  - Phase lifecycle is computed as BUILD (<100), HARDEN (100 + unsigned), COMPLETE (100 + signed).
+  - tx spec complete succeeds only from HARDEN and persists signer metadata.
+  - REST and MCP expose equivalent operations and payload semantics.
+  - Integration tests cover CRUD, discovery, scoring, phase transitions, and cascade behavior.
+
+out_of_scope:
+  - Running test frameworks from tx.
+  - Dashboard UX for traceability views.
+  - AST-based language-specific discovery parsers.
+  - Mutation test orchestration.

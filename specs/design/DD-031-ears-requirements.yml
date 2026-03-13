@@ -1,0 +1,71 @@
+kind: design
+name: DD-031-ears-requirements
+title: "EARS Requirements Integration"
+status: changing
+version: 1
+
+problem_definition: |
+  Why this change is needed.
+
+goals:
+  - Goal 1
+
+architecture: |
+  ## Components
+  ...
+
+data_model: |
+  ## Table Name
+  | Column | Type | Constraints |
+  |--------|------|-------------|
+
+invariants: []
+
+failure_modes: []
+
+edge_cases: []
+
+work_breakdown:
+  - description: "Phase 1"
+
+retention: |
+  - docs: All versions retained
+
+testing_strategy: |
+  ## Requirement Traceability
+  | Requirement | Test Type | Test Name | Assertions | File Path |
+  |-------------|-----------|-----------|------------|-----------|
+  | Req 1 | integration | should_do_x | Expected output/state | test/integration/feature.test.ts |
+
+  ## Unit Tests
+  - Target functions/services:
+  - Mock boundaries (what is mocked vs real):
+  - Error branches to cover:
+
+  ## Integration Tests (REQUIRED)
+  - Test layer: getSharedTestLayer()
+  - Deterministic IDs: fixtureId(name)
+  - Scenarios (minimum 8):
+    1. Setup / Action / Assert
+    2. Setup / Action / Assert
+    3. Setup / Action / Assert
+    4. Setup / Action / Assert
+    5. Setup / Action / Assert
+    6. Setup / Action / Assert
+    7. Setup / Action / Assert
+    8. Setup / Action / Assert
+
+  ## Failure Injection
+  - Timeout behavior:
+  - Malformed input handling:
+  - Partial failure and retry/idempotency behavior:
+
+  ## Edge Cases
+  - Boundary conditions:
+  - Recovery scenarios:
+  - Concurrent/race scenarios (if applicable):
+
+  ## Performance (if applicable)
+  - Latency target:
+  - Throughput target:
+  - Memory limits:

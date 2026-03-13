@@ -1,0 +1,14 @@
+generated: true
+generated_at: 2026-03-13T11:50:40.178Z
+requirements:
+  - name: test-auth-flows
+    title: Auth Flows
+    status: changing
+prds:
+  - name: auth-prd
+    title: Auth PRD
+    status: changing
+system_designs:
+  - name: error-handling
+    title: Error Handling
+    status: changing

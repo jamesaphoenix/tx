@@ -1,0 +1,62 @@
+kind: prd
+name: PRD-023-docs-as-primitives
+title: "Docs as Primitives"
+status: changing
+
+problem: |
+  Agent orchestration systems accumulate design knowledge across PRDs, design docs,
+  and system overviews, but this knowledge lives in disconnected markdown files with
+  no machine-readable structure. Agents cannot query which design doc covers a
+  subsystem, which invariants apply, or whether a PRD has a matching design doc.
+
+  Without structured docs, agents repeat mistakes, violate invariants they cannot
+  discover, and cannot trace task work back to the requirements that motivated it.
+
+solution: |
+  Treat docs as first-class tx primitives stored in YAML with a database metadata
+  layer. Each doc has a kind (overview, prd, design), a lifecycle (changing/locked),
+  versioning, and typed links to other docs and tasks.
+
+  YAML on disk is the source of truth. The database stores metadata, links, and
+  invariants extracted from YAML. A deterministic renderer converts YAML to markdown
+  for human consumption.
+
+  Key capabilities:
+  - `tx doc add` creates docs with kind-specific YAML templates
+  - `tx doc link` creates typed DAG edges (overview->prd->design)
+  - `tx doc attach` links tasks to docs (implements/references)
+  - `tx doc render` produces deterministic markdown from YAML
+  - Invariants extracted from YAML are synced to DB for querying
+  - Auto-render on every mutation (create/update/lock/version)
+
+requirements:
+  - Docs stored as YAML files in specs/{kind}/{name}.yml
+  - Three doc kinds - overview (singleton), prd, design
+  - Two statuses - changing (editable) and locked (immutable)
+  - Versioning chain via parentDocId (new version only from locked docs)
+  - Typed doc-doc links forming a DAG (overview_to_prd, prd_to_design, etc.)
+  - Task-doc links with implements/references semantics
+  - Invariants as first-class entities with enforcement type tracking
+  - Deterministic YAML-to-markdown rendering per doc kind
+  - Auto-render on create, update, lock, version, and patch operations
+  - Index generation (index.yml + index.md) on every mutation
+  - Drift detection (hash mismatch between DB and disk)
+  - Dashboard visualization via doc graph (nodes + edges)
+
+acceptance_criteria:
+  - tx doc add creates YAML file and DB row with correct hash
+  - tx doc update modifies YAML and re-renders markdown
+  - tx doc lock sets status to locked and prevents further updates
+  - tx doc version creates v2+ only from locked docs
+  - tx doc link infers link type from doc kinds
+  - tx doc render produces stable markdown output
+  - Auto-render writes .md alongside .yml on every CRUD operation
+  - tx doc remove deletes DB record, YAML, and rendered markdown
+  - Invariants sync from YAML to DB with deprecation of removed ones
+  - Dashboard shows interactive doc graph with clickable nodes
+
+out_of_scope:
+  - Two-way sync (markdown edits do not flow back to YAML)
+  - Fumadocs integration (docs site renders separately)
+  - LLM-powered doc generation or summarization
+  - Real-time collaborative editing

@@ -14,7 +14,7 @@
  *
  * OPTIMIZED: Uses shared test layer with reset between tests for memory efficiency.
  *
- * @see docs/prd/PRD-017-invalidation-maintenance.md
+ * @see specs/prd/PRD-017-invalidation-maintenance.md
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest"

@@ -15,7 +15,6 @@ import { TaskDetail } from "./TaskDetail"
 import { TaskComposerModal, type TaskComposerModalSubmit } from "./TaskComposerModal"
 import {
   HUMAN_STAGE_OPTIONS,
-  HUMAN_STAGE_TO_STATUS,
   autoTaskLabelColor,
   toHumanTaskStage,
   type HumanTaskStage,
@@ -522,7 +521,7 @@ export function TasksPage({
       title: payload.title,
       description: payload.description,
       parentId: payload.parentId,
-      status: HUMAN_STAGE_TO_STATUS[payload.stage],
+      status: payload.stage,
       assigneeType: payload.assigneeType,
       assigneeId: payload.assigneeId,
       assignedBy: "dashboard:composer",
@@ -617,7 +616,7 @@ export function TasksPage({
 
   const changeTaskStatusStage = useCallback(async (stage: HumanTaskStage, taskId: string | null = viewState.taskId) => {
     if (!taskId) return
-    await fetchers.updateTask(taskId, { status: HUMAN_STAGE_TO_STATUS[stage] })
+    await fetchers.updateTask(taskId, { status: stage })
     await invalidateTaskQueries()
   }, [viewState.taskId, invalidateTaskQueries])
 
@@ -647,7 +646,7 @@ export function TasksPage({
 
   const cycleTaskStatusStage = useCallback(async () => {
     if (!selectedTask) return
-    const order: HumanTaskStage[] = ["backlog", "in_progress", "done"]
+    const order: HumanTaskStage[] = ["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]
     const current = toHumanTaskStage(selectedTask.status)
     const next = order[(order.indexOf(current) + 1) % order.length]!
     await changeTaskStatusStage(next, selectedTask.id)
@@ -656,14 +655,14 @@ export function TasksPage({
   const setSelectedChildrenStatusStage = useCallback(async (stage: HumanTaskStage) => {
     const ids = Array.from(selectedChildIds)
     if (ids.length === 0) return
-    await Promise.all(ids.map((taskId) => fetchers.updateTask(taskId, { status: HUMAN_STAGE_TO_STATUS[stage] })))
+    await Promise.all(ids.map((taskId) => fetchers.updateTask(taskId, { status: stage })))
     await invalidateTaskQueries()
   }, [selectedChildIds, invalidateTaskQueries])
 
   const setSelectedTasksStatusStage = useCallback(async (stage: HumanTaskStage) => {
     const ids = Array.from(selectedTaskIds)
     if (ids.length === 0) return
-    await Promise.all(ids.map((taskId) => fetchers.updateTask(taskId, { status: HUMAN_STAGE_TO_STATUS[stage] })))
+    await Promise.all(ids.map((taskId) => fetchers.updateTask(taskId, { status: stage })))
     await invalidateTaskQueries()
   }, [selectedTaskIds, invalidateTaskQueries])
 
@@ -926,7 +925,7 @@ export function TasksPage({
       },
       {
         id: "tasks:status-cycle",
-        label: "Cycle status (Backlog → In Progress → Done)",
+        label: "Cycle status (Backlog → Ready → … → Done)",
         group: "Actions",
         icon: "action",
         shortcut: "⌘S",

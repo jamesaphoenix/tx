@@ -3,7 +3,7 @@
  */
 import { CLI_VERSION } from "./version.js"
 
-export const HELP_TEXT = `tx v${CLI_VERSION} - Task management for AI agents and humans
+export const HELP_TEXT = `tx v${CLI_VERSION} - Headless task infrastructure for AI agents
 
 Usage: tx <command> [arguments] [options]
 
@@ -254,7 +254,8 @@ Examples:
 Usage: tx show <id> [options]
 
 Shows full details for a single task including title, status, score,
-description, parent, blockers, blocks, children, and timestamps.
+description, parent, blockers, blocks, children, timestamps, and
+orchestration status (claim info, failed attempts).
 
 Arguments:
   <id>    Required. Task ID (e.g., tx-a1b2c3d4)
@@ -1450,6 +1451,7 @@ Examples:
 Usage: tx claim <task-id> <worker-id> [options]
 
 Claims a task for a worker, preventing other workers from claiming it.
+Sets orchestrationStatus to "claimed" (or "running" if task is active).
 The claim has a lease duration; if the lease expires, the task becomes
 claimable again. Workers should renew leases for long-running tasks.
 
@@ -2006,7 +2008,7 @@ Options:
 
 Examples:
   tx doc lint-ears PRD-031-ears-requirements
-  tx doc lint-ears .tx/docs/prd/PRD-031-ears-requirements.yml
+  tx doc lint-ears specs/prd/PRD-031-ears-requirements.yml
   tx doc lint-ears PRD-031-ears-requirements --json`,
 
   invariant: `tx invariant - Advanced tooling for doc-derived invariants
@@ -2835,7 +2837,7 @@ Options:
   --json            Output as JSON
   --help            Show this help`,
 
-  gate: `tx gate - Human-in-the-loop phase gates (pin wrapper)
+  gate: `tx gate - Phase gates (approval checkpoints, pin wrapper)
 
 Usage: tx gate <subcommand> [options]
 

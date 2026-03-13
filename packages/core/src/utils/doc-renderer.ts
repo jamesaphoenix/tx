@@ -77,6 +77,12 @@ export const renderDocToMarkdown = (parsed: ParsedYaml, kind: DocKind): string =
     case "system_design":
       renderSystemDesign(parsed, lines)
       break
+    default: {
+      // Compile-time exhaustive check — adding a new DocKind without
+      // a case above will fail here with a type error.
+      const _exhaustive: never = kind
+      return _exhaustive
+    }
   }
 
   return lines.join("\n")

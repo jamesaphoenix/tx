@@ -16,7 +16,7 @@ tx provides four interfaces. You can add the others after the CLI path is workin
 
 | Interface | Package | Best For |
 |-----------|---------|----------|
-| CLI | `@jamesaphoenix/tx-cli` | Shell scripts, human operators |
+| CLI | `@jamesaphoenix/tx-cli` | Shell scripts, agent loops |
 | TypeScript SDK | `@jamesaphoenix/tx-agent-sdk` | Custom agents in Node/Bun |
 | MCP Server | `@jamesaphoenix/tx-mcp-server` | Claude, Cursor, AI IDEs |
 | REST API | `@jamesaphoenix/tx-api-server` | Language-agnostic HTTP clients |
@@ -159,7 +159,7 @@ This creates a `.tx/` directory:
 
 ```toml
 [docs]
-path = ".tx/docs"                          # Where tx doc files live
+path = "specs"                             # Where tx doc files live
 
 [memory]
 default_dir = "docs"                       # Default dir for tx memory add

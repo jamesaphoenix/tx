@@ -57,6 +57,10 @@ function makeTask(overrides: TaskOverride): TaskWithDeps {
     groupContext: null,
     effectiveGroupContext: null,
     effectiveGroupContextSourceTaskId: effectiveGroupContextSourceTaskId ? asTaskId(effectiveGroupContextSourceTaskId) : null,
+    orchestrationStatus: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    failedAttempts: 0,
     ...rest,
   }
 }

@@ -5,7 +5,8 @@ import {
   type TaskAssigneeType,
   type TaskDetailResponse,
   type TaskLabel,
-  type TaskWithDeps
+  type TaskWithDeps,
+  type OrchestrationStatus,
 } from "../../api/client"
 import { useDebounce } from "../../hooks/useDebounce"
 import {
@@ -77,7 +78,22 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <span className={`px-2 py-0.5 text-xs rounded-full text-white ${colors[status] ?? "bg-gray-400"}`}>
-      {status}
+      {status.replace(/_/g, " ")}
+    </span>
+  )
+}
+
+function OrchestrationBadge({ status }: { status: OrchestrationStatus }) {
+  const styles: Record<OrchestrationStatus, string> = {
+    unclaimed: "bg-gray-600 text-gray-200",
+    claimed: "bg-cyan-600 text-cyan-100",
+    running: "bg-yellow-600 text-yellow-100",
+    lease_expired: "bg-red-600 text-red-100",
+    released: "bg-gray-500 text-gray-200",
+  }
+  return (
+    <span className={`px-2 py-0.5 text-xs rounded-full ${styles[status] ?? "bg-gray-500 text-gray-200"}`}>
+      {status.replace(/_/g, " ")}
     </span>
   )
 }
@@ -534,6 +550,9 @@ export function TaskDetail({
           <div className="mb-2 flex items-center gap-2">
             <code className="text-sm text-gray-400">{task.id}</code>
             <StatusBadge status={task.status} />
+            {task.orchestrationStatus && task.orchestrationStatus !== "unclaimed" && (
+              <OrchestrationBadge status={task.orchestrationStatus} />
+            )}
             {task.isReady && (
               <span className="rounded-full border border-blue-500 bg-blue-500/20 px-2 py-0.5 text-xs text-blue-400">
                 Ready
@@ -717,6 +736,28 @@ export function TaskDetail({
             />
             <p className="mt-2 text-[11px] text-gray-500">Internal status: {task.status}</p>
           </section>
+
+          {task.orchestrationStatus && task.orchestrationStatus !== "unclaimed" && (
+            <section>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Orchestration</p>
+              <OrchestrationBadge status={task.orchestrationStatus} />
+              {task.claimedBy && (
+                <p className="mt-1.5 text-[11px] text-gray-400">
+                  Worker: <span className="text-gray-200">{task.claimedBy}</span>
+                </p>
+              )}
+              {task.claimExpiresAt && (
+                <p className="text-[11px] text-gray-400">
+                  Lease expires: <span className="text-gray-200">{formatTimestamp(task.claimExpiresAt)}</span>
+                </p>
+              )}
+              {(task.failedAttempts ?? 0) > 0 && (
+                <p className="mt-1 text-[11px] text-red-400">
+                  Failed attempts: {task.failedAttempts}
+                </p>
+              )}
+            </section>
+          )}
 
           <section>
             <div className="mb-2 flex items-center justify-between">

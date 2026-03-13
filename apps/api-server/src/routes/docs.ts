@@ -8,7 +8,8 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
 import { readFileSync, existsSync } from "node:fs"
-import { DocService } from "@jamesaphoenix/tx-core"
+import { resolve } from "node:path"
+import { DocService, readTxConfig } from "@jamesaphoenix/tx-core"
 import { TxApi, mapCoreError } from "../api.js"
 
 // -----------------------------------------------------------------------------
@@ -163,6 +164,46 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
           return ""
         })
         return { rendered }
+      }).pipe(Effect.mapError(mapCoreError))
+    )
+
+    .handle("getDocSource", ({ path: { name } }) =>
+      Effect.gen(function* () {
+        const svc = yield* DocService
+        const doc = yield* svc.get(name)
+
+        let yamlContent: string | null = null
+        let renderedContent: string | null = null
+
+        const config = readTxConfig()
+        const docsPath = resolve(config.docs.path)
+
+        // Resolve subdirectory for this doc kind
+        const kindSubdir = doc.kind === "overview" ? "" :
+          doc.kind === "requirement" ? "requirements" :
+          doc.kind === "system_design" ? "system-design" :
+          doc.kind
+        const yamlRel = kindSubdir ? `${kindSubdir}/${doc.name}.yml` : `${doc.name}.yml`
+        const yamlPath = resolve(docsPath, yamlRel)
+
+        if (existsSync(yamlPath)) {
+          yamlContent = readFileSync(yamlPath, "utf8")
+        }
+
+        // Try to read rendered MD file
+        const mdRel = kindSubdir ? `${kindSubdir}/${doc.name}.md` : `${doc.name}.md`
+        const mdPath = resolve(docsPath, mdRel)
+
+        if (existsSync(mdPath)) {
+          renderedContent = readFileSync(mdPath, "utf8")
+        }
+
+        return {
+          name: doc.name,
+          filePath: doc.filePath,
+          yamlContent,
+          renderedContent,
+        }
       }).pipe(Effect.mapError(mapCoreError))
     )
 

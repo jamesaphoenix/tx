@@ -24,6 +24,13 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
+    groupContext: null,
+    effectiveGroupContext: null,
+    effectiveGroupContextSourceTaskId: null,
+    orchestrationStatus: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    failedAttempts: 0,
     ...overrides,
   }
 }
@@ -62,12 +69,21 @@ describe('TaskCard', () => {
       expect(screen.getByText('active')).toBeInTheDocument()
     })
 
-    it('renders multiple status types correctly', () => {
-      const statuses = ['backlog', 'ready', 'planning', 'active', 'blocked', 'review', 'done']
+    it('renders all 8 status types correctly', () => {
+      const cases: Array<[string, string]> = [
+        ['backlog', 'backlog'],
+        ['ready', 'ready'],
+        ['planning', 'planning'],
+        ['active', 'active'],
+        ['blocked', 'blocked'],
+        ['review', 'review'],
+        ['human_needs_to_review', 'human needs to review'],
+        ['done', 'done'],
+      ]
 
-      statuses.forEach((status) => {
+      cases.forEach(([status, displayText]) => {
         const { unmount } = render(<TaskCard task={createTask({ status })} />)
-        expect(screen.getByText(status)).toBeInTheDocument()
+        expect(screen.getByText(displayText)).toBeInTheDocument()
         unmount()
       })
     })
@@ -258,6 +274,54 @@ describe('TaskCard', () => {
 
       fireEvent.keyDown(screen.getByRole('button'), { key: 'Tab' })
       expect(onClick).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('orchestration badge', () => {
+    it('shows orchestration badge when status is claimed', () => {
+      const task = createTask({ orchestrationStatus: 'claimed' })
+      render(<TaskCard task={task} />)
+
+      expect(screen.getByText('claimed')).toBeInTheDocument()
+    })
+
+    it('shows orchestration badge when status is running', () => {
+      const task = createTask({ orchestrationStatus: 'running' })
+      render(<TaskCard task={task} />)
+
+      expect(screen.getByText('running')).toBeInTheDocument()
+    })
+
+    it('shows orchestration badge when status is lease_expired', () => {
+      const task = createTask({ orchestrationStatus: 'lease_expired' })
+      render(<TaskCard task={task} />)
+
+      expect(screen.getByText('lease expired')).toBeInTheDocument()
+    })
+
+    it('shows orchestration badge when status is released', () => {
+      const task = createTask({ orchestrationStatus: 'released' })
+      render(<TaskCard task={task} />)
+
+      expect(screen.getByText('released')).toBeInTheDocument()
+    })
+
+    it('hides orchestration badge when status is unclaimed', () => {
+      const task = createTask({ orchestrationStatus: 'unclaimed' })
+      render(<TaskCard task={task} />)
+
+      expect(screen.queryByText('unclaimed')).not.toBeInTheDocument()
+    })
+
+    it('hides orchestration badge when status is null', () => {
+      const task = createTask({ orchestrationStatus: null })
+      render(<TaskCard task={task} />)
+
+      // None of the orchestration status texts should appear
+      expect(screen.queryByText('claimed')).not.toBeInTheDocument()
+      expect(screen.queryByText('running')).not.toBeInTheDocument()
+      expect(screen.queryByText('lease expired')).not.toBeInTheDocument()
+      expect(screen.queryByText('released')).not.toBeInTheDocument()
     })
   })
 

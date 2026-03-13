@@ -20,7 +20,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
-const docsDesignDir = path.join(projectRoot, 'docs/design');
+const docsDesignDir = path.join(projectRoot, 'specs/design');
 
 // =============================================================================
 // Unit Tests for Helper Functions
@@ -241,14 +241,14 @@ Test code here.
 // =============================================================================
 
 describe('integration with actual Design Documents', () => {
-  // Get all DD-*.md files in docs/design
+  // Get all DD-*.md files in specs/design
   const ddFiles = fs.existsSync(docsDesignDir)
     ? fs.readdirSync(docsDesignDir)
         .filter(f => /^DD-\d{3}-.+\.md$/.test(f))
         .map(f => path.join(docsDesignDir, f))
     : [];
 
-  it('can find Design Documents in docs/design', () => {
+  it('can find Design Documents in specs/design', () => {
     expect(ddFiles.length).toBeGreaterThan(0);
   });
 
@@ -461,7 +461,7 @@ describe('pattern matching edge cases', () => {
 describe('rule configuration options', () => {
   const defaultOptions = {
     ddPattern: /^DD-\d{3}-.+\.md$/,
-    ddDirectory: 'docs/design',
+    ddDirectory: 'specs/design',
     requireTestingStrategy: true,
     requireIntegrationTests: true,
     requireUnitTests: true,
@@ -475,7 +475,7 @@ describe('rule configuration options', () => {
   });
 
   it('has correct default directory', () => {
-    expect(defaultOptions.ddDirectory).toBe('docs/design');
+    expect(defaultOptions.ddDirectory).toBe('specs/design');
   });
 
   it('requires all test sections by default', () => {

@@ -55,17 +55,17 @@ const serializeCheck = (check: InvariantCheck) => ({
   checkedAt: check.checkedAt.toISOString(),
 })
 
-/** Set up .tx/docs directory structure required by DocService. */
+/** Set up specs/ directory structure required by DocService. */
 const setupDocsWorkspace = (cwd: string): void => {
   mkdirSync(join(cwd, ".tx"), { recursive: true })
-  mkdirSync(join(cwd, ".tx", "docs", "prd"), { recursive: true })
-  mkdirSync(join(cwd, ".tx", "docs", "design"), { recursive: true })
+  mkdirSync(join(cwd, "specs", "prd"), { recursive: true })
+  mkdirSync(join(cwd, "specs", "design"), { recursive: true })
 }
 
 const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
   writeFileSync(
     join(cwd, ".tx", "config.toml"),
-    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    ["[docs]", 'path = "specs"', `require_ears = ${requireEars}`].join("\n"),
     "utf8"
   )
 }

@@ -46,6 +46,7 @@ import {
   PinRepositoryLive,
   ClaimRepositoryLive,
   ClaimServiceLive,
+  ClaimService,
   OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
@@ -97,6 +98,10 @@ interface NormalizedTask {
   groupContext: string | null
   effectiveGroupContext: string | null
   effectiveGroupContextSourceTaskId: string | null
+  orchestrationStatus: string | null
+  claimedBy: string | null
+  claimExpiresAt: string | null
+  failedAttempts: number
 }
 
 interface CliExecResult {
@@ -135,7 +140,7 @@ function runTxArgs(args: string[], dbPath: string): CliExecResult {
 // MCP Test Runtime Factory
 // =============================================================================
 
-type McpTestServices = TaskService | ReadyService | DependencyService
+type McpTestServices = TaskService | ReadyService | DependencyService | ClaimService
 
 function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
   const infra = Layer.succeed(SqliteClient, db.db as Database)
@@ -159,7 +164,7 @@ function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTes
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
   )
 
-  const services = Layer.mergeAll(
+  const appServices = Layer.mergeAll(
     TaskServiceLive,
     DependencyServiceLive,
     ReadyServiceLive,
@@ -169,6 +174,8 @@ function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTes
   ).pipe(
     Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop, claimService))
   )
+
+  const services = Layer.mergeAll(appServices, claimService)
 
   return ManagedRuntime.make(services)
 }
@@ -194,7 +201,11 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   isReady: task.isReady,
   groupContext: task.groupContext,
   effectiveGroupContext: task.effectiveGroupContext,
-  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId
+  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId,
+  orchestrationStatus: task.orchestrationStatus,
+  claimedBy: task.claimedBy,
+  claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
+  failedAttempts: task.failedAttempts,
 })
 
 interface McpToolResponse {
@@ -319,6 +330,10 @@ interface ApiTaskWithDeps {
   groupContext: string | null
   effectiveGroupContext: string | null
   effectiveGroupContextSourceTaskId: string | null
+  orchestrationStatus: string | null
+  claimedBy: string | null
+  claimExpiresAt: string | null
+  failedAttempts: number
 }
 
 function createTestApiApp(db: TestDatabase) {
@@ -436,6 +451,25 @@ function createTestApiApp(db: TestDatabase) {
       }
     }
 
+    // Derive orchestration status from claims (mirrors deriveOrchestrationStatus in internals.ts)
+    const claimsMap = new Map<string, { status: string; worker_id: string; lease_expires_at: string }>()
+    if (taskIds.length > 0) {
+      const claimPlaceholders = taskIds.map(() => "?").join(",")
+      const claimRows = db.db.prepare(
+        `SELECT c.* FROM task_claims c
+         INNER JOIN (
+           SELECT task_id, MAX(id) AS max_id
+           FROM task_claims
+           WHERE task_id IN (${claimPlaceholders}) AND status != 'completed'
+           GROUP BY task_id
+         ) latest ON c.id = latest.max_id`
+      ).all(...taskIds) as Array<{ task_id: string; status: string; worker_id: string; lease_expires_at: string }>
+      for (const row of claimRows) {
+        claimsMap.set(row.task_id, { status: row.status, worker_id: row.worker_id, lease_expires_at: row.lease_expires_at })
+      }
+    }
+
+    const now = new Date()
     return tasks.map(task => {
       const blockedBy = blockedByMap.get(task.id) ?? []
       const blocks = blocksMap.get(task.id) ?? []
@@ -443,6 +477,33 @@ function createTestApiApp(db: TestDatabase) {
       const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
       const isReady = workableStatuses.includes(task.status) && allBlockersDone
       const effective = effectiveContextMap.get(task.id)
+      const claim = claimsMap.get(task.id)
+
+      // Derive orchestration status (mirrors core deriveOrchestrationStatus)
+      let orchestrationStatus: string = "unclaimed"
+      let claimedBy: string | null = null
+      let claimExpiresAt: string | null = null
+
+      if (claim) {
+        const leaseExpiry = new Date(claim.lease_expires_at)
+        if (claim.status === "released") {
+          orchestrationStatus = "released"
+          claimedBy = claim.worker_id
+          claimExpiresAt = claim.lease_expires_at
+        } else if (claim.status === "expired" || leaseExpiry < now) {
+          orchestrationStatus = "lease_expired"
+          claimedBy = claim.worker_id
+          claimExpiresAt = claim.lease_expires_at
+        } else if (task.status === "active") {
+          orchestrationStatus = "running"
+          claimedBy = claim.worker_id
+          claimExpiresAt = claim.lease_expires_at
+        } else {
+          orchestrationStatus = "claimed"
+          claimedBy = claim.worker_id
+          claimExpiresAt = claim.lease_expires_at
+        }
+      }
 
       return {
         id: task.id,
@@ -461,7 +522,11 @@ function createTestApiApp(db: TestDatabase) {
         isReady,
         groupContext: directContextMap.get(task.id) ?? null,
         effectiveGroupContext: effective?.context ?? null,
-        effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
+        effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null,
+        orchestrationStatus,
+        claimedBy,
+        claimExpiresAt,
+        failedAttempts: 0,
       }
     })
   }
@@ -608,7 +673,11 @@ function normalizeTask(task: any): NormalizedTask {
     isReady: task.isReady,
     groupContext: task.groupContext ?? null,
     effectiveGroupContext: task.effectiveGroupContext ?? null,
-    effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId ?? null
+    effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId ?? null,
+    orchestrationStatus: task.orchestrationStatus ?? null,
+    claimedBy: task.claimedBy ?? null,
+    claimExpiresAt: task.claimExpiresAt ?? null,
+    failedAttempts: task.failedAttempts ?? 0,
   }
 }
 
@@ -636,6 +705,10 @@ function assertTasksEqual(label: string, t1: NormalizedTask, t2: NormalizedTask)
   expect(t1.effectiveGroupContextSourceTaskId, `${label}: effectiveGroupContextSourceTaskId`).toBe(
     t2.effectiveGroupContextSourceTaskId
   )
+  expect(t1.orchestrationStatus, `${label}: orchestrationStatus`).toBe(t2.orchestrationStatus)
+  expect(t1.claimedBy, `${label}: claimedBy`).toBe(t2.claimedBy)
+  expect(t1.claimExpiresAt, `${label}: claimExpiresAt`).toBe(t2.claimExpiresAt)
+  expect(t1.failedAttempts, `${label}: failedAttempts`).toBe(t2.failedAttempts)
 }
 
 function assertTaskListsEqual(label: string, list1: NormalizedTask[], list2: NormalizedTask[]): void {
@@ -1200,6 +1273,71 @@ describe("Interface Parity", () => {
       } finally {
         prepareSpy.mockRestore()
       }
+    })
+
+    it("returns equivalent orchestrationStatus when a task is claimed", async () => {
+      const taskId = FIXTURES.TASK_JWT
+      const workerId = "parity-worker-1"
+      const leaseMinutes = 30
+      const leaseExpiresAt = new Date(Date.now() + leaseMinutes * 60 * 1000)
+
+      // Insert worker + claim into MCP/API shared DB
+      db.db.prepare(
+        `INSERT OR IGNORE INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at)
+         VALUES (?, ?, 'localhost', 1, 'idle', datetime('now'), datetime('now'))`
+      ).run(workerId, workerId)
+
+      // Create claim via MCP runtime (exercises real ClaimService)
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const claimService = yield* ClaimService
+          yield* claimService.claim(taskId as TaskId, workerId, leaseMinutes)
+        })
+      )
+
+      // Create equivalent claim in CLI DB
+      const cliDb = new Database(dbPath)
+      cliDb.prepare(
+        `INSERT OR IGNORE INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at)
+         VALUES (?, ?, 'localhost', 1, 'idle', datetime('now'), datetime('now'))`
+      ).run(workerId, workerId)
+      cliDb.prepare(
+        `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+         VALUES (?, ?, ?, ?, 0, 'active')`
+      ).run(taskId, workerId, new Date().toISOString(), leaseExpiresAt.toISOString())
+      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+      cliDb.close()
+
+      // CLI
+      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      expect(cliResult.status, `CLI failed: ${cliResult.stderr}`).toBe(0)
+      const cliTask = JSON.parse(cliResult.stdout)
+
+      // MCP
+      const mcpResult = await callMcpShow(runtime, taskId)
+      expect(mcpResult.isError).toBeFalsy()
+      const mcpTask = JSON.parse(mcpResult.content[1].text)
+
+      // API
+      const apiResponse = await apiApp.request(`/api/tasks/${taskId}`)
+      expect(apiResponse.status).toBe(200)
+      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
+      const apiTask = apiData.task
+
+      // All interfaces should report "claimed" orchestration status
+      expect(cliTask.orchestrationStatus, "CLI: orchestrationStatus").toBe("claimed")
+      expect(mcpTask.orchestrationStatus, "MCP: orchestrationStatus").toBe("claimed")
+      expect(apiTask.orchestrationStatus, "API: orchestrationStatus").toBe("claimed")
+
+      // All interfaces should report the correct worker
+      expect(cliTask.claimedBy, "CLI: claimedBy").toBe(workerId)
+      expect(mcpTask.claimedBy, "MCP: claimedBy").toBe(workerId)
+      expect(apiTask.claimedBy, "API: claimedBy").toBe(workerId)
+
+      // All interfaces should have non-null claimExpiresAt
+      expect(cliTask.claimExpiresAt, "CLI: claimExpiresAt").not.toBeNull()
+      expect(mcpTask.claimExpiresAt, "MCP: claimExpiresAt").not.toBeNull()
+      expect(apiTask.claimExpiresAt, "API: claimExpiresAt").not.toBeNull()
     })
   })
 

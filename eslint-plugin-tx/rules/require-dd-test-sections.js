@@ -88,7 +88,7 @@ function getMissingSections(content) {
 
 const defaultOptions = {
   ddPattern: /^DD-\d{3}-.+\.md$/,
-  ddDirectory: 'docs/design',
+  ddDirectory: 'specs/design',
   requireTestingStrategy: true,
   requireIntegrationTests: true,
   requireUnitTests: true,

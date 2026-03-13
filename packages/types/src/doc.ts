@@ -6,7 +6,7 @@
  * Core type definitions using Effect Schema (Doctrine Rule 10).
  *
  * Docs are structured YAML (source of truth) with rendered MD views.
- * YAML content lives on disk (.tx/docs/); DB stores metadata + links only.
+ * YAML content lives on disk (specs/); DB stores metadata + links only.
  */
 import { Schema } from "effect"
 

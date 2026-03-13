@@ -1044,6 +1044,13 @@ const RenderDocsResponse = Schema.Struct({
   rendered: Schema.Array(Schema.String),
 })
 
+const DocSourceResponse = Schema.Struct({
+  name: Schema.String,
+  filePath: Schema.String,
+  yamlContent: Schema.NullOr(Schema.String),
+  renderedContent: Schema.NullOr(Schema.String),
+})
+
 const DocGraphResponse = Schema.Struct({
   nodes: Schema.Array(DocGraphNodeSchema),
   edges: Schema.Array(DocGraphEdgeSchema),
@@ -1091,6 +1098,10 @@ export const DocsGroup = HttpApiGroup.make("docs")
     HttpApiEndpoint.post("renderDocs", "/api/docs/render")
       .setPayload(RenderDocsBody)
       .addSuccess(RenderDocsResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getDocSource")`/api/docs/${DocNameParam}/source`
+      .addSuccess(DocSourceResponse)
   )
   .add(
     HttpApiEndpoint.get("getDocGraph", "/api/docs/graph")

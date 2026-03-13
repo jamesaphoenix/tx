@@ -10,6 +10,7 @@ import {
   applyMigrations,
   escapeLikePattern,
   isPathWithin,
+  isValidDocKind,
   readTxConfig,
   renderDocToMarkdown,
   resolvePathWithin,
@@ -875,9 +876,7 @@ function renderMarkdownFromYaml(yamlContent: string, filePath: string): string {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const parsedDoc = parsed as Record<string, unknown>
       const kindRaw = typeof parsedDoc.kind === "string" ? parsedDoc.kind.toLowerCase() : "overview"
-      const kind = kindRaw === "prd" || kindRaw === "design" || kindRaw === "overview"
-        ? kindRaw
-        : "overview"
+      const kind = isValidDocKind(kindRaw) ? kindRaw : "overview"
       return renderDocToMarkdown(parsedDoc, kind)
     }
   } catch {
@@ -893,6 +892,17 @@ function getDocsRootPath(): string {
   } catch {
     return resolve(dbDir, "docs")
   }
+}
+
+/**
+ * Normalize a doc file_path from the DB to match the actual filesystem layout.
+ * Handles legacy paths where kind was used directly as subdirectory name
+ * (e.g. "requirement/" instead of "requirements/", "system_design/" instead of "system-design/").
+ */
+function normalizeDocFilePath(filePath: string): string {
+  return filePath
+    .replace(/^requirement\//, "requirements/")
+    .replace(/^system_design\//, "system-design/")
 }
 
 const WORKABLE_TASK_STATUSES = new Set<string>(["backlog", "ready", "planning"])
@@ -1861,17 +1871,18 @@ app.post("/api/docs/render", async (c) => {
 
     const docsRoot = getDocsRootPath()
     const rendered = rows.flatMap((row) => {
-      const yamlPath = resolvePathWithin(docsRoot, row.file_path, { useRealpath: true })
+      const fp = normalizeDocFilePath(row.file_path)
+      const yamlPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
       if (!yamlPath) {
         return []
       }
-      const mdRelativePath = row.file_path.replace(/\.yml$/i, ".md")
+      const mdRelativePath = fp.replace(/\.yml$/i, ".md")
       const mdPath = resolvePathWithin(docsRoot, mdRelativePath, { useRealpath: true })
 
       if (existsSync(yamlPath)) {
         try {
           const yamlContent = readFileSync(yamlPath, "utf-8")
-          return [renderMarkdownFromYaml(yamlContent, row.file_path)]
+          return [renderMarkdownFromYaml(yamlContent, fp)]
         } catch {
           return []
         }
@@ -1942,16 +1953,17 @@ app.get("/api/docs/:name/source", (c) => {
     }
 
     const docsRoot = getDocsRootPath()
-    const yamlPath = resolvePathWithin(docsRoot, row.file_path, { useRealpath: true })
+    const fp = normalizeDocFilePath(row.file_path)
+    const yamlPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
     if (!yamlPath) {
       return c.json({ error: "Invalid doc source path" }, 400)
     }
-    const mdRelativePath = row.file_path.replace(/\.yml$/i, ".md")
+    const mdRelativePath = fp.replace(/\.yml$/i, ".md")
     const mdPath = resolvePathWithin(docsRoot, mdRelativePath, { useRealpath: true })
 
     const yamlContent = existsSync(yamlPath) ? readFileSync(yamlPath, "utf-8") : null
     const renderedContent = yamlContent
-      ? renderMarkdownFromYaml(yamlContent, row.file_path)
+      ? renderMarkdownFromYaml(yamlContent, fp)
       : mdPath && existsSync(mdPath)
         ? readFileSync(mdPath, "utf-8")
         : null
@@ -1960,7 +1972,7 @@ app.get("/api/docs/:name/source", (c) => {
       name,
       yamlContent,
       renderedContent,
-      filePath: row.file_path,
+      filePath: fp,
     })
   } catch (e) {
     return c.json({ error: String(e) }, 500)

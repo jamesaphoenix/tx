@@ -33,6 +33,14 @@ export function formatTaskWithDeps(t: TaskWithDeps): string {
   lines.push(`  Blocked by: ${t.blockedBy.length > 0 ? t.blockedBy.join(", ") : "(none)"}`)
   lines.push(`  Blocks: ${t.blocks.length > 0 ? t.blocks.join(", ") : "(none)"}`)
   lines.push(`  Children: ${t.children.length > 0 ? t.children.join(", ") : "(none)"}`)
+  if (t.orchestrationStatus && t.orchestrationStatus !== "unclaimed") {
+    lines.push(`  Orchestration: ${t.orchestrationStatus}${t.claimedBy ? ` (worker: ${t.claimedBy})` : ""}`)
+    if (t.claimExpiresAt) {
+      const expiresStr = t.claimExpiresAt instanceof Date ? t.claimExpiresAt.toISOString() : String(t.claimExpiresAt)
+      lines.push(`  Lease expires: ${expiresStr}`)
+    }
+  }
+  if (t.failedAttempts > 0) lines.push(`  Failed attempts: ${t.failedAttempts}`)
   lines.push(`  Created: ${t.createdAt.toISOString()}`)
   lines.push(`  Updated: ${t.updatedAt.toISOString()}`)
   if (t.completedAt) lines.push(`  Completed: ${t.completedAt.toISOString()}`)

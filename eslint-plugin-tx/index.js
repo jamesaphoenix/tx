@@ -116,14 +116,14 @@ const plugin = {
         }],
         'tx/require-dd-test-sections': ['error', {
           ddPattern: '^DD-\\d{3}-.+\\.md$',
-          ddDirectory: 'docs/design',
+          ddDirectory: 'specs/design',
           requireTestingStrategy: true,
           requireIntegrationTests: true,
           requireUnitTests: true
         }],
         'tx/prd-failure-modes': ['error', {
           prdPattern: '^PRD-\\d{3}-.+\\.md$',
-          prdDirectory: 'docs/prd',
+          prdDirectory: 'specs/prd',
           requireFailureModes: true,
           requireRecoveryStrategy: false
         }],

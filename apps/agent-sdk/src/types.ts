@@ -382,6 +382,10 @@ export interface SerializedTaskWithDeps {
   groupContext: string | null
   effectiveGroupContext: string | null
   effectiveGroupContextSourceTaskId: string | null
+  orchestrationStatus: "unclaimed" | "claimed" | "running" | "lease_expired" | "released" | null
+  claimedBy: string | null
+  claimExpiresAt: string | null
+  failedAttempts: number
 }
 
 /**

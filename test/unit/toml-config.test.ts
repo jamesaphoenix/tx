@@ -18,7 +18,7 @@ import {
 
 const tempDirs: string[] = [];
 const DEFAULTS = {
-  docs: { path: ".tx/docs" },
+  docs: { path: "specs" },
   spec: {
     testPatterns: [
       "test/**/*.test.{ts,js,tsx,jsx}",
@@ -34,7 +34,7 @@ const DEFAULTS = {
       "**/*_test.{c,cpp,cc}",
     ],
   },
-  memory: { defaultDir: "docs" },
+  memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: { defaultTaskAssigmentType: "human" },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
@@ -121,12 +121,12 @@ describe("toml-config", () => {
     const cwd = makeTempDir();
     writeConfig(
       cwd,
-      ["[docs]", 'path = ".tx/docs"', "require_ears = false"].join("\n"),
+      ["[docs]", 'path = "specs"', "require_ears = false"].join("\n"),
     );
 
     const parsed = readTxConfig(cwd);
     // require_ears is no longer a config option (EARS is always mandatory)
-    expect(parsed.docs.path).toBe(".tx/docs");
+    expect(parsed.docs.path).toBe("specs");
   });
 
   it("writes dashboard default assignment type to config.toml", () => {
@@ -219,10 +219,10 @@ describe("toml-config", () => {
 
   it("defaults memory default_dir to docs when section is absent", () => {
     const cwd = makeTempDir();
-    writeConfig(cwd, ["[docs]", 'path = ".tx/docs"'].join("\n"));
+    writeConfig(cwd, ["[docs]", 'path = "specs"'].join("\n"));
 
     const parsed = readTxConfig(cwd);
-    expect(parsed.memory.defaultDir).toBe("docs");
+    expect(parsed.memory.defaultDir).toBe("specs");
   });
 
   it("parses pins target_files as comma-separated list", () => {
@@ -251,7 +251,7 @@ describe("toml-config", () => {
 
   it("defaults pins target_files to CLAUDE.md and AGENTS.md when section is absent", () => {
     const cwd = makeTempDir();
-    writeConfig(cwd, ["[docs]", 'path = ".tx/docs"'].join("\n"));
+    writeConfig(cwd, ["[docs]", 'path = "specs"'].join("\n"));
 
     const parsed = readTxConfig(cwd);
     expect(parsed.pins.targetFiles).toEqual(["CLAUDE.md", "AGENTS.md"]);
@@ -286,7 +286,7 @@ describe("scaffoldConfigToml", () => {
     expect(raw).toContain("tx spec discover");
     expect(raw).toContain("[memory]");
     expect(raw).toContain("https://txdocs.dev/docs/primitives/memory");
-    expect(raw).toContain('default_dir = "docs"');
+    expect(raw).toContain('default_dir = "specs"');
     expect(raw).toContain("[cycles]");
     expect(raw).toContain("https://txdocs.dev/docs/headful/docs-runs-cycles");
     expect(raw).toContain("[dashboard]");
@@ -296,7 +296,7 @@ describe("scaffoldConfigToml", () => {
     expect(raw).toContain("[pins]");
     expect(raw).toContain("https://txdocs.dev/docs/primitives/pin");
     // Check defaults are set
-    expect(raw).toContain('path = ".tx/docs"');
+    expect(raw).toContain('path = "specs"');
     expect(raw).toContain("test_patterns = [");
     expect(raw).toContain("agents = 3");
     expect(raw).toContain('model = "claude-opus-4-6"');

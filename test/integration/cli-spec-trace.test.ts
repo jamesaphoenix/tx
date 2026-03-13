@@ -31,7 +31,7 @@ const runTx = (cwd: string, dbPath: string, args: string[], input?: string): Exe
 const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
   writeFileSync(
     join(cwd, ".tx", "config.toml"),
-    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    ["[docs]", 'path = "specs"', `require_ears = ${requireEars}`].join("\n"),
     "utf-8"
   )
 }
@@ -54,7 +54,7 @@ const writeSpecDocYaml = (
     ]),
   ]
 
-  writeFileSync(join(cwd, ".tx", "docs", "prd", `${name}.yml`), `${lines.join("\n")}\n`, "utf-8")
+  writeFileSync(join(cwd, "specs", "prd", `${name}.yml`), `${lines.join("\n")}\n`, "utf-8")
 }
 
 describe("CLI spec traceability", () => {

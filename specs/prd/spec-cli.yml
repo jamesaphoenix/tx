@@ -1,0 +1,27 @@
+kind: prd
+name: spec-cli
+title: "Spec CLI"
+status: changing
+
+problem: |
+  Describe the problem.
+
+solution: |
+  Describe the solution approach.
+
+requirements:
+  - Requirement 1
+
+# Structured requirements using EARS notation (optional)
+# ears_requirements:
+#   - id: EARS-XXX-001
+#     pattern: ubiquitous
+#     system: the system
+#     response: do something
+#     priority: must
+
+acceptance_criteria:
+  - Criterion 1
+
+out_of_scope:
+  - Item 1

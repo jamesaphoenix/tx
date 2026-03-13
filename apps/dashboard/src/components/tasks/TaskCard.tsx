@@ -1,6 +1,21 @@
 import { forwardRef, useEffect, useRef, useImperativeHandle } from "react"
-import type { TaskWithDeps } from "../../api/client"
+import type { TaskWithDeps, OrchestrationStatus } from "../../api/client"
 import { canonicalTaskLabelName } from "./TaskPropertySelects"
+
+function OrchestrationBadge({ status }: { status: OrchestrationStatus }) {
+  const styles: Record<OrchestrationStatus, string> = {
+    unclaimed: "bg-gray-600 text-gray-200",
+    claimed: "bg-cyan-600 text-cyan-100",
+    running: "bg-yellow-600 text-yellow-100",
+    lease_expired: "bg-red-600 text-red-100",
+    released: "bg-gray-500 text-gray-200",
+  }
+  return (
+    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${styles[status] ?? "bg-gray-500 text-gray-200"}`}>
+      {status.replace(/_/g, " ")}
+    </span>
+  )
+}
 
 // Local StatusBadge - TODO: extract to ui/StatusBadge.tsx
 function StatusBadge({ status }: { status: string }) {
@@ -16,7 +31,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <span className={`px-2 py-0.5 text-xs rounded-full text-white ${colors[status] ?? "bg-gray-400"}`}>
-      {status}
+      {status.replace(/_/g, " ")}
     </span>
   )
 }
@@ -110,6 +125,9 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
             <h3 className="text-sm font-medium text-white truncate">{task.title}</h3>
           </div>
           <StatusBadge status={task.status} />
+          {task.orchestrationStatus && task.orchestrationStatus !== "unclaimed" && (
+            <OrchestrationBadge status={task.orchestrationStatus} />
+          )}
         </div>
         {task.labels && task.labels.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">

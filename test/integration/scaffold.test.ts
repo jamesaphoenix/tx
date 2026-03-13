@@ -49,9 +49,9 @@ describe("scaffold", () => {
       expect(content).toContain("inherit the same context")
       expect(content).toContain("Example Orchestration")
       expect(content).toContain("Documentation Structure")
-      expect(content).toContain("docs/requirements/")
+      expect(content).toContain("specs/requirements/")
       expect(content).toContain("REQ-NNN")
-      expect(content).toContain("docs/system-design/")
+      expect(content).toContain("specs/system-design/")
       expect(content).toContain("SD-NNN")
 
       // Bounded Autonomy section
@@ -210,9 +210,9 @@ describe("scaffold", () => {
       expect(content).toContain("tx group-context set <id> <context>")
       expect(content).toContain("inherit the same context")
       expect(content).toContain("Documentation Structure")
-      expect(content).toContain("docs/requirements/")
+      expect(content).toContain("specs/requirements/")
       expect(content).toContain("REQ-NNN")
-      expect(content).toContain("docs/system-design/")
+      expect(content).toContain("specs/system-design/")
       expect(content).toContain("SD-NNN")
 
       // Bounded Autonomy section

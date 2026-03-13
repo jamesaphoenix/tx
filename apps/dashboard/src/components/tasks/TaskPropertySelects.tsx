@@ -3,12 +3,15 @@ import Select, { type MultiValue, type SingleValue, type StylesConfig } from "re
 import CreatableSelect from "react-select/creatable"
 import type { TaskLabel } from "../../api/client"
 
-export type HumanTaskStage = "backlog" | "in_progress" | "done"
+export type TaskStatusValue = "backlog" | "ready" | "planning" | "active" | "blocked" | "review" | "human_needs_to_review" | "done"
+
+/** @deprecated Use TaskStatusValue instead */
+export type HumanTaskStage = TaskStatusValue
 
 type SelectTheme = "light" | "dark"
 
 interface StageOption {
-  value: HumanTaskStage
+  value: TaskStatusValue
   label: string
 }
 
@@ -23,9 +26,14 @@ interface LabelOption {
   color: string
 }
 
-const HUMAN_STAGE_OPTIONS_INTERNAL: readonly StageOption[] = [
+const TASK_STATUS_OPTIONS_INTERNAL: readonly StageOption[] = [
   { value: "backlog", label: "Backlog" },
-  { value: "in_progress", label: "In Progress" },
+  { value: "ready", label: "Ready" },
+  { value: "planning", label: "Planning" },
+  { value: "active", label: "Active" },
+  { value: "blocked", label: "Blocked" },
+  { value: "review", label: "Review" },
+  { value: "human_needs_to_review", label: "Needs Review" },
   { value: "done", label: "Done" },
 ]
 
@@ -81,18 +89,27 @@ const DARK_THEME = {
   chipRemoveHoverBg: "#374151",
 }
 
-export const HUMAN_STAGE_OPTIONS = HUMAN_STAGE_OPTIONS_INTERNAL
+export const HUMAN_STAGE_OPTIONS = TASK_STATUS_OPTIONS_INTERNAL
 
-export const HUMAN_STAGE_TO_STATUS: Record<HumanTaskStage, "backlog" | "active" | "done"> = {
+export const TASK_STATUS_OPTIONS = TASK_STATUS_OPTIONS_INTERNAL
+
+/** @deprecated No mapping needed — use status values directly */
+export const HUMAN_STAGE_TO_STATUS: Record<TaskStatusValue, string> = {
   backlog: "backlog",
-  in_progress: "active",
+  ready: "ready",
+  planning: "planning",
+  active: "active",
+  blocked: "blocked",
+  review: "review",
+  human_needs_to_review: "human_needs_to_review",
   done: "done",
 }
 
-export function toHumanTaskStage(status: string): HumanTaskStage {
-  if (status === "done") return "done"
-  if (status === "backlog") return "backlog"
-  return "in_progress"
+/** @deprecated Use status directly — this is now an identity function */
+export function toHumanTaskStage(status: string): TaskStatusValue {
+  const valid: TaskStatusValue[] = ["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]
+  if (valid.includes(status as TaskStatusValue)) return status as TaskStatusValue
+  return "backlog"
 }
 
 function hashLabelName(value: string): number {
@@ -195,12 +212,12 @@ export function TaskStatusSelect({
   placeholder = "Select one...",
 }: TaskStatusSelectProps) {
   const selectedOption =
-    HUMAN_STAGE_OPTIONS_INTERNAL.find((option) => option.value === value) ?? HUMAN_STAGE_OPTIONS_INTERNAL[0]
+    TASK_STATUS_OPTIONS_INTERNAL.find((option) => option.value === value) ?? TASK_STATUS_OPTIONS_INTERNAL[0]
 
   return (
     <Select<StageOption, false>
       instanceId={instanceId}
-      options={HUMAN_STAGE_OPTIONS_INTERNAL as StageOption[]}
+      options={TASK_STATUS_OPTIONS_INTERNAL as StageOption[]}
       value={selectedOption}
       isClearable={false}
       isSearchable={false}

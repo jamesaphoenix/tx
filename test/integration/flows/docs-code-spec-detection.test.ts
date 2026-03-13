@@ -6,6 +6,8 @@ import { tmpdir } from "node:os"
 
 const CLI_SRC = resolve(__dirname, "../../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 120000 : 60000))
+// Each flow test spawns 10-20+ CLI commands via spawnSync; the default 10s vitest timeout is insufficient in CI.
+const FLOW_TEST_TIMEOUT = process.env.CI ? 120_000 : 60_000
 
 type ExecResult = {
   readonly stdout: string
@@ -47,7 +49,7 @@ const writeRelative = (cwd: string, relativePath: string, content: string): void
 const writeDocsConfig = (cwd: string): void => {
   writeRelative(cwd, ".tx/config.toml", [
     "[docs]",
-    'path = ".tx/docs"',
+    'path = "specs"',
     "require_ears = false",
     "",
     "[spec]",
@@ -63,7 +65,7 @@ const overwritePrdYaml = (
 ): void => {
   writeRelative(
     cwd,
-    `.tx/docs/prd/${name}.yml`,
+    `specs/prd/${name}.yml`,
     [
       "kind: prd",
       `name: ${name}`,
@@ -96,7 +98,7 @@ const addPrd = (cwd: string, dbPath: string, name: string, title: string): void 
 
 const parseJson = <T>(result: ExecResult): T => JSON.parse(result.stdout) as T
 
-describe("Docs -> code -> spec detection flow", () => {
+describe("Docs -> code -> spec detection flow", { timeout: FLOW_TEST_TIMEOUT }, () => {
   let cwd: string
   let dbPath: string
 

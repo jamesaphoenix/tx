@@ -14,7 +14,7 @@
  */
 
 import { Schema } from "effect"
-import { TaskIdSchema, TaskStatusSchema } from "./task.js"
+import { TaskIdSchema, TaskStatusSchema, OrchestrationStatusSchema } from "./task.js"
 import type { TaskWithDeps } from "./task.js"
 import { LearningSourceTypeSchema } from "./learning.js"
 import type { Learning, LearningWithScore } from "./learning.js"
@@ -68,6 +68,14 @@ export const TaskWithDepsSerializedSchema = Schema.Struct({
   effectiveGroupContext: Schema.NullOr(Schema.String),
   /** Source task ID that provided effectiveGroupContext */
   effectiveGroupContextSourceTaskId: Schema.NullOr(TaskIdSchema),
+  /** Orchestration status derived from claims (null when claims not in use) */
+  orchestrationStatus: Schema.NullOr(OrchestrationStatusSchema),
+  /** Worker ID holding the active claim (null when no claim) */
+  claimedBy: Schema.NullOr(Schema.String),
+  /** Lease expiry time for the active claim (null when no claim, ISO string) */
+  claimExpiresAt: Schema.NullOr(Schema.String),
+  /** Number of failed attempts for this task */
+  failedAttempts: Schema.Number.pipe(Schema.int()),
 })
 export type TaskWithDepsSerialized = typeof TaskWithDepsSerializedSchema.Type
 
@@ -204,6 +212,10 @@ export const serializeTask = (task: TaskWithDeps): TaskWithDepsSerialized => ({
   groupContext: task.groupContext,
   effectiveGroupContext: task.effectiveGroupContext,
   effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId,
+  orchestrationStatus: task.orchestrationStatus,
+  claimedBy: task.claimedBy,
+  claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
+  failedAttempts: task.failedAttempts,
 })
 
 /**

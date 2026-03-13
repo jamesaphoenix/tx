@@ -1,0 +1,21 @@
+kind: system_design
+name: error-handling
+title: "Error Handling"
+status: changing
+
+overview: |
+  What cross-cutting concern this describes.
+
+scope: |
+  Which features/subsystems this applies to.
+
+constraints: []
+
+design: |
+  Architecture, patterns, data flow, service boundaries.
+
+invariants: []
+
+applies_to: []
+
+decision_log: []

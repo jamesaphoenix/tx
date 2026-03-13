@@ -95,7 +95,6 @@ export const list = (_pos: string[], flags: Flags) =>
 export const ready = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const svc = yield* ReadyService
-    const attemptSvc = yield* AttemptService
     const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
 
     // Label filtering
@@ -127,25 +126,15 @@ export const ready = (_pos: string[], flags: Flags) =>
       excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
     })
 
-    // Get failed attempt counts for all tasks in a single query
-    const taskIds = tasks.map(t => t.id)
-    const failedCounts = yield* attemptSvc.getFailedCountsForTasks(taskIds)
-
     if (flag(flags, "json")) {
-      // Add failedAttemptCount to each task in JSON output
-      const tasksWithCounts = tasks.map(t => ({
-        ...t,
-        failedAttemptCount: failedCounts.get(t.id) ?? 0
-      }))
-      console.log(toJson(tasksWithCounts))
+      console.log(toJson(tasks))
     } else {
       if (tasks.length === 0) {
         console.log("No ready tasks")
       } else {
         console.log(`${tasks.length} ready task(s):`)
         for (const t of tasks) {
-          const failedCount = failedCounts.get(t.id) ?? 0
-          const failedWarning = failedCount >= 2 ? ` \u26A0 ${failedCount} failed attempts` : ""
+          const failedWarning = t.failedAttempts >= 2 ? ` \u26A0 ${t.failedAttempts} failed attempts` : ""
           console.log(formatReadyTaskLine(t) + failedWarning)
         }
       }

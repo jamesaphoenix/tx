@@ -3,10 +3,12 @@ import { TaskRepository } from "../../repo/task-repo.js"
 import { DependencyRepository } from "../../repo/dep-repo.js"
 import { GuardRepository } from "../../repo/guard-repo.js"
 import { PinRepository } from "../../repo/pin-repo.js"
+import { ClaimRepository } from "../../repo/claim-repo.js"
+import { AttemptRepository } from "../../repo/attempt-repo.js"
 import { GuardExceededError, DatabaseError, StaleDataError, TaskNotFoundError } from "../../errors.js"
 import { readTxConfig } from "../../utils/toml-config.js"
 import { isValidTaskId } from "@jamesaphoenix/tx-types"
-import type { Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId, TaskWithDeps, OrchestrationStatus } from "@jamesaphoenix/tx-types"
 
 type EffectiveGuardLimits = {
   readonly maxPending: number | null
@@ -18,6 +20,8 @@ type EffectiveGuardLimits = {
 type InternalDeps = {
   readonly taskRepo: Context.Tag.Service<typeof TaskRepository>
   readonly depRepo: Context.Tag.Service<typeof DependencyRepository>
+  readonly claimRepo?: Context.Tag.Service<typeof ClaimRepository>
+  readonly attemptRepo?: Context.Tag.Service<typeof AttemptRepository>
 }
 
 /**
@@ -161,6 +165,31 @@ export const checkGuards = (
     return warnings
   })
 
+/**
+ * Derive orchestration status from claim state.
+ * Pure function — no side effects or database access.
+ */
+export function deriveOrchestrationStatus(
+  claim: { status: string; leaseExpiresAt: Date; workerId: string } | null,
+  taskStatus: string,
+  now: Date
+): { orchestrationStatus: OrchestrationStatus | null; claimedBy: string | null; claimExpiresAt: Date | null } {
+  // No claim found — "unclaimed" (claims system is available but no claim on this task)
+  if (!claim) return { orchestrationStatus: "unclaimed", claimedBy: null, claimExpiresAt: null }
+  // Explicitly released
+  if (claim.status === "released") return { orchestrationStatus: "released", claimedBy: claim.workerId, claimExpiresAt: claim.leaseExpiresAt }
+  // DB-side expired or lease past due
+  if (claim.status === "expired" || claim.leaseExpiresAt < now) return { orchestrationStatus: "lease_expired", claimedBy: claim.workerId, claimExpiresAt: claim.leaseExpiresAt }
+  // Completed claims → unclaimed (work is done)
+  // Note: callers typically pre-filter completed claims (findLatestByTaskId excludes them),
+  // so this branch is a safety net rather than the common path.
+  if (claim.status === "completed") return { orchestrationStatus: "unclaimed", claimedBy: null, claimExpiresAt: null }
+  // Active claim + task is active → running
+  if (taskStatus === "active") return { orchestrationStatus: "running", claimedBy: claim.workerId, claimExpiresAt: claim.leaseExpiresAt }
+  // Active claim + task not yet active → claimed
+  return { orchestrationStatus: "claimed", claimedBy: claim.workerId, claimExpiresAt: claim.leaseExpiresAt }
+}
+
 const isWorkableStatus = (status: string): boolean =>
   ["backlog", "ready", "planning", "active"].includes(status)
 
@@ -183,6 +212,21 @@ export const enrichWithDeps = (
 
     const effective = effectiveContextMap.get(task.id)
 
+    // Orchestration status from claims (optional — graceful when not available)
+    const now = new Date()
+    let orch: { orchestrationStatus: OrchestrationStatus | null; claimedBy: string | null; claimExpiresAt: Date | null } = { orchestrationStatus: null, claimedBy: null, claimExpiresAt: null }
+    if (deps.claimRepo) {
+      const claim = yield* deps.claimRepo.findLatestByTaskId(task.id)
+      orch = deriveOrchestrationStatus(claim, task.status, now)
+    }
+
+    // Failed attempts count (optional)
+    let failedAttempts = 0
+    if (deps.attemptRepo) {
+      const counts = yield* deps.attemptRepo.getFailedCountsForTasks([task.id])
+      failedAttempts = counts.get(task.id) ?? 0
+    }
+
     return {
       ...task,
       blockedBy: blockerIds as TaskId[],
@@ -191,7 +235,11 @@ export const enrichWithDeps = (
       isReady,
       groupContext: directContextMap.get(task.id) ?? null,
       effectiveGroupContext: effective?.context ?? null,
-      effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
+      effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null,
+      orchestrationStatus: orch.orchestrationStatus,
+      claimedBy: orch.claimedBy,
+      claimExpiresAt: orch.claimExpiresAt,
+      failedAttempts,
     }
   })
 
@@ -228,6 +276,15 @@ export const enrichWithDepsBatch = (
       blockerStatusMap.set(t.id, t.status)
     }
 
+    // Batch fetch orchestration data (claims + failed attempts)
+    const now = new Date()
+    const claimsMap = deps.claimRepo
+      ? yield* deps.claimRepo.findLatestByTaskIds(taskIds)
+      : new Map<string, { status: string; leaseExpiresAt: Date; workerId: string }>()
+    const failedCountsMap = deps.attemptRepo
+      ? yield* deps.attemptRepo.getFailedCountsForTasks(taskIds)
+      : new Map<string, number>()
+
     // Build TaskWithDeps for each task
     const results: TaskWithDeps[] = []
     for (const task of tasks) {
@@ -242,6 +299,11 @@ export const enrichWithDepsBatch = (
       }
 
       const effective = effectiveContextMap.get(task.id)
+      const claim = claimsMap.get(task.id) ?? null
+      // When claims system is unavailable, return null (not "unclaimed") to match enrichWithDeps behavior
+      const orch = deps.claimRepo
+        ? deriveOrchestrationStatus(claim, task.status, now)
+        : { orchestrationStatus: null as OrchestrationStatus | null, claimedBy: null, claimExpiresAt: null }
 
       results.push({
         ...task,
@@ -251,7 +313,11 @@ export const enrichWithDepsBatch = (
         isReady,
         groupContext: directContextMap.get(task.id) ?? null,
         effectiveGroupContext: effective?.context ?? null,
-        effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null
+        effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null,
+        orchestrationStatus: orch.orchestrationStatus,
+        claimedBy: orch.claimedBy,
+        claimExpiresAt: orch.claimExpiresAt,
+        failedAttempts: failedCountsMap.get(task.id) ?? 0,
       })
     }
 

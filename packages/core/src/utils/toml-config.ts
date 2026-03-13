@@ -34,7 +34,7 @@ const isGuardMode = (v: string | null): v is GuardMode =>
   v === "advisory" || v === "enforce"
 
 const DEFAULT_CONFIG: TxConfig = {
-  docs: { path: ".tx/docs" },
+  docs: { path: "specs" },
   spec: {
     testPatterns: [
       "test/**/*.test.{ts,js,tsx,jsx}",
@@ -50,7 +50,7 @@ const DEFAULT_CONFIG: TxConfig = {
       "**/*_test.{c,cpp,cc}",
     ]
   },
-  memory: { defaultDir: "docs" },
+  memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: { defaultTaskAssigmentType: "human" },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
@@ -358,7 +358,7 @@ const DEFAULT_CONFIG_TOML = `# tx configuration
 
 # Where tx stores YAML doc files on disk.
 # Relative to the project root.
-path = ".tx/docs"
+path = "specs"
 
 # EARS (Easy Approach to Requirements Syntax) is mandatory for all PRDs.
 # PRDs with legacy 'requirements' must also define 'ears_requirements'.
@@ -395,7 +395,7 @@ test_patterns = [
 # If this directory isn't already a registered source, tx auto-registers
 # it so new documents survive future \`tx memory index\` runs.
 # Relative to the project root.
-default_dir = "docs"
+default_dir = "specs"
 
 # ─── Cycles ─────────────────────────────────────────────────────────
 # Sub-agent swarm for automated issue discovery.

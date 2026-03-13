@@ -4,7 +4,7 @@
  * Manages doc lifecycle (create/update/lock/version), rendering (YAML→MD),
  * linking (doc-doc, task-doc), invariant sync, drift detection, and graph data.
  *
- * YAML content lives on disk (.tx/docs/); DB stores metadata + links only.
+ * YAML content lives on disk (specs/); DB stores metadata + links only.
  */
 import {
   readFileSync,
@@ -79,8 +79,8 @@ const inferLinkType = (
 /** Get the subdirectory for a doc kind. overview lives at root. */
 const kindSubdir = (kind: DocKind): string => {
   if (kind === "overview") return ""
-  if (kind === "requirement") return "requirement"
-  if (kind === "system_design") return "system_design"
+  if (kind === "requirement") return "requirements"
+  if (kind === "system_design") return "system-design"
   return kind
 }
 

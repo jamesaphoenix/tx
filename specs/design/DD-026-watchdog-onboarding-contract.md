@@ -146,7 +146,7 @@ Validation command in test plan:
 
 | Phase | Files | Changes |
 |-------|-------|---------|
-| 0 | `docs/prd/PRD-026-watchdog-onboarding-contract.md`, `docs/design/DD-026-watchdog-onboarding-contract.md` | Publish canonical contract and defaults |
+| 0 | `specs/prd/PRD-026-watchdog-onboarding-contract.md`, `specs/design/DD-026-watchdog-onboarding-contract.md` | Publish canonical contract and defaults |
 | 1 | `apps/cli/src/cli.ts`, `apps/cli/src/help.ts`, `apps/cli/src/commands/scaffold.ts`, `apps/cli/src/templates/**` | Add `tx init --watchdog` path, runtime selection, launcher/config scaffolding, non-overwrite behavior |
 | 2 | `test/integration/init-onboarding.test.ts`, `test/integration/scaffold.test.ts`, `test/integration/ralph-watchdog-script.test.ts`, `test/integration/bash32-compat.test.ts` | Add integration and script-level contract coverage |
 | 3 | `README.md`, `docs/examples/**`, `apps/docs/content/docs/**` | Publish user-facing onboarding flow, launchd/systemd setup, troubleshooting, rollback |

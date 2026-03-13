@@ -6,11 +6,16 @@ import {
 } from "../TaskPropertySelects"
 
 describe("TaskPropertySelects helpers", () => {
-  it("maps task status values to human stages", () => {
+  it("maps task status values to their canonical values", () => {
     expect(toHumanTaskStage("done")).toBe("done")
     expect(toHumanTaskStage("backlog")).toBe("backlog")
-    expect(toHumanTaskStage("active")).toBe("in_progress")
-    expect(toHumanTaskStage("ready")).toBe("in_progress")
+    expect(toHumanTaskStage("active")).toBe("active")
+    expect(toHumanTaskStage("ready")).toBe("ready")
+    expect(toHumanTaskStage("planning")).toBe("planning")
+    expect(toHumanTaskStage("blocked")).toBe("blocked")
+    expect(toHumanTaskStage("review")).toBe("review")
+    expect(toHumanTaskStage("human_needs_to_review")).toBe("human_needs_to_review")
+    expect(toHumanTaskStage("unknown_status")).toBe("backlog")
   })
 
   it("creates deterministic auto label colors", () => {

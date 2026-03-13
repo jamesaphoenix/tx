@@ -41,14 +41,14 @@ const runTx = (args: string[], cwd: string): ExecResult => {
 
 const setupDocsWorkspace = (cwd: string): void => {
   mkdirSync(join(cwd, ".tx"), { recursive: true })
-  mkdirSync(join(cwd, ".tx", "docs", "prd"), { recursive: true })
-  mkdirSync(join(cwd, ".tx", "docs", "design"), { recursive: true })
+  mkdirSync(join(cwd, "specs", "prd"), { recursive: true })
+  mkdirSync(join(cwd, "specs", "design"), { recursive: true })
 }
 
 const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
   writeFileSync(
     join(cwd, ".tx", "config.toml"),
-    ["[docs]", 'path = ".tx/docs"', `require_ears = ${requireEars}`].join("\n"),
+    ["[docs]", 'path = "specs"', `require_ears = ${requireEars}`].join("\n"),
     "utf8"
   )
 }
@@ -120,7 +120,7 @@ describe("EARS requirements integration", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    const renderedPath = join(tempDir, ".tx", "docs", "prd", `${name}.md`)
+    const renderedPath = join(tempDir, "specs", "prd", `${name}.md`)
     expect(existsSync(renderedPath)).toBe(true)
     const markdown = readFileSync(renderedPath, "utf8")
     expect(markdown).toContain("## Structured Requirements (EARS)")
@@ -317,7 +317,7 @@ describe("EARS requirements integration", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    const markdown = readFileSync(join(tempDir, ".tx", "docs", "prd", `${name}.md`), "utf8")
+    const markdown = readFileSync(join(tempDir, "specs", "prd", `${name}.md`), "utf8")
     expect(markdown).toContain("## Requirements")
     expect(markdown).toContain("## Structured Requirements (EARS)")
   })
@@ -368,7 +368,7 @@ describe("EARS requirements integration", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    const markdown = readFileSync(join(tempDir, ".tx", "docs", "prd", `${name}.md`), "utf8")
+    const markdown = readFileSync(join(tempDir, "specs", "prd", `${name}.md`), "utf8")
     expect(markdown).toContain("## Structured Requirements (EARS)")
     expect(markdown).toContain("| EARS-UPD-001 | event_driven |")
   })
@@ -451,7 +451,7 @@ describe("EARS requirements integration", () => {
       }).pipe(Effect.provide(shared.layer))
     )
 
-    const markdown = readFileSync(join(tempDir, ".tx", "docs", "prd", `${name}.md`), "utf8")
+    const markdown = readFileSync(join(tempDir, "specs", "prd", `${name}.md`), "utf8")
     expect(markdown).toContain(
       "| EARS-PIPE-001 | ubiquitous | The tx \\| learn shall persist A \\| B values. | - |"
     )
@@ -478,7 +478,7 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Valid EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
     writeFileSync(
       yamlPath,
       [
@@ -514,7 +514,7 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Path EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
     writeFileSync(
       yamlPath,
       [
@@ -549,7 +549,7 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Invalid EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
     writeFileSync(
       yamlPath,
       [
@@ -585,7 +585,7 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Valid JSON EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
     writeFileSync(
       yamlPath,
       [
@@ -633,7 +633,7 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Invalid JSON EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
     writeFileSync(
       yamlPath,
       [
@@ -677,7 +677,7 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Legacy PRD"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
     writeFileSync(
       yamlPath,
       [
@@ -712,7 +712,7 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Optional EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, ".tx", "docs", "prd", `${name}.yml`)
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
     writeFileSync(
       yamlPath,
       [

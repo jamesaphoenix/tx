@@ -123,7 +123,11 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   isReady: task.isReady,
   groupContext: task.groupContext,
   effectiveGroupContext: task.effectiveGroupContext,
-  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId
+  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId,
+  orchestrationStatus: task.orchestrationStatus,
+  claimedBy: task.claimedBy,
+  claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
+  failedAttempts: task.failedAttempts,
 })
 
 // TaskWithDeps validation schema for serialized output
@@ -150,7 +154,11 @@ const TaskWithDepsOutputSchema = Schema.Struct({
   isReady: Schema.Boolean,
   groupContext: Schema.NullOr(Schema.String),
   effectiveGroupContext: Schema.NullOr(Schema.String),
-  effectiveGroupContextSourceTaskId: Schema.NullOr(Schema.String)
+  effectiveGroupContextSourceTaskId: Schema.NullOr(Schema.String),
+  orchestrationStatus: Schema.NullOr(Schema.String),
+  claimedBy: Schema.NullOr(Schema.String),
+  claimExpiresAt: Schema.NullOr(Schema.String),
+  failedAttempts: Schema.Number.pipe(Schema.int()),
 })
 
 // -----------------------------------------------------------------------------
@@ -180,6 +188,10 @@ function makeTestTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     groupContext: null,
     effectiveGroupContext: null,
     effectiveGroupContextSourceTaskId: null,
+    orchestrationStatus: null,
+    claimedBy: null,
+    claimExpiresAt: null,
+    failedAttempts: 0,
     ...overrides
   }
 }

@@ -1,0 +1,30 @@
+kind: requirement
+name: test-auth-flows
+title: "Auth Flows"
+status: changing
+
+overview: |
+  One-sentence behavioral description.
+
+actors:
+  - name: User
+    description: Primary user of the system
+
+use_cases:
+  - id: UC-001
+    title: Example Use Case
+    trigger: User initiates action
+    preconditions: System is running
+    flow:
+      - Step 1
+      - Step 2
+    postconditions: Action completed
+    exceptions: None
+
+invariants: []
+
+non_functional_requirements: []
+
+traceability:
+  scoped_by: null
+  designed_in: null

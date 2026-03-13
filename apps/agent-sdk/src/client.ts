@@ -1272,7 +1272,13 @@ class DirectTransport implements Transport {
       isReady: task.isReady,
       groupContext: task.groupContext ?? null,
       effectiveGroupContext: task.effectiveGroupContext ?? null,
-      effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId ?? null
+      effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId ?? null,
+      orchestrationStatus: task.orchestrationStatus ?? null,
+      claimedBy: task.claimedBy ?? null,
+      claimExpiresAt: task.claimExpiresAt instanceof Date
+        ? task.claimExpiresAt.toISOString()
+        : (task.claimExpiresAt ?? null),
+      failedAttempts: task.failedAttempts ?? 0,
     }
   }
 

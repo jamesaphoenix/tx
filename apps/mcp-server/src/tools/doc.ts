@@ -269,7 +269,7 @@ export const registerDocTools = (server: McpServer): void => {
   // tx_doc_create - Create a new doc
   registerEffectTool(server,
     "tx_doc_create",
-    "Create a new doc with YAML content. Writes YAML to .tx/docs/ and stores metadata in DB.",
+    "Create a new doc with YAML content. Writes YAML to specs/ and stores metadata in DB.",
     {
       kind: z.enum(DOC_KINDS).describe(`Doc kind: ${DOC_KINDS.join(", ")}`),
       name: z.string().max(200).describe("Unique doc name (alphanumeric with dashes/dots, e.g. 'PRD-001-feature')"),

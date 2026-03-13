@@ -105,6 +105,8 @@ export function DocsPage() {
       { id: "filter:doc-overview", label: "Filter: Overview docs", group: "Filters", icon: "filter", action: () => setKindFilter("overview") },
       { id: "filter:doc-prd", label: "Filter: PRD docs", group: "Filters", icon: "filter", action: () => setKindFilter("prd") },
       { id: "filter:doc-design", label: "Filter: Design docs", group: "Filters", icon: "filter", action: () => setKindFilter("design") },
+      { id: "filter:doc-requirement", label: "Filter: Requirement docs", group: "Filters", icon: "filter", action: () => setKindFilter("requirement") },
+      { id: "filter:doc-system-design", label: "Filter: System Design docs", group: "Filters", icon: "filter", action: () => setKindFilter("system_design") },
       { id: "filter:doc-all-kinds", label: "Filter: All doc kinds", group: "Filters", icon: "filter", action: () => setKindFilter("") },
     )
 

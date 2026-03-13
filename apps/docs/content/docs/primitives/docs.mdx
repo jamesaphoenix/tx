@@ -5,7 +5,7 @@ description: "Docs-as-primitives: structured PRDs and design docs on disk"
 
 ## Purpose
 
-`tx doc` manages structured documentation as first-class primitives. In practice, that means PRDs and design docs live as structured data on disk instead of prose blobs hidden in chat history. Docs are YAML files in `.tx/docs/` with metadata and links stored in the database. This enables:
+`tx doc` manages structured documentation as first-class primitives. In practice, that means PRDs and design docs live as structured data on disk instead of prose blobs hidden in chat history. Docs are YAML files in `specs/` with metadata and links stored in the database. This enables:
 
 - **Structured PRDs** with stable fields, lifecycle state, linked references, and mandatory EARS requirements
 - **Version-controlled docs** that live alongside code
@@ -109,7 +109,7 @@ tx doc drift auth-system
 
 # Validate EARS requirements for a PRD (by doc name or YAML file path)
 tx doc lint-ears auth-system
-tx doc lint-ears .tx/docs/prd/auth-system.yml
+tx doc lint-ears specs/prd/auth-system.yml
 ```
 
 </Tab>
@@ -278,10 +278,10 @@ curl http://localhost:3456/api/docs/graph
 
 ## YAML Structure
 
-Docs are stored as YAML files in `.tx/docs/`:
+Docs are stored as YAML files in `specs/`:
 
 ```
-.tx/docs/
+specs/
   overview.yml              # Project overview
   requirement/
     auth-flows.yml          # Requirements / Use Cases

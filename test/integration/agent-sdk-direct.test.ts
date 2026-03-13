@@ -48,7 +48,7 @@ describe("TxClient direct mode integration", () => {
     db.exec("DELETE FROM run_heartbeat_state")
     db.exec("DELETE FROM runs")
 
-    rmSync(join(tmpProjectDir, ".tx", "docs"), { recursive: true, force: true })
+    rmSync(join(tmpProjectDir, "specs"), { recursive: true, force: true })
     rmSync(join(tmpProjectDir, ".tx", "runs"), { recursive: true, force: true })
   })
 
@@ -62,11 +62,11 @@ describe("TxClient direct mode integration", () => {
 
   it("supports spec traceability flows in direct mode", async () => {
     process.chdir(tmpProjectDir)
-    mkdirSync(join(tmpProjectDir, ".tx", "docs", "prd"), { recursive: true })
-    mkdirSync(join(tmpProjectDir, ".tx", "docs", "design"), { recursive: true })
+    mkdirSync(join(tmpProjectDir, "specs", "prd"), { recursive: true })
+    mkdirSync(join(tmpProjectDir, "specs", "design"), { recursive: true })
     writeFileSync(
       join(tmpProjectDir, ".tx", "config.toml"),
-      ['[docs]', 'path = ".tx/docs"', "require_ears = false"].join("\n"),
+      ['[docs]', 'path = "specs"', "require_ears = false"].join("\n"),
       "utf8"
     )
 
