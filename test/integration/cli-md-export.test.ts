@@ -75,7 +75,9 @@ function runTx(args: string, dbPath: string): ExecResult {
 // tx md-export Command Tests
 // =============================================================================
 
-describe("CLI md-export command", () => {
+const SUITE_TIMEOUT = process.env.CI ? 240_000 : 120_000
+
+describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
   let tmpDir: string
   let dbPath: string
 

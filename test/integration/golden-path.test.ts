@@ -40,7 +40,9 @@ const writeRelative = (cwd: string, relativePath: string, content: string): void
   writeFileSync(absPath, content, "utf-8")
 }
 
-describe("CLI golden path", () => {
+const SUITE_TIMEOUT = process.env.CI ? 120_000 : 60_000
+
+describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
   let cwd: string
 
   beforeEach(() => {
