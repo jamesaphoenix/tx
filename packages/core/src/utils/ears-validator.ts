@@ -67,6 +67,9 @@ export const validateEarsRequirements = (
     }
 
     const id = pickString(req, "id")
+    const statementRaw = req.statement
+    const isNewFormat = typeof statementRaw === "string"
+    const statement = isNewFormat ? statementRaw.trim() : null
     const pattern = pickString(req, "pattern")
     const system = pickString(req, "system")
     const response = pickString(req, "response")
@@ -101,6 +104,19 @@ export const validateEarsRequirements = (
       } else {
         seenIds.add(id)
       }
+    }
+
+    if (isNewFormat) {
+      if (!statement) {
+        errors.push({
+          index,
+          id,
+          field: "statement",
+          code: "missing_required",
+          message: "Field 'statement' is required.",
+        })
+      }
+      return
     }
 
     if (!pattern) {

@@ -249,14 +249,14 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
         kind: kindFilter || undefined,
         status: statusFilter || undefined,
       }),
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   })
 
   const graphQuery = useQuery({
     queryKey: ["doc-graph"],
     queryFn: fetchers.docGraph,
     enabled: viewMode === "hierarchy",
-    refetchInterval: 30000,
+    refetchInterval: 5000,
   })
 
   const docs = docsQuery.data?.docs ?? []
