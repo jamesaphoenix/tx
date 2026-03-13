@@ -58,7 +58,7 @@ describe("4-tier doc system (Phase 1)", () => {
     expect(add.stdout).toContain("auth-flows")
 
     // Verify YAML file exists and contains expected sections
-    const filePath = join(tmpDir, ".tx", "docs", "requirement", "auth-flows.yml")
+    const filePath = join(tmpDir, "specs", "requirements", "auth-flows.yml")
     expect(existsSync(filePath)).toBe(true)
     const content = readFileSync(filePath, "utf-8")
     expect(content).toContain("kind: requirement")
@@ -76,7 +76,7 @@ describe("4-tier doc system (Phase 1)", () => {
     expect(add.status).toBe(0)
     expect(add.stdout).toContain("error-handling")
 
-    const filePath = join(tmpDir, ".tx", "docs", "system_design", "error-handling.yml")
+    const filePath = join(tmpDir, "specs", "system-design", "error-handling.yml")
     expect(existsSync(filePath)).toBe(true)
     const content = readFileSync(filePath, "utf-8")
     expect(content).toContain("kind: system_design")
@@ -275,7 +275,7 @@ describe("4-tier doc system (Phase 1)", () => {
     )
     runTx(["doc", "render", "md-req"], tmpDir)
 
-    const mdPath = join(tmpDir, ".tx", "docs", "requirement", "md-req.md")
+    const mdPath = join(tmpDir, "specs", "requirements", "md-req.md")
     expect(existsSync(mdPath)).toBe(true)
     const md = readFileSync(mdPath, "utf-8")
     expect(md).toContain("# MD Req")
@@ -289,7 +289,7 @@ describe("4-tier doc system (Phase 1)", () => {
     )
     runTx(["doc", "render", "md-sd"], tmpDir)
 
-    const mdPath = join(tmpDir, ".tx", "docs", "system_design", "md-sd.md")
+    const mdPath = join(tmpDir, "specs", "system-design", "md-sd.md")
     expect(existsSync(mdPath)).toBe(true)
     const md = readFileSync(mdPath, "utf-8")
     expect(md).toContain("# MD SD")
@@ -303,7 +303,7 @@ describe("4-tier doc system (Phase 1)", () => {
     runTx(["doc", "add", "system_design", "idx-sd", "--title", "Idx SD"], tmpDir)
 
     // Index gets regenerated on each doc add
-    const indexPath = join(tmpDir, ".tx", "docs", "index.yml")
+    const indexPath = join(tmpDir, "specs", "index.yml")
     expect(existsSync(indexPath)).toBe(true)
     const indexContent = readFileSync(indexPath, "utf-8")
     expect(indexContent).toContain("idx-req")
@@ -318,7 +318,7 @@ describe("4-tier doc system (Phase 1)", () => {
     runTx(["doc", "add", "requirement", "md-idx-req", "--title", "MD Idx Req"], tmpDir)
     runTx(["doc", "add", "system_design", "md-idx-sd", "--title", "MD Idx SD"], tmpDir)
 
-    const indexMdPath = join(tmpDir, ".tx", "docs", "index.md")
+    const indexMdPath = join(tmpDir, "specs", "index.md")
     expect(existsSync(indexMdPath)).toBe(true)
     const indexMd = readFileSync(indexMdPath, "utf-8")
     expect(indexMd).toContain("Requirements Documents")
