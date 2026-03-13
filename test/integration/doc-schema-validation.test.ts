@@ -150,17 +150,58 @@ describe("YAML content schema validation integration", () => {
     ).rejects.toThrow(/problem/i)
   })
 
-  it("3. PRD deprecation warning text is surfaced for requirements", () => {
+  it("3. PRD with deprecated requirements passes and keeps deprecation warning path", async () => {
     const name = shortName("doc-schema-prd-deprecated", "prd")
-    const add = runTx(["doc", "add", "prd", name, "--title", "Deprecated PRD"], tempProjectDir)
-    expect(add.status).toBe(0)
+    const yamlContent = [
+      "kind: prd",
+      `name: ${name}`,
+      'title: "Deprecated Requirements PRD"',
+      "status: changing",
+      "",
+      "problem: |",
+      "  Validate deprecated requirements behavior.",
+      "",
+      "solution: |",
+      "  Keep legacy requirements non-fatal.",
+      "",
+      "requirements:",
+      "  - Legacy requirement line",
+      "",
+      "ears_requirements:",
+      "  - id: EARS-PRDDEP-001",
+      "    statement: When deprecated requirements are present, then validation shall still pass.",
+      "",
+      "acceptance_criteria:",
+      "  - PRD creation succeeds with legacy requirements present.",
+    ].join("\n")
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
-    const yaml = readFileSync(yamlPath, "utf-8")
-    const combined = `${add.stdout}\n${add.stderr}\n${yaml}`
+    const doc = await createDoc({
+      kind: "prd",
+      name,
+      title: "Deprecated Requirements PRD",
+      yamlContent,
+    })
+    expect(doc.kind).toBe("prd")
 
-    expect(combined).toContain("requirements")
-    expect(combined.toLowerCase()).toContain("deprecated")
+    const rendered = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DocService
+        return yield* svc.render(name)
+      }).pipe(Effect.provide(shared.layer))
+    )
+    expect(rendered.length).toBeGreaterThan(0)
+
+    const markdown = readFileSync(join(tempProjectDir, "specs", "prd", `${name}.md`), "utf-8")
+    expect(markdown).toContain("## Requirements")
+    expect(markdown).toContain("Legacy requirement line")
+
+    const validatorSource = readFileSync(
+      resolve(__dirname, "../../packages/core/src/internal/doc-service-impl.ts"),
+      "utf-8"
+    )
+    expect(validatorSource).toContain(
+      "Deprecated field 'requirements' detected in PRD YAML; use 'ears_requirements' instead."
+    )
   })
 
   it("4. valid design doc with required fields succeeds", async () => {
@@ -357,36 +398,40 @@ describe("YAML content schema validation integration", () => {
     ).rejects.toThrow(/problem_definition/i)
   })
 
-  it("11. EARS validation still fails invalid statement entries", async () => {
-    const name = shortName("doc-schema-prd-invalid-ears", "prd")
-    const yamlContent = [
+  it("11. EARS validation still fails invalid pattern entries", () => {
+    const name = shortName("doc-schema-prd-invalid-ears-pattern", "prd")
+    const add = runTx(["doc", "add", "prd", name, "--title", "Invalid EARS Pattern PRD"], tempProjectDir)
+    expect(add.status).toBe(0)
+
+    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const invalidYaml = [
       "kind: prd",
       `name: ${name}`,
-      'title: "Invalid EARS PRD"',
+      'title: "Invalid EARS Pattern PRD"',
       "status: changing",
       "",
       "problem: |",
-      "  Validate EARS remains enforced.",
+      "  Validate EARS pattern enforcement.",
       "",
       "solution: |",
-      "  Reject invalid EARS entries.",
+      "  Reject invalid legacy pattern.",
       "",
       "ears_requirements:",
       "  - id: EARS-INVALID-001",
-      '    statement: ""',
+      "    pattern: invalid_pattern",
+      "    system: doc service",
+      "    response: reject invalid patterns",
       "",
       "acceptance_criteria:",
-      "  - Invalid EARS entries are rejected.",
+      "  - Invalid pattern entries are rejected by EARS validation.",
     ].join("\n")
+    writeFileSync(yamlPath, invalidYaml, "utf-8")
 
-    await expect(
-      createDoc({
-        kind: "prd",
-        name,
-        title: "Invalid EARS PRD",
-        yamlContent,
-      })
-    ).rejects.toThrow(/EARS:|statement/i)
+    const render = runTx(["doc", "render", name], tempProjectDir)
+    expect(render.status).not.toBe(0)
+
+    const output = `${render.stdout}\n${render.stderr}`
+    expect(output).toMatch(/EARS:|pattern|Invalid EARS pattern/i)
   })
 
   it("12. kind mismatch between YAML and requested kind fails", async () => {
