@@ -43,6 +43,10 @@ requirements:
   - Drift detection (hash mismatch between DB and disk)
   - Dashboard visualization via doc graph (nodes + edges)
 
+ears_requirements:
+  - id: EARS-TODO-001
+    statement: "TODO: Add EARS requirement statement."
+
 acceptance_criteria:
   - tx doc add creates YAML file and DB row with correct hash
   - tx doc update modifies YAML and re-renders markdown

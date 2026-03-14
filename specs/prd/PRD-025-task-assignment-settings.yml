@@ -45,6 +45,10 @@ requirements:
   - Add extensive automated tests for migration, config persistence, API responses, UI behavior,
     keyboard behavior, and regressions in existing shortcuts.
 
+ears_requirements:
+  - id: EARS-TODO-001
+    statement: "TODO: Add EARS requirement statement."
+
 acceptance_criteria:
   - With no config key present, creating a task in dashboard writes `assigneeType = "human"`.
   - Changing default in Settings to `agent` causes subsequent dashboard-created tasks to default to `agent`.

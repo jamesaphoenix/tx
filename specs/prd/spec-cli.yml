@@ -20,6 +20,10 @@ requirements:
 #     response: do something
 #     priority: must
 
+ears_requirements:
+  - id: EARS-TODO-001
+    statement: "TODO: Add EARS requirement statement."
+
 acceptance_criteria:
   - Criterion 1
 
