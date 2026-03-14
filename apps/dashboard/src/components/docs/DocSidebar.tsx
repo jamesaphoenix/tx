@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type DocSerialized, type DocGraphEdge, type DocGraphNode } from "../../api/client"
+import { SpecHealth } from "./SpecHealth"
 
 interface DocSidebarProps {
   selectedDocName: string | null
@@ -338,6 +339,8 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
           Graph
         </button>
       </div>
+
+      <SpecHealth onSelectDoc={onSelectDoc} />
 
       {/* Filters */}
       <div className="flex gap-2 mb-2">

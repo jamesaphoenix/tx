@@ -1056,6 +1056,18 @@ const DocGraphResponse = Schema.Struct({
   edges: Schema.Array(DocGraphEdgeSchema),
 })
 
+const DocHealthIssueResponse = Schema.Struct({
+  docName: Schema.String,
+  kind: Schema.String,
+  problems: Schema.Array(Schema.String),
+})
+
+const DocHealthResponse = Schema.Struct({
+  total: Schema.Number.pipe(Schema.int()),
+  healthy: Schema.Number.pipe(Schema.int()),
+  issues: Schema.Array(DocHealthIssueResponse),
+})
+
 const DocDeleteResponse = Schema.Struct({
   success: Schema.Boolean,
   name: Schema.String,
@@ -1066,6 +1078,10 @@ export const DocsGroup = HttpApiGroup.make("docs")
     HttpApiEndpoint.get("listDocs", "/api/docs")
       .setUrlParams(DocListParams)
       .addSuccess(DocListResponse)
+  )
+  .add(
+    HttpApiEndpoint.get("getDocsHealth", "/api/docs/health")
+      .addSuccess(DocHealthResponse)
   )
   .add(
     HttpApiEndpoint.post("createDoc", "/api/docs")
