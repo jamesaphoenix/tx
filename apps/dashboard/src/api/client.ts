@@ -471,6 +471,18 @@ export interface DocSourceResponse {
   renderedContent: string | null
 }
 
+export interface DocHealthIssue {
+  docName: string
+  kind: string
+  problems: string[]
+}
+
+export interface DocHealthResponse {
+  total: number
+  healthy: number
+  issues: DocHealthIssue[]
+}
+
 // Promise-based wrappers for TanStack Query
 export const fetchers = {
   tasks: () => Effect.runPromise(api.getTasks()),
@@ -536,6 +548,11 @@ export const fetchers = {
   },
   docGraph: async (): Promise<DocGraphResponse> => {
     const res = await fetch("/api/docs/graph")
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  docHealth: async (): Promise<DocHealthResponse> => {
+    const res = await fetch("/api/docs/health")
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
