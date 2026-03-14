@@ -26,70 +26,82 @@ requirements:
 
 ears_requirements:
   - id: EARS-SPEC-001
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: ubiquitous
     system: tx
     response: maintain a many-to-many mapping between active invariants and discovered tests
     priority: must
   - id: EARS-SPEC-002
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: event_driven
     trigger: tx spec discover is executed
     system: tx
     response: scan configured test patterns, parse annotations and manifest mappings, and upsert normalized links
     priority: must
   - id: EARS-SPEC-003
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: event_driven
     trigger: a test run result is recorded
     system: tx
     response: append a run record linked to the mapped spec-test entry
     priority: must
   - id: EARS-SPEC-004
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: state_driven
     state: computing FCI for a scope
     system: tx
     response: classify each active invariant as passing, failing, untested, or uncovered
     priority: must
   - id: EARS-SPEC-005
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: state_driven
     state: FCI is below 100
     system: tx
     response: report phase BUILD
     priority: must
   - id: EARS-SPEC-006
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: state_driven
     state: FCI equals 100 and no sign-off exists
     system: tx
     response: report phase HARDEN
     priority: must
   - id: EARS-SPEC-007
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: event_driven
     trigger: a human records sign-off for a HARDEN scope
     system: tx
     response: transition that scope to COMPLETE
     priority: must
   - id: EARS-SPEC-008
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: unwanted
     condition: sign-off is requested while phase is BUILD
     system: tx
     response: reject the request with a typed validation error
     priority: must
   - id: EARS-SPEC-009
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: optional
     feature: source annotations
     system: tx
     response: support declarative fallback mappings via .tx/spec-tests.yml
     priority: should
   - id: EARS-SPEC-010
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: ubiquitous
     system: tx
     response: keep discovery language-agnostic via shared text scanning conventions
     priority: must
   - id: EARS-SPEC-011
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: event_driven
     trigger: tx spec batch receives framework output
     system: tx
     response: normalize records into generic test-result entries
     priority: must
   - id: EARS-SPEC-012
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: ubiquitous
     system: tx
     response: expose equivalent spec-trace operations across CLI, REST, and MCP

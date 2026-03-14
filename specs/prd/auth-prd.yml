@@ -11,6 +11,7 @@ solution: |
 
 ears_requirements:
   - id: EARS-AUTHPRD-001
+    statement: "TODO: Convert legacy EARS fields to canonical statement."
     pattern: ubiquitous
     system: the system
     response: do something important
