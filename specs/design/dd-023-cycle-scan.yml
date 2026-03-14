@@ -133,44 +133,69 @@ data_model: |
 invariants:
   - id: INV-CYCLE-001
     rule: "Every cycle group run records metadata with type, cycle number, and final loss"
+    statement: "Every cycle group run records metadata with type, cycle number, and final loss"
     enforcement: integration_test
     subsystem: cycles
     test_ref: test/integration/cycle-scan.test.ts
   - id: INV-CYCLE-002
     rule: "Duplicate findings never create duplicate tasks within a cycle"
+    statement: "Duplicate findings never create duplicate tasks within a cycle"
     enforcement: integration_test
     subsystem: cycles
     test_ref: test/integration/cycle-scan.test.ts
   - id: INV-CYCLE-003
     rule: "All scan-created tasks have metadata.foundByScan true and metadata.cycleId set"
+    statement: "All scan-created tasks have metadata.foundByScan true and metadata.cycleId set"
     enforcement: integration_test
     subsystem: cycles
     test_ref: test/integration/cycle-scan.test.ts
   - id: INV-CYCLE-004
     rule: "Each round emits a cycle.round.loss metric event to the events table"
+    statement: "Each round emits a cycle.round.loss metric event to the events table"
     enforcement: integration_test
     subsystem: cycles
     test_ref: test/integration/cycle-scan.test.ts
 
 failure_modes:
   - scenario: "LLM returns unparseable JSON"
+    condition: "LLM returns unparseable JSON"
+    impact: "TODO: Define impact."
+    handling: "Skip finding, log warning, continue with other agents' results"
     mitigation: "Skip finding, log warning, continue with other agents' results"
   - scenario: "All scan agents fail in a round"
+    condition: "All scan agents fail in a round"
+    impact: "TODO: Define impact."
+    handling: "Mark round as failed, skip to next round or end cycle"
     mitigation: "Mark round as failed, skip to next round or end cycle"
   - scenario: "Dedup agent fails"
+    condition: "Dedup agent fails"
+    impact: "TODO: Define impact."
+    handling: "Treat all findings as new (conservative fallback)"
     mitigation: "Treat all findings as new (conservative fallback)"
   - scenario: "Fix agent fails to resolve issues"
+    condition: "Fix agent fails to resolve issues"
+    impact: "TODO: Define impact."
+    handling: "Leave tasks open, continue to next round"
     mitigation: "Leave tasks open, continue to next round"
   - scenario: "Fix agent modifies code that breaks subsequent scan"
+    condition: "Fix agent modifies code that breaks subsequent scan"
+    impact: "TODO: Define impact."
+    handling: "Scan agents are independent; next round will detect regressions"
     mitigation: "Scan agents are independent; next round will detect regressions"
 
 edge_cases:
-  - "First round in first cycle has no existing issues to dedup against"
-  - "Same issue found by multiple scan agents in one round (within-round dedup by dedup agent)"
-  - "Issue was fixed but scan finds it again (false positive from stale analysis)"
-  - "Fix agent introduces new issues while fixing old ones (next round catches them)"
-  - "Very large issuesMap serialization exceeds LLM context (need to summarize/truncate)"
-  - "--scan-only mode runs all rounds without fix phase"
+  - condition: "First round in first cycle has no existing issues to dedup against"
+    expected_behavior: "TODO: Define expected behavior."
+  - condition: "Same issue found by multiple scan agents in one round (within-round dedup by dedup agent)"
+    expected_behavior: "TODO: Define expected behavior."
+  - condition: "Issue was fixed but scan finds it again (false positive from stale analysis)"
+    expected_behavior: "TODO: Define expected behavior."
+  - condition: "Fix agent introduces new issues while fixing old ones (next round catches them)"
+    expected_behavior: "TODO: Define expected behavior."
+  - condition: "Very large issuesMap serialization exceeds LLM context (need to summarize/truncate)"
+    expected_behavior: "TODO: Define expected behavior."
+  - condition: "--scan-only mode runs all rounds without fix phase"
+    expected_behavior: "TODO: Define expected behavior."
 
 work_breakdown:
   - description: "Phase 1: Create PRD-023 and DD-023 via tx doc CLI"
@@ -184,19 +209,22 @@ retention: |
   - metrics: Events table retains all cycle.round.loss and cycle.complete events
   - tasks: Issue tasks persist with cycleId metadata for historical queries
 
-testing_strategy: |
-  Integration tests using shared test layer (getSharedTestLayer, DOCTRINE Rule 8):
-
-  1. Agent SDK dedup: Mock dedup agent, verify it receives existing issues + new findings
-  2. Cycle metadata: Run creation -> verify type "cycle" format
-  3. Task creation: New findings -> tasks with foundByScan + cycleId metadata
-  4. In-memory map growth: Issues from round 1 appear in round 2 dedup context
-  5. Loss computation: Verify 3*H + 2*M + 1*L formula
-  6. Metrics emission: Verify events table gets cycle.round.loss records
-  7. Dry-run: No tasks created
-  8. Parse failure: Malformed JSON from agent -> graceful skip
-  9. Dashboard API: /api/cycles/stats returns correct aggregation from events
-
+testing_strategy:
+  - requirement_id: REQ-TODO-001
+    level: integration
+    verification: |
+      Integration tests using shared test layer (getSharedTestLayer, DOCTRINE Rule 8):
+      
+      1. Agent SDK dedup: Mock dedup agent, verify it receives existing issues + new findings
+      2. Cycle metadata: Run creation -> verify type "cycle" format
+      3. Task creation: New findings -> tasks with foundByScan + cycleId metadata
+      4. In-memory map growth: Issues from round 1 appear in round 2 dedup context
+      5. Loss computation: Verify 3*H + 2*M + 1*L formula
+      6. Metrics emission: Verify events table gets cycle.round.loss records
+      7. Dry-run: No tasks created
+      8. Parse failure: Malformed JSON from agent -> graceful skip
+      9. Dashboard API: /api/cycles/stats returns correct aggregation from events
+    success_criteria: "TODO: Define success criteria."
 open_questions: |
   1. Context window limits: When the issuesMap grows very large (100+ issues),
      the serialized JSON may exceed the dedup agent's context. Should we

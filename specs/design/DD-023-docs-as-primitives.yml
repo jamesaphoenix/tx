@@ -393,65 +393,100 @@ data_model: |
 invariants:
   - id: INV-DOC-001
     rule: "Auto-render must produce .md file on every doc mutation (create/update/lock/version/patch)"
+    statement: "Auto-render must produce .md file on every doc mutation (create/update/lock/version/patch)"
     enforcement: integration_test
     test_ref: test/integration/doc.test.ts
     subsystem: docs
   - id: INV-DOC-002
     rule: "Locked docs cannot be updated or removed"
+    statement: "Locked docs cannot be updated or removed"
     enforcement: integration_test
     test_ref: test/integration/doc.test.ts
     subsystem: docs
   - id: INV-DOC-003
     rule: "YAML on disk is the source of truth; DB stores metadata only"
+    statement: "YAML on disk is the source of truth; DB stores metadata only"
     enforcement: integration_test
     test_ref: test/integration/doc.test.ts
     subsystem: docs
   - id: INV-DOC-004
     rule: "Doc links form a DAG with no self-links (from_doc_id != to_doc_id)"
+    statement: "Doc links form a DAG with no self-links (from_doc_id != to_doc_id)"
     enforcement: integration_test
     test_ref: test/integration/doc.test.ts
     subsystem: docs
   - id: INV-DOC-005
     rule: "Content-addressed hash must be deterministic (same content = same hash)"
+    statement: "Content-addressed hash must be deterministic (same content = same hash)"
     enforcement: integration_test
     test_ref: test/integration/doc.test.ts
     subsystem: docs
   - id: INV-DOC-006
     rule: "No unsafe 'as' type casts — all branded types use runtime assertX() validators"
+    statement: "No unsafe 'as' type casts — all branded types use runtime assertX() validators"
     enforcement: linter
     subsystem: docs
 
 failure_modes:
   - id: FM-DOC-001
+    condition: "YAML file deleted but DB row persists"
+    impact: "TODO: Define impact."
+    handling: "detectDrift() reports missing files; render is non-fatal"
     description: "YAML file deleted but DB row persists"
     mitigation: "detectDrift() reports missing files; render is non-fatal"
   - id: FM-DOC-002
+    condition: "DB hash does not match file hash after manual edit"
+    impact: "TODO: Define impact."
+    handling: "detectDrift() compares hashes and reports mismatch"
     description: "DB hash does not match file hash after manual edit"
     mitigation: "detectDrift() compares hashes and reports mismatch"
   - id: FM-DOC-003
+    condition: "Auto-render fails silently on malformed YAML"
+    impact: "TODO: Define impact."
+    handling: "try/catch prevents render errors from blocking mutations; explicit render() surfaces errors"
     description: "Auto-render fails silently on malformed YAML"
     mitigation: "try/catch prevents render errors from blocking mutations; explicit render() surfaces errors"
   - id: FM-DOC-004
+    condition: "Dashboard server resolves wrong path for YAML files"
+    impact: "TODO: Define impact."
+    handling: "Server prefixes file_path with specs/ directory; auto-renders from YAML if .md missing"
     description: "Dashboard server resolves wrong path for YAML files"
     mitigation: "Server prefixes file_path with specs/ directory; auto-renders from YAML if .md missing"
   - id: FM-DOC-005
+    condition: "Concurrent doc mutations cause stale hash in DB"
+    impact: "TODO: Define impact."
+    handling: "SQLite WAL mode + single-writer guarantees serialized writes; hash recomputed on every mutation"
     description: "Concurrent doc mutations cause stale hash in DB"
     mitigation: "SQLite WAL mode + single-writer guarantees serialized writes; hash recomputed on every mutation"
 
 edge_cases:
   - id: EC-DOC-001
+    condition: "Creating a version of an unlocked doc (rejected with ValidationError)"
+    expected_behavior: "TODO: Define expected behavior."
     description: "Creating a version of an unlocked doc (rejected with ValidationError)"
   - id: EC-DOC-002
+    condition: "Attaching a task to a locked doc (allowed - task links are additive)"
+    expected_behavior: "TODO: Define expected behavior."
     description: "Attaching a task to a locked doc (allowed - task links are additive)"
   - id: EC-DOC-003
+    condition: "Overview singleton constraint (only one active overview doc allowed)"
+    expected_behavior: "TODO: Define expected behavior."
     description: "Overview singleton constraint (only one active overview doc allowed)"
   - id: EC-DOC-004
+    condition: "Remove deletes .yml, .md, and DB row but rejects locked docs"
+    expected_behavior: "TODO: Define expected behavior."
     description: "Remove deletes .yml, .md, and DB row but rejects locked docs"
   - id: EC-DOC-005
+    condition: "Doc name validation (must match /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/ pattern)"
+    expected_behavior: "TODO: Define expected behavior."
     description: "Doc name validation (must match /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/ pattern)"
   - id: EC-DOC-006
+    condition: "readTxConfig falls back to defaults if .tx/config.toml missing or malformed"
+    expected_behavior: "TODO: Define expected behavior."
     description: "readTxConfig falls back to defaults if .tx/config.toml missing or malformed"
   - id: EC-DOC-007
+    condition: "Rendering a doc with no YAML file on disk (returns empty content gracefully)"
+    expected_behavior: "TODO: Define expected behavior."
     description: "Rendering a doc with no YAML file on disk (returns empty content gracefully)"
 
 work_breakdown:
@@ -473,89 +508,92 @@ retention: |
   - YAML files persist on disk; .md files are regeneratable
   - Deprecated invariants retained (status=deprecated, not deleted)
 
-testing_strategy: |
-  ## Integration Tests (test/integration/doc.test.ts)
-
-  64 integration tests using the shared singleton database layer (DOCTRINE Rule 8).
-  Tests use temp directories for file I/O to avoid polluting the real `specs/` tree.
-
-  ### DocRepository Tests (15 tests)
-
-  Repository-level CRUD and relationship management:
-  - `insert` returns a doc with valid fields and auto-incremented ID
-  - `findByName` returns the doc, returns null for missing, filters by version
-  - `findAll` returns all docs, filters by kind
-  - `update` changes doc fields (hash, title, metadata)
-  - `lock` sets status to locked and records lockedAt timestamp
-  - `createLink` creates doc-doc links; `getAllLinks` returns all links
-  - `createTaskLink` links tasks to docs; `getUnlinkedTaskIds` finds orphan tasks
-  - `upsertInvariant` creates and updates invariants
-  - `findInvariants` filters by subsystem and enforcement type
-  - `deprecateInvariantsNotIn` marks removed invariants as deprecated
-  - `insertInvariantCheck` records pass/fail results; `getInvariantChecks` returns history
-
-  ### DocService Tests (49 tests)
-
-  Service-level business logic with file I/O:
-  - **Lifecycle**: create writes YAML + returns doc, rejects duplicates, rejects invalid YAML, rejects invalid names
-  - **Read**: get returns existing doc, fails for nonexistent
-  - **Update**: changes YAML and hash, rejects locked doc
-  - **Hashing**: same content = same hash, different content = different hash
-  - **Lock**: changes status, is idempotent (locking twice succeeds)
-  - **Versioning**: createVersion from locked doc, rejects unlocked doc
-  - **Linking**: auto-infers link type from kinds, supports explicit type, attachTask works on locked docs
-  - **Patching**: createPatch creates design patch, rejects non-design docs
-  - **Render**: writes .md file, render all renders multiple files
-  - **Validation**: reports unlinked tasks, returns empty for linked tasks
-  - **Drift**: reports hash mismatch, missing file, design with no linked tasks
-  - **Invariants**: syncInvariants parses from YAML, deprecates removed, recordCheck pass/fail
-  - **Graph**: getDocGraph returns correct nodes and edges
-  - **Auto-render**: .md produced on create, update, lock, createVersion, createPatch
-  - **Index**: auto-generates index.yml + index.md on create
-  - **Remove**: deletes DB + .yml + .md, rejects locked, fails for nonexistent, regenerates index
-  - **Config**: reads docs path from .tx/config.toml
-
-  ### MCP Tool Tests (test/integration/mcp.test.ts)
-
-  End-to-end tests via MCP protocol for all 7 doc tools:
-  - `tx_doc_create` + `tx_doc_list` round-trip
-  - `tx_doc_get` with version parameter
-  - `tx_doc_update` modifies content
-  - `tx_doc_lock` makes doc immutable
-  - `tx_doc_link` creates typed relationship
-  - `tx_doc_render` produces .md output
-
-  ### API Endpoint Tests (test/integration/api-contract-validator.test.ts)
-
-  HTTP-level tests for all doc REST endpoints:
-  - `GET /api/docs` returns list with correct shape
-  - `POST /api/docs` creates doc and returns serialized response
-  - `GET /api/docs/:name` includes mdContent, links, invariants
-  - `PATCH /api/docs/:name` updates content
-  - `POST /api/docs/:name/lock` locks doc
-  - `POST /api/docs/:name/link` creates relationship
-
-  ### Agent SDK Tests (apps/agent-sdk/)
-
-  Client-level tests for DocsNamespace:
-  - `tx.docs.list()` returns array of serialized docs
-  - `tx.docs.get(name)` returns detail with content
-  - `tx.docs.create(input)` creates and returns doc
-  - `tx.docs.lock(name)` transitions status
-
-  ## Unit Test Opportunities
-
-  Pure functions suitable for isolated unit tests (no DB, no file I/O):
-  - `computeDocHash()` — deterministic hashing with normalization
-  - `renderDocToMarkdown()` — section ordering, table rendering, free-text passthrough
-  - `renderIndexToMarkdown()` — index file generation
-  - `readTxConfig()` — TOML parsing with fallback defaults
-  - `assertDocKind/assertDocStatus/assertDocLinkType` — runtime type validators
-  - `extractTopicId()` — dashboard doc grouping logic
-
-  These are currently tested implicitly through integration tests but could be
-  extracted into a dedicated `test/unit/doc-renderer.test.ts` for faster feedback loops.
-
+testing_strategy:
+  - requirement_id: REQ-TODO-001
+    level: integration
+    verification: |
+      ## Integration Tests (test/integration/doc.test.ts)
+      
+      64 integration tests using the shared singleton database layer (DOCTRINE Rule 8).
+      Tests use temp directories for file I/O to avoid polluting the real `specs/` tree.
+      
+      ### DocRepository Tests (15 tests)
+      
+      Repository-level CRUD and relationship management:
+      - `insert` returns a doc with valid fields and auto-incremented ID
+      - `findByName` returns the doc, returns null for missing, filters by version
+      - `findAll` returns all docs, filters by kind
+      - `update` changes doc fields (hash, title, metadata)
+      - `lock` sets status to locked and records lockedAt timestamp
+      - `createLink` creates doc-doc links; `getAllLinks` returns all links
+      - `createTaskLink` links tasks to docs; `getUnlinkedTaskIds` finds orphan tasks
+      - `upsertInvariant` creates and updates invariants
+      - `findInvariants` filters by subsystem and enforcement type
+      - `deprecateInvariantsNotIn` marks removed invariants as deprecated
+      - `insertInvariantCheck` records pass/fail results; `getInvariantChecks` returns history
+      
+      ### DocService Tests (49 tests)
+      
+      Service-level business logic with file I/O:
+      - **Lifecycle**: create writes YAML + returns doc, rejects duplicates, rejects invalid YAML, rejects invalid names
+      - **Read**: get returns existing doc, fails for nonexistent
+      - **Update**: changes YAML and hash, rejects locked doc
+      - **Hashing**: same content = same hash, different content = different hash
+      - **Lock**: changes status, is idempotent (locking twice succeeds)
+      - **Versioning**: createVersion from locked doc, rejects unlocked doc
+      - **Linking**: auto-infers link type from kinds, supports explicit type, attachTask works on locked docs
+      - **Patching**: createPatch creates design patch, rejects non-design docs
+      - **Render**: writes .md file, render all renders multiple files
+      - **Validation**: reports unlinked tasks, returns empty for linked tasks
+      - **Drift**: reports hash mismatch, missing file, design with no linked tasks
+      - **Invariants**: syncInvariants parses from YAML, deprecates removed, recordCheck pass/fail
+      - **Graph**: getDocGraph returns correct nodes and edges
+      - **Auto-render**: .md produced on create, update, lock, createVersion, createPatch
+      - **Index**: auto-generates index.yml + index.md on create
+      - **Remove**: deletes DB + .yml + .md, rejects locked, fails for nonexistent, regenerates index
+      - **Config**: reads docs path from .tx/config.toml
+      
+      ### MCP Tool Tests (test/integration/mcp.test.ts)
+      
+      End-to-end tests via MCP protocol for all 7 doc tools:
+      - `tx_doc_create` + `tx_doc_list` round-trip
+      - `tx_doc_get` with version parameter
+      - `tx_doc_update` modifies content
+      - `tx_doc_lock` makes doc immutable
+      - `tx_doc_link` creates typed relationship
+      - `tx_doc_render` produces .md output
+      
+      ### API Endpoint Tests (test/integration/api-contract-validator.test.ts)
+      
+      HTTP-level tests for all doc REST endpoints:
+      - `GET /api/docs` returns list with correct shape
+      - `POST /api/docs` creates doc and returns serialized response
+      - `GET /api/docs/:name` includes mdContent, links, invariants
+      - `PATCH /api/docs/:name` updates content
+      - `POST /api/docs/:name/lock` locks doc
+      - `POST /api/docs/:name/link` creates relationship
+      
+      ### Agent SDK Tests (apps/agent-sdk/)
+      
+      Client-level tests for DocsNamespace:
+      - `tx.docs.list()` returns array of serialized docs
+      - `tx.docs.get(name)` returns detail with content
+      - `tx.docs.create(input)` creates and returns doc
+      - `tx.docs.lock(name)` transitions status
+      
+      ## Unit Test Opportunities
+      
+      Pure functions suitable for isolated unit tests (no DB, no file I/O):
+      - `computeDocHash()` — deterministic hashing with normalization
+      - `renderDocToMarkdown()` — section ordering, table rendering, free-text passthrough
+      - `renderIndexToMarkdown()` — index file generation
+      - `readTxConfig()` — TOML parsing with fallback defaults
+      - `assertDocKind/assertDocStatus/assertDocLinkType` — runtime type validators
+      - `extractTopicId()` — dashboard doc grouping logic
+      
+      These are currently tested implicitly through integration tests but could be
+      extracted into a dedicated `test/unit/doc-renderer.test.ts` for faster feedback loops.
+    success_criteria: "TODO: Define success criteria."
 open_questions: |
   ## Resolved
 

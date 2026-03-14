@@ -12,8 +12,10 @@ actors:
 
 use_cases:
   - id: UC-001
+    actor: User
     title: Example Use Case
     trigger: User initiates action
+    outcome: Action completed
     preconditions: System is running
     flow:
       - Step 1
@@ -21,10 +23,16 @@ use_cases:
     postconditions: Action completed
     exceptions: None
 
+ears_requirements:
+  - id: EARS-AUTH-001
+    statement: "TODO: Add EARS requirement statement."
+
 invariants: []
 
 non_functional_requirements: []
 
 traceability:
-  scoped_by: null
-  designed_in: null
+  - requirement_id: REQ-TODO-001
+    level: integration
+    verification: "TODO: Define verification."
+    success_criteria: "TODO: Define success criteria."
