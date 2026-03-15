@@ -4,7 +4,6 @@ import { useReadyTasks } from "../../hooks/useReadyTasks"
 import { useIntersectionObserver } from "../../hooks/useIntersectionObserver"
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation"
 import type { TaskWithDeps } from "../../api/client"
-import { LoadingSkeleton } from "../ui/LoadingSkeleton"
 import { EmptyState } from "../ui/EmptyState"
 import { TaskCard } from "./TaskCard"
 import {
@@ -194,15 +193,7 @@ export function TaskList({
 
   // Initial loading state
   if (isLoading) {
-    return (
-      <div className={`space-y-2 ${isBucketAnimating ? "animate-bucket-swap" : ""}`}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-300">Tasks</h2>
-          <span className="text-sm text-gray-500">Loading...</span>
-        </div>
-        <LoadingSkeleton count={5} />
-      </div>
-    )
+    return null
   }
 
   // Error state
@@ -273,9 +264,6 @@ export function TaskList({
 
       {/* Sentinel element for infinite scroll (only in paginated mode) */}
       {!useReadyEndpoint && <div ref={sentinelRef} className="h-4" />}
-
-      {/* Loading more indicator (only in paginated mode) */}
-      {!useReadyEndpoint && isFetchingNextPage && <LoadingSkeleton count={3} />}
 
       {/* End of list indicator */}
       {(useReadyEndpoint || !hasNextPage) && hasFilteredResults && (

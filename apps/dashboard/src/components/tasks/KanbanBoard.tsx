@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react
 import { TASK_STATUSES, VALID_TRANSITIONS, type TaskStatus } from "@jamesaphoenix/tx-types/task"
 import { fetchers, type TaskWithDeps } from "../../api/client"
 import { useInfiniteTasks } from "../../hooks/useInfiniteTasks"
-import { LoadingSkeleton } from "../ui/LoadingSkeleton"
 import { EmptyState } from "../ui/EmptyState"
 import { TaskCard } from "./TaskCard"
 import {
@@ -284,11 +283,7 @@ export function KanbanBoard({
   const hasTasksLoaded = nonDoneTasks.length > 0 || doneTasks.length > 0
 
   if (isLoading && !hasTasksLoaded) {
-    return (
-      <div className="space-y-2">
-        <LoadingSkeleton count={6} />
-      </div>
-    )
+    return null
   }
 
   if ((isNonDoneError || isDoneError) && !hasTasksLoaded) {

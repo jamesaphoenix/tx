@@ -408,14 +408,7 @@ export function TaskDetail({
   }, [onUpdateAssignment])
 
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="animate-pulse rounded bg-gray-700 h-8 w-3/4" />
-        <div className="animate-pulse rounded bg-gray-700 h-4 w-1/2" />
-        <div className="animate-pulse rounded bg-gray-700 h-24" />
-        <div className="animate-pulse rounded bg-gray-700 h-32" />
-      </div>
-    )
+    return null
   }
 
   if (error) {
