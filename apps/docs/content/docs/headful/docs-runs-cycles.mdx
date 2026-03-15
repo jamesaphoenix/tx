@@ -3,25 +3,49 @@ title: Docs, Runs, and Cycles
 description: Dashboard panes beyond task management
 ---
 
-The dashboard now keeps Docs, Runs, and Cycles consistent with the same navigation model as Tasks.
+The dashboard keeps Docs, Runs, and Cycles consistent with the same navigation model as Tasks.
 
 ## Docs View
 
 The Docs surface uses a sidebar + detail pane model so you can browse structured docs and inspect content without losing context.
 
-![Docs view with grouped sidebar, document panes, and top navigation tabs](/images/headful/headful-docs-navigation-2026-02-22.png)
-
 ## Runs View
 
 Runs gives a split layout for agent/run selection on the left and conversation details on the right, with clear empty states when no runs are active.
 
-![Runs view with list/detail layout and shared top navigation model](/images/headful/headful-runs-navigation-2026-02-22.png)
-
 ## Cycles View
 
-Cycles provides a queue/detail split and communicates scan status immediately when no cycle data exists yet.
+Cycles is now built around weekly planning and execution, similar to Linear-style time boxes.
 
-![Cycles view showing issue queue, detail panel, and top-level tab navigation](/images/headful/headful-cycles-navigation-2026-02-22.png)
+### Weekly Cycle Model
+
+Use cycles to scope work for a fixed time window, then close the window with clear carry-over behavior. A cycle has a start date, end date, status, and task membership.
+
+### Creating Cycles
+
+Use `+ New Cycle` to create a cycle. The dashboard auto-generates the name (`Cycle N`) and computes dates from cycle settings (length + start day). The cycles list is organized into Current, Upcoming, and Completed sections so planning and history stay separate.
+
+### Cycle Detail
+
+Each cycle detail page shows scope and progress at a glance (total scoped, started, completed), then groups cycle tasks by status so handoffs and bottlenecks are visible.
+
+### Adding and Removing Tasks
+
+Add tasks from a searchable multi-select picker in cycle detail. Remove tasks individually when scope changes.
+
+### Completing a Cycle and Carry-over
+
+Completing a cycle closes it and carries unfinished work into the next cycle based on your carry-over statuses. This keeps momentum without manually re-scoping every remaining task.
+
+### Cycle Settings
+
+Cycle behavior is configured in **Settings > Cycles**:
+
+- cycle length (days)
+- cycle start day
+- carry-over statuses
+
+These settings persist in `.tx/config.toml` under `[dashboard.cycles]` and map to `cycle_length_days`, `cycle_start_day`, and `carry_statuses`.
 
 ## Navigation Consistency
 
