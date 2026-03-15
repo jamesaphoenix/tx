@@ -77,7 +77,7 @@ describe('TaskCard', () => {
         ['active', 'active'],
         ['blocked', 'blocked'],
         ['review', 'review'],
-        ['human_needs_to_review', 'human needs to review'],
+        ['needs_review', 'needs review'],
         ['done', 'done'],
       ]
 

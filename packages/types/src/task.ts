@@ -13,7 +13,7 @@ import { Schema } from "effect"
 
 /**
  * All valid task statuses in lifecycle order.
- * backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+ * backlog → ready → planning → active → blocked → review → needs_review → done
  */
 export const TASK_STATUSES = [
   "backlog",
@@ -22,7 +22,7 @@ export const TASK_STATUSES = [
   "active",
   "blocked",
   "review",
-  "human_needs_to_review",
+  "needs_review",
   "done",
 ] as const;
 
@@ -60,8 +60,8 @@ export const VALID_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   planning: ["ready", "active", "blocked", "done"],
   active: ["blocked", "review", "done"],
   blocked: ["backlog", "ready", "planning", "active"],
-  review: ["active", "human_needs_to_review", "done"],
-  human_needs_to_review: ["active", "review", "done"],
+  review: ["active", "needs_review", "done"],
+  needs_review: ["active", "review", "done"],
   done: ["backlog"],
 } as const;
 
