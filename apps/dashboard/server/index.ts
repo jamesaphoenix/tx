@@ -9,9 +9,12 @@ import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/
 import { parse as parseYaml } from "yaml"
 import {
   applyMigrations,
+  computeDocHash,
   escapeLikePattern,
   isPathWithin,
   isValidDocKind,
+  MdDocParseError,
+  parseMdDocSync,
   readTxConfig,
   renderDocToMarkdown,
   resolvePathWithin,
@@ -1397,6 +1400,104 @@ function normalizeDocFilePath(filePath: string): string {
     .replace(/^system_design\//, "system-design/")
 }
 
+const PLACEHOLDER_TEXT_BY_KIND: Record<string, readonly string[]> = {
+  overview: [
+    "Describe the system overview.",
+    "What problem this system solves.",
+    "Included: ...",
+    "Excluded: ...",
+  ],
+  prd: [
+    "Describe the purpose of this PRD.",
+    "Describe the problem this feature solves.",
+    "the system shall do X",
+    "criterion description",
+  ],
+  design: [
+    "Describe the design approach.",
+    "No data model changes.",
+    "Unresolved design decisions",
+  ],
+  requirement: [
+    "One-sentence behavioral description.",
+    "The system shall do something",
+  ],
+  system_design: [
+    "What cross-cutting concern this describes.",
+    "Which features/subsystems this applies to.",
+    "Architecture, patterns, data flow, service boundaries.",
+  ],
+  runbook: [
+    "Describe when to use this runbook.",
+    "Describe observable symptoms.",
+    "How to confirm root cause.",
+    "Step-by-step mitigation actions.",
+    "When and how to escalate.",
+  ],
+  decision: [
+    "One-line decision summary.",
+    "Describe the context and constraints.",
+    "List alternatives considered.",
+    "Record the chosen option.",
+    "Document expected trade-offs and impacts.",
+  ],
+}
+
+function kindSubdir(kind: string): string {
+  if (kind === "overview") return ""
+  if (kind === "requirement") return "requirements"
+  if (kind === "system_design") return "system-design"
+  return kind
+}
+
+function resolveDocMdRelativePath(kind: string, name: string): string {
+  const sub = kindSubdir(kind)
+  return sub ? `${sub}/${name}.md` : `${name}.md`
+}
+
+function formatMarkdownParseProblem(error: unknown): string {
+  if (error instanceof MdDocParseError) {
+    return `Markdown parse error: ${error.reason}`
+  }
+  return "Markdown parse error: unable to parse document content."
+}
+
+function findPlaceholderProblems(
+  kind: string,
+  parsed: {
+    frontmatter: { title?: unknown; summary?: unknown }
+    sections: ReadonlyArray<{ heading: string; body: string }>
+  }
+): string[] {
+  const placeholders = PLACEHOLDER_TEXT_BY_KIND[kind] ?? []
+  const problems: string[] = []
+  const seen = new Set<string>()
+
+  const checkValue = (field: string, value: unknown): void => {
+    if (value === undefined || value === null) return
+    const haystack = (typeof value === "string" ? value : JSON.stringify(value)).toLowerCase()
+    for (const placeholder of placeholders) {
+      const marker = placeholder.toLowerCase()
+      if (!haystack.includes(marker)) continue
+
+      const problem = `Placeholder text in '${field}': "${placeholder}"`
+      if (!seen.has(problem)) {
+        seen.add(problem)
+        problems.push(problem)
+      }
+    }
+  }
+
+  checkValue("frontmatter.title", parsed.frontmatter.title)
+  checkValue("frontmatter.summary", parsed.frontmatter.summary)
+
+  for (const section of parsed.sections) {
+    checkValue(`section.${section.heading}`, section.body)
+  }
+
+  return problems
+}
+
 const WORKABLE_TASK_STATUSES = new Set<string>(["backlog", "ready", "planning"])
 
 function pushToMapList(map: Map<string, string[]>, key: string, value: string): void {
@@ -2751,6 +2852,144 @@ app.get("/api/docs/graph", (c) => {
     }
 
     return c.json({ nodes, edges })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/docs/health - validate docs health (hash drift, parsing, links)
+app.get("/api/docs/health", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ total: 0, healthy: 0, issues: [] })
+    }
+
+    const docs = db.prepare(`
+      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+      FROM docs
+      ORDER BY kind, name, version
+    `).all() as DocRow[]
+
+    const issues: Array<{ docName: string; kind: string; problems: string[] }> = []
+    const unhealthyDocs = new Set<string>()
+    const docsRoot = getDocsRootPath()
+
+    const docNodeById = new Map<number, { name: string; kind: string }>()
+    for (const doc of docs) {
+      docNodeById.set(doc.id, { name: doc.name, kind: doc.kind })
+    }
+
+    const incomingDocLinkCount = new Map<string, number>()
+    const prdsLinkedToDesign = new Set<string>()
+    const designsLinkedFromPrd = new Set<string>()
+    for (const doc of docs) {
+      incomingDocLinkCount.set(doc.name, 0)
+    }
+
+    if (hasDocLinksSchema(db)) {
+      const docLinks = db.prepare(`
+        SELECT from_doc_id, to_doc_id, link_type
+        FROM doc_links
+        ORDER BY id ASC
+      `).all() as DocLinkRow[]
+
+      for (const edge of docLinks) {
+        const source = docNodeById.get(edge.from_doc_id)
+        const target = docNodeById.get(edge.to_doc_id)
+        if (!source || !target) continue
+
+        incomingDocLinkCount.set(
+          target.name,
+          (incomingDocLinkCount.get(target.name) ?? 0) + 1
+        )
+
+        if (edge.link_type === "prd_to_design" && source.kind === "prd" && target.kind === "design") {
+          prdsLinkedToDesign.add(source.name)
+          designsLinkedFromPrd.add(target.name)
+        }
+      }
+    }
+
+    for (const doc of docs) {
+      const mdRelPath = resolveDocMdRelativePath(doc.kind, doc.name)
+      const mdPath = resolvePathWithin(docsRoot, mdRelPath)
+      let content: string | null = null
+
+      if (!mdPath || !existsSync(mdPath)) {
+        issues.push({
+          docName: doc.name,
+          kind: "hash_drift",
+          problems: [`Markdown file missing on disk: ${mdRelPath}`],
+        })
+      } else {
+        content = readFileSync(mdPath, "utf8")
+        const currentHash = computeDocHash(content)
+        if (currentHash !== doc.hash) {
+          issues.push({
+            docName: doc.name,
+            kind: "hash_drift",
+            problems: [
+              `Content hash mismatch: DB has ${doc.hash.slice(0, 8)}..., file has ${currentHash.slice(0, 8)}...`,
+            ],
+          })
+        }
+      }
+
+      if (content !== null) {
+        const parsedResult = parseMdDocSync(content)
+        if (parsedResult._tag === "Left") {
+          issues.push({
+            docName: doc.name,
+            kind: "parse",
+            problems: [formatMarkdownParseProblem(parsedResult.left)],
+          })
+        } else {
+          const problems = findPlaceholderProblems(doc.kind, parsedResult.right)
+          if (problems.length > 0) {
+            issues.push({
+              docName: doc.name,
+              kind: "placeholder",
+              problems,
+            })
+          }
+        }
+      }
+
+      if ((incomingDocLinkCount.get(doc.name) ?? 0) === 0) {
+        issues.push({
+          docName: doc.name,
+          kind: "orphaned",
+          problems: ["No incoming doc links."],
+        })
+      }
+
+      if (doc.kind === "prd" && !prdsLinkedToDesign.has(doc.name)) {
+        issues.push({
+          docName: doc.name,
+          kind: "cross_link",
+          problems: ["PRD is not linked to any design doc via 'prd_to_design'."],
+        })
+      }
+
+      if (doc.kind === "design" && !designsLinkedFromPrd.has(doc.name)) {
+        issues.push({
+          docName: doc.name,
+          kind: "cross_link",
+          problems: ["Design doc has no incoming PRD link via 'prd_to_design'."],
+        })
+      }
+    }
+
+    for (const issue of issues) {
+      unhealthyDocs.add(issue.docName)
+    }
+
+    return c.json({
+      total: docs.length,
+      healthy: docs.length - unhealthyDocs.size,
+      issues,
+    })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
