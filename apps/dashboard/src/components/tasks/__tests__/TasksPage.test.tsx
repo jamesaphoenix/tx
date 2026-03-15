@@ -7,8 +7,13 @@ import { CommandProvider } from "../../command-palette/CommandContext"
 import { TasksPage } from "../TasksPage"
 
 vi.mock("../TaskList", () => ({
-  TaskList: ({ onSelectTask }: { onSelectTask: (taskId: string) => void }) => (
-    <button onClick={() => onSelectTask("tx-open-1")}>Open Mock Task</button>
+  TaskList: ({ onSelectTask, filters }: { onSelectTask: (taskId: string) => void; filters?: { status?: string[] } }) => (
+    <div>
+      <button onClick={() => onSelectTask("tx-open-1")}>Open Mock Task</button>
+      <div data-testid="status-filter-value">
+        {filters?.status?.length ? filters.status.join(",") : "all"}
+      </div>
+    </div>
   ),
 }))
 
@@ -113,6 +118,26 @@ describe("TasksPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Open Mock Task" })).toBeInTheDocument()
+    })
+  })
+
+  it("supports multi-status filter toggles with status URL param", async () => {
+    window.history.replaceState({}, "", "/?status=ready")
+
+    renderWithProviders(<TasksPage />)
+
+    expect(screen.getByTestId("status-filter-value")).toHaveTextContent("ready")
+
+    fireEvent.click(screen.getByRole("button", { name: /Blocked/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("ready,blocked")
+      expect(window.location.search).toContain("status=ready%2Cblocked")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /^All/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("all")
+      expect(window.location.search).not.toContain("status=")
     })
   })
 })

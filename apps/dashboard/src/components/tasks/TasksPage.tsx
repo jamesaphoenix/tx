@@ -4,6 +4,7 @@ import { useStore } from "@tanstack/react-store"
 import Select, { type MultiValue, type SingleValue, type StylesConfig } from "react-select"
 import {
   fetchers,
+  type DashboardDefaultTaskView,
   type TaskAssigneeType,
   type TaskWithDeps,
   type PaginatedTasksResponse,
@@ -15,8 +16,10 @@ import { TaskDetail } from "./TaskDetail"
 import { TaskComposerModal, type TaskComposerModalSubmit } from "./TaskComposerModal"
 import {
   HUMAN_STAGE_OPTIONS,
+  TASK_STATUS_OPTIONS,
   autoTaskLabelColor,
   toHumanTaskStage,
+  type TaskStatusValue,
   type HumanTaskStage,
 } from "./TaskPropertySelects"
 import { useCommands, type Command } from "../command-palette/CommandContext"
@@ -29,12 +32,12 @@ import {
   type TaskClientFilters,
 } from "./taskClientFilters"
 
-type TaskBucket = "backlog" | "in_progress" | "done"
 type ThemeMode = "light" | "dark"
 
 export interface TasksPageProps {
   themeMode?: ThemeMode
   defaultTaskAssigmentType?: TaskAssigneeType
+  defaultTaskView?: DashboardDefaultTaskView
   /**
    * Incrementing signal from the app shell to request opening the
    * task composer even before page-level shortcut registration settles.
@@ -43,7 +46,7 @@ export interface TasksPageProps {
 }
 
 interface TaskViewState {
-  bucket: TaskBucket
+  statuses: TaskStatusValue[]
   search: string
   taskId: string | null
   assigneeType: TaskAssigneeFilterValue
@@ -56,17 +59,19 @@ interface ComposerState {
   parentId: string | null
 }
 
-const BUCKET_OPTIONS: Array<{ value: TaskBucket; label: string }> = [
-  { value: "backlog", label: "Backlog" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "done", label: "Done" },
-]
-
-const STATUS_BY_BUCKET: Record<TaskBucket, string[]> = {
-  backlog: ["backlog"],
-  in_progress: ["ready", "planning", "active", "blocked", "review", "human_needs_to_review"],
-  done: ["done"],
+const STATUS_COLORS: Record<TaskStatusValue, string> = {
+  backlog: "bg-gray-500",
+  ready: "bg-blue-500",
+  planning: "bg-purple-500",
+  active: "bg-yellow-500",
+  blocked: "bg-red-500",
+  review: "bg-orange-500",
+  human_needs_to_review: "bg-pink-500",
+  done: "bg-green-500",
 }
+
+const TASK_STATUS_VALUES: readonly TaskStatusValue[] = TASK_STATUS_OPTIONS.map((option) => option.value)
+const TASK_STATUS_SET = new Set<TaskStatusValue>(TASK_STATUS_VALUES)
 
 interface AssigneeFilterOption {
   value: TaskAssigneeFilterValue
@@ -217,9 +222,23 @@ function createTaskFilterSelectStyles(themeMode: ThemeMode): StylesConfig<Assign
   }
 }
 
-function parseBucket(value: string | null): TaskBucket {
-  if (value === "backlog" || value === "in_progress" || value === "done") return value
-  return "backlog"
+function parseTaskStatuses(value: string | null): TaskStatusValue[] {
+  if (!value) return []
+
+  const statuses = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((status): status is TaskStatusValue => TASK_STATUS_SET.has(status as TaskStatusValue))
+
+  const deduped = new Set(statuses)
+  return TASK_STATUS_VALUES.filter((status) => deduped.has(status))
+}
+
+function parseLegacyBucketStatuses(value: string | null): TaskStatusValue[] {
+  if (value === "backlog") return ["backlog"]
+  if (value === "in_progress") return ["ready", "planning", "active", "blocked", "review", "human_needs_to_review"]
+  if (value === "done") return ["done"]
+  return []
 }
 
 function parseTaskAssigneeFilter(value: string | null): TaskAssigneeFilterValue {
@@ -240,8 +259,10 @@ function parseTaskLabelFilters(value: string | null): number[] {
 
 function readTaskViewStateFromUrl(): TaskViewState {
   const params = new URLSearchParams(window.location.search)
+  const statuses = parseTaskStatuses(params.get("status"))
+  const legacyStatuses = statuses.length === 0 ? parseLegacyBucketStatuses(params.get("taskBucket")) : []
   return {
-    bucket: parseBucket(params.get("taskBucket")),
+    statuses: statuses.length > 0 ? statuses : legacyStatuses,
     search: params.get("taskSearch") ?? "",
     taskId: params.get("taskId"),
     assigneeType: parseTaskAssigneeFilter(params.get("taskAssignee")),
@@ -251,14 +272,15 @@ function readTaskViewStateFromUrl(): TaskViewState {
 
 function buildTaskUrl(state: TaskViewState): string {
   const params = new URLSearchParams(window.location.search)
+  params.delete("status")
   params.delete("taskBucket")
   params.delete("taskSearch")
   params.delete("taskId")
   params.delete("taskAssignee")
   params.delete("taskLabels")
 
-  if (state.bucket !== "backlog") {
-    params.set("taskBucket", state.bucket)
+  if (state.statuses.length > 0) {
+    params.set("status", state.statuses.join(","))
   }
   if (state.search) {
     params.set("taskSearch", state.search)
@@ -288,8 +310,10 @@ async function copyToClipboard(value: string): Promise<void> {
 export function TasksPage({
   themeMode = "light",
   defaultTaskAssigmentType = "human",
+  defaultTaskView = "list",
   newTaskRequestNonce = 0
 }: TasksPageProps) {
+  void defaultTaskView
   const isDarkTheme = themeMode === "dark"
   const queryClient = useQueryClient()
   const selectedTaskIds = useStore(selectionStore, (s) => s.taskIds)
@@ -309,9 +333,41 @@ export function TasksPage({
   )
 
   const filters = useMemo(() => ({
-    status: STATUS_BY_BUCKET[viewState.bucket],
+    status: viewState.statuses,
     search: viewState.search,
-  }), [viewState.bucket, viewState.search])
+  }), [viewState.statuses, viewState.search])
+
+  const statusCounts = useMemo(() => {
+    const activeQueryData = queryClient.getQueryData<{ pages: PaginatedTasksResponse[] }>(
+      ["tasks", "infinite", filters] as const
+    )
+
+    const fallbackLoadedCounts = TASK_STATUS_VALUES.reduce((acc, status) => {
+      acc[status] = 0
+      return acc
+    }, {} as Record<TaskStatusValue, number>)
+
+    for (const page of activeQueryData?.pages ?? []) {
+      for (const task of page.tasks) {
+        const status = task.status as TaskStatusValue
+        if (TASK_STATUS_SET.has(status)) {
+          fallbackLoadedCounts[status] += 1
+        }
+      }
+    }
+
+    const summaryByStatus = activeQueryData?.pages[activeQueryData.pages.length - 1]?.summary?.byStatus
+
+    return TASK_STATUS_VALUES.reduce((acc, status) => {
+      const summaryCount = summaryByStatus?.[status]
+      acc[status] = typeof summaryCount === "number" ? summaryCount : fallbackLoadedCounts[status]
+      return acc
+    }, {} as Record<TaskStatusValue, number>)
+  }, [filters, queryClient])
+  const allStatusCount = useMemo(
+    () => TASK_STATUS_VALUES.reduce((total, status) => total + (statusCounts[status] ?? 0), 0),
+    [statusCounts]
+  )
 
   const { data: labelsData } = useQuery({
     queryKey: ["labels"],
@@ -480,8 +536,21 @@ export function TasksPage({
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [viewState.taskId, composer, closeTask, selectedChildIds])
 
-  const setBucket = useCallback((bucket: TaskBucket) => {
-    writeViewState({ ...viewState, bucket, taskId: null }, "replace")
+  const toggleStatusFilter = useCallback((status: TaskStatusValue) => {
+    const selected = new Set(viewState.statuses)
+    if (selected.has(status)) {
+      selected.delete(status)
+    } else {
+      selected.add(status)
+    }
+
+    const statuses = TASK_STATUS_VALUES.filter((value) => selected.has(value))
+    writeViewState({ ...viewState, statuses, taskId: null }, "replace")
+  }, [viewState, writeViewState])
+
+  const clearStatusFilters = useCallback(() => {
+    if (viewState.statuses.length === 0) return
+    writeViewState({ ...viewState, statuses: [], taskId: null }, "replace")
   }, [viewState, writeViewState])
 
   const setSearch = useCallback((search: string) => {
@@ -692,8 +761,10 @@ export function TasksPage({
     if (!viewState.taskId) return
     const selected = selectedTask
     const params = new URLSearchParams(window.location.search)
+    params.delete("status")
+    params.delete("taskBucket")
     params.set("taskId", viewState.taskId)
-    if (viewState.bucket !== "backlog") params.set("taskBucket", viewState.bucket)
+    if (viewState.statuses.length > 0) params.set("status", viewState.statuses.join(","))
     if (viewState.assigneeType !== "all") params.set("taskAssignee", viewState.assigneeType)
     if (viewState.labelIds.length > 0) params.set("taskLabels", viewState.labelIds.join(","))
     const deepLink = `${window.location.origin}${window.location.pathname}?${params.toString()}`
@@ -701,7 +772,7 @@ export function TasksPage({
       ? `${selected.id} ${selected.title}\n${deepLink}`
       : `${viewState.taskId}\n${deepLink}`
     await copyToClipboard(text)
-  }, [viewState.taskId, viewState.bucket, viewState.assigneeType, viewState.labelIds, selectedTask])
+  }, [viewState.taskId, viewState.statuses, viewState.assigneeType, viewState.labelIds, selectedTask])
 
   const getLoadedTasks = useCallback((): TaskWithDeps[] => {
     const byId = new Map<string, TaskWithDeps>()
@@ -775,27 +846,23 @@ export function TasksPage({
         }),
       },
       {
-        id: "tasks:bucket-backlog",
-        label: "View Backlog",
+        id: "tasks:statuses:all",
+        label: "View All Statuses",
         group: "Filters",
         icon: "filter",
-        action: () => setBucket("backlog"),
-      },
-      {
-        id: "tasks:bucket-in-progress",
-        label: "View In Progress",
-        group: "Filters",
-        icon: "filter",
-        action: () => setBucket("in_progress"),
-      },
-      {
-        id: "tasks:bucket-done",
-        label: "View Done",
-        group: "Filters",
-        icon: "filter",
-        action: () => setBucket("done"),
+        action: clearStatusFilters,
       },
     ]
+
+    for (const option of TASK_STATUS_OPTIONS) {
+      cmds.push({
+        id: `tasks:statuses:toggle:${option.value}`,
+        label: `Toggle status: ${option.label}`,
+        group: "Filters",
+        icon: "filter",
+        action: () => toggleStatusFilter(option.value),
+      })
+    }
 
     if (!hasTaskDetailOpen && hasActiveClientFilters) {
       cmds.push({
@@ -1068,7 +1135,8 @@ export function TasksPage({
     openTask,
     closeTask,
     openComposer,
-    setBucket,
+    clearStatusFilters,
+    toggleStatusFilter,
     hasActiveClientFilters,
     clearClientFilters,
     copySelectedTaskReference,
@@ -1097,13 +1165,28 @@ export function TasksPage({
                 <div className={`inline-flex gap-1 rounded-lg p-1 shadow-sm ${
                   isDarkTheme ? "bg-gray-800" : "bg-[#e8f0fb]"
                 }`}>
-                  {BUCKET_OPTIONS.map((option) => {
-                    const isActive = viewState.bucket === option.value
+                  <button
+                    type="button"
+                    onClick={clearStatusFilters}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                      viewState.statuses.length === 0
+                        ? "bg-blue-600 text-white"
+                        : isDarkTheme
+                          ? "text-gray-300 hover:bg-gray-700"
+                          : "text-[#475569] hover:bg-white/70"
+                    }`}
+                  >
+                    <span>All</span>
+                    <span className="text-[10px] opacity-80">{allStatusCount}</span>
+                  </button>
+                  {TASK_STATUS_OPTIONS.map((option) => {
+                    const isActive = viewState.statuses.includes(option.value)
                     return (
                       <button
                         key={option.value}
-                        onClick={() => setBucket(option.value)}
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                        type="button"
+                        onClick={() => toggleStatusFilter(option.value)}
+                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
                           isActive
                             ? "bg-blue-600 text-white"
                             : isDarkTheme
@@ -1111,7 +1194,12 @@ export function TasksPage({
                               : "text-[#475569] hover:bg-white/70"
                         }`}
                       >
-                        {option.label}
+                        <span
+                          className={`h-2 w-2 rounded-full ${STATUS_COLORS[option.value]}`}
+                          aria-hidden="true"
+                        />
+                        <span>{option.label}</span>
+                        <span className="text-[10px] opacity-80">{statusCounts[option.value] ?? 0}</span>
                       </button>
                     )
                   })}
