@@ -1048,7 +1048,6 @@ const DocSourceResponse = Schema.Struct({
   name: Schema.String,
   filePath: Schema.String,
   content: Schema.NullOr(Schema.String),
-  yamlContent: Schema.NullOr(Schema.String),
   renderedContent: Schema.NullOr(Schema.String),
 })
 

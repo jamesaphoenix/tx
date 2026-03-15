@@ -413,7 +413,6 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
           name: doc.name,
           filePath: doc.filePath,
           content,
-          yamlContent: null,
           renderedContent: content,
         }
       }).pipe(Effect.mapError(mapCoreError))

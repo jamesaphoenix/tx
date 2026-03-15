@@ -237,8 +237,8 @@ interface Transport {
   // Docs
   docsList(options?: { kind?: string; status?: string }): Promise<SerializedDoc[]>
   docsGet(name: string): Promise<SerializedDoc>
-  docsCreate(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc>
-  docsUpdate(name: string, yamlContent: string): Promise<SerializedDoc>
+  docsCreate(data: { kind: string; name: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc>
+  docsUpdate(name: string, content: string): Promise<SerializedDoc>
   docsDelete(name: string): Promise<void>
   docsLock(name: string): Promise<SerializedDoc>
   docsLink(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink>
@@ -898,12 +898,12 @@ class HttpTransport implements Transport {
     return await this.request<SerializedDoc>("GET", `/api/docs/${encodeURIComponent(name)}`)
   }
 
-  async docsCreate(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> {
+  async docsCreate(data: { kind: string; name: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> {
     return await this.request<SerializedDoc>("POST", "/api/docs", { body: data })
   }
 
-  async docsUpdate(name: string, yamlContent: string): Promise<SerializedDoc> {
-    return await this.request<SerializedDoc>("PATCH", `/api/docs/${encodeURIComponent(name)}`, { body: { yamlContent } })
+  async docsUpdate(name: string, content: string): Promise<SerializedDoc> {
+    return await this.request<SerializedDoc>("PATCH", `/api/docs/${encodeURIComponent(name)}`, { body: { content } })
   }
 
   async docsDelete(name: string): Promise<void> {
@@ -3241,7 +3241,7 @@ class DirectTransport implements Transport {
     return self.serializeDoc(doc)
   }
 
-  async docsCreate(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> {
+  async docsCreate(data: { kind: string; name: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -3257,7 +3257,7 @@ class DirectTransport implements Transport {
     return self.serializeDoc(doc)
   }
 
-  async docsUpdate(name: string, yamlContent: string): Promise<SerializedDoc> {
+  async docsUpdate(name: string, content: string): Promise<SerializedDoc> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -3266,7 +3266,7 @@ class DirectTransport implements Transport {
     const doc = await this.run(
       Effect.gen(function* () {
         const docService = yield* core.DocService
-        return yield* docService.update(name, yamlContent)
+        return yield* docService.update(name, content)
       })
     )
 
@@ -5043,7 +5043,7 @@ class SyncNamespace {
  * const docs = await tx.docs.list()
  *
  * // Create a doc
- * const doc = await tx.docs.create({ kind: 'prd', name: 'my-feature', title: 'My Feature', yamlContent: '...' })
+ * const doc = await tx.docs.create({ kind: 'prd', name: 'my-feature', title: 'My Feature', content: '...' })
  * ```
  */
 class DocsNamespace {
@@ -5051,8 +5051,8 @@ class DocsNamespace {
 
   async list(options?: { kind?: string; status?: string }): Promise<SerializedDoc[]> { return this.transport.docsList(options) }
   async get(name: string): Promise<SerializedDoc> { return this.transport.docsGet(name) }
-  async create(data: { kind: string; name: string; title: string; yamlContent: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> { return this.transport.docsCreate(data) }
-  async update(name: string, yamlContent: string): Promise<SerializedDoc> { return this.transport.docsUpdate(name, yamlContent) }
+  async create(data: { kind: string; name: string; title: string; content: string; metadata?: Record<string, unknown> }): Promise<SerializedDoc> { return this.transport.docsCreate(data) }
+  async update(name: string, content: string): Promise<SerializedDoc> { return this.transport.docsUpdate(name, content) }
   async delete(name: string): Promise<void> { return this.transport.docsDelete(name) }
   async lock(name: string): Promise<SerializedDoc> { return this.transport.docsLock(name) }
   async link(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink> { return this.transport.docsLink(fromName, toName, linkType) }

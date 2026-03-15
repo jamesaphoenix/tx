@@ -182,7 +182,7 @@ export const CreateDocInputSchema = Schema.Struct({
   kind: DocKindSchema,
   name: Schema.String,
   title: Schema.String,
-  yamlContent: Schema.String,
+  content: Schema.String,
   metadata: Schema.optional(
     Schema.Record({ key: Schema.String, value: Schema.Unknown })
   ),
