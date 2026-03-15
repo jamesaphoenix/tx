@@ -19,6 +19,12 @@ export interface TaskLabel {
 export type TaskAssigneeType = "human" | "agent"
 export type DashboardDefaultTaskView = "list" | "kanban"
 
+export interface CycleSettings {
+  cycleLengthDays: number
+  cycleStartDay: string
+  carryStatuses: string[]
+}
+
 export interface TaskRow {
   id: string
   title: string
@@ -41,6 +47,7 @@ export interface DashboardSettings {
   dashboard: {
     defaultTaskAssigmentType: TaskAssigneeType
     defaultTaskView: DashboardDefaultTaskView
+    cycles?: CycleSettings
   }
 }
 
@@ -383,6 +390,23 @@ export const api = {
 }
 
 // Cycle types
+export interface Cycle {
+  id: string
+  name: string
+  startDate: string
+  endDate: string
+  status: "current" | "upcoming" | "completed"
+  createdAt: string
+  updatedAt: string
+  taskCount: number
+  completedCount: number
+  inProgressCount: number
+}
+
+export interface CycleDetail extends Cycle {
+  tasks: TaskWithDeps[]
+}
+
 export interface CycleRun {
   id: string
   cycle: number
@@ -524,6 +548,54 @@ export const fetchers = {
   },
   cycleDetail: async (id: string): Promise<CycleDetailResponse> => {
     const res = await fetch(`/api/cycles/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  listCycles: async (): Promise<Cycle[]> => {
+    const res = await fetch("/api/cycles")
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  createCycle: async (): Promise<Cycle> => {
+    const res = await fetch("/api/cycles", { method: "POST" })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  getCycle: async (id: string): Promise<CycleDetail> => {
+    const res = await fetch(`/api/cycles/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  updateCycle: async (
+    id: string,
+    data: { name?: string; startDate?: string; endDate?: string }
+  ): Promise<Cycle> => {
+    const res = await fetch(`/api/cycles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  addTasksToCycle: async (cycleId: string, taskIds: string[]): Promise<void> => {
+    const res = await fetch(`/api/cycles/${cycleId}/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskIds }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  },
+  removeTaskFromCycle: async (cycleId: string, taskId: string): Promise<void> => {
+    const res = await fetch(`/api/cycles/${cycleId}/tasks/${taskId}`, {
+      method: "DELETE",
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  },
+  completeCycle: async (id: string): Promise<{ completedCycle: Cycle; newCycle: Cycle; carriedTaskIds: string[] }> => {
+    const res = await fetch(`/api/cycles/${id}/complete`, {
+      method: "POST",
+    })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
