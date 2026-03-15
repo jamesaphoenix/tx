@@ -1,8 +1,23 @@
+---
+kind: spec
+spec_type: design
+name: DD-031-ears-requirements
+title: EARS Requirements Integration
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # EARS Requirements Integration
 
-**Kind**: design
-**Status**: changing
-**Version**: 1
 
 ## Problem Definition
 

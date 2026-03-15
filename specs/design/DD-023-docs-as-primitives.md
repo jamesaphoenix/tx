@@ -1,9 +1,23 @@
+---
+kind: spec
+spec_type: design
+name: DD-023-docs-as-primitives
+title: Docs as Primitives Design
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: PRD-023-docs-as-primitives
+last_reviewed_at: 2026-03-15
+---
+
+
 # Docs as Primitives Design
 
-**Kind**: design
-**Status**: changing
-**Version**: 1
-**Implements**: PRD-023-docs-as-primitives
 
 ## Problem Definition
 

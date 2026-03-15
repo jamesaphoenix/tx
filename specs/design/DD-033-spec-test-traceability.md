@@ -1,8 +1,23 @@
+---
+kind: spec
+spec_type: design
+name: DD-033-spec-test-traceability
+title: "DD-033: Spec-to-Test Traceability"
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # DD-033: Spec-to-Test Traceability
 
-**Kind**: design
-**Status**: changing
-**Version**: 1
 
 ## Problem Definition
 

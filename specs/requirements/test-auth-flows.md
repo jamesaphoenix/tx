@@ -1,7 +1,23 @@
+---
+kind: spec
+spec_type: prd
+name: test-auth-flows
+title: Auth Flows
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # Auth Flows
 
-**Kind**: requirement
-**Status**: changing
 
 ## Overview
 

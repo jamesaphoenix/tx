@@ -1,6 +1,23 @@
+---
+kind: spec
+spec_type: overview
+name: system-design
+title: tx System Design & Invariants
+status: draft
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # tx System Design & Invariants
 
-**Kind**: overview
 
 ## Problem Definition
 
