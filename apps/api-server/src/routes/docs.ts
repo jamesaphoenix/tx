@@ -247,11 +247,12 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
     .handle("createDoc", ({ payload }) =>
       Effect.gen(function* () {
         const svc = yield* DocService
+        const content = payload.yamlContent
         const doc = yield* svc.create({
           kind: payload.kind as DocKind,
           name: payload.name,
           title: payload.title,
-          content: payload.yamlContent,
+          content,
           metadata: payload.metadata as Record<string, unknown> | undefined,
         })
         return {
@@ -301,7 +302,8 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
     .handle("updateDoc", ({ path: { name }, payload }) =>
       Effect.gen(function* () {
         const svc = yield* DocService
-        const doc = yield* svc.update(name, payload.yamlContent)
+        const content = payload.yamlContent
+        const doc = yield* svc.update(name, content)
         return {
           id: doc.id,
           hash: doc.hash,
