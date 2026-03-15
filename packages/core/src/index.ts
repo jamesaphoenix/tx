@@ -526,6 +526,11 @@ export {
   type EarsValidationError,
 } from "./utils/ears-validator.js"
 export {
+  parseMdDoc,
+  parseMdDocSync,
+  MdDocParseError,
+} from "./utils/md-doc-parser.js"
+export {
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
   writeDashboardDefaultTaskView,

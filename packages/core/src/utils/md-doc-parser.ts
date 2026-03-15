@@ -33,6 +33,8 @@ const EMBEDDED_BLOCK_KEYS = new Set<EmbeddedBlockKey>(
   Object.keys(EMBEDDED_BLOCK_SCHEMAS) as EmbeddedBlockKey[]
 )
 
+type ParseEither<A> = Either.Either<A, MdDocParseError>
+
 export class MdDocParseError extends Data.TaggedError("MdDocParseError")<{
   readonly reason: string
 }> {
@@ -58,23 +60,23 @@ const formatDecodeError = (error: unknown): string => {
   return String(error)
 }
 
-const decodeUnknown = <A>(
-  schema: Schema.Schema<A, unknown, never>,
+const decodeUnknown = <A, I>(
+  schema: Schema.Schema<A, I, never>,
   input: unknown,
   context: string
-): Either.Either<A, MdDocParseError> => {
-  const decoded = Schema.decodeUnknownEither(schema)(input)
-  if (Either.isLeft(decoded)) {
+): ParseEither<A> => {
+  try {
+    return Either.right(Schema.decodeUnknownSync(schema)(input))
+  } catch (error) {
     return Either.left(
-      new MdDocParseError({ reason: `${context}: ${formatDecodeError(decoded.left)}` })
+      new MdDocParseError({ reason: `${context}: ${formatDecodeError(error)}` })
     )
   }
-  return decoded
 }
 
 const splitFrontmatter = (
   content: string
-): Either.Either<{ frontmatter: string; body: string }, MdDocParseError> => {
+): ParseEither<{ frontmatter: string; body: string }> => {
   const cleaned = content.startsWith("\uFEFF") ? content.slice(1) : content
   const hasFrontmatterOpen = cleaned.startsWith("---\n") || cleaned.startsWith("---\r\n")
 
@@ -104,7 +106,7 @@ const splitFrontmatter = (
 const parseYamlRecord = (
   yamlContent: string,
   context: string
-): Either.Either<Record<string, unknown>, MdDocParseError> => {
+): ParseEither<Record<string, unknown>> => {
   let parsed: unknown
 
   try {
@@ -125,7 +127,7 @@ const parseYamlRecord = (
   return Either.right(record)
 }
 
-const extractYamlBlocks = (body: string): Either.Either<string[], MdDocParseError> => {
+const extractYamlBlocks = (body: string): ParseEither<string[]> => {
   const lines = body.split(/\r?\n/)
   const blocks: string[] = []
   let inFence = false
@@ -161,18 +163,16 @@ const extractYamlBlocks = (body: string): Either.Either<string[], MdDocParseErro
   }
 
   if (inFence && isYamlFence) {
-    return Either.left(
-      new MdDocParseError({ reason: "Unclosed fenced YAML block detected." })
-    )
+    return Either.left(new MdDocParseError({ reason: "Unclosed fenced YAML block detected." }))
   }
 
   return Either.right(blocks)
 }
 
 const mergeEmbeddedBlock = (
-  accumulator: Partial<Record<EmbeddedBlockKey, unknown[]>>,
+  accumulator: Partial<Record<EmbeddedBlockKey, readonly unknown[]>>,
   key: EmbeddedBlockKey,
-  entries: unknown[]
+  entries: readonly unknown[]
 ): void => {
   const existing = accumulator[key] ?? []
   accumulator[key] = [...existing, ...entries]
@@ -181,7 +181,7 @@ const mergeEmbeddedBlock = (
 const decodeEmbeddedBlockEntries = (
   key: EmbeddedBlockKey,
   value: unknown
-): Either.Either<unknown[], MdDocParseError> => {
+): ParseEither<readonly unknown[]> => {
   switch (key) {
     case "ears_requirements":
       return decodeUnknown(
@@ -222,22 +222,21 @@ const decodeEmbeddedBlockEntries = (
   }
 }
 
-const parseEmbeddedBlocks = (body: string): Either.Either<MdEmbeddedBlocks, MdDocParseError> => {
+const parseEmbeddedBlocks = (body: string): ParseEither<MdEmbeddedBlocks> => {
   const yamlBlocksResult = extractYamlBlocks(body)
   if (Either.isLeft(yamlBlocksResult)) {
-    return yamlBlocksResult
+    return Either.left(yamlBlocksResult.left)
   }
 
-  const mergedBlocks: Partial<Record<EmbeddedBlockKey, unknown[]>> = {}
+  const mergedBlocks: Partial<Record<EmbeddedBlockKey, readonly unknown[]>> = {}
 
   for (const rawBlock of yamlBlocksResult.right) {
     const parsedBlockResult = parseYamlRecord(rawBlock, "Embedded YAML block")
     if (Either.isLeft(parsedBlockResult)) {
-      return parsedBlockResult
+      return Either.left(parsedBlockResult.left)
     }
 
-    const parsedBlock = parsedBlockResult.right
-    for (const [key, value] of Object.entries(parsedBlock)) {
+    for (const [key, value] of Object.entries(parsedBlockResult.right)) {
       if (!EMBEDDED_BLOCK_KEYS.has(key as EmbeddedBlockKey)) {
         continue
       }
@@ -245,7 +244,7 @@ const parseEmbeddedBlocks = (body: string): Either.Either<MdEmbeddedBlocks, MdDo
       const typedKey = key as EmbeddedBlockKey
       const decodedEntriesResult = decodeEmbeddedBlockEntries(typedKey, value)
       if (Either.isLeft(decodedEntriesResult)) {
-        return decodedEntriesResult
+        return Either.left(decodedEntriesResult.left)
       }
 
       if (typedKey === "ears_requirements") {
@@ -266,7 +265,7 @@ const parseEmbeddedBlocks = (body: string): Either.Either<MdEmbeddedBlocks, MdDo
   return decodeUnknown(MdEmbeddedBlocksSchema, mergedBlocks, "Embedded blocks validation failed")
 }
 
-const extractSections = (body: string): Either.Either<MdSection[], MdDocParseError> => {
+const extractSections = (body: string): ParseEither<readonly MdSection[]> => {
   const lines = body.split(/\r?\n/)
   const sections: Array<{ heading: string; body: string }> = []
   let inFence = false
@@ -318,7 +317,7 @@ const normalizeHeading = (heading: string): string => heading.trim().toLowerCase
 const validateRequiredSections = (
   frontmatter: MdFrontmatter,
   sections: readonly MdSection[]
-): Either.Either<void, MdDocParseError> => {
+): ParseEither<void> => {
   const requiredSections = MD_REQUIRED_SECTIONS_BY_SPEC_TYPE[frontmatter.spec_type]
   const present = new Set(sections.map((section) => normalizeHeading(section.heading)))
   const missing = requiredSections.filter(
@@ -338,10 +337,9 @@ const validateRequiredSections = (
 
 const parseFrontmatterByKind = (
   rawFrontmatter: Record<string, unknown>
-): Either.Either<
+): ParseEither<
   | { kind: "spec"; frontmatter: MdFrontmatter }
-  | { kind: "task"; frontmatter: Record<string, unknown> },
-  MdDocParseError
+  | { kind: "task"; frontmatter: Record<string, unknown> }
 > => {
   const kind = rawFrontmatter.kind
 
@@ -352,7 +350,7 @@ const parseFrontmatterByKind = (
       "Frontmatter validation failed"
     )
     if (Either.isLeft(decodedFrontmatter)) {
-      return decodedFrontmatter
+      return Either.left(decodedFrontmatter.left)
     }
     return Either.right({ kind: "spec", frontmatter: decodedFrontmatter.right })
   }
@@ -368,30 +366,30 @@ const parseFrontmatterByKind = (
   )
 }
 
-export const parseMdDocSync = (content: string): Either.Either<MdParsedDoc, MdDocParseError> => {
+export const parseMdDocSync = (content: string): ParseEither<MdParsedDoc> => {
   const frontmatterSplit = splitFrontmatter(content)
   if (Either.isLeft(frontmatterSplit)) {
-    return frontmatterSplit
+    return Either.left(frontmatterSplit.left)
   }
 
   const rawFrontmatterResult = parseYamlRecord(frontmatterSplit.right.frontmatter, "Frontmatter")
   if (Either.isLeft(rawFrontmatterResult)) {
-    return rawFrontmatterResult
+    return Either.left(rawFrontmatterResult.left)
   }
 
   const parsedFrontmatterResult = parseFrontmatterByKind(rawFrontmatterResult.right)
   if (Either.isLeft(parsedFrontmatterResult)) {
-    return parsedFrontmatterResult
+    return Either.left(parsedFrontmatterResult.left)
   }
 
   const sectionsResult = extractSections(frontmatterSplit.right.body)
   if (Either.isLeft(sectionsResult)) {
-    return sectionsResult
+    return Either.left(sectionsResult.left)
   }
 
   const blocksResult = parseEmbeddedBlocks(frontmatterSplit.right.body)
   if (Either.isLeft(blocksResult)) {
-    return blocksResult
+    return Either.left(blocksResult.left)
   }
 
   if (parsedFrontmatterResult.right.kind === "spec") {
@@ -400,7 +398,7 @@ export const parseMdDocSync = (content: string): Either.Either<MdParsedDoc, MdDo
       sectionsResult.right
     )
     if (Either.isLeft(sectionValidation)) {
-      return sectionValidation
+      return Either.left(sectionValidation.left)
     }
 
     return decodeUnknown(
@@ -429,4 +427,9 @@ export const parseMdDocSync = (content: string): Either.Either<MdParsedDoc, MdDo
 
 export const parseMdDoc = (
   content: string
-): Effect.Effect<MdParsedDoc, MdDocParseError> => Effect.fromEither(parseMdDocSync(content))
+): Effect.Effect<MdParsedDoc, MdDocParseError> => {
+  const parsed = parseMdDocSync(content)
+  return Either.isLeft(parsed)
+    ? Effect.fail(parsed.left)
+    : Effect.succeed(parsed.right)
+}
