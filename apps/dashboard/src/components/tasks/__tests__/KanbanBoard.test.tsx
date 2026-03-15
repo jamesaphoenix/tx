@@ -110,10 +110,11 @@ function createDataTransfer(): DataTransfer {
     },
     dropEffect: "move",
     effectAllowed: "all",
+    setDragImage: () => {},
     files: [] as unknown as FileList,
     items: [] as unknown as DataTransferItemList,
     types: [],
-  } as DataTransfer
+  } as unknown as DataTransfer
 }
 
 describe("KanbanBoard", () => {

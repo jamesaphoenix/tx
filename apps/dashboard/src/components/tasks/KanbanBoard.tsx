@@ -255,7 +255,7 @@ export function KanbanBoard({
     setActiveDropTarget(null)
   }, [])
 
-  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>, status: TaskStatus) => {
+  const handleDragOver = useCallback((event: DragEvent<HTMLElement>, status: TaskStatus) => {
     event.preventDefault()
     event.dataTransfer.dropEffect = "move"
     if (activeDropTarget !== status) {
@@ -264,7 +264,7 @@ export function KanbanBoard({
   }, [activeDropTarget])
 
   const handleDrop = useCallback(
-    (event: DragEvent<HTMLDivElement>, status: TaskStatus) => {
+    (event: DragEvent<HTMLElement>, status: TaskStatus) => {
       event.preventDefault()
       const droppedTaskId = event.dataTransfer.getData("text/plain") || draggedTaskId
       setActiveDropTarget(null)
