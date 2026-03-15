@@ -1455,156 +1455,138 @@ function AppContent() {
           }
         },
       },
-      {
-        id: "global:nav:tasks",
-        label: "Go to Tasks",
-        group: "Navigate",
-        icon: "navigate",
-        shortcut: "g t",
-        allowInInput: true,
-        action: () => setActiveTab("tasks"),
-      },
-      {
-        id: "global:nav:runs",
-        label: "Go to Runs",
-        group: "Navigate",
-        icon: "navigate",
-        shortcut: "g r",
-        allowInInput: true,
-        action: () => setActiveTab("runs"),
-      },
-      {
-        id: "global:nav:docs",
-        label: "Go to Docs",
-        group: "Navigate",
-        icon: "navigate",
-        shortcut: "g d",
-        allowInInput: true,
-        action: () => setActiveTab("docs"),
-      },
-      {
-        id: "global:nav:cycles",
-        label: "Go to Cycles",
-        group: "Navigate",
-        icon: "navigate",
-        shortcut: "g c",
-        allowInInput: true,
-        action: () => setActiveTab("cycles"),
-      },
-      {
-        id: "global:nav:settings",
-        label: "Go to Settings",
-        group: "Navigate",
-        icon: "navigate",
-        shortcut: "g s",
-        allowInInput: true,
-        action: () => setActiveTab("settings"),
-      },
-      {
-        id: "global:runs:open-selected",
-        label: "Open selected run",
-        group: "Runs",
-        icon: "action",
-        shortcut: "↩",
-        action: () => {
-          const selected = selectionStore.state.runIds[0]
-          if (selected) setSelectedRunId(selected)
-        },
-        enabled: activeTab === "runs" && selectedRunIds.length > 0,
-      },
-      {
-        id: "global:runs:compare",
-        label: "Compare selected runs",
-        group: "Runs",
-        icon: "action",
-        shortcut: "c",
-        action: () => {
-          // Placeholder for compare action; currently opens first selected.
-          const selected = selectionStore.state.runIds[0]
-          if (selected) setSelectedRunId(selected)
-        },
-        enabled: activeTab === "runs" && selectedRunIds.length >= 2,
-      },
-      {
-        id: "global:runs:clear-selection",
-        label: "Clear run selection",
-        group: "Runs",
-        icon: "action",
-        shortcut: "Esc",
-        action: () => {
-          selectionActions.clearRuns()
-          setSelectedRunId(null)
-        },
-        enabled: activeTab === "runs" && (selectedRunIds.length > 0 || selectedRunId !== null),
-      },
-      {
-        id: "global:runs:next",
-        label: "Select next run",
-        group: "Runs",
-        icon: "action",
-        shortcut: "j",
-        allowInInput: true,
-        action: () => {
-          const runs = getLoadedRuns()
-          if (runs.length === 0) return
-          const current = selectionStore.state.runIds[0] ?? selectedRunId ?? runs[0].id
-          const idx = runs.findIndex((run) => run.id === current)
-          const next = runs[(idx + 1 + runs.length) % runs.length]
-          selectionActions.selectRun(next.id)
-        },
-        enabled: activeTab === "runs",
-      },
-      {
-        id: "global:runs:prev",
-        label: "Select previous run",
-        group: "Runs",
-        icon: "action",
-        shortcut: "k",
-        allowInInput: true,
-        action: () => {
-          const runs = getLoadedRuns()
-          if (runs.length === 0) return
-          const current = selectionStore.state.runIds[0] ?? selectedRunId ?? runs[0].id
-          const idx = runs.findIndex((run) => run.id === current)
-          const prev = runs[(idx - 1 + runs.length) % runs.length]
-          selectionActions.selectRun(prev.id)
-        },
-        enabled: activeTab === "runs",
-      },
-      {
-        id: "global:runs:open-detail",
-        label: "Open run detail",
-        group: "Runs",
-        icon: "action",
-        shortcut: "o",
-        action: () => {
-          const selected = selectionStore.state.runIds[0]
-          if (selected) setSelectedRunId(selected)
-        },
-        enabled: activeTab === "runs" && selectedRunIds.length > 0,
-      },
-      {
-        id: "global:runs:back-to-list",
-        label: "Back to run list",
-        group: "Runs",
-        icon: "navigate",
-        shortcut: "Esc",
-        action: () => setSelectedRunId(null),
-        enabled: activeTab === "runs" && selectedRunId !== null,
-      },
-      {
-        id: "global:theme:toggle",
-        label: themeMode === "light" ? "Switch to dark mode" : "Switch to light mode",
-        group: "Appearance",
-        icon: "action",
-        shortcut: "⌘⇧L",
-        allowInInput: true,
-        action: toggleThemeMode,
-      },
     ]
 
+    // Tab switching - always available
+    const tabs: { tab: Tab; label: string }[] = [
+      { tab: "tasks", label: "Go to Tasks" },
+      { tab: "docs", label: "Go to Docs" },
+      { tab: "runs", label: "Go to Runs" },
+      { tab: "cycles", label: "Go to Cycles" },
+      { tab: "settings", label: "Go to Settings" },
+    ]
+    for (const { tab, label } of tabs) {
+      if (tab !== activeTab) {
+        cmds.push({ id: `nav:${tab}`, label, group: "Navigation", icon: "nav", action: () => setActiveTab(tab) })
+      }
+    }
+
+    // Per-tab commands
+    if (activeTab === "runs") {
+      cmds.push({
+        id: "select-all",
+        label: "Select all runs",
+        group: "Actions",
+        icon: "select",
+        shortcut: "⌘A",
+        action: () => {
+          const loaded = getLoadedRuns()
+          selectionActions.selectAllRuns(loaded.map((run) => run.id))
+        },
+      })
+      if (selectedRunIds.size > 0) {
+        cmds.push({
+          id: "action:copy-selected-runs",
+          label: "Copy selected run IDs",
+          sublabel: `${selectedRunIds.size} selected`,
+          group: "Actions",
+          icon: "copy",
+          shortcut: "⌘C",
+          action: async () => {
+            const loaded = getLoadedRuns()
+            const text = loaded
+              .filter((run) => selectedRunIds.has(run.id))
+              .map((run) => `${run.id} ${run.agent} ${run.status}`)
+              .join("\n")
+            await navigator.clipboard.writeText(text)
+          },
+        })
+        cmds.push({
+          id: "action:clear-run-selection",
+          label: "Clear run selection",
+          sublabel: `${selectedRunIds.size} selected`,
+          group: "Actions",
+          icon: "action",
+          action: () => selectionActions.clearRuns(),
+        })
+      }
+      cmds.push(
+        {
+          id: "filter:run-running",
+          label: "Filter: Running",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, status: ["running"] }),
+        },
+        {
+          id: "filter:run-completed",
+          label: "Filter: Completed",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, status: ["completed"] }),
+        },
+        {
+          id: "filter:run-failed",
+          label: "Filter: Failed",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, status: ["failed"] }),
+        },
+        {
+          id: "filter:run-all",
+          label: "Filter: Show all runs",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ status: [], agent: "" }),
+        },
+      )
+      // Agent-specific filters
+      for (const agent of runsMetadata?.agents ?? []) {
+        cmds.push({
+          id: `filter:run-agent-${agent}`,
+          label: `Filter: Agent "${agent}"`,
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, agent }),
+        })
+      }
+      if (runFilters.agent) {
+        cmds.push({
+          id: "action:clear-agent",
+          label: "Clear agent filter",
+          sublabel: runFilters.agent,
+          group: "Actions",
+          icon: "action",
+          action: () => setRunFilters({ ...runFilters, agent: "" }),
+        })
+      }
+      if (selectedRunId) {
+        cmds.push({
+          id: "action:copy-run",
+          label: "Copy run ID & agent",
+          sublabel: selectedRunId,
+          group: "Actions",
+          icon: "copy",
+          shortcut: selectedRunIds.size === 0 ? "⌘C" : undefined,
+          action: async () => {
+            const loaded = getLoadedRuns()
+            const run = loaded.find((candidate) => candidate.id === selectedRunId)
+            const text = run ? `${run.id} ${run.agent} ${run.status}` : selectedRunId
+            await navigator.clipboard.writeText(text)
+          },
+        })
+        cmds.push({
+          id: "action:deselect-run",
+          label: "Deselect run",
+          group: "Actions",
+          icon: "action",
+          action: () => setSelectedRunId(null),
+        })
+      }
+    }
+
     return cmds
-  }, [activeTab, getLoadedRuns, selectedRunId, selectedRunIds.length, themeMode, toggleThemeMode])
+  }, [activeTab, runFilters, selectedRunId, selectedRunIds, getLoadedRuns, setRunFilters, runsMetadata?.agents])
 
   useEffect(() => {
     setAppCommands(appCommands)
