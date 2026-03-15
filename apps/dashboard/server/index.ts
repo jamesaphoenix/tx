@@ -57,7 +57,7 @@ const DEFAULT_TASK_LABELS = [
   "Documentation",
 ] as const
 const LEGACY_LABEL_RENAMES = [
-  { from: "DevOps", to: "DevOFps" },
+  { from: "DevOFps", to: "DevOps" },
 ] as const
 const LEGACY_LABELS_TO_REMOVE = [
   "AISEO",
