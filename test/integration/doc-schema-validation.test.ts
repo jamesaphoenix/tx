@@ -43,14 +43,37 @@ const runTx = (args: string[], cwd: string): ExecResult => {
 const shortName = (seed: string, prefix: string): string =>
   `${prefix}-${fixtureId(seed).slice(3, 10)}`
 
-const traceabilityRow = [
-  "  - requirement_id: REQ-001",
-  "    level: integration",
-  "    verification: Run integration tests",
-  "    success_criteria: Tests pass",
-].join("\n")
+const specFrontmatter = (
+  specType: "prd" | "design" | "overview",
+  name: string,
+  title: string
+): string => `---
+kind: spec
+spec_type: ${specType}
+name: ${name}
+title: "${title}"
+status: draft
+version: 1
+owners:
+  - docs-team
+summary: Integration test fixture for ${title}
+domain: test
+tags:
+  - integration
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: "2026-03-15"
+---`
 
-describe("YAML content schema validation integration", () => {
+const withSpecFrontmatter = (
+  specType: "prd" | "design" | "overview",
+  name: string,
+  title: string,
+  body: string
+): string => `${specFrontmatter(specType, name, title)}\n\n${body.trim()}\n`
+
+describe("Markdown content schema validation integration", () => {
   let shared: SharedTestLayerResult
   let originalCwd: string
   let tempProjectDir: string
@@ -90,25 +113,35 @@ describe("YAML content schema validation integration", () => {
 
   it("1. valid PRD with all required fields succeeds", async () => {
     const name = shortName("doc-schema-prd-valid", "prd")
-    const content = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Valid PRD"',
-      "status: changing",
-      "",
-      "problem: |",
-      "  Existing process is manual.",
-      "",
-      "solution: |",
-      "  Add automated validation and checks.",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-PRDVAL-001",
-      "    statement: When YAML is submitted, then the system shall validate content schema.",
-      "",
-      "acceptance_criteria:",
-      "  - PRD YAML validates successfully.",
-    ].join("\n")
+    const content = withSpecFrontmatter(
+      "prd",
+      name,
+      "Valid PRD",
+      `# Summary
+Valid PRD test fixture.
+
+# Problem
+Existing process is manual.
+
+# Scope
+Included: schema validation.
+Excluded: production rollout.
+
+# Requirements
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-DOCS-001
+    kind: ubiquitous
+    statement: the system shall validate content schema.
+    priority: must
+\`\`\`
+
+# Acceptance Criteria
+- PRD markdown validates successfully.
+
+# Non-goals
+- None.`
+    )
 
     const doc = await createDoc({
       kind: "prd",
@@ -123,22 +156,32 @@ describe("YAML content schema validation integration", () => {
 
   it("2. PRD missing problem fails with problem error", async () => {
     const name = shortName("doc-schema-prd-missing-problem", "prd")
-    const content = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Missing Problem PRD"',
-      "status: changing",
-      "",
-      "solution: |",
-      "  This has no problem section.",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-PRDMISS-001",
-      "    statement: When missing sections exist, then validation shall fail.",
-      "",
-      "acceptance_criteria:",
-      "  - Validation reports missing field.",
-    ].join("\n")
+    const content = withSpecFrontmatter(
+      "prd",
+      name,
+      "Missing Problem PRD",
+      `# Summary
+Missing problem section fixture.
+
+# Scope
+Included: section validation.
+Excluded: full PRD behavior.
+
+# Requirements
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-DOCS-002
+    kind: ubiquitous
+    statement: the system shall fail when required sections are missing.
+    priority: must
+\`\`\`
+
+# Acceptance Criteria
+- Validation reports missing section.
+
+# Non-goals
+- None.`
+    )
 
     await expect(
       createDoc({
@@ -152,28 +195,36 @@ describe("YAML content schema validation integration", () => {
 
   it("3. PRD with deprecated requirements passes and keeps deprecation warning path", async () => {
     const name = shortName("doc-schema-prd-deprecated", "prd")
-    const content = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Deprecated Requirements PRD"',
-      "status: changing",
-      "",
-      "problem: |",
-      "  Validate deprecated requirements behavior.",
-      "",
-      "solution: |",
-      "  Keep legacy requirements non-fatal.",
-      "",
-      "requirements:",
-      "  - Legacy requirement line",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-PRDDEP-001",
-      "    statement: When deprecated requirements are present, then validation shall still pass.",
-      "",
-      "acceptance_criteria:",
-      "  - PRD creation succeeds with legacy requirements present.",
-    ].join("\n")
+    const content = withSpecFrontmatter(
+      "prd",
+      name,
+      "Deprecated Requirements PRD",
+      `# Summary
+Deprecated requirements compatibility fixture.
+
+# Problem
+Validate deprecated requirements behavior.
+
+# Scope
+Included: markdown requirement rendering.
+Excluded: migration tooling.
+
+# Requirements
+- Legacy requirement line
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-DOCS-003
+    kind: ubiquitous
+    statement: the system shall still parse docs with legacy requirement prose.
+    priority: should
+\`\`\`
+
+# Acceptance Criteria
+- PRD creation succeeds with legacy requirements present.
+
+# Non-goals
+- None.`
+    )
 
     const doc = await createDoc({
       kind: "prd",
@@ -192,7 +243,7 @@ describe("YAML content schema validation integration", () => {
     expect(rendered.length).toBeGreaterThan(0)
 
     const markdown = readFileSync(join(tempProjectDir, "specs", "prd", `${name}.md`), "utf-8")
-    expect(markdown).toContain("## Requirements")
+    expect(markdown).toContain("# Requirements")
     expect(markdown).toContain("Legacy requirement line")
 
     const validatorSource = readFileSync(
@@ -206,22 +257,55 @@ describe("YAML content schema validation integration", () => {
 
   it("4. valid design doc with required fields succeeds", async () => {
     const name = shortName("doc-schema-design-valid", "design")
-    const content = [
-      "kind: design",
-      `name: ${name}`,
-      'title: "Valid Design"',
-      "status: changing",
-      "version: 1",
-      "",
-      "problem_definition: |",
-      "  Need a robust implementation plan.",
-      "",
-      "architecture: |",
-      "  Use service-repository layering.",
-      "",
-      "testing_strategy:",
-      traceabilityRow,
-    ].join("\n")
+    const content = withSpecFrontmatter(
+      "design",
+      name,
+      "Valid Design",
+      `# Summary
+Design fixture summary.
+
+# Architecture
+Use service-repository layering.
+
+# Interfaces
+\`\`\`yaml
+interfaces:
+  - name: CreateDoc
+    type: http
+    method: POST
+    path: /docs
+    semantics: Creates markdown docs.
+\`\`\`
+
+# Data Model
+No schema changes for this fixture.
+
+# Invariants
+\`\`\`yaml
+invariants:
+  - id: INV-DOCS-001
+    statement: Every design fixture has required sections.
+    severity: high
+    verified_by:
+      - test/integration/doc-schema-validation.test.ts
+\`\`\`
+
+# Failure Modes
+\`\`\`yaml
+failure_modes:
+  - condition: Missing markdown sections
+    impact: Parsing fails
+    handling: Return validation error
+\`\`\`
+
+# Verification
+\`\`\`yaml
+verification:
+  - requirement_id: REQ-DOCS-004
+    test_type: integration
+    target: test/integration/doc-schema-validation.test.ts
+\`\`\``
+    )
 
     const doc = await createDoc({
       kind: "design",
@@ -236,19 +320,36 @@ describe("YAML content schema validation integration", () => {
 
   it("5. design doc missing architecture fails", async () => {
     const name = shortName("doc-schema-design-missing-architecture", "design")
-    const content = [
-      "kind: design",
-      `name: ${name}`,
-      'title: "Missing Architecture Design"',
-      "status: changing",
-      "version: 1",
-      "",
-      "problem_definition: |",
-      "  Architecture section is missing.",
-      "",
-      "testing_strategy:",
-      traceabilityRow,
-    ].join("\n")
+    const content = withSpecFrontmatter(
+      "design",
+      name,
+      "Missing Architecture Design",
+      `# Summary
+Architecture section intentionally missing.
+
+# Interfaces
+\`\`\`yaml
+interfaces: []
+\`\`\`
+
+# Data Model
+No data model changes.
+
+# Invariants
+\`\`\`yaml
+invariants: []
+\`\`\`
+
+# Failure Modes
+\`\`\`yaml
+failure_modes: []
+\`\`\`
+
+# Verification
+\`\`\`yaml
+verification: []
+\`\`\``
+    )
 
     await expect(
       createDoc({
@@ -265,50 +366,90 @@ describe("YAML content schema validation integration", () => {
     const add = runTx(["doc", "add", "design", name, "--title", "Null Testing Strategy Design"], tempProjectDir)
     expect(add.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "design", `${name}.yml`)
-    const content = [
-      "kind: design",
-      `name: ${name}`,
-      'title: "Null Testing Strategy Design"',
-      "status: changing",
-      "",
-      "problem_definition: |",
-      "  Null testing strategy should not break rendering.",
-      "",
-      "architecture: |",
-      "  Keep this minimal.",
-      "",
-      "testing_strategy: null",
-    ].join("\n")
-    writeFileSync(yamlPath, content, "utf-8")
+    const markdownPath = join(tempProjectDir, "specs", "design", `${name}.md`)
+    const content = withSpecFrontmatter(
+      "design",
+      name,
+      "Null Testing Strategy Design",
+      `# Summary
+Null testing strategy regression fixture.
+
+# Architecture
+Keep this minimal.
+
+# Interfaces
+\`\`\`yaml
+interfaces: []
+\`\`\`
+
+# Data Model
+No model changes.
+
+# Invariants
+\`\`\`yaml
+invariants: []
+\`\`\`
+
+# Failure Modes
+\`\`\`yaml
+failure_modes: []
+\`\`\`
+
+# Verification
+\`\`\`yaml
+verification: []
+\`\`\`
+
+# Testing Strategy
+null`
+    )
+    writeFileSync(markdownPath, content, "utf-8")
 
     const render = runTx(["doc", "render", name], tempProjectDir)
     expect(render.status).toBe(0)
   })
 
   it("7. valid requirement doc with overview and functional_requirements succeeds", async () => {
-    const name = shortName("doc-schema-requirement-valid", "requirement")
-    const content = [
-      "kind: requirement",
-      `name: ${name}`,
-      'title: "Valid Requirement"',
-      "status: changing",
-      "",
-      "overview: |",
-      "  Requirement overview text.",
-      "",
-      "functional_requirements: |",
-      "  - The system shall support schema validation.",
-    ].join("\n")
+    const name = shortName("doc-schema-requirement-valid", "prd")
+    const content = withSpecFrontmatter(
+      "prd",
+      name,
+      "Valid Requirement",
+      `# Summary
+Requirement-style PRD summary.
+
+# Problem
+Requirement overview text.
+
+# Scope
+Included: schema validation behavior.
+Excluded: implementation details.
+
+# Requirements
+- The system shall support schema validation.
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-DOCS-007
+    kind: ubiquitous
+    statement: the system shall support schema validation.
+    priority: must
+\`\`\`
+
+# Acceptance Criteria
+- Requirement-style PRD persists successfully.
+
+# Non-goals
+- None.`
+    )
 
     const doc = await createDoc({
-      kind: "requirement",
+      kind: "prd",
       name,
       title: "Valid Requirement",
       content,
     })
 
-    expect(doc.kind).toBe("requirement")
+    expect(doc.kind).toBe("prd")
   })
 
   it("8. requirement doc render with actors array avoids [object Object]", () => {
@@ -316,31 +457,44 @@ describe("YAML content schema validation integration", () => {
     const add = runTx(["doc", "add", "requirement", name, "--title", "Requirement Actors"], tempProjectDir)
     expect(add.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "requirements", `${name}.yml`)
-    const content = [
-      "kind: requirement",
-      `name: ${name}`,
-      'title: "Requirement Actors"',
-      "status: changing",
-      "",
-      "overview: |",
-      "  Validate rendering of structured actors.",
-      "",
-      "actors:",
-      "  - name: Product Manager",
-      "    description: Defines acceptance criteria",
-      "  - name: Engineer",
-      "    description: Implements the feature",
-      "",
-      "functional_requirements: |",
-      "  - The system shall render actor entries as structured rows.",
-    ].join("\n")
-    writeFileSync(yamlPath, content, "utf-8")
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
+    const content = withSpecFrontmatter(
+      "prd",
+      name,
+      "Requirement Actors",
+      `# Summary
+Validate rendering of structured actors.
+
+# Problem
+Actor metadata must render as text, not object coercion.
+
+# Scope
+Included: actor content rendering.
+Excluded: actor schema enforcement.
+
+# Requirements
+- Product Manager: Defines acceptance criteria
+- Engineer: Implements the feature
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-DOCS-008
+    kind: ubiquitous
+    statement: the system shall render actor entries as readable text.
+    priority: should
+\`\`\`
+
+# Acceptance Criteria
+- Actor entries render as plain text.
+
+# Non-goals
+- None.`
+    )
+    writeFileSync(markdownPath, content, "utf-8")
 
     const render = runTx(["doc", "render", name], tempProjectDir)
     expect(render.status).toBe(0)
 
-    const mdPath = join(tempProjectDir, "specs", "requirements", `${name}.md`)
+    const mdPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     const markdown = readFileSync(mdPath, "utf-8")
     expect(markdown).not.toContain("[object Object]")
     expect(markdown).toContain("Product Manager")
@@ -348,45 +502,66 @@ describe("YAML content schema validation integration", () => {
   })
 
   it("9. valid system_design doc with required fields succeeds", async () => {
-    const name = shortName("doc-schema-system-design-valid", "system-design")
-    const content = [
-      "kind: system_design",
-      `name: ${name}`,
-      'title: "Valid System Design"',
-      "status: changing",
-      "",
-      "overview: |",
-      "  Cross-cutting architecture overview.",
-      "",
-      "scope: |",
-      "  Applies to documentation and validation subsystems.",
-      "",
-      "design: |",
-      "  Describe architecture constraints and flows.",
-    ].join("\n")
+    const name = shortName("doc-schema-system-design-valid", "design")
+    const content = withSpecFrontmatter(
+      "design",
+      name,
+      "Valid System Design",
+      `# Summary
+Cross-cutting architecture overview.
+
+# Architecture
+Describe architecture constraints and flows.
+
+# Interfaces
+\`\`\`yaml
+interfaces: []
+\`\`\`
+
+# Data Model
+No model changes.
+
+# Invariants
+\`\`\`yaml
+invariants: []
+\`\`\`
+
+# Failure Modes
+\`\`\`yaml
+failure_modes: []
+\`\`\`
+
+# Verification
+\`\`\`yaml
+verification: []
+\`\`\``
+    )
 
     const doc = await createDoc({
-      kind: "system_design",
+      kind: "design",
       name,
       title: "Valid System Design",
       content,
     })
 
-    expect(doc.kind).toBe("system_design")
+    expect(doc.kind).toBe("design")
   })
 
   it("10. overview doc missing problem_definition fails", async () => {
     const name = shortName("doc-schema-overview-missing-problem-definition", "overview")
-    const content = [
-      "kind: overview",
-      `name: ${name}`,
-      'title: "Missing Problem Definition Overview"',
-      "status: changing",
-      "",
-      "subsystems: |",
-      "  - docs",
-      "  - validation",
-    ].join("\n")
+    const content = withSpecFrontmatter(
+      "overview",
+      name,
+      "Missing Problem Definition Overview",
+      `# Summary
+Overview fixture missing required Components section.
+
+# Architecture
+Architecture summary.
+
+# Data Flows
+Primary data flow description.`
+    )
 
     await expect(
       createDoc({
@@ -395,7 +570,7 @@ describe("YAML content schema validation integration", () => {
         title: "Missing Problem Definition Overview",
         content,
       })
-    ).rejects.toThrow(/problem_definition/i)
+    ).rejects.toThrow(/components/i)
   })
 
   it("11. EARS validation still fails invalid pattern entries", () => {
@@ -403,55 +578,76 @@ describe("YAML content schema validation integration", () => {
     const add = runTx(["doc", "add", "prd", name, "--title", "Invalid EARS Pattern PRD"], tempProjectDir)
     expect(add.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
-    const invalidYaml = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Invalid EARS Pattern PRD"',
-      "status: changing",
-      "",
-      "problem: |",
-      "  Validate EARS pattern enforcement.",
-      "",
-      "solution: |",
-      "  Reject invalid legacy pattern.",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-INVALID-001",
-      "    pattern: invalid_pattern",
-      "    system: doc service",
-      "    response: reject invalid patterns",
-      "",
-      "acceptance_criteria:",
-      "  - Invalid pattern entries are rejected by EARS validation.",
-    ].join("\n")
-    writeFileSync(yamlPath, invalidYaml, "utf-8")
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
+    const invalidContent = withSpecFrontmatter(
+      "prd",
+      name,
+      "Invalid EARS Pattern PRD",
+      `# Summary
+Invalid EARS requirement fixture.
+
+# Problem
+Validate EARS kind enforcement.
+
+# Scope
+Included: EARS semantic validation.
+Excluded: renderer behavior.
+
+# Requirements
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-DOCS-011
+    kind: invalid-kind
+    statement: the system shall reject invalid EARS kinds.
+    priority: must
+\`\`\`
+
+# Acceptance Criteria
+- Invalid kind entries are rejected.
+
+# Non-goals
+- None.`
+    )
+    writeFileSync(markdownPath, invalidContent, "utf-8")
 
     const render = runTx(["doc", "render", name], tempProjectDir)
     expect(render.status).not.toBe(0)
 
     const output = `${render.stdout}\n${render.stderr}`
-    expect(output).toMatch(/EARS:|pattern|Invalid EARS pattern/i)
+    expect(output).toMatch(/ears_requirements|kind|invalid/i)
   })
 
   it("12. kind mismatch between YAML and requested kind fails", async () => {
     const name = shortName("doc-schema-kind-mismatch", "design")
-    const content = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Kind Mismatch Design"',
-      "status: changing",
-      "version: 1",
-      "",
-      "problem_definition: |",
-      "  Content is design-shaped but kind is mismatched.",
-      "",
-      "architecture: |",
-      "  Keep design fields valid so mismatch check is reached.",
-      "",
-      "testing_strategy:",
-      traceabilityRow,
-    ].join("\n")
+    const content = withSpecFrontmatter(
+      "prd",
+      name,
+      "Kind Mismatch Design",
+      `# Summary
+Kind mismatch fixture.
+
+# Problem
+Content kind intentionally mismatches requested kind.
+
+# Scope
+Included: mismatch error path.
+Excluded: design parsing.
+
+# Requirements
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-DOCS-012
+    kind: ubiquitous
+    statement: the system shall detect kind mismatches.
+    priority: must
+\`\`\`
+
+# Acceptance Criteria
+- Mismatch is rejected.
+
+# Non-goals
+- None.`
+    )
 
     await expect(
       createDoc({
@@ -460,6 +656,6 @@ describe("YAML content schema validation integration", () => {
         title: "Kind Mismatch Design",
         content,
       })
-    ).rejects.toThrow(/Expected "design", actual "prd"|kind/i)
+    ).rejects.toThrow(/spec_type|kind/i)
   })
 })
