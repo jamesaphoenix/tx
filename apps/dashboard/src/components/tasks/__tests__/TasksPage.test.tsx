@@ -17,6 +17,15 @@ vi.mock("../TaskList", () => ({
   ),
 }))
 
+vi.mock("../KanbanBoard", () => ({
+  KanbanBoard: ({ search }: { search?: string }) => (
+    <div>
+      <div>KanbanBoard</div>
+      <div data-testid="kanban-search">{search ?? ""}</div>
+    </div>
+  ),
+}))
+
 vi.mock("../TaskDetail", () => ({
   TaskDetail: ({ taskId }: { taskId: string }) => <div>TaskDetail:{taskId}</div>,
 }))
@@ -54,6 +63,27 @@ describe("TasksPage", () => {
 
     server.use(
       http.get("/api/labels", () => HttpResponse.json({ labels: [] })),
+      http.get("/api/tasks", () =>
+        HttpResponse.json({
+          tasks: [],
+          nextCursor: null,
+          hasMore: false,
+          total: 14,
+          summary: {
+            total: 14,
+            byStatus: {
+              backlog: 0,
+              ready: 1,
+              planning: 0,
+              active: 0,
+              blocked: 0,
+              review: 0,
+              human_needs_to_review: 0,
+              done: 13,
+            },
+          },
+        })
+      ),
       http.get("/api/tasks/:id", ({ params }) => {
         const id = String(params.id)
         return HttpResponse.json({
@@ -138,6 +168,46 @@ describe("TasksPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("status-filter-value")).toHaveTextContent("all")
       expect(window.location.search).not.toContain("status=")
+    })
+  })
+
+  it("renders status counts from summary data", async () => {
+    renderWithProviders(<TasksPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /All/i })).toHaveTextContent("14")
+      expect(screen.getByRole("button", { name: /Ready/i })).toHaveTextContent("1")
+      expect(screen.getByRole("button", { name: /Done/i })).toHaveTextContent("13")
+    })
+  })
+
+  it("toggles between list and kanban views and syncs view URL", async () => {
+    renderWithProviders(<TasksPage />)
+
+    expect(screen.getByRole("button", { name: "Open Mock Task" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Kanban view" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("KanbanBoard")).toBeInTheDocument()
+      expect(screen.getByTestId("kanban-search")).toHaveTextContent("")
+      expect(window.location.search).toContain("view=kanban")
+    })
+    expect(screen.queryByRole("button", { name: /^All/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "List view" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open Mock Task" })).toBeInTheDocument()
+      expect(window.location.search).toContain("view=list")
+    })
+  })
+
+  it("uses defaultTaskView when view URL param is missing", async () => {
+    renderWithProviders(<TasksPage defaultTaskView="kanban" />)
+
+    await waitFor(() => {
+      expect(screen.getByText("KanbanBoard")).toBeInTheDocument()
     })
   })
 })

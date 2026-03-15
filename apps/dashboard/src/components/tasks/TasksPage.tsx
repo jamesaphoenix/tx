@@ -11,6 +11,7 @@ import {
 } from "../../api/client"
 import { SearchInput } from "../ui/SearchInput"
 import { TaskList } from "./TaskList"
+import { KanbanBoard } from "./KanbanBoard"
 import { TaskDetail } from "./TaskDetail"
 import { TaskComposerModal, type TaskComposerModalSubmit } from "./TaskComposerModal"
 import {
@@ -36,6 +37,7 @@ type ThemeMode = "light" | "dark"
 export interface TasksPageProps {
   themeMode?: ThemeMode
   defaultTaskAssigmentType?: TaskAssigneeType
+  defaultTaskView?: "list" | "kanban"
   /**
    * Incrementing signal from the app shell to request opening the
    * task composer even before page-level shortcut registration settles.
@@ -43,7 +45,10 @@ export interface TasksPageProps {
   newTaskRequestNonce?: number
 }
 
+type TaskViewMode = "list" | "kanban"
+
 interface TaskViewState {
+  view: TaskViewMode
   statuses: TaskStatusValue[]
   search: string
   taskId: string | null
@@ -255,11 +260,19 @@ function parseTaskLabelFilters(value: string | null): number[] {
   return Array.from(new Set(parsed))
 }
 
-function readTaskViewStateFromUrl(): TaskViewState {
+function parseTaskView(value: string | null, fallback: TaskViewMode): TaskViewMode {
+  if (value === "list" || value === "kanban") {
+    return value
+  }
+  return fallback
+}
+
+function readTaskViewStateFromUrl(defaultTaskView: TaskViewMode = "list"): TaskViewState {
   const params = new URLSearchParams(window.location.search)
   const statuses = parseTaskStatuses(params.get("status"))
   const legacyStatuses = statuses.length === 0 ? parseLegacyBucketStatuses(params.get("taskBucket")) : []
   return {
+    view: parseTaskView(params.get("view"), defaultTaskView),
     statuses: statuses.length > 0 ? statuses : legacyStatuses,
     search: params.get("taskSearch") ?? "",
     taskId: params.get("taskId"),
@@ -270,6 +283,7 @@ function readTaskViewStateFromUrl(): TaskViewState {
 
 function buildTaskUrl(state: TaskViewState): string {
   const params = new URLSearchParams(window.location.search)
+  params.delete("view")
   params.delete("status")
   params.delete("taskBucket")
   params.delete("taskSearch")
@@ -277,6 +291,7 @@ function buildTaskUrl(state: TaskViewState): string {
   params.delete("taskAssignee")
   params.delete("taskLabels")
 
+  params.set("view", state.view)
   if (state.statuses.length > 0) {
     params.set("status", state.statuses.join(","))
   }
@@ -308,6 +323,7 @@ async function copyToClipboard(value: string): Promise<void> {
 export function TasksPage({
   themeMode = "light",
   defaultTaskAssigmentType = "human",
+  defaultTaskView = "list",
   newTaskRequestNonce = 0
 }: TasksPageProps) {
   const isDarkTheme = themeMode === "dark"
@@ -317,7 +333,7 @@ export function TasksPage({
   const nextComposerLabelIdRef = useRef(-1)
   const filterButtonRef = useRef<HTMLButtonElement | null>(null)
   const filterPanelRef = useRef<HTMLDivElement | null>(null)
-  const [viewState, setViewState] = useState<TaskViewState>(() => readTaskViewStateFromUrl())
+  const [viewState, setViewState] = useState<TaskViewState>(() => readTaskViewStateFromUrl(defaultTaskView))
   const [composer, setComposer] = useState<ComposerState | null>(null)
   const [composerFallbackLabels, setComposerFallbackLabels] = useState<Record<number, { name: string; color: string }>>({})
   const [selectedChildIds, setSelectedChildIds] = useState<Set<string>>(new Set())
@@ -333,33 +349,19 @@ export function TasksPage({
     search: viewState.search,
   }), [viewState.statuses, viewState.search])
 
+  const { data: taskSummaryData } = useQuery({
+    queryKey: ["tasks", "summary"],
+    queryFn: fetchers.tasks,
+    staleTime: 5000,
+  })
   const statusCounts = useMemo(() => {
-    const activeQueryData = queryClient.getQueryData<{ pages: PaginatedTasksResponse[] }>(
-      ["tasks", "infinite", filters] as const
-    )
-
-    const fallbackLoadedCounts = TASK_STATUS_VALUES.reduce((acc, status) => {
-      acc[status] = 0
-      return acc
-    }, {} as Record<TaskStatusValue, number>)
-
-    for (const page of activeQueryData?.pages ?? []) {
-      for (const task of page.tasks) {
-        const status = task.status as TaskStatusValue
-        if (TASK_STATUS_SET.has(status)) {
-          fallbackLoadedCounts[status] += 1
-        }
-      }
-    }
-
-    const summaryByStatus = activeQueryData?.pages[activeQueryData.pages.length - 1]?.summary?.byStatus
-
+    const summaryByStatus = taskSummaryData?.summary.byStatus
     return TASK_STATUS_VALUES.reduce((acc, status) => {
-      const summaryCount = summaryByStatus?.[status]
-      acc[status] = typeof summaryCount === "number" ? summaryCount : fallbackLoadedCounts[status]
+      const count = summaryByStatus?.[status]
+      acc[status] = typeof count === "number" ? count : 0
       return acc
     }, {} as Record<TaskStatusValue, number>)
-  }, [filters, queryClient])
+  }, [taskSummaryData])
   const allStatusCount = useMemo(
     () => TASK_STATUS_VALUES.reduce((total, status) => total + (statusCounts[status] ?? 0), 0),
     [statusCounts]
@@ -426,10 +428,21 @@ export function TasksPage({
   }, [])
 
   useEffect(() => {
-    const onPopState = () => setViewState(readTaskViewStateFromUrl())
+    const onPopState = () => setViewState(readTaskViewStateFromUrl(defaultTaskView))
     window.addEventListener("popstate", onPopState)
     return () => window.removeEventListener("popstate", onPopState)
-  }, [])
+  }, [defaultTaskView])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.has("view")) return
+    setViewState((current) => {
+      if (current.view === defaultTaskView) {
+        return current
+      }
+      return { ...current, view: defaultTaskView }
+    })
+  }, [defaultTaskView])
 
   useEffect(() => {
     setSelectedChildIds(new Set())
@@ -547,6 +560,11 @@ export function TasksPage({
   const clearStatusFilters = useCallback(() => {
     if (viewState.statuses.length === 0) return
     writeViewState({ ...viewState, statuses: [], taskId: null }, "replace")
+  }, [viewState, writeViewState])
+
+  const setView = useCallback((view: TaskViewMode) => {
+    if (viewState.view === view) return
+    writeViewState({ ...viewState, view, taskId: null }, "replace")
   }, [viewState, writeViewState])
 
   const setSearch = useCallback((search: string) => {
@@ -757,9 +775,11 @@ export function TasksPage({
     if (!viewState.taskId) return
     const selected = selectedTask
     const params = new URLSearchParams(window.location.search)
+    params.delete("view")
     params.delete("status")
     params.delete("taskBucket")
     params.set("taskId", viewState.taskId)
+    params.set("view", viewState.view)
     if (viewState.statuses.length > 0) params.set("status", viewState.statuses.join(","))
     if (viewState.assigneeType !== "all") params.set("taskAssignee", viewState.assigneeType)
     if (viewState.labelIds.length > 0) params.set("taskLabels", viewState.labelIds.join(","))
@@ -768,7 +788,7 @@ export function TasksPage({
       ? `${selected.id} ${selected.title}\n${deepLink}`
       : `${viewState.taskId}\n${deepLink}`
     await copyToClipboard(text)
-  }, [viewState.taskId, viewState.statuses, viewState.assigneeType, viewState.labelIds, selectedTask])
+  }, [viewState.taskId, viewState.view, viewState.statuses, viewState.assigneeType, viewState.labelIds, selectedTask])
 
   const getLoadedTasks = useCallback((): TaskWithDeps[] => {
     const byId = new Map<string, TaskWithDeps>()
@@ -1158,47 +1178,116 @@ export function TasksPage({
           <div className="px-3 py-2">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
+                {viewState.view === "list" && (
+                  <div className={`inline-flex gap-1 rounded-lg p-1 shadow-sm ${
+                    isDarkTheme ? "bg-gray-800" : "bg-[#e8f0fb]"
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={clearStatusFilters}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                        viewState.statuses.length === 0
+                          ? "bg-blue-600 text-white"
+                          : isDarkTheme
+                            ? "text-gray-300 hover:bg-gray-700"
+                            : "text-[#475569] hover:bg-white/70"
+                      }`}
+                    >
+                      <span>All</span>
+                      <span className="text-[10px] opacity-80">{allStatusCount}</span>
+                    </button>
+                    {TASK_STATUS_OPTIONS.map((option) => {
+                      const isActive = viewState.statuses.includes(option.value)
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => toggleStatusFilter(option.value)}
+                          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                            isActive
+                              ? "bg-blue-600 text-white"
+                              : isDarkTheme
+                                ? "text-gray-300 hover:bg-gray-700"
+                                : "text-[#475569] hover:bg-white/70"
+                          }`}
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full ${STATUS_COLORS[option.value]}`}
+                            aria-hidden="true"
+                          />
+                          <span>{option.label}</span>
+                          <span className="text-[10px] opacity-80">{statusCounts[option.value] ?? 0}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
                 <div className={`inline-flex gap-1 rounded-lg p-1 shadow-sm ${
                   isDarkTheme ? "bg-gray-800" : "bg-[#e8f0fb]"
                 }`}>
                   <button
                     type="button"
-                    onClick={clearStatusFilters}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                      viewState.statuses.length === 0
+                    aria-label="List view"
+                    title="List view"
+                    aria-pressed={viewState.view === "list"}
+                    onClick={() => setView("list")}
+                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                      viewState.view === "list"
                         ? "bg-blue-600 text-white"
                         : isDarkTheme
                           ? "text-gray-300 hover:bg-gray-700"
                           : "text-[#475569] hover:bg-white/70"
                     }`}
                   >
-                    <span>All</span>
-                    <span className="text-[10px] opacity-80">{allStatusCount}</span>
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="14"
+                      height="14"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <line x1="8" y1="6" x2="20" y2="6" />
+                      <line x1="8" y1="12" x2="20" y2="12" />
+                      <line x1="8" y1="18" x2="20" y2="18" />
+                      <line x1="4" y1="6" x2="4.01" y2="6" />
+                      <line x1="4" y1="12" x2="4.01" y2="12" />
+                      <line x1="4" y1="18" x2="4.01" y2="18" />
+                    </svg>
                   </button>
-                  {TASK_STATUS_OPTIONS.map((option) => {
-                    const isActive = viewState.statuses.includes(option.value)
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => toggleStatusFilter(option.value)}
-                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                          isActive
-                            ? "bg-blue-600 text-white"
-                            : isDarkTheme
-                              ? "text-gray-300 hover:bg-gray-700"
-                              : "text-[#475569] hover:bg-white/70"
-                        }`}
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${STATUS_COLORS[option.value]}`}
-                          aria-hidden="true"
-                        />
-                        <span>{option.label}</span>
-                        <span className="text-[10px] opacity-80">{statusCounts[option.value] ?? 0}</span>
-                      </button>
-                    )
-                  })}
+                  <button
+                    type="button"
+                    aria-label="Kanban view"
+                    title="Kanban view"
+                    aria-pressed={viewState.view === "kanban"}
+                    onClick={() => setView("kanban")}
+                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                      viewState.view === "kanban"
+                        ? "bg-blue-600 text-white"
+                        : isDarkTheme
+                          ? "text-gray-300 hover:bg-gray-700"
+                          : "text-[#475569] hover:bg-white/70"
+                    }`}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="14"
+                      height="14"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="3" y="4" width="6" height="16" rx="1" />
+                      <rect x="10.5" y="4" width="10.5" height="7" rx="1" />
+                      <rect x="10.5" y="13" width="10.5" height="7" rx="1" />
+                    </svg>
+                  </button>
                 </div>
                 <div className="relative">
                   <button
@@ -1353,15 +1442,27 @@ export function TasksPage({
               />
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto px-3 pb-3">
-            <TaskList
-              filters={filters}
-              clientFilters={clientFilters}
-              onSelectTask={openTask}
-              selectedIds={selectedTaskIds}
-              onToggleSelect={selectionActions.toggleTask}
-              onEscape={selectionActions.clearTasks}
-            />
+          <div className={`flex-1 px-3 pb-3 ${
+            viewState.view === "kanban"
+              ? "min-h-0 overflow-hidden"
+              : "overflow-y-auto"
+          }`}>
+            {viewState.view === "kanban" ? (
+              <KanbanBoard
+                onSelectTask={openTask}
+                search={viewState.search}
+                clientFilters={clientFilters}
+              />
+            ) : (
+              <TaskList
+                filters={filters}
+                clientFilters={clientFilters}
+                onSelectTask={openTask}
+                selectedIds={selectedTaskIds}
+                onToggleSelect={selectionActions.toggleTask}
+                onEscape={selectionActions.clearTasks}
+              />
+            )}
           </div>
         </div>
       ) : (

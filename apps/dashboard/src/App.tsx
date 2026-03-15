@@ -1434,6 +1434,7 @@ function AppContent() {
           <TasksPage
             themeMode={themeMode}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
+            defaultTaskView={defaultTaskView}
             newTaskRequestNonce={newTaskRequestNonce}
           />
         ) : activeTab === "docs" ? (
