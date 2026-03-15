@@ -7,6 +7,19 @@ import { dirname, resolve } from "node:path"
 
 export type DashboardDefaultTaskAssigmentType = "human" | "agent"
 export type DashboardDefaultTaskView = "list" | "kanban"
+export type DashboardCycleStartDay =
+  | "sunday"
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+export type DashboardCyclesConfig = {
+  cycleLengthDays: number
+  cycleStartDay: DashboardCycleStartDay
+  carryStatuses: string[]
+}
 export type GuardMode = "advisory" | "enforce"
 
 export type TxConfig = {
@@ -17,6 +30,7 @@ export type TxConfig = {
   dashboard: {
     defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
     defaultTaskView: DashboardDefaultTaskView
+    cycles: DashboardCyclesConfig
   }
   pins: { targetFiles: string[]; blockAgentDoneWhenTaskIdPresent: boolean }
   guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
@@ -26,6 +40,10 @@ export type TxConfig = {
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
 export const DASHBOARD_DEFAULT_TASK_VIEW_KEY = "default_task_view"
 const DASHBOARD_SECTION = "dashboard"
+const DASHBOARD_CYCLES_SECTION = "dashboard.cycles"
+export const DASHBOARD_CYCLE_LENGTH_DAYS_KEY = "cycle_length_days"
+export const DASHBOARD_CYCLE_START_DAY_KEY = "cycle_start_day"
+export const DASHBOARD_CARRY_STATUSES_KEY = "carry_statuses"
 const DOCS_SECTION = "docs"
 const SPEC_SECTION = "spec"
 const CYCLES_SECTION = "cycles"
@@ -57,7 +75,15 @@ const DEFAULT_CONFIG: TxConfig = {
   },
   memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
-  dashboard: { defaultTaskAssigmentType: "human", defaultTaskView: "list" },
+  dashboard: {
+    defaultTaskAssigmentType: "human",
+    defaultTaskView: "list",
+    cycles: {
+      cycleLengthDays: 7,
+      cycleStartDay: "monday",
+      carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+    },
+  },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
   guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
   verify: { timeout: 300, defaultSchema: null },
@@ -74,6 +100,16 @@ const isDashboardDefaultTaskView = (
 ): value is DashboardDefaultTaskView =>
   value === "list" || value === "kanban"
 
+const DASHBOARD_CYCLE_START_DAYS = new Set<DashboardCycleStartDay>([
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+])
+
 const parseTaskAssigmentTypeOrDefault = (value: string | null): DashboardDefaultTaskAssigmentType =>
   isDashboardDefaultTaskAssigmentType(value)
     ? value
@@ -85,6 +121,27 @@ const parseDashboardDefaultTaskViewOrDefault = (
   isDashboardDefaultTaskView(value)
     ? value
     : DEFAULT_CONFIG.dashboard.defaultTaskView
+
+const parseDashboardCycleLengthOrDefault = (value: string | null): number => {
+  if (!value) return DEFAULT_CONFIG.dashboard.cycles.cycleLengthDays
+  const parsed = parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_CONFIG.dashboard.cycles.cycleLengthDays
+}
+
+const parseDashboardCycleStartDayOrDefault = (value: string | null): DashboardCycleStartDay => {
+  if (!value) return DEFAULT_CONFIG.dashboard.cycles.cycleStartDay
+  const normalized = value.toLowerCase() as DashboardCycleStartDay
+  return DASHBOARD_CYCLE_START_DAYS.has(normalized)
+    ? normalized
+    : DEFAULT_CONFIG.dashboard.cycles.cycleStartDay
+}
+
+const parseDashboardCarryStatusesOrDefault = (values: string[]): string[] => {
+  const normalized = values.map((value) => value.trim()).filter((value) => value.length > 0)
+  return normalized.length > 0 ? normalized : DEFAULT_CONFIG.dashboard.cycles.carryStatuses
+}
 
 const parseBooleanOrDefault = (value: string | null, fallback: boolean): boolean => {
   if (value === "true") return true
@@ -118,6 +175,21 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       raw,
       DASHBOARD_SECTION,
       DASHBOARD_DEFAULT_TASK_VIEW_KEY
+    )
+    const dashboardCycleLengthDays = extractTomlValue(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CYCLE_LENGTH_DAYS_KEY
+    )
+    const dashboardCycleStartDay = extractTomlValue(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CYCLE_START_DAY_KEY
+    )
+    const dashboardCarryStatuses = extractTomlArray(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CARRY_STATUSES_KEY
     )
     const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
     const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
@@ -159,6 +231,11 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       dashboard: {
         defaultTaskAssigmentType: parseTaskAssigmentTypeOrDefault(defaultTaskAssigmentType),
         defaultTaskView: parseDashboardDefaultTaskViewOrDefault(defaultTaskView),
+        cycles: {
+          cycleLengthDays: parseDashboardCycleLengthOrDefault(dashboardCycleLengthDays),
+          cycleStartDay: parseDashboardCycleStartDayOrDefault(dashboardCycleStartDay),
+          carryStatuses: parseDashboardCarryStatusesOrDefault(dashboardCarryStatuses),
+        },
       },
       pins: {
         targetFiles: pinsTargetFiles
@@ -243,6 +320,121 @@ export const writeDashboardDefaultTaskView = (
     DASHBOARD_SECTION,
     DASHBOARD_DEFAULT_TASK_VIEW_KEY,
     `"${value}"`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Read dashboard cycle settings from .tx/config.toml.
+ */
+export const readDashboardCyclesConfig = (
+  cwd: string = process.cwd()
+): DashboardCyclesConfig => readTxConfig(cwd).dashboard.cycles
+
+/**
+ * Patch dashboard cycle length in .tx/config.toml.
+ */
+export const writeDashboardCycleLengthDays = (
+  value: number,
+  cwd: string = process.cwd()
+): TxConfig => {
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const normalizedValue =
+    Number.isFinite(value) && Number.isInteger(value) && value > 0
+      ? value
+      : current.dashboard.cycles.cycleLengthDays
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: {
+      ...current.dashboard,
+      cycles: { ...current.dashboard.cycles, cycleLengthDays: normalizedValue },
+    },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CYCLE_LENGTH_DAYS_KEY,
+    `${normalizedValue}`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Patch dashboard cycle start day in .tx/config.toml.
+ */
+export const writeDashboardCycleStartDay = (
+  value: DashboardCycleStartDay,
+  cwd: string = process.cwd()
+): TxConfig => {
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const normalizedValue = DASHBOARD_CYCLE_START_DAYS.has(value)
+    ? value
+    : current.dashboard.cycles.cycleStartDay
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: {
+      ...current.dashboard,
+      cycles: { ...current.dashboard.cycles, cycleStartDay: normalizedValue },
+    },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CYCLE_START_DAY_KEY,
+    `"${normalizedValue}"`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Patch dashboard cycle carry statuses in .tx/config.toml.
+ */
+export const writeDashboardCarryStatuses = (
+  value: readonly string[],
+  cwd: string = process.cwd()
+): TxConfig => {
+  const normalized = value
+    .map((status) => status.trim())
+    .filter((status) => status.length > 0)
+
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const nextCarryStatuses = normalized.length > 0
+    ? normalized
+    : current.dashboard.cycles.carryStatuses
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: {
+      ...current.dashboard,
+      cycles: { ...current.dashboard.cycles, carryStatuses: [...nextCarryStatuses] },
+    },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const renderedStatuses = `[${nextCarryStatuses.map((status) => JSON.stringify(status)).join(", ")}]`
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CARRY_STATUSES_KEY,
+    renderedStatuses
   )
   writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
 
@@ -488,6 +680,18 @@ default_task_assigment_type = "human"
 # "list" = table/list layout.
 # "kanban" = status-column board layout.
 default_task_view = "list"
+
+# Weekly cycle planning settings used by dashboard cycle APIs.
+[dashboard.cycles]
+
+# Cycle duration in days.
+cycle_length_days = 7
+
+# Day of week that anchors cycle windows.
+cycle_start_day = "monday"
+
+# Non-done statuses carried into the next cycle when a cycle is completed.
+carry_statuses = ["planning", "active", "blocked", "review", "needs_review"]
 
 # ─── Pins ───────────────────────────────────────────────────────────
 # Context pins — persistent named content blocks that are injected

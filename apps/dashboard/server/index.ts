@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite"
+import { randomUUID } from "node:crypto"
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { resolve, dirname } from "node:path"
@@ -29,11 +30,44 @@ const claudeDir = resolve(homedir(), ".claude")
 const VALID_TASK_STATUSES = new Set<string>(TASK_STATUSES)
 type DashboardDefaultTaskAssigmentType = "human" | "agent"
 type DashboardDefaultTaskView = "list" | "kanban"
+type CycleStatus = "current" | "upcoming" | "completed"
+type DashboardCycleStartDay =
+  | "sunday"
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+type DashboardCycleSettings = {
+  cycleLengthDays: number
+  cycleStartDay: DashboardCycleStartDay
+  carryStatuses: string[]
+}
 const VALID_ASSIGNEE_TYPES = new Set<DashboardDefaultTaskAssigmentType>(["human", "agent"])
 const VALID_TASK_VIEWS = new Set<DashboardDefaultTaskView>(["list", "kanban"])
+const VALID_CYCLE_START_DAYS = new Set<DashboardCycleStartDay>([
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+])
 const DASHBOARD_CONFIG_SECTION = "dashboard"
 const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
 const DASHBOARD_DEFAULT_TASK_VIEW_KEY = "default_task_view"
+const DASHBOARD_CYCLES_SECTION = "dashboard.cycles"
+const DASHBOARD_CYCLE_LENGTH_DAYS_KEY = "cycle_length_days"
+const DASHBOARD_CYCLE_START_DAY_KEY = "cycle_start_day"
+const DASHBOARD_CARRY_STATUSES_KEY = "carry_statuses"
+const DEFAULT_DASHBOARD_CYCLE_SETTINGS: DashboardCycleSettings = {
+  cycleLengthDays: 7,
+  cycleStartDay: "monday",
+  carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+}
+const IN_PROGRESS_TASK_STATUSES = new Set<string>(["planning", "active", "blocked", "review", "needs_review"])
 const DEFAULT_LABEL_COLORS = [
   "#2563eb", // blue
   "#0ea5e9", // sky
@@ -424,6 +458,7 @@ interface SettingsResponse {
   dashboard: {
     defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
     defaultTaskView: DashboardDefaultTaskView
+    cycles: DashboardCycleSettings
   }
 }
 
@@ -431,7 +466,60 @@ interface SettingsPatchPayload {
   dashboard?: {
     defaultTaskAssigmentType?: DashboardDefaultTaskAssigmentType
     defaultTaskView?: DashboardDefaultTaskView
+    cycles?: {
+      cycleLengthDays?: number
+      cycleStartDay?: string
+      carryStatuses?: string[]
+    }
   }
+}
+
+interface CycleRow {
+  id: string
+  name: string
+  start_date: string
+  end_date: string
+  status: CycleStatus
+  created_at: string
+  updated_at: string
+}
+
+interface CycleListRow extends CycleRow {
+  task_count: number | null
+  completed_count: number | null
+  in_progress_count: number | null
+}
+
+interface CycleSummaryResponse {
+  id: string
+  name: string
+  startDate: string
+  endDate: string
+  status: CycleStatus
+  createdAt: string
+  updatedAt: string
+  taskCount: number
+  completedCount: number
+  inProgressCount: number
+}
+
+interface CycleDetailResponse extends CycleSummaryResponse {
+  tasks: TaskWithDepsResponse[]
+  stats: {
+    total: number
+    completed: number
+    inProgress: number
+  }
+}
+
+interface CycleUpdatePayload {
+  name?: string
+  startDate?: string
+  endDate?: string
+}
+
+interface AddCycleTasksPayload {
+  taskIds?: string[]
 }
 
 interface CreateLabelPayload {
@@ -523,6 +611,12 @@ function isDashboardDefaultTaskView(
   return value !== undefined && value !== null && VALID_TASK_VIEWS.has(value as DashboardDefaultTaskView)
 }
 
+function isDashboardCycleStartDay(
+  value: string | null | undefined
+): value is DashboardCycleStartDay {
+  return value !== undefined && value !== null && VALID_CYCLE_START_DAYS.has(value as DashboardCycleStartDay)
+}
+
 function normalizeAssigneeType(
   value: string | null | undefined
 ): DashboardDefaultTaskAssigmentType | null {
@@ -534,6 +628,7 @@ function toSettingsResponse(): SettingsResponse {
     dashboard: {
       defaultTaskAssigmentType: readDashboardDefaultTaskAssigmentType(process.cwd()),
       defaultTaskView: readDashboardDefaultTaskView(process.cwd()),
+      cycles: readDashboardCycleSettings(process.cwd()),
     },
   }
 }
@@ -604,6 +699,58 @@ function readDashboardDefaultTaskView(cwd: string): DashboardDefaultTaskView {
   }
 }
 
+function readDashboardCycleSettings(cwd: string): DashboardCycleSettings {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  if (!existsSync(configPath)) {
+    return {
+      ...DEFAULT_DASHBOARD_CYCLE_SETTINGS,
+      carryStatuses: [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
+    }
+  }
+  try {
+    const raw = readFileSync(configPath, "utf8")
+    const cycleLengthRaw = extractTomlValue(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CYCLE_LENGTH_DAYS_KEY
+    )
+    const cycleStartDayRaw = extractTomlValue(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CYCLE_START_DAY_KEY
+    )
+    const carryStatusesRaw = extractTomlArray(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CARRY_STATUSES_KEY
+    )
+
+    const cycleLengthParsed = cycleLengthRaw ? parseInt(cycleLengthRaw, 10) : NaN
+    const cycleLengthDays = Number.isFinite(cycleLengthParsed) && cycleLengthParsed > 0
+      ? cycleLengthParsed
+      : DEFAULT_DASHBOARD_CYCLE_SETTINGS.cycleLengthDays
+    const cycleStartDay = isDashboardCycleStartDay(cycleStartDayRaw)
+      ? cycleStartDayRaw
+      : DEFAULT_DASHBOARD_CYCLE_SETTINGS.cycleStartDay
+    const carryStatuses = carryStatusesRaw
+      .map((status) => status.trim())
+      .filter((status) => status.length > 0)
+
+    return {
+      cycleLengthDays,
+      cycleStartDay,
+      carryStatuses: carryStatuses.length > 0
+        ? carryStatuses
+        : [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
+    }
+  } catch {
+    return {
+      ...DEFAULT_DASHBOARD_CYCLE_SETTINGS,
+      carryStatuses: [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
+    }
+  }
+}
+
 function writeDashboardDefaultTaskAssigmentType(
   value: DashboardDefaultTaskAssigmentType,
   cwd: string
@@ -636,6 +783,46 @@ function writeDashboardDefaultTaskView(
   writeFileSync(configPath, patched.endsWith("\n") ? patched : `${patched}\n`, "utf8")
 }
 
+function writeDashboardCycleLengthDays(value: number, cwd: string): void {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const patched = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CYCLE_LENGTH_DAYS_KEY,
+    `${value}`
+  )
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeFileSync(configPath, patched.endsWith("\n") ? patched : `${patched}\n`, "utf8")
+}
+
+function writeDashboardCycleStartDay(value: DashboardCycleStartDay, cwd: string): void {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const patched = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CYCLE_START_DAY_KEY,
+    `"${value}"`
+  )
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeFileSync(configPath, patched.endsWith("\n") ? patched : `${patched}\n`, "utf8")
+}
+
+function writeDashboardCarryStatuses(value: readonly string[], cwd: string): void {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const renderedStatuses = `[${value.map((status) => JSON.stringify(status)).join(", ")}]`
+  const patched = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CARRY_STATUSES_KEY,
+    renderedStatuses
+  )
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeFileSync(configPath, patched.endsWith("\n") ? patched : `${patched}\n`, "utf8")
+}
+
 function extractTomlValue(toml: string, section: string, key: string): string | null {
   const lines = toml.split("\n")
   let inSection = false
@@ -659,6 +846,47 @@ function extractTomlValue(toml: string, section: string, key: string): string | 
     }
   }
   return null
+}
+
+function extractTomlArray(toml: string, section: string, key: string): string[] {
+  const lines = toml.split("\n")
+  let inSection = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    if (trimmed === `[${section}]`) {
+      inSection = true
+      continue
+    }
+    if (trimmed.startsWith("[") && inSection) {
+      break
+    }
+    if (!inSection) continue
+
+    const arrayStart = new RegExp(`^${key}\\s*=\\s*\\[`).exec(trimmed)
+    if (!arrayStart) continue
+
+    let collected = trimmed
+    while (!collected.includes("]") && i + 1 < lines.length) {
+      i += 1
+      collected += lines[i]!.trim()
+    }
+
+    const out: string[] = []
+    const quoted = /["']([^"']+)["']/g
+    let match: RegExpExecArray | null
+    while ((match = quoted.exec(collected)) !== null) {
+      if (match[1].trim().length > 0) {
+        out.push(match[1].trim())
+      }
+    }
+    return out
+  }
+
+  const fallback = extractTomlValue(toml, section, key)
+  if (!fallback) return []
+  return fallback.split(",").map((value) => value.trim()).filter(Boolean)
 }
 
 function patchTomlKey(
@@ -875,6 +1103,221 @@ function serializeTask(task: TaskRowWithDeps): TaskWithDepsResponse {
   }
 }
 
+const WEEKDAY_TO_INDEX: Record<DashboardCycleStartDay, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+}
+
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+}
+
+function formatDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function parseDateOnly(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return null
+
+  const year = Number.parseInt(match[1]!, 10)
+  const month = Number.parseInt(match[2]!, 10) - 1
+  const day = Number.parseInt(match[3]!, 10)
+  const parsed = new Date(Date.UTC(year, month, day))
+
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month
+    || parsed.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  return parsed
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const next = startOfUtcDay(date)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next
+}
+
+function mostRecentStartDay(baseDate: Date, startDay: DashboardCycleStartDay): Date {
+  const day = startOfUtcDay(baseDate)
+  const target = WEEKDAY_TO_INDEX[startDay]
+  const current = day.getUTCDay()
+  const offset = (7 + current - target) % 7
+  return addUtcDays(day, -offset)
+}
+
+function nextStartDay(baseDate: Date, startDay: DashboardCycleStartDay): Date {
+  const day = startOfUtcDay(baseDate)
+  const target = WEEKDAY_TO_INDEX[startDay]
+  const current = day.getUTCDay()
+  let offset = (7 + target - current) % 7
+  if (offset === 0) offset = 7
+  return addUtcDays(day, offset)
+}
+
+function serializeCycleSummary(row: CycleListRow): CycleSummaryResponse {
+  return {
+    id: row.id,
+    name: row.name,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    taskCount: Number(row.task_count ?? 0),
+    completedCount: Number(row.completed_count ?? 0),
+    inProgressCount: Number(row.in_progress_count ?? 0),
+  }
+}
+
+function listCyclesWithStats(db: Database): CycleSummaryResponse[] {
+  const inProgressStatuses = [...IN_PROGRESS_TASK_STATUSES]
+  const inProgressPlaceholders = inProgressStatuses.map(() => "?").join(",")
+  const rows = db.prepare(`
+    SELECT
+      c.id,
+      c.name,
+      c.start_date,
+      c.end_date,
+      c.status,
+      c.created_at,
+      c.updated_at,
+      COUNT(ct.task_id) as task_count,
+      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) as completed_count,
+      SUM(CASE WHEN t.status IN (${inProgressPlaceholders}) THEN 1 ELSE 0 END) as in_progress_count
+    FROM cycles c
+    LEFT JOIN cycle_tasks ct ON ct.cycle_id = c.id
+    LEFT JOIN tasks t ON t.id = ct.task_id
+    GROUP BY c.id
+    ORDER BY c.start_date DESC, c.created_at DESC
+  `).all(...inProgressStatuses) as CycleListRow[]
+
+  return rows.map(serializeCycleSummary)
+}
+
+function getCycleWithStats(db: Database, cycleId: string): CycleSummaryResponse | null {
+  const inProgressStatuses = [...IN_PROGRESS_TASK_STATUSES]
+  const inProgressPlaceholders = inProgressStatuses.map(() => "?").join(",")
+  const row = db.prepare(`
+    SELECT
+      c.id,
+      c.name,
+      c.start_date,
+      c.end_date,
+      c.status,
+      c.created_at,
+      c.updated_at,
+      COUNT(ct.task_id) as task_count,
+      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) as completed_count,
+      SUM(CASE WHEN t.status IN (${inProgressPlaceholders}) THEN 1 ELSE 0 END) as in_progress_count
+    FROM cycles c
+    LEFT JOIN cycle_tasks ct ON ct.cycle_id = c.id
+    LEFT JOIN tasks t ON t.id = ct.task_id
+    WHERE c.id = ?
+    GROUP BY c.id
+  `).get(...inProgressStatuses, cycleId) as CycleListRow | undefined
+
+  return row ? serializeCycleSummary(row) : null
+}
+
+function getCycleRow(db: Database, cycleId: string): CycleRow | null {
+  const row = db.prepare(`
+    SELECT id, name, start_date, end_date, status, created_at, updated_at
+    FROM cycles
+    WHERE id = ?
+    LIMIT 1
+  `).get(cycleId) as CycleRow | undefined
+
+  return row ?? null
+}
+
+function hasCurrentCycle(db: Database): boolean {
+  const row = db.prepare(`
+    SELECT 1
+    FROM cycles
+    WHERE status = 'current'
+    LIMIT 1
+  `).get() as { 1: number } | undefined
+
+  return Boolean(row)
+}
+
+function getNextUpcomingCycle(db: Database): CycleRow | null {
+  const row = db.prepare(`
+    SELECT id, name, start_date, end_date, status, created_at, updated_at
+    FROM cycles
+    WHERE status = 'upcoming'
+    ORDER BY start_date ASC, created_at ASC
+    LIMIT 1
+  `).get() as CycleRow | undefined
+
+  return row ?? null
+}
+
+function nextCycleName(db: Database): string {
+  const row = db.prepare("SELECT COUNT(*) as count FROM cycles").get() as { count: number }
+  return `Cycle ${row.count + 1}`
+}
+
+function insertCycle(
+  db: Database,
+  input: {
+    name?: string
+    startDate: string
+    endDate: string
+    status: CycleStatus
+  }
+): CycleRow {
+  const id = randomUUID()
+  const name = input.name?.trim() || nextCycleName(db)
+  const now = new Date().toISOString()
+
+  db.prepare(`
+    INSERT INTO cycles (id, name, start_date, end_date, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, input.startDate, input.endDate, input.status, now, now)
+
+  const created = getCycleRow(db, id)
+  if (!created) {
+    throw new Error("Failed to create cycle")
+  }
+  return created
+}
+
+function computeDefaultCycleWindow(config: DashboardCycleSettings): { startDate: string; endDate: string } {
+  const now = new Date()
+  const start = nextStartDay(now, config.cycleStartDay)
+  const end = addUtcDays(start, config.cycleLengthDays)
+  return {
+    startDate: formatDateOnly(start),
+    endDate: formatDateOnly(end),
+  }
+}
+
+function computeCurrentCycleWindow(config: DashboardCycleSettings): { startDate: string; endDate: string } {
+  const now = new Date()
+  const start = mostRecentStartDay(now, config.cycleStartDay)
+  const end = addUtcDays(start, config.cycleLengthDays)
+  return {
+    startDate: formatDateOnly(start),
+    endDate: formatDateOnly(end),
+  }
+}
+
+function shouldAutoCreateCurrentCycle(autoCreateQueryValue: string | undefined): boolean {
+  if (!autoCreateQueryValue) return true
+  return autoCreateQueryValue !== "false" && autoCreateQueryValue !== "0"
+}
+
 function serializeDoc(doc: DocRow): DocResponse {
   return {
     id: doc.id,
@@ -1059,8 +1502,17 @@ app.patch("/api/settings", async (c) => {
     const payload = await c.req.json<SettingsPatchPayload>()
     const nextType = payload?.dashboard?.defaultTaskAssigmentType
     const nextTaskView = payload?.dashboard?.defaultTaskView
+    const nextCycleLengthDays = payload?.dashboard?.cycles?.cycleLengthDays
+    const nextCycleStartDay = payload?.dashboard?.cycles?.cycleStartDay
+    const nextCarryStatuses = payload?.dashboard?.cycles?.carryStatuses
 
-    if (nextType === undefined && nextTaskView === undefined) {
+    if (
+      nextType === undefined
+      && nextTaskView === undefined
+      && nextCycleLengthDays === undefined
+      && nextCycleStartDay === undefined
+      && nextCarryStatuses === undefined
+    ) {
       return c.json({ error: "At least one dashboard setting must be provided" }, 400)
     }
 
@@ -1072,13 +1524,377 @@ app.patch("/api/settings", async (c) => {
       return c.json({ error: "dashboard.defaultTaskView must be \"list\" or \"kanban\"" }, 400)
     }
 
+    if (
+      nextCycleLengthDays !== undefined
+      && (!Number.isFinite(nextCycleLengthDays) || !Number.isInteger(nextCycleLengthDays) || nextCycleLengthDays <= 0)
+    ) {
+      return c.json({ error: "dashboard.cycles.cycleLengthDays must be a positive integer" }, 400)
+    }
+
+    if (nextCycleStartDay !== undefined && !isDashboardCycleStartDay(nextCycleStartDay)) {
+      return c.json({
+        error: "dashboard.cycles.cycleStartDay must be one of: sunday, monday, tuesday, wednesday, thursday, friday, saturday",
+      }, 400)
+    }
+
+    const normalizedCarryStatuses = nextCarryStatuses
+      ?.map((status) => status.trim())
+      .filter((status) => status.length > 0)
+
+    if (nextCarryStatuses !== undefined && (!normalizedCarryStatuses || normalizedCarryStatuses.length === 0)) {
+      return c.json({ error: "dashboard.cycles.carryStatuses must contain at least one status" }, 400)
+    }
+
     if (nextType !== undefined) {
       writeDashboardDefaultTaskAssigmentType(nextType, process.cwd())
     }
     if (nextTaskView !== undefined) {
       writeDashboardDefaultTaskView(nextTaskView, process.cwd())
     }
+    if (nextCycleLengthDays !== undefined) {
+      writeDashboardCycleLengthDays(nextCycleLengthDays, process.cwd())
+    }
+    if (nextCycleStartDay !== undefined) {
+      writeDashboardCycleStartDay(nextCycleStartDay, process.cwd())
+    }
+    if (normalizedCarryStatuses !== undefined) {
+      writeDashboardCarryStatuses(normalizedCarryStatuses, process.cwd())
+    }
     return c.json(toSettingsResponse())
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/cycles - list cycles (newest first), auto-create current cycle when missing
+app.get("/api/cycles", (c) => {
+  try {
+    const db = getDb()
+    const config = readDashboardCycleSettings(process.cwd())
+    const shouldAutoCreate = shouldAutoCreateCurrentCycle(c.req.query("autoCreate"))
+
+    if (shouldAutoCreate && !hasCurrentCycle(db)) {
+      const nextUpcoming = getNextUpcomingCycle(db)
+      if (nextUpcoming) {
+        db.prepare(`
+          UPDATE cycles
+          SET status = 'current', updated_at = ?
+          WHERE id = ?
+        `).run(new Date().toISOString(), nextUpcoming.id)
+      } else {
+        const { startDate, endDate } = computeCurrentCycleWindow(config)
+        try {
+          insertCycle(db, { startDate, endDate, status: "current" })
+        } catch (error) {
+          // Another concurrent request may have created the current cycle first.
+          if (!String(error).includes("idx_cycles_single_current")) {
+            throw error
+          }
+        }
+      }
+    }
+
+    return c.json({ cycles: listCyclesWithStats(db) })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// POST /api/cycles - create next cycle
+app.post("/api/cycles", (c) => {
+  try {
+    const db = getDb()
+    const config = readDashboardCycleSettings(process.cwd())
+    const latestCycle = db.prepare(`
+      SELECT end_date
+      FROM cycles
+      ORDER BY start_date DESC, created_at DESC
+      LIMIT 1
+    `).get() as { end_date: string } | undefined
+
+    const window = latestCycle?.end_date
+      ? (() => {
+        const parsed = parseDateOnly(latestCycle.end_date)
+        if (!parsed) return computeDefaultCycleWindow(config)
+        const startDate = formatDateOnly(startOfUtcDay(parsed))
+        const endDate = formatDateOnly(addUtcDays(parsed, config.cycleLengthDays))
+        return { startDate, endDate }
+      })()
+      : computeDefaultCycleWindow(config)
+
+    const status: CycleStatus = hasCurrentCycle(db) ? "upcoming" : "current"
+    const created = insertCycle(db, {
+      startDate: window.startDate,
+      endDate: window.endDate,
+      status,
+    })
+    const createdWithStats = getCycleWithStats(db, created.id)
+    if (!createdWithStats) {
+      return c.json({ error: "Failed to load created cycle" }, 500)
+    }
+    return c.json(createdWithStats, 201)
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/cycles/:id - cycle detail with tasks and stats
+app.get("/api/cycles/:id", (c) => {
+  try {
+    const db = getDb()
+    const cycleId = c.req.param("id")
+    const cycle = getCycleWithStats(db, cycleId)
+    if (!cycle) {
+      return c.json({ error: "Cycle not found" }, 404)
+    }
+
+    const taskIdRows = db.prepare(`
+      SELECT task_id
+      FROM cycle_tasks
+      WHERE cycle_id = ?
+      ORDER BY added_at ASC
+    `).all(cycleId) as Array<{ task_id: string }>
+
+    const tasks: TaskWithDepsResponse[] = []
+    for (const row of taskIdRows) {
+      const task = getTaskWithDeps(db, row.task_id)
+      if (task) {
+        tasks.push(serializeTask(task))
+      }
+    }
+
+    const detail: CycleDetailResponse = {
+      ...cycle,
+      tasks,
+      stats: {
+        total: tasks.length,
+        completed: tasks.filter((task) => task.status === "done").length,
+        inProgress: tasks.filter((task) => IN_PROGRESS_TASK_STATUSES.has(task.status)).length,
+      },
+    }
+
+    return c.json(detail)
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// PATCH /api/cycles/:id - update cycle metadata
+app.patch("/api/cycles/:id", async (c) => {
+  try {
+    const db = getDb()
+    const cycleId = c.req.param("id")
+    const existing = getCycleRow(db, cycleId)
+    if (!existing) {
+      return c.json({ error: "Cycle not found" }, 404)
+    }
+
+    const payload = await c.req.json<CycleUpdatePayload>()
+    const hasNameUpdate = payload.name !== undefined
+    const hasStartDateUpdate = payload.startDate !== undefined
+    const hasEndDateUpdate = payload.endDate !== undefined
+
+    if (!hasNameUpdate && !hasStartDateUpdate && !hasEndDateUpdate) {
+      return c.json({ error: "At least one cycle field must be provided" }, 400)
+    }
+
+    const nextName = hasNameUpdate ? payload.name?.trim() : existing.name
+    if (!nextName) {
+      return c.json({ error: "Cycle name cannot be empty" }, 400)
+    }
+
+    const nextStartDate = hasStartDateUpdate ? payload.startDate : existing.start_date
+    const nextEndDate = hasEndDateUpdate ? payload.endDate : existing.end_date
+    const parsedStartDate = nextStartDate ? parseDateOnly(nextStartDate) : null
+    const parsedEndDate = nextEndDate ? parseDateOnly(nextEndDate) : null
+
+    if (!parsedStartDate || !parsedEndDate) {
+      return c.json({ error: "startDate and endDate must be valid YYYY-MM-DD values" }, 400)
+    }
+    if (parsedStartDate.getTime() > parsedEndDate.getTime()) {
+      return c.json({ error: "startDate must be on or before endDate" }, 400)
+    }
+
+    const normalizedStartDate = formatDateOnly(parsedStartDate)
+    const normalizedEndDate = formatDateOnly(parsedEndDate)
+
+    db.prepare(`
+      UPDATE cycles
+      SET name = ?, start_date = ?, end_date = ?, updated_at = ?
+      WHERE id = ?
+    `).run(nextName, normalizedStartDate, normalizedEndDate, new Date().toISOString(), cycleId)
+
+    const updated = getCycleWithStats(db, cycleId)
+    if (!updated) {
+      return c.json({ error: "Failed to load updated cycle" }, 500)
+    }
+    return c.json(updated)
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// POST /api/cycles/:id/tasks - add tasks to cycle (duplicate-safe)
+app.post("/api/cycles/:id/tasks", async (c) => {
+  try {
+    const db = getDb()
+    const cycleId = c.req.param("id")
+    const cycle = getCycleRow(db, cycleId)
+    if (!cycle) {
+      return c.json({ error: "Cycle not found" }, 404)
+    }
+
+    const payload = await c.req.json<AddCycleTasksPayload>()
+    const taskIds = (payload.taskIds ?? []).map((taskId) => taskId.trim()).filter((taskId) => taskId.length > 0)
+    const uniqueTaskIds = [...new Set(taskIds)]
+
+    if (uniqueTaskIds.length === 0) {
+      return c.json({ success: true, cycleId, addedCount: 0 })
+    }
+
+    const placeholders = uniqueTaskIds.map(() => "?").join(",")
+    const existingTasks = db.prepare(`
+      SELECT id
+      FROM tasks
+      WHERE id IN (${placeholders})
+    `).all(...uniqueTaskIds) as Array<{ id: string }>
+    const existingTaskIds = new Set(existingTasks.map((task) => task.id))
+    const missingTaskIds = uniqueTaskIds.filter((taskId) => !existingTaskIds.has(taskId))
+    if (missingTaskIds.length > 0) {
+      return c.json({ error: `Task not found: ${missingTaskIds.join(", ")}` }, 400)
+    }
+
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO cycle_tasks (cycle_id, task_id)
+      VALUES (?, ?)
+    `)
+
+    let addedCount = 0
+    for (const taskId of uniqueTaskIds) {
+      const result = insert.run(cycleId, taskId)
+      addedCount += Number(result.changes ?? 0)
+    }
+
+    return c.json({ success: true, cycleId, addedCount })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// DELETE /api/cycles/:id/tasks/:taskId - remove task from cycle
+app.delete("/api/cycles/:id/tasks/:taskId", (c) => {
+  try {
+    const db = getDb()
+    const cycleId = c.req.param("id")
+    const taskId = c.req.param("taskId")
+    const cycle = getCycleRow(db, cycleId)
+    if (!cycle) {
+      return c.json({ error: "Cycle not found" }, 404)
+    }
+
+    const result = db.prepare(`
+      DELETE FROM cycle_tasks
+      WHERE cycle_id = ? AND task_id = ?
+    `).run(cycleId, taskId)
+
+    return c.json({
+      success: true,
+      cycleId,
+      taskId,
+      removed: Number(result.changes ?? 0) > 0,
+    })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// POST /api/cycles/:id/complete - complete cycle and carry tasks to next cycle
+app.post("/api/cycles/:id/complete", (c) => {
+  try {
+    const db = getDb()
+    const cycleId = c.req.param("id")
+    const cycle = getCycleRow(db, cycleId)
+    if (!cycle) {
+      return c.json({ error: "Cycle not found" }, 404)
+    }
+    if (cycle.status === "completed") {
+      return c.json({ error: "Cycle is already completed" }, 400)
+    }
+    if (cycle.status !== "current") {
+      return c.json({ error: "Only current cycles can be completed" }, 400)
+    }
+
+    const config = readDashboardCycleSettings(process.cwd())
+    const carryStatuses = config.carryStatuses.map((status) => status.trim()).filter((status) => status.length > 0)
+    const now = new Date().toISOString()
+    let nextCycleId = ""
+    let carriedTaskIds: string[] = []
+
+    db.exec("BEGIN IMMEDIATE")
+    try {
+      db.prepare(`
+        UPDATE cycles
+        SET status = 'completed', updated_at = ?
+        WHERE id = ?
+      `).run(now, cycleId)
+
+      if (carryStatuses.length > 0) {
+        const carryStatusPlaceholders = carryStatuses.map(() => "?").join(",")
+        const rows = db.prepare(`
+          SELECT t.id
+          FROM cycle_tasks ct
+          JOIN tasks t ON t.id = ct.task_id
+          WHERE ct.cycle_id = ?
+            AND t.status != 'done'
+            AND t.status IN (${carryStatusPlaceholders})
+          ORDER BY t.updated_at DESC, t.id ASC
+        `).all(cycleId, ...carryStatuses) as Array<{ id: string }>
+        carriedTaskIds = rows.map((row) => row.id)
+      }
+
+      let nextCycle = getNextUpcomingCycle(db)
+      if (nextCycle) {
+        db.prepare(`
+          UPDATE cycles
+          SET status = 'current', updated_at = ?
+          WHERE id = ?
+        `).run(now, nextCycle.id)
+        nextCycle = getCycleRow(db, nextCycle.id)
+      } else {
+        const startFrom = parseDateOnly(cycle.end_date) ?? nextStartDay(new Date(), config.cycleStartDay)
+        const startDate = formatDateOnly(startOfUtcDay(startFrom))
+        const endDate = formatDateOnly(addUtcDays(startFrom, config.cycleLengthDays))
+        nextCycle = insertCycle(db, { startDate, endDate, status: "current" })
+      }
+
+      if (!nextCycle) {
+        throw new Error("Failed to resolve next cycle")
+      }
+
+      nextCycleId = nextCycle.id
+      if (carriedTaskIds.length > 0) {
+        const insert = db.prepare(`
+          INSERT OR IGNORE INTO cycle_tasks (cycle_id, task_id)
+          VALUES (?, ?)
+        `)
+        for (const taskId of carriedTaskIds) {
+          insert.run(nextCycle.id, taskId)
+        }
+      }
+
+      db.exec("COMMIT")
+    } catch (error) {
+      db.exec("ROLLBACK")
+      throw error
+    }
+
+    const completedCycle = getCycleWithStats(db, cycleId)
+    const newCycle = getCycleWithStats(db, nextCycleId)
+    if (!completedCycle || !newCycle) {
+      return c.json({ error: "Failed to load cycle completion result" }, 500)
+    }
+
+    return c.json({ completedCycle, newCycle, carriedTaskIds })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
