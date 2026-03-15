@@ -122,7 +122,7 @@ const handleDocGet = async (args: { name: string; version?: number }): Promise<M
   }
 }
 
-const handleDocCreate = async (args: { kind: string; name: string; title: string; yamlContent: string }): Promise<McpToolResult> => {
+const handleDocCreate = async (args: { kind: string; name: string; title: string; content: string }): Promise<McpToolResult> => {
   try {
     const doc = await runEffect(
       Effect.gen(function* () {
@@ -131,7 +131,7 @@ const handleDocCreate = async (args: { kind: string; name: string; title: string
           kind: assertDocKind(args.kind),
           name: args.name,
           title: args.title,
-          yamlContent: args.yamlContent,
+          content: args.content,
         })
       })
     )
@@ -148,12 +148,12 @@ const handleDocCreate = async (args: { kind: string; name: string; title: string
   }
 }
 
-const handleDocUpdate = async (args: { name: string; yamlContent: string }): Promise<McpToolResult> => {
+const handleDocUpdate = async (args: { name: string; content: string }): Promise<McpToolResult> => {
   try {
     const doc = await runEffect(
       Effect.gen(function* () {
         const docService = yield* DocService
-        return yield* docService.update(args.name, args.yamlContent)
+        return yield* docService.update(args.name, args.content)
       })
     )
     const serialized = serializeDoc(doc)
@@ -269,23 +269,23 @@ export const registerDocTools = (server: McpServer): void => {
   // tx_doc_create - Create a new doc
   registerEffectTool(server,
     "tx_doc_create",
-    "Create a new doc with YAML content. Writes YAML to specs/ and stores metadata in DB.",
+    "Create a new doc with markdown content (YAML frontmatter + prose sections). Writes .md to specs/ and stores metadata in DB.",
     {
       kind: z.enum(DOC_KINDS).describe(`Doc kind: ${DOC_KINDS.join(", ")}`),
       name: z.string().max(200).describe("Unique doc name (alphanumeric with dashes/dots, e.g. 'PRD-001-feature')"),
       title: z.string().max(500).describe("Human-readable title"),
-      yamlContent: z.string().max(100000).describe("Full YAML content for the doc")
+      content: z.string().max(100000).describe("Full markdown content for the doc (YAML frontmatter + prose sections + embedded YAML blocks)")
     },
     handleDocCreate
   )
 
-  // tx_doc_update - Update doc YAML content
+  // tx_doc_update - Update doc markdown content
   registerEffectTool(server,
     "tx_doc_update",
-    "Update a doc's YAML content. Fails if the doc is locked.",
+    "Update a doc's markdown content. Fails if the doc is locked.",
     {
       name: z.string().describe("Doc name to update"),
-      yamlContent: z.string().max(100000).describe("New YAML content for the doc")
+      content: z.string().max(100000).describe("New markdown content for the doc (YAML frontmatter + prose sections + embedded YAML blocks)")
     },
     handleDocUpdate
   )
@@ -312,12 +312,12 @@ export const registerDocTools = (server: McpServer): void => {
     handleDocLink
   )
 
-  // tx_doc_render - Render doc(s) to markdown
+  // tx_doc_render - Validate doc(s) and regenerate index
   registerEffectTool(server,
     "tx_doc_render",
-    "Render doc YAML to markdown. Renders a single doc if name is provided, otherwise renders all docs.",
+    "Validate doc markdown files and regenerate the index. Validates a single doc if name is provided, otherwise validates all docs.",
     {
-      name: z.string().optional().describe("Doc name to render (omit to render all)")
+      name: z.string().optional().describe("Doc name to validate (omit to validate all)")
     },
     handleDocRender
   )

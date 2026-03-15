@@ -300,7 +300,7 @@ const collectSchemaWarnings = (
 }
 
 /** Validate YAML content and return parsed object. */
-const validateYaml = (
+const _validateYaml = (
   name: string,
   content: string,
   expectedKind?: DocKind,
@@ -391,7 +391,7 @@ const validateYaml = (
 }
 
 /** Validate doc kind from YAML. */
-const validateKind = (
+const _validateKind = (
   name: string,
   parsed: Record<string, unknown>,
   expectedKind: DocKind

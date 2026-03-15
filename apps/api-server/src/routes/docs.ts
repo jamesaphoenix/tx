@@ -44,6 +44,20 @@ const PLACEHOLDER_TEXT_BY_KIND: Record<DocKind, Record<string, readonly string[]
     scope: ["Which features/subsystems this applies to."],
     design: ["Architecture, patterns, data flow, service boundaries."],
   },
+  runbook: {
+    summary: ["Describe when to use this runbook."],
+    symptoms: ["Describe observable symptoms."],
+    diagnosis: ["How to confirm root cause."],
+    mitigation: ["Step-by-step mitigation actions."],
+    escalation: ["When and how to escalate."],
+  },
+  decision: {
+    summary: ["One-line decision summary."],
+    context: ["Describe the context and constraints."],
+    alternatives: ["List alternatives considered."],
+    decision: ["Record the chosen option."],
+    consequences: ["Document expected trade-offs and impacts."],
+  },
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -234,10 +248,10 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
       Effect.gen(function* () {
         const svc = yield* DocService
         const doc = yield* svc.create({
-          kind: payload.kind as "overview" | "prd" | "design",
+          kind: payload.kind as DocKind,
           name: payload.name,
           title: payload.title,
-          yamlContent: payload.yamlContent,
+          content: payload.yamlContent,
           metadata: payload.metadata as Record<string, unknown> | undefined,
         })
         return {

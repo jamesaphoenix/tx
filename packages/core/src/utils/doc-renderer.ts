@@ -77,6 +77,12 @@ export const renderDocToMarkdown = (parsed: ParsedYaml, kind: DocKind): string =
     case "system_design":
       renderSystemDesign(parsed, lines)
       break
+    case "runbook":
+      renderRunbook(parsed, lines)
+      break
+    case "decision":
+      renderDecision(parsed, lines)
+      break
     default: {
       // Compile-time exhaustive check — adding a new DocKind without
       // a case above will fail here with a type error.
@@ -176,6 +182,24 @@ const renderDesign = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "implementation", "Implementation")
   renderWorkBreakdown(parsed.work_breakdown as unknown[] | undefined, lines)
   renderFreeTextSection(parsed, lines, "retention", "Retention")
+}
+
+const renderRunbook = (parsed: ParsedYaml, lines: string[]): void => {
+  renderFreeTextSection(parsed, lines, "summary", "Summary")
+  renderFreeTextSection(parsed, lines, "symptoms", "Symptoms")
+  renderFreeTextSection(parsed, lines, "diagnosis", "Diagnosis")
+  renderFreeTextSection(parsed, lines, "mitigation", "Mitigation")
+  renderFreeTextSection(parsed, lines, "escalation", "Escalation")
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
+}
+
+const renderDecision = (parsed: ParsedYaml, lines: string[]): void => {
+  renderFreeTextSection(parsed, lines, "summary", "Summary")
+  renderFreeTextSection(parsed, lines, "context", "Context")
+  renderFreeTextSection(parsed, lines, "alternatives", "Alternatives")
+  renderFreeTextSection(parsed, lines, "decision", "Decision")
+  renderFreeTextSection(parsed, lines, "consequences", "Consequences")
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
 }
 
 // =============================================================================

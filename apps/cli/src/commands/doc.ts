@@ -4,58 +4,24 @@
  * doc lint-ears
  */
 
-import { Effect } from "effect"
+import { Effect, Either } from "effect"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { execSync } from "node:child_process"
 import {
   DocService,
   formatEarsValidationErrors,
+  parseMdDocSync,
   readTxConfig,
   validateEarsRequirements,
 } from "@jamesaphoenix/tx-core"
 import { DOC_KINDS } from "@jamesaphoenix/tx-types"
 import type { DocKind, DocLinkType, TaskDocLinkType } from "@jamesaphoenix/tx-types"
-import { parse as parseYaml } from "yaml"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"
 
 const docKindStrings: readonly string[] = DOC_KINDS
-
-const collectLegacyRequirements = (value: unknown): string[] => {
-  const normalize = (item: string): string | null => {
-    const stripped = item
-      .trim()
-      .replace(/^[-*]\s+/, "")
-      .replace(/^\d+\.\s+/, "")
-      .trim()
-    return stripped.length > 0 ? stripped : null
-  }
-
-  if (Array.isArray(value)) {
-    const out: string[] = []
-    for (const item of value) {
-      if (typeof item !== "string") continue
-      const normalized = normalize(item)
-      if (!normalized) continue
-      out.push(normalized)
-    }
-    return out
-  }
-
-  if (typeof value === "string") {
-    const out: string[] = []
-    for (const line of value.split(/\r?\n/)) {
-      const normalized = normalize(line)
-      if (!normalized) continue
-      out.push(normalized)
-    }
-    return out
-  }
-
-  return []
-}
 
 const toEarsAreaSegment = (name: string): string => {
   const normalized = name
@@ -63,6 +29,16 @@ const toEarsAreaSegment = (name: string): string => {
     .replace(/[^A-Z0-9]+/g, "")
     .slice(0, 12)
   return normalized.length > 0 ? normalized : "DOC"
+}
+
+const normalizeDocKind = (kind: DocKind): DocKind => {
+  if (kind === "requirement") {
+    return "prd"
+  }
+  if (kind === "system_design") {
+    return "design"
+  }
+  return kind
 }
 
 /** Dispatch doc subcommands. */
@@ -110,7 +86,9 @@ const docAdd = (pos: string[], flags: Flags) =>
     }
 
     const title = opt(flags, "title", "t") ?? name
-    const yamlContent = generateTemplate(
+    const requestedKind = kind as DocKind
+    const normalizedKind = normalizeDocKind(requestedKind)
+    const content = generateTemplate(
       kind as DocKind,
       name,
       title
@@ -118,10 +96,10 @@ const docAdd = (pos: string[], flags: Flags) =>
 
     const svc = yield* DocService
     const doc = yield* svc.create({
-      kind: kind as DocKind,
+      kind: normalizedKind,
       name,
       title,
-      yamlContent,
+      content,
     })
 
     if (flag(flags, "json")) {
@@ -168,10 +146,13 @@ const docShow = (pos: string[], flags: Flags) =>
     if (flag(flags, "json")) {
       console.log(toJson(doc))
     } else if (flag(flags, "md")) {
-      const rendered = yield* svc.render(name)
-      if (rendered.length > 0) {
-        console.log(readFileSync(rendered[0], "utf8"))
+      const config = readTxConfig()
+      const markdownPath = resolve(config.docs.path, doc.filePath)
+      if (!existsSync(markdownPath)) {
+        console.error(`File not found: ${markdownPath}`)
+        throw new CliExitError(1)
       }
+      console.log(readFileSync(markdownPath, "utf8"))
     } else {
       console.log(`Doc: ${doc.name}`)
       console.log(`  Kind: ${doc.kind}`)
@@ -226,7 +207,7 @@ const docRender = (pos: string[], flags: Flags) =>
         for (const path of rendered) {
           console.log(`  ${path}`)
         }
-        console.log("  + index.yml, index.md")
+        console.log("  + index.md (index.yml retained for compatibility)")
       }
     }
   })
@@ -383,13 +364,13 @@ const docLintEars = (pos: string[], flags: Flags) =>
     const target = pos[0]
     const jsonMode = flag(flags, "json")
     if (!target) {
-      console.error("Usage: tx doc lint-ears <doc-name-or-yaml-path> [--json]")
+      console.error("Usage: tx doc lint-ears <doc-name-or-markdown-path> [--json]")
       throw new CliExitError(1)
     }
 
-    let yamlPath = target
+    let docPath = target
     let docName: string | null = null
-    if (!existsSync(yamlPath)) {
+    if (!existsSync(docPath)) {
       const svc = yield* DocService
       const doc = yield* svc.get(target)
       if (doc.kind !== "prd") {
@@ -402,61 +383,58 @@ const docLintEars = (pos: string[], flags: Flags) =>
         throw new CliExitError(1)
       }
       docName = doc.name
-      yamlPath = resolve(readTxConfig().docs.path, doc.filePath)
+      docPath = resolve(readTxConfig().docs.path, doc.filePath)
     }
 
-    let parsed: unknown
+    let markdownContent: string
     try {
-      parsed = parseYaml(readFileSync(yamlPath, "utf8"))
+      markdownContent = readFileSync(docPath, "utf8")
     } catch (error) {
       if (jsonMode) {
         console.log(
           toJson({
             valid: false,
             doc: docName ?? null,
-            path: yamlPath,
+            path: docPath,
             errors: [
               {
-                field: "yaml",
-                message: `YAML parse error: ${String(error)}`,
+                field: "markdown",
+                message: `Read error: ${String(error)}`,
               },
             ],
           })
         )
       } else {
-        console.error(`YAML parse error in ${yamlPath}: ${String(error)}`)
+        console.error(`Read error in ${docPath}: ${String(error)}`)
       }
       throw new CliExitError(1)
     }
 
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    const parsed = parseMdDocSync(markdownContent)
+    if (Either.isLeft(parsed)) {
       if (jsonMode) {
         console.log(
           toJson({
             valid: false,
             doc: docName ?? null,
-            path: yamlPath,
-            errors: [{ field: "yaml", message: "YAML root must be an object" }],
+            path: docPath,
+            errors: [{ field: "markdown", message: parsed.left.reason }],
           })
         )
       } else {
-        console.error(`YAML root must be an object: ${yamlPath}`)
+        console.error(`Markdown parse error in ${docPath}: ${parsed.left.reason}`)
       }
       throw new CliExitError(1)
     }
 
-    const parsedRecord = parsed as Record<string, unknown>
-    const kind = typeof parsedRecord.kind === "string" ? parsedRecord.kind : null
-    const usesLegacyRequirements =
-      collectLegacyRequirements(parsedRecord.requirements).length > 0
-    if (kind && kind !== "prd") {
-      const message = `YAML kind '${kind}' is not 'prd'. EARS validation is only supported for PRD docs.`
+    if (parsed.right.kind !== "spec") {
+      const message = "Only markdown spec docs are supported for EARS validation."
       if (jsonMode) {
         console.log(
           toJson({
             valid: false,
             doc: docName ?? null,
-            path: yamlPath,
+            path: docPath,
             errors: [{ field: "kind", message }],
           })
         )
@@ -466,79 +444,43 @@ const docLintEars = (pos: string[], flags: Flags) =>
       throw new CliExitError(1)
     }
 
-    const earsRequirements = parsedRecord.ears_requirements
-    if (earsRequirements === undefined) {
-      if (usesLegacyRequirements) {
-        const message =
-          "PRDs with legacy 'requirements' must also define a non-empty " +
-          "'ears_requirements' array. EARS-structured requirements are mandatory for all PRDs."
-        if (jsonMode) {
-          console.log(
-            toJson({
-              valid: false,
-              doc: docName ?? null,
-              path: yamlPath,
-              errors: [{ field: "ears_requirements", message }],
-            })
-          )
-        } else {
-          console.error(`EARS validation failed: ${message}`)
-        }
-        throw new CliExitError(1)
+    if (parsed.right.frontmatter.spec_type !== "prd") {
+      const message =
+        `Doc is spec_type '${parsed.right.frontmatter.spec_type}'. ` +
+        "EARS validation is only supported for PRD docs."
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: false,
+            doc: docName ?? parsed.right.frontmatter.name,
+            path: docPath,
+            errors: [{ field: "spec_type", message }],
+          })
+        )
+      } else {
+        console.error(message)
       }
+      throw new CliExitError(1)
+    }
 
+    docName = docName ?? parsed.right.frontmatter.name
+    const earsRequirements = parsed.right.blocks.ears_requirements ?? []
+    if (earsRequirements.length === 0) {
       if (jsonMode) {
         console.log(
           toJson({
             valid: true,
             doc: docName ?? null,
-            path: yamlPath,
+            path: docPath,
             count: 0,
             errors: [],
             message: "No ears_requirements section found",
           })
         )
       } else {
-        console.log(`No ears_requirements section found in: ${yamlPath}`)
+        console.log(`No ears_requirements section found in: ${docPath}`)
       }
       return
-    }
-
-    if (!Array.isArray(earsRequirements)) {
-      if (jsonMode) {
-        console.log(
-          toJson({
-            valid: false,
-            doc: docName ?? null,
-            path: yamlPath,
-            errors: [
-              { field: "ears_requirements", message: "'ears_requirements' must be an array" },
-            ],
-          })
-        )
-      } else {
-        console.error("EARS validation failed: 'ears_requirements' must be an array")
-      }
-      throw new CliExitError(1)
-    }
-
-    if (usesLegacyRequirements && earsRequirements.length === 0) {
-      const message =
-        "PRDs with legacy 'requirements' must also define a non-empty " +
-        "'ears_requirements' array. EARS-structured requirements are mandatory for all PRDs."
-      if (jsonMode) {
-        console.log(
-          toJson({
-            valid: false,
-            doc: docName ?? null,
-            path: yamlPath,
-            errors: [{ field: "ears_requirements", message }],
-          })
-        )
-      } else {
-        console.error(`EARS validation failed: ${message}`)
-      }
-      throw new CliExitError(1)
     }
 
     const errors = validateEarsRequirements(earsRequirements)
@@ -547,16 +489,16 @@ const docLintEars = (pos: string[], flags: Flags) =>
         toJson({
           valid: errors.length === 0,
           doc: docName ?? null,
-          path: yamlPath,
+          path: docPath,
           count: earsRequirements.length,
           errors,
           errorSummary: errors.length > 0 ? formatEarsValidationErrors(errors) : null,
         })
       )
     } else if (errors.length === 0) {
-      console.log(`EARS validation passed: ${yamlPath}`)
+      console.log(`EARS validation passed: ${docPath}`)
     } else {
-      console.error(`EARS validation failed for ${yamlPath}:`)
+      console.error(`EARS validation failed for ${docPath}:`)
       for (const error of errors) {
         const location = error.id ? `${error.id}` : `entry #${error.index + 1}`
         console.error(`- ${location} (${error.field}) ${error.message}`)
@@ -568,221 +510,258 @@ const docLintEars = (pos: string[], flags: Flags) =>
     }
   })
 
-/** Generate template YAML content for a doc kind. */
+/** Generate markdown-first template content for a doc kind. */
 function generateTemplate(
   kind: DocKind,
   name: string,
   title: string
 ): string {
+  const today = new Date().toISOString().slice(0, 10)
+
   switch (kind) {
     case "overview":
       return [
-        `kind: overview`,
+        `---`,
+        `kind: spec`,
+        `spec_type: overview`,
         `name: ${name}`,
         `title: "${title}"`,
+        `status: draft`,
+        `version: 1`,
+        `owners:`,
+        `  - docs-team`,
+        `summary: Architectural overview of ${title}`,
+        `domain: product-area`,
+        `tags:`,
+        `  - overview`,
+        `depends_on: []`,
+        `supersedes: []`,
+        `implements: null`,
+        `last_reviewed_at: ${today}`,
+        `---`,
         ``,
-        `problem_definition: |`,
-        `  Describe the problem this system solves.`,
+        `# Summary`,
+        `Describe the system overview.`,
         ``,
-        `subsystems: |`,
-        `  ## Subsystem 1`,
-        `  - Boundary: packages/core/src/services/...`,
+        `# Architecture`,
+        `High-level architecture narrative for this system.`,
         ``,
-        `# object_model: |`,
-        `#   ## Entity`,
-        `#   - Table: ...`,
-        `#   - Lifecycle: ...`,
+        `# Components`,
+        `- Component 1`,
         ``,
-        `# invariants:`,
-        `#   - id: INV-001`,
-        `#     statement: Describe the invariant`,
-        `#     rationale: Why this invariant matters`,
+        `# Data Flows`,
+        `Describe primary data and control flows.`,
         ``,
-        `# failure_modes:`,
-        `#   - condition: When X happens`,
-        `#     impact: Y is affected`,
-        `#     handling: Do Z to recover`,
+        `# Problem`,
+        `What problem this system solves.`,
         ``,
-        `# edge_cases:`,
-        `#   - condition: When boundary X is hit`,
-        `#     expected_behavior: System does Y`,
+        `# Scope`,
+        `What's included and excluded.`,
         ``,
-        `# constraints:`,
-        `#   - Constraint 1`,
+        `# Requirements`,
+        `No requirements for overview docs.`,
         ``,
-        `# user_specific_content: |`,
-        `#   Any additional notes.`,
+        `# Non-goals`,
+        `- Item 1`,
         ``,
       ].join("\n")
     case "prd": {
       const earsArea = toEarsAreaSegment(name)
       return [
-        `kind: prd`,
+        `---`,
+        `kind: spec`,
+        `spec_type: prd`,
         `name: ${name}`,
         `title: "${title}"`,
-        `status: changing`,
+        `status: draft`,
+        `version: 1`,
+        `owners:`,
+        `  - docs-team`,
+        `summary: One-line summary of ${title}`,
+        `domain: product-area`,
+        `tags:`,
+        `  - prd`,
+        `depends_on: []`,
+        `supersedes: []`,
+        `implements: null`,
+        `last_reviewed_at: ${today}`,
+        `---`,
         ``,
-        `problem: |`,
-        `  Describe the problem.`,
+        `# Summary`,
+        `Describe the purpose of this PRD.`,
         ``,
-        `solution: |`,
-        `  Describe the solution approach.`,
+        `# Problem`,
+        `Describe the problem this feature solves.`,
         ``,
+        `# Scope`,
+        `Included: ...`,
+        `Excluded: ...`,
+        ``,
+        `# Requirements`,
+        `\`\`\`yaml`,
         `ears_requirements:`,
-        `  - id: EARS-${earsArea}-001`,
-        `    statement: The system shall do something important`,
-        `    category: functional`,
-        `    rationale: Why this requirement matters`,
+        `  - id: REQ-${earsArea}-001`,
+        `    kind: ubiquitous`,
+        `    statement: the system shall do X`,
+        `    priority: must`,
+        `    rationale: why this matters`,
+        `\`\`\``,
         ``,
+        `# Acceptance Criteria`,
+        `\`\`\`yaml`,
         `acceptance_criteria:`,
-        `  - Criterion 1`,
+        `  - id: AC-001`,
+        `    statement: criterion description`,
+        `\`\`\``,
         ``,
-        `# requirements:`,
-        `#   - Legacy requirement (deprecated; use ears_requirements)`,
-        ``,
-        `# non_goals:`,
-        `#   - Item 1`,
-        ``,
-        `# user_specific_content: |`,
-        `#   Any additional notes.`,
+        `# Non-goals`,
+        `- Item 1`,
         ``,
       ].join("\n")
     }
     case "design":
       return [
-        `kind: design`,
+        `---`,
+        `kind: spec`,
+        `spec_type: design`,
         `name: ${name}`,
         `title: "${title}"`,
-        `status: changing`,
+        `status: draft`,
         `version: 1`,
+        `owners:`,
+        `  - docs-team`,
+        `summary: Technical approach for ${title}`,
+        `domain: product-area`,
+        `tags:`,
+        `  - design`,
+        `depends_on: []`,
+        `supersedes: []`,
+        `implements: null`,
+        `last_reviewed_at: ${today}`,
+        `---`,
         ``,
-        `problem_definition: |`,
-        `  Why this change is needed.`,
+        `# Summary`,
+        `Describe the design approach.`,
         ``,
-        `architecture: |`,
-        `  ## Components`,
-        `  ...`,
+        `# Architecture`,
+        `## Components`,
+        `...`,
         ``,
-        `testing_strategy:`,
-        `  - requirement_id: EARS-XXX-001`,
-        `    level: integration`,
-        `    verification: should do X when Y`,
-        `    success_criteria: Returns expected state Z`,
+        `# Interfaces`,
+        `\`\`\`yaml`,
+        `interfaces: []`,
+        `\`\`\``,
         ``,
-        `# goals:`,
-        `#   - Goal 1`,
+        `# Data Model`,
+        `No data model changes.`,
         ``,
-        `# data_model: |`,
-        `#   ## Table Name`,
-        `#   | Column | Type | Constraints |`,
-        `#   |--------|------|-------------|`,
+        `# Invariants`,
+        `\`\`\`yaml`,
+        `invariants: []`,
+        `\`\`\``,
         ``,
-        `# invariants:`,
-        `#   - id: INV-001`,
-        `#     statement: Describe the invariant`,
+        `# Failure Modes`,
+        `\`\`\`yaml`,
+        `failure_modes: []`,
+        `\`\`\``,
         ``,
-        `# failure_modes:`,
-        `#   - condition: When X happens`,
-        `#     impact: Y is affected`,
-        `#     handling: Do Z to recover`,
+        `# Verification`,
+        `\`\`\`yaml`,
+        `verification: []`,
+        `\`\`\``,
         ``,
-        `# edge_cases:`,
-        `#   - condition: When boundary X is hit`,
-        `#     expected_behavior: System does Y`,
+        `# Testing Strategy`,
+        `## Unit Tests`,
+        `...`,
         ``,
-        `# non_goals:`,
-        `#   - Item 1`,
+        `## Integration Tests`,
+        `...`,
         ``,
-        `# open_questions: |`,
-        `#   - Unresolved design decisions`,
+        `# Open Questions`,
+        `- [ ] Unresolved design decisions`,
         ``,
-        `# user_specific_content: |`,
-        `#   Any additional notes.`,
+      ].join("\n")
+    case "runbook":
+      return [
+        `---`,
+        `kind: spec`,
+        `spec_type: runbook`,
+        `name: ${name}`,
+        `title: "${title}"`,
+        `status: draft`,
+        `version: 1`,
+        `owners:`,
+        `  - docs-team`,
+        `summary: Operational runbook for ${title}`,
+        `domain: product-area`,
+        `tags:`,
+        `  - runbook`,
+        `depends_on: []`,
+        `supersedes: []`,
+        `implements: null`,
+        `last_reviewed_at: ${today}`,
+        `---`,
+        ``,
+        `# Summary`,
+        `Describe when to use this runbook.`,
+        ``,
+        `# Symptoms`,
+        `Describe observable symptoms.`,
+        ``,
+        `# Diagnosis`,
+        `How to confirm root cause.`,
+        ``,
+        `# Mitigation`,
+        `Step-by-step mitigation actions.`,
+        ``,
+        `# Escalation`,
+        `When and how to escalate.`,
+        ``,
+      ].join("\n")
+    case "decision":
+      return [
+        `---`,
+        `kind: spec`,
+        `spec_type: decision`,
+        `name: ${name}`,
+        `title: "${title}"`,
+        `status: draft`,
+        `version: 1`,
+        `owners:`,
+        `  - docs-team`,
+        `summary: Architecture decision for ${title}`,
+        `domain: product-area`,
+        `tags:`,
+        `  - decision`,
+        `depends_on: []`,
+        `supersedes: []`,
+        `implements: null`,
+        `last_reviewed_at: ${today}`,
+        `---`,
+        ``,
+        `# Summary`,
+        `One-line decision summary.`,
+        ``,
+        `# Context`,
+        `Describe the context and constraints.`,
+        ``,
+        `# Alternatives`,
+        `List alternatives considered.`,
+        ``,
+        `# Decision`,
+        `Record the chosen option.`,
+        ``,
+        `# Consequences`,
+        `Document expected trade-offs and impacts.`,
         ``,
       ].join("\n")
     case "requirement":
-      return [
-        `# NOTE: The 'requirement' doc kind is deprecated.`,
-        `# Prefer using 'prd' + 'design' docs instead.`,
-        `kind: requirement`,
-        `name: ${name}`,
-        `title: "${title}"`,
-        `status: changing`,
-        ``,
-        `overview: |`,
-        `  One-sentence behavioral description.`,
-        ``,
-        `actors:`,
-        `  - name: User`,
-        `    description: Primary user of the system`,
-        ``,
-        `use_cases:`,
-        `  - id: UC-001`,
-        `    actor: User`,
-        `    trigger: User initiates action`,
-        `    outcome: Action completed successfully`,
-        ``,
-        `# At least one of functional_requirements or ears_requirements must be present`,
-        `ears_requirements:`,
-        `  - id: EARS-XXX-001`,
-        `    statement: The system shall do something`,
-        ``,
-        `# functional_requirements: |`,
-        `#   Free-text functional requirements.`,
-        ``,
-        `# invariants:`,
-        `#   - id: INV-001`,
-        `#     statement: Describe the invariant`,
-        ``,
-        `# non_functional_requirements:`,
-        `#   - Requirement 1`,
-        ``,
-        `# traceability:`,
-        `#   - requirement_id: EARS-XXX-001`,
-        `#     level: integration`,
-        `#     verification: should do X when Y`,
-        `#     success_criteria: Returns expected state Z`,
-        ``,
-        `# user_specific_content: |`,
-        `#   Any additional notes.`,
-        ``,
-      ].join("\n")
+      console.error("The 'requirement' kind is deprecated. Use 'prd' instead.")
+      console.error("Creating as 'prd' with spec_type: prd...")
+      return generateTemplate("prd", name, title)
     case "system_design":
-      return [
-        `kind: system_design`,
-        `name: ${name}`,
-        `title: "${title}"`,
-        `status: changing`,
-        ``,
-        `overview: |`,
-        `  What cross-cutting concern this describes.`,
-        ``,
-        `scope: |`,
-        `  Which features/subsystems this applies to.`,
-        ``,
-        `design: |`,
-        `  Architecture, patterns, data flow, service boundaries.`,
-        ``,
-        `# constraints:`,
-        `#   - Constraint 1`,
-        ``,
-        `# invariants:`,
-        `#   - id: INV-001`,
-        `#     statement: Describe the invariant`,
-        ``,
-        `# applies_to:`,
-        `#   - target: Subsystem name`,
-        `#     reason: Why this design applies`,
-        ``,
-        `# decision_log:`,
-        `#   - decision: What was decided`,
-        `#     rationale: Why it was decided`,
-        `#     date: "2026-01-01"`,
-        `#     consequence: What follows from this decision`,
-        ``,
-        `# user_specific_content: |`,
-        `#   Any additional notes.`,
-        ``,
-      ].join("\n")
+      console.error("The 'system_design' kind is deprecated. Use 'design' instead.")
+      console.error("Creating as 'design' with spec_type: design...")
+      return generateTemplate("design", name, title)
   }
 }
