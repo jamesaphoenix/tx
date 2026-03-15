@@ -4,7 +4,6 @@ import { useStore } from "@tanstack/react-store"
 import Select, { type MultiValue, type SingleValue, type StylesConfig } from "react-select"
 import {
   fetchers,
-  type DashboardDefaultTaskView,
   type TaskAssigneeType,
   type TaskWithDeps,
   type PaginatedTasksResponse,
@@ -37,7 +36,6 @@ type ThemeMode = "light" | "dark"
 export interface TasksPageProps {
   themeMode?: ThemeMode
   defaultTaskAssigmentType?: TaskAssigneeType
-  defaultTaskView?: DashboardDefaultTaskView
   /**
    * Incrementing signal from the app shell to request opening the
    * task composer even before page-level shortcut registration settles.
@@ -310,10 +308,8 @@ async function copyToClipboard(value: string): Promise<void> {
 export function TasksPage({
   themeMode = "light",
   defaultTaskAssigmentType = "human",
-  defaultTaskView = "list",
   newTaskRequestNonce = 0
 }: TasksPageProps) {
-  void defaultTaskView
   const isDarkTheme = themeMode === "dark"
   const queryClient = useQueryClient()
   const selectedTaskIds = useStore(selectionStore, (s) => s.taskIds)
