@@ -63,6 +63,12 @@ function sortByMostRecentCompletion(a: TaskWithDeps, b: TaskWithDeps): number {
   return right - left
 }
 
+function sortByMostRecentUpdate(a: TaskWithDeps, b: TaskWithDeps): number {
+  const left = toTimestamp(a.updatedAt)
+  const right = toTimestamp(b.updatedAt)
+  return right - left
+}
+
 export function KanbanBoard({
   onSelectTask,
   search,
@@ -162,7 +168,14 @@ export function KanbanBoard({
       grouped[task.status].push(task)
     }
 
-    grouped.done.sort(sortByMostRecentCompletion)
+    for (const status of TASK_STATUSES) {
+      if (status === "done") {
+        grouped[status].sort(sortByMostRecentCompletion)
+      } else {
+        grouped[status].sort(sortByMostRecentUpdate)
+      }
+    }
+
     return grouped
   }, [mergedTasksById, taskClientFilterPredicate])
 
