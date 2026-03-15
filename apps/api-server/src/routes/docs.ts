@@ -2,79 +2,102 @@
  * Doc Route Handlers
  *
  * Implements docs-as-primitives endpoint handlers (DD-023).
- * YAML-on-disk doc management with DB metadata, linking, and invariant sync.
+ * Markdown-on-disk doc management with DB metadata, linking, and invariant sync.
  */
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
 import { readFileSync, existsSync } from "node:fs"
 import { resolve } from "node:path"
-import { computeDocHash, DocService, readTxConfig } from "@jamesaphoenix/tx-core"
+import {
+  computeDocHash,
+  DocService,
+  MdDocParseError,
+  parseMdDocSync,
+  readTxConfig,
+} from "@jamesaphoenix/tx-core"
 import type { DocKind } from "@jamesaphoenix/tx-types"
-import { parse as parseYaml } from "yaml"
 import { TxApi, mapCoreError } from "../api.js"
 
 // -----------------------------------------------------------------------------
 // Handler Layer
 // -----------------------------------------------------------------------------
 
-const PLACEHOLDER_TEXT_BY_KIND: Record<DocKind, Record<string, readonly string[]>> = {
-  overview: {
-    problem_definition: ["Describe the problem this system solves."],
-    subsystems: ["## Subsystem 1", "Boundary: packages/core/src/services/..."],
-  },
-  prd: {
-    problem: ["Describe the problem."],
-    solution: ["Describe the solution approach."],
-    ears_requirements: ["The system shall do something important"],
-    acceptance_criteria: ["Criterion 1"],
-  },
-  design: {
-    problem_definition: ["Why this change is needed."],
-    architecture: ["## Components\n  ..."],
-    testing_strategy: ["EARS-XXX-001", "should do X when Y", "Returns expected state Z"],
-    goals: ["Goal 1"],
-  },
-  requirement: {
-    overview: ["One-sentence behavioral description."],
-    ears_requirements: ["The system shall do something"],
-  },
-  system_design: {
-    overview: ["What cross-cutting concern this describes."],
-    scope: ["Which features/subsystems this applies to."],
-    design: ["Architecture, patterns, data flow, service boundaries."],
-  },
-  runbook: {
-    summary: ["Describe when to use this runbook."],
-    symptoms: ["Describe observable symptoms."],
-    diagnosis: ["How to confirm root cause."],
-    mitigation: ["Step-by-step mitigation actions."],
-    escalation: ["When and how to escalate."],
-  },
-  decision: {
-    summary: ["One-line decision summary."],
-    context: ["Describe the context and constraints."],
-    alternatives: ["List alternatives considered."],
-    decision: ["Record the chosen option."],
-    consequences: ["Document expected trade-offs and impacts."],
-  },
+const PLACEHOLDER_TEXT_BY_KIND: Record<DocKind, readonly string[]> = {
+  overview: [
+    "Describe the system overview.",
+    "What problem this system solves.",
+    "Included: ...",
+    "Excluded: ...",
+  ],
+  prd: [
+    "Describe the purpose of this PRD.",
+    "Describe the problem this feature solves.",
+    "the system shall do X",
+    "criterion description",
+  ],
+  design: [
+    "Describe the design approach.",
+    "No data model changes.",
+    "Unresolved design decisions",
+  ],
+  requirement: [
+    "One-sentence behavioral description.",
+    "The system shall do something",
+  ],
+  system_design: [
+    "What cross-cutting concern this describes.",
+    "Which features/subsystems this applies to.",
+    "Architecture, patterns, data flow, service boundaries.",
+  ],
+  runbook: [
+    "Describe when to use this runbook.",
+    "Describe observable symptoms.",
+    "How to confirm root cause.",
+    "Step-by-step mitigation actions.",
+    "When and how to escalate.",
+  ],
+  decision: [
+    "One-line decision summary.",
+    "Describe the context and constraints.",
+    "List alternatives considered.",
+    "Record the chosen option.",
+    "Document expected trade-offs and impacts.",
+  ],
 }
 
-const asRecord = (value: unknown): Record<string, unknown> | null =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null
+const kindSubdir = (kind: string): string => {
+  if (kind === "overview") return ""
+  if (kind === "requirement") return "requirements"
+  if (kind === "system_design") return "system-design"
+  return kind
+}
 
-const findPlaceholderProblems = (kind: DocKind, parsed: unknown): string[] => {
-  const doc = asRecord(parsed)
-  if (!doc) return []
+const resolveDocMdRelativePath = (kind: string, name: string): string => {
+  const sub = kindSubdir(kind)
+  return sub ? `${sub}/${name}.md` : `${name}.md`
+}
 
-  const checks = PLACEHOLDER_TEXT_BY_KIND[kind]
+const formatMarkdownParseProblem = (error: unknown): string => {
+  if (error instanceof MdDocParseError) {
+    return `Markdown parse error: ${error.reason}`
+  }
+  return "Markdown parse error: unable to parse document content."
+}
+
+const findPlaceholderProblems = (
+  kind: DocKind,
+  parsed: {
+    frontmatter: { title?: unknown; summary?: unknown }
+    sections: ReadonlyArray<{ heading: string; body: string }>
+  }
+): string[] => {
+  const placeholders = PLACEHOLDER_TEXT_BY_KIND[kind]
   const problems: string[] = []
   const seen = new Set<string>()
 
-  for (const [field, placeholders] of Object.entries(checks)) {
-    const value = doc[field]
-    if (value === undefined || value === null) continue
-
+  const checkValue = (field: string, value: unknown) => {
+    if (value === undefined || value === null) return
     const haystack = (typeof value === "string" ? value : JSON.stringify(value)).toLowerCase()
     for (const placeholder of placeholders) {
       const marker = placeholder.toLowerCase()
@@ -86,6 +109,13 @@ const findPlaceholderProblems = (kind: DocKind, parsed: unknown): string[] => {
         problems.push(problem)
       }
     }
+  }
+
+  checkValue("frontmatter.title", parsed.frontmatter.title)
+  checkValue("frontmatter.summary", parsed.frontmatter.summary)
+
+  for (const section of parsed.sections) {
+    checkValue(`section.${section.heading}`, section.body)
   }
 
   return problems
@@ -160,18 +190,19 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         }
 
         for (const doc of docs) {
-          const yamlPath = resolve(docsPath, doc.filePath)
-          let yamlContent: string | null = null
+          const mdRelPath = resolveDocMdRelativePath(doc.kind, doc.name)
+          const mdPath = resolve(docsPath, mdRelPath)
+          let content: string | null = null
 
-          if (!existsSync(yamlPath)) {
+          if (!existsSync(mdPath)) {
             issues.push({
               docName: doc.name,
               kind: "hash_drift",
-              problems: [`YAML file missing on disk: ${doc.filePath}`],
+              problems: [`Markdown file missing on disk: ${mdRelPath}`],
             })
           } else {
-            yamlContent = readFileSync(yamlPath, "utf8")
-            const currentHash = computeDocHash(yamlContent)
+            content = readFileSync(mdPath, "utf8")
+            const currentHash = computeDocHash(content)
             if (currentHash !== doc.hash) {
               issues.push({
                 docName: doc.name,
@@ -183,17 +214,14 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
             }
           }
 
-          if (yamlContent !== null) {
-            const parsedResult = yield* Effect.try({
-              try: () => parseYaml(yamlContent) as unknown,
-              catch: () => new Error("Invalid YAML"),
-            }).pipe(Effect.either)
+          if (content !== null) {
+            const parsedResult = parseMdDocSync(content)
 
             if (parsedResult._tag === "Left") {
               issues.push({
                 docName: doc.name,
-                kind: "placeholder",
-                problems: ["Unable to parse YAML for placeholder health checks."],
+                kind: "parse",
+                problems: [formatMarkdownParseProblem(parsedResult.left)],
               })
             } else {
               const problems = findPlaceholderProblems(doc.kind, parsedResult.right)
@@ -247,7 +275,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
     .handle("createDoc", ({ payload }) =>
       Effect.gen(function* () {
         const svc = yield* DocService
-        const content = payload.yamlContent
+        const content = payload.content
         const doc = yield* svc.create({
           kind: payload.kind as DocKind,
           name: payload.name,
@@ -302,7 +330,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
     .handle("updateDoc", ({ path: { name }, payload }) =>
       Effect.gen(function* () {
         const svc = yield* DocService
-        const content = payload.yamlContent
+        const content = payload.content
         const doc = yield* svc.update(name, content)
         return {
           id: doc.id,
@@ -375,37 +403,18 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         const svc = yield* DocService
         const doc = yield* svc.get(name)
 
-        let yamlContent: string | null = null
-        let renderedContent: string | null = null
-
         const config = readTxConfig()
         const docsPath = resolve(config.docs.path)
-
-        // Resolve subdirectory for this doc kind
-        const kindSubdir = doc.kind === "overview" ? "" :
-          doc.kind === "requirement" ? "requirements" :
-          doc.kind === "system_design" ? "system-design" :
-          doc.kind
-        const yamlRel = kindSubdir ? `${kindSubdir}/${doc.name}.yml` : `${doc.name}.yml`
-        const yamlPath = resolve(docsPath, yamlRel)
-
-        if (existsSync(yamlPath)) {
-          yamlContent = readFileSync(yamlPath, "utf8")
-        }
-
-        // Try to read rendered MD file
-        const mdRel = kindSubdir ? `${kindSubdir}/${doc.name}.md` : `${doc.name}.md`
+        const mdRel = resolveDocMdRelativePath(doc.kind, doc.name)
         const mdPath = resolve(docsPath, mdRel)
-
-        if (existsSync(mdPath)) {
-          renderedContent = readFileSync(mdPath, "utf8")
-        }
+        const content = existsSync(mdPath) ? readFileSync(mdPath, "utf8") : null
 
         return {
           name: doc.name,
           filePath: doc.filePath,
-          yamlContent,
-          renderedContent,
+          content,
+          yamlContent: null,
+          renderedContent: content,
         }
       }).pipe(Effect.mapError(mapCoreError))
     )

@@ -1014,12 +1014,12 @@ const CreateDocBody = Schema.Struct({
   kind: Schema.Literal(...DOC_KINDS),
   name: Schema.String.pipe(Schema.minLength(1)),
   title: Schema.String.pipe(Schema.minLength(1)),
-  yamlContent: Schema.String.pipe(Schema.minLength(1)),
+  content: Schema.String.pipe(Schema.minLength(1)),
   metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 })
 
 const UpdateDocBody = Schema.Struct({
-  yamlContent: Schema.String.pipe(Schema.minLength(1)),
+  content: Schema.String.pipe(Schema.minLength(1)),
 })
 
 const DocLinkBody = Schema.Struct({
@@ -1047,6 +1047,7 @@ const RenderDocsResponse = Schema.Struct({
 const DocSourceResponse = Schema.Struct({
   name: Schema.String,
   filePath: Schema.String,
+  content: Schema.NullOr(Schema.String),
   yamlContent: Schema.NullOr(Schema.String),
   renderedContent: Schema.NullOr(Schema.String),
 })
