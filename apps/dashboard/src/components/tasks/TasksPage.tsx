@@ -640,8 +640,8 @@ export function TasksPage({
       return
     }
 
-    openTask(created.id)
-  }, [composerFallbackLabels, invalidateTaskQueries, openTask, queryClient])
+    closeComposer()
+  }, [closeComposer, composerFallbackLabels, invalidateTaskQueries, queryClient])
 
   const createLabel = useCallback(async (payload: { name: string; color?: string }): Promise<TaskLabel | null> => {
     const normalizedName = payload.name.trim()
