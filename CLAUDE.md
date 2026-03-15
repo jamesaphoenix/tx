@@ -711,267 +711,270 @@ Do not bypass hooks in this workflow. Commits and pushes must run with verificat
 
 ---
 
-## Development Process: Documentation First (4-Tier)
+## Development Process: Documentation First (Markdown-First)
 
-**All non-trivial features MUST have documentation before implementation.**
+**All non-trivial features MUST have markdown spec documentation before implementation.**
 
-### 4-Tier Documentation Model
+### Spec-Type Documentation Model
 
-| Tier | Directory | Prefix | Focus |
-|------|-----------|--------|-------|
-| Requirements / Use Cases | `specs/requirements/` | `REQ-NNN` | Behavioral requirements and use-case flows |
-| Product Requirements Document | `specs/prd/` | `PRD-NNN` | Scope, success criteria, and rollout boundaries |
-| Design Document | `specs/design/` | `DD-NNN` | Technical implementation approach |
-| System Design | `specs/system-design/` | `SD-NNN` | Cross-cutting architecture constraints and patterns |
+| spec_type | Focus |
+|-----------|-------|
+| `prd` | Product intent (what and why) |
+| `design` | System behaviour (how) |
+| `overview` | Architectural map (non-normative) |
+| `runbook` | Operational procedures |
+| `decision` | Architectural decisions (ADRs) |
 
-`tx doc` currently scaffolds `overview`, `prd`, and `design` docs. REQ/SD are documentation conventions managed as markdown files.
+Markdown is canonical: docs are authored as `.md` with YAML frontmatter and embedded YAML blocks. There is no YAML-source render pipeline.
 
 ### Why Documentation First?
 
-- **Prevents wasted effort** — catch design issues before writing code
-- **Creates reviewable artifacts** — behavior, scope, implementation, and architecture are reviewed separately
+- **Prevents wasted effort** — catch scope and design issues before writing code
+- **Creates reviewable artifacts** — intent, behaviour, architecture, and operations are reviewed explicitly
 - **Enables parallelism** — multiple agents can implement from the same specification set
 - **Builds institutional knowledge** — docs persist beyond conversation context
 
 ### The Process
 
 ```
-1. Problem identified → Create REQ (use-cases and behavioral requirements)
-2. REQ approved → Create PRD (scope, acceptance criteria, out-of-scope)
-3. PRD approved → Create DD (technical implementation plan)
-4. If cross-cutting architecture applies → Create or update SD
-5. DD (+ SD when needed) approved → Implementation (code follows the docs)
-6. Implementation complete → Update REQ/PRD/DD/SD if design changed
+1. Problem identified → Create `prd` spec (intent, problem, scope, requirements, acceptance criteria)
+2. PRD approved → Create `design` spec (architecture, interfaces, invariants, failure modes, verification)
+3. Add supporting specs as needed: `overview`, `runbook`, `decision`
+4. Specs approved → Implementation (code follows the specs)
+5. Implementation complete → Update affected specs when design or behaviour changes
 ```
 
-### Plans MUST Become Docs (All 4 Tiers)
+### Plans MUST Become Docs (Spec Types)
 
 When a plan is requested (via `/plan`, plan mode, or explicit request), the output
-MUST be formalized into the appropriate documentation layers, not left as a standalone plan file.
+MUST be formalized into markdown specs, not left as a standalone plan file.
 
-- REQ captures **behavior and use cases**
-- PRD captures **scope and acceptance criteria**
-- DD captures **implementation design**
-- SD captures **shared architecture constraints** (when cross-cutting)
+- `prd` captures **product intent** (what and why)
+- `design` captures **system behaviour** (how)
+- `overview` captures **cross-system architectural context** (non-normative map)
+- `runbook` captures **operational procedures** (symptoms, diagnosis, mitigation, escalation)
+- `decision` captures **architecture decisions** and trade-offs (ADRs)
 - Optionally reference source plan files: `plan.md`, `codex-plan.md`, or `.claude/plan.md`
-- Optionally reference relevant CLAUDE.md DOCTRINE rules in DD/SD References
+- Optionally reference relevant CLAUDE.md DOCTRINE rules in design/decision references
 
 **Do NOT** leave plans as standalone `plan.md` files.
 
-### REQ Structure (specs/requirements/REQ-NNN-*.md)
+### PRD Structure (`spec_type: prd`)
 
-```markdown
-# REQ-NNN: Feature Name
+````markdown
+---
+kind: spec
+spec_type: prd
+name: feature-name
+title: Feature Name
+status: draft
+version: 1
+owners:
+  - team
+summary: One-line summary
+domain: product-area
+tags:
+  - feature
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
 
-## Overview
-One-sentence behavioral description.
+# Summary
+...
 
-## Actors
-| Actor | Description |
-|-------|-------------|
+# Problem
+...
 
-## Use Cases
+# Scope
+Included: ...
+Excluded: ...
 
-### UC-001: Title
-**Trigger**: ...
-**Preconditions**: ...
-**Flow**: 1. ... 2. ...
-**Postconditions**: ...
-**Exceptions**: ...
+# Requirements
 
-## Functional Requirements
-| ID | Pattern | Requirement |
-|----|---------|-------------|
-| EARS-AREA-001 | ubiquitous | The system shall ... |
-
-## Non-Functional Requirements
-
-## Traceability
-- Scoped by: PRD-NNN
-- Designed in: DD-NNN
+```yaml
+ears_requirements:
+  - id: REQ-FEAT-001
+    kind: ubiquitous
+    statement: the system shall do X
+    priority: must
+    rationale: why this matters
 ```
 
-### PRD Structure (specs/prd/PRD-NNN-*.md)
+# Acceptance Criteria
 
-```markdown
-# PRD-NNN: Feature Name
-
-## Problem
-What is broken or missing?
-
-## Solution
-High-level approach (not implementation details).
-
-## Requirements
--> REQ-NNN (detailed behavior)
-
-Summary checklist:
-- [ ] Capability 1
-- [ ] Capability 2
-
-## Acceptance Criteria
-How do we know it is done?
-
-## Out of Scope
+```yaml
+acceptance_criteria:
+  - id: AC-001
+    statement: criterion description
 ```
 
-### DD Structure (specs/design/DD-NNN-*.md)
+# Non-goals
+...
+````
 
-```markdown
-# DD-NNN: Feature Name
+### DD Structure (`spec_type: design`)
 
-## Overview
-Technical approach summary
+````markdown
+---
+kind: spec
+spec_type: design
+name: feature-name-design
+title: Feature Name Design
+status: draft
+version: 1
+owners:
+  - team
+summary: Technical approach summary
+domain: product-area
+tags:
+  - design
+depends_on:
+  - feature-name
+supersedes: []
+implements: feature-name
+last_reviewed_at: 2026-03-15
+---
 
-## Design
+# Summary
+...
 
-### Data Model
-Schema changes, new tables, migrations
+# Architecture
+...
 
-### Service Layer
-New services, interface changes
+# Interfaces
 
-### API/CLI Changes
-New commands, endpoints, MCP tools
+```yaml
+interfaces:
+  - name: endpoint_name
+    type: http
+    method: POST
+    path: /path
+    semantics: description of guarantees
+    contract: packages/types/src/doc.ts#SomeContractSchema
+```
 
-## Implementation Plan
+# Data Model
+...
 
-| Phase | Files | Changes |
-|-------|-------|---------|
-| 1 | file.ts | Add X |
-| 2 | other.ts | Modify Y |
+# Invariants
 
-## Testing Strategy (REQUIRED — must be detailed and comprehensive)
+```yaml
+invariants:
+  - id: INV-001
+    statement: what must always be true
+    severity: high
+    verified_by:
+      - test/path.test.ts
+```
 
-This section is mandatory and must be thorough. Testing strategy is a first-class concern, not an afterthought.
+# Failure Modes
 
-### Unit Tests
+```yaml
+failure_modes:
+  - condition: when X happens
+    impact: Y is affected
+    handling: do Z to recover
+```
+
+# Verification
+
+```yaml
+verification:
+  - requirement_id: REQ-FEAT-001
+    test_type: integration
+    target: test/path.test.ts
+```
+
+# Testing Strategy
+(detailed and comprehensive; see quality bar below)
+
+## Unit Tests
 - List specific functions/methods to unit test
 - Mock boundaries: what gets mocked vs real
 - Expected coverage targets
 
-### Integration Tests
+## Integration Tests
 - Must use real in-memory SQLite with `getSharedTestLayer()`
 - Must use SHA256-based deterministic IDs via `fixtureId(name)`
 - List specific integration test scenarios (CRUD, edge cases, error paths)
 - Cover cross-service interactions
 
-### Edge Cases
+## Edge Cases
 - Boundary conditions to test
 - Error recovery scenarios
 - Concurrent access / race conditions (if applicable)
 
-### Performance (if applicable)
+## Performance (if applicable)
 - Benchmarks to establish
 - Acceptable latency/throughput thresholds
 
-### Minimum Quality Bar (MUST)
-- A DD testing strategy is incomplete unless it includes:
+## Minimum Quality Bar (MUST)
 - Requirement-to-test traceability (each requirement maps to one or more tests)
 - At least 8 numbered integration scenarios with concrete setup, action, and assertions
 - Failure-path and recovery coverage (timeouts, malformed input, partial failure, retries/idempotency when relevant)
 - File-level test plan (exact test files to create or modify)
 - Observable assertions (DB rows, API responses, emitted events/metrics, status transitions)
-- Avoid vague bullets like "add tests" or "cover edge cases" without concrete inputs and expected outputs.
+- Avoid vague bullets like "add tests" or "cover edge cases" without concrete inputs and expected outputs
 
-### Prompting Template for DD Testing Strategy
-When generating or revising a DD, use this prompt shape:
-
-```text
-Write ONLY the "Testing Strategy" section for <DD-NNN>.
-
-Requirements:
-1. Provide a traceability matrix with columns:
-   Requirement | Test Type | Test Name | Assertions | File Path
-2. Include sections for Unit Tests, Integration Tests, Edge Cases, Failure Injection, and Performance.
-3. Integration tests must use getSharedTestLayer() and fixtureId(name).
-4. Provide at least 8 numbered integration scenarios, each with Setup / Action / Assert.
-5. Include non-functional thresholds where applicable (latency, throughput, memory).
-6. Do not use vague bullets; every test must name concrete files, inputs, and expected outcomes.
-```
-
-## Open Questions (REQUIRED)
+# Open Questions
 - [ ] Unresolved design decisions
 - [ ] Alternatives considered but not yet decided
 - [ ] Dependencies on external teams/systems
 
-## Migration
-How existing data/users transition
+# Migration
+How existing data/users transition.
 
-## References (optional)
+# References
 - Plan file: `plan.md` or `codex-plan.md` (if originated from a planning session)
-- REQ: `specs/requirements/REQ-NNN-*.md` (when available)
-- SD: `specs/system-design/SD-NNN-*.md` (when relevant)
+- Related PRD: `specs/prd/*.md`
+- Related decisions: `specs/**/*.md` with `spec_type: decision`
 - CLAUDE.md section: Link to relevant DOCTRINE rules
-```
-
-### SD Structure (specs/system-design/SD-NNN-*.md)
-
-```markdown
-# SD-NNN: Pattern Name
-
-## Overview
-What cross-cutting concern this describes.
-
-## Scope
-Which features/subsystems this applies to.
-
-## Constraints
-
-## Design
-Architecture, patterns, data flow, service boundaries.
-
-## Applies To
-| Document | Relationship |
-|----------|-------------|
-
-## Decision Log
-| Date | Decision | Rationale |
-|------|----------|-----------|
-```
+````
 
 ### Linking Convention
 
-- REQs reference scoped PRDs: `→ [PRD-NNN](specs/prd/PRD-NNN-*.md)`
-- PRDs reference REQ + DD: `→ [REQ-NNN](specs/requirements/REQ-NNN-*.md)`, `→ [DD-NNN](specs/design/DD-NNN-*.md)`
-- DDs reference PRD and relevant REQ/SD documents
-- SDs reference all applicable REQ/PRD/DD documents in `## Applies To`
-- CLAUDE.md DOCTRINE rules should link to relevant PRD/DD (and REQ/SD when applicable)
-- Implementation PRs should reference the full doc chain used for delivery
+- PRDs reference their implementing design docs and related decisions
+- Design docs set `implements` to the PRD `name` and map requirements to verification targets
+- Overview specs reference connected PRD/design docs for system context
+- Runbooks reference the design docs and interfaces they operationalize
+- Decision docs reference affected PRD/design/runbook specs
+- Implementation PRs should reference the relevant spec chain used for delivery
 
 ### When to Skip
 
-Skip all docs for:
+Skip spec docs for:
 - Bug fixes with obvious solutions
 - Typo corrections
 - Single-line changes
 - Test additions for existing features
 
-Create docs per tier as needed:
-- Create **REQ** for new behavior, user-visible flows, or new requirement sets
-- Create **PRD** when scope/acceptance needs explicit review
-- Create **DD** for any non-trivial technical implementation
-- Create or update **SD** when decisions are cross-cutting, reusable, or constrain multiple features
+Create docs per `spec_type` as needed:
+- Create **`prd`** for new product capabilities and acceptance scope
+- Create **`design`** for non-trivial implementation and verification mapping
+- Create **`overview`** for cross-system maps that aid orientation
+- Create **`runbook`** for operational response procedures
+- Create **`decision`** for durable architecture decisions and trade-offs
 
-Existing PRDs are not retroactively migrated; apply the 4-tier model to new work and major revisions.
+Existing YAML-first docs are not retroactively rewritten unless explicitly scoped; all new documentation should follow markdown-first spec types.
 
 ---
 
 ## For Detailed Information
 
-### Internal Documentation (4 Tiers)
+### Internal Documentation (Markdown Spec Types)
 
-- **Requirements / Use Cases (REQs)**: [specs/requirements/](specs/requirements/)
-- **Product Requirements Docs (PRDs)**: [specs/prd/](specs/prd/)
-- **Design Docs (DDs)**: [specs/design/](specs/design/)
-- **System Design (SDs)**: [specs/system-design/](specs/system-design/)
+- **PRD specs (`spec_type: prd`)**: [specs/prd/](specs/prd/)
+- **Design specs (`spec_type: design`)**: [specs/design/](specs/design/)
+- **Overview/Runbook/Decision specs**: [specs/](specs/)
 - **Full index**: [specs/index.md](specs/index.md)
 
 ### Published User Docs
 
 The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
-- **Source REQ/PRD/DD/SD docs**: `specs/` directory — internal artifacts linked from CLAUDE.md
+- **Source markdown-first specs**: `specs/` directory — internal artifacts linked from CLAUDE.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
 
 <tx-pin id="gate.docs-to-build">
