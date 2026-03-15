@@ -700,19 +700,33 @@ Do not bypass hooks in this workflow. Commits and pushes must run with verificat
 ### Plans MUST Become PRD + Design Doc
 
 When a plan is requested (via `/plan`, plan mode, or explicit request), the output
-MUST be split into a PRD and a Design Doc — not a single monolithic plan file.
+MUST be formalized as markdown specs with `spec_type: prd` and `spec_type: design` — not a single monolithic plan file.
 
 - The PRD captures **what** and **why** (requirements, acceptance criteria)
 - The DD captures **how** (architecture, file changes, testing strategy, open questions)
+- Both docs are markdown-first `.md` files with frontmatter + embedded YAML blocks where structure is required
 - Optionally reference the source plan file: `plan.md`, `codex-plan.md`, or `.codex/plan.md`
 - Optionally reference relevant AGENTS.md DOCTRINE rules in the DD's References section
 
-**Do NOT** leave plans as standalone `plan.md` files. They must be formalized into PRD + DD.
+**Do NOT** leave plans as standalone `plan.md` files. They must be formalized into `spec_type` docs.
 
 ### PRD Structure (specs/prd/PRD-NNN-*.md)
 
-```markdown
-# PRD-NNN: Feature Name
+````markdown
+---
+kind: spec
+spec_type: prd
+name: feature-name
+title: Feature Name
+status: draft
+version: 1
+owners:
+  - team
+summary: One-line summary
+---
+
+# Summary
+...
 
 ## Problem
 What's broken or missing?
@@ -721,103 +735,105 @@ What's broken or missing?
 High-level approach (not implementation details)
 
 ## Requirements
-- [ ] Requirement 1
-- [ ] Requirement 2
+
+```yaml
+ears_requirements:
+  - id: REQ-FEAT-001
+    kind: ubiquitous
+    statement: the system shall do X
+    priority: must
+```
 
 ## Acceptance Criteria
-How do we know it's done?
 
-## Out of Scope
-What this PRD explicitly does NOT cover
+```yaml
+acceptance_criteria:
+  - id: AC-001
+    statement: how we know it's done
 ```
+
+# Non-goals
+What this explicitly does NOT cover
+````
 
 ### DD Structure (specs/design/DD-NNN-*.md)
 
-```markdown
-# DD-NNN: Feature Name
+````markdown
+---
+kind: spec
+spec_type: design
+name: feature-name
+title: Feature Name Design
+status: draft
+version: 1
+implements: feature-name
+summary: Technical approach summary
+---
 
-## Overview
-Technical approach summary
+# Summary
+...
 
-## Design
+# Architecture
+...
 
-### Data Model
-Schema changes, new tables, migrations
+# Interfaces
 
-### Service Layer
-New services, interface changes
-
-### API/CLI Changes
-New commands, endpoints, MCP tools
-
-## Implementation Plan
-
-| Phase | Files | Changes |
-|-------|-------|---------|
-| 1 | file.ts | Add X |
-| 2 | other.ts | Modify Y |
-
-## Testing Strategy (REQUIRED — must be detailed and comprehensive)
-
-This section is mandatory and must be thorough. Testing strategy is a first-class concern, not an afterthought.
-
-### Unit Tests
-- List specific functions/methods to unit test
-- Mock boundaries: what gets mocked vs real
-- Expected coverage targets
-
-### Integration Tests
-- Must use real in-memory SQLite with `getSharedTestLayer()`
-- Must use SHA256-based deterministic IDs via `fixtureId(name)`
-- List specific integration test scenarios (CRUD, edge cases, error paths)
-- Cover cross-service interactions
-
-### Edge Cases
-- Boundary conditions to test
-- Error recovery scenarios
-- Concurrent access / race conditions (if applicable)
-
-### Performance (if applicable)
-- Benchmarks to establish
-- Acceptable latency/throughput thresholds
-
-### Minimum Quality Bar (MUST)
-- A DD testing strategy is incomplete unless it includes:
-- Requirement-to-test traceability (each requirement maps to one or more tests)
-- At least 8 numbered integration scenarios with concrete setup, action, and assertions
-- Failure-path and recovery coverage (timeouts, malformed input, partial failure, retries/idempotency when relevant)
-- File-level test plan (exact test files to create or modify)
-- Observable assertions (DB rows, API responses, emitted events/metrics, status transitions)
-- Avoid vague bullets like "add tests" or "cover edge cases" without concrete inputs and expected outputs.
-
-### Prompting Template for DD Testing Strategy
-When generating or revising a DD, use this prompt shape:
-
-```text
-Write ONLY the "Testing Strategy" section for <DD-NNN>.
-
-Requirements:
-1. Provide a traceability matrix with columns:
-   Requirement | Test Type | Test Name | Assertions | File Path
-2. Include sections for Unit Tests, Integration Tests, Edge Cases, Failure Injection, and Performance.
-3. Integration tests must use getSharedTestLayer() and fixtureId(name).
-4. Provide at least 8 numbered integration scenarios, each with Setup / Action / Assert.
-5. Include non-functional thresholds where applicable (latency, throughput, memory).
-6. Do not use vague bullets; every test must name concrete files, inputs, and expected outcomes.
+```yaml
+interfaces:
+  - name: endpoint_name
+    type: http
+    method: POST
+    path: /path
+    semantics: description of guarantees
 ```
 
-## Open Questions (REQUIRED)
+# Data Model
+...
+
+# Invariants
+
+```yaml
+invariants:
+  - id: INV-001
+    statement: what must always be true
+    severity: high
+    verified_by:
+      - test/path.test.ts
+```
+
+# Failure Modes
+
+```yaml
+failure_modes:
+  - condition: when X happens
+    impact: Y is affected
+    handling: do Z to recover
+```
+
+# Verification
+
+```yaml
+verification:
+  - requirement_id: REQ-001
+    test_type: integration
+    target: test/path.test.ts
+```
+
+# Testing Strategy
+(Keep the quality bar from this AGENTS.md section.)
+
+# Open Questions
 - [ ] Unresolved design decisions
 - [ ] Alternatives considered but not yet decided
 - [ ] Dependencies on external teams/systems
 
-## Migration
+# Migration
 How existing data/users transition
 
-## References (optional)
+# References (optional)
 - Plan file: `plan.md` or `codex-plan.md` (if originated from a planning session)
 - AGENTS.md section: Link to relevant DOCTRINE rules
-```
+````
 
 ### Linking Convention
 
@@ -900,6 +916,8 @@ tx spec status --doc auth-flow
 tx spec complete --doc auth-flow --by <human>
 ```
 
+`tx doc add prd auth-flow --title "Auth Flow"` creates a markdown-first spec at `specs/prd/auth-flow.md` with frontmatter.
+
 ### Core Commands
 
 | Command | Purpose |
@@ -912,7 +930,7 @@ tx spec complete --doc auth-flow --by <human>
 | `tx group-context set <id> <context>` | Attach shared task-group context for related tasks |
 | `tx group-context clear <id>` | Clear task-group context from a task |
 | `tx memory context <id>` | Get relevant memory + history |
-| `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or YAML path) |
+| `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or markdown path) |
 
 ### Bounded Autonomy
 
@@ -1020,25 +1038,34 @@ If related tasks share rollout/migration notes, set them once via `tx group-cont
 
 ## EARS-First Requirements
 
-- For new PRDs, prefer `ears_requirements` over plain `requirements`.
-- Use deterministic IDs in the form `EARS-<AREA>-NNN` (example: `EARS-API-001`).
-- Use valid patterns only: `ubiquitous`, `event_driven`, `state_driven`, `optional`, `unwanted`, `complex`.
-- Run `tx doc lint-ears <doc-name-or-yaml-path>` before implementation and before review.
+- For new PRDs, define EARS in an embedded YAML block under `# Requirements`:
+  ```yaml
+  ears_requirements:
+    - id: REQ-API-001
+      kind: ubiquitous
+      statement: the system shall ...
+      priority: must
+  ```
+- Use deterministic IDs in the form `REQ-<AREA>-NNN` (example: `REQ-API-001`).
+- Use valid patterns only: `ubiquitous`, `event-driven`, `state-driven`, `optional`, `unwanted`, `complex`.
+- Run `tx doc lint-ears <doc-name-or-markdown-path>` before implementation and before review.
+- Example: `tx doc lint-ears specs/prd/auth-flow.md`
 - Keep legacy `requirements` only for backward compatibility or migration.
 
-## Documentation Structure (4-Tier Convention)
+## Documentation Structure (Markdown Spec Types)
 
-| Tier | Directory | Prefix | Focus |
-|------|-----------|--------|-------|
-| Requirements | `specs/requirements/` | `REQ-NNN` | Use-cases and behavior |
-| PRD | `specs/prd/` | `PRD-NNN` | Scope and acceptance criteria |
-| Design Doc | `specs/design/` | `DD-NNN` | Implementation design |
-| System Design | `specs/system-design/` | `SD-NNN` | Shared architecture constraints |
+| `spec_type` | Directory | File Pattern | Focus |
+|-------------|-----------|--------------|-------|
+| `prd` | `specs/prd/` | `<name>.md` | Product intent (what and why) |
+| `design` | `specs/design/` | `<name>.md` | System behavior (how) |
+| `overview` | `specs/` | `<name>.md` | Architecture map (non-normative) |
+| `runbook` | `specs/` | `<name>.md` | Operational procedures |
+| `decision` | `specs/` | `<name>.md` | Architectural decisions (ADRs) |
 
-- `tx doc` currently scaffolds `overview`, `prd`, and `design` docs; REQ/SD are manual markdown conventions.
-- Create docs for non-trivial features and plans; formalize behavior, scope, design, and SD when cross-cutting.
+- `tx doc` markdown-first docs are canonical `.md` files with frontmatter and embedded YAML blocks.
+- Create docs for non-trivial features and plans; formalize product intent, design, and operational/decision context when needed.
 - Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
-- Link docs as a chain: `REQ -> PRD -> DD`, and include `SD` when constraints span multiple features.
+- Link docs with frontmatter references (`depends_on`, `supersedes`, `implements`) to preserve graph structure.
 
 ## Testing + OTEL Quality Bar
 
@@ -1050,10 +1077,10 @@ If related tasks share rollout/migration notes, set them once via `tx group-cont
 
 ## Design Doc Testing Strategy Quality Bar
 
-For `specs/design/DD-*.md`, the `## Testing Strategy` section must be concrete and testable.
+For design specs (`spec_type: design`, usually under `specs/design/*.md`), the `## Testing Strategy` section must be concrete and testable.
 
 - Include requirement-to-test traceability (every requirement maps to one or more tests).
-- When PRDs use EARS, map each `EARS-*` ID to one or more tests in the traceability matrix.
+- When PRDs use EARS blocks, map each `REQ-*` ID to one or more tests in the traceability matrix.
 - Include at least 8 numbered integration scenarios with setup, action, and assertions.
 - Include failure-path testing (timeouts, malformed input, partial failures, retries/idempotency where relevant).
 - Include OTEL/non-OTEL behavior assertions when observability paths are touched.
@@ -1070,7 +1097,7 @@ Write ONLY the "Testing Strategy" section for <DD-NNN>.
 2) Include Unit, Integration, Edge Cases, Failure Injection, Performance.
 3) Integration tests must use getSharedTestLayer() and fixtureId(name).
 4) Provide at least 8 numbered integration scenarios with Setup / Action / Assert.
-5) If the PRD uses EARS, include EARS requirement IDs in traceability rows.
+5) If the PRD uses EARS, include `REQ-*` requirement IDs in traceability rows.
 6) If telemetry is in scope, include noop/configured/exporter-failure assertions.
 7) Use specific files, inputs, and expected outcomes; no vague statements.
 ```
