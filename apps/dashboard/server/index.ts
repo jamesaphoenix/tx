@@ -1092,35 +1092,60 @@ app.get("/api/tasks", (c) => {
     const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
     const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
     const search = c.req.query("search")
+    const labelIdRaw = c.req.query("labelId")
+    const parentId = c.req.query("parentId")?.trim()
+    let labelId: number | null = null
+
+    if (labelIdRaw !== undefined) {
+      const parsedLabelId = parseInt(labelIdRaw, 10)
+      if (Number.isNaN(parsedLabelId)) {
+        return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
+      }
+      labelId = parsedLabelId
+    }
 
     // Build WHERE clauses
     const conditions: string[] = []
     const params: (string | number)[] = []
+    const joins: string[] = []
+
+    if (labelId !== null) {
+      joins.push("JOIN task_label_assignments tla ON tla.task_id = tasks.id")
+      conditions.push("tla.label_id = ?")
+      params.push(labelId)
+    }
 
     if (statusFilter?.length) {
-      conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
+      conditions.push(`tasks.status IN (${statusFilter.map(() => "?").join(",")})`)
       params.push(...statusFilter)
     }
 
     if (search) {
       const searchPattern = `%${escapeLikePattern(search)}%`
-      conditions.push("(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')")
+      conditions.push("(tasks.title LIKE ? ESCAPE '\\' OR tasks.description LIKE ? ESCAPE '\\')")
       params.push(searchPattern, searchPattern)
+    }
+
+    if (parentId) {
+      conditions.push("tasks.parent_id = ?")
+      params.push(parentId)
     }
 
     if (cursor) {
       const { score, id } = parseTaskCursor(cursor)
-      conditions.push("(score < ? OR (score = ? AND id > ?))")
+      conditions.push("(tasks.score < ? OR (tasks.score = ? AND tasks.id > ?))")
       params.push(score, score, id)
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+    const joinClause = joins.length ? joins.join(" ") : ""
 
     // Fetch limit + 1 to check hasMore
     const sql = `
-      SELECT * FROM tasks
+      SELECT tasks.* FROM tasks
+      ${joinClause}
       ${whereClause}
-      ORDER BY score DESC, id ASC
+      ORDER BY tasks.score DESC, tasks.id ASC
       LIMIT ?
     `
     params.push(limit + 1)
@@ -1136,7 +1161,9 @@ app.get("/api/tasks", (c) => {
     })
     const countParams = cursor ? params.slice(0, -4) : params.slice(0, -1) // Remove limit and cursor params
     const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
-    const total = (db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
+    const total = (
+      db.prepare(`SELECT COUNT(*) as count FROM tasks ${joinClause} ${countWhereClause}`).get(...countParams) as { count: number }
+    ).count
 
     const dependencySnapshot = buildDependencySnapshot(db)
 
@@ -1144,7 +1171,13 @@ app.get("/api/tasks", (c) => {
     const enriched = enrichTasksWithDeps(db, tasks, dependencySnapshot)
 
     // Summary (from all tasks matching filter, not just current page)
-    const summaryRows = db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
+    const summaryRows = db.prepare(`
+      SELECT tasks.status as status, COUNT(*) as count
+      FROM tasks
+      ${joinClause}
+      ${countWhereClause}
+      GROUP BY tasks.status
+    `).all(...countParams) as Array<{ status: string; count: number }>
     const byStatus = summaryRows.reduce((acc, r) => {
       acc[r.status] = r.count
       return acc
