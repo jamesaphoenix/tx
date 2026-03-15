@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 
 export type DashboardDefaultTaskAssigmentType = "human" | "agent"
+export type DashboardDefaultTaskView = "list" | "kanban"
 export type GuardMode = "advisory" | "enforce"
 
 export type TxConfig = {
@@ -13,13 +14,17 @@ export type TxConfig = {
   spec: { testPatterns: string[] }
   memory: { defaultDir: string }
   cycles: { scanPrompt: string | null; agents: number; model: string }
-  dashboard: { defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType }
+  dashboard: {
+    defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
+    defaultTaskView: DashboardDefaultTaskView
+  }
   pins: { targetFiles: string[]; blockAgentDoneWhenTaskIdPresent: boolean }
   guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
   verify: { timeout: number; defaultSchema: string | null }
   reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }};
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
+export const DASHBOARD_DEFAULT_TASK_VIEW_KEY = "default_task_view"
 const DASHBOARD_SECTION = "dashboard"
 const DOCS_SECTION = "docs"
 const SPEC_SECTION = "spec"
@@ -52,7 +57,7 @@ const DEFAULT_CONFIG: TxConfig = {
   },
   memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
-  dashboard: { defaultTaskAssigmentType: "human" },
+  dashboard: { defaultTaskAssigmentType: "human", defaultTaskView: "list" },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
   guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
   verify: { timeout: 300, defaultSchema: null },
@@ -64,10 +69,22 @@ const isDashboardDefaultTaskAssigmentType = (
 ): value is DashboardDefaultTaskAssigmentType =>
   value === "human" || value === "agent"
 
+const isDashboardDefaultTaskView = (
+  value: string | null
+): value is DashboardDefaultTaskView =>
+  value === "list" || value === "kanban"
+
 const parseTaskAssigmentTypeOrDefault = (value: string | null): DashboardDefaultTaskAssigmentType =>
   isDashboardDefaultTaskAssigmentType(value)
     ? value
     : DEFAULT_CONFIG.dashboard.defaultTaskAssigmentType
+
+const parseDashboardDefaultTaskViewOrDefault = (
+  value: string | null
+): DashboardDefaultTaskView =>
+  isDashboardDefaultTaskView(value)
+    ? value
+    : DEFAULT_CONFIG.dashboard.defaultTaskView
 
 const parseBooleanOrDefault = (value: string | null, fallback: boolean): boolean => {
   if (value === "true") return true
@@ -96,6 +113,11 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       raw,
       DASHBOARD_SECTION,
       DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY
+    )
+    const defaultTaskView = extractTomlValue(
+      raw,
+      DASHBOARD_SECTION,
+      DASHBOARD_DEFAULT_TASK_VIEW_KEY
     )
     const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
     const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
@@ -136,6 +158,7 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       },
       dashboard: {
         defaultTaskAssigmentType: parseTaskAssigmentTypeOrDefault(defaultTaskAssigmentType),
+        defaultTaskView: parseDashboardDefaultTaskViewOrDefault(defaultTaskView),
       },
       pins: {
         targetFiles: pinsTargetFiles
@@ -179,7 +202,10 @@ export const writeDashboardDefaultTaskAssigmentType = (
   const configDir = resolve(cwd, ".tx")
   const configPath = resolve(configDir, "config.toml")
   const current = readTxConfig(cwd)
-  const nextConfig: TxConfig = { ...current, dashboard: { defaultTaskAssigmentType: value } }
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: { ...current.dashboard, defaultTaskAssigmentType: value },
+  }
 
   mkdirSync(dirname(configPath), { recursive: true })
   const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
@@ -187,6 +213,35 @@ export const writeDashboardDefaultTaskAssigmentType = (
     existingRaw,
     DASHBOARD_SECTION,
     DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
+    `"${value}"`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Patch the dashboard default task view in .tx/config.toml.
+ * Preserves unrelated sections and comments.
+ */
+export const writeDashboardDefaultTaskView = (
+  value: DashboardDefaultTaskView,
+  cwd: string = process.cwd()
+): TxConfig => {
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: { ...current.dashboard, defaultTaskView: value },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_SECTION,
+    DASHBOARD_DEFAULT_TASK_VIEW_KEY,
     `"${value}"`
   )
   writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
@@ -428,6 +483,11 @@ model = "claude-opus-4-6"
 # "agent" = tasks are assigned to agents by default.
 # Can be toggled per-task with Cmd+K in the dashboard.
 default_task_assigment_type = "human"
+
+# Default task view when opening the Tasks tab in the dashboard.
+# "list" = table/list layout.
+# "kanban" = status-column board layout.
+default_task_view = "list"
 
 # ─── Pins ───────────────────────────────────────────────────────────
 # Context pins — persistent named content blocks that are injected

@@ -7,6 +7,7 @@ import {
   type Run,
   type PaginatedRunsResponse,
   type TaskAssigneeType,
+  type DashboardDefaultTaskView,
   type TaskLabel
 } from "./api/client"
 import { TasksPage } from "./components/tasks"
@@ -660,24 +661,34 @@ function SettingsIcon() {
 
 function SettingsPage({
   defaultTaskAssigmentType,
+  defaultTaskView,
   isSaving,
   errorMessage,
   onBack,
-  onSave,
+  onSaveDefaultTaskAssigmentType,
+  onSaveDefaultTaskView,
 }: {
   defaultTaskAssigmentType: TaskAssigneeType
+  defaultTaskView: DashboardDefaultTaskView
   isSaving: boolean
   errorMessage: string | null
   onBack: () => void
-  onSave: (nextType: TaskAssigneeType) => void
+  onSaveDefaultTaskAssigmentType: (nextType: TaskAssigneeType) => void
+  onSaveDefaultTaskView: (nextView: DashboardDefaultTaskView) => void
 }) {
   const [draftType, setDraftType] = useState<TaskAssigneeType>(defaultTaskAssigmentType)
+  const [draftTaskView, setDraftTaskView] = useState<DashboardDefaultTaskView>(defaultTaskView)
 
   useEffect(() => {
     setDraftType(defaultTaskAssigmentType)
   }, [defaultTaskAssigmentType])
 
-  const hasChanges = draftType !== defaultTaskAssigmentType
+  useEffect(() => {
+    setDraftTaskView(defaultTaskView)
+  }, [defaultTaskView])
+
+  const hasAssigmentTypeChanges = draftType !== defaultTaskAssigmentType
+  const hasDefaultTaskViewChanges = draftTaskView !== defaultTaskView
   const queryClient = useQueryClient()
   const { data: labelsData, isLoading: isLoadingLabels } = useQuery({
     queryKey: ["labels"],
@@ -844,14 +855,66 @@ function SettingsPage({
         <div className="mt-4 flex items-center gap-3">
           <button
             type="button"
-            disabled={isSaving || !hasChanges}
-            onClick={() => onSave(draftType)}
+            disabled={isSaving || !hasAssigmentTypeChanges}
+            onClick={() => onSaveDefaultTaskAssigmentType(draftType)}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? "Saving..." : "Save settings"}
           </button>
           <span className="text-xs text-gray-500">
             Current default: {defaultTaskAssigmentType}
+          </span>
+        </div>
+
+        {errorMessage && (
+          <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+            {errorMessage}
+          </p>
+        )}
+      </section>
+
+      <section className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+        <h3 className="text-sm font-semibold text-gray-200">Default Tasks View</h3>
+        <p className="mt-1 text-xs text-gray-400">
+          Applied when opening the Tasks tab unless overridden by URL query params.
+        </p>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setDraftTaskView("list")}
+            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+              draftTaskView === "list"
+                ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+            }`}
+          >
+            List
+          </button>
+          <button
+            type="button"
+            onClick={() => setDraftTaskView("kanban")}
+            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+              draftTaskView === "kanban"
+                ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+            }`}
+          >
+            Kanban
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            type="button"
+            disabled={isSaving || !hasDefaultTaskViewChanges}
+            onClick={() => onSaveDefaultTaskView(draftTaskView)}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? "Saving..." : "Save view setting"}
+          </button>
+          <span className="text-xs text-gray-500">
+            Current default: {defaultTaskView}
           </span>
         </div>
 
@@ -1085,6 +1148,8 @@ function AppContent() {
 
   const defaultTaskAssigmentType: TaskAssigneeType =
     settingsData?.dashboard.defaultTaskAssigmentType ?? "human"
+  const defaultTaskView: DashboardDefaultTaskView =
+    settingsData?.dashboard.defaultTaskView ?? "list"
 
   const saveDashboardDefaultAssigmentType = useCallback(async (nextType: TaskAssigneeType) => {
     setIsSavingSettings(true)
@@ -1093,6 +1158,23 @@ function AppContent() {
       const updated = await fetchers.updateSettings({
         dashboard: {
           defaultTaskAssigmentType: nextType,
+        },
+      })
+      queryClient.setQueryData(["settings"], updated)
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }, [queryClient])
+
+  const saveDashboardDefaultTaskView = useCallback(async (nextView: DashboardDefaultTaskView) => {
+    setIsSavingSettings(true)
+    setSettingsSaveError(null)
+    try {
+      const updated = await fetchers.updateSettings({
+        dashboard: {
+          defaultTaskView: nextView,
         },
       })
       queryClient.setQueryData(["settings"], updated)
@@ -1352,6 +1434,7 @@ function AppContent() {
           <TasksPage
             themeMode={themeMode}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
+            defaultTaskView={defaultTaskView}
             newTaskRequestNonce={newTaskRequestNonce}
           />
         ) : activeTab === "docs" ? (
@@ -1398,11 +1481,15 @@ function AppContent() {
         ) : activeTab === "settings" ? (
           <SettingsPage
             defaultTaskAssigmentType={defaultTaskAssigmentType}
+            defaultTaskView={defaultTaskView}
             isSaving={isSavingSettings}
             errorMessage={settingsSaveError}
             onBack={() => setActiveTab("tasks")}
-            onSave={(nextType) => {
+            onSaveDefaultTaskAssigmentType={(nextType) => {
               void saveDashboardDefaultAssigmentType(nextType)
+            }}
+            onSaveDefaultTaskView={(nextView) => {
+              void saveDashboardDefaultTaskView(nextView)
             }}
           />
         ) : (

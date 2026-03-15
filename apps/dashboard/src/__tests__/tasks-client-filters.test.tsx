@@ -74,10 +74,10 @@ function parseSearch(requestUrl: string): string {
 function setupApi(tasks: TaskWithDeps[], labels: TaskLabel[] = []) {
   server.use(
     http.get("/api/settings", () =>
-      HttpResponse.json({ dashboard: { defaultTaskAssigmentType: "human" } })
+      HttpResponse.json({ dashboard: { defaultTaskAssigmentType: "human", defaultTaskView: "list" } })
     ),
     http.patch("/api/settings", () =>
-      HttpResponse.json({ dashboard: { defaultTaskAssigmentType: "human" } })
+      HttpResponse.json({ dashboard: { defaultTaskAssigmentType: "human", defaultTaskView: "list" } })
     ),
     http.get("/api/stats", () =>
       HttpResponse.json({ tasks: 0, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })

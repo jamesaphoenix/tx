@@ -17,6 +17,7 @@ export interface TaskLabel {
 }
 
 export type TaskAssigneeType = "human" | "agent"
+export type DashboardDefaultTaskView = "list" | "kanban"
 
 export interface TaskRow {
   id: string
@@ -39,6 +40,14 @@ export interface TaskRow {
 export interface DashboardSettings {
   dashboard: {
     defaultTaskAssigmentType: TaskAssigneeType
+    defaultTaskView: DashboardDefaultTaskView
+  }
+}
+
+export interface DashboardSettingsPatch {
+  dashboard?: {
+    defaultTaskAssigmentType?: TaskAssigneeType
+    defaultTaskView?: DashboardDefaultTaskView
   }
 }
 
@@ -277,7 +286,7 @@ export const api = {
       catch: (e) => new ApiError({ message: String(e) }),
     }),
   getSettings: () => fetchJson<DashboardSettings>("/api/settings"),
-  updateSettings: (payload: DashboardSettings) =>
+  updateSettings: (payload: DashboardSettingsPatch) =>
     Effect.tryPromise({
       try: async () => {
         const res = await fetch("/api/settings", {
@@ -493,7 +502,7 @@ export const fetchers = {
   updateTask: (id: string, payload: TaskMutationPayload) =>
     Effect.runPromise(api.updateTask(id, payload)),
   settings: () => Effect.runPromise(api.getSettings()),
-  updateSettings: (payload: DashboardSettings) => Effect.runPromise(api.updateSettings(payload)),
+  updateSettings: (payload: DashboardSettingsPatch) => Effect.runPromise(api.updateSettings(payload)),
   labels: () => Effect.runPromise(api.getLabels()),
   createLabel: (payload: { name: string; color?: string }) => Effect.runPromise(api.createLabel(payload)),
   updateLabel: (labelId: number, payload: { name?: string; color?: string }) =>

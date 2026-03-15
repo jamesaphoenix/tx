@@ -528,9 +528,12 @@ export {
 export {
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
+  writeDashboardDefaultTaskView,
   scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
-  type DashboardDefaultTaskAssigmentType
+  DASHBOARD_DEFAULT_TASK_VIEW_KEY,
+  type DashboardDefaultTaskAssigmentType,
+  type DashboardDefaultTaskView,
 } from "./utils/toml-config.js"
 export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
 export {

@@ -71,7 +71,9 @@ function dispatchKeyCombo(key: string, meta = false, ctrl = false, shift = false
 function setupEmptyApiMocks() {
   server.use(
     http.get('/api/settings', () =>
-      HttpResponse.json({ dashboard: { defaultTaskAssigmentType: 'human' } })
+      HttpResponse.json({
+        dashboard: { defaultTaskAssigmentType: 'human', defaultTaskView: 'list' },
+      })
     ),
     http.get('/api/stats', () =>
       HttpResponse.json({ tasks: 0, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })

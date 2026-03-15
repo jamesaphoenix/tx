@@ -28,9 +28,12 @@ const txDir = resolve(dbDir)
 const claudeDir = resolve(homedir(), ".claude")
 const VALID_TASK_STATUSES = new Set<string>(TASK_STATUSES)
 type DashboardDefaultTaskAssigmentType = "human" | "agent"
+type DashboardDefaultTaskView = "list" | "kanban"
 const VALID_ASSIGNEE_TYPES = new Set<DashboardDefaultTaskAssigmentType>(["human", "agent"])
+const VALID_TASK_VIEWS = new Set<DashboardDefaultTaskView>(["list", "kanban"])
 const DASHBOARD_CONFIG_SECTION = "dashboard"
 const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
+const DASHBOARD_DEFAULT_TASK_VIEW_KEY = "default_task_view"
 const DEFAULT_LABEL_COLORS = [
   "#2563eb", // blue
   "#0ea5e9", // sky
@@ -420,12 +423,14 @@ interface TaskUpdatePayload {
 interface SettingsResponse {
   dashboard: {
     defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
+    defaultTaskView: DashboardDefaultTaskView
   }
 }
 
 interface SettingsPatchPayload {
   dashboard?: {
     defaultTaskAssigmentType?: DashboardDefaultTaskAssigmentType
+    defaultTaskView?: DashboardDefaultTaskView
   }
 }
 
@@ -512,6 +517,12 @@ function isAssigneeType(
   return value === undefined || value === null || VALID_ASSIGNEE_TYPES.has(value as DashboardDefaultTaskAssigmentType)
 }
 
+function isDashboardDefaultTaskView(
+  value: string | null | undefined
+): value is DashboardDefaultTaskView {
+  return value !== undefined && value !== null && VALID_TASK_VIEWS.has(value as DashboardDefaultTaskView)
+}
+
 function normalizeAssigneeType(
   value: string | null | undefined
 ): DashboardDefaultTaskAssigmentType | null {
@@ -522,6 +533,7 @@ function toSettingsResponse(): SettingsResponse {
   return {
     dashboard: {
       defaultTaskAssigmentType: readDashboardDefaultTaskAssigmentType(process.cwd()),
+      defaultTaskView: readDashboardDefaultTaskView(process.cwd()),
     },
   }
 }
@@ -571,6 +583,27 @@ function readDashboardDefaultTaskAssigmentType(
   }
 }
 
+function readDashboardDefaultTaskView(cwd: string): DashboardDefaultTaskView {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  if (!existsSync(configPath)) {
+    return "list"
+  }
+  try {
+    const raw = readFileSync(configPath, "utf8")
+    const configuredValue = extractTomlValue(
+      raw,
+      DASHBOARD_CONFIG_SECTION,
+      DASHBOARD_DEFAULT_TASK_VIEW_KEY
+    )
+    if (configuredValue === "list" || configuredValue === "kanban") {
+      return configuredValue
+    }
+    return "list"
+  } catch {
+    return "list"
+  }
+}
+
 function writeDashboardDefaultTaskAssigmentType(
   value: DashboardDefaultTaskAssigmentType,
   cwd: string
@@ -581,6 +614,22 @@ function writeDashboardDefaultTaskAssigmentType(
     existingRaw,
     DASHBOARD_CONFIG_SECTION,
     DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
+    `"${value}"`
+  )
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeFileSync(configPath, patched.endsWith("\n") ? patched : `${patched}\n`, "utf8")
+}
+
+function writeDashboardDefaultTaskView(
+  value: DashboardDefaultTaskView,
+  cwd: string
+): void {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const patched = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CONFIG_SECTION,
+    DASHBOARD_DEFAULT_TASK_VIEW_KEY,
     `"${value}"`
   )
   mkdirSync(dirname(configPath), { recursive: true })
@@ -1009,12 +1058,26 @@ app.patch("/api/settings", async (c) => {
   try {
     const payload = await c.req.json<SettingsPatchPayload>()
     const nextType = payload?.dashboard?.defaultTaskAssigmentType
+    const nextTaskView = payload?.dashboard?.defaultTaskView
 
-    if (!isAssigneeType(nextType) || nextType === null) {
+    if (nextType === undefined && nextTaskView === undefined) {
+      return c.json({ error: "At least one dashboard setting must be provided" }, 400)
+    }
+
+    if (nextType !== undefined && (!isAssigneeType(nextType) || nextType === null)) {
       return c.json({ error: "dashboard.defaultTaskAssigmentType must be \"human\" or \"agent\"" }, 400)
     }
 
-    writeDashboardDefaultTaskAssigmentType(nextType, process.cwd())
+    if (nextTaskView !== undefined && !isDashboardDefaultTaskView(nextTaskView)) {
+      return c.json({ error: "dashboard.defaultTaskView must be \"list\" or \"kanban\"" }, 400)
+    }
+
+    if (nextType !== undefined) {
+      writeDashboardDefaultTaskAssigmentType(nextType, process.cwd())
+    }
+    if (nextTaskView !== undefined) {
+      writeDashboardDefaultTaskView(nextTaskView, process.cwd())
+    }
     return c.json(toSettingsResponse())
   } catch (e) {
     return c.json({ error: String(e) }, 500)

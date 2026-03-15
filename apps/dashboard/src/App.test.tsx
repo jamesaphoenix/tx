@@ -87,16 +87,27 @@ function mockRunsEndpoint(runs: Run[]) {
 }
 
 describe('App', () => {
-  const settingsPatchPayloads: Array<{ dashboard?: { defaultTaskAssigmentType?: string } }> = []
+  const settingsPatchPayloads: Array<{
+    dashboard?: { defaultTaskAssigmentType?: string; defaultTaskView?: string }
+  }> = []
 
   beforeEach(() => {
     settingsPatchPayloads.length = 0
     server.use(
-      http.get('/api/settings', () => HttpResponse.json({ dashboard: { defaultTaskAssigmentType: 'human' } })),
+      http.get('/api/settings', () => HttpResponse.json({
+        dashboard: { defaultTaskAssigmentType: 'human', defaultTaskView: 'list' },
+      })),
       http.patch('/api/settings', async ({ request }) => {
-        const payload = await request.json() as { dashboard?: { defaultTaskAssigmentType?: string } }
+        const payload = await request.json() as {
+          dashboard?: { defaultTaskAssigmentType?: string; defaultTaskView?: string }
+        }
         settingsPatchPayloads.push(payload)
-        return HttpResponse.json({ dashboard: { defaultTaskAssigmentType: payload.dashboard?.defaultTaskAssigmentType ?? 'human' } })
+        return HttpResponse.json({
+          dashboard: {
+            defaultTaskAssigmentType: payload.dashboard?.defaultTaskAssigmentType ?? 'human',
+            defaultTaskView: payload.dashboard?.defaultTaskView ?? 'list',
+          },
+        })
       }),
       http.get('/api/stats', () => HttpResponse.json({ tasks: 0, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })),
       http.get('/api/ralph', () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
