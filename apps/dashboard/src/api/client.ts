@@ -55,6 +55,7 @@ export interface DashboardSettingsPatch {
   dashboard?: {
     defaultTaskAssigmentType?: TaskAssigneeType
     defaultTaskView?: DashboardDefaultTaskView
+    cycles?: CycleSettings
   }
 }
 
