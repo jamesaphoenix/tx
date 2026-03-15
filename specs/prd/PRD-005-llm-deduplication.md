@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-005-llm-deduplication"
+title: "PRD-005: LLM-Powered Deduplication"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-005: LLM-Powered Deduplication
 
 **Status**: Draft

@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-006-llm-integration"
+title: "DD-006: LLM Integration (Deduplication + Compaction)"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-006: LLM Integration (Deduplication + Compaction)
 
 **Status**: Draft

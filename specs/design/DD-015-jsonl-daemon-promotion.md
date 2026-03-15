@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-015-jsonl-daemon-promotion"
+title: "DD-015: JSONL Daemon and Promotion Pipeline - Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-015: JSONL Daemon and Promotion Pipeline - Implementation
 
 ## Overview

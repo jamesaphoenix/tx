@@ -80,7 +80,7 @@ describe("EARS requirements integration", () => {
 
   it("creates and renders a PRD with EARS requirements", async () => {
     const name = `prd-${fixtureId("ears-create").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "EARS PRD"',
@@ -114,7 +114,7 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "EARS PRD",
-          yamlContent,
+          content,
         })
         yield* svc.render(name)
       }).pipe(Effect.provide(shared.layer))
@@ -130,7 +130,7 @@ describe("EARS requirements integration", () => {
 
   it("rejects PRD YAML with missing required EARS trigger for event_driven", async () => {
     const name = `prd-${fixtureId("ears-missing-trigger").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Invalid EARS PRD"',
@@ -151,7 +151,7 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Invalid EARS PRD",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
@@ -160,7 +160,7 @@ describe("EARS requirements integration", () => {
 
   it("rejects duplicate EARS IDs", async () => {
     const name = `prd-${fixtureId("ears-duplicate-id").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Duplicate EARS IDs"',
@@ -185,7 +185,7 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Duplicate EARS IDs",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
@@ -194,7 +194,7 @@ describe("EARS requirements integration", () => {
 
   it("rejects non-array ears_requirements in DocService validation", async () => {
     const name = `prd-${fixtureId("ears-non-array").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Invalid non-array EARS"',
@@ -215,7 +215,7 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Invalid non-array EARS",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
@@ -224,7 +224,7 @@ describe("EARS requirements integration", () => {
 
   it("requires EARS when legacy requirements are present by default", async () => {
     const name = `prd-${fixtureId("ears-required-default").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Legacy PRD"',
@@ -245,7 +245,7 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Legacy PRD",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
@@ -257,7 +257,7 @@ describe("EARS requirements integration", () => {
     writeDocsConfig(tempDir, false)
 
     const name = `prd-${fixtureId("ears-backward-compatible").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Legacy PRD"',
@@ -278,7 +278,7 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Legacy PRD",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
@@ -287,7 +287,7 @@ describe("EARS requirements integration", () => {
 
   it("supports mixed requirements and ears_requirements in the same PRD", async () => {
     const name = `prd-${fixtureId("ears-mixed").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Mixed PRD"',
@@ -311,7 +311,7 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Mixed PRD",
-          yamlContent,
+          content,
         })
         yield* svc.render(name)
       }).pipe(Effect.provide(shared.layer))
@@ -361,7 +361,7 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Update PRD",
-          yamlContent: initialYaml,
+          content: initialYaml,
         })
         yield* svc.update(name, updatedYaml)
         yield* svc.render(name)
@@ -408,7 +408,7 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Update Invalid PRD",
-          yamlContent: initialYaml,
+          content: initialYaml,
         })
       }).pipe(Effect.provide(shared.layer))
     )
@@ -425,7 +425,7 @@ describe("EARS requirements integration", () => {
 
   it("escapes pipe characters in rendered EARS integration output", async () => {
     const name = `prd-${fixtureId("ears-pipe-escape").slice(3, 10)}`
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Pipe Escape PRD"',
@@ -445,7 +445,7 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Pipe Escape PRD",
-          yamlContent,
+          content,
         })
         yield* svc.render(name)
       }).pipe(Effect.provide(shared.layer))

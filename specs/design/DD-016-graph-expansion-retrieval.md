@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-016-graph-expansion-retrieval"
+title: "DD-016: Graph-Expanded Retrieval - Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-016: Graph-Expanded Retrieval - Implementation
 
 ## Overview

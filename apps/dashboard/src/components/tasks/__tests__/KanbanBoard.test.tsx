@@ -130,7 +130,7 @@ describe("KanbanBoard", () => {
       createTask({ id: "tx-active", title: "Active Task", status: "active" }),
       createTask({ id: "tx-blocked", title: "Blocked Task", status: "blocked" }),
       createTask({ id: "tx-review", title: "Review Task", status: "review" }),
-      createTask({ id: "tx-needs", title: "Needs Review Task", status: "human_needs_to_review" }),
+      createTask({ id: "tx-needs", title: "Needs Review Task", status: "needs_review" }),
     ]
     const doneTasks = [createTask({ id: "tx-done", title: "Done Task", status: "done", completedAt: "2026-02-02T00:00:00.000Z" })]
 
@@ -144,7 +144,7 @@ describe("KanbanBoard", () => {
     expect(screen.getByTestId("kanban-column-active")).toBeInTheDocument()
     expect(screen.getByTestId("kanban-column-blocked")).toBeInTheDocument()
     expect(screen.getByTestId("kanban-column-review")).toBeInTheDocument()
-    expect(screen.getByTestId("kanban-column-human_needs_to_review")).toBeInTheDocument()
+    expect(screen.getByTestId("kanban-column-needs_review")).toBeInTheDocument()
     expect(screen.getByTestId("kanban-column-done")).toBeInTheDocument()
 
     expect(within(screen.getByTestId("kanban-column-backlog")).getByText("Backlog Task")).toBeInTheDocument()

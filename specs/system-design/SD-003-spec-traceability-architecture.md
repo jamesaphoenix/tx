@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "SD-003-spec-traceability-architecture"
+title: "SD-003: Spec Traceability Architecture"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # SD-003: Spec Traceability Architecture
 
 ## Overview

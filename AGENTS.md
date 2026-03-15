@@ -438,7 +438,7 @@ pipe(
 ### Status Lifecycle
 
 ```
-backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+backlog → ready → planning → active → blocked → review → needs_review → done
 ```
 
 A task is **ready** when: status is workable AND all blockers have status `done`.

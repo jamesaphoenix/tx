@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-012-dashboard-ux"
+title: "DD-012: Dashboard UX Architecture"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-012: Dashboard UX Architecture
 
 **Status**: Draft

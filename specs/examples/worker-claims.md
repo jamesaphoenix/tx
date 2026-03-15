@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: overview
+name: "worker-claims"
+title: "Worker Claims Example"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # Worker Claims Example
 
 This example demonstrates the claim system for worker coordination.

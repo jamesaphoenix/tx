@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-007-multi-interface-integration"
+title: "PRD-007: Multi-Interface Integration"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-007: Multi-Interface Integration
 
 **Status**: Draft

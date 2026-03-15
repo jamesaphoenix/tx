@@ -78,7 +78,7 @@ describe("TasksPage", () => {
               active: 0,
               blocked: 0,
               review: 0,
-              human_needs_to_review: 0,
+              needs_review: 0,
               done: 13,
             },
           },

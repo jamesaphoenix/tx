@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-003-dependency-blocking-system"
+title: "PRD-003: Dependency & Blocking System"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-003: Dependency & Blocking System
 
 **Status**: Draft

@@ -14,7 +14,7 @@ interface StatusCounts {
   backlog?: number
   planning?: number
   review?: number
-  human_needs_to_review?: number
+  needs_review?: number
   [key: string]: number | undefined
 }
 

@@ -14,7 +14,7 @@ describe("TaskPropertySelects helpers", () => {
     expect(toHumanTaskStage("planning")).toBe("planning")
     expect(toHumanTaskStage("blocked")).toBe("blocked")
     expect(toHumanTaskStage("review")).toBe("review")
-    expect(toHumanTaskStage("human_needs_to_review")).toBe("human_needs_to_review")
+    expect(toHumanTaskStage("needs_review")).toBe("needs_review")
     expect(toHumanTaskStage("unknown_status")).toBe("backlog")
   })
 

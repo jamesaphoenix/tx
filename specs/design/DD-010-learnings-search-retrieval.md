@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-010-learnings-search-retrieval"
+title: "DD-010: Learnings Search & Retrieval"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-010: Learnings Search & Retrieval
 
 **Status**: Draft

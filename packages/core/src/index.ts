@@ -534,11 +534,20 @@ export {
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
   writeDashboardDefaultTaskView,
+  readDashboardCyclesConfig,
+  writeDashboardCycleLengthDays,
+  writeDashboardCycleStartDay,
+  writeDashboardCarryStatuses,
   scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
   DASHBOARD_DEFAULT_TASK_VIEW_KEY,
+  DASHBOARD_CYCLE_LENGTH_DAYS_KEY,
+  DASHBOARD_CYCLE_START_DAY_KEY,
+  DASHBOARD_CARRY_STATUSES_KEY,
   type DashboardDefaultTaskAssigmentType,
   type DashboardDefaultTaskView,
+  type DashboardCycleStartDay,
+  type DashboardCyclesConfig,
 } from "./utils/toml-config.js"
 export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
 export {

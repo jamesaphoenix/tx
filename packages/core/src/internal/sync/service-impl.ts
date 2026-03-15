@@ -67,6 +67,8 @@ const DEFAULT_SYNC_WATERMARK_KEY = "last_import_at";
 const FULL_EXPORT_LIMIT = 1_000_000_000;
 const MAX_SYNC_JSONL_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_STREAM_IMPORT_EVENTS = 250_000;
+const LEGACY_NEEDS_REVIEW_STATUS = "human_needs_to_review";
+const CURRENT_NEEDS_REVIEW_STATUS = "needs_review";
 /**
  * Compute a content hash for cross-machine dedup.
  * Entities with auto-increment IDs use this to identify duplicates.
@@ -159,6 +161,22 @@ const compareSyncOrder = (a, b) => {
     if (t !== 0)
         return t;
     return (a.eventId ?? "").localeCompare(b.eventId ?? "");
+};
+const normalizeLegacyTaskStatusInSyncOp = (value) => {
+    if (!value || typeof value !== "object")
+        return value;
+    const maybeOp = value;
+    if (maybeOp.op !== "upsert" || !maybeOp.data || typeof maybeOp.data !== "object")
+        return value;
+    if (maybeOp.data.status !== LEGACY_NEEDS_REVIEW_STATUS)
+        return value;
+    return {
+        ...maybeOp,
+        data: {
+            ...maybeOp.data,
+            status: CURRENT_NEEDS_REVIEW_STATUS
+        }
+    };
 };
 const toSyncEvent = (op, streamId, seq) => {
     const type = opToSyncEventType(op);
@@ -1136,8 +1154,9 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     try: () => JSON.parse(line),
                     catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
                 });
+                const normalized = normalizeLegacyTaskStatusInSyncOp(parsed);
                 const op = yield* Effect.try({
-                    try: () => Schema.decodeUnknownSync(TaskSyncOperationSchema)(parsed),
+                    try: () => Schema.decodeUnknownSync(TaskSyncOperationSchema)(normalized),
                     catch: (cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` })
                 });
                 ops.push(op);

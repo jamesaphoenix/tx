@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-011-claude-code-hooks"
+title: "DD-011: Claude Code Hooks Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-011: Claude Code Hooks Implementation
 
 **Status**: Draft

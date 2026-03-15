@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-022-agent-outbox"
+title: "PRD-022: Agent Outbox Messaging"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-022: Agent Outbox Messaging
 
 **Status**: Implemented

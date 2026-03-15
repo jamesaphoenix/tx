@@ -69,7 +69,7 @@ const STATUS_COLORS: Record<TaskStatusValue, string> = {
   active: "bg-yellow-500",
   blocked: "bg-red-500",
   review: "bg-orange-500",
-  human_needs_to_review: "bg-pink-500",
+  needs_review: "bg-pink-500",
   done: "bg-green-500",
 }
 
@@ -239,7 +239,7 @@ function parseTaskStatuses(value: string | null): TaskStatusValue[] {
 
 function parseLegacyBucketStatuses(value: string | null): TaskStatusValue[] {
   if (value === "backlog") return ["backlog"]
-  if (value === "in_progress") return ["ready", "planning", "active", "blocked", "review", "human_needs_to_review"]
+  if (value === "in_progress") return ["ready", "planning", "active", "blocked", "review", "needs_review"]
   if (value === "done") return ["done"]
   return []
 }
@@ -729,7 +729,7 @@ export function TasksPage({
 
   const cycleTaskStatusStage = useCallback(async () => {
     if (!selectedTask) return
-    const order: HumanTaskStage[] = ["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]
+    const order: HumanTaskStage[] = ["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]
     const current = toHumanTaskStage(selectedTask.status)
     const next = order[(order.indexOf(current) + 1) % order.length]!
     await changeTaskStatusStage(next, selectedTask.id)

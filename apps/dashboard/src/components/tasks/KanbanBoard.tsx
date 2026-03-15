@@ -18,7 +18,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   active: "Active",
   blocked: "Blocked",
   review: "Review",
-  human_needs_to_review: "Needs Review",
+  needs_review: "Needs Review",
   done: "Done",
 }
 
@@ -29,7 +29,7 @@ const STATUS_DOT_CLASS: Record<TaskStatus, string> = {
   active: "bg-yellow-500",
   blocked: "bg-red-500",
   review: "bg-orange-500",
-  human_needs_to_review: "bg-pink-500",
+  needs_review: "bg-pink-500",
   done: "bg-green-500",
 }
 
@@ -158,7 +158,7 @@ export function KanbanBoard({
       active: [],
       blocked: [],
       review: [],
-      human_needs_to_review: [],
+      needs_review: [],
       done: [],
     }
 

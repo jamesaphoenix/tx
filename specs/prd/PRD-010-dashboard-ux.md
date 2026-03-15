@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-010-dashboard-ux"
+title: "PRD-010: Dashboard UX Improvements"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-010: Dashboard UX Improvements
 
 **Status**: Draft

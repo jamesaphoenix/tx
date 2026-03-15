@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-008-observability-opentelemetry"
+title: "PRD-008: Observability & OpenTelemetry"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-008: Observability & OpenTelemetry
 
 **Status**: Draft

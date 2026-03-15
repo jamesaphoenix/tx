@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-019-execution-tracing"
+title: "PRD-019: Execution Tracing System"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-019: Execution Tracing System
 
 ## Problem

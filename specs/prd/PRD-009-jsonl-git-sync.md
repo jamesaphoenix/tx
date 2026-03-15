@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-009-jsonl-git-sync"
+title: "PRD-009: JSONL Git-Backed Sync"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-009: JSONL Git-Backed Sync
 
 ## Problem Statement

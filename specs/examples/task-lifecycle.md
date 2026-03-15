@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: overview
+name: "task-lifecycle"
+title: "Task Lifecycle Example"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # Task Lifecycle Example
 
 This example demonstrates the complete task lifecycle from creation to completion.

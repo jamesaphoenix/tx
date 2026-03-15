@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: overview
+name: "parallel-workers"
+title: "Parallel Workers Example"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # Parallel Workers Example
 
 This example demonstrates how multiple workers coordinate using tx.

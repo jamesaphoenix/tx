@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-018-worker-orchestration"
+title: "PRD-018: Worker Coordination Primitives"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-018: Worker Coordination Primitives
 
 **Status**: Draft

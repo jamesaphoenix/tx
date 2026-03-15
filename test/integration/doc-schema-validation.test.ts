@@ -59,7 +59,7 @@ describe("YAML content schema validation integration", () => {
     kind: DocKind
     name: string
     title: string
-    yamlContent: string
+    content: string
   }) =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -90,7 +90,7 @@ describe("YAML content schema validation integration", () => {
 
   it("1. valid PRD with all required fields succeeds", async () => {
     const name = shortName("doc-schema-prd-valid", "prd")
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Valid PRD"',
@@ -114,7 +114,7 @@ describe("YAML content schema validation integration", () => {
       kind: "prd",
       name,
       title: "Valid PRD",
-      yamlContent,
+      content,
     })
 
     expect(doc.kind).toBe("prd")
@@ -123,7 +123,7 @@ describe("YAML content schema validation integration", () => {
 
   it("2. PRD missing problem fails with problem error", async () => {
     const name = shortName("doc-schema-prd-missing-problem", "prd")
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Missing Problem PRD"',
@@ -145,14 +145,14 @@ describe("YAML content schema validation integration", () => {
         kind: "prd",
         name,
         title: "Missing Problem PRD",
-        yamlContent,
+        content,
       })
     ).rejects.toThrow(/problem/i)
   })
 
   it("3. PRD with deprecated requirements passes and keeps deprecation warning path", async () => {
     const name = shortName("doc-schema-prd-deprecated", "prd")
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Deprecated Requirements PRD"',
@@ -179,7 +179,7 @@ describe("YAML content schema validation integration", () => {
       kind: "prd",
       name,
       title: "Deprecated Requirements PRD",
-      yamlContent,
+      content,
     })
     expect(doc.kind).toBe("prd")
 
@@ -206,7 +206,7 @@ describe("YAML content schema validation integration", () => {
 
   it("4. valid design doc with required fields succeeds", async () => {
     const name = shortName("doc-schema-design-valid", "design")
-    const yamlContent = [
+    const content = [
       "kind: design",
       `name: ${name}`,
       'title: "Valid Design"',
@@ -227,7 +227,7 @@ describe("YAML content schema validation integration", () => {
       kind: "design",
       name,
       title: "Valid Design",
-      yamlContent,
+      content,
     })
 
     expect(doc.kind).toBe("design")
@@ -236,7 +236,7 @@ describe("YAML content schema validation integration", () => {
 
   it("5. design doc missing architecture fails", async () => {
     const name = shortName("doc-schema-design-missing-architecture", "design")
-    const yamlContent = [
+    const content = [
       "kind: design",
       `name: ${name}`,
       'title: "Missing Architecture Design"',
@@ -255,7 +255,7 @@ describe("YAML content schema validation integration", () => {
         kind: "design",
         name,
         title: "Missing Architecture Design",
-        yamlContent,
+        content,
       })
     ).rejects.toThrow(/architecture/i)
   })
@@ -266,7 +266,7 @@ describe("YAML content schema validation integration", () => {
     expect(add.status).toBe(0)
 
     const yamlPath = join(tempProjectDir, "specs", "design", `${name}.yml`)
-    const yamlContent = [
+    const content = [
       "kind: design",
       `name: ${name}`,
       'title: "Null Testing Strategy Design"',
@@ -280,7 +280,7 @@ describe("YAML content schema validation integration", () => {
       "",
       "testing_strategy: null",
     ].join("\n")
-    writeFileSync(yamlPath, yamlContent, "utf-8")
+    writeFileSync(yamlPath, content, "utf-8")
 
     const render = runTx(["doc", "render", name], tempProjectDir)
     expect(render.status).toBe(0)
@@ -288,7 +288,7 @@ describe("YAML content schema validation integration", () => {
 
   it("7. valid requirement doc with overview and functional_requirements succeeds", async () => {
     const name = shortName("doc-schema-requirement-valid", "requirement")
-    const yamlContent = [
+    const content = [
       "kind: requirement",
       `name: ${name}`,
       'title: "Valid Requirement"',
@@ -305,7 +305,7 @@ describe("YAML content schema validation integration", () => {
       kind: "requirement",
       name,
       title: "Valid Requirement",
-      yamlContent,
+      content,
     })
 
     expect(doc.kind).toBe("requirement")
@@ -317,7 +317,7 @@ describe("YAML content schema validation integration", () => {
     expect(add.status).toBe(0)
 
     const yamlPath = join(tempProjectDir, "specs", "requirements", `${name}.yml`)
-    const yamlContent = [
+    const content = [
       "kind: requirement",
       `name: ${name}`,
       'title: "Requirement Actors"',
@@ -335,7 +335,7 @@ describe("YAML content schema validation integration", () => {
       "functional_requirements: |",
       "  - The system shall render actor entries as structured rows.",
     ].join("\n")
-    writeFileSync(yamlPath, yamlContent, "utf-8")
+    writeFileSync(yamlPath, content, "utf-8")
 
     const render = runTx(["doc", "render", name], tempProjectDir)
     expect(render.status).toBe(0)
@@ -349,7 +349,7 @@ describe("YAML content schema validation integration", () => {
 
   it("9. valid system_design doc with required fields succeeds", async () => {
     const name = shortName("doc-schema-system-design-valid", "system-design")
-    const yamlContent = [
+    const content = [
       "kind: system_design",
       `name: ${name}`,
       'title: "Valid System Design"',
@@ -369,7 +369,7 @@ describe("YAML content schema validation integration", () => {
       kind: "system_design",
       name,
       title: "Valid System Design",
-      yamlContent,
+      content,
     })
 
     expect(doc.kind).toBe("system_design")
@@ -377,7 +377,7 @@ describe("YAML content schema validation integration", () => {
 
   it("10. overview doc missing problem_definition fails", async () => {
     const name = shortName("doc-schema-overview-missing-problem-definition", "overview")
-    const yamlContent = [
+    const content = [
       "kind: overview",
       `name: ${name}`,
       'title: "Missing Problem Definition Overview"',
@@ -393,7 +393,7 @@ describe("YAML content schema validation integration", () => {
         kind: "overview",
         name,
         title: "Missing Problem Definition Overview",
-        yamlContent,
+        content,
       })
     ).rejects.toThrow(/problem_definition/i)
   })
@@ -436,7 +436,7 @@ describe("YAML content schema validation integration", () => {
 
   it("12. kind mismatch between YAML and requested kind fails", async () => {
     const name = shortName("doc-schema-kind-mismatch", "design")
-    const yamlContent = [
+    const content = [
       "kind: prd",
       `name: ${name}`,
       'title: "Kind Mismatch Design"',
@@ -458,7 +458,7 @@ describe("YAML content schema validation integration", () => {
         kind: "design",
         name,
         title: "Kind Mismatch Design",
-        yamlContent,
+        content,
       })
     ).rejects.toThrow(/Expected "design", actual "prd"|kind/i)
   })

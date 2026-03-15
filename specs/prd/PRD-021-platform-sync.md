@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-021-platform-sync"
+title: "PRD-021: Platform Sync (Claude Code, Codex)"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-021: Platform Sync (Claude Code, Codex)
 
 ## Problem
@@ -20,7 +30,7 @@ For Claude Code specifically, this means writing individual JSON files to `~/.cl
 - [x] tx task IDs mapped to sequential numeric IDs for Claude Code compatibility
 - [x] Dependencies (`blockedBy`/`blocks`) translated using the ID mapping
 - [x] Done tasks excluded; deps referencing done tasks filtered out
-- [x] Status mapping: active/review/human_needs_to_review -> `in_progress`, all others -> `pending`
+- [x] Status mapping: active/review/needs_review -> `in_progress`, all others -> `pending`
 - [x] `.highwatermark` file updated for Claude Code's ID auto-increment
 - [x] Task descriptions include `tx memory context <id>` and `tx done <id>` instructions
 - [ ] `tx sync codex` stub (not yet implemented, extensible pattern)

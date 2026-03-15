@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-002-effect-ts-service-layer"
+title: "DD-002: Effect-TS Service Layer Design"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-002: Effect-TS Service Layer Design
 
 **Status**: Draft

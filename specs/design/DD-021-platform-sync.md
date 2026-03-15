@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-021-platform-sync"
+title: "DD-021: Platform Sync (Claude Code, Codex)"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-021: Platform Sync (Claude Code, Codex)
 
 ## Overview
@@ -79,7 +89,7 @@ tx uses hash-based IDs (`tx-a1b2c3d4`), Claude Code uses sequential numeric IDs 
 | tx status | Claude Code status | Rationale |
 |-----------|-------------------|-----------|
 | `done` | excluded | Not synced |
-| `active`, `review`, `human_needs_to_review` | `in_progress` | Work underway |
+| `active`, `review`, `needs_review` | `in_progress` | Work underway |
 | `backlog`, `ready`, `planning`, `blocked` | `pending` | Not started |
 
 ### Description Enrichment

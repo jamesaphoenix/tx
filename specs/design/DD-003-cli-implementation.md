@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-003-cli-implementation"
+title: "DD-003: CLI Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-003: CLI Implementation
 
 **Status**: Draft

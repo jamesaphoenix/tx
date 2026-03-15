@@ -40,7 +40,8 @@ export default defineConfig({
   test: {
     include: [
       "test/**/*.test.ts",
-      "eslint-plugin-tx/tests/**/*.test.js"
+      "eslint-plugin-tx/tests/**/*.test.js",
+      "packages/core/src/utils/md-doc-parser.test.ts",
     ],
     exclude: [
       // Commands not yet registered in CLI — tests exist ahead of implementation

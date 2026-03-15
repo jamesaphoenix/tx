@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: overview
+name: "dependency-chain"
+title: "Dependency Chain Example"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # Dependency Chain Example
 
 This example demonstrates how to create and manage task dependencies.

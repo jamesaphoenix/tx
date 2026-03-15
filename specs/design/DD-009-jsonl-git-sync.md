@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-009-jsonl-git-sync"
+title: "DD-009: JSONL Git Sync Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-009: JSONL Git Sync Implementation
 
 ## Overview

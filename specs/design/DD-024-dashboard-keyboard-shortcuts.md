@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-024-dashboard-keyboard-shortcuts"
+title: "DD-024: Dashboard Keyboard Shortcuts & UX Polish"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-024: Dashboard Keyboard Shortcuts & UX Polish
 
 ## Overview

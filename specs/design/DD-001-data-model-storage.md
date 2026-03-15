@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-001-data-model-storage"
+title: "DD-001: Data Model & Storage Architecture"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-001: Data Model & Storage Architecture
 
 **Status**: Draft
@@ -76,7 +86,7 @@ CREATE TABLE tasks (
     status TEXT NOT NULL DEFAULT 'backlog'
         CHECK (status IN (
             'backlog', 'ready', 'planning', 'active',
-            'blocked', 'review', 'human_needs_to_review', 'done'
+            'blocked', 'review', 'needs_review', 'done'
         )),
 
     -- Hierarchy
@@ -154,7 +164,7 @@ import { Schema } from "effect"
 
 export const TaskStatus = Schema.Literal(
   "backlog", "ready", "planning", "active",
-  "blocked", "review", "human_needs_to_review", "done"
+  "blocked", "review", "needs_review", "done"
 )
 export type TaskStatus = Schema.Schema.Type<typeof TaskStatus>
 
@@ -192,7 +202,7 @@ export class Task extends Schema.Class<Task>("Task")({
     return this.status === "done"
   }
   get isWorkable(): boolean {
-    return !["blocked", "done", "human_needs_to_review"].includes(this.status)
+    return !["blocked", "done", "needs_review"].includes(this.status)
   }
 }
 
@@ -379,8 +389,8 @@ const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   planning:               ["ready", "active", "blocked", "done"],
   active:                 ["blocked", "review", "done"],
   blocked:                ["backlog", "ready", "planning", "active"],
-  review:                 ["active", "human_needs_to_review", "done"],
-  human_needs_to_review:  ["active", "review", "done"],
+  review:                 ["active", "needs_review", "done"],
+  needs_review:  ["active", "review", "done"],
   done:                   ["backlog"]  // Reopen only to backlog
 }
 

@@ -44,30 +44,68 @@ const createDocWithInvariants = (docName: string, invariants: readonly Invariant
       .map((inv) =>
         [
           `  - id: ${inv.id}`,
-          `    rule: ${inv.rule}`,
-          "    enforcement: integration_test",
-          inv.subsystem ? `    subsystem: ${inv.subsystem}` : null,
+          `    statement: ${inv.rule}`,
+          "    severity: high",
+          "    verified_by:",
+          "      - test/integration/mcp-spec-trace.test.ts",
         ]
-          .filter((line): line is string => line !== null)
           .join("\n")
       )
       .join("\n")
 
-    const yamlContent = [
-      "kind: prd",
+    const content = [
+      "---",
+      "kind: spec",
+      "spec_type: prd",
       `name: ${docName}`,
       `title: ${docName}`,
-      "status: changing",
+      "status: draft",
+      "version: 1",
+      "owners: [test]",
+      'summary: ""',
+      'domain: ""',
+      "tags: []",
+      "depends_on: []",
+      "supersedes: []",
+      "implements: null",
+      "last_reviewed_at: 2026-03-15",
+      "---",
       "",
+      `# ${docName}`,
+      "",
+      "## Summary",
+      "",
+      "Test document for MCP spec trace integration.",
+      "",
+      "## Problem",
+      "",
+      "Need to verify MCP spec trace behavior.",
+      "",
+      "## Scope",
+      "",
+      "Integration test scope.",
+      "",
+      "## Requirements",
+      "",
+      "Test requirements.",
+      "",
+      "## Acceptance Criteria",
+      "",
+      "Tests pass.",
+      "",
+      "## Invariants",
+      "",
+      "```yaml",
       "invariants:",
       invariantBlock,
+      "```",
     ].join("\n")
 
     yield* docService.create({
       kind: "prd",
       name: docName,
       title: docName,
-      yamlContent,
+      content,
     })
 
     return yield* docService.syncInvariants(docName)
@@ -256,9 +294,10 @@ describe("MCP Spec Trace Integration", () => {
   it("transitions subsystem scope to COMPLETE after HARDEN sign-off", async () => {
     const payload = await run(
       Effect.gen(function* () {
+        // In markdown-first, subsystem is derived from doc.kind ("prd")
         yield* createDocWithInvariants("mcp-scope-doc", [
-          { id: "INV-MCP-SCOPE-001", rule: "scope first", subsystem: "mcp-subsystem" },
-          { id: "INV-MCP-SCOPE-002", rule: "scope second", subsystem: "mcp-subsystem" },
+          { id: "INV-MCP-SCOPE-001", rule: "scope first" },
+          { id: "INV-MCP-SCOPE-002", rule: "scope second" },
         ])
 
         const spec = yield* SpecTraceService
@@ -270,10 +309,10 @@ describe("MCP Spec Trace Integration", () => {
           { testId: second.testId, passed: true },
         ])
 
-        const before = yield* spec.status({ subsystem: "mcp-subsystem" })
-        const signoff = yield* spec.complete({ subsystem: "mcp-subsystem" }, "mcp-reviewer", "approved")
-        const after = yield* spec.status({ subsystem: "mcp-subsystem" })
-        const matrix = yield* spec.matrix({ subsystem: "mcp-subsystem" })
+        const before = yield* spec.status({ subsystem: "prd" })
+        const signoff = yield* spec.complete({ subsystem: "prd" }, "mcp-reviewer", "approved")
+        const after = yield* spec.status({ subsystem: "prd" })
+        const matrix = yield* spec.matrix({ subsystem: "prd" })
 
         return { before, signoff, after, matrix }
       })
@@ -284,7 +323,7 @@ describe("MCP Spec Trace Integration", () => {
     expect(payload.before.total).toBe(2)
 
     expect(payload.signoff.scopeType).toBe("subsystem")
-    expect(payload.signoff.scopeValue).toBe("mcp-subsystem")
+    expect(payload.signoff.scopeValue).toBe("prd")
     expect(payload.signoff.signedOffBy).toBe("mcp-reviewer")
 
     expect(payload.after.phase).toBe("COMPLETE")

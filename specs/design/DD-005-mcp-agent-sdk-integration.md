@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-005-mcp-agent-sdk-integration"
+title: "DD-005: MCP Server & Agent SDK Integration"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-005: MCP Server & Agent SDK Integration
 
 **Status**: Draft
@@ -364,7 +374,7 @@ export const createMcpServer = () => {
   // tx_update — returns TaskWithDeps
   server.tool("tx_update", "Update task status, score, or details", {
     id: z.string(),
-    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]).optional(),
+    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]).optional(),
     score: z.number().optional(),
     title: z.string().optional(),
     description: z.string().optional()
@@ -387,7 +397,7 @@ export const createMcpServer = () => {
 
   // tx_list — returns TaskWithDeps[]
   server.tool("tx_list", "List tasks with optional filtering", {
-    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]).optional(),
+    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]).optional(),
     parentId: z.string().optional(),
     limit: z.number().min(1).max(100).default(20)
   }, async (args) => {
@@ -692,7 +702,7 @@ execute: async (args) => {
 **Workaround** (until fixed):
 ```typescript
 // Explicit validation
-const validStatuses = ["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]
+const validStatuses = ["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]
 if (args.status && !validStatuses.includes(args.status)) {
   throw new Error(`Invalid status: ${args.status}`)
 }

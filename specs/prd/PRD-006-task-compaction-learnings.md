@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-006-task-compaction-learnings"
+title: "PRD-006: Task Compaction & Learnings Export"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-006: Task Compaction & Learnings Export
 
 **Status**: Draft

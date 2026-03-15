@@ -30,7 +30,7 @@ function StatusBadge({ status }: { status: string }) {
     active: "bg-yellow-500",
     blocked: "bg-red-500",
     review: "bg-orange-500",
-    human_needs_to_review: "bg-pink-500",
+    needs_review: "bg-pink-500",
     done: "bg-green-500",
     running: "bg-yellow-500",
     completed: "bg-green-500",

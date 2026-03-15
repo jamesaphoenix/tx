@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-013-test-utilities"
+title: "PRD-013: Test Utilities Package"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-013: Test Utilities Package
 
 ## Overview

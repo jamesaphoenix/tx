@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: overview
+name: "sync-roundtrip"
+title: "Sync Round-Trip Example"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # Sync Round-Trip Example
 
 This example demonstrates the sync workflow for git-friendly persistence.

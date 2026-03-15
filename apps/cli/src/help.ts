@@ -278,7 +278,7 @@ Arguments:
   <id>    Required. Task ID (e.g., tx-a1b2c3d4)
 
 Options:
-  --status <s>          New status (backlog|ready|planning|active|blocked|review|human_needs_to_review|done)
+  --status <s>          New status (backlog|ready|planning|active|blocked|review|needs_review|done)
   --title <t>           New title
   --score <n>           New score (0-1000)
   --description, -d <text>  New description
