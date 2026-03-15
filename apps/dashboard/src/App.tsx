@@ -8,7 +8,8 @@ import {
   type PaginatedRunsResponse,
   type TaskAssigneeType,
   type DashboardDefaultTaskView,
-  type TaskLabel
+  type TaskLabel,
+  type CycleSettings,
 } from "./api/client"
 import { TasksPage } from "./components/tasks"
 import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
@@ -659,25 +660,93 @@ function SettingsIcon() {
   )
 }
 
+type SettingsTab = "general" | "labels" | "cycles"
+
+const SETTINGS_TAB_LABELS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
+  { id: "general", label: "General" },
+  { id: "labels", label: "Labels" },
+  { id: "cycles", label: "Cycles" },
+]
+
+const CYCLE_START_DAY_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "monday", label: "Monday" },
+  { value: "tuesday", label: "Tuesday" },
+  { value: "wednesday", label: "Wednesday" },
+  { value: "thursday", label: "Thursday" },
+  { value: "friday", label: "Friday" },
+  { value: "saturday", label: "Saturday" },
+  { value: "sunday", label: "Sunday" },
+]
+
+const CYCLE_CARRY_STATUS_OPTIONS = [
+  "backlog",
+  "ready",
+  "planning",
+  "active",
+  "blocked",
+  "review",
+  "needs_review",
+  "done",
+] as const
+
+type CycleCarryStatus = (typeof CYCLE_CARRY_STATUS_OPTIONS)[number]
+
+const CYCLE_CARRY_STATUS_LABELS: Record<CycleCarryStatus, string> = {
+  backlog: "Backlog",
+  ready: "Ready",
+  planning: "Planning",
+  active: "Active",
+  blocked: "Blocked",
+  review: "Review",
+  needs_review: "Needs Review",
+  done: "Done",
+}
+
+const DEFAULT_CYCLE_SETTINGS: CycleSettings = {
+  cycleLengthDays: 7,
+  cycleStartDay: "monday",
+  carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+}
+
+function normalizeCarryStatuses(statuses: readonly string[]): CycleCarryStatus[] {
+  return CYCLE_CARRY_STATUS_OPTIONS.filter((status) => statuses.includes(status))
+}
+
 function SettingsPage({
   defaultTaskAssigmentType,
   defaultTaskView,
+  cycleSettings,
   isSaving,
   errorMessage,
   onBack,
   onSaveDefaultTaskAssigmentType,
   onSaveDefaultTaskView,
+  onSaveCycleSettings,
 }: {
   defaultTaskAssigmentType: TaskAssigneeType
   defaultTaskView: DashboardDefaultTaskView
+  cycleSettings: CycleSettings
   isSaving: boolean
   errorMessage: string | null
   onBack: () => void
   onSaveDefaultTaskAssigmentType: (nextType: TaskAssigneeType) => void
   onSaveDefaultTaskView: (nextView: DashboardDefaultTaskView) => void
+  onSaveCycleSettings: (nextSettings: CycleSettings) => void
 }) {
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("general")
   const [draftType, setDraftType] = useState<TaskAssigneeType>(defaultTaskAssigmentType)
   const [draftTaskView, setDraftTaskView] = useState<DashboardDefaultTaskView>(defaultTaskView)
+  const normalizedCycleStartDay = CYCLE_START_DAY_OPTIONS.some((option) => option.value === cycleSettings.cycleStartDay)
+    ? cycleSettings.cycleStartDay
+    : DEFAULT_CYCLE_SETTINGS.cycleStartDay
+  const normalizedCurrentCarryStatuses = useMemo(
+    () => normalizeCarryStatuses(cycleSettings.carryStatuses),
+    [cycleSettings.carryStatuses]
+  )
+  const currentCarryStatusesKey = normalizedCurrentCarryStatuses.join(",")
+  const [draftCycleLengthDays, setDraftCycleLengthDays] = useState(String(cycleSettings.cycleLengthDays))
+  const [draftCycleStartDay, setDraftCycleStartDay] = useState(normalizedCycleStartDay)
+  const [draftCarryStatuses, setDraftCarryStatuses] = useState<CycleCarryStatus[]>(normalizedCurrentCarryStatuses)
 
   useEffect(() => {
     setDraftType(defaultTaskAssigmentType)
@@ -687,8 +756,25 @@ function SettingsPage({
     setDraftTaskView(defaultTaskView)
   }, [defaultTaskView])
 
+  useEffect(() => {
+    setDraftCycleLengthDays(String(cycleSettings.cycleLengthDays))
+    setDraftCycleStartDay(normalizedCycleStartDay)
+    setDraftCarryStatuses(normalizedCurrentCarryStatuses)
+  }, [cycleSettings.cycleLengthDays, normalizedCycleStartDay, currentCarryStatusesKey, normalizedCurrentCarryStatuses])
+
   const hasAssigmentTypeChanges = draftType !== defaultTaskAssigmentType
   const hasDefaultTaskViewChanges = draftTaskView !== defaultTaskView
+  const parsedCycleLengthDays = Number.parseInt(draftCycleLengthDays, 10)
+  const hasValidCycleLengthDays = Number.isInteger(parsedCycleLengthDays) && parsedCycleLengthDays > 0
+  const normalizedDraftCarryStatuses = normalizeCarryStatuses(draftCarryStatuses)
+  const hasCycleSettingChanges =
+    hasValidCycleLengthDays &&
+    (
+      parsedCycleLengthDays !== cycleSettings.cycleLengthDays ||
+      draftCycleStartDay !== normalizedCycleStartDay ||
+      normalizedDraftCarryStatuses.join(",") !== currentCarryStatusesKey
+    )
+
   const queryClient = useQueryClient()
   const { data: labelsData, isLoading: isLoadingLabels } = useQuery({
     queryKey: ["labels"],
@@ -806,8 +892,35 @@ function SettingsPage({
     }
   }, [editingLabelId, invalidateLabelCaches])
 
+  const toggleCarryStatus = useCallback((status: CycleCarryStatus) => {
+    setDraftCarryStatuses((current) =>
+      current.includes(status)
+        ? current.filter((existingStatus) => existingStatus !== status)
+        : [...current, status]
+    )
+  }, [])
+
+  const saveCycleSettings = useCallback(() => {
+    if (!hasValidCycleLengthDays) return
+    onSaveCycleSettings({
+      cycleLengthDays: parsedCycleLengthDays,
+      cycleStartDay: draftCycleStartDay,
+      carryStatuses: normalizedDraftCarryStatuses,
+    })
+  }, [
+    draftCycleStartDay,
+    hasValidCycleLengthDays,
+    normalizedDraftCarryStatuses,
+    onSaveCycleSettings,
+    parsedCycleLengthDays,
+  ])
+
+  const cycleLengthError = draftCycleLengthDays.trim().length > 0 && !hasValidCycleLengthDays
+    ? "Cycle length must be a positive whole number."
+    : null
+
   return (
-    <div className="mx-auto w-full max-w-2xl p-6 pb-8">
+    <div className="mx-auto w-full max-w-4xl p-6 pb-8">
       <button
         type="button"
         onClick={onBack}
@@ -818,52 +931,695 @@ function SettingsPage({
       </button>
       <h2 className="mt-3 text-xl font-semibold text-white">Settings</h2>
       <p className="mt-1 text-sm text-gray-400">
-        Configure dashboard defaults for new task creation.
+        Configure dashboard defaults, labels, and cycles.
       </p>
 
-      <section className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-4">
-        <h3 className="text-sm font-semibold text-gray-200">Default Task Assignment Type</h3>
-        <p className="mt-1 text-xs text-gray-400">
-          Applied when creating tasks from the dashboard composer.
+      <div className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-1">
+        <nav className="flex flex-wrap gap-1" aria-label="Settings sections">
+          {SETTINGS_TAB_LABELS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveSettingsTab(tab.id)}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                activeSettingsTab === tab.id
+                  ? "bg-blue-600 text-white"
+                  : "bg-transparent text-gray-300 hover:bg-gray-700/60"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <div className="mt-4 space-y-4">
+        {activeSettingsTab === "general" ? (
+          <>
+            <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+              <h3 className="text-sm font-semibold text-gray-200">Default Task Assignment Type</h3>
+              <p className="mt-1 text-xs text-gray-400">
+                Applied when creating tasks from the dashboard composer.
+              </p>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setDraftType("human")}
+                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                    draftType === "human"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
+                >
+                  Human
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftType("agent")}
+                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                    draftType === "agent"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
+                >
+                  Agent
+                </button>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={isSaving || !hasAssigmentTypeChanges}
+                  onClick={() => onSaveDefaultTaskAssigmentType(draftType)}
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSaving ? "Saving..." : "Save settings"}
+                </button>
+                <span className="text-xs text-gray-500">
+                  Current default: {defaultTaskAssigmentType}
+                </span>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+              <h3 className="text-sm font-semibold text-gray-200">Default Tasks View</h3>
+              <p className="mt-1 text-xs text-gray-400">
+                Applied when opening the Tasks tab unless overridden by URL query params.
+              </p>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setDraftTaskView("list")}
+                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                    draftTaskView === "list"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftTaskView("kanban")}
+                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                    draftTaskView === "kanban"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
+                >
+                  Kanban
+                </button>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={isSaving || !hasDefaultTaskViewChanges}
+                  onClick={() => onSaveDefaultTaskView(draftTaskView)}
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSaving ? "Saving..." : "Save view setting"}
+                </button>
+                <span className="text-xs text-gray-500">
+                  Current default: {defaultTaskView}
+                </span>
+              </div>
+            </section>
+          </>
+        ) : activeSettingsTab === "labels" ? (
+          <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+            <h3 className="text-sm font-semibold text-gray-200">Task Labels</h3>
+            <p className="mt-1 text-xs text-gray-400">
+              Create, edit, and delete reusable task labels.
+            </p>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto]">
+              <input
+                aria-label="New label name"
+                type="text"
+                value={newLabelName}
+                onChange={(event) => setNewLabelName(event.target.value)}
+                placeholder="Label name"
+                className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
+              />
+              <label className="flex h-10 items-center justify-between rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-xs text-gray-300">
+                Color
+                <input
+                  aria-label="New label color"
+                  type="color"
+                  value={newLabelColor}
+                  onChange={(event) => setNewLabelColor(event.target.value)}
+                  className="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
+                />
+              </label>
+              <button
+                type="button"
+                aria-label="Create label"
+                disabled={isCreatingLabel}
+                onClick={() => { void handleCreateLabel() }}
+                className="inline-flex h-10 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isCreatingLabel ? "Creating..." : "Create"}
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-gray-700/80 bg-gray-900/20 p-2">
+              {!isLoadingLabels && labels.length > 0 && (
+                <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-gray-500">
+                  <span>{labels.length} label{labels.length === 1 ? "" : "s"}</span>
+                  <span>Scroll to manage all labels</span>
+                </div>
+              )}
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {isLoadingLabels ? (
+                  <p className="text-xs text-gray-400">Loading labels...</p>
+                ) : labels.length === 0 ? (
+                  <p className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2 text-xs text-gray-500">
+                    No labels yet.
+                  </p>
+                ) : (
+                  labels.map((label) => {
+                    const isEditing = editingLabelId === label.id
+                    const isBusy = labelBusyId === label.id
+                    return (
+                      <div
+                        key={label.id}
+                        className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2"
+                      >
+                        {isEditing ? (
+                          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto_auto]">
+                            <input
+                              aria-label={`Edit label name ${label.name}`}
+                              type="text"
+                              value={editingLabelName}
+                              onChange={(event) => setEditingLabelName(event.target.value)}
+                              className="rounded-md border border-gray-700 bg-gray-900/50 px-2.5 py-1.5 text-xs text-gray-100 outline-none transition focus:border-blue-500"
+                            />
+                            <label className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-900/50 px-2 py-1.5 text-[11px] text-gray-300">
+                              Color
+                              <input
+                                aria-label={`Edit label color ${label.name}`}
+                                type="color"
+                                value={editingLabelColor}
+                                onChange={(event) => setEditingLabelColor(event.target.value)}
+                                className="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              aria-label={`Save label ${label.name}`}
+                              disabled={isBusy}
+                              onClick={() => { void handleSaveLabel(label.id) }}
+                              className="rounded-md bg-blue-600 px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Cancel label edit ${label.name}`}
+                              onClick={cancelEditLabel}
+                              className="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-[11px] text-gray-300 transition hover:bg-gray-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="inline-flex min-w-0 items-center gap-2">
+                              <span
+                                className="h-3 w-3 flex-shrink-0 rounded-full border border-white/10"
+                                style={{ backgroundColor: label.color }}
+                                aria-hidden="true"
+                              />
+                              <span className="truncate text-sm text-gray-100">{label.name}</span>
+                              <span className="text-[10px] text-gray-500">#{label.id}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {pendingDeleteLabelId === label.id ? (
+                                <>
+                                  <span className="text-[11px] text-red-300">Confirm delete?</span>
+                                  <button
+                                    type="button"
+                                    aria-label={`Confirm delete label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => { void handleDeleteLabel(label.id) }}
+                                    className="rounded-md border border-red-500/70 bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-200 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {isBusy ? "Deleting..." : "Confirm"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label={`Cancel delete label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => cancelDeleteLabel(label.id)}
+                                    className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    aria-label={`Edit label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => beginEditLabel(label)}
+                                    className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label={`Delete label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => requestDeleteLabel(label.id)}
+                                    className="rounded-md border border-red-500/50 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            {labelError && (
+              <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+                {labelError}
+              </p>
+            )}
+          </section>
+        ) : (
+          <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+            <h3 className="text-sm font-semibold text-gray-200">Cycle Defaults</h3>
+            <p className="mt-1 text-xs text-gray-400">
+              Configure cycle cadence and which task statuses carry forward to the next cycle.
+            </p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-gray-300">
+                Cycle length (days)
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={draftCycleLengthDays}
+                  onChange={(event) => setDraftCycleLengthDays(event.target.value)}
+                  className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-gray-300">
+                Cycle start day
+                <select
+                  value={draftCycleStartDay}
+                  onChange={(event) => setDraftCycleStartDay(event.target.value)}
+                  className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
+                >
+                  {CYCLE_START_DAY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <fieldset className="mt-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Carry-over statuses
+              </legend>
+              <p className="mt-1 text-xs text-gray-400">
+                Tasks in selected statuses are copied into the next cycle when the current cycle completes.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {CYCLE_CARRY_STATUS_OPTIONS.map((status) => (
+                  <label
+                    key={status}
+                    className="flex items-center gap-2 rounded-md border border-gray-700 bg-gray-900/30 px-2.5 py-2 text-sm text-gray-200"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={draftCarryStatuses.includes(status)}
+                      onChange={() => toggleCarryStatus(status)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+                    />
+                    {CYCLE_CARRY_STATUS_LABELS[status]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={isSaving || !hasCycleSettingChanges || !hasValidCycleLengthDays}
+                onClick={saveCycleSettings}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSaving ? "Saving..." : "Save cycle settings"}
+              </button>
+              <span className="text-xs text-gray-500">
+                {normalizedDraftCarryStatuses.length} status{normalizedDraftCarryStatuses.length === 1 ? "" : "es"} selected
+              </span>
+            </div>
+
+            {cycleLengthError && (
+              <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+                {cycleLengthError}
+              </p>
+            )}
+          </section>
+        )}
+      </div>
+
+      {errorMessage && (
+        <p className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+          {errorMessage}
         </p>
+      )}
+    </div>
+  )
+}
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setDraftType("human")}
-            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
-              draftType === "human"
-                ? "border-blue-500 bg-blue-500/20 text-blue-200"
-                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
-            }`}
-          >
-            Human
-          </button>
-          <button
-            type="button"
-            onClick={() => setDraftType("agent")}
-            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
-              draftType === "agent"
-                ? "border-blue-500 bg-blue-500/20 text-blue-200"
-                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
-            }`}
-          >
-            Agent
-          </button>
-        </div>
+export default function App() {
+  return (
+    <CommandProvider>
+      <AppContent />
+      <CommandPalette />
+    </CommandProvider>
+  )
+}
 
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            disabled={isSaving || !hasAssigmentTypeChanges}
-            onClick={() => onSaveDefaultTaskAssigmentType(draftType)}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "Saving..." : "Save settings"}
-          </button>
-          <span className="text-xs text-gray-500">
-            Current default: {defaultTaskAssigmentType}
-          </span>
+function AppContent() {
+  const [activeTab, setActiveTab] = useState<Tab>("tasks")
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme())
+  const [newTaskRequestNonce, setNewTaskRequestNonce] = useState(0)
+
+  const selectedRunIds = useStore(selectionStore, (s) => s.runIds)
+
+  const queryClient = useQueryClient()
+
+  const handleToggleRun = useCallback((id: string) => {
+    selectionActions.toggleRun(id)
+  }, [])
+
+  const toggleThemeMode = useCallback(() => {
+    setThemeMode((current) => current === "light" ? "dark" : "light")
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode
+    document.documentElement.style.colorScheme = themeMode
+    try {
+      getThemeStorage()?.setItem(THEME_STORAGE_KEY, themeMode)
+    } catch {
+      // Ignore storage write failures (e.g. restricted environments)
+    }
+  }, [themeMode])
+
+  // URL state management for filters
+  const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null)
+
+  const { data: settingsData } = useQuery({
+    queryKey: ["settings"],
+    queryFn: fetchers.settings,
+    staleTime: 5000,
+    retry: false,
+  })
+
+  const defaultTaskAssigmentType: TaskAssigneeType =
+    settingsData?.dashboard.defaultTaskAssigmentType ?? "human"
+  const defaultTaskView: DashboardDefaultTaskView =
+    settingsData?.dashboard.defaultTaskView ?? "list"
+  const cycleSettings: CycleSettings =
+    settingsData?.dashboard.cycles ?? DEFAULT_CYCLE_SETTINGS
+
+  const saveDashboardDefaultAssigmentType = useCallback(async (nextType: TaskAssigneeType) => {
+    setIsSavingSettings(true)
+    setSettingsSaveError(null)
+    try {
+      const updated = await fetchers.updateSettings({
+        dashboard: {
+          defaultTaskAssigmentType: nextType,
+        },
+      })
+      queryClient.setQueryData(["settings"], updated)
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }, [queryClient])
+
+  const saveDashboardDefaultTaskView = useCallback(async (nextView: DashboardDefaultTaskView) => {
+    setIsSavingSettings(true)
+    setSettingsSaveError(null)
+    try {
+      const updated = await fetchers.updateSettings({
+        dashboard: {
+          defaultTaskView: nextView,
+        },
+      })
+      queryClient.setQueryData(["settings"], updated)
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }, [queryClient])
+
+  const saveDashboardCycleSettings = useCallback(async (nextSettings: CycleSettings) => {
+    setIsSavingSettings(true)
+    setSettingsSaveError(null)
+    try {
+      const updated = await fetchers.updateSettings({
+        dashboard: {
+          cycles: nextSettings,
+        },
+      })
+      queryClient.setQueryData(["settings"], updated)
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }, [queryClient])
+
+  const { setAppCommands, setPageCommands, setOverlayCommands } = useCommandContext()
+
+  const getLoadedRuns = useCallback((): Run[] => {
+    const queries = queryClient.getQueriesData<{ pages: PaginatedRunsResponse[] }>({ queryKey: ["runs", "infinite"] })
+    return queries.flatMap(([, data]) => data?.pages?.flatMap((p) => p.runs) ?? [])
+  }, [queryClient])
+
+  // Fetch runs to get available agents and status counts
+  const { data: runsMetadata } = useQuery({
+    queryKey: ["runs", "metadata"],
+    queryFn: fetchers.runs,
+    select: (data) => {
+      const agents = [...new Set(data.runs.map((run) => run.agent))].filter(Boolean).sort()
+      const statusCounts = data.runs.reduce<Record<string, number>>((acc, run) => {
+        acc[run.status] = (acc[run.status] ?? 0) + 1
+        return acc
+      }, {})
+      return { agents, statusCounts }
+    },
+    staleTime: 5000,
+  })
+
+  // Register app-level commands (global + per-tab)
+  const appCommands = useMemo((): Command[] => {
+    const cmds: Command[] = [
+      {
+        id: "global:task:new",
+        label: "Create new task",
+        group: "Actions",
+        icon: "action",
+        shortcut: "⌘N",
+        allowInInput: true,
+        action: () => {
+          setNewTaskRequestNonce((current) => current + 1)
+          if (activeTab !== "tasks") {
+            setActiveTab("tasks")
+          }
+        },
+      },
+      {
+        id: "global:nav:tasks",
+        label: "Go to Tasks",
+        group: "Navigate",
+        icon: "navigate",
+        shortcut: "g t",
+        allowInInput: true,
+        action: () => setActiveTab("tasks"),
+      },
+      {
+        id: "global:nav:runs",
+        label: "Go to Runs",
+        group: "Navigate",
+        icon: "navigate",
+        shortcut: "g r",
+        allowInInput: true,
+        action: () => setActiveTab("runs"),
+      },
+      {
+        id: "global:nav:docs",
+        label: "Go to Docs",
+        group: "Navigate",
+        icon: "navigate",
+        shortcut: "g d",
+        allowInInput: true,
+        action: () => setActiveTab("docs"),
+      },
+      {
+        id: "global:nav:cycles",
+        label: "Go to Cycles",
+        group: "Navigate",
+        icon: "navigate",
+        shortcut: "g c",
+        allowInInput: true,
+        action: () => setActiveTab("cycles"),
+      },
+      {
+        id: "global:nav:settings",
+        label: "Go to Settings",
+        group: "Navigate",
+        icon: "navigate",
+        shortcut: "g s",
+        allowInInput: true,
+        action: () => setActiveTab("settings"),
+      },
+      {
+        id: "global:runs:open-selected",
+        label: "Open selected run",
+        group: "Runs",
+        icon: "action",
+        shortcut: "↩",
+        action: () => {
+          const selected = selectionStore.state.runIds[0]
+          if (selected) setSelectedRunId(selected)
+        },
+        enabled: activeTab === "runs" && selectedRunIds.length > 0,
+      },
+      {
+        id: "global:runs:compare",
+        label: "Compare selected runs",
+        group: "Runs",
+        icon: "action",
+        shortcut: "c",
+        action: () => {
+          // Placeholder for compare action; currently opens first selected.
+          const selected = selectionStore.state.runIds[0]
+          if (selected) setSelectedRunId(selected)
+        },
+        enabled: activeTab === "runs" && selectedRunIds.length >= 2,
+      },
+      {
+        id: "global:runs:clear-selection",
+        label: "Clear run selection",
+        group: "Runs",
+        icon: "action",
+        shortcut: "Esc",
+        action: () => {
+          selectionActions.clearRuns()
+          setSelectedRunId(null)
+        },
+        enabled: activeTab === "runs" && (selectedRunIds.length > 0 || selectedRunId !== null),
+      },
+      {
+        id: "global:runs:next",
+        label: "Select next run",
+        group: "Runs",
+        icon: "action",
+        shortcut: "j",
+        allowInInput: true,
+        action: () => {
+          const runs = getLoadedRuns()
+          if (runs.length === 0) return
+          const current = selectionStore.state.runIds[0] ?? selectedRunId ?? runs[0].id
+          const idx = runs.findIndex((run) => run.id === current)
+          const next = runs[(idx + 1 + runs.length) % runs.length]
+          selectionActions.selectRun(next.id)
+        },
+        enabled: activeTab === "runs",
+      },
+      {
+        id: "global:runs:prev",
+        label: "Select previous run",
+        group: "Runs",
+        icon: "action",
+        shortcut: "k",
+        allowInInput: true,
+        action: () => {
+          const runs = getLoadedRuns()
+          if (runs.length === 0) return
+          const current = selectionStore.state.runIds[0] ?? selectedRunId ?? runs[0].id
+          const idx = runs.findIndex((run) => run.id === current)
+          const prev = runs[(idx - 1 + runs.length) % runs.length]
+          selectionActions.selectRun(prev.id)
+        },
+        enabled: activeTab === "runs",
+      },
+      {
+        id: "global:runs:open-detail",
+        label: "Open run detail",
+        group: "Runs",
+        icon: "action",
+        shortcut: "o",
+        action: () => {
+          const selected = selectionStore.state.runIds[0]
+          if (selected) setSelectedRunId(selected)
+        },
+        enabled: activeTab === "runs" && selectedRunIds.length > 0,
+      },
+      {
+        id: "global:runs:back-to-list",
+        label: "Back to run list",
+        group: "Runs",
+        icon: "navigate",
+        shortcut: "Esc",
+        action: () => setSelectedRunId(null),
+        enabled: activeTab === "runs" && selectedRunId !== null,
+      },
+      {
+        id: "global:theme:toggle",
+        label: themeMode === "light" ? "Switch to dark mode" : "Switch to light mode",
+        group: "Appearance",
+        icon: "action",
+        shortcut: "⌘⇧L",
+        allowInInput: true,
+        action: toggleThemeMode,
+      },
+    ]
+
+    return cmds
+  }, [activeTab, getLoadedRuns, selectedRunId, selectedRunIds.length, themeMode, toggleThemeMode])
+
+  useEffect(() => {
+    setAppCommands(appCommands)
+  }, [appCommands, setAppCommands])
+
+  useEffect(() => {
+    // Runs and settings tabs do not provide page-level commands.
+    if (activeTab === "runs" || activeTab === "settings") {
+      setPageCommands([])
+    }
+    // Task composer overlay commands should never leak across tabs.
+    if (activeTab !== "tasks") {
+      setOverlayCommands([])
+    }
+  }, [activeTab, setPageCommands, setOverlayCommands])
         </div>
 
         {errorMessage && (
@@ -1041,7 +1797,7 @@ function SettingsPage({
                               aria-label={`Confirm delete label ${label.name}`}
                               disabled={isBusy}
                               onClick={() => { void handleDeleteLabel(label.id) }}
-                              className="rounded-md border border-red-500/70 bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-200 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="rounded-md border border-red-500/70 bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-300 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {isBusy ? "Deleting..." : "Confirm"}
                             </button>
