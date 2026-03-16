@@ -266,7 +266,7 @@ export function CycleDetail({ cycleId, onBack, themeMode = "dark" }: CycleDetail
                 completeCycleMutation.mutate()
               }}
               disabled={completeCycleMutation.isPending}
-              className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md border border-emerald-600 bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {completeCycleMutation.isPending ? "Completing…" : "Complete Cycle"}
             </button>
@@ -324,16 +324,17 @@ export function CycleDetail({ cycleId, onBack, themeMode = "dark" }: CycleDetail
               </button>
             </>
           ) : (
-            <>
-              <h2 className={`text-xl font-semibold ${isDarkTheme ? "text-gray-100" : "text-zinc-900"}`}>{cycle.name}</h2>
-              <button
-                type="button"
-                onClick={() => setIsEditingName(true)}
-                className="rounded-md border border-gray-700 bg-gray-900 px-2 py-0.5 text-[11px] text-gray-300 transition hover:bg-gray-800"
-              >
-                Edit
-              </button>
-            </>
+            <h2
+              className={`text-xl font-semibold cursor-pointer rounded px-1 -mx-1 transition ${
+                isDarkTheme
+                  ? "text-gray-100 hover:bg-gray-800/60"
+                  : "text-zinc-900 hover:bg-zinc-100"
+              }`}
+              onClick={() => setIsEditingName(true)}
+              title="Click to rename"
+            >
+              {cycle.name}
+            </h2>
           )}
           <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${CYCLE_STATUS_CLASS[cycle.status]}`}>
             {cycle.status}
