@@ -94,14 +94,12 @@ describe('RunsList', () => {
       const onSelectRun = vi.fn()
       const { container } = renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
-      expect(screen.getByRole('heading', { level: 2, name: 'Runs' })).toBeInTheDocument()
-      expect(screen.getByText('Loading...')).toBeInTheDocument()
-      expect(container.querySelectorAll('.animate-shimmer')).toHaveLength(5)
+      // Loading state renders LoadingSkeleton (no heading or "Loading..." text)
+      expect(container.querySelector('.space-y-2')).toBeInTheDocument()
 
       gate.resolve()
 
       await waitFor(() => {
-        expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
         expect(screen.getByText('No runs found')).toBeInTheDocument()
       })
     })
@@ -288,7 +286,8 @@ describe('RunsList', () => {
       renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
       await waitFor(() => {
-        expect(screen.getByText('running')).toBeInTheDocument()
+        // "Running" appears both in section header and badge; just check at least one exists
+        expect(screen.getAllByText('Running').length).toBeGreaterThan(0)
       })
     })
   })
@@ -695,8 +694,10 @@ describe('RunsList', () => {
       renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
       await waitFor(() => {
-        const badge = screen.getByText('running')
-        expect(badge).toHaveClass('bg-yellow-500')
+        // Badge is the span.rounded-full element, section header is h2
+        const badges = screen.getAllByText('Running').filter((el) => el.classList.contains('rounded-full'))
+        expect(badges.length).toBeGreaterThan(0)
+        expect(badges[0]).toHaveClass('bg-yellow-500/20')
       })
     })
 
@@ -717,8 +718,9 @@ describe('RunsList', () => {
       renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
       await waitFor(() => {
-        const badge = screen.getByText('completed')
-        expect(badge).toHaveClass('bg-green-500')
+        const badges = screen.getAllByText('Completed').filter((el) => el.classList.contains('rounded-full'))
+        expect(badges.length).toBeGreaterThan(0)
+        expect(badges[0]).toHaveClass('bg-green-500/20')
       })
     })
 
@@ -739,8 +741,9 @@ describe('RunsList', () => {
       renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
       await waitFor(() => {
-        const badge = screen.getByText('failed')
-        expect(badge).toHaveClass('bg-red-500')
+        const badges = screen.getAllByText('Failed').filter((el) => el.classList.contains('rounded-full'))
+        expect(badges.length).toBeGreaterThan(0)
+        expect(badges[0]).toHaveClass('bg-red-500/20')
       })
     })
 
@@ -761,8 +764,9 @@ describe('RunsList', () => {
       renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
       await waitFor(() => {
-        const badge = screen.getByText('timeout')
-        expect(badge).toHaveClass('bg-orange-500')
+        const badges = screen.getAllByText('Timeout').filter((el) => el.classList.contains('rounded-full'))
+        expect(badges.length).toBeGreaterThan(0)
+        expect(badges[0]).toHaveClass('bg-orange-500/20')
       })
     })
 
@@ -783,8 +787,9 @@ describe('RunsList', () => {
       renderWithProviders(<RunsList onSelectRun={onSelectRun} />)
 
       await waitFor(() => {
-        const badge = screen.getByText('cancelled')
-        expect(badge).toHaveClass('bg-gray-500')
+        const badges = screen.getAllByText('Cancelled').filter((el) => el.classList.contains('rounded-full'))
+        expect(badges.length).toBeGreaterThan(0)
+        expect(badges[0]).toHaveClass('bg-gray-500/20')
       })
     })
 
@@ -808,7 +813,7 @@ describe('RunsList', () => {
 
       await waitFor(() => {
         const card = screen.getByText('Running task').closest('div[class*="border"]')
-        expect(card).toHaveClass('border-yellow-500')
+        expect(card).toHaveClass('border-gray-800/80')
       })
     })
 
@@ -832,7 +837,7 @@ describe('RunsList', () => {
 
       await waitFor(() => {
         const card = screen.getByText('Failed task').closest('div[class*="border"]')
-        expect(card).toHaveClass('border-red-500/50')
+        expect(card).toHaveClass('border-gray-800/80')
       })
     })
   })

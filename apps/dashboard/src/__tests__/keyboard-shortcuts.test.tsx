@@ -1925,7 +1925,10 @@ describe('Keyboard shortcuts', () => {
         expect(selectionStore.state.taskIds.size).toBe(2)
       })
 
-      await runPaletteCommand('Set selected tasks to Done')
+      // Commands are now hierarchical: "Set status" > "Done"
+      // First drill into "Set status" parent, then select "Done" child
+      await runPaletteCommand('Set status')
+      await runPaletteCommand('Done')
 
       await waitFor(() => {
         expect(patchPayloads.some((payload) => payload.id === 'tx-palette-list-a' && payload.status === 'done')).toBe(true)
@@ -1983,7 +1986,9 @@ describe('Keyboard shortcuts', () => {
         expect(screen.getByText('Delete selected (2)')).toBeInTheDocument()
       })
 
-      await runPaletteCommand('Set selected child tasks to Blocked')
+      // Commands are now hierarchical: "Set selected child tasks to" > "Blocked"
+      await runPaletteCommand('Set selected child tasks to')
+      await runPaletteCommand('Blocked')
 
       await waitFor(() => {
         expect(patchPayloads.some((payload) => payload.id === 'tx-palette-child-a' && payload.status === 'blocked')).toBe(true)

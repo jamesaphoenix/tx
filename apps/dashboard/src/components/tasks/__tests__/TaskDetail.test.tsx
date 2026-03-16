@@ -71,7 +71,7 @@ describe('TaskDetail', () => {
   })
 
   describe('loading state', () => {
-    it('shows loading skeleton while fetching', async () => {
+    it('shows nothing while fetching', async () => {
       server.use(
         http.get('/api/tasks/:id', async () => {
           await new Promise((resolve) => setTimeout(resolve, 100))
@@ -90,9 +90,8 @@ describe('TaskDetail', () => {
         <TaskDetail taskId="tx-loading" onNavigateToTask={onNavigate} />
       )
 
-      // Should show loading skeleton (animate-pulse divs)
-      const skeletons = container.querySelectorAll('.animate-pulse')
-      expect(skeletons.length).toBeGreaterThan(0)
+      // Loading state returns null (empty container)
+      expect(container).toBeEmptyDOMElement()
     })
   })
 

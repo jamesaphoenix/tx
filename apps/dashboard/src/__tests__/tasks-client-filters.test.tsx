@@ -325,7 +325,12 @@ describe("Tasks client filters", () => {
       expect(screen.getByText("Backlog bug task")).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Done" })[0]!)
+    // The status filter button includes a count suffix (e.g., "Done1").
+    // Find the Done filter button by matching text content.
+    const doneButtons = screen.getAllByRole("button").filter(
+      (btn) => /^Done\d*$/.test(btn.textContent ?? "")
+    )
+    fireEvent.click(doneButtons[0]!)
 
     await waitFor(() => {
       expect(screen.getByText("Done bug task")).toBeInTheDocument()
@@ -333,7 +338,7 @@ describe("Tasks client filters", () => {
     })
 
     const params = new URLSearchParams(window.location.search)
-    expect(params.get("taskBucket")).toBe("done")
+    expect(params.get("status")).toBe("done")
     expect(params.get("taskLabels")).toBe("1")
   })
 })

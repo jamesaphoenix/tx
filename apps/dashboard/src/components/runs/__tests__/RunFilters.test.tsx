@@ -264,7 +264,7 @@ describe('RunFilters', () => {
       })
     })
 
-    it('renders empty dropdown when no agents available', () => {
+    it('renders no dropdown when no agents available', () => {
       const onChange = vi.fn()
       render(
         <RunFilters
@@ -274,11 +274,8 @@ describe('RunFilters', () => {
         />
       )
 
-      const select = screen.getByRole('combobox')
-      // Should only have "All Agents" option
-      const options = select.querySelectorAll('option')
-      expect(options.length).toBe(1)
-      expect(options[0].textContent).toBe('All Agents')
+      // Agent dropdown is hidden when no agents are available
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     })
   })
 

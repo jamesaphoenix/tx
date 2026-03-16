@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
@@ -80,7 +80,7 @@ describe("DocDetail", () => {
     server.resetHandlers()
   })
 
-  it("renders document details and toggles to YAML source", async () => {
+  it("renders document details with rendered content", async () => {
     const onNavigateToDoc = vi.fn()
 
     renderWithProviders(
@@ -95,9 +95,7 @@ describe("DocDetail", () => {
       expect(screen.getByText("Rendered body text")).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "YAML Source" }))
-
-    expect(screen.getByText(/name: PRD-001-dashboard/)).toBeInTheDocument()
-    expect(screen.getByText(/kind: prd/)).toBeInTheDocument()
+    // YAML Source toggle was removed; verify metadata is visible instead
+    expect(screen.getByText(docFixture.name)).toBeInTheDocument()
   })
 })

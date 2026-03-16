@@ -201,6 +201,13 @@ describe('App', () => {
       expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     })
 
+    // Navigate to the Labels settings tab
+    fireEvent.click(screen.getByRole('button', { name: 'Labels' }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('New label name')).toBeInTheDocument()
+    })
+
     fireEvent.change(screen.getByLabelText('New label name'), {
       target: { value: 'priority-high' },
     })
@@ -242,6 +249,13 @@ describe('App', () => {
     renderWithProviders(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    })
+
+    // Navigate to the Labels settings tab
+    fireEvent.click(screen.getByRole('button', { name: 'Labels' }))
 
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()

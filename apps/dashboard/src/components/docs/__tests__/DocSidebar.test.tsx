@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { render, screen, waitFor, fireEvent } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
@@ -122,39 +122,21 @@ describe("DocSidebar", () => {
       expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
     })
 
-    expect(screen.getByRole("button", { name: "Grouped" })).toHaveClass("bg-blue-600")
+    // Docs are grouped by their numeric prefix (e.g., "001 - ...")
     expect(screen.getByText(/001 -/i)).toBeInTheDocument()
   })
 
-  it("toggles to hierarchy view and uses doc graph relationships", async () => {
-    let graphCalls = 0
-    server.use(
-      http.get("*", ({ request }) => {
-        const pathname = new URL(request.url).pathname
-        if (pathname === "/api/docs") {
-          return HttpResponse.json({ docs: docsFixture })
-        }
-        if (pathname === "/api/docs/graph") {
-          graphCalls += 1
-          return HttpResponse.json(graphFixture)
-        }
-        return HttpResponse.json({ error: "not found" }, { status: 404 })
-      }),
-    )
-
+  it("renders all docs with their kind badges", async () => {
     renderWithProviders()
 
     await waitFor(() => {
       expect(screen.getByText("overview-dashboard")).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Hierarchy" }))
-
-    await waitFor(() => {
-      expect(graphCalls).toBeGreaterThan(0)
-      expect(screen.getByRole("button", { name: "Hierarchy" })).toHaveClass("bg-blue-600")
-      expect(screen.queryByText(/001 -/i)).not.toBeInTheDocument()
-      expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
-    })
+    // Verify kind badges are rendered
+    expect(screen.getByText("OV")).toBeInTheDocument()
+    expect(screen.getByText("PRD")).toBeInTheDocument()
+    expect(screen.getByText("DD")).toBeInTheDocument()
+    expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
   })
 })

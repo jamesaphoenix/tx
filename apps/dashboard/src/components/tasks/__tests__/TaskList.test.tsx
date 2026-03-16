@@ -544,7 +544,6 @@ describe('TaskList', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Ready Tasks')).toBeInTheDocument()
         expect(screen.getByText('Ready task 1')).toBeInTheDocument()
         expect(screen.getByText('Ready task 2')).toBeInTheDocument()
       })
@@ -876,7 +875,7 @@ describe('TaskList', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText('No tasks in the loaded results match the current assignment/label filters.')
+          screen.getByText('No tasks in the loaded results match the current filters.')
         ).toBeInTheDocument()
       })
       expect(screen.getByText('0 matching of 2 loaded')).toBeInTheDocument()
