@@ -555,7 +555,8 @@ export const fetchers = {
   listCycles: async (): Promise<Cycle[]> => {
     const res = await fetch("/api/cycles")
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
+    const data = await res.json()
+    return data.cycles
   },
   createCycle: async (): Promise<Cycle> => {
     const res = await fetch("/api/cycles", { method: "POST" })
