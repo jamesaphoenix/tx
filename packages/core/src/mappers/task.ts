@@ -130,7 +130,7 @@ export const isValidTransition = (from: TaskStatus, to: TaskStatus): boolean => 
     backlog: ["ready", "planning", "active", "blocked", "done"],
     ready: ["planning", "active", "blocked", "done"],
     planning: ["ready", "active", "blocked", "done"],
-    active: ["blocked", "review", "done"],
+    active: ["blocked", "review", "needs_review", "done"],
     blocked: ["backlog", "ready", "planning", "active"],
     review: ["active", "needs_review", "done"],
     needs_review: ["active", "review", "done"],

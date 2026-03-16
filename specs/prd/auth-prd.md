@@ -17,27 +17,32 @@ last_reviewed_at: 2026-03-15
 ---
 
 
-# Auth PRD
+# Summary
+Draft PRD for authentication requirements and acceptance criteria.
 
-
-## Problem
-
+# Problem
 Describe the problem.
 
-## Solution
+# Scope
+Included: Authentication flows and credential management.
+Excluded: Authorization and role-based access control.
 
-Describe the solution approach.
+# Requirements
+```yaml
+ears_requirements:
+  - id: REQ-AUTHPRD-001
+    kind: ubiquitous
+    statement: the system shall authenticate users before granting access
+    priority: must
+    rationale: core security requirement
+```
 
-## Structured Requirements (EARS)
+# Acceptance Criteria
+```yaml
+acceptance_criteria:
+  - id: AC-001
+    statement: users can authenticate with valid credentials
+```
 
-| ID | Pattern | Requirement | Priority |
-|-----|---------|-------------|----------|
-| EARS-AUTHPRD-001 | ubiquitous | The the system shall do something important. | must |
-
-## Acceptance Criteria
-
-- Criterion 1
-
-## Non-Goals
-
+# Non-goals
 - Item 1

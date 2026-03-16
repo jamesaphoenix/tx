@@ -41,7 +41,7 @@ ears_requirements:
 ```yaml
 acceptance_criteria:
   - id: AC-001
-    statement: `bun apps/cli/src/cli.ts doc validate` reports no placeholder-content issues for this document
+    statement: "bun apps/cli/src/cli.ts doc validate reports no placeholder-content issues for this document"
 ```
 
 # Non-goals
