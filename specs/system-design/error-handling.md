@@ -3,11 +3,12 @@ kind: spec
 spec_type: design
 name: error-handling
 title: Error Handling
-status: changing
+status: draft
 version: 1
-owners: []
-summary: ""
-domain: ""
+owners:
+  - team
+summary: Draft system design guidance for consistent error handling across tx services.
+domain: platform
 tags: []
 depends_on: []
 supersedes: []

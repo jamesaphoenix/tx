@@ -3,11 +3,12 @@ kind: spec
 spec_type: prd
 name: test-auth-flows
 title: Auth Flows
-status: changing
+status: draft
 version: 1
-owners: []
-summary: ""
-domain: ""
+owners:
+  - team
+summary: Draft coverage of core authentication user flows for testing and review.
+domain: auth
 tags: []
 depends_on: []
 supersedes: []

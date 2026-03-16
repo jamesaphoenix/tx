@@ -3,11 +3,12 @@ kind: spec
 spec_type: prd
 name: auth-prd
 title: Auth PRD
-status: changing
+status: draft
 version: 1
-owners: []
-summary: ""
-domain: ""
+owners:
+  - team
+summary: Draft PRD for authentication requirements and acceptance criteria.
+domain: auth
 tags: []
 depends_on: []
 supersedes: []

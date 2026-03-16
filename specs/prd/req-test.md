@@ -18,31 +18,31 @@ last_reviewed_at: 2026-03-15
 ---
 
 # Summary
-Describe the purpose of this PRD.
+This draft PRD acts as a minimal fixture for validating markdown-first PRD parsing and linting.
 
 # Problem
-Describe the problem this feature solves.
+Template placeholders in fixture specs create avoidable validation noise during doc pipeline checks.
 
 # Scope
-Included: ...
-Excluded: ...
+Included: a small but realistic auth-related requirement and acceptance check for validation tests.
+Excluded: production authentication implementation details.
 
 # Requirements
 ```yaml
 ears_requirements:
   - id: REQ-REQTEST-001
     kind: ubiquitous
-    statement: the system shall do X
+    statement: the documentation system shall parse and validate this draft PRD requirement without placeholder-field errors
     priority: must
-    rationale: why this matters
+    rationale: keeps regression fixtures representative and valid
 ```
 
 # Acceptance Criteria
 ```yaml
 acceptance_criteria:
   - id: AC-001
-    statement: criterion description
+    statement: `bun apps/cli/src/cli.ts doc validate` reports no placeholder-content issues for this document
 ```
 
 # Non-goals
-- Item 1
+- Defining the complete auth product roadmap in this fixture document
