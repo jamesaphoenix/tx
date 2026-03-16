@@ -42,6 +42,142 @@ function writeDocsConfig(cwd: string, requireEars: boolean): void {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Markdown-first helpers
+// ---------------------------------------------------------------------------
+
+interface InvariantDef {
+  id: string
+  statement: string
+  severity?: string
+  verified_by?: string[]
+}
+
+interface EarsRequirementDef {
+  id: string
+  kind?: string
+  statement: string
+  priority?: string
+  rationale?: string
+}
+
+/** Build a fenced YAML block for invariants. */
+function invariantsYaml(invariants: InvariantDef[]): string {
+  const lines: string[] = ['```yaml', 'invariants:']
+  for (const inv of invariants) {
+    lines.push(`  - id: ${inv.id}`)
+    lines.push(`    statement: "${inv.statement}"`)
+    lines.push(`    severity: ${inv.severity ?? 'high'}`)
+    lines.push('    verified_by:')
+    for (const v of (inv.verified_by ?? ['test/placeholder.test.ts'])) {
+      lines.push(`      - ${v}`)
+    }
+  }
+  lines.push('```')
+  return lines.join('\n')
+}
+
+/** Build a fenced YAML block for EARS requirements. */
+function earsYaml(ears: EarsRequirementDef[]): string {
+  const lines: string[] = ['```yaml', 'ears_requirements:']
+  for (const req of ears) {
+    lines.push(`  - id: ${req.id}`)
+    lines.push(`    kind: ${req.kind ?? 'ubiquitous'}`)
+    lines.push(`    statement: "${req.statement}"`)
+    lines.push(`    priority: ${req.priority ?? 'must'}`)
+    if (req.rationale) lines.push(`    rationale: "${req.rationale}"`)
+  }
+  lines.push('```')
+  return lines.join('\n')
+}
+
+/**
+ * Build a markdown-first doc with YAML frontmatter and section body.
+ * Sections are rendered as `# Heading\nbody\n`. Embedded YAML blocks
+ * (invariants, EARS) must be included inside the section body text
+ * via the invariantsYaml/earsYaml helpers.
+ */
+function buildMdDoc(opts: {
+  specType: string
+  name: string
+  title: string
+  sections: Record<string, string>
+}): string {
+  const lines: string[] = [
+    '---',
+    'kind: spec',
+    `spec_type: ${opts.specType}`,
+    `name: ${opts.name}`,
+    `title: "${opts.title}"`,
+    'status: draft',
+    'version: 1',
+    'owners:',
+    '  - team',
+    `summary: ${opts.title} summary`,
+    'domain: test',
+    'tags: []',
+    'depends_on: []',
+    'supersedes: []',
+    'implements: null',
+    `last_reviewed_at: ${new Date().toISOString().split('T')[0]}`,
+    '---',
+    '',
+  ]
+
+  for (const [heading, body] of Object.entries(opts.sections)) {
+    lines.push(`# ${heading}`, body, '')
+  }
+
+  return lines.join('\n')
+}
+
+/** Build required sections for a PRD spec type. */
+function prdSections(opts?: {
+  invariants?: InvariantDef[]
+  ears?: EarsRequirementDef[]
+}): Record<string, string> {
+  const requirementsContent = (opts?.ears && opts.ears.length > 0)
+    ? earsYaml(opts.ears)
+    : 'No specific requirements.'
+
+  const sections: Record<string, string> = {
+    Summary: 'PRD summary.',
+    Problem: 'Problem statement.',
+    Scope: 'Included: all.\nExcluded: none.',
+    Requirements: requirementsContent,
+    'Acceptance Criteria': 'AC placeholder.',
+  }
+
+  if (opts?.invariants && opts.invariants.length > 0) {
+    sections['Invariants'] = invariantsYaml(opts.invariants)
+  }
+
+  return sections
+}
+
+/** Build required sections for a design spec type. */
+function designSections(opts?: {
+  invariants?: InvariantDef[]
+}): Record<string, string> {
+  const invariantsContent = (opts?.invariants && opts.invariants.length > 0)
+    ? invariantsYaml(opts.invariants)
+    : '```yaml\ninvariants: []\n```'
+
+  return {
+    Summary: 'Design summary.',
+    Architecture: '## Components\n...',
+    Interfaces: '```yaml\ninterfaces: []\n```',
+    'Data Model': 'No data model changes.',
+    Invariants: invariantsContent,
+    'Failure Modes': '```yaml\nfailure_modes: []\n```',
+    Verification: '```yaml\nverification: []\n```',
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 describe("tx doc command default behavior", () => {
   let tmpProjectDir: string
 
@@ -97,14 +233,17 @@ describe("tx doc command default behavior", () => {
     )
     expect(addDoc.status).toBe(0)
 
-    const yaml = readFileSync(
-      join(tmpProjectDir, "specs", "prd", "doc-default-prd.yml"),
+    // Markdown-first: file is .md, not .yml
+    const md = readFileSync(
+      join(tmpProjectDir, "specs", "prd", "doc-default-prd.md"),
       "utf-8"
     )
-    expect(yaml).toContain("ears_requirements:")
-    expect(yaml).toContain("EARS-DOCDEFAULTPR-001")
-    expect(yaml).toContain("# requirements:")
-    expect(yaml).not.toContain("\nrequirements:\n  - Requirement 1")
+    // Frontmatter contains spec_type: prd
+    expect(md).toContain("spec_type: prd")
+    expect(md).toContain("kind: spec")
+    // EARS requirements are in a fenced yaml block
+    expect(md).toContain("ears_requirements:")
+    expect(md).toContain("REQ-DOCDEFAULTPR-001")
   })
 })
 
@@ -161,10 +300,9 @@ describe("tx doc lifecycle coverage", () => {
     expect(patch.status).toBe(0)
     expect(patch.stdout).toContain("Created patch: dd-feature-patch → dd-feature")
 
-    const render = runTx(["doc", "render"], tmpProjectDir)
-    expect(render.status).toBe(0)
-    expect(render.stdout).toContain("Rendered")
-    // After subprocess exits, verify files exist (retry briefly for fs flush)
+    // Lock triggers render internally (index regeneration)
+    const lockResult = runTx(["doc", "lock", "dd-feature-patch"], tmpProjectDir)
+    expect(lockResult.status).toBe(0)
     const indexMd = join(tmpProjectDir, "specs", "index.md")
     const indexYml = join(tmpProjectDir, "specs", "index.yml")
     for (let i = 0; i < 10 && (!existsSync(indexMd) || !existsSync(indexYml)); i++) {
@@ -197,7 +335,7 @@ describe("tx doc lifecycle coverage", () => {
     expect(after.warnings).toEqual([])
   })
 
-  it("detects content drift after YAML mutation", () => {
+  it("detects content drift after markdown mutation", () => {
     const addTask = runTx(["add", "Drift task", "--json"], tmpProjectDir)
     expect(addTask.status).toBe(0)
     const task = JSON.parse(addTask.stdout) as { id: string }
@@ -212,9 +350,10 @@ describe("tx doc lifecycle coverage", () => {
     const cleanJson = JSON.parse(clean.stdout) as { warnings: string[] }
     expect(cleanJson.warnings).toEqual([])
 
-    const yamlPath = join(tmpProjectDir, "specs", "design", "dd-drift.yml")
-    const original = readFileSync(yamlPath, "utf-8")
-    writeFileSync(yamlPath, `${original}\n# manual drift edit\n`, "utf-8")
+    // Markdown-first: file is .md, not .yml
+    const mdPath = join(tmpProjectDir, "specs", "design", "dd-drift.md")
+    const original = readFileSync(mdPath, "utf-8")
+    writeFileSync(mdPath, `${original}\n# manual drift edit\n`, "utf-8")
 
     const drift = runTx(["doc", "drift", "dd-drift", "--json"], tmpProjectDir)
     expect(drift.status).toBe(0)
@@ -223,85 +362,44 @@ describe("tx doc lifecycle coverage", () => {
     expect(driftJson.warnings.some((w) => w.includes("Content hash mismatch"))).toBe(true)
   })
 
-  it("syncs invariants from explicit YAML, PRD requirements/EARS, and design goals", () => {
+  it("syncs invariants from embedded invariants and EARS requirements blocks", () => {
     const addPrd = runTx(["doc", "add", "prd", "invariant-prd", "--title", "Invariant PRD"], tmpProjectDir)
     const addDesign = runTx(["doc", "add", "design", "invariant-design", "--title", "Invariant Design"], tmpProjectDir)
     expect(addPrd.status).toBe(0)
     expect(addDesign.status).toBe(0)
 
-    const prdYamlPath = join(tmpProjectDir, "specs", "prd", "invariant-prd.yml")
+    // Write markdown-first PRD with embedded invariants + EARS requirements
     writeFileSync(
-      prdYamlPath,
-      [
-        "kind: prd",
-        "name: invariant-prd",
-        'title: "Invariant PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements:",
-        "  - Requirement one must hold",
-        "  - Requirement two remains true",
-        "",
-        "ears_requirements:",
-        "  - id: EARS-PRD-001",
-        "    pattern: ubiquitous",
-        "    system: The API",
-        "    response: return deterministic task IDs",
-        "    test_hint: test/integration/task-id.test.ts",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-        "invariants:",
-        "  - id: INV-PRD-EXPLICIT-001",
-        "    rule: Explicit PRD invariant",
-        "    enforcement: integration_test",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "prd", "invariant-prd.md"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'invariant-prd',
+        title: 'Invariant PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-PRD-EXPLICIT-001', statement: 'Explicit PRD invariant' },
+          ],
+          ears: [
+            { id: 'REQ-PRD-001', statement: 'the system shall return deterministic task IDs' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
-    const designYamlPath = join(tmpProjectDir, "specs", "design", "invariant-design.yml")
+    // Write markdown-first design doc with embedded invariants
     writeFileSync(
-      designYamlPath,
-      [
-        "kind: design",
-        "name: invariant-design",
-        'title: "Invariant Design"',
-        "status: changing",
-        "version: 1",
-        "",
-        "problem_definition: |",
-        "  Why this change is needed.",
-        "",
-        "goals:",
-        "  - Design goal one must be preserved",
-        "  - Design goal two must stay true",
-        "",
-        "architecture: |",
-        "  ## Components",
-        "  ...",
-        "",
-        "data_model: |",
-        "  ## Table Name",
-        "  | Column | Type | Constraints |",
-        "  |--------|------|-------------|",
-        "",
-        "invariants:",
-        "  - id: INV-DESIGN-EXPLICIT-001",
-        "    rule: Explicit design invariant",
-        "    enforcement: linter",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "design", "invariant-design.md"),
+      buildMdDoc({
+        specType: 'design',
+        name: 'invariant-design',
+        title: 'Invariant Design',
+        sections: designSections({
+          invariants: [
+            { id: 'INV-DESIGN-EXPLICIT-001', statement: 'Explicit design invariant', severity: 'medium' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
@@ -311,52 +409,31 @@ describe("tx doc lifecycle coverage", () => {
       synced: number
       invariants: Array<{ id: string }>
     }
-    expect(syncJson.synced).toBe(7)
+    // 1 explicit PRD invariant + 1 EARS-derived (INV-REQ-PRD-001) + 1 explicit design invariant = 3
+    expect(syncJson.synced).toBe(3)
 
     const syncedIds = syncJson.invariants.map((inv) => inv.id)
     expect(syncedIds).toContain("INV-PRD-EXPLICIT-001")
     expect(syncedIds).toContain("INV-DESIGN-EXPLICIT-001")
-    expect(syncedIds).toContain("INV-EARS-PRD-001")
-    expect(syncedIds).toContain("INV-PRD-INVARIANT-PRD-REQ-001")
-    expect(syncedIds).toContain("INV-PRD-INVARIANT-PRD-REQ-002")
-    expect(syncedIds).toContain("INV-DESIGN-INVARIANT-DESIGN-GOAL-001")
-    expect(syncedIds).toContain("INV-DESIGN-INVARIANT-DESIGN-GOAL-002")
+    expect(syncedIds).toContain("INV-REQ-PRD-001")
   })
 
-  it("retains EARS-derived subsystem/test_ref metadata and supports subsystem filtering", () => {
+  it("retains EARS-derived subsystem metadata and supports subsystem filtering", () => {
     const addPrd = runTx(["doc", "add", "prd", "ears-meta-prd", "--title", "EARS Meta PRD"], tmpProjectDir)
     expect(addPrd.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, "specs", "prd", "ears-meta-prd.yml"),
-      [
-        "kind: prd",
-        "name: ears-meta-prd",
-        'title: "EARS Meta PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements: []",
-        "",
-        "ears_requirements:",
-        "  - id: EARS-AUTH-001",
-        "    pattern: ubiquitous",
-        "    system: Authentication API",
-        "    response: emit deterministic access tokens",
-        "    test_hint: test/integration/auth-token.test.ts",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "prd", "ears-meta-prd.md"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'ears-meta-prd',
+        title: 'EARS Meta PRD',
+        sections: prdSections({
+          ears: [
+            { id: 'REQ-AUTH-001', statement: 'the system shall emit deterministic access tokens' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
@@ -364,25 +441,25 @@ describe("tx doc lifecycle coverage", () => {
     expect(sync.status).toBe(0)
     const syncJson = JSON.parse(sync.stdout) as { synced: number; invariants: Array<{ id: string }> }
     expect(syncJson.synced).toBe(1)
-    expect(syncJson.invariants.map((inv) => inv.id)).toContain("INV-EARS-AUTH-001")
+    expect(syncJson.invariants.map((inv) => inv.id)).toContain("INV-REQ-AUTH-001")
 
-    const show = runTx(["invariant", "show", "INV-EARS-AUTH-001", "--json"], tmpProjectDir)
+    const show = runTx(["invariant", "show", "INV-REQ-AUTH-001", "--json"], tmpProjectDir)
     expect(show.status).toBe(0)
     const shown = JSON.parse(show.stdout) as {
       id: string
       subsystem?: string | null
       testRef?: string | null
     }
-    expect(shown.id).toBe("INV-EARS-AUTH-001")
-    expect(shown.subsystem).toBe("auth")
-    expect(shown.testRef).toBe("test/integration/auth-token.test.ts")
+    expect(shown.id).toBe("INV-REQ-AUTH-001")
+    // In markdown-first, subsystem is set to the doc kind
+    expect(shown.subsystem).toBe("prd")
 
-    const listBySubsystem = runTx(["invariant", "list", "--subsystem", "auth", "--json"], tmpProjectDir)
+    const listBySubsystem = runTx(["invariant", "list", "--subsystem", "prd", "--json"], tmpProjectDir)
     expect(listBySubsystem.status).toBe(0)
     const filtered = JSON.parse(listBySubsystem.stdout) as Array<{ id: string; subsystem?: string | null }>
     expect(filtered).toHaveLength(1)
-    expect(filtered[0]?.id).toBe("INV-EARS-AUTH-001")
-    expect(filtered[0]?.subsystem).toBe("auth")
+    expect(filtered[0]?.id).toBe("INV-REQ-AUTH-001")
+    expect(filtered[0]?.subsystem).toBe("prd")
   })
 
   it("syncs only the requested doc when using invariant sync --doc", () => {
@@ -392,170 +469,98 @@ describe("tx doc lifecycle coverage", () => {
     expect(addDesign.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, "specs", "prd", "target-prd.yml"),
-      [
-        "kind: prd",
-        "name: target-prd",
-        'title: "Target PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements:",
-        "  - Requirement A",
-        "  - Requirement B",
-        "",
-        "ears_requirements:",
-        "  - id: EARS-TGT-001",
-        "    pattern: ubiquitous",
-        "    system: Target API",
-        "    response: return deterministic values",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-        "invariants:",
-        "  - id: INV-TARGET-PRD-EXPLICIT-001",
-        "    rule: Explicit target PRD invariant",
-        "    enforcement: integration_test",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "prd", "target-prd.md"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'target-prd',
+        title: 'Target PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-TARGET-PRD-EXPLICIT-001', statement: 'Explicit target PRD invariant' },
+          ],
+          ears: [
+            { id: 'REQ-TGT-001', statement: 'the system shall return deterministic values' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
     writeFileSync(
-      join(tmpProjectDir, "specs", "design", "target-design.yml"),
-      [
-        "kind: design",
-        "name: target-design",
-        'title: "Target Design"',
-        "status: changing",
-        "version: 1",
-        "",
-        "problem_definition: |",
-        "  Why this change is needed.",
-        "",
-        "goals:",
-        "  - Keep target design stable",
-        "",
-        "architecture: |",
-        "  ## Components",
-        "  ...",
-        "",
-        "data_model: |",
-        "  ## Table Name",
-        "  | Column | Type | Constraints |",
-        "  |--------|------|-------------|",
-        "",
-        "invariants:",
-        "  - id: INV-TARGET-DESIGN-EXPLICIT-001",
-        "    rule: Explicit target design invariant",
-        "    enforcement: linter",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "design", "target-design.md"),
+      buildMdDoc({
+        specType: 'design',
+        name: 'target-design',
+        title: 'Target Design',
+        sections: designSections({
+          invariants: [
+            { id: 'INV-TARGET-DESIGN-EXPLICIT-001', statement: 'Explicit target design invariant', severity: 'medium' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
+    // Sync only PRD: 1 explicit invariant + 1 EARS = 2
     const syncPrd = runTx(["invariant", "sync", "--doc", "target-prd", "--json"], tmpProjectDir)
     expect(syncPrd.status).toBe(0)
     const syncPrdJson = JSON.parse(syncPrd.stdout) as { synced: number; invariants: Array<{ id: string }> }
-    expect(syncPrdJson.synced).toBe(4)
+    expect(syncPrdJson.synced).toBe(2)
     expect(syncPrdJson.invariants.map((inv) => inv.id)).toContain("INV-TARGET-PRD-EXPLICIT-001")
     expect(syncPrdJson.invariants.map((inv) => inv.id)).not.toContain("INV-TARGET-DESIGN-EXPLICIT-001")
 
     const listAfterPrd = runTx(["invariant", "list", "--json"], tmpProjectDir)
     expect(listAfterPrd.status).toBe(0)
     const listAfterPrdJson = JSON.parse(listAfterPrd.stdout) as Array<{ id: string }>
-    expect(listAfterPrdJson).toHaveLength(4)
+    expect(listAfterPrdJson).toHaveLength(2)
     expect(listAfterPrdJson.some((inv) => inv.id === "INV-TARGET-DESIGN-EXPLICIT-001")).toBe(false)
 
+    // Now sync design: 1 explicit invariant
     const syncDesign = runTx(["invariant", "sync", "--doc", "target-design", "--json"], tmpProjectDir)
     expect(syncDesign.status).toBe(0)
     const syncDesignJson = JSON.parse(syncDesign.stdout) as { synced: number; invariants: Array<{ id: string }> }
-    expect(syncDesignJson.synced).toBe(2)
+    expect(syncDesignJson.synced).toBe(1)
     expect(syncDesignJson.invariants.map((inv) => inv.id)).toContain("INV-TARGET-DESIGN-EXPLICIT-001")
   })
 
-  it("deprecates invariants that are removed from YAML on re-sync", () => {
+  it("deprecates invariants that are removed from markdown on re-sync", () => {
     const addPrd = runTx(["doc", "add", "prd", "deprecation-prd", "--title", "Deprecation PRD"], tmpProjectDir)
     expect(addPrd.status).toBe(0)
 
-    const prdPath = join(tmpProjectDir, "specs", "prd", "deprecation-prd.yml")
+    const prdPath = join(tmpProjectDir, "specs", "prd", "deprecation-prd.md")
+    // First sync: 1 explicit invariant + 1 EARS = 2
     writeFileSync(
       prdPath,
-      [
-        "kind: prd",
-        "name: deprecation-prd",
-        'title: "Deprecation PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements:",
-        "  - Requirement to remove later",
-        "",
-        "ears_requirements:",
-        "  - id: EARS-DEP-001",
-        "    pattern: ubiquitous",
-        "    system: the system",
-        "    response: handle deprecation",
-        "    priority: must",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-        "invariants:",
-        "  - id: INV-DEPRECATION-EXPLICIT-001",
-        "    rule: Explicit invariant to remove",
-        "    enforcement: integration_test",
-        "",
-      ].join("\n"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'deprecation-prd',
+        title: 'Deprecation PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-DEPRECATION-EXPLICIT-001', statement: 'Explicit invariant to remove' },
+          ],
+          ears: [
+            { id: 'REQ-DEP-001', statement: 'the system shall handle deprecation' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
     const firstSync = runTx(["invariant", "sync", "--doc", "deprecation-prd", "--json"], tmpProjectDir)
     expect(firstSync.status).toBe(0)
     const firstSyncJson = JSON.parse(firstSync.stdout) as { synced: number }
-    // 1 explicit invariant + 1 legacy requirement invariant + 1 EARS invariant
-    expect(firstSyncJson.synced).toBe(3)
+    expect(firstSyncJson.synced).toBe(2)
 
+    // Second sync: remove all invariants and EARS
     writeFileSync(
       prdPath,
-      [
-        "kind: prd",
-        "name: deprecation-prd",
-        'title: "Deprecation PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements: []",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-      ].join("\n"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'deprecation-prd',
+        title: 'Deprecation PRD',
+        sections: prdSections(),
+      }),
       "utf-8"
     )
 
@@ -569,11 +574,10 @@ describe("tx doc lifecycle coverage", () => {
     const listed = JSON.parse(list.stdout) as Array<{ id: string; status: string }>
     const deprecationIds = new Set([
       "INV-DEPRECATION-EXPLICIT-001",
-      "INV-PRD-DEPRECATION-PRD-REQ-001",
-      "INV-EARS-DEP-001",
+      "INV-REQ-DEP-001",
     ])
     const rows = listed.filter((inv) => deprecationIds.has(inv.id))
-    expect(rows).toHaveLength(3)
+    expect(rows).toHaveLength(2)
     for (const row of rows) {
       expect(row.status).toBe("deprecated")
     }
@@ -583,71 +587,38 @@ describe("tx doc lifecycle coverage", () => {
     const addPrd = runTx(["doc", "add", "prd", "upsert-prd", "--title", "Upsert PRD"], tmpProjectDir)
     expect(addPrd.status).toBe(0)
 
-    const prdPath = join(tmpProjectDir, "specs", "prd", "upsert-prd.yml")
+    const prdPath = join(tmpProjectDir, "specs", "prd", "upsert-prd.md")
     writeFileSync(
       prdPath,
-      [
-        "kind: prd",
-        "name: upsert-prd",
-        'title: "Upsert PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements: []",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-        "invariants:",
-        "  - id: INV-UPSERT-001",
-        "    rule: Original rule text",
-        "    enforcement: integration_test",
-        "    test_ref: test/original.test.ts",
-        "",
-      ].join("\n"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'upsert-prd',
+        title: 'Upsert PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-UPSERT-001', statement: 'Original rule text', verified_by: ['test/original.test.ts'] },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
     const firstSync = runTx(["invariant", "sync", "--doc", "upsert-prd", "--json"], tmpProjectDir)
     expect(firstSync.status).toBe(0)
 
+    // Update the invariant statement and verified_by
     writeFileSync(
       prdPath,
-      [
-        "kind: prd",
-        "name: upsert-prd",
-        'title: "Upsert PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements: []",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-        "invariants:",
-        "  - id: INV-UPSERT-001",
-        "    rule: Updated rule text",
-        "    enforcement: integration_test",
-        "    test_ref: test/updated.test.ts",
-        "",
-      ].join("\n"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'upsert-prd',
+        title: 'Upsert PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-UPSERT-001', statement: 'Updated rule text', verified_by: ['test/updated.test.ts'] },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
@@ -671,73 +642,44 @@ describe("tx doc lifecycle coverage", () => {
     expect(rows[0]?.status).toBe("active")
   })
 
-  it("derives invariants from scalar legacy requirements/goals blocks", () => {
+  it("derives invariants from embedded invariants and ears_requirements blocks", () => {
     const addPrd = runTx(["doc", "add", "prd", "scalar-prd", "--title", "Scalar PRD"], tmpProjectDir)
     const addDesign = runTx(["doc", "add", "design", "scalar-design", "--title", "Scalar Design"], tmpProjectDir)
     expect(addPrd.status).toBe(0)
     expect(addDesign.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, "specs", "prd", "scalar-prd.yml"),
-      [
-        "kind: prd",
-        "name: scalar-prd",
-        'title: "Scalar PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements: |",
-        "  - Legacy requirement one",
-        "  - Legacy requirement two",
-        "",
-        "ears_requirements:",
-        "  - id: EARS-SCALAR-001",
-        "    pattern: ubiquitous",
-        "    system: the system",
-        "    response: handle scalar requirements",
-        "    priority: must",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "prd", "scalar-prd.md"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'scalar-prd',
+        title: 'Scalar PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-SCALAR-PRD-001', statement: 'PRD invariant one' },
+            { id: 'INV-SCALAR-PRD-002', statement: 'PRD invariant two' },
+          ],
+          ears: [
+            { id: 'REQ-SCALAR-001', statement: 'the system shall handle scalar requirements' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
     writeFileSync(
-      join(tmpProjectDir, "specs", "design", "scalar-design.yml"),
-      [
-        "kind: design",
-        "name: scalar-design",
-        'title: "Scalar Design"',
-        "status: changing",
-        "version: 1",
-        "",
-        "problem_definition: |",
-        "  Why this change is needed.",
-        "",
-        "goals: |",
-        "  - Legacy goal one",
-        "  - Legacy goal two",
-        "",
-        "architecture: |",
-        "  ## Components",
-        "  ...",
-        "",
-        "data_model: |",
-        "  ## Table Name",
-        "  | Column | Type | Constraints |",
-        "  |--------|------|-------------|",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "design", "scalar-design.md"),
+      buildMdDoc({
+        specType: 'design',
+        name: 'scalar-design',
+        title: 'Scalar Design',
+        sections: designSections({
+          invariants: [
+            { id: 'INV-SCALAR-DESIGN-001', statement: 'Design invariant one' },
+            { id: 'INV-SCALAR-DESIGN-002', statement: 'Design invariant two' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
@@ -748,14 +690,14 @@ describe("tx doc lifecycle coverage", () => {
       invariants: Array<{ id: string }>
     }
 
-    // 2 legacy reqs + 1 EARS + 2 design goals = 5
+    // 2 PRD invariants + 1 EARS + 2 design invariants = 5
     expect(syncJson.synced).toBe(5)
     const ids = new Set(syncJson.invariants.map((inv) => inv.id))
-    expect(ids.has("INV-PRD-SCALAR-PRD-REQ-001")).toBe(true)
-    expect(ids.has("INV-PRD-SCALAR-PRD-REQ-002")).toBe(true)
-    expect(ids.has("INV-EARS-SCALAR-001")).toBe(true)
-    expect(ids.has("INV-DESIGN-SCALAR-DESIGN-GOAL-001")).toBe(true)
-    expect(ids.has("INV-DESIGN-SCALAR-DESIGN-GOAL-002")).toBe(true)
+    expect(ids.has("INV-SCALAR-PRD-001")).toBe(true)
+    expect(ids.has("INV-SCALAR-PRD-002")).toBe(true)
+    expect(ids.has("INV-REQ-SCALAR-001")).toBe(true)
+    expect(ids.has("INV-SCALAR-DESIGN-001")).toBe(true)
+    expect(ids.has("INV-SCALAR-DESIGN-002")).toBe(true)
   })
 
   it("supports invariant show and record flows after sync", () => {
@@ -763,33 +705,17 @@ describe("tx doc lifecycle coverage", () => {
     expect(addPrd.status).toBe(0)
 
     writeFileSync(
-      join(tmpProjectDir, "specs", "prd", "record-prd.yml"),
-      [
-        "kind: prd",
-        "name: record-prd",
-        'title: "Record PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Problem statement.",
-        "",
-        "solution: |",
-        "  Solution statement.",
-        "",
-        "requirements: []",
-        "",
-        "acceptance_criteria:",
-        "  - Criterion 1",
-        "",
-        "out_of_scope:",
-        "  - Item 1",
-        "",
-        "invariants:",
-        "  - id: INV-RECORD-001",
-        "    rule: Record flow invariant",
-        "    enforcement: integration_test",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "prd", "record-prd.md"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'record-prd',
+        title: 'Record PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-RECORD-001', statement: 'Record flow invariant' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
@@ -844,62 +770,47 @@ describe("tx doc lifecycle coverage", () => {
     expect(missing.stderr).toContain("Doc not found")
   })
 
-  it("continues syncing valid docs when one doc has malformed YAML", () => {
+  it("continues syncing valid docs when one doc has malformed markdown", () => {
     const addBad = runTx(["doc", "add", "prd", "bad-prd", "--title", "Bad PRD"], tmpProjectDir)
     const addGood = runTx(["doc", "add", "prd", "good-prd", "--title", "Good PRD"], tmpProjectDir)
     expect(addBad.status).toBe(0)
     expect(addGood.status).toBe(0)
 
+    // Overwrite bad-prd with malformed markdown (invalid frontmatter)
     writeFileSync(
-      join(tmpProjectDir, "specs", "prd", "bad-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "bad-prd.md"),
       [
-        "kind: prd",
+        "---",
+        "kind: spec",
+        "spec_type: prd",
         "name: bad-prd",
         'title: "Bad PRD"',
-        "status: changing",
-        "requirements:",
-        "  - [broken",
+        "status: draft",
+        "version: not-a-number",
+        "---",
+        "",
+        "# Broken content",
         "",
       ].join("\n"),
       "utf-8"
     )
 
+    // Write good-prd with proper markdown-first content
     writeFileSync(
-      join(tmpProjectDir, "specs", "prd", "good-prd.yml"),
-      [
-        "kind: prd",
-        "name: good-prd",
-        'title: "Good PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Good problem.",
-        "",
-        "solution: |",
-        "  Good solution.",
-        "",
-        "requirements:",
-        "  - Good requirement",
-        "",
-        "ears_requirements:",
-        "  - id: EARS-GOOD-001",
-        "    pattern: ubiquitous",
-        "    system: the system",
-        "    response: do something good",
-        "    priority: must",
-        "",
-        "acceptance_criteria:",
-        "  - Good criterion",
-        "",
-        "out_of_scope:",
-        "  - None",
-        "",
-        "invariants:",
-        "  - id: INV-GOOD-001",
-        "    rule: Good explicit invariant",
-        "    enforcement: integration_test",
-        "",
-      ].join("\n"),
+      join(tmpProjectDir, "specs", "prd", "good-prd.md"),
+      buildMdDoc({
+        specType: 'prd',
+        name: 'good-prd',
+        title: 'Good PRD',
+        sections: prdSections({
+          invariants: [
+            { id: 'INV-GOOD-001', statement: 'Good explicit invariant' },
+          ],
+          ears: [
+            { id: 'REQ-GOOD-001', statement: 'the system shall do something good' },
+          ],
+        }),
+      }),
       "utf-8"
     )
 
@@ -909,27 +820,31 @@ describe("tx doc lifecycle coverage", () => {
       synced: number
       invariants: Array<{ id: string }>
     }
-    // 1 explicit invariant + 1 legacy requirement + 1 EARS = 3
-    expect(payload.synced).toBe(3)
+    // 1 explicit invariant + 1 EARS = 2
+    expect(payload.synced).toBe(2)
     const ids = new Set(payload.invariants.map((inv) => inv.id))
     expect(ids.has("INV-GOOD-001")).toBe(true)
-    expect(ids.has("INV-PRD-GOOD-PRD-REQ-001")).toBe(true)
-    expect(ids.has("INV-EARS-GOOD-001")).toBe(true)
+    expect(ids.has("INV-REQ-GOOD-001")).toBe(true)
   })
 
-  it("fails doc-scoped invariant sync when the target doc YAML is malformed", () => {
+  it("fails doc-scoped invariant sync when the target doc markdown is malformed", () => {
     const addBad = runTx(["doc", "add", "prd", "bad-only-prd", "--title", "Bad Only PRD"], tmpProjectDir)
     expect(addBad.status).toBe(0)
 
+    // Overwrite with malformed markdown (invalid frontmatter)
     writeFileSync(
-      join(tmpProjectDir, "specs", "prd", "bad-only-prd.yml"),
+      join(tmpProjectDir, "specs", "prd", "bad-only-prd.md"),
       [
-        "kind: prd",
+        "---",
+        "kind: spec",
+        "spec_type: prd",
         "name: bad-only-prd",
         'title: "Bad Only PRD"',
-        "status: changing",
-        "requirements:",
-        "  - [broken",
+        "status: draft",
+        "version: not-a-number",
+        "---",
+        "",
+        "# Broken content",
         "",
       ].join("\n"),
       "utf-8"

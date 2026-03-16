@@ -720,16 +720,17 @@ ears_requirements:
     expect(lint.stdout).toContain("No ears_requirements section found")
   })
 
-  it("shows lint-ears in doc help output", () => {
-    const help = runTx(["doc", "--help"], tempProjectDir)
-    expect(help.status).toBe(0)
-    expect(help.stdout).toContain("lint-ears")
-  })
-
-  it("shows lint-ears in top-level help output", () => {
+  it("shows spec lint in top-level help output", () => {
     const help = runTx(["--help"], tempProjectDir)
     expect(help.status).toBe(0)
-    expect(help.stdout).toContain("lint-ears")
+    expect(help.stdout).toContain("spec")
+    expect(help.stdout).toContain("lint")
+  })
+
+  it("shows spec lint in spec help output", () => {
+    const help = runTx(["spec", "--help"], tempProjectDir)
+    expect(help.status).toBe(0)
+    expect(help.stdout).toContain("lint")
   })
 
   it("fails lint-ears for non-PRD docs", () => {

@@ -405,7 +405,7 @@ null`
     )
     writeFileSync(markdownPath, content, "utf-8")
 
-    const render = runTx(["doc", "render", name], tempProjectDir)
+    const render = runTx(["doc", "show", name], tempProjectDir)
     expect(render.status).toBe(0)
   })
 
@@ -491,7 +491,7 @@ ears_requirements:
     )
     writeFileSync(markdownPath, content, "utf-8")
 
-    const render = runTx(["doc", "render", name], tempProjectDir)
+    const render = runTx(["doc", "show", name], tempProjectDir)
     expect(render.status).toBe(0)
 
     const mdPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
@@ -610,10 +610,10 @@ ears_requirements:
     )
     writeFileSync(markdownPath, invalidContent, "utf-8")
 
-    const render = runTx(["doc", "render", name], tempProjectDir)
-    expect(render.status).not.toBe(0)
+    const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
+    expect(lint.status).not.toBe(0)
 
-    const output = `${render.stdout}\n${render.stderr}`
+    const output = `${lint.stdout}\n${lint.stderr}`
     expect(output).toMatch(/ears_requirements|kind|invalid/i)
   })
 

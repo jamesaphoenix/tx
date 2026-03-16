@@ -23,7 +23,6 @@ import { cycle } from "./commands/cycle.js"
 import { trace } from "./commands/trace.js"
 import { claim } from "./commands/claim.js"
 import { compact, history } from "./commands/compact.js"
-import { validate } from "./commands/validate.js"
 import { doctor } from "./commands/doctor.js"
 import { stats } from "./commands/stats.js"
 import { bulk } from "./commands/bulk.js"
@@ -198,11 +197,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   compact,
   history,
 
-  // Validation command
-  validate,
-
-  // Diagnostics command
+  // Consolidated diagnostics (validate merged into doctor)
   doctor,
+  validate: deprecatedAlias("doctor", doctor),
 
   // Stats command
   stats,
@@ -222,7 +219,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   // Doc commands (DD-023 docs-as-primitives)
   doc,
-  invariant,
+  invariant: deprecatedAlias("spec", invariant),
   spec,
 
   // Decision commands
@@ -267,8 +264,8 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       }
       // Check for compound command help (e.g., tx help sync export)
       const compoundParents = [
-        "sync", "utils", "pin", "guard", "gate", "verify", "label", "spec",
-        "memory", "claim", "outbox", "group-context", "ack"
+        "sync", "trace", "bulk", "doc", "spec", "memory", "utils", "pin",
+        "guard", "gate", "verify", "label", "claim", "outbox", "group-context", "ack"
       ]
       if (pos[1] && compoundParents.includes(subcommand ?? "")) {
         const subcommandKey = `${subcommand} ${pos[1]}`
@@ -293,7 +290,7 @@ if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
 
 // Commands that support compound help (e.g., tx sync export --help, tx help learning add)
 const compoundHelpParents = [
-  "sync", "trace", "bulk", "doc", "invariant", "spec", "memory", "utils", "pin",
+  "sync", "trace", "bulk", "doc", "spec", "memory", "utils", "pin",
   "guard", "gate", "verify", "label", "claim", "outbox", "group-context", "ack"
 ]
 

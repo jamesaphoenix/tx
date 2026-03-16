@@ -1,9 +1,12 @@
 /**
- * Doctor command: System health diagnostics for troubleshooting
+ * Doctor command: consolidated system diagnostics (database health + system checks)
+ *
+ * Merges the former `validate` and `doctor` commands into a single entry point.
  */
 
 import { Effect } from "effect"
-import { SqliteClient, MigrationService } from "@jamesaphoenix/tx-core"
+import { SqliteClient, MigrationService, ValidationService } from "@jamesaphoenix/tx-core"
+import type { ValidationResult } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { statSync } from "node:fs"
 
@@ -23,6 +26,7 @@ interface DoctorCheck {
 interface DoctorResult {
   readonly healthy: boolean
   readonly checks: readonly DoctorCheck[]
+  readonly validation?: ValidationResult
 }
 
 function statusIcon(status: "pass" | "warn" | "fail"): string {
@@ -36,6 +40,10 @@ function statusIcon(status: "pass" | "warn" | "fail"): string {
 function formatDoctorResult(result: DoctorResult, verbose: boolean): string {
   const lines: string[] = []
 
+  lines.push("tx doctor - System Health")
+  lines.push("=" .repeat(40))
+  lines.push("")
+
   for (const check of result.checks) {
     lines.push(`${statusIcon(check.status)} ${check.message}`)
     if (verbose && check.details) {
@@ -47,7 +55,9 @@ function formatDoctorResult(result: DoctorResult, verbose: boolean): string {
   if (result.healthy) {
     lines.push("All checks passed.")
   } else {
-    lines.push("Issues detected. Run with --verbose for details.")
+    lines.push(verbose
+      ? "Issues detected."
+      : "Issues detected. Run with --verbose for details.")
   }
 
   return lines.join("\n")
@@ -58,7 +68,34 @@ export const doctor = (_pos: string[], flags: Flags) =>
     const db = yield* SqliteClient
     const migrationSvc = yield* MigrationService
     const verbose = flag(flags, "verbose", "v")
+    const fix = flag(flags, "fix")
     const checks: DoctorCheck[] = []
+
+    // --- Database validation checks (formerly `tx validate`) ---
+    const validationSvc = yield* ValidationService
+    const validationResult = yield* validationSvc.validate({ fix })
+
+    for (const check of validationResult.checks) {
+      const status: DoctorCheck["status"] = check.passed ? "pass" : "fail"
+      let message = check.name
+      if (check.fixed !== undefined && check.fixed > 0) {
+        message += ` (${check.fixed} fixed)`
+      }
+      const details = check.issues.length > 0
+        ? check.issues.map(i => `${i.severity}: ${i.message}`).join("; ")
+        : undefined
+      checks.push({ name: `validate_${check.name}`, status, message: `Validate: ${message}`, details })
+    }
+
+    if (validationResult.fixedCount > 0) {
+      checks.push({
+        name: "validate_fixes",
+        status: "pass",
+        message: `Validate: ${validationResult.fixedCount} issue(s) auto-fixed`,
+      })
+    }
+
+    // --- System diagnostics (formerly `tx doctor`) ---
 
     // 1. Check database file exists and is readable
     const dbPath = typeof flags.db === "string" ? flags.db : undefined
@@ -79,7 +116,6 @@ export const doctor = (_pos: string[], flags: Flags) =>
         })
       }
     } else {
-      // db path not available as flag — just confirm connection works
       checks.push({
         name: "database",
         status: "pass",
@@ -113,7 +149,7 @@ export const doctor = (_pos: string[], flags: Flags) =>
         : undefined,
     })
 
-    // 4. Verify Effect services are properly wired (we already have db + migrationSvc)
+    // 4. Verify Effect services are properly wired
     checks.push({
       name: "services",
       status: "pass",
@@ -121,8 +157,6 @@ export const doctor = (_pos: string[], flags: Flags) =>
     })
 
     // 5. Check for stale claims/workers
-    // Wrap in try/catch: task_claims and workers tables may not exist if migrations
-    // haven't fully applied (e.g., migration 015+ not yet run)
     try {
       const staleClaims = db.prepare<{ count: number }>(
         `SELECT COUNT(*) as count FROM task_claims
@@ -201,8 +235,8 @@ export const doctor = (_pos: string[], flags: Flags) =>
       details: hasApiKey ? undefined : "Required for: tx compact, tx dedupe, tx reprioritize",
     })
 
-    const healthy = checks.every(c => c.status !== "fail")
-    const result: DoctorResult = { healthy, checks }
+    const healthy = checks.every(c => c.status !== "fail") && validationResult.valid
+    const result: DoctorResult = { healthy, checks, validation: validationResult }
 
     if (flag(flags, "json")) {
       console.log(toJson(result))

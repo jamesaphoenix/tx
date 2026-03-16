@@ -73,10 +73,9 @@ Context Pins:
   pin sync                Sync pins to target files
   pin targets [files...]  Show/set target files
 
-Docs-First Specs:
-  doc <subcommand>        Manage docs (add, edit, show, list, render, lock, version, link, attach, patch, validate, drift, lint-ears)
-  spec <subcommand>       Spec traceability (discover, run/batch, fci, status, complete, health)
-  invariant <subcommand>  Advanced invariant inspection/repair tooling
+Docs & Specs:
+  doc <subcommand>        Manage docs (add, edit, show, list, lock, version, link, attach, patch)
+  spec <subcommand>       Spec traceability (lint, discover, health, fci, status, complete, run/batch)
 
 Cycle Scan:
   cycle                   Run cycle-based issue discovery with sub-agent swarms
@@ -98,10 +97,9 @@ Bulk Operations:
   bulk reset <id...>      Reset multiple tasks to ready
   bulk delete <id...>     Delete multiple tasks
 
-Diagnostics & Rollups:
+Diagnostics:
   stats                   Show queue metrics and health overview
-  validate                Run pre-flight database health checks
-  doctor                  Run system diagnostics
+  doctor                  Run system health checks (DB validation + diagnostics)
   dashboard               Start API server + dashboard
 
 Guards & Limits:
@@ -1555,33 +1553,9 @@ Examples:
   tx history
   tx history --json`,
 
-  validate: `tx validate - Database health checks
+  validate: `tx validate is a deprecated alias for 'tx doctor'.
 
-Usage: tx validate [options]
-
-Performs comprehensive pre-flight checks on the database:
-- Database integrity (SQLite PRAGMA integrity_check)
-- Schema version verification
-- Foreign key constraint validation
-- Orphaned dependency detection
-- Invalid status values scan
-- Missing parent references
-
-Use before running agents or after sync import to catch corruption early.
-
-Options:
-  --fix    Auto-fix what's fixable (orphaned deps, invalid statuses, missing parent refs)
-  --json   Output as JSON
-  --help   Show this help
-
-Exit Codes:
-  0        Database is valid (no errors)
-  1        Validation failed (errors found)
-
-Examples:
-  tx validate              # Run all checks
-  tx validate --fix        # Auto-fix fixable issues
-  tx validate --json       # Machine-readable output`,
+Run 'tx doctor --help' for full usage.`,
 
   stats: `tx stats - Show queue metrics and health overview
 
@@ -1625,20 +1599,29 @@ Examples:
   tx bulk reset tx-abc123 tx-def456
   tx bulk delete tx-abc123 tx-def456 --json`,
 
-  doctor: `tx doctor - System diagnostics for troubleshooting
+  doctor: `tx doctor - System health checks
 
 Usage: tx doctor [options]
 
-Runs diagnostic checks to help troubleshoot issues:
-- Database file exists and is readable
-- WAL mode enabled
-- Schema version matches expected
-- Effect services are properly wired
-- Stale claims and workers
-- Task and learning counts
-- ANTHROPIC_API_KEY availability for LLM features
+Runs all system and database health checks in one pass:
+
+Database validation (formerly 'tx validate'):
+  - Database integrity (PRAGMA integrity_check)
+  - Schema version verification
+  - Foreign key constraint validation
+  - Orphaned dependency detection
+  - Invalid status values scan
+
+System diagnostics:
+  - Database file readable, WAL mode enabled
+  - Schema version matches expected
+  - Effect services wired correctly
+  - Stale claims and workers
+  - Task and learning counts
+  - ANTHROPIC_API_KEY availability
 
 Options:
+  --fix          Auto-fix fixable DB issues (orphaned deps, invalid statuses)
   --verbose, -v  Include detailed output for each check
   --json         Output as JSON
   --help         Show this help
@@ -1648,7 +1631,8 @@ Exit Codes:
   1        One or more checks failed
 
 Examples:
-  tx doctor              # Run diagnostics
+  tx doctor              # Run all checks
+  tx doctor --fix        # Auto-fix fixable issues
   tx doctor --verbose    # Include detailed output
   tx doctor --json       # Machine-readable output`,
 
@@ -1754,21 +1738,19 @@ Usage: tx doc [subcommand] [options]
 
 Subcommands:
   add <kind> <name>         Create a new doc (overview, prd, design)
-  edit <name>               Open doc YAML in $EDITOR
+  edit <name>               Open doc in $EDITOR
   show <name>               Show doc details
   list                      List all docs
-  render [name]             Render YAML to Markdown (all docs if no name)
   lock <name>               Lock a doc version (immutable)
   version <name>            Create new version from locked doc
   link <from> <to>          Link two docs
   attach <task-id> <name>   Attach a doc to a task
   patch <design> <patch>    Create a design patch doc
-  validate                  Check all tasks are linked to docs
-  drift <name>              Detect hash/link drift for a doc
-  lint-ears <target>        Validate PRD EARS requirements (doc name or YAML path)
 
 Run 'tx doc <subcommand> --help' for subcommand-specific help.
 Running 'tx doc' with no subcommand defaults to 'tx doc list'.
+
+Use 'tx spec lint' for comprehensive doc/spec checking (drift, EARS, coverage).
 
 Examples:
   tx doc add prd auth-flow --title "Authentication Flow"
@@ -1776,10 +1758,7 @@ Examples:
   tx doc list --kind design --status changing
   tx doc lock auth-flow
   tx doc version auth-flow
-  tx doc render
-  tx doc attach tx-abc123 auth-flow
-  tx doc drift auth-flow
-  tx doc lint-ears auth-flow`,
+  tx doc attach tx-abc123 auth-flow`,
 
   "doc add": `tx doc add - Create a new doc
 
@@ -1849,25 +1828,6 @@ Examples:
   tx doc list
   tx doc list --kind design
   tx doc list --status locked --json`,
-
-  "doc render": `tx doc render - Render YAML to Markdown
-
-Usage: tx doc render [name] [--json]
-
-Renders doc YAML to Markdown files. If no name given, renders all docs.
-Also regenerates index.yml and index.md.
-
-Arguments:
-  [name]    Optional. Doc name (renders all if omitted)
-
-Options:
-  --json    Output as JSON
-  --help    Show this help
-
-Examples:
-  tx doc render                # Render all docs
-  tx doc render auth-flow      # Render specific doc
-  tx doc render --json`,
 
   "doc lock": `tx doc lock - Lock a doc version
 
@@ -1960,175 +1920,25 @@ Options:
 Examples:
   tx doc patch auth-impl auth-impl-v2 --title "Auth v2 Migration"`,
 
-  "doc validate": `tx doc validate - Check task-doc coverage
 
-Usage: tx doc validate [--json]
+  invariant: `tx invariant is deprecated. Use 'tx spec' instead.
 
-Checks that all tasks are linked to at least one doc.
+Run 'tx spec --help' for full usage.`,
 
-Options:
-  --json    Output as JSON
-  --help    Show this help
-
-Examples:
-  tx doc validate
-  tx doc validate --json`,
-
-  "doc drift": `tx doc drift - Detect drift for a doc
-
-Usage: tx doc drift <name> [--json]
-
-Checks for drift between the DB metadata and the YAML file on disk.
-Reports hash mismatches, missing files, and unlinked design docs.
-
-Arguments:
-  <name>    Required. Doc name
-
-Options:
-  --json    Output as JSON
-  --help    Show this help
-
-Examples:
-  tx doc drift auth-flow
-  tx doc drift auth-flow --json`,
-
-  "doc lint-ears": `tx doc lint-ears - Validate PRD EARS requirements
-
-Usage: tx doc lint-ears <doc-name-or-yaml-path> [--json]
-
-Validates the mandatory \`ears_requirements\` section in PRD YAML.
-Returns non-zero exit code when EARS entries are invalid.
-
-Arguments:
-  <doc-name-or-yaml-path>  Required. Doc name in tx DB or direct YAML file path
-
-Options:
-  --json    Output validation result as JSON
-  --help    Show this help
-
-Examples:
-  tx doc lint-ears PRD-031-ears-requirements
-  tx doc lint-ears specs/prd/PRD-031-ears-requirements.yml
-  tx doc lint-ears PRD-031-ears-requirements --json`,
-
-  invariant: `tx invariant - Advanced tooling for doc-derived invariants
-
-Usage: tx invariant <subcommand> [options]
-
-Subcommands:
-  list                List all invariants
-  show <id>           Show invariant details
-  record <id>         Record a check result (--passed or --failed)
-  sync                Sync invariants from doc YAML files into DB
-
-Use this when you need to inspect, repair, or directly record checks for
-derived invariants. Normal docs-first workflows usually start with
-\`tx spec discover\`.
-
-Run 'tx invariant <subcommand> --help' for subcommand-specific help.
-
-Examples:
-  tx invariant list
-  tx invariant list --subsystem auth --enforcement integration_test
-  tx invariant show INV-AUTH-001
-  tx invariant record INV-AUTH-001 --passed
-  tx invariant sync
-  tx invariant sync --doc auth-flow`,
-
-  "invariant list": `tx invariant list - List all invariants
-
-Usage: tx invariant list [options]
-
-Lists all invariants, optionally filtered by subsystem or enforcement type.
-
-Options:
-  --subsystem, -s <name>      Filter by subsystem
-  --enforcement, -e <type>    Filter by enforcement (integration_test, linter, llm_as_judge)
-  --json                      Output as JSON
-  --help                      Show this help
-
-Examples:
-  tx invariant list
-  tx invariant list --subsystem auth
-  tx invariant list --enforcement linter --json`,
-
-  "invariant show": `tx invariant show - Show invariant details
-
-Usage: tx invariant show <id> [--json]
-
-Shows full details for an invariant including rule, enforcement type,
-subsystem, test/lint/prompt references, and creation date.
-
-Arguments:
-  <id>    Required. Invariant ID (e.g., INV-AUTH-001)
-
-Options:
-  --json    Output as JSON
-  --help    Show this help
-
-Examples:
-  tx invariant show INV-AUTH-001
-  tx invariant show INV-AUTH-001 --json`,
-
-  "invariant record": `tx invariant record - Record a check result
-
-Usage: tx invariant record <id> --passed|--failed [--details <text>] [--json]
-
-Records whether an invariant check passed or failed. Creates an audit
-trail entry for compliance tracking.
-
-Arguments:
-  <id>    Required. Invariant ID (e.g., INV-AUTH-001)
-
-Flags (one required):
-  --passed     Record a passing check
-  --failed     Record a failing check
-
-Options:
-  --details, -d <text>  Additional details about the check result
-  --json                Output as JSON
-  --help                Show this help
-
-Examples:
-  tx invariant record INV-AUTH-001 --passed
-  tx invariant record INV-AUTH-001 --failed --details "Missing null check"
-  tx invariant record INV-AUTH-001 --passed --json`,
-
-  "invariant sync": `tx invariant sync - Sync doc-derived invariants from YAML
-
-Usage: tx invariant sync [--doc <name>] [--json]
-
-Syncs invariants from doc YAML files into the database. Sources include:
-- explicit \`invariants\` arrays on docs
-- PRD \`ears_requirements\` and \`requirements\`
-- design \`goals\`
-If a doc name is given, syncs only that doc's invariants. Otherwise syncs all docs.
-
-Most users do not need to run this directly: \`tx spec discover\` refreshes
-doc-derived invariants automatically before scanning tests.
-
-Options:
-  --doc <name>  Sync invariants from a specific doc only
-  --json        Output as JSON
-  --help        Show this help
-
-Examples:
-  tx invariant sync                  # Sync all docs
-  tx invariant sync --doc auth-flow  # Sync specific doc
-  tx invariant sync --json`,
 
   spec: `tx spec - Docs-first spec-to-test traceability primitives
 
 Usage: tx spec <subcommand> [options]
 
 Subcommands:
+  lint                         All-in-one check (drift, EARS, coverage, spec-test status)
   discover                     Refresh doc-derived invariants and discover test mappings
-  run <test-id>                Record pass/fail run result for mapped test id
-  batch                        Import batch run results from stdin JSON
+  health                       Repo rollup for closure, decisions, and drift
   fci                          Compute Feature Completion Index
   status                       Quick phase + blocker summary
   complete                     Record human sign-off (HARDEN -> COMPLETE)
-  health                       Repo rollup for closure, decisions, and drift
+  run <test-id>                Record pass/fail run result for mapped test id
+  batch                        Import batch run results from stdin JSON
   link <inv-id> <file> [name]  Manually link invariant to test
   unlink <inv-id> <test-id>    Remove invariant/test link
   tests <inv-id>               List tests linked to an invariant
@@ -2138,14 +1948,14 @@ Subcommands:
 Run 'tx spec <subcommand> --help' for subcommand-specific help.
 
 Examples:
+  tx spec lint
+  tx spec lint --json
   tx spec discover
-  tx spec discover --doc PRD-033-spec-test-traceability
-  tx spec gaps --doc PRD-033-spec-test-traceability
-  tx spec fci --doc PRD-033-spec-test-traceability
+  tx spec health
+  tx spec fci --doc auth-flow
   tx spec run test/core.test.ts::"ready returns unblocked" --passed
   vitest run --reporter=json | tx spec batch --from vitest
-  tx spec complete --doc PRD-033-spec-test-traceability --by james
-  tx spec health`,
+  tx spec complete --doc auth-flow --by james`,
 
   "spec discover": `tx spec discover - Refresh doc-derived invariants and upsert test mappings
 
@@ -3135,7 +2945,26 @@ Examples:
   tx spec health
   tx spec health --json`,
 
+  "spec lint": `tx spec lint - All-in-one spec and doc checker
+
+Usage: tx spec lint [--json]
+
+Runs all doc and spec checks in a single pass:
+  - Doc drift: hash mismatch between disk and DB
+  - Task-doc coverage: tasks not linked to any doc
+  - EARS lint: validates PRD requirements syntax
+  - Spec-test status: uncovered or failing invariants
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx spec lint
+  tx spec lint --json`,
+
   triangle: `tx triangle is a deprecated alias for 'tx spec health'.
 
 Run 'tx spec health --help' for full usage.`,
+
 }

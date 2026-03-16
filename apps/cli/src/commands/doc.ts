@@ -1,5 +1,5 @@
 /**
- * Doc commands: doc add, doc edit, doc show, doc list, doc render, doc lock,
+ * Doc commands: doc add, doc edit, doc show, doc list, doc lock,
  * doc version, doc link, doc attach, doc patch, doc validate, doc drift,
  * doc lint-ears
  */
@@ -53,7 +53,6 @@ export const doc = (pos: string[], flags: Flags) => {
     case "edit": return docEdit(rest, flags)
     case "show": return docShow(rest, flags)
     case "list": return docList(rest, flags)
-    case "render": return docRender(rest, flags)
     case "lock": return docLock(rest, flags)
     case "version": return docVersion(rest, flags)
     case "link": return docLink(rest, flags)
@@ -122,13 +121,20 @@ const docEdit = (pos: string[], _flags: Flags) =>
     const svc = yield* DocService
     const doc = yield* svc.get(name)
     const editor = process.env.EDITOR ?? "vi"
-    const docsPath = doc.filePath
+    const config = readTxConfig()
+    const absPath = resolve(config.docs.path, doc.filePath)
 
     try {
-      execSync(`${editor} "${docsPath}"`, { stdio: "inherit" })
+      execSync(`${editor} "${absPath}"`, { stdio: "inherit" })
     } catch {
       console.error(`Failed to open editor: ${editor}`)
       throw new CliExitError(1)
+    }
+
+    // Re-sync DB hash after editor closes (markdown-first docs only)
+    if (!doc.filePath.endsWith(".yml") && existsSync(absPath)) {
+      const content = readFileSync(absPath, "utf8")
+      yield* svc.update(name, content)
     }
   })
 
@@ -186,28 +192,6 @@ const docList = (_pos: string[], flags: Flags) =>
           const statusIcon = d.status === "locked" ? "🔒" : "📝"
           console.log(`  ${statusIcon} ${d.name} (${d.kind} v${d.version}) [${d.status}] ${d.title}`)
         }
-      }
-    }
-  })
-
-const docRender = (pos: string[], flags: Flags) =>
-  Effect.gen(function* () {
-    const name = pos[0] || undefined
-
-    const svc = yield* DocService
-    const rendered = yield* svc.render(name)
-
-    if (flag(flags, "json")) {
-      console.log(toJson({ rendered }))
-    } else {
-      if (rendered.length === 0) {
-        console.log("No docs rendered")
-      } else {
-        console.log(`Rendered ${rendered.length} doc(s):`)
-        for (const path of rendered) {
-          console.log(`  ${path}`)
-        }
-        console.log("  + index.md (index.yml retained for compatibility)")
       }
     }
   })
