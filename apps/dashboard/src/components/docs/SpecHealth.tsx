@@ -127,10 +127,8 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
             </button>
             <button
               onClick={handleCopyAllProblems}
-              className={`inline-flex items-center gap-1 rounded border px-2.5 py-1.5 text-xs transition ${
-                copiedAll
-                  ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-200"
-                  : "border-gray-700 bg-gray-900/60 text-gray-200 hover:bg-gray-800/80"
+              className={`inline-flex items-center gap-1 rounded border border-gray-700 bg-gray-900/60 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-gray-800/80 transition ${
+                copiedAll ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/25" : ""
               }`}
               title={copiedAll ? "Copied!" : "Copy all issues"}
               aria-label={copiedAll ? "Copied all issue text" : "Copy all issue text"}
