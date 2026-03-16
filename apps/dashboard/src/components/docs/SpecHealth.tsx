@@ -30,6 +30,8 @@ const formatKind = (kind: string): string => kind.replace(/_/g, " ")
 
 export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
   const [expanded, setExpanded] = useState(false)
+  const [copiedProblemKey, setCopiedProblemKey] = useState<string | null>(null)
+  const [copiedAll, setCopiedAll] = useState(false)
 
   const healthQuery = useQuery({
     queryKey: ["doc-health"],
@@ -57,6 +59,35 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
   const hasCritical = health.issues.some((issue) => issue.kind === "hash_drift")
   const tone: PanelTone = issueCount === 0 ? "healthy" : (hasCritical ? "critical" : "warning")
   const styles = PANEL_STYLES[tone]
+  const allIssueProblems = health.issues.flatMap((issue) =>
+    issue.problems.map((problem) => `${issue.docName} [${issue.kind}]: ${problem}`),
+  )
+  const handleCopyProblem = (problemKey: string, copyText: string) => {
+    void navigator.clipboard.writeText(copyText)
+      .then(() => {
+        setCopiedProblemKey(problemKey)
+        window.setTimeout(() => {
+          setCopiedProblemKey((current) => (current === problemKey ? null : current))
+        }, 1500)
+      })
+      .catch(() => {
+        // Ignore clipboard failures; user remains on the same view.
+      })
+  }
+  const handleCopyAllProblems = () => {
+    if (allIssueProblems.length === 0) return
+
+    void navigator.clipboard.writeText(allIssueProblems.join("\n"))
+      .then(() => {
+        setCopiedAll(true)
+        window.setTimeout(() => {
+          setCopiedAll(false)
+        }, 1500)
+      })
+      .catch(() => {
+        // Ignore clipboard failures; user remains on the same view.
+      })
+  }
 
   return (
     <div className={`mb-3 rounded-lg border p-3 ${styles.border}`}>
@@ -87,15 +118,39 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
 
       {issueCount > 0 && (
         <>
-          <button
-            onClick={() => setExpanded((prev) => !prev)}
-            className="mt-3 w-full rounded border border-gray-700 bg-gray-900/60 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-gray-800/80 transition"
-          >
-            {expanded ? "Hide details" : `Show details (${issueCount})`}
-          </button>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              onClick={() => setExpanded((prev) => !prev)}
+              className="flex-1 rounded border border-gray-700 bg-gray-900/60 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-gray-800/80 transition"
+            >
+              {expanded ? "Hide details" : `Show details (${issueCount})`}
+            </button>
+            <button
+              onClick={handleCopyAllProblems}
+              className={`inline-flex items-center gap-1 rounded border px-2.5 py-1.5 text-xs transition ${
+                copiedAll
+                  ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-200"
+                  : "border-gray-700 bg-gray-900/60 text-gray-200 hover:bg-gray-800/80"
+              }`}
+              title={copiedAll ? "Copied!" : "Copy all issues"}
+              aria-label={copiedAll ? "Copied all issue text" : "Copy all issue text"}
+            >
+              {copiedAll ? (
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              )}
+              <span>{copiedAll ? "Copied!" : "Copy all"}</span>
+            </button>
+          </div>
 
           {expanded && (
-            <div className="mt-2 space-y-2">
+            <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:#4b556388_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-600/70 [&::-webkit-scrollbar-thumb:hover]:bg-gray-500/70 [&::-webkit-scrollbar-track]:bg-transparent">
               {health.issues.map((issue, index) => (
                 <div
                   key={`${issue.docName}:${issue.kind}:${index}`}
@@ -112,11 +167,36 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
                   </div>
 
                   <div className="mt-1.5 space-y-1">
-                    {issue.problems.map((problem, problemIndex) => (
-                      <div key={`${issue.docName}:${issue.kind}:problem:${problemIndex}`} className="text-[11px] text-gray-300">
-                        • {problem}
-                      </div>
-                    ))}
+                    {issue.problems.map((problem, problemIndex) => {
+                      const problemKey = `${issue.docName}:${issue.kind}:problem:${problemIndex}`
+                      const isCopied = copiedProblemKey === problemKey
+                      return (
+                        <div key={problemKey} className="flex items-start justify-between gap-2 text-[11px] text-gray-300">
+                          <div className="min-w-0 flex-1">• {problem}</div>
+                          <button
+                            onClick={() => handleCopyProblem(problemKey, `${issue.docName} [${issue.kind}]: ${problem}`)}
+                            className={`inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border transition ${
+                              isCopied
+                                ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300"
+                                : "border-gray-700 bg-gray-900/70 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+                            }`}
+                            title={isCopied ? "Copied!" : "Copy issue"}
+                            aria-label={isCopied ? "Copied issue text" : "Copy issue text"}
+                          >
+                            {isCopied ? (
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            ) : (
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               ))}
