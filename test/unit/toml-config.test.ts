@@ -36,7 +36,15 @@ const DEFAULTS = {
   },
   memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
-  dashboard: { defaultTaskAssigmentType: "human" },
+  dashboard: {
+    defaultTaskAssigmentType: "human",
+    defaultTaskView: "list",
+    cycles: {
+      cycleLengthDays: 7,
+      cycleStartDay: "monday",
+      carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+    },
+  },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
   guard: {
     mode: "advisory",

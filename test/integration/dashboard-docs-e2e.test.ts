@@ -80,13 +80,13 @@ describe.sequential("dashboard docs e2e", () => {
     expect(addOverview.status).toBe(0)
 
     const addPrd = runTx(
-      ["doc", "add", "prd", "PRD-001-dashboard-e2e", "--title", "PRD Dashboard E2E"],
+      ["doc", "add", "prd", "prd-001-dashboard-e2e", "--title", "PRD Dashboard E2E"],
       tmpProjectDir,
     )
     expect(addPrd.status).toBe(0)
 
     const link = runTx(
-      ["doc", "link", "overview-dashboard-e2e", "PRD-001-dashboard-e2e", "--type", "overview_to_prd"],
+      ["doc", "link", "overview-dashboard-e2e", "prd-001-dashboard-e2e", "--type", "overview_to_prd"],
       tmpProjectDir,
     )
     expect(link.status).toBe(0)
@@ -110,7 +110,7 @@ describe.sequential("dashboard docs e2e", () => {
     expect(listRes.ok).toBe(true)
     const listData = await listRes.json() as { docs: Array<{ name: string; kind: string }> }
     expect(listData.docs.some((doc) => doc.name === "overview-dashboard-e2e")).toBe(true)
-    expect(listData.docs.some((doc) => doc.name === "PRD-001-dashboard-e2e")).toBe(true)
+    expect(listData.docs.some((doc) => doc.name === "prd-001-dashboard-e2e")).toBe(true)
 
     const filteredRes = await fetch(`http://localhost:${apiPort}/api/docs?kind=prd`)
     expect(filteredRes.ok).toBe(true)
@@ -118,10 +118,10 @@ describe.sequential("dashboard docs e2e", () => {
     expect(filteredData.docs.length).toBeGreaterThan(0)
     expect(filteredData.docs.every((doc) => doc.kind === "prd")).toBe(true)
 
-    const detailRes = await fetch(`http://localhost:${apiPort}/api/docs/PRD-001-dashboard-e2e`)
+    const detailRes = await fetch(`http://localhost:${apiPort}/api/docs/prd-001-dashboard-e2e`)
     expect(detailRes.ok).toBe(true)
     const detailData = await detailRes.json() as { name: string; kind: string }
-    expect(detailData.name).toBe("PRD-001-dashboard-e2e")
+    expect(detailData.name).toBe("prd-001-dashboard-e2e")
     expect(detailData.kind).toBe("prd")
 
     const graphRes = await fetch(`http://localhost:${apiPort}/api/docs/graph`)
@@ -131,7 +131,7 @@ describe.sequential("dashboard docs e2e", () => {
       edges: Array<{ source: string; target: string; type: string }>
     }
     const overviewNode = graphData.nodes.find((node) => node.label === "overview-dashboard-e2e")
-    const prdNode = graphData.nodes.find((node) => node.label === "PRD-001-dashboard-e2e")
+    const prdNode = graphData.nodes.find((node) => node.label === "prd-001-dashboard-e2e")
     expect(overviewNode).toBeDefined()
     expect(prdNode).toBeDefined()
     expect(
@@ -144,11 +144,11 @@ describe.sequential("dashboard docs e2e", () => {
     const renderRes = await fetch(`http://localhost:${apiPort}/api/docs/render`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "PRD-001-dashboard-e2e" }),
+      body: JSON.stringify({ name: "prd-001-dashboard-e2e" }),
     })
     expect(renderRes.ok).toBe(true)
     const renderData = await renderRes.json() as { rendered: string[] }
     expect(renderData.rendered.length).toBeGreaterThan(0)
-    expect(renderData.rendered[0]).toContain("# PRD Dashboard E2E")
+    expect(renderData.rendered[0]).toContain("# Summary")
   }, 45000)
 })

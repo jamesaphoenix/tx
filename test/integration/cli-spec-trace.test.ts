@@ -36,25 +36,60 @@ const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
   )
 }
 
-const writeSpecDocYaml = (
+const writeSpecDocMd = (
   cwd: string,
   name: string,
   invariants: readonly { id: string; rule: string }[]
 ): void => {
-  const lines = [
-    "kind: prd",
+  const today = new Date().toISOString().slice(0, 10)
+  const invYaml = invariants.map((inv) =>
+    `  - id: ${inv.id}\n    statement: "${inv.rule}"\n    severity: high\n    verified_by:\n      - test/placeholder.test.ts`
+  ).join("\n")
+
+  const content = [
+    "---",
+    "kind: spec",
+    "spec_type: prd",
     `name: ${name}`,
     `title: "${name}"`,
-    "status: changing",
+    "status: draft",
+    "version: 1",
+    "owners:",
+    "  - test",
+    `summary: Test doc ${name}`,
+    "domain: test",
+    "tags:",
+    "  - test",
+    "depends_on: []",
+    "supersedes: []",
+    "implements: null",
+    `last_reviewed_at: ${today}`,
+    "---",
+    "",
+    "# Summary",
+    `Test document for ${name}.`,
+    "",
+    "# Problem",
+    "Test problem statement.",
+    "",
+    "# Scope",
+    "Included: test scope.",
+    "",
+    "# Requirements",
+    "No additional requirements.",
+    "",
+    "# Acceptance Criteria",
+    "- Tests pass.",
+    "",
+    "# Invariants",
+    "```yaml",
     "invariants:",
-    ...invariants.flatMap((inv) => [
-      `  - id: ${inv.id}`,
-      `    rule: ${inv.rule}`,
-      "    enforcement: integration_test",
-    ]),
-  ]
+    invYaml,
+    "```",
+    "",
+  ].join("\n")
 
-  writeFileSync(join(cwd, "specs", "prd", `${name}.yml`), `${lines.join("\n")}\n`, "utf-8")
+  writeFileSync(join(cwd, "specs", "prd", `${name}.md`), content, "utf-8")
 }
 
 describe("CLI spec traceability", () => {
@@ -79,7 +114,7 @@ describe("CLI spec traceability", () => {
 
   it("discovers mappings and reports BUILD gaps/fci for uncovered invariants", { timeout: 120_000 }, () => {
     expect(runTx(cwd, dbPath, ["doc", "add", "prd", "spec-cli-a", "--title", "Spec CLI A"]).status).toBe(0)
-    writeSpecDocYaml(cwd, "spec-cli-a", [
+    writeSpecDocMd(cwd, "spec-cli-a", [
       { id: "INV-CLI-SPEC-A-001", rule: "mapped by discovery" },
       { id: "INV-CLI-SPEC-A-002", rule: "left uncovered" },
     ])
@@ -131,7 +166,7 @@ describe("CLI spec traceability", () => {
 
   it("transitions HARDEN -> COMPLETE via spec run and complete", { timeout: 120_000 }, () => {
     expect(runTx(cwd, dbPath, ["doc", "add", "prd", "spec-cli-b", "--title", "Spec CLI B"]).status).toBe(0)
-    writeSpecDocYaml(cwd, "spec-cli-b", [
+    writeSpecDocMd(cwd, "spec-cli-b", [
       { id: "INV-CLI-SPEC-B-001", rule: "must pass" },
     ])
     expect(runTx(cwd, dbPath, ["invariant", "sync", "--doc", "spec-cli-b"]).status).toBe(0)
@@ -187,7 +222,7 @@ describe("CLI spec traceability", () => {
 
   it("supports link/tests/unlink + batch ingestion and blocks premature complete", { timeout: 120_000 }, () => {
     expect(runTx(cwd, dbPath, ["doc", "add", "prd", "spec-cli-c", "--title", "Spec CLI C"]).status).toBe(0)
-    writeSpecDocYaml(cwd, "spec-cli-c", [
+    writeSpecDocMd(cwd, "spec-cli-c", [
       { id: "INV-CLI-SPEC-C-001", rule: "batch mapped" },
     ])
     expect(runTx(cwd, dbPath, ["invariant", "sync", "--doc", "spec-cli-c"]).status).toBe(0)
@@ -250,7 +285,7 @@ describe("CLI spec traceability", () => {
 
   it("ingests junit batch input with testcase file routing and excludes skipped status cases", { timeout: 120_000 }, () => {
     expect(runTx(cwd, dbPath, ["doc", "add", "prd", "spec-cli-junit", "--title", "Spec CLI JUnit"]).status).toBe(0)
-    writeSpecDocYaml(cwd, "spec-cli-junit", [
+    writeSpecDocMd(cwd, "spec-cli-junit", [
       { id: "INV-CLI-SPEC-JUNIT-001", rule: "junit pass" },
       { id: "INV-CLI-SPEC-JUNIT-002", rule: "junit fail" },
     ])

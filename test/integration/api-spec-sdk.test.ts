@@ -161,7 +161,7 @@ describe("API + SDK spec traceability integration", () => {
 
   it("SDK HTTP client exposes spec discovery, mapping, scoring, batch ingestion, and completion", async () => {
     const tx = new TxClient({ apiUrl: baseUrl })
-    const docName = `PRD-${fixtureId("api-spec-sdk:doc").slice(3)}`
+    const docName = `prd-${fixtureId("api-spec-sdk:doc").slice(3)}`
     const invariantA = `INV-${fixtureId("api-spec-sdk:inv-a").slice(3).toUpperCase()}`
     const invariantB = `INV-${fixtureId("api-spec-sdk:inv-b").slice(3).toUpperCase()}`
 
@@ -169,19 +169,53 @@ describe("API + SDK spec traceability integration", () => {
       kind: "prd",
       name: docName,
       title: "HTTP SDK Spec",
-      yamlContent: [
-        "kind: prd",
+      content: [
+        "---",
+        "kind: spec",
+        "spec_type: prd",
         `name: ${docName}`,
-        "title: HTTP SDK Spec",
-        "status: changing",
+        "title: \"HTTP SDK Spec\"",
+        "status: draft",
+        "version: 1",
+        "owners: [test]",
+        "summary: Test",
+        "domain: test",
+        "tags: [test]",
+        "depends_on: []",
+        "supersedes: []",
+        "implements: null",
+        "last_reviewed_at: 2026-03-16",
+        "---",
         "",
+        "# Summary",
+        "Test.",
+        "",
+        "# Problem",
+        "Test.",
+        "",
+        "# Scope",
+        "Test.",
+        "",
+        "# Requirements",
+        "No additional requirements.",
+        "",
+        "# Acceptance Criteria",
+        "- Tests pass.",
+        "",
+        "# Invariants",
+        "```yaml",
         "invariants:",
         `  - id: ${invariantA}`,
-        "    rule: http sdk invariant a",
-        "    enforcement: integration_test",
+        "    statement: \"http sdk invariant a\"",
+        "    severity: high",
+        "    verified_by:",
+        "      - test/placeholder.test.ts",
         `  - id: ${invariantB}`,
-        "    rule: http sdk invariant b",
-        "    enforcement: integration_test",
+        "    statement: \"http sdk invariant b\"",
+        "    severity: high",
+        "    verified_by:",
+        "      - test/placeholder.test.ts",
+        "```",
       ].join("\n"),
     })
 

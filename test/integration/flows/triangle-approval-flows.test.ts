@@ -86,45 +86,73 @@ const writeDocsConfig = (cwd: string): void => {
   ].join("\n"))
 }
 
-const renderPrdYaml = (
+const renderPrdMd = (
   name: string,
   title: string,
   invariants: readonly InvariantInput[],
 ): string => [
-  "kind: prd",
+  "---",
+  "kind: spec",
+  "spec_type: prd",
   `name: ${name}`,
   `title: "${title}"`,
-  "status: changing",
+  "status: draft",
+  "version: 1",
+  "owners:",
+  "  - test",
+  `summary: ${title}`,
+  "domain: test",
+  "tags:",
+  "  - test",
+  "depends_on: []",
+  "supersedes: []",
+  "implements: null",
+  "last_reviewed_at: 2026-03-16",
+  "---",
   "",
-  "problem: |",
-  `  ${title} should keep docs, code, tests, and approvals aligned.`,
+  "# Summary",
+  `${title} should keep docs, code, tests, and approvals aligned.`,
   "",
-  "solution: |",
-  `  Track ${title.toLowerCase()} with explicit invariants and flow-level checks.`,
+  "# Problem",
+  `${title} needs explicit invariants and flow-level checks.`,
   "",
+  "# Scope",
+  `Track ${title.toLowerCase()} with explicit invariants.`,
+  "",
+  "# Requirements",
+  "No additional requirements.",
+  "",
+  "# Acceptance Criteria",
+  "- Tests pass.",
+  "",
+  "# Invariants",
+  "```yaml",
   "invariants:",
   ...invariants.flatMap((invariant) => [
     `  - id: ${invariant.id}`,
-    `    rule: ${invariant.rule}`,
-    "    enforcement: integration_test",
+    `    statement: "${invariant.rule}"`,
+    "    severity: high",
+    "    verified_by:",
+    "      - test/placeholder.test.ts",
   ]),
+  "```",
   "",
 ].join("\n")
 
-const syncPrdYaml = (
+const syncPrdMd = (
   cwd: string,
   dbPath: string,
   name: string,
   title: string,
   invariants: readonly InvariantInput[],
 ): void => {
-  const yaml = renderPrdYaml(name, title, invariants)
-  writeRelative(cwd, `specs/prd/${name}.yml`, yaml)
+  const md = renderPrdMd(name, title, invariants)
+  writeRelative(cwd, `specs/prd/${name}.md`, md)
 
   const db = new Database(dbPath)
   try {
     db.prepare("UPDATE docs SET hash = ?, title = ? WHERE name = ?").run(
-      computeDocHash(yaml),
+      computeDocHash(md),
       title,
       name,
     )
@@ -224,7 +252,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
   it("marks triangle health synced when spec coverage closes and COMPLETE sign-off is recorded", () => {
     addPrd(cwd, dbPath, "payments-triangle", "Payments Triangle")
-    syncPrdYaml(cwd, dbPath, "payments-triangle", "Payments Triangle", [
+    syncPrdMd(cwd, dbPath, "payments-triangle", "Payments Triangle", [
       { id: "INV-TRI-PAYMENTS-001", rule: "compute subtotal deterministically" },
       { id: "INV-TRI-PAYMENTS-002", rule: "apply tax with two decimals" },
     ])
@@ -297,10 +325,10 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
     addPrd(cwd, dbPath, "accounts-global-loop", "Accounts Global Loop")
     addPrd(cwd, dbPath, "ledger-global-loop", "Ledger Global Loop")
 
-    syncPrdYaml(cwd, dbPath, "accounts-global-loop", "Accounts Global Loop", [
+    syncPrdMd(cwd, dbPath, "accounts-global-loop", "Accounts Global Loop", [
       { id: "INV-TRI-ACCOUNTS-001", rule: "normalize account ids" },
     ])
-    syncPrdYaml(cwd, dbPath, "ledger-global-loop", "Ledger Global Loop", [
+    syncPrdMd(cwd, dbPath, "ledger-global-loop", "Ledger Global Loop", [
       { id: "INV-TRI-LEDGER-001", rule: "keep ledger entries balanced" },
     ])
 
@@ -380,7 +408,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
   it("keeps triangle health drifting when a decision is approved before the spec loop is closed", () => {
     addPrd(cwd, dbPath, "auth-approval-gap", "Auth Approval Gap")
-    syncPrdYaml(cwd, dbPath, "auth-approval-gap", "Auth Approval Gap", [
+    syncPrdMd(cwd, dbPath, "auth-approval-gap", "Auth Approval Gap", [
       { id: "INV-TRI-AUTH-001", rule: "issue session tokens" },
       { id: "INV-TRI-AUTH-002", rule: "reject expired sessions" },
     ])
@@ -443,7 +471,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
   it("keeps triangle health drifting at HARDEN until human spec approval is recorded", () => {
     addPrd(cwd, dbPath, "shipping-harden", "Shipping Harden")
-    syncPrdYaml(cwd, dbPath, "shipping-harden", "Shipping Harden", [
+    syncPrdMd(cwd, dbPath, "shipping-harden", "Shipping Harden", [
       { id: "INV-TRI-SHIPPING-001", rule: "normalize postal codes" },
       { id: "INV-TRI-SHIPPING-002", rule: "format labels consistently" },
     ])
@@ -493,7 +521,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
   it("keeps triangle health drifting after COMPLETE when an approved decision remains unsynced", () => {
     addPrd(cwd, dbPath, "queue-approval-loop", "Queue Approval Loop")
-    syncPrdYaml(cwd, dbPath, "queue-approval-loop", "Queue Approval Loop", [
+    syncPrdMd(cwd, dbPath, "queue-approval-loop", "Queue Approval Loop", [
       { id: "INV-TRI-QUEUE-001", rule: "enqueue in FIFO order" },
       { id: "INV-TRI-QUEUE-002", rule: "dequeue the oldest item" },
     ])
@@ -550,7 +578,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
   it("reopens triangle coverage when docs move ahead of code and closes it again after catch-up", () => {
     addPrd(cwd, dbPath, "orders-triangle-catchup", "Orders Triangle Catchup")
-    syncPrdYaml(cwd, dbPath, "orders-triangle-catchup", "Orders Triangle Catchup", [
+    syncPrdMd(cwd, dbPath, "orders-triangle-catchup", "Orders Triangle Catchup", [
       { id: "INV-TRI-ORDERS-001", rule: "sum line items into a subtotal" },
     ])
 
@@ -584,7 +612,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
     expect(initialHealth.specTest.coveragePercent).toBe(100)
     expect(initialHealth.specTest.docsComplete).toBe(1)
 
-    syncPrdYaml(cwd, dbPath, "orders-triangle-catchup", "Orders Triangle Catchup", [
+    syncPrdMd(cwd, dbPath, "orders-triangle-catchup", "Orders Triangle Catchup", [
       { id: "INV-TRI-ORDERS-001", rule: "sum line items into a subtotal" },
       { id: "INV-TRI-ORDERS-002", rule: "round order totals to cents" },
     ])
@@ -639,7 +667,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
   it("marks triangle health broken when a latest recorded spec run fails", () => {
     addPrd(cwd, dbPath, "pricing-failure", "Pricing Failure")
-    syncPrdYaml(cwd, dbPath, "pricing-failure", "Pricing Failure", [
+    syncPrdMd(cwd, dbPath, "pricing-failure", "Pricing Failure", [
       { id: "INV-TRI-PRICING-001", rule: "round discounts to cents" },
     ])
 
@@ -681,20 +709,20 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
     addPrd(cwd, dbPath, "drift-b", "Drift B")
     addPrd(cwd, dbPath, "drift-c", "Drift C")
 
-    syncPrdYaml(cwd, dbPath, "drift-a", "Drift A", [
+    syncPrdMd(cwd, dbPath, "drift-a", "Drift A", [
       { id: "INV-TRI-DRIFT-A-001", rule: "doc a remains consistent" },
     ])
-    syncPrdYaml(cwd, dbPath, "drift-b", "Drift B", [
+    syncPrdMd(cwd, dbPath, "drift-b", "Drift B", [
       { id: "INV-TRI-DRIFT-B-001", rule: "doc b remains consistent" },
     ])
-    syncPrdYaml(cwd, dbPath, "drift-c", "Drift C", [
+    syncPrdMd(cwd, dbPath, "drift-c", "Drift C", [
       { id: "INV-TRI-DRIFT-C-001", rule: "doc c remains consistent" },
     ])
 
-    writeRelative(cwd, "specs/prd/drift-a.yml", `${renderPrdYaml("drift-a", "Drift A", [
+    writeRelative(cwd, "specs/prd/drift-a.md", `${renderPrdMd("drift-a", "Drift A", [
       { id: "INV-TRI-DRIFT-A-001", rule: "doc a remains consistent" },
     ])}\n# manual drift\n`)
-    writeRelative(cwd, "specs/prd/drift-b.yml", `${renderPrdYaml("drift-b", "Drift B", [
+    writeRelative(cwd, "specs/prd/drift-b.md", `${renderPrdMd("drift-b", "Drift B", [
       { id: "INV-TRI-DRIFT-B-001", rule: "doc b remains consistent" },
     ])}\n# manual drift\n`)
 
@@ -706,7 +734,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
   it("keeps triangle health drifting when a decision is still pending even after doc COMPLETE", () => {
     addPrd(cwd, dbPath, "ledger-pending-review", "Ledger Pending Review")
-    syncPrdYaml(cwd, dbPath, "ledger-pending-review", "Ledger Pending Review", [
+    syncPrdMd(cwd, dbPath, "ledger-pending-review", "Ledger Pending Review", [
       { id: "INV-TRI-LEDGER-001", rule: "sum ledger balances" },
     ])
 
