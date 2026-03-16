@@ -269,6 +269,9 @@ describe("Migration system", () => {
         "process_registry",
         // Migration 037 — decisions
         "decisions",
+        // Migration 038+ — cycles
+        "cycles",
+        "cycle_tasks",
       ]
 
       for (const table of expectedTables) {
