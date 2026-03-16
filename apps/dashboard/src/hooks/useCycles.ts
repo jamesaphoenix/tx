@@ -5,6 +5,7 @@ export function useCycles() {
   return useQuery({
     queryKey: ["cycles"],
     queryFn: () => fetchers.listCycles(),
+    staleTime: 30_000,
   })
 }
 
@@ -13,5 +14,6 @@ export function useCycleDetail(id: string | null) {
     queryKey: ["cycles", id],
     queryFn: () => fetchers.getCycle(id!),
     enabled: !!id,
+    staleTime: 30_000,
   })
 }

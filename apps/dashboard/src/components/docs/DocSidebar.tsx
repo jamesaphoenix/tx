@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
+import { Button } from "../ui"
 import { useQuery } from "@tanstack/react-query"
-import { fetchers, type DocSerialized, type DocGraphEdge, type DocGraphNode } from "../../api/client"
+import { fetchers, type DocSerialized } from "../../api/client"
 import { SpecHealth } from "./SpecHealth"
 
 interface DocSidebarProps {
@@ -34,11 +35,15 @@ interface DocGroup {
   docs: DocSerialized[]
 }
 
-type DocsViewMode = "grouped" | "hierarchy"
+/** Sort docs by createdAt descending (most recent first). */
+function sortByRecent(docs: DocSerialized[]): DocSerialized[] {
+  return [...docs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
 
 /**
  * Group docs by their numbering prefix (e.g., "023" from "PRD-023-..." or "DD-023-...").
  * Overview docs with no prefix go at the top level.
+ * Within each group, docs are sorted by most recently created.
  */
 function groupDocs(docs: DocSerialized[]): { topLevel: DocSerialized[]; groups: DocGroup[] } {
   const topLevel: DocSerialized[] = []
@@ -63,115 +68,22 @@ function groupDocs(docs: DocSerialized[]): { topLevel: DocSerialized[]; groups: 
 
   const groups: DocGroup[] = []
   for (const [key, groupDocs] of groupMap) {
+    const sorted = sortByRecent(groupDocs)
     // Try to derive a label from the first doc's title
-    const label = `${key} - ${groupDocs[0]?.title?.split(" ").slice(0, 4).join(" ") ?? key}`
-    groups.push({ label: label.toUpperCase(), docs: groupDocs })
+    const label = `${key} - ${sorted[0]?.title?.split(" ").slice(0, 4).join(" ") ?? key}`
+    groups.push({ label: label.toUpperCase(), docs: sorted })
   }
 
-  return { topLevel, groups }
-}
+  // Sort groups by most recent doc within each group
+  groups.sort((a, b) => new Date(b.docs[0].createdAt).getTime() - new Date(a.docs[0].createdAt).getTime())
 
-interface DocHierarchyNode {
-  doc: DocSerialized
-  children: DocHierarchyNode[]
-}
-
-function buildDocHierarchy(
-  docs: DocSerialized[],
-  graphNodes: DocGraphNode[],
-  graphEdges: DocGraphEdge[],
-): DocHierarchyNode[] {
-  const docsByName = new Map(docs.map((doc) => [doc.name, doc]))
-  const nodeToDocName = new Map<string, string>()
-  for (const node of graphNodes) {
-    if (node.kind !== "task") {
-      nodeToDocName.set(node.id, node.label)
-    }
-  }
-
-  const childNamesByParent = new Map<string, Set<string>>()
-  const incomingCount = new Map<string, number>()
-  for (const doc of docs) {
-    childNamesByParent.set(doc.name, new Set<string>())
-    incomingCount.set(doc.name, 0)
-  }
-
-  for (const edge of graphEdges) {
-    if (!edge.source.startsWith("doc:") || !edge.target.startsWith("doc:")) continue
-    const fromName = nodeToDocName.get(edge.source)
-    const toName = nodeToDocName.get(edge.target)
-    if (!fromName || !toName || fromName === toName) continue
-    if (!docsByName.has(fromName) || !docsByName.has(toName)) continue
-
-    const children = childNamesByParent.get(fromName)
-    if (!children || children.has(toName)) continue
-    children.add(toName)
-    incomingCount.set(toName, (incomingCount.get(toName) ?? 0) + 1)
-  }
-
-  const sortByName = (a: string, b: string) => a.localeCompare(b)
-  const visited = new Set<string>()
-
-  const buildNode = (name: string, stack: Set<string>): DocHierarchyNode | null => {
-    const doc = docsByName.get(name)
-    if (!doc) return null
-    if (stack.has(name)) return null
-    visited.add(name)
-
-    const nextStack = new Set(stack)
-    nextStack.add(name)
-    const childNames = [...(childNamesByParent.get(name) ?? [])].sort(sortByName)
-    const children: DocHierarchyNode[] = []
-    for (const childName of childNames) {
-      const childNode = buildNode(childName, nextStack)
-      if (childNode) children.push(childNode)
-    }
-    return { doc, children }
-  }
-
-  const roots = docs
-    .map((doc) => doc.name)
-    .filter((name) => (incomingCount.get(name) ?? 0) === 0)
-    .sort(sortByName)
-
-  const tree: DocHierarchyNode[] = []
-  for (const rootName of roots) {
-    const node = buildNode(rootName, new Set<string>())
-    if (node) tree.push(node)
-  }
-
-  const unvisited = docs
-    .map((doc) => doc.name)
-    .filter((name) => !visited.has(name))
-    .sort(sortByName)
-  for (const name of unvisited) {
-    const node = buildNode(name, new Set<string>())
-    if (node) tree.push(node)
-  }
-
-  return tree
+  return { topLevel: sortByRecent(topLevel), groups }
 }
 
 function matchesDocQuery(doc: DocSerialized, query: string): boolean {
   if (!query) return true
   const q = query.toLowerCase()
   return doc.name.toLowerCase().includes(q) || doc.title.toLowerCase().includes(q)
-}
-
-function filterHierarchy(nodes: DocHierarchyNode[], query: string): DocHierarchyNode[] {
-  if (!query) return nodes
-
-  const filtered: DocHierarchyNode[] = []
-  for (const node of nodes) {
-    const childMatches = filterHierarchy(node.children, query)
-    if (matchesDocQuery(node.doc, query) || childMatches.length > 0) {
-      filtered.push({
-        doc: node.doc,
-        children: childMatches,
-      })
-    }
-  }
-  return filtered
 }
 
 function DocItem({
@@ -240,7 +152,6 @@ function DocItem({
 }
 
 export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap, kindFilter, onKindFilterChange, statusFilter, onStatusFilterChange, selectedDocNames, onToggleSelectDoc }: DocSidebarProps) {
-  const [viewMode, setViewMode] = useState<DocsViewMode>("grouped")
   const [searchQuery, setSearchQuery] = useState("")
 
   const docsQuery = useQuery({
@@ -253,56 +164,17 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
     refetchInterval: 5000,
   })
 
-  const graphQuery = useQuery({
-    queryKey: ["doc-graph"],
-    queryFn: fetchers.docGraph,
-    enabled: viewMode === "hierarchy",
-    refetchInterval: 5000,
-  })
-
   const docs = docsQuery.data?.docs ?? []
   const filteredDocs = useMemo(
     () => docs.filter((doc) => matchesDocQuery(doc, searchQuery)),
     [docs, searchQuery],
   )
-  const graphNodes = graphQuery.data?.nodes ?? []
-  const graphEdges = graphQuery.data?.edges ?? []
   const { topLevel, groups } = useMemo(() => groupDocs(filteredDocs), [filteredDocs])
-  const hierarchy = useMemo(() => {
-    const fullTree = buildDocHierarchy(docs, graphNodes, graphEdges)
-    return filterHierarchy(fullTree, searchQuery)
-  }, [docs, graphNodes, graphEdges, searchQuery])
-  const kindCounts = useMemo(() => ({
-    all: filteredDocs.length,
-    overview: filteredDocs.filter((doc) => doc.kind === "overview").length,
-    prd: filteredDocs.filter((doc) => doc.kind === "prd").length,
-    design: filteredDocs.filter((doc) => doc.kind === "design").length,
-    requirement: filteredDocs.filter((doc) => doc.kind === "requirement").length,
-    system_design: filteredDocs.filter((doc) => doc.kind === "system_design").length,
-  }), [filteredDocs])
-  const isLoading = docsQuery.isLoading || (viewMode === "hierarchy" && graphQuery.isLoading)
+
+  const isLoading = docsQuery.isLoading
   const loadError = docsQuery.error instanceof Error
     ? docsQuery.error.message
-    : graphQuery.error instanceof Error
-      ? graphQuery.error.message
-      : null
-
-  const renderHierarchyNode = (node: DocHierarchyNode, depth = 0) => (
-    <div key={node.doc.name} className={depth > 0 ? "border-l border-gray-800/60 pl-2 ml-3" : ""}>
-      <DocItem
-        doc={node.doc}
-        isSelected={selectedDocName === node.doc.name}
-        isChecked={selectedDocNames?.has(node.doc.name)}
-        onToggleCheck={onToggleSelectDoc}
-        onClick={() => onSelectDoc(node.doc.name)}
-      />
-      {node.children.length > 0 && (
-        <div className="space-y-1 mt-1">
-          {node.children.map((child) => renderHierarchyNode(child, depth + 1))}
-        </div>
-      )}
-    </div>
-  )
+    : null
 
   if (isLoading) {
     return (
@@ -321,13 +193,10 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
         <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
           Docs
         </span>
-        <button
+        <Button
+          size="sm"
+          variant={showMap ? "primary" : "ghost"}
           onClick={onToggleMap}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition ${
-            showMap
-              ? "bg-blue-600 text-white"
-              : "bg-gray-700 text-gray-400 hover:bg-gray-600"
-          }`}
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="opacity-70">
             <circle cx="3" cy="3" r="2" stroke="currentColor" strokeWidth="1.2" />
@@ -337,7 +206,7 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
             <line x1="4.5" y1="4" x2="7.5" y2="8" stroke="currentColor" strokeWidth="1" />
           </svg>
           Graph
-        </button>
+        </Button>
       </div>
 
       <SpecHealth onSelectDoc={onSelectDoc} />
@@ -367,29 +236,6 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
         </select>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <button
-          onClick={() => setViewMode("grouped")}
-          className={`px-2.5 py-1.5 rounded text-xs transition ${
-            viewMode === "grouped"
-              ? "bg-blue-600 text-white"
-              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-          }`}
-        >
-          Grouped
-        </button>
-        <button
-          onClick={() => setViewMode("hierarchy")}
-          className={`px-2.5 py-1.5 rounded text-xs transition ${
-            viewMode === "hierarchy"
-              ? "bg-blue-600 text-white"
-              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-          }`}
-        >
-          Hierarchy
-        </button>
-      </div>
-
       <input
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
@@ -398,33 +244,6 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
         className="mb-3 w-full bg-gray-900 border border-gray-700 text-xs text-gray-200 rounded px-2.5 py-1.5 placeholder:text-gray-500 focus:outline-none focus:border-blue-500"
       />
 
-      <div className="grid grid-cols-3 gap-1.5 mb-3">
-        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
-          <div className="text-[10px] text-gray-500 uppercase">All</div>
-          <div className="text-xs text-gray-100 font-semibold">{kindCounts.all}</div>
-        </div>
-        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
-          <div className="text-[10px] text-gray-500 uppercase">OV</div>
-          <div className="text-xs text-gray-100 font-semibold">{kindCounts.overview}</div>
-        </div>
-        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
-          <div className="text-[10px] text-gray-500 uppercase">PRD</div>
-          <div className="text-xs text-gray-100 font-semibold">{kindCounts.prd}</div>
-        </div>
-        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
-          <div className="text-[10px] text-gray-500 uppercase">DD</div>
-          <div className="text-xs text-gray-100 font-semibold">{kindCounts.design}</div>
-        </div>
-        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
-          <div className="text-[10px] text-gray-500 uppercase">REQ</div>
-          <div className="text-xs text-gray-100 font-semibold">{kindCounts.requirement}</div>
-        </div>
-        <div className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-center">
-          <div className="text-[10px] text-gray-500 uppercase">SD</div>
-          <div className="text-xs text-gray-100 font-semibold">{kindCounts.system_design}</div>
-        </div>
-      </div>
-
       {/* Doc tree */}
       <div className="flex-1 overflow-y-auto space-y-1">
         {loadError ? (
@@ -432,7 +251,7 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
             <div className="text-sm">Unable to load docs</div>
             <div className="text-xs mt-1 text-red-400/80">{loadError}</div>
           </div>
-        ) : viewMode === "grouped" ? (
+        ) : (
           <>
             {/* Top-level docs (overviews) */}
             {topLevel.map((doc) => (
@@ -467,10 +286,6 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
               </div>
             ))}
           </>
-        ) : (
-          <div className="space-y-1">
-            {hierarchy.map((node) => renderHierarchyNode(node))}
-          </div>
         )}
 
         {filteredDocs.length === 0 && !loadError && (

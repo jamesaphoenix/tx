@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { Button } from "../ui"
 import { useQuery } from "@tanstack/react-query"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -62,27 +63,29 @@ function RelationshipsSection({ doc, allDocs, onNavigateToDoc }: {
       </div>
       <div className="flex flex-wrap gap-3">
         {parentDoc && (
-          <button
+          <Button
+            size="sm"
+            variant="secondary"
             onClick={() => onNavigateToDoc(parentDoc.name)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700/50 hover:border-blue-500/50 hover:bg-gray-750 transition text-sm"
           >
             <span className="text-gray-500">&larr;</span>
             <span className="text-blue-400">{parentDoc.name}</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">parent</span>
-          </button>
+          </Button>
         )}
         {related.map((rel) => (
-          <button
+          <Button
             key={rel.name}
+            size="sm"
+            variant="secondary"
             onClick={() => onNavigateToDoc(rel.name)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700/50 hover:border-blue-500/50 hover:bg-gray-750 transition text-sm"
           >
             <span className="text-gray-500">&larr;</span>
             <span className="text-blue-400">{rel.name}</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">
               {inferLinkType(doc, rel)}
             </span>
-          </button>
+          </Button>
         ))}
       </div>
     </div>
@@ -192,7 +195,7 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
             ))}
           </div>
         ) : rendered ? (
-          <div className="prose prose-invert prose-sm max-w-none">
+          <div className="prose prose-sm max-w-none tx-prose">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {rendered}
             </ReactMarkdown>

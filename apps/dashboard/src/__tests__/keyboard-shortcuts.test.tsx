@@ -533,7 +533,7 @@ describe('Keyboard shortcuts', () => {
       })
 
       act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Docs' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Specs' }))
       })
 
       await waitFor(() => {
@@ -1799,22 +1799,31 @@ describe('Keyboard shortcuts', () => {
     ] as const
 
     async function runPaletteCommand(label: string) {
-      if (!screen.queryByPlaceholderText('Type a command...')) {
+      if (!screen.queryByPlaceholderText(/command|filter/i)) {
         act(() => {
           dispatchKeyCombo('k', true)
         })
         await waitFor(() => {
-          expect(screen.getByPlaceholderText('Type a command...')).toBeInTheDocument()
+          expect(screen.getByPlaceholderText(/command|filter/i)).toBeInTheDocument()
         })
       }
 
-      const paletteInput = screen.getByPlaceholderText('Type a command...')
-      fireEvent.change(paletteInput, { target: { value: '' } })
+      // Type the label to surface hierarchical children via search
+      const paletteInput = screen.getByPlaceholderText(/command|filter/i)
+      fireEvent.change(paletteInput, { target: { value: label } })
 
-      const matchingNodes = await screen.findAllByText(label)
-      const commandButton = matchingNodes
-        .map((node) => node.closest('button'))
-        .find((button): button is HTMLButtonElement => Boolean(button?.hasAttribute('data-item-index')))
+      await waitFor(() => {
+        const allButtons = Array.from(document.querySelectorAll('[data-item-index]'))
+        expect(allButtons.length).toBeGreaterThan(0)
+      })
+
+      const allPaletteButtons = Array.from(document.querySelectorAll('[data-item-index]')) as HTMLButtonElement[]
+      let commandButton = allPaletteButtons.find((btn) => btn.textContent?.includes(label))
+      if (!commandButton) {
+        // For hierarchical commands, try matching the last segment after ": "
+        const lastSegment = label.includes(': ') ? label.split(': ').pop()! : label
+        commandButton = allPaletteButtons.find((btn) => btn.textContent?.includes(lastSegment))
+      }
 
       if (!commandButton) {
         throw new Error(`Unable to locate command button for label: ${label}`)
@@ -1904,10 +1913,6 @@ describe('Keyboard shortcuts', () => {
 
       renderApp()
 
-      act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
-      })
-
       await waitFor(() => {
         expect(screen.getByText('Palette list A')).toBeInTheDocument()
       })
@@ -1960,10 +1965,6 @@ describe('Keyboard shortcuts', () => {
       )
 
       renderApp()
-
-      act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
-      })
 
       await waitFor(() => {
         expect(screen.getByText('Palette child parent')).toBeInTheDocument()

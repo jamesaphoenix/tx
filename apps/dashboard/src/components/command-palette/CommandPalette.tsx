@@ -38,6 +38,12 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   ),
 }
 
+const CHEVRON_RIGHT = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-500">
+    <polyline points="9 18 15 12 9 6" />
+  </svg>
+)
+
 const GROUP_ORDER = ["Actions", "Navigation", "Filters", "Items"]
 
 function groupCommands(commands: Command[]): { group: string; items: Command[] }[] {
@@ -67,30 +73,63 @@ export function CommandPalette() {
   const { commands, isOpen, setOpen } = useCommandContext()
   const [query, setQuery] = useState("")
   const [activeIndex, setActiveIndex] = useState(0)
+  // Hierarchical drill-down: stack of parent commands
+  const [breadcrumb, setBreadcrumb] = useState<Command[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   useShortcutScope("palette", isOpen)
+
+  // Current level commands: if drilled into a parent, show its children
+  const currentCommands = useMemo(() => {
+    if (breadcrumb.length === 0) return commands
+    const parent = breadcrumb[breadcrumb.length - 1]
+    return parent.children ?? []
+  }, [commands, breadcrumb])
 
   // Reset on open
   useEffect(() => {
     if (isOpen) {
       setQuery("")
       setActiveIndex(0)
+      setBreadcrumb([])
       setTimeout(() => inputRef.current?.focus(), 0)
     }
   }, [isOpen])
 
-  // Filter commands by query
+  // Filter commands by query — when searching, also surface matching children
   const filtered = useMemo(() => {
-    if (!query.trim()) return commands
+    if (!query.trim()) return currentCommands
     const q = query.toLowerCase()
-    return commands.filter(
-      (c) =>
+
+    function matchesQuery(c: Command): boolean {
+      return (
         c.label.toLowerCase().includes(q) ||
         (c.sublabel?.toLowerCase().includes(q) ?? false) ||
         (c.group?.toLowerCase().includes(q) ?? false)
-    )
-  }, [commands, query])
+      )
+    }
+
+    const results: Command[] = []
+    for (const cmd of currentCommands) {
+      if (matchesQuery(cmd)) {
+        results.push(cmd)
+      }
+      // Also search children and surface matching ones directly
+      if (cmd.children) {
+        // Combine parent label with child label for matching (e.g. "Set status Backlog")
+        // Normalize by stripping punctuation for fuzzy matching
+        const qNorm = q.replace(/[^a-z0-9\s]/g, "")
+        for (const child of cmd.children) {
+          const combinedLabel = `${cmd.label} ${child.label}`.toLowerCase()
+          const combinedNorm = combinedLabel.replace(/[^a-z0-9\s]/g, "")
+          if (matchesQuery(child) || combinedLabel.includes(q) || combinedNorm.includes(qNorm)) {
+            results.push(child)
+          }
+        }
+      }
+    }
+    return results
+  }, [currentCommands, query])
 
   // Flat list for keyboard nav
   const flatItems = useMemo(() => {
@@ -125,12 +164,30 @@ export function CommandPalette() {
     }
   }, [activeIndex])
 
+  const drillInto = useCallback((cmd: Command) => {
+    setBreadcrumb((prev) => [...prev, cmd])
+    setQuery("")
+    setActiveIndex(0)
+  }, [])
+
+  const drillUp = useCallback(() => {
+    setBreadcrumb((prev) => prev.slice(0, -1))
+    setQuery("")
+    setActiveIndex(0)
+  }, [])
+
   const executeItem = useCallback(
     (cmd: Command) => {
+      // If the command has children, drill into them
+      if (cmd.children && cmd.children.length > 0) {
+        drillInto(cmd)
+        return
+      }
       setOpen(false)
+      setBreadcrumb([])
       cmd.action()
     },
-    [setOpen]
+    [setOpen, drillInto]
   )
 
   // Keyboard navigation inside palette
@@ -147,22 +204,71 @@ export function CommandPalette() {
           e.preventDefault()
           setActiveIndex((i) => Math.max(i - 1, 0))
           break
+        case "ArrowRight":
+          // Drill into child if active item has children
+          if (flatItems[activeIndex]?.cmd.children?.length) {
+            e.preventDefault()
+            drillInto(flatItems[activeIndex].cmd)
+          }
+          break
+        case "ArrowLeft":
+          // Drill up if at root of search (no query text) and we have breadcrumb
+          if (breadcrumb.length > 0 && query === "") {
+            e.preventDefault()
+            drillUp()
+          }
+          break
+        case "Backspace":
+          // CMD+Backspace clears the search input
+          if (e.metaKey && query.length > 0) {
+            e.preventDefault()
+            setQuery("")
+            setActiveIndex(0)
+          }
+          // Plain Backspace with empty query drills up in hierarchy
+          else if (breadcrumb.length > 0 && query === "") {
+            e.preventDefault()
+            drillUp()
+          }
+          break
         case "Enter":
           e.preventDefault()
           if (flatItems[activeIndex]) {
             executeItem(flatItems[activeIndex].cmd)
           }
           break
+        case "1": case "2": case "3": case "4": case "5":
+        case "6": case "7": case "8": case "9":
+          // Number shortcuts when inside a hierarchy with empty search (Linear-style quick-select)
+          if (breadcrumb.length > 0 && query === "") {
+            e.preventDefault()
+            const idx = parseInt(e.key, 10) - 1
+            if (idx < flatItems.length) {
+              executeItem(flatItems[idx].cmd)
+            }
+          }
+          break
+        case "a":
+          // CMD+A selects all text in the palette search input
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault()
+            inputRef.current?.select()
+          }
+          break
         case "Escape":
           e.preventDefault()
-          setOpen(false)
+          if (breadcrumb.length > 0) {
+            drillUp()
+          } else {
+            setOpen(false)
+          }
           break
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isOpen, flatItems, activeIndex, setOpen, executeItem])
+  }, [isOpen, flatItems, activeIndex, setOpen, executeItem, breadcrumb, query, drillInto, drillUp])
 
   if (!isOpen) return null
 
@@ -183,6 +289,35 @@ export function CommandPalette() {
 
       {/* Palette */}
       <div className="relative w-full max-w-lg bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden">
+        {/* Breadcrumb */}
+        {breadcrumb.length > 0 && (
+          <div className="flex items-center gap-1 px-4 pt-2 pb-0 text-[11px] text-gray-500">
+            <button
+              type="button"
+              onClick={() => setBreadcrumb([])}
+              className="hover:text-gray-300 transition-colors"
+              data-testid="breadcrumb-root"
+            >
+              All
+            </button>
+            {breadcrumb.map((crumb, idx) => (
+              <span key={crumb.id} className="flex items-center gap-1">
+                <span className="text-gray-600">/</span>
+                <button
+                  type="button"
+                  onClick={() => setBreadcrumb((prev) => prev.slice(0, idx + 1))}
+                  className={`hover:text-gray-300 transition-colors ${
+                    idx === breadcrumb.length - 1 ? "text-gray-300" : ""
+                  }`}
+                  data-testid={`breadcrumb-${crumb.id}`}
+                >
+                  {crumb.label}
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Search */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-700/50">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-500 flex-shrink-0">
@@ -198,7 +333,7 @@ export function CommandPalette() {
               setQuery(e.target.value)
               setActiveIndex(0)
             }}
-            placeholder="Type a command..."
+            placeholder={breadcrumb.length > 0 ? `Filter ${breadcrumb[breadcrumb.length - 1].label}...` : "Type a command..."}
             className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none"
           />
           <kbd className="px-1.5 py-0.5 text-[10px] text-gray-500 bg-gray-800 rounded border border-gray-700">
@@ -227,6 +362,9 @@ export function CommandPalette() {
 
             const isActive = item.index === activeIndex
             const icon = item.cmd.icon ? ICON_MAP[item.cmd.icon] : ICON_MAP.action
+            const hasChildren = (item.cmd.children?.length ?? 0) > 0
+            // Show number badge (1-9) when inside a hierarchy and no search query
+            const showNumberBadge = breadcrumb.length > 0 && query === "" && item.index < 9
 
             return (
               <button
@@ -238,23 +376,30 @@ export function CommandPalette() {
                   isActive ? "bg-blue-600/20" : "hover:bg-gray-800"
                 }`}
               >
-                <span className="flex-shrink-0">{icon}</span>
+                {showNumberBadge ? (
+                  <kbd className="flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded bg-gray-800 border border-gray-700 text-[10px] text-gray-400 font-mono" data-testid={`number-badge-${item.index + 1}`}>
+                    {item.index + 1}
+                  </kbd>
+                ) : (
+                  <span className="flex-shrink-0">{icon}</span>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-white truncate">{item.cmd.label}</div>
                   {item.cmd.sublabel && (
                     <div className="text-[10px] text-gray-500 truncate">{item.cmd.sublabel}</div>
                   )}
                 </div>
-                {item.cmd.shortcut && (
+                {hasChildren ? (
+                  <span className="flex-shrink-0" data-testid={`children-indicator-${item.cmd.id}`}>{CHEVRON_RIGHT}</span>
+                ) : item.cmd.shortcut ? (
                   <kbd className="px-1.5 py-0.5 text-[9px] text-gray-500 bg-gray-800 rounded border border-gray-700 flex-shrink-0">
                     {item.cmd.shortcut}
                   </kbd>
-                )}
-                {isActive && !item.cmd.shortcut && (
+                ) : isActive ? (
                   <kbd className="px-1.5 py-0.5 text-[9px] text-gray-500 bg-gray-800 rounded border border-gray-700 flex-shrink-0">
                     &#x23CE;
                   </kbd>
-                )}
+                ) : null}
               </button>
             )
           })}
@@ -268,8 +413,13 @@ export function CommandPalette() {
           <span>
             <kbd className="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">&#x23CE;</kbd> select
           </span>
+          {breadcrumb.length > 0 && (
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">&#x2190;</kbd> back
+            </span>
+          )}
           <span>
-            <kbd className="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">esc</kbd> close
+            <kbd className="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">esc</kbd> {breadcrumb.length > 0 ? "back" : "close"}
           </span>
         </div>
       </div>

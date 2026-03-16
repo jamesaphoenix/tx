@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react
 import { TASK_STATUSES, VALID_TRANSITIONS, type TaskStatus } from "@jamesaphoenix/tx-types/task"
 import { fetchers, type TaskWithDeps } from "../../api/client"
 import { useInfiniteTasks } from "../../hooks/useInfiniteTasks"
+import { Button } from "../ui"
 import { EmptyState } from "../ui/EmptyState"
 import { TaskCard } from "./TaskCard"
 import {
@@ -32,6 +33,17 @@ const STATUS_DOT_CLASS: Record<TaskStatus, string> = {
   done: "bg-green-500",
 }
 
+const STATUS_HEADER_TEXT: Record<TaskStatus, string> = {
+  backlog: "text-gray-400",
+  ready: "text-blue-300",
+  planning: "text-purple-300",
+  active: "text-yellow-300",
+  blocked: "text-red-300",
+  review: "text-orange-300",
+  needs_review: "text-pink-300",
+  done: "text-green-300",
+}
+
 const INITIAL_DONE_VISIBLE = 5
 const DONE_INCREMENT = 10
 const DONE_PAGE_SIZE = 5
@@ -39,6 +51,18 @@ const STATUS_SET = new Set<string>(TASK_STATUSES as readonly string[])
 const NON_DONE_STATUSES = TASK_STATUSES.filter(
   (status): status is Exclude<TaskStatus, "done"> => status !== "done",
 )
+
+/** Column display order — puts "Needs Review" before "Review" on the kanban board. */
+const KANBAN_COLUMN_ORDER: readonly TaskStatus[] = [
+  "backlog",
+  "ready",
+  "planning",
+  "active",
+  "blocked",
+  "needs_review",
+  "review",
+  "done",
+]
 
 export interface KanbanBoardProps {
   onSelectTask: (id: string) => void
@@ -311,7 +335,7 @@ export function KanbanBoard({
       ) : null}
       <div className="min-h-0 flex-1 overflow-x-auto pb-2">
         <div className="flex h-full min-h-0 gap-3 pr-2">
-          {TASK_STATUSES.map((status) => {
+          {KANBAN_COLUMN_ORDER.map((status) => {
             const columnTasks = status === "done" ? visibleDoneTasks : groupedTasks[status]
             const columnCount = status === "done" ? doneColumnTotal : groupedTasks[status].length
             const canShowMoreDone = status === "done" && doneVisibleCount < doneColumnTotal
@@ -330,25 +354,25 @@ export function KanbanBoard({
                 className={`flex min-w-[250px] max-w-[340px] flex-1 min-h-0 flex-col rounded-lg border p-2 transition ${
                   activeDropTarget === status
                     ? "border-blue-400/70 ring-2 ring-blue-500/40"
-                    : "border-gray-700 bg-gray-900/50"
+                    : "border-gray-800/80 bg-gray-900/40"
                 }`}
               >
                 <header className="mb-2 flex items-center justify-between gap-2 px-1">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT_CLASS[status]}`} />
-                    <h3 className="truncate text-sm font-semibold text-gray-100">{STATUS_LABELS[status]}</h3>
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_CLASS[status]}`} />
+                    <h3 className={`truncate text-[11px] font-semibold uppercase tracking-wider ${STATUS_HEADER_TEXT[status]}`}>{STATUS_LABELS[status]}</h3>
                   </div>
                   <span
                     data-testid={status === "done" ? "kanban-count-done" : undefined}
-                    className="shrink-0 rounded-full bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-300"
+                    className="shrink-0 text-[11px] text-gray-600"
                   >
                     {columnCount}
                   </span>
                 </header>
 
-                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1 pb-1">
+                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-0.5 pb-1">
                   {columnTasks.length === 0 ? (
-                    <div className="rounded-md border border-dashed border-gray-700 px-2 py-3 text-xs text-gray-500">
+                    <div className="rounded-lg border border-dashed border-gray-800 px-2 py-3 text-[11px] text-gray-600">
                       No tasks
                     </div>
                   ) : (
@@ -361,21 +385,22 @@ export function KanbanBoard({
                         onDragEnd={handleDragEnd}
                         className="cursor-grab active:cursor-grabbing"
                       >
-                        <TaskCard task={task} onClick={() => onSelectTask(task.id)} />
+                        <TaskCard task={task} compact onClick={() => onSelectTask(task.id)} />
                       </div>
                     ))
                   )}
                 </div>
 
                 {canShowMoreDone ? (
-                  <button
-                    type="button"
+                  <Button
+                    size="xs"
+                    variant="secondary"
                     onClick={handleShowMoreDone}
                     disabled={isFetchingNextDonePage}
-                    className="mt-2 rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-2"
                   >
                     {isFetchingNextDonePage ? "Loading..." : "Show more"}
-                  </button>
+                  </Button>
                 ) : null}
               </section>
             )

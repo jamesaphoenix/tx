@@ -9,6 +9,7 @@ import {
   type PaginatedTasksResponse,
   type TaskLabel
 } from "../../api/client"
+import { Button } from "../ui"
 import { SearchInput } from "../ui/SearchInput"
 import { TaskList } from "./TaskList"
 import { KanbanBoard } from "./KanbanBoard"
@@ -23,6 +24,8 @@ import {
   type HumanTaskStage,
 } from "./TaskPropertySelects"
 import { useCommands, type Command } from "../command-palette/CommandContext"
+import { buildTaskCommands, buildSelectionCommands } from "../command-palette/buildTaskCommands"
+import { useCycles } from "../../hooks/useCycles"
 import { selectionActions, selectionStore } from "../../stores/selection-store"
 import {
   buildTaskClientFilterPredicate,
@@ -343,6 +346,14 @@ export function TasksPage({
     () => createTaskFilterSelectStyles(themeMode),
     [themeMode]
   )
+
+  // Cycles data for task commands
+  const { data: cycles = [] } = useCycles()
+  const moveTaskToCycle = useCallback(async (cycleId: string, taskIds: string[]) => {
+    await fetchers.addTasksToCycle(cycleId, taskIds)
+    await queryClient.invalidateQueries({ queryKey: ["cycles"] })
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] })
+  }, [queryClient])
 
   const filters = useMemo(() => ({
     status: viewState.statuses,
@@ -870,15 +881,20 @@ export function TasksPage({
       },
     ]
 
-    for (const option of TASK_STATUS_OPTIONS) {
-      cmds.push({
+    cmds.push({
+      id: "tasks:statuses:toggle",
+      label: "Filter by status",
+      group: "Filters",
+      icon: "filter",
+      action: () => {},
+      children: TASK_STATUS_OPTIONS.map((option) => ({
         id: `tasks:statuses:toggle:${option.value}`,
-        label: `Toggle status: ${option.label}`,
-        group: "Filters",
-        icon: "filter",
+        label: option.label,
+        group: "Statuses",
+        icon: "filter" as const,
         action: () => toggleStatusFilter(option.value),
-      })
-    }
+      })),
+    })
 
     if (!hasTaskDetailOpen && hasActiveClientFilters) {
       cmds.push({
@@ -911,6 +927,24 @@ export function TasksPage({
     if (!hasTaskDetailOpen && selectedLoadedIds.length > 0) {
       const selectedIds = selectedLoadedIds
       const selectedIdSet = new Set(selectedIds)
+
+      // "Set status", "Set label", "Move to cycle" — top of the list
+      cmds.push(...buildSelectionCommands({
+        namespace: "tasks",
+        selectedIds,
+        labels: allLabels,
+        cycles,
+        onBulkSetStatus: (status) => void setSelectedTasksStatusStage(status as TaskStatusValue),
+        onBulkToggleLabel: (label) => {
+          void (async () => {
+            for (const id of selectedIds) {
+              await fetchers.assignTaskLabel(id, { labelId: label.id })
+            }
+            await invalidateTaskQueries()
+          })()
+        },
+        onBulkMoveToCycle: (cycleId) => void moveTaskToCycle(cycleId, selectedIds),
+      }))
 
       cmds.push({
         id: "tasks:copy-selected",
@@ -949,17 +983,6 @@ export function TasksPage({
           selectionActions.clearTasks()
         },
       })
-
-      for (const stage of HUMAN_STAGE_OPTIONS) {
-        cmds.push({
-          id: `tasks:selected:status:${stage.value}`,
-          label: `Set selected tasks to ${stage.label}`,
-          sublabel: `${selectedIds.length} selected`,
-          group: "Actions",
-          icon: "action",
-          action: () => void setSelectedTasksStatusStage(stage.value),
-        })
-      }
     }
 
     if (!hasTaskDetailOpen) {
@@ -1048,28 +1071,31 @@ export function TasksPage({
       },
     )
 
-    if (selectedTask) {
-      for (const stage of HUMAN_STAGE_OPTIONS) {
-        cmds.push({
-          id: `tasks:stage:${stage.value}`,
-          label: `Set status: ${stage.label}`,
-          group: "Actions",
-          icon: "action",
-          action: () => void changeTaskStatusStage(stage.value, selectedTask.id),
-        })
-      }
-    }
-
-    for (const label of allLabels) {
-      const assigned = isAssignedLabel(label)
-      cmds.push({
-        id: `tasks:label:${label.id}`,
-        label: `${assigned ? "Remove" : "Add"} label: ${label.name}`,
-        group: "Labels",
-        icon: "action",
-        action: () => void toggleLabel(label),
-      })
-    }
+    // Shared "Set <field>" commands via buildTaskCommands
+    cmds.push(...buildTaskCommands({
+      namespace: "tasks",
+      task: selectedTask ? { id: selectedTask.id, labels: selectedTask.labels } : null,
+      labels: allLabels,
+      cycles,
+      onSetStatus: (status) => void changeTaskStatusStage(status as TaskStatusValue, selectedTask!.id),
+      onToggleLabel: (label) => void toggleLabel(label),
+      onSetScore: () => {
+        if (!selectedTask) return
+        const input = window.prompt("Score:", String(selectedTask.score ?? 0))
+        if (input === null) return
+        const score = parseInt(input, 10)
+        if (Number.isNaN(score)) return
+        void (async () => {
+          await fetchers.updateTask(selectedTask.id, { score })
+          await invalidateTaskQueries()
+        })()
+      },
+      onMoveToCycle: (cycleId) => {
+        if (viewState.taskId) {
+          void moveTaskToCycle(cycleId, [viewState.taskId])
+        }
+      },
+    }))
 
     for (const child of childTasks.slice(0, 100)) {
       cmds.push({
@@ -1117,15 +1143,21 @@ export function TasksPage({
         },
       )
 
-      for (const stage of HUMAN_STAGE_OPTIONS) {
-        cmds.push({
+      cmds.push({
+        id: "tasks:children:status",
+        label: "Set selected child tasks to",
+        sublabel: `${selectedChildIds.size} selected`,
+        group: "Children",
+        icon: "action",
+        action: () => {},
+        children: HUMAN_STAGE_OPTIONS.map((stage) => ({
           id: `tasks:children:status:${stage.value}`,
-          label: `Set selected child tasks to ${stage.label}`,
-          group: "Children",
-          icon: "action",
+          label: stage.label,
+          group: "Statuses",
+          icon: "action" as const,
           action: () => void setSelectedChildrenStatusStage(stage.value),
-        })
-      }
+        })),
+      })
     }
 
     if (childTasks.length > 0) {
@@ -1167,6 +1199,8 @@ export function TasksPage({
     invalidateTaskQueries,
     setSelectedChildrenStatusStage,
     setSelectedTasksStatusStage,
+    cycles,
+    moveTaskToCycle,
   ])
 
   useCommands(commands)
@@ -1182,34 +1216,22 @@ export function TasksPage({
                   <div className={`inline-flex gap-1 rounded-lg p-1 shadow-sm ${
                     isDarkTheme ? "bg-gray-800" : "bg-[#e8f0fb]"
                   }`}>
-                    <button
-                      type="button"
+                    <Button
+                      size="sm"
+                      variant={viewState.statuses.length === 0 ? "primary" : "ghost"}
                       onClick={clearStatusFilters}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                        viewState.statuses.length === 0
-                          ? "bg-blue-600 text-white"
-                          : isDarkTheme
-                            ? "text-gray-300 hover:bg-gray-700"
-                            : "text-[#475569] hover:bg-white/70"
-                      }`}
                     >
                       <span>All</span>
                       <span className="text-[10px] opacity-80">{allStatusCount}</span>
-                    </button>
+                    </Button>
                     {TASK_STATUS_OPTIONS.map((option) => {
                       const isActive = viewState.statuses.includes(option.value)
                       return (
-                        <button
+                        <Button
                           key={option.value}
-                          type="button"
+                          size="sm"
+                          variant={isActive ? "primary" : "ghost"}
                           onClick={() => toggleStatusFilter(option.value)}
-                          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                            isActive
-                              ? "bg-blue-600 text-white"
-                              : isDarkTheme
-                                ? "text-gray-300 hover:bg-gray-700"
-                                : "text-[#475569] hover:bg-white/70"
-                          }`}
                         >
                           <span
                             className={`h-2 w-2 rounded-full ${STATUS_COLORS[option.value]}`}
@@ -1217,7 +1239,7 @@ export function TasksPage({
                           />
                           <span>{option.label}</span>
                           <span className="text-[10px] opacity-80">{statusCounts[option.value] ?? 0}</span>
-                        </button>
+                        </Button>
                       )
                     })}
                   </div>
@@ -1225,19 +1247,13 @@ export function TasksPage({
                 <div className={`inline-flex gap-1 rounded-lg p-1 shadow-sm ${
                   isDarkTheme ? "bg-gray-800" : "bg-[#e8f0fb]"
                 }`}>
-                  <button
-                    type="button"
+                  <Button
+                    size="icon-sm"
+                    variant={viewState.view === "list" ? "primary" : "ghost"}
                     aria-label="List view"
                     title="List view"
                     aria-pressed={viewState.view === "list"}
                     onClick={() => setView("list")}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                      viewState.view === "list"
-                        ? "bg-blue-600 text-white"
-                        : isDarkTheme
-                          ? "text-gray-300 hover:bg-gray-700"
-                          : "text-[#475569] hover:bg-white/70"
-                    }`}
                   >
                     <svg
                       viewBox="0 0 24 24"
@@ -1257,20 +1273,14 @@ export function TasksPage({
                       <line x1="4" y1="12" x2="4.01" y2="12" />
                       <line x1="4" y1="18" x2="4.01" y2="18" />
                     </svg>
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    size="icon-sm"
+                    variant={viewState.view === "kanban" ? "primary" : "ghost"}
                     aria-label="Kanban view"
                     title="Kanban view"
                     aria-pressed={viewState.view === "kanban"}
                     onClick={() => setView("kanban")}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                      viewState.view === "kanban"
-                        ? "bg-blue-600 text-white"
-                        : isDarkTheme
-                          ? "text-gray-300 hover:bg-gray-700"
-                          : "text-[#475569] hover:bg-white/70"
-                    }`}
                   >
                     <svg
                       viewBox="0 0 24 24"
@@ -1287,29 +1297,21 @@ export function TasksPage({
                       <rect x="10.5" y="4" width="10.5" height="7" rx="1" />
                       <rect x="10.5" y="13" width="10.5" height="7" rx="1" />
                     </svg>
-                  </button>
+                  </Button>
                 </div>
                 <div className="relative">
-                  <button
+                  <Button
                     ref={filterButtonRef}
-                    type="button"
+                    size="sm"
+                    variant={hasActiveClientFilters ? "primary" : "secondary"}
                     onClick={() => setIsFilterPanelOpen((current) => !current)}
                     aria-expanded={isFilterPanelOpen}
                     aria-controls="task-filter-popover"
-                    className={`inline-flex items-center gap-2 rounded-md font-medium transition ${
-                      hasActiveClientFilters
-                        ? isDarkTheme
-                          ? "border border-blue-500/70 bg-blue-500/15 px-2.5 py-1.5 text-xs text-blue-300"
-                          : "bg-blue-600 px-4 py-2 text-sm text-white shadow-sm hover:bg-blue-500"
-                        : isDarkTheme
-                          ? "border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700"
-                          : "bg-[#e8f0fb] px-4 py-2 text-sm text-[#1e293b] hover:bg-[#dce7f8]"
-                    }`}
                   >
                     <svg
                       viewBox="0 0 24 24"
-                      width="15"
-                      height="15"
+                      width="14"
+                      height="14"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
@@ -1325,7 +1327,7 @@ export function TasksPage({
                         {activeClientFilterCount}
                       </span>
                     )}
-                  </button>
+                  </Button>
 
                   {isFilterPanelOpen && (
                     <div
@@ -1398,40 +1400,37 @@ export function TasksPage({
                         </div>
                       </div>
                       <div className="mt-4 flex items-center justify-between">
-                        <button
-                          type="button"
+                        <Button
+                          size="sm"
+                          variant="secondary"
                           disabled={!hasActiveClientFilters}
                           onClick={clearClientFilters}
-                          className={`rounded-md border px-2.5 py-1.5 text-xs transition ${
-                            isDarkTheme
-                              ? "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                              : "border-transparent bg-[#e9f0fb] text-[#475569] hover:bg-[#dce7f8]"
-                          } disabled:cursor-not-allowed disabled:opacity-60`}
                         >
                           Clear Filters
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="primary"
                           onClick={() => setIsFilterPanelOpen(false)}
-                          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500"
                         >
                           Done
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
-              <button
+              <Button
+                size="sm"
+                variant="primary"
                 onClick={() => openComposer({
                   heading: "New task",
                   submitLabel: "Create task",
                   parentId: null,
                 })}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-500"
               >
                 New Task
-              </button>
+              </Button>
             </div>
             <div className="mt-3">
               <SearchInput
@@ -1469,12 +1468,13 @@ export function TasksPage({
         <div className="flex w-full flex-col overflow-hidden">
           <div className="px-3 py-2">
             <div className="flex items-center gap-2">
-              <button
+              <Button
+                size="sm"
+                variant="secondary"
                 onClick={closeTask}
-                className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-300 shadow-sm hover:bg-gray-700"
               >
                 ← Back to Tasks
-              </button>
+              </Button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto pr-3 pb-3 pl-4">

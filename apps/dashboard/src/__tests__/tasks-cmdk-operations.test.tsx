@@ -90,12 +90,35 @@ async function runCommand(label: string) {
   }
 
   const paletteInput = screen.getByPlaceholderText("Type a command...")
+
+  // First try direct match with cleared search
   fireEvent.change(paletteInput, { target: { value: "" } })
 
-  const matchingNodes = await screen.findAllByText(label)
-  const commandButton = matchingNodes
+  const directNodes = screen.queryAllByText(label)
+  const directMatch = directNodes
     .map((node) => node.closest("button"))
     .find((button): button is HTMLButtonElement => Boolean(button?.hasAttribute("data-item-index")))
+
+  if (directMatch) {
+    fireEvent.click(directMatch)
+    return
+  }
+
+  // Fall back: type the label to surface hierarchical children via search
+  fireEvent.change(paletteInput, { target: { value: label } })
+
+  await waitFor(() => {
+    const allButtons = Array.from(document.querySelectorAll("[data-item-index]"))
+    expect(allButtons.length).toBeGreaterThan(0)
+  })
+
+  const allPaletteButtons = Array.from(document.querySelectorAll("[data-item-index]")) as HTMLButtonElement[]
+  let commandButton = allPaletteButtons.find((btn) => btn.textContent?.includes(label))
+  if (!commandButton) {
+    // For hierarchical commands like "Set status: Backlog", try the last segment
+    const lastSegment = label.includes(": ") ? label.split(": ").pop()! : label
+    commandButton = allPaletteButtons.find((btn) => btn.textContent?.includes(lastSegment))
+  }
 
   if (!commandButton) {
     throw new Error(`Unable to locate command button for label: ${label}`)

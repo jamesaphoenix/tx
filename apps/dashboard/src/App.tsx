@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { Button } from "./components/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
 import {
@@ -380,26 +381,22 @@ function ChatView({ runId }: { runId: string }) {
       {/* Transcript / Logs tabs */}
       <div className="px-4 pt-3 border-b border-gray-800 bg-gray-900/40">
         <div className="inline-flex rounded-lg border border-gray-700 overflow-hidden">
-          <button
+          <Button
+            size="sm"
+            variant={activeTab === "transcript" ? "primary" : "ghost"}
             onClick={() => setActiveTab("transcript")}
-            className={`px-3 py-1.5 text-xs font-medium transition ${
-              activeTab === "transcript"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-900 text-gray-300 hover:bg-gray-800"
-            }`}
+            className="rounded-none border-0"
           >
             Transcript
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTab === "logs" ? "primary" : "ghost"}
             onClick={() => setActiveTab("logs")}
-            className={`px-3 py-1.5 text-xs font-medium transition ${
-              activeTab === "logs"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-900 text-gray-300 hover:bg-gray-800"
-            }`}
+            className="rounded-none border-0"
           >
             Execution Logs
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -512,15 +509,17 @@ function ChatView({ runId }: { runId: string }) {
 
       {/* Auto-scroll indicator */}
       {!autoScroll && ((activeTab === "transcript" && messages.length > 0) || (activeTab === "logs" && hasLogs)) && (
-        <button
+        <Button
+          size="sm"
+          variant="primary"
           onClick={() => {
             setAutoScroll(true)
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
           }}
-          className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-full shadow-lg transition"
+          className="absolute bottom-4 right-4 rounded-full shadow-lg"
         >
           Scroll to bottom
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -539,7 +538,7 @@ function Stats() {
   if (!data) return null
 
   return (
-    <div className="grid grid-cols-6 gap-3">
+    <div className="grid grid-cols-5 gap-3">
       <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-white">{data.tasks}</div>
         <div className="text-xs text-gray-400">Tasks</div>
@@ -551,10 +550,6 @@ function Stats() {
       <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-green-400">{data.done}</div>
         <div className="text-xs text-gray-400">Done</div>
-      </div>
-      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
-        <div className="text-xl font-bold text-purple-400">{data.learnings}</div>
-        <div className="text-xs text-gray-400">Learnings</div>
       </div>
       <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-yellow-400">{data.runsRunning ?? 0}</div>
@@ -921,14 +916,14 @@ function SettingsPage({
 
   return (
     <div className="mx-auto w-full max-w-4xl p-6 pb-8">
-      <button
-        type="button"
+      <Button
+        size="sm"
+        variant="secondary"
         onClick={onBack}
-        className="inline-flex items-center rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-300 transition hover:bg-gray-700"
         aria-label="Back to Tasks"
       >
         ← Back to Tasks
-      </button>
+      </Button>
       <h2 className="mt-3 text-xl font-semibold text-white">Settings</h2>
       <p className="mt-1 text-sm text-gray-400">
         Configure dashboard defaults, labels, and cycles.
@@ -937,18 +932,14 @@ function SettingsPage({
       <div className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-1">
         <nav className="flex flex-wrap gap-1" aria-label="Settings sections">
           {SETTINGS_TAB_LABELS.map((tab) => (
-            <button
+            <Button
               key={tab.id}
-              type="button"
+              size="md"
+              variant={activeSettingsTab === tab.id ? "primary" : "ghost"}
               onClick={() => setActiveSettingsTab(tab.id)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                activeSettingsTab === tab.id
-                  ? "bg-blue-600 text-white"
-                  : "bg-transparent text-gray-300 hover:bg-gray-700/60"
-              }`}
             >
               {tab.label}
-            </button>
+            </Button>
           ))}
         </nav>
       </div>
@@ -966,7 +957,7 @@ function SettingsPage({
                 <button
                   type="button"
                   onClick={() => setDraftType("human")}
-                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
                     draftType === "human"
                       ? "border-blue-500 bg-blue-500/20 text-blue-200"
                       : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
@@ -977,7 +968,7 @@ function SettingsPage({
                 <button
                   type="button"
                   onClick={() => setDraftType("agent")}
-                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
                     draftType === "agent"
                       ? "border-blue-500 bg-blue-500/20 text-blue-200"
                       : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
@@ -988,14 +979,14 @@ function SettingsPage({
               </div>
 
               <div className="mt-4 flex items-center gap-3">
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  variant="primary"
                   disabled={isSaving || !hasAssigmentTypeChanges}
                   onClick={() => onSaveDefaultTaskAssigmentType(draftType)}
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSaving ? "Saving..." : "Save settings"}
-                </button>
+                </Button>
                 <span className="text-xs text-gray-500">
                   Current default: {defaultTaskAssigmentType}
                 </span>
@@ -1012,7 +1003,7 @@ function SettingsPage({
                 <button
                   type="button"
                   onClick={() => setDraftTaskView("list")}
-                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
                     draftTaskView === "list"
                       ? "border-blue-500 bg-blue-500/20 text-blue-200"
                       : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
@@ -1023,7 +1014,7 @@ function SettingsPage({
                 <button
                   type="button"
                   onClick={() => setDraftTaskView("kanban")}
-                  className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
                     draftTaskView === "kanban"
                       ? "border-blue-500 bg-blue-500/20 text-blue-200"
                       : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
@@ -1034,14 +1025,14 @@ function SettingsPage({
               </div>
 
               <div className="mt-4 flex items-center gap-3">
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  variant="primary"
                   disabled={isSaving || !hasDefaultTaskViewChanges}
                   onClick={() => onSaveDefaultTaskView(draftTaskView)}
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSaving ? "Saving..." : "Save view setting"}
-                </button>
+                </Button>
                 <span className="text-xs text-gray-500">
                   Current default: {defaultTaskView}
                 </span>
@@ -1074,15 +1065,16 @@ function SettingsPage({
                   className="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
                 />
               </label>
-              <button
-                type="button"
+              <Button
+                size="lg"
+                variant="primary"
                 aria-label="Create label"
                 disabled={isCreatingLabel}
                 onClick={() => { void handleCreateLabel() }}
-                className="inline-flex h-10 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-10"
               >
                 {isCreatingLabel ? "Creating..." : "Create"}
-              </button>
+              </Button>
             </div>
 
             <div className="mt-4 rounded-lg border border-gray-700/80 bg-gray-900/20 p-2">
@@ -1127,23 +1119,23 @@ function SettingsPage({
                                 className="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
                               />
                             </label>
-                            <button
-                              type="button"
+                            <Button
+                              size="xs"
+                              variant="primary"
                               aria-label={`Save label ${label.name}`}
                               disabled={isBusy}
                               onClick={() => { void handleSaveLabel(label.id) }}
-                              className="rounded-md bg-blue-600 px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Save
-                            </button>
-                            <button
-                              type="button"
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="secondary"
                               aria-label={`Cancel label edit ${label.name}`}
                               onClick={cancelEditLabel}
-                              className="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-[11px] text-gray-300 transition hover:bg-gray-800"
                             >
                               Cancel
-                            </button>
+                            </Button>
                           </div>
                         ) : (
                           <div className="flex items-center justify-between gap-2">
@@ -1160,45 +1152,45 @@ function SettingsPage({
                               {pendingDeleteLabelId === label.id ? (
                                 <>
                                   <span className="text-[11px] text-red-300">Confirm delete?</span>
-                                  <button
-                                    type="button"
+                                  <Button
+                                    size="xs"
+                                    variant="danger"
                                     aria-label={`Confirm delete label ${label.name}`}
                                     disabled={isBusy}
                                     onClick={() => { void handleDeleteLabel(label.id) }}
-                                    className="rounded-md border border-red-500/70 bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-200 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     {isBusy ? "Deleting..." : "Confirm"}
-                                  </button>
-                                  <button
-                                    type="button"
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
                                     aria-label={`Cancel delete label ${label.name}`}
                                     disabled={isBusy}
                                     onClick={() => cancelDeleteLabel(label.id)}
-                                    className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     Cancel
-                                  </button>
+                                  </Button>
                                 </>
                               ) : (
                                 <>
-                                  <button
-                                    type="button"
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
                                     aria-label={`Edit label ${label.name}`}
                                     disabled={isBusy}
                                     onClick={() => beginEditLabel(label)}
-                                    className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     Edit
-                                  </button>
-                                  <button
-                                    type="button"
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="danger"
                                     aria-label={`Delete label ${label.name}`}
                                     disabled={isBusy}
                                     onClick={() => requestDeleteLabel(label.id)}
-                                    className="rounded-md border border-red-500/50 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     Delete
-                                  </button>
+                                  </Button>
                                 </>
                               )}
                             </div>
@@ -1278,14 +1270,14 @@ function SettingsPage({
             </fieldset>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
+              <Button
+                size="sm"
+                variant="primary"
                 disabled={isSaving || !hasCycleSettingChanges || !hasValidCycleLengthDays}
                 onClick={saveCycleSettings}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSaving ? "Saving..." : "Save cycle settings"}
-              </button>
+              </Button>
               <span className="text-xs text-gray-500">
                 {normalizedDraftCarryStatuses.length} status{normalizedDraftCarryStatuses.length === 1 ? "" : "es"} selected
               </span>
@@ -1321,6 +1313,20 @@ export default function App() {
 function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>("tasks")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+
+  /** Switch tab and strip section-specific URL params so the URL stays clean. */
+  const navigateToTab = useCallback((tab: Tab) => {
+    const params = new URLSearchParams(window.location.search)
+    // Remove all section-specific params
+    for (const key of ["taskId", "cycleId", "runId", "status", "taskSearch", "taskAssignee", "taskLabels", "taskBucket", "view", "runStatus", "runAgent"]) {
+      params.delete(key)
+    }
+    const search = params.toString()
+    const url = search ? `${window.location.pathname}?${search}` : window.location.pathname
+    window.history.replaceState({}, "", url)
+    setActiveTab(tab)
+    if (tab !== "runs") setSelectedRunId(null)
+  }, [])
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme())
   const [newTaskRequestNonce, setNewTaskRequestNonce] = useState(0)
 
@@ -1451,7 +1457,7 @@ function AppContent() {
         action: () => {
           setNewTaskRequestNonce((current) => current + 1)
           if (activeTab !== "tasks") {
-            setActiveTab("tasks")
+            navigateToTab("tasks")
           }
         },
       },
@@ -1460,14 +1466,14 @@ function AppContent() {
     // Tab switching - always available
     const tabs: { tab: Tab; label: string }[] = [
       { tab: "tasks", label: "Go to Tasks" },
-      { tab: "docs", label: "Go to Docs" },
-      { tab: "runs", label: "Go to Runs" },
+      { tab: "docs", label: "Go to Specs" },
       { tab: "cycles", label: "Go to Cycles" },
+      { tab: "runs", label: "Go to Runs" },
       { tab: "settings", label: "Go to Settings" },
     ]
     for (const { tab, label } of tabs) {
       if (tab !== activeTab) {
-        cmds.push({ id: `nav:${tab}`, label, group: "Navigation", icon: "nav", action: () => setActiveTab(tab) })
+        cmds.push({ id: `nav:${tab}`, label, group: "Navigation", icon: "nav", action: () => navigateToTab(tab) })
       }
     }
 
@@ -1610,73 +1616,54 @@ function AppContent() {
           <div className="flex items-center gap-6">
             <h1 className="text-xl font-bold">tx</h1>
             <nav className="flex gap-1">
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "tasks" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("tasks")}
-              >
-                Tasks
-              </button>
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "docs" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("docs")}
-              >
-                Docs
-              </button>
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "runs" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("runs")}
-              >
-                Runs
-              </button>
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "cycles" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("cycles")}
-              >
-                Cycles
-              </button>
+              {([
+                { id: "tasks", label: "Tasks" },
+                { id: "docs", label: "Specs" },
+                { id: "cycles", label: "Cycles" },
+                { id: "runs", label: "Runs" },
+              ] as const).map(({ id, label }) => (
+                <Button
+                  key={id}
+                  size="md"
+                  variant={activeTab === id ? "primary" : "ghost"}
+                  onClick={() => navigateToTab(id)}
+                >
+                  {label}
+                </Button>
+              ))}
             </nav>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab("settings")}
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-gray-300 transition ${
-                activeTab === "settings"
-                  ? "border-blue-500 bg-blue-500/20"
-                  : "border-gray-700 bg-gray-800 hover:bg-gray-700"
-              }`}
+            <Button
+              size="icon-lg"
+              variant={activeTab === "settings" ? "primary" : "secondary"}
+              onClick={() => navigateToTab("settings")}
               aria-label="Open settings"
               title="Open settings"
+              className="rounded-full"
             >
               <SettingsIcon />
               <span className="sr-only">Open settings</span>
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              size="icon-lg"
+              variant="secondary"
               onClick={toggleThemeMode}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-gray-300 transition hover:bg-gray-700"
               aria-label={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
               title={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
+              className="rounded-full"
             >
               <ThemeToggleIcon themeMode={themeMode} />
               <span className="sr-only">
                 Switch to {themeMode === "light" ? "dark" : "light"} mode
               </span>
-            </button>
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Stats — hidden on cycles tab */}
-      {activeTab !== "cycles" && activeTab !== "settings" && (
+      {/* Stats — only shown on tasks tab */}
+      {activeTab === "tasks" && (
         <div className="flex-shrink-0 px-4 pb-2">
           <Stats />
         </div>
@@ -1695,10 +1682,9 @@ function AppContent() {
           <DocsPage />
         ) : activeTab === "runs" ? (
           <div className="flex h-full w-full overflow-hidden">
-            {/* Runs List */}
-            <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
-              {/* Run Filters - synced with URL */}
-              <div className="mb-4">
+            {/* Runs sidebar */}
+            <div className="w-80 min-h-0 border-r border-gray-800/80 flex-shrink-0 flex flex-col">
+              <div className="px-4 pt-4 pb-3">
                 <RunFilters
                   value={runFilters}
                   onChange={setRunFilters}
@@ -1706,13 +1692,15 @@ function AppContent() {
                   availableAgents={runsMetadata?.agents}
                 />
               </div>
-              <RunsList
-                filters={runFilters}
-                onSelectRun={setSelectedRunId}
-                onEscape={() => setSelectedRunId(null)}
-                selectedIds={selectedRunIds}
-                onToggleSelect={handleToggleRun}
-              />
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+                <RunsList
+                  filters={runFilters}
+                  onSelectRun={setSelectedRunId}
+                  onEscape={() => setSelectedRunId(null)}
+                  selectedIds={selectedRunIds}
+                  onToggleSelect={handleToggleRun}
+                />
+              </div>
             </div>
 
             {/* Chat View */}
@@ -1720,12 +1708,18 @@ function AppContent() {
               {selectedRunId ? (
                 <ChatView runId={selectedRunId} />
               ) : (
-                <div className="flex-1 flex items-center justify-center text-gray-500">
-                  <div className="text-center">
-                    <div className="text-lg mb-2">Select a run to view details</div>
-                    <div className="text-sm">Runs show agent execution transcripts and outcomes</div>
-                    <div className="mt-2 text-xs text-gray-500">
-                      Use <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">j</kbd>/<kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">k</kbd> or arrow keys to navigate, <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">Enter</kbd> to select
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="max-w-md rounded-xl border border-dashed border-gray-700/60 bg-gray-900/30 p-6 text-center">
+                    <h2 className="text-base font-semibold text-gray-100">Select a run</h2>
+                    <p className="mt-2 text-sm text-gray-400">
+                      View agent execution transcripts and outcomes.
+                    </p>
+                    <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-gray-500">
+                      <kbd className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-gray-300">j</kbd>
+                      <kbd className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-gray-300">k</kbd>
+                      <span>to navigate</span>
+                      <kbd className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-gray-300">Enter</kbd>
+                      <span>to select</span>
                     </div>
                   </div>
                 </div>
@@ -1739,7 +1733,7 @@ function AppContent() {
             cycleSettings={cycleSettings}
             isSaving={isSavingSettings}
             errorMessage={settingsSaveError}
-            onBack={() => setActiveTab("tasks")}
+            onBack={() => navigateToTab("tasks")}
             onSaveDefaultTaskAssigmentType={(nextType) => {
               void saveDashboardDefaultAssigmentType(nextType)
             }}
@@ -1751,7 +1745,7 @@ function AppContent() {
             }}
           />
         ) : (
-          <CyclePage />
+          <CyclePage themeMode={themeMode} />
         )}
       </main>
     </div>

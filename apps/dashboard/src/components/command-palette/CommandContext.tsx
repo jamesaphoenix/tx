@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useRef, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode } from "react"
 import { selectionActions } from "../../stores/selection-store"
 
 export interface Command {
@@ -14,6 +14,11 @@ export interface Command {
   allowInInput?: boolean
   icon?: "nav" | "filter" | "copy" | "delete" | "select" | "action"
   action: () => void | Promise<void>
+  /**
+   * Sub-commands for hierarchical drill-down in the palette.
+   * When selected, the palette shows children instead of executing `action`.
+   */
+  children?: Command[]
 }
 
 type ShortcutScope = "global" | "modal" | "palette"
@@ -131,7 +136,15 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   const [isOpen, setOpen] = useState(false)
   const nextShortcutScopeIdRef = useRef(0)
 
-  const commands = [...appCommands, ...pageCommands, ...overlayCommands]
+  // Deduplicate: page/overlay commands with the same shortcut supersede app commands
+  const commands = useMemo(() => {
+    const overrideShortcuts = new Set<string>()
+    for (const cmd of [...pageCommands, ...overlayCommands]) {
+      if (cmd.shortcut) overrideShortcuts.add(cmd.shortcut)
+    }
+    const deduped = appCommands.filter((cmd) => !cmd.shortcut || !overrideShortcuts.has(cmd.shortcut))
+    return [...deduped, ...pageCommands, ...overlayCommands]
+  }, [appCommands, pageCommands, overlayCommands])
   const activeShortcutScope: ShortcutScope = shortcutScopes.length > 0
     ? shortcutScopes[shortcutScopes.length - 1]!.scope
     : "global"

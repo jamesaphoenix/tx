@@ -4,6 +4,7 @@ import { useStore } from "@tanstack/react-store"
 import { fetchers } from "../../api/client"
 import { useCommands, type Command } from "../command-palette/CommandContext"
 import { selectionStore, selectionActions } from "../../stores/selection-store"
+import { Button } from "../ui"
 import { DocSidebar } from "./DocSidebar"
 import { DocDetail } from "./DocDetail"
 import { DocGraph } from "./DocGraph"
@@ -169,17 +170,14 @@ export function DocsPage() {
     return (
       <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-700/50 flex-shrink-0">
-          <button
-            onClick={() => setShowMap(false)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-gray-600 transition"
-          >
+          <Button size="sm" variant="secondary" onClick={() => setShowMap(false)}>
             &larr; Back to Docs
-          </button>
+          </Button>
           <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
             Document Graph
           </span>
         </div>
-      <div className="min-h-0 flex-1 bg-gray-900 p-6 overflow-hidden relative">
+        <div className="min-h-0 flex-1 overflow-hidden relative">
           <DocGraph
             selectedDocName={selectedDocName}
             onSelectDoc={(name) => {

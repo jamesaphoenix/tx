@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { Button } from "../ui"
 import { SearchInput } from "../ui/SearchInput"
 
 export interface TaskFiltersValues {
@@ -95,21 +96,13 @@ export function TaskFilters({ value, onChange, statusCounts = {} }: TaskFiltersP
           const count = isAll ? totalCount : statusCounts[option.value]
 
           return (
-            <button
+            <Button
               key={option.value}
+              size="sm"
+              variant={isSelected ? "primary" : "secondary"}
               onClick={() => handleStatusToggle(option.value)}
-              className={`
-                inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
-                transition-all duration-150
-                ${
-                  isSelected
-                    ? "bg-blue-600 text-white ring-2 ring-blue-400 ring-offset-1 ring-offset-gray-900"
-                    : "bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700"
-                }
-              `}
               aria-pressed={isSelected}
             >
-              {/* Status color indicator (not for "All") */}
               {!isAll && option.color && (
                 <span
                   className={`w-2 h-2 rounded-full ${option.color}`}
@@ -117,18 +110,16 @@ export function TaskFilters({ value, onChange, statusCounts = {} }: TaskFiltersP
                 />
               )}
               <span>{option.label}</span>
-              {/* Count badge */}
               {count !== undefined && (
                 <span
-                  className={`
-                    ml-1 px-1.5 py-0.5 text-xs rounded-full min-w-[1.25rem] text-center
-                    ${isSelected ? "bg-blue-500 text-white" : "bg-gray-700 text-gray-400"}
-                  `}
+                  className={`ml-1 px-1.5 py-0.5 text-[10px] rounded-full min-w-[1.25rem] text-center ${
+                    isSelected ? "bg-blue-500 text-white" : "bg-gray-700 text-gray-400"
+                  }`}
                 >
                   {count}
                 </span>
               )}
-            </button>
+            </Button>
           )
         })}
       </div>

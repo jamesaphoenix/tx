@@ -544,7 +544,7 @@ interface AssignLabelPayload {
 interface DocRow {
   id: number
   hash: string
-  kind: "overview" | "prd" | "design"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
   name: string
   title: string
   version: number
@@ -570,7 +570,7 @@ interface TaskDocLinkRow {
 interface DocResponse {
   id: number
   hash: string
-  kind: "overview" | "prd" | "design"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
   name: string
   title: string
   version: number
@@ -1453,6 +1453,27 @@ function kindSubdir(kind: string): string {
 function resolveDocMdRelativePath(kind: string, name: string): string {
   const sub = kindSubdir(kind)
   return sub ? `${sub}/${name}.md` : `${name}.md`
+}
+
+/** Strip YAML frontmatter (--- delimited) from markdown content. */
+function stripFrontmatter(content: string): string {
+  if (!content.startsWith("---")) return content
+  // Find closing --- delimiter — must occupy an entire line (not a partial match like -----)
+  let search = 3
+  while (true) {
+    const idx = content.indexOf("\n---", search)
+    if (idx === -1) return content // no closing delimiter — return as-is
+    const afterDashes = idx + 4
+    const next = content[afterDashes]
+    // Valid closing: end of string, newline, or carriage return
+    if (next === undefined || next === "\n" || next === "\r") {
+      let end = afterDashes
+      if (content[end] === "\r") end++
+      if (content[end] === "\n") end++
+      return content.slice(end)
+    }
+    search = idx + 1
+  }
 }
 
 function formatMarkdownParseProblem(error: unknown): string {
@@ -2777,7 +2798,7 @@ app.get("/api/docs/graph", (c) => {
     const nodes: Array<{
       id: string
       label: string
-      kind: "overview" | "prd" | "design" | "task"
+      kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "task"
       status?: "changing" | "locked"
     }> = docs.map((doc) => ({
       id: `doc:${doc.id}`,
@@ -2887,7 +2908,8 @@ app.get("/api/docs/health", (c) => {
       incomingDocLinkCount.set(doc.name, 0)
     }
 
-    if (hasDocLinksSchema(db)) {
+    const hasDocLinks = hasDocLinksSchema(db)
+    if (hasDocLinks) {
       const docLinks = db.prepare(`
         SELECT from_doc_id, to_doc_id, link_type
         FROM doc_links
@@ -2904,7 +2926,7 @@ app.get("/api/docs/health", (c) => {
           (incomingDocLinkCount.get(target.name) ?? 0) + 1
         )
 
-        if (edge.link_type === "prd_to_design" && source.kind === "prd" && target.kind === "design") {
+        if (edge.link_type === "prd_to_design" && source.kind === "prd" && (target.kind === "design" || target.kind === "system_design")) {
           prdsLinkedToDesign.add(source.name)
           designsLinkedFromPrd.add(target.name)
         }
@@ -2956,28 +2978,26 @@ app.get("/api/docs/health", (c) => {
         }
       }
 
-      if ((incomingDocLinkCount.get(doc.name) ?? 0) === 0) {
-        issues.push({
-          docName: doc.name,
-          kind: "orphaned",
-          problems: ["No incoming doc links."],
-        })
-      }
+      // Link checks only apply when the doc_links table exists
+      if (hasDocLinks) {
+        // Only design docs should warn about missing incoming links.
+        // PRDs, overviews, system_design, requirements, runbooks, decisions are root-level.
+        const isDesignKind = doc.kind === "design" || doc.kind === "system_design"
+        if (isDesignKind && (incomingDocLinkCount.get(doc.name) ?? 0) === 0) {
+          issues.push({
+            docName: doc.name,
+            kind: "orphaned",
+            problems: ["Design doc has no incoming links — expected a 'prd_to_design' link from a PRD."],
+          })
+        }
 
-      if (doc.kind === "prd" && !prdsLinkedToDesign.has(doc.name)) {
-        issues.push({
-          docName: doc.name,
-          kind: "cross_link",
-          problems: ["PRD is not linked to any design doc via 'prd_to_design'."],
-        })
-      }
-
-      if (doc.kind === "design" && !designsLinkedFromPrd.has(doc.name)) {
-        issues.push({
-          docName: doc.name,
-          kind: "cross_link",
-          problems: ["Design doc has no incoming PRD link via 'prd_to_design'."],
-        })
+        if (doc.kind === "prd" && !prdsLinkedToDesign.has(doc.name)) {
+          issues.push({
+            docName: doc.name,
+            kind: "cross_link",
+            problems: ["PRD has no outgoing 'prd_to_design' link to a design doc."],
+          })
+        }
       }
     }
 
@@ -3023,6 +3043,22 @@ app.post("/api/docs/render", async (c) => {
     const docsRoot = getDocsRootPath()
     const rendered = rows.flatMap((row) => {
       const fp = normalizeDocFilePath(row.file_path)
+      const isMdFile = /\.md$/i.test(fp)
+
+      // Markdown-first docs: strip frontmatter and return body
+      if (isMdFile) {
+        const mdPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
+        if (mdPath && existsSync(mdPath)) {
+          try {
+            return [stripFrontmatter(readFileSync(mdPath, "utf-8"))]
+          } catch {
+            return []
+          }
+        }
+        return []
+      }
+
+      // Legacy YAML docs: render via YAML→Markdown converter
       const yamlPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
       if (!yamlPath) {
         return []
@@ -3041,7 +3077,7 @@ app.post("/api/docs/render", async (c) => {
 
       if (mdPath && existsSync(mdPath)) {
         try {
-          return [readFileSync(mdPath, "utf-8")]
+          return [stripFrontmatter(readFileSync(mdPath, "utf-8"))]
         } catch {
           return []
         }
@@ -3105,6 +3141,18 @@ app.get("/api/docs/:name/source", (c) => {
 
     const docsRoot = getDocsRootPath()
     const fp = normalizeDocFilePath(row.file_path)
+    const isMdFile = /\.md$/i.test(fp)
+
+    if (isMdFile) {
+      // Markdown-first doc: strip frontmatter, no YAML source
+      const mdPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
+      const renderedContent = mdPath && existsSync(mdPath)
+        ? stripFrontmatter(readFileSync(mdPath, "utf-8"))
+        : null
+      return c.json({ name, yamlContent: null, renderedContent, filePath: fp })
+    }
+
+    // Legacy YAML doc
     const yamlPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
     if (!yamlPath) {
       return c.json({ error: "Invalid doc source path" }, 400)
@@ -3116,7 +3164,7 @@ app.get("/api/docs/:name/source", (c) => {
     const renderedContent = yamlContent
       ? renderMarkdownFromYaml(yamlContent, fp)
       : mdPath && existsSync(mdPath)
-        ? readFileSync(mdPath, "utf-8")
+        ? stripFrontmatter(readFileSync(mdPath, "utf-8"))
         : null
 
     return c.json({

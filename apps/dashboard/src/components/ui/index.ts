@@ -1,3 +1,5 @@
+export { Button, buttonVariants } from "./Button"
+export type { ButtonSize, ButtonVariant } from "./Button"
 export { LoadingSkeleton } from "./LoadingSkeleton"
 export { EmptyState } from "./EmptyState"
 export { SidePanel } from "./SidePanel"
