@@ -2262,7 +2262,7 @@ describe('Keyboard shortcuts', () => {
       await waitFor(() => {
         expect(writeText).toHaveBeenCalled()
       })
-      const copiedText = String((writeText.mock.calls as Array<[unknown]>)[0]?.[0] ?? '')
+      const copiedText = String((writeText.mock.calls as unknown as Array<[unknown]>)[0]?.[0] ?? '')
       expect(copiedText).toContain('tx-copy-detail Copy detail task')
     })
 
@@ -2325,7 +2325,7 @@ describe('Keyboard shortcuts', () => {
       await waitFor(() => {
         expect(writeText).toHaveBeenCalled()
       })
-      const copiedText = String((writeText.mock.calls as Array<[unknown]>)[0]?.[0] ?? '')
+      const copiedText = String((writeText.mock.calls as unknown as Array<[unknown]>)[0]?.[0] ?? '')
       expect(copiedText).toContain('tx-copy-child-a')
       expect(copiedText).toContain('tx-copy-child-b')
     })
@@ -2400,7 +2400,7 @@ describe('Keyboard shortcuts', () => {
       await waitFor(() => {
         expect(writeText).toHaveBeenCalled()
       })
-      const copiedText = String((writeText.mock.calls as Array<[unknown]>)[0]?.[0] ?? '')
+      const copiedText = String((writeText.mock.calls as unknown as Array<[unknown]>)[0]?.[0] ?? '')
       expect(copiedText).toContain('tx-copy-ctrl Copy ctrl task')
     })
   })
