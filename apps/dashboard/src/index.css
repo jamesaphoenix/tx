@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@tailwindcss/typography";
 
 :root {
   --color-gray-750: #344255;
