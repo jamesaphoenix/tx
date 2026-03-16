@@ -1,13 +1,13 @@
 ---
-title: tx invariant
-description: Doc-derived invariants with enforcement levels and check recording
+title: Invariants
+description: Doc-derived invariants with enforcement levels and spec traceability
 ---
 
 import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
 
 ## Purpose
 
-`tx invariant` manages invariants that are derived from structured documentation (PRDs and design docs). Invariants are rules extracted from doc YAML files via `tx invariant sync`, each with an enforcement level and optional subsystem ownership.
+Invariants are rules extracted from structured documentation (PRDs and design docs). Each invariant has an enforcement level and optional subsystem ownership. Invariants are managed through [`tx spec`](/docs/primitives/spec-trace).
 
 Invariants enable:
 
@@ -23,36 +23,27 @@ Invariants enable:
 <Tab value="CLI">
 
 ```bash
-tx invariant list [options]
-tx invariant show <id>
-tx invariant record <id> --passed|--failed [--details <text>]
-tx invariant sync [--doc <name>]
-```
+# Discover invariants from docs and link to tests
+tx spec discover
 
-```bash
-# Sync invariants from all doc YAML files
-tx invariant sync
+# Run all checks (drift, EARS, coverage, spec-test status)
+tx spec lint
 
-# Sync invariants from a specific doc
-tx invariant sync --doc auth-prd
+# List uncovered invariants
+tx spec gaps
 
-# List all invariants
-tx invariant list
+# Show full traceability matrix
+tx spec matrix
 
-# Filter by subsystem
-tx invariant list --subsystem auth
+# Record a test run result
+tx spec run test/auth.test.ts::"login works" --passed
 
-# Filter by enforcement level
-tx invariant list --enforcement error
+# Batch import test results
+vitest run --reporter=json | tx spec batch --from vitest
 
-# Show a specific invariant
-tx invariant show INV-AUTH-001
-
-# Record a passing check
-tx invariant record INV-AUTH-001 --passed
-
-# Record a failing check with details
-tx invariant record INV-AUTH-001 --failed --details "Token validation skipped"
+# Check coverage and phase status
+tx spec fci
+tx spec status
 ```
 
 </Tab>
@@ -183,10 +174,11 @@ curl -X POST http://localhost:3456/api/invariants/INV-AUTH-001/check \
 
 Invariants are derived from doc YAML, not created manually:
 
-1. Define invariants in a PRD or design doc YAML file
-2. Run `tx invariant sync` to extract them into the database
-3. Run `tx invariant record` to track pass/fail results
-4. If an invariant is removed from the YAML, re-sync marks it as deprecated
+1. Define invariants in a PRD or design doc markdown file
+2. Run `tx spec discover` to extract them into the database and link to tests
+3. Run `tx spec run` or `tx spec batch` to record pass/fail results
+4. Run `tx spec lint` to check overall health
+5. Run `tx spec complete` to sign off when coverage is full
 
 ## Related Commands
 

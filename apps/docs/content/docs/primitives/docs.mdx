@@ -22,7 +22,7 @@ Why EARS is mandatory:
 - Plain bullet requirements are ambiguous and untestable.
 - EARS gives requirements a predictable structure that is machine-parseable and lintable.
 - EARS IDs map cleanly to test cases in DD testing strategies (traceability).
-- tx validates EARS early with `tx doc lint-ears` before implementation starts.
+- tx validates EARS early with `tx spec lint` before implementation starts.
 - EARS-structured invariants populate provenance fields for full traceability.
 
 EARS requirements use the `REQ-<SCOPE>-NNN` ID format and a `statement` field containing the full EARS sentence:
@@ -86,10 +86,6 @@ tx doc list
 tx doc list --kind prd
 tx doc list --status draft
 
-# Validate docs (check frontmatter and sections)
-tx doc render
-tx doc render auth-system
-
 # Lock a doc (makes it immutable)
 tx doc lock auth-system
 
@@ -105,15 +101,9 @@ tx doc attach tx-abc123 auth-system
 # Create a design patch
 tx doc patch auth-design auth-patch-001 "Fix auth flow"
 
-# Validate doc graph
-tx doc validate
-
-# Detect drift between markdown and DB
-tx doc drift auth-system
-
-# Validate EARS requirements for a PRD
-tx doc lint-ears auth-system
-tx doc lint-ears specs/prd/auth-system.md
+# Run all doc/spec checks (drift, EARS, coverage, spec-test status)
+tx spec lint
+tx spec lint --json
 ```
 
 </Tab>
@@ -150,8 +140,8 @@ const locked = await tx.docs.lock('auth-system')
 // Link two docs
 const link = await tx.docs.link('overview', 'auth-system')
 
-// Validate docs
-const validated = await tx.docs.render('auth-system')
+// Lock a doc
+const lockedDoc = await tx.docs.lock('auth-system')
 
 // Get the doc graph
 const graph = await tx.docs.graph()
@@ -217,11 +207,6 @@ const graph = await tx.docs.graph()
 | `name` | `string` | Yes | Doc name to update |
 | `content` | `string` | Yes | New markdown content |
 
-**Tool name:** `tx_doc_render`
-
-| Arg | Type | Required | Description |
-|-----|------|----------|-------------|
-| `name` | `string` | No | Doc name to validate (omit for all) |
 
 </Tab>
 <Tab value="REST API">
@@ -234,7 +219,7 @@ PATCH  /api/docs/:name            # Update doc markdown content
 DELETE /api/docs/:name            # Delete a doc
 POST   /api/docs/:name/lock       # Lock a doc
 POST   /api/docs/link             # Link two docs
-POST   /api/docs/render           # Validate docs
+GET    /api/docs/health            # Get doc health status
 GET    /api/docs/graph            # Get the doc graph
 ```
 
@@ -363,7 +348,7 @@ acceptance_criteria:
 - Multi-factor authentication
 ````
 
-Use `tx doc lint-ears` to validate EARS requirement compliance.
+Use `tx spec lint` to validate EARS requirement compliance.
 
 ## Doc Graph
 
