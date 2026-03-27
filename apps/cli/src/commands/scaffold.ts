@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { resolve, join, dirname, relative, delimiter } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as p from "@clack/prompts"
-import { generateSkillBundles, type SkillTarget } from "../skills/generate.js"
+import { generateSkillBundles, listAvailableSkills, type SkillTarget } from "../skills/generate.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -87,12 +87,16 @@ export interface ScaffoldResult {
   skipped: string[]
 }
 
-export interface ClaudeOptions {
+interface SkillSelectionOptions {
+  skills?: readonly string[]
+}
+
+export interface ClaudeOptions extends SkillSelectionOptions {
   claudeMd?: boolean
   ralphScript?: boolean
 }
 
-interface CodexOptions {
+interface CodexOptions extends SkillSelectionOptions {
   agentsMd?: boolean
 }
 
@@ -124,6 +128,28 @@ interface ResolvedWatchdogRuntime {
   codexEnabled: boolean
   claudeEnabled: boolean
 }
+
+interface ScaffoldSkillManifestEntry {
+  id: string
+  title: string
+  installPath: string
+  checksum: string
+  commandKeys: string[]
+  source: "generated" | "bundled"
+}
+
+interface ScaffoldSkillManifest {
+  generator: "tx skills generate"
+  version: string
+  target: SkillTarget
+  installRoot: ".claude/skills" | ".codex/skills"
+  skillCount: number
+  commandCount: number
+  skills: ScaffoldSkillManifestEntry[]
+}
+
+const AVAILABLE_SKILLS = listAvailableSkills()
+const AVAILABLE_SKILL_IDS = new Set(AVAILABLE_SKILLS.map((skill) => skill.id))
 
 export function parseWatchdogRuntimeMode(value: string | boolean | undefined): WatchdogRuntimeMode {
   if (value === undefined) {
@@ -250,19 +276,136 @@ function installRoot(target: SkillTarget): string {
   return target === "claude" ? ".claude/skills" : ".codex/skills"
 }
 
-function scaffoldGeneratedSkills(projectDir: string, target: SkillTarget): ScaffoldResult {
+function normalizeSelectedSkills(skills: readonly string[] | undefined): string[] | undefined {
+  if (skills === undefined) {
+    return undefined
+  }
+
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  const invalid: string[] = []
+
+  for (const rawSkillId of skills) {
+    const skillId = rawSkillId.trim()
+    if (!skillId) {
+      continue
+    }
+    if (!AVAILABLE_SKILL_IDS.has(skillId)) {
+      invalid.push(skillId)
+      continue
+    }
+    if (seen.has(skillId)) {
+      continue
+    }
+    seen.add(skillId)
+    normalized.push(skillId)
+  }
+
+  if (invalid.length > 0) {
+    const available = AVAILABLE_SKILLS.map((skill) => skill.id).join(", ")
+    throw new ScaffoldError(`Unknown tx skill id(s): ${invalid.join(", ")}. Available skills: ${available}`)
+  }
+
+  return normalized
+}
+
+function readSkillManifest(path: string): ScaffoldSkillManifest {
+  return JSON.parse(readFileSync(path, "utf-8")) as ScaffoldSkillManifest
+}
+
+function renderSkillManifest(manifest: ScaffoldSkillManifest): string {
+  return `${JSON.stringify(manifest, null, 2)}\n`
+}
+
+function selectSkillManifest(
+  manifest: ScaffoldSkillManifest,
+  selectedSkillIds: readonly string[] | undefined,
+): ScaffoldSkillManifest {
+  if (selectedSkillIds === undefined) {
+    return manifest
+  }
+
+  const selected = new Set(selectedSkillIds)
+  const skills = manifest.skills.filter((skill) => selected.has(skill.id))
+
+  return {
+    ...manifest,
+    skillCount: skills.length,
+    commandCount: skills.reduce((total, skill) => total + skill.commandKeys.length, 0),
+    skills,
+  }
+}
+
+function writeManifestFile(
+  destRoot: string,
+  root: string,
+  manifest: ScaffoldSkillManifest,
+): Pick<ScaffoldResult, "copied" | "skipped"> {
+  const manifestPath = join(destRoot, "manifest.json")
+  const manifestContent = renderSkillManifest(manifest)
+  const relPath = `${root}/manifest.json`
+
+  if (existsSync(manifestPath)) {
+    if (readFileSync(manifestPath, "utf-8") === manifestContent) {
+      return { copied: [], skipped: [relPath] }
+    }
+    return { copied: [], skipped: [relPath] }
+  }
+
+  mkdirSync(destRoot, { recursive: true })
+  writeFileSync(manifestPath, manifestContent, "utf-8")
+  return { copied: [relPath], skipped: [] }
+}
+
+async function promptForSkills(target: SkillTarget): Promise<string[] | symbol> {
+  return await p.multiselect({
+    message:
+      target === "claude"
+        ? "Choose Claude tx skills to install"
+        : "Choose Codex tx skills to install",
+    initialValues: [],
+    required: false,
+    options: AVAILABLE_SKILLS.map((skill) => ({
+      value: skill.id,
+      label: skill.title,
+      hint: `${skill.id} — ${skill.shortDescription}`,
+    })),
+  })
+}
+
+function scaffoldGeneratedSkills(
+  projectDir: string,
+  target: SkillTarget,
+  options?: SkillSelectionOptions,
+): ScaffoldResult {
   const tempDir = mkdtempSync(join(tmpdir(), `tx-generated-skills-${target}-`))
+  const selectedSkillIds = normalizeSelectedSkills(options?.skills)
 
   try {
     generateSkillBundles({ target, outputDir: tempDir, clean: true })
     const root = installRoot(target)
     const src = join(tempDir, target, root)
     const dest = join(projectDir, root)
-    const result = copyTree(src, dest)
+    const manifest = selectSkillManifest(
+      readSkillManifest(join(src, "manifest.json")),
+      selectedSkillIds,
+    )
+    const copied: string[] = []
+    const skipped: string[] = []
+
+    for (const skill of manifest.skills) {
+      const result = copyTree(join(src, skill.id), join(dest, skill.id), dest)
+      copied.push(...result.copied.map((path) => `${root}/${path}`))
+      skipped.push(...result.skipped.map((path) => `${root}/${path}`))
+    }
+
+    const manifestResult = writeManifestFile(dest, root, manifest)
+    copied.push(...manifestResult.copied)
+    skipped.push(...manifestResult.skipped)
 
     return {
-      copied: result.copied.map((path) => `${root}/${path}`),
-      skipped: result.skipped.map((path) => `${root}/${path}`),
+      copied,
+      skipped,
     }
   } finally {
     rmSync(tempDir, { recursive: true, force: true })
@@ -278,7 +421,7 @@ export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): Sca
   const allSkipped: string[] = []
   const templates = templatesDir()
 
-  const generated = scaffoldGeneratedSkills(projectDir, "claude")
+  const generated = scaffoldGeneratedSkills(projectDir, "claude", { skills: opts.skills })
   allCopied.push(...generated.copied)
   allSkipped.push(...generated.skipped)
 
@@ -323,7 +466,7 @@ export function scaffoldCodex(projectDir: string, options?: CodexOptions): Scaff
   const templates = templatesDir()
   const opts = { agentsMd: false, ...options }
 
-  const generated = scaffoldGeneratedSkills(projectDir, "codex")
+  const generated = scaffoldGeneratedSkills(projectDir, "codex", { skills: opts.skills })
   allCopied.push(...generated.copied)
   allSkipped.push(...generated.skipped)
 
@@ -425,6 +568,9 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
   const results: ScaffoldResult[] = []
 
   if (wantsClaude) {
+    const selectedClaudeSkills = await promptForSkills("claude")
+    if (p.isCancel(selectedClaudeSkills)) { p.cancel("Setup cancelled."); return }
+
     const wantsRalph = await p.confirm({
       message: "Include ralph script? (autonomous task loop)",
       initialValue: false,
@@ -434,8 +580,12 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
     const result = scaffoldClaude(projectDir, {
       claudeMd: false,
       ralphScript: !!wantsRalph,
+      skills: [...selectedClaudeSkills],
     })
     results.push(result)
+    if (selectedClaudeSkills.length === 0) {
+      p.log.info("Claude integration installed without tx skills. Re-run tx init or use tx skills sync later to add them.")
+    }
   }
 
   const wantsCodex = await p.confirm({
@@ -445,7 +595,13 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
   if (p.isCancel(wantsCodex)) { p.cancel("Setup cancelled."); return }
 
   if (wantsCodex) {
-    results.push(scaffoldCodex(projectDir))
+    const selectedCodexSkills = await promptForSkills("codex")
+    if (p.isCancel(selectedCodexSkills)) { p.cancel("Setup cancelled."); return }
+
+    results.push(scaffoldCodex(projectDir, { skills: [...selectedCodexSkills] }))
+    if (selectedCodexSkills.length === 0) {
+      p.log.info("Codex integration installed without tx skills. Re-run tx init or use tx skills sync later to add them.")
+    }
   }
 
   const wantsWatchdog = await p.confirm({

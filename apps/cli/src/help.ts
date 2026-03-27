@@ -71,6 +71,10 @@ Usage: tx init [--db <path>] [--claude] [--codex] [--watchdog] [--watchdog-runti
 Initializes the tx database and required tables. Creates .tx/tasks.db
 by default. Safe to run multiple times (idempotent).
 
+Interactive tx init lets the user choose the exact Claude/Codex tx skills
+to install during onboarding. Passing --claude or --codex installs the
+full default bundle non-interactively.
+
 Options:
   --db <path>   Database path (default: .tx/tasks.db)
   --claude      Scaffold Claude Code integration (.claude/skills; no CLAUDE.md by default)
@@ -81,9 +85,9 @@ Options:
   --help        Show this help
 
 Examples:
-  tx init                     # Initialize database only
-  tx init --claude            # Database + generated Claude Code skills
-  tx init --codex             # Database + generated Codex skills + rules
+  tx init                     # Initialize database + choose skills interactively
+  tx init --claude            # Database + full generated Claude Code skills bundle
+  tx init --codex             # Database + full generated Codex skills bundle + rules
   tx init --claude --codex    # Database + both integrations
   tx init --watchdog          # Optional later: watchdog scaffolding (runtime auto-detect)
   tx init --watchdog --watchdog-runtime both
