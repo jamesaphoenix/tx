@@ -10,6 +10,14 @@ const SHARED_SKILLS_DIR = resolve(__dirname, "..", "templates", "shared-skills")
 
 export type SkillTarget = "claude" | "codex"
 export type SkillTargetSelection = SkillTarget | "all"
+export type GeneratedSkillSource = "generated" | "bundled"
+
+export interface AvailableSkillDefinition {
+  id: string
+  title: string
+  shortDescription: string
+  source: GeneratedSkillSource
+}
 
 interface SkillGroupDefinition {
   id: string
@@ -26,7 +34,7 @@ interface GeneratedSkill {
   installPath: string
   files: Array<{ relativePath: string; content: string }>
   checksum: string
-  source: "generated" | "bundled"
+  source: GeneratedSkillSource
 }
 
 interface TargetManifest {
@@ -178,16 +186,70 @@ const SKILL_GROUPS: readonly SkillGroupDefinition[] = [
 ] as const
 
 const BUNDLED_SKILLS = [
-  { id: "decompose-spec", title: "Decompose Spec" },
-  { id: "design-doc", title: "Design Doc" },
-  { id: "map-invariants", title: "Map Invariants" },
-  { id: "overview-spec", title: "Overview Spec" },
-  { id: "prd", title: "Product Requirements Document" },
-  { id: "ralph-loop", title: "Ralph Loop" },
-  { id: "skills-sync", title: "Skills Sync" },
-  { id: "task-spec-loop", title: "Task Spec Loop" },
-  { id: "verify-invariants", title: "Verify Invariants" },
+  {
+    id: "decompose-spec",
+    title: "Decompose Spec",
+    shortDescription: "Turn a design spec into a first-pass tx task graph.",
+  },
+  {
+    id: "design-doc",
+    title: "Design Doc",
+    shortDescription: "Write architecture-first design docs from a tracked plan.",
+  },
+  {
+    id: "map-invariants",
+    title: "Map Invariants",
+    shortDescription: "Link existing tests and source to design invariants.",
+  },
+  {
+    id: "overview-spec",
+    title: "Overview Spec",
+    shortDescription: "Create an architectural overview spec before implementation.",
+  },
+  {
+    id: "prd",
+    title: "Product Requirements Document",
+    shortDescription: "Write a PRD with EARS requirements and acceptance criteria.",
+  },
+  {
+    id: "ralph-loop",
+    title: "Ralph Loop",
+    shortDescription: "Run Ralph against the repo queue or one linked design doc.",
+  },
+  {
+    id: "skills-sync",
+    title: "Skills Sync",
+    shortDescription: "Refresh tx-managed skill bundles inside a project checkout.",
+  },
+  {
+    id: "task-spec-loop",
+    title: "Task Spec Loop",
+    shortDescription: "Attach tasks to paired PRD/design docs and keep the graph aligned.",
+  },
+  {
+    id: "verify-invariants",
+    title: "Verify Invariants",
+    shortDescription: "Implement and verify invariant coverage from a design doc.",
+  },
 ] as const
+
+export function listAvailableSkills(): AvailableSkillDefinition[] {
+  const generated: AvailableSkillDefinition[] = SKILL_GROUPS.map((group) => ({
+    id: group.id,
+    title: group.title,
+    shortDescription: group.shortDescription,
+    source: "generated" as const,
+  }))
+
+  const bundled: AvailableSkillDefinition[] = BUNDLED_SKILLS.map((skill) => ({
+    id: skill.id,
+    title: skill.title,
+    shortDescription: skill.shortDescription,
+    source: "bundled" as const,
+  }))
+
+  return [...generated, ...bundled]
+}
 
 function validateGeneratedSkillCoverage(target: SkillTarget, skills: GeneratedSkill[]): void {
   const expectedKeys = Object.keys(commandHelp).sort((a, b) => a.localeCompare(b))

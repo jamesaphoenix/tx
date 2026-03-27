@@ -25,6 +25,10 @@ tx init --codex
 tx init --claude --codex
 ```
 
+Running plain `tx init` opens onboarding prompts where you choose the exact tx
+skills to install for Claude and Codex. Passing `--claude` or `--codex` skips
+that prompt and installs the full default bundle for the selected runtime.
+
 Default outputs:
 
 - `tx init --claude` installs `.claude/skills/**`
