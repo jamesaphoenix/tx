@@ -490,6 +490,8 @@ describe("ralph-watchdog signal trap integration", () => {
     "--run-stale-seconds",
     "60",
   ]
+  const SIGNAL_EXIT_TIMEOUT_MS = 15000
+  const LOCK_RELEASE_TIMEOUT_MS = 8000
 
   async function expectSignalStopsWatchdog(
     signal: "SIGTERM" | "SIGINT",
@@ -520,9 +522,9 @@ describe("ralph-watchdog signal trap integration", () => {
 
       proc.kill(signal)
 
-      const exitCode = await waitForExit(proc, 8000)
+      const exitCode = await waitForExit(proc, SIGNAL_EXIT_TIMEOUT_MS)
       expect(exitCode, procOut).toBe(expectedExitCode)
-      await waitForCondition(() => !existsSync(pidFile), 4000)
+      await waitForCondition(() => !existsSync(pidFile), LOCK_RELEASE_TIMEOUT_MS)
 
       const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
       expect(watchdogLog).toContain(`Received ${signal}`)

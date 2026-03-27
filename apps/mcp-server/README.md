@@ -69,6 +69,16 @@ Use the spec primitives like this:
 - `tx spec status`: human-readable blocker view for one scope
 - `tx spec health`: repo rollup, not part of the minimum day-1 loop
 
+### Human-in-Loop Example
+
+```bash
+task=$(tx ready --limit 1 --json | jq -r '.[0].id')
+codex "Read AGENTS.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+codex "Read AGENTS.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
+```
+
 ## The Six Layers
 
 ### 1. Task Management
