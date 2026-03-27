@@ -59,7 +59,7 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 │  tx primitives                                          │
 │                                                         │
 │   tx ready     tx done      tx memory     tx pin        │
-│   tx send      tx block     tx inbox      tx sync       │
+│   tx msg send  tx dep block tx msg inbox  tx sync       │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -78,12 +78,12 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 |-----------|---------|
 | `tx ready` | Get next workable task (unblocked, highest priority) |
 | `tx done <id>` | Complete task, potentially unblocking others |
-| `tx block <id> <blocker>` | Declare dependencies |
+| `tx dep block <id> <blocker>` | Declare dependencies |
 | `tx memory context <id>` | Get relevant memory + learnings for prompt injection |
 | `tx memory add` | Record knowledge for future agents |
-| `tx send <channel> <content>` | Send a message to an agent channel |
-| `tx inbox <channel>` | Read messages (read-only, cursor-based) |
-| `tx ack <id>` | Acknowledge a message |
+| `tx msg send <channel> <content>` | Send a message to an agent channel |
+| `tx msg inbox <channel>` | Read messages (read-only, cursor-based) |
+| `tx msg ack <id>` | Acknowledge a message |
 | `tx claim <id> <worker>` | Claim a task with a lease for worker coordination |
 | `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
 | `tx memory recall [path]` | Query file-specific learnings by path |
@@ -113,10 +113,11 @@ wait
 
 ```bash
 # Human-in-loop: agent proposes, human approves
-task=$(tx ready --limit 1)
-claude "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " && claude "Execute plan.md"
-tx done $task
+task=$(tx ready --limit 1 --json | jq -r '.[0].id')
+claude "Read CLAUDE.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+claude "Read CLAUDE.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
 ```
 
 ```bash
@@ -185,7 +186,7 @@ interface TaskWithDeps extends Task {
 
 ### RULE 2: Compaction MUST export learnings to a file agents can read
 
-`tx compact` MUST append learnings to a markdown file (default: `CLAUDE.md`). Storing only in `compaction_log` table is insufficient.
+`tx sync compact` MUST append learnings to a markdown file (default: `CLAUDE.md`). Storing only in `compaction_log` table is insufficient.
 
 ```markdown
 ## Agent Learnings (YYYY-MM-DD)
@@ -233,7 +234,7 @@ All business logic MUST use Effect-TS:
 
 ### RULE 7: ANTHROPIC_API_KEY is optional for core commands
 
-LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Core commands do not.
+LLM features (`tx dedupe`, `tx sync compact`, `tx reprioritize`) require the key. Core commands do not.
 
 | Layer | LLM | Used By |
 |-------|-----|---------|
@@ -486,92 +487,147 @@ Run `tx help` for the full list or `tx help <command>` for details.
 
 ```bash
 # Tasks
-tx init                    # Initialize database
-tx add <title>             # Create task (--parent, --score, --description)
-tx list                    # List tasks (--status, --limit)
-tx ready                   # List unblocked tasks
-tx show <id>               # Show task details
-tx update <id>             # Update task fields
-tx done <id>               # Mark complete
-tx reset <id>              # Reset to ready
-tx delete <id>             # Delete task
-tx md-export               # Export tasks to markdown file (--watch, --include-context)
+tx init                        # Initialize database
+tx add <title>                 # Create task (--parent, --score, --description)
+tx list                        # List tasks (--status, --limit)
+tx ready                       # List unblocked tasks
+tx show <id>                   # Show task details
+tx update <id>                 # Update task fields
+tx done <id>                   # Mark complete
+tx reset <id>                  # Reset to ready
+tx delete <id>                 # Delete task
+tx md-export                   # Export tasks to markdown file (--watch, --include-context)
 
-# Dependencies & Hierarchy
-tx block <id> <blocker>    # Add blocking dependency
-tx unblock <id> <blocker>  # Remove dependency
-tx children <id>           # List child tasks
-tx tree <id>               # Show task subtree
+# Dependencies & Hierarchy (tx dep)
+tx dep block <id> <blocker>    # Add blocking dependency
+tx dep unblock <id> <blocker>  # Remove dependency
+tx dep children <id>           # List child tasks
+tx dep tree <id>               # Show task subtree
 
 # Memory (filesystem-backed .md search)
-tx memory source add <dir> # Register directory for indexing
-tx memory source rm <dir>  # Unregister directory
-tx memory source list      # Show registered directories
-tx memory add <title>      # Create .md file (--content, --tags, --dir)
-tx memory index            # Index all sources (--incremental, --status)
-tx memory search <query>   # BM25 search (--semantic, --expand, --tags, --prop)
-tx memory show <id>        # Display document
-tx memory tag <id> <tags>  # Add tags to frontmatter
-tx memory untag <id> <t>   # Remove tags
-tx memory relate <id> <t>  # Add to frontmatter.related
-tx memory set <id> <k> <v> # Set property (writes frontmatter + DB)
-tx memory unset <id> <k>   # Remove property
-tx memory props <id>       # Show properties
-tx memory links <id>       # Outgoing wikilinks + edges
-tx memory backlinks <id>   # Incoming links
-tx memory list             # List documents (--source, --tags)
-tx memory link <src> <tgt> # Create explicit edge
-tx memory context <id>     # Task-relevant memory for prompt injection
-tx memory learn <p> <note> # Attach learning to file path/glob
-tx memory recall [path]    # Query file-specific learnings
+tx memory source add <dir>     # Register directory for indexing
+tx memory source rm <dir>      # Unregister directory
+tx memory source list          # Show registered directories
+tx memory add <title>          # Create .md file (--content, --tags, --dir)
+tx memory index                # Index all sources (--incremental, --status)
+tx memory search <query>       # BM25 search (--semantic, --expand, --tags, --prop)
+tx memory show <id>            # Display document
+tx memory tag <id> <tags>      # Add tags to frontmatter
+tx memory untag <id> <t>       # Remove tags
+tx memory relate <id> <t>      # Add to frontmatter.related
+tx memory set <id> <k> <v>     # Set property (writes frontmatter + DB)
+tx memory unset <id> <k>       # Remove property
+tx memory props <id>           # Show properties
+tx memory links <id>           # Outgoing wikilinks + edges
+tx memory backlinks <id>       # Incoming links
+tx memory list                 # List documents (--source, --tags)
+tx memory link <src> <tgt>     # Create explicit edge
+tx memory context <id>         # Task-relevant memory for prompt injection
+tx memory learn <p> <note>     # Attach learning to file path/glob
+tx memory recall [path]        # Query file-specific learnings
 
-# Messages (Agent Outbox)
-tx send <channel> <msg>    # Send to channel
-tx inbox <channel>         # Read messages
-tx ack <id>                # Acknowledge message
-tx ack all <channel>       # Acknowledge all on channel
-tx outbox pending <ch>     # Count pending messages
-tx outbox gc               # Garbage collect old messages
+# Messages (tx msg)
+tx msg send <channel> <msg>    # Send to channel
+tx msg inbox <channel>         # Read messages
+tx msg ack <id>                # Acknowledge message
+tx msg ack all <channel>       # Acknowledge all on channel
+tx msg pending <ch>            # Count pending messages
+tx msg gc                      # Garbage collect old messages
 
-# Docs & Invariants
-tx doc <sub>               # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
-tx invariant <sub>         # list, show, record, sync
+# Docs & Specs
+tx doc <sub>                   # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
+tx spec lint                   # All-in-one check (drift, EARS, coverage, spec-test status)
+tx spec discover               # Refresh doc-derived invariants and discover test mappings
+tx spec health                 # Repo rollup for closure, decisions, and drift
+tx spec fci                    # Compute Feature Completion Index
+tx spec status                 # Quick phase + blocker summary
+tx spec complete               # Record human sign-off
+tx spec run <test-id>          # Record pass/fail for a mapped test
+tx spec batch                  # Import batch run results from stdin JSON
+tx spec link <inv> <file>      # Manually link invariant to test
+tx spec unlink <inv> <test>    # Remove invariant/test link
+tx spec tests <inv-id>         # List tests linked to an invariant
+tx spec gaps                   # List uncovered invariants
+tx spec matrix                 # Show full traceability matrix
 
 # Claims (Worker Leasing)
-tx claim <task> <worker>   # Claim with lease (--lease minutes)
-tx claim release <t> <w>   # Release claim
-tx claim renew <t> <w>     # Renew lease
+tx claim <task> <worker>       # Claim with lease (--lease minutes)
+tx claim release <t> <w>       # Release claim
+tx claim renew <t> <w>         # Renew lease
 
 # Traces (Run Debugging)
-tx trace list              # Recent runs
-tx trace show <run-id>     # Metrics events for a run
-tx trace transcript <id>   # Raw JSONL transcript
-tx trace stderr <id>       # Stderr output
-tx trace errors            # Recent errors across runs
+tx trace list                  # Recent runs
+tx trace show <run-id>         # Metrics events for a run
+tx trace transcript <id>       # Raw JSONL transcript
+tx trace stderr <id>           # Stderr output
+tx trace errors                # Recent errors across runs
 
-# Sync & Data
-tx sync export             # SQLite → JSONL (git-friendly)
-tx sync import             # JSONL → SQLite
-tx sync status             # Show sync status
-tx sync claude             # Push to Claude Code team dir
-tx compact                 # Compact done tasks + export learnings
-tx history                 # View compaction history
-tx migrate status          # Database migration status
+# Sync & Data (tx sync)
+tx sync export                 # SQLite → JSONL (git-friendly)
+tx sync import                 # JSONL → SQLite
+tx sync status                 # Show sync status
+tx sync claude                 # Push to Claude Code team dir
+tx sync compact                # Compact done tasks + export learnings
+tx sync history                # View compaction history
+tx sync migrate status         # Database migration status
 
 # Bulk Operations
-tx bulk done <id...>       # Complete multiple tasks
-tx bulk score <n> <id...>  # Set score for multiple tasks
-tx bulk reset <id...>      # Reset multiple tasks
-tx bulk delete <id...>     # Delete multiple tasks
+tx bulk done <id...>           # Complete multiple tasks
+tx bulk score <n> <id...>      # Set score for multiple tasks
+tx bulk reset <id...>          # Reset multiple tasks
+tx bulk delete <id...>         # Delete multiple tasks
 
 # Cycle (Sub-Agent Swarm)
-tx cycle                   # Issue discovery with sub-agent swarms
+tx cycle                       # Issue discovery with sub-agent swarms
 
-# Tools
-tx stats                   # Queue metrics and health
-tx validate                # Database health checks (--fix)
-tx doctor                  # System diagnostics
-tx dashboard               # Start API server + dashboard UI
+# Automation (tx auto)
+tx auto guard                  # Run guard checks
+tx auto gate                   # Manage phase gates
+tx auto verify                 # Verify task completion
+tx auto label                  # Auto-label tasks
+tx auto reflect                # Agent reflection on completed work
+
+# Context Pins (tx pin)
+tx pin set <id> [content]      # Create or update a pin
+tx pin get <id>                # Show pin content
+tx pin rm <id>                 # Remove a pin from DB and target files
+tx pin list                    # List all pins
+tx pin sync                    # Re-sync all pins to target files
+tx pin targets [files...]      # Show or set target files
+
+# Decisions (tx decision)
+tx decision add <content>      # Add a decision manually
+tx decision list               # List decisions
+tx decision show <id>          # Show decision details
+tx decision approve <id>       # Approve a pending decision
+tx decision reject <id>        # Reject a pending decision (--reason required)
+tx decision edit <id> <content># Edit a pending decision
+tx decision pending            # List pending decisions
+
+# Group Context
+tx group-context set <id> <ctx># Set task-group context
+tx group-context clear <id>    # Clear task-group context
+
+# Diagnostics (tx diag)
+tx diag stats                  # Queue metrics and health
+tx diag doctor                 # System diagnostics
+tx diag dashboard              # Start API server + dashboard UI
+tx validate                    # Database health checks (--fix)
+
+# Utilities (tx utils)
+tx utils claude-usage          # Show Claude Code rate limit usage
+tx utils codex-usage           # Show Codex rate limit usage
+
+# Deprecated aliases (still work)
+# tx block → tx dep block, tx unblock → tx dep unblock
+# tx children → tx dep children, tx tree → tx dep tree
+# tx send → tx msg send, tx inbox → tx msg inbox
+# tx ack → tx msg ack, tx outbox → tx msg
+# tx stats → tx diag stats, tx doctor → tx diag doctor
+# tx dashboard → tx diag dashboard
+# tx compact → tx sync compact, tx history → tx sync history
+# tx migrate status → tx sync migrate status
+# tx invariant → tx spec
 ```
 
 ### Cycle vs Teams vs Sub-agents — Disambiguation
@@ -677,7 +733,7 @@ Task-layer source of truth policy:
 - If pulling work from a queue, use `tx ready` as the primary place to get work.
 - Every create/update/complete/block action in native task tools **must be mirrored back to `tx`**.
 - Mirror creates with `tx add` (and `--parent` for subtasks).
-- Mirror updates with `tx update`, `tx block`, `tx unblock`, `tx done`, and `tx reset`.
+- Mirror updates with `tx update`, `tx dep block`, `tx dep unblock`, `tx done`, and `tx reset`.
 - If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
 - Before handoff, commit, or session end, run `tx sync export`.
 
@@ -976,7 +1032,3 @@ The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
 - **Source markdown-first specs**: `specs/` directory — internal artifacts linked from CLAUDE.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
-
-<tx-pin id="gate.docs-to-build">
-{"approved":false,"phaseFrom":null,"phaseTo":null,"required":true,"approvedBy":null,"approvedAt":null,"revokedBy":null,"revokedAt":null,"revokeReason":null,"note":null,"taskId":null,"createdAt":"2026-03-05T20:16:32.675Z"}
-</tx-pin>

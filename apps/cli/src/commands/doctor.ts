@@ -40,7 +40,7 @@ function statusIcon(status: "pass" | "warn" | "fail"): string {
 function formatDoctorResult(result: DoctorResult, verbose: boolean): string {
   const lines: string[] = []
 
-  lines.push("tx doctor - System Health")
+  lines.push("tx diag doctor - System Health")
   lines.push("=" .repeat(40))
   lines.push("")
 

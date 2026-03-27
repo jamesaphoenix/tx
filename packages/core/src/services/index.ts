@@ -290,6 +290,11 @@ export {
   type AgentMessageCallback
 } from "./agent-service.js"
 export {
+  DecomposeService,
+  DecomposeServiceLive,
+  type DecomposeError,
+} from "./decompose-service.js"
+export {
   CycleScanService,
   CycleScanServiceLive
 } from "./cycle-scan-service.js"

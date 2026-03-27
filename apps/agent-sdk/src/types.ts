@@ -96,6 +96,26 @@ export {
   type FciResult,
 } from "@jamesaphoenix/tx-types"
 
+export {
+  DecomposeDocSummarySchema,
+  DecomposeRootPreviewSchema,
+  DecompositionTaskSchema,
+  DecompositionPlanSchema,
+  DecomposeRequestSchema,
+  MaterializedDecomposeTaskSchema,
+  DecomposeResultSchema,
+  DecomposeResultSerializedSchema,
+  serializeDecomposeResult,
+  type DecomposeDocSummary,
+  type DecomposeRootPreview,
+  type DecompositionTask,
+  type DecompositionPlan,
+  type DecomposeRequest,
+  type MaterializedDecomposeTask,
+  type DecomposeResult,
+  type DecomposeResultSerialized,
+} from "@jamesaphoenix/tx-types"
+
 // Decision types
 export {
   DECISION_STATUSES,
@@ -386,6 +406,16 @@ export interface SerializedTaskWithDeps {
   claimedBy: string | null
   claimExpiresAt: string | null
   failedAttempts: number
+  linkedDocs: Array<{
+    docId: string
+    name: string
+    title: string
+    kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
+    version: number
+    status: "changing" | "locked"
+    filePath: string
+    linkType: "implements" | "references"
+  }>
 }
 
 /**
@@ -696,6 +726,7 @@ export interface SyncHydrateResult {
 
 export interface SerializedDoc {
   id: number
+  docId: string
   hash: string
   kind: string
   name: string

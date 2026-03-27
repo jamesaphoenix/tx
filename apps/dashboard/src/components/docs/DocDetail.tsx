@@ -6,8 +6,9 @@ import remarkGfm from "remark-gfm"
 import { fetchers, type DocSerialized } from "../../api/client"
 
 interface DocDetailProps {
-  docName: string
-  onNavigateToDoc: (name: string) => void
+  docId: string
+  version: number
+  onNavigateToDoc: (docId: string, version: number) => void
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -16,6 +17,8 @@ const KIND_LABELS: Record<string, string> = {
   design: "DESIGN DOCUMENT",
   requirement: "REQUIREMENT",
   system_design: "SYSTEM DESIGN",
+  runbook: "RUNBOOK",
+  decision: "DECISION RECORD",
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -38,13 +41,13 @@ function StatusBadge({ status }: { status: string }) {
 function RelationshipsSection({ doc, allDocs, onNavigateToDoc }: {
   doc: DocSerialized
   allDocs: DocSerialized[]
-  onNavigateToDoc: (name: string) => void
+  onNavigateToDoc: (docId: string, version: number) => void
 }) {
   const parentDoc = doc.parentDocId ? allDocs.find((d) => d.id === doc.parentDocId) : null
 
   const prefix = doc.name.match(/^(?:PRD|DD|prd|dd)-?(\d{3})/i)?.[1]
   const related = prefix
-    ? allDocs.filter((d) => d.name !== doc.name && d.name.match(new RegExp(`^(?:PRD|DD|prd|dd)-?${prefix}`, "i")))
+    ? allDocs.filter((d) => (d.docId !== doc.docId || d.version !== doc.version) && d.name.match(new RegExp(`^(?:PRD|DD|prd|dd)-?${prefix}`, "i")))
     : []
 
   if (!parentDoc && related.length === 0) return null
@@ -66,7 +69,7 @@ function RelationshipsSection({ doc, allDocs, onNavigateToDoc }: {
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => onNavigateToDoc(parentDoc.name)}
+            onClick={() => onNavigateToDoc(parentDoc.docId, parentDoc.version)}
           >
             <span className="text-gray-500">&larr;</span>
             <span className="text-blue-400">{parentDoc.name}</span>
@@ -75,10 +78,10 @@ function RelationshipsSection({ doc, allDocs, onNavigateToDoc }: {
         )}
         {related.map((rel) => (
           <Button
-            key={rel.name}
+            key={`${rel.docId}:${rel.version}`}
             size="sm"
             variant="secondary"
-            onClick={() => onNavigateToDoc(rel.name)}
+            onClick={() => onNavigateToDoc(rel.docId, rel.version)}
           >
             <span className="text-gray-500">&larr;</span>
             <span className="text-blue-400">{rel.name}</span>
@@ -96,18 +99,11 @@ function RelationshipsSection({ doc, allDocs, onNavigateToDoc }: {
 // DocDetail component
 // =============================================================================
 
-export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
+export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
   const { data: doc, isLoading: docLoading } = useQuery({
-    queryKey: ["doc", docName],
-    queryFn: () => fetchers.docDetail(docName),
-    enabled: !!docName,
-    refetchInterval: 5000,
-  })
-
-  const { data: renderData, isLoading: renderLoading } = useQuery({
-    queryKey: ["doc-render", docName],
-    queryFn: () => fetchers.docRender(docName),
-    enabled: !!docName,
+    queryKey: ["doc", docId, version],
+    queryFn: () => fetchers.docDetail(docId, version),
+    enabled: !!docId,
     refetchInterval: 5000,
   })
 
@@ -118,9 +114,9 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
   })
 
   const { data: sourceData, isLoading: sourceLoading } = useQuery({
-    queryKey: ["doc-source", docName],
-    queryFn: () => fetchers.docSource(docName),
-    enabled: !!docName,
+    queryKey: ["doc-source", docId, version],
+    queryFn: () => fetchers.docSource(docId, version),
+    enabled: !!docId,
     refetchInterval: 5000,
   })
 
@@ -128,7 +124,7 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
   // Strip leading title and Kind/Status/Version lines from rendered content
   // since we already show them in the header above
   const rendered = useMemo(() => {
-    let text = renderData?.rendered?.[0] ?? sourceData?.renderedContent ?? ""
+    let text = sourceData?.renderedContent ?? ""
     // Strip leading "# Title\n" line
     text = text.replace(/^#\s+[^\n]+\n+/, "")
     // Strip "**Kind**: ..." line
@@ -140,7 +136,7 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
     // Strip "**Implements**: ..." line
     text = text.replace(/^\*\*Implements\*\*:\s*[^\n]+\n+/, "")
     return text.trim()
-  }, [renderData, sourceData])
+  }, [sourceData])
 
   if (docLoading) {
     return (
@@ -178,6 +174,8 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-8 font-mono">
         <span>{doc.name}</span>
         <span className="text-gray-600">&middot;</span>
+        <span>{doc.docId}</span>
+        <span className="text-gray-600">&middot;</span>
         <span>SHA: {doc.hash.slice(0, 10)}</span>
         <span className="text-gray-600">&middot;</span>
         <span>{doc.filePath}</span>
@@ -188,7 +186,7 @@ export function DocDetail({ docName, onNavigateToDoc }: DocDetailProps) {
 
       {/* Content */}
       <div>
-        {(!rendered && (renderLoading || sourceLoading)) ? (
+        {(!rendered && sourceLoading) ? (
           <div className="space-y-3">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="animate-pulse bg-gray-800 h-4 rounded" style={{ width: `${60 + ((i * 17 + 7) % 40)}%` }} />

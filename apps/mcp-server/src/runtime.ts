@@ -25,8 +25,10 @@ import {
   GuardService,
   VerifyService,
   ReflectService,
+  DecomposeService,
   SpecTraceService,
   DecisionService,
+  LabelRepository,
   SqliteClient,
 } from "@jamesaphoenix/tx-core"
 
@@ -52,8 +54,10 @@ export type McpServices =
   | GuardService
   | VerifyService
   | ReflectService
+  | DecomposeService
   | SpecTraceService
   | DecisionService
+  | LabelRepository
   | SqliteClient
 
 // -----------------------------------------------------------------------------

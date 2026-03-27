@@ -1,17 +1,17 @@
 ---
-title: tx send / tx inbox
+title: tx msg send / tx msg inbox
 description: Channel-based agent-to-agent messaging
 ---
 
 ## Purpose
 
-`tx send` and `tx inbox` provide channel-based messaging for agent-to-agent communication. Messages are persistent, cursor-based, and support acknowledgment for reliable delivery.
+`tx msg send` and `tx msg inbox` provide channel-based messaging for agent-to-agent communication. Messages are persistent, cursor-based, and support acknowledgment for reliable delivery.
 
 Key properties:
 
 - **Channel-based**: Messages are organized into named channels (e.g., agent ID, topic, `task:tx-abc123`)
 - **Cursor-based fan-out**: Multiple consumers read from the same channel using `afterId` cursors
-- **Read-only inbox**: Reading messages has no side effects. Explicit `tx ack` is required.
+- **Read-only inbox**: Reading messages has no side effects. Explicit `tx msg ack` is required.
 - **TTL support**: Messages can auto-expire after a configurable duration
 - **Correlation IDs**: Request/reply patterns via `correlationId` matching
 
@@ -27,12 +27,12 @@ Key properties:
     participant A as Agent A
     participant B as Agent B
 
-    Planner->>TX: tx send team "review this"
-    A->>TX: tx inbox team --after 0
+    Planner->>TX: tx msg send team "review this"
+    A->>TX: tx msg inbox team --after 0
     TX-->>A: pending message
-    B->>TX: tx inbox team --after 0
+    B->>TX: tx msg inbox team --after 0
     TX-->>B: same pending message
-    A->>TX: tx ack 42
+    A->>TX: tx msg ack 42
   `}
 />
 
@@ -40,9 +40,9 @@ Key properties:
   title="Message State"
   caption="Only send, ack, TTL expiry, and garbage collection change message state. Reads just move the consumer cursor."
   chart={`stateDiagram-v2
-    [*] --> Pending: tx send
-    Pending --> Pending: tx inbox / cursor read
-    Pending --> Acked: tx ack or ack all
+    [*] --> Pending: tx msg send
+    Pending --> Pending: tx msg inbox / cursor read
+    Pending --> Acked: tx msg ack or msg ack all
     Pending --> Expired: TTL elapsed
     Acked --> GC: outbox GC
     Expired --> GC: outbox GC
@@ -56,7 +56,7 @@ Key properties:
 <Tab value="CLI">
 
 ```bash
-tx send <channel> <content> [options]
+tx msg send <channel> <content> [options]
 ```
 
 ### Arguments
@@ -81,16 +81,16 @@ tx send <channel> <content> [options]
 
 ```bash
 # Send a simple message
-tx send agent-1 "Task tx-abc123 is ready for review"
+tx msg send agent-1 "Task tx-abc123 is ready for review"
 
 # Send with metadata and TTL
-tx send builds "Deploy v2.3.1 complete" --sender ci --ttl 3600 --metadata '{"version":"2.3.1"}'
+tx msg send builds "Deploy v2.3.1 complete" --sender ci --ttl 3600 --metadata '{"version":"2.3.1"}'
 
 # Send with correlation for request/reply
-tx send planner "Need architecture review" --correlation req-001
+tx msg send planner "Need architecture review" --correlation req-001
 
 # JSON output
-tx send agent-1 "hello" --json
+tx msg send agent-1 "hello" --json
 ```
 
 </Tab>
@@ -115,7 +115,7 @@ const message = await tx.messages.send({
 
 ```json
 {
-  "tool": "tx_send",
+  "tool": "tx_msg_send",
   "arguments": {
     "channel": "agent-1",
     "content": "Task tx-abc123 is ready for review",
@@ -197,7 +197,7 @@ Read messages from a channel. This is a **pure read** with no side effects. Mess
 <Tab value="CLI">
 
 ```bash
-tx inbox <channel> [options]
+tx msg inbox <channel> [options]
 ```
 
 ### Arguments
@@ -221,19 +221,19 @@ tx inbox <channel> [options]
 
 ```bash
 # Read all pending messages
-tx inbox agent-1
+tx msg inbox agent-1
 
 # Cursor-based pagination
-tx inbox agent-1 --after 42
+tx msg inbox agent-1 --after 42
 
 # Filter by sender
-tx inbox agent-1 --sender planner
+tx msg inbox agent-1 --sender planner
 
 # Include already-acknowledged messages
-tx inbox agent-1 --include-acked
+tx msg inbox agent-1 --include-acked
 
 # JSON output for scripting
-tx inbox agent-1 --json
+tx msg inbox agent-1 --json
 ```
 
 ### Output
@@ -262,7 +262,7 @@ const messages = await tx.messages.inbox('agent-1', { limit: 10, afterId: 42 })
 
 ```json
 {
-  "tool": "tx_inbox",
+  "tool": "tx_msg_inbox",
   "arguments": {
     "channel": "agent-1",
     "afterId": 42,
@@ -344,7 +344,7 @@ Mark a single message as acknowledged. This transitions its status from `pending
 <Tab value="CLI">
 
 ```bash
-tx ack <message-id> [options]
+tx msg ack <message-id> [options]
 ```
 
 ### Arguments
@@ -362,7 +362,7 @@ tx ack <message-id> [options]
 ### Examples
 
 ```bash
-tx ack 42
+tx msg ack 42
 ```
 
 </Tab>
@@ -381,7 +381,7 @@ const message = await tx.messages.ack(42)
 
 ```json
 {
-  "tool": "tx_ack",
+  "tool": "tx_msg_ack",
   "arguments": {
     "id": 42
   }
@@ -434,7 +434,7 @@ Acknowledge all pending messages on a channel at once.
 <Tab value="CLI">
 
 ```bash
-tx ack all <channel> [options]
+tx msg ack all <channel> [options]
 ```
 
 ### Arguments
@@ -452,7 +452,7 @@ tx ack all <channel> [options]
 ### Examples
 
 ```bash
-tx ack all agent-1
+tx msg ack all agent-1
 ```
 
 </Tab>
@@ -471,7 +471,7 @@ const { channel, ackedCount } = await tx.messages.ackAll('agent-1')
 
 ```json
 {
-  "tool": "tx_ack_all",
+  "tool": "tx_msg_ack_all",
   "arguments": {
     "channel": "agent-1"
   }
@@ -513,7 +513,7 @@ Count unacknowledged messages on a channel.
 <Tab value="CLI">
 
 ```bash
-tx outbox pending <channel> [options]
+tx msg pending <channel> [options]
 ```
 
 ### Options
@@ -525,7 +525,7 @@ tx outbox pending <channel> [options]
 ### Examples
 
 ```bash
-tx outbox pending agent-1
+tx msg pending agent-1
 ```
 
 </Tab>
@@ -544,7 +544,7 @@ const count = await tx.messages.pending('agent-1')
 
 ```json
 {
-  "tool": "tx_outbox_pending",
+  "tool": "tx_msg_pending",
   "arguments": {
     "channel": "agent-1"
   }
@@ -586,7 +586,7 @@ Clean up expired and old acknowledged messages.
 <Tab value="CLI">
 
 ```bash
-tx outbox gc [options]
+tx msg gc [options]
 ```
 
 ### Options
@@ -600,7 +600,7 @@ tx outbox gc [options]
 
 ```bash
 # Remove expired + acked messages older than 24 hours
-tx outbox gc --acked-older-than 24
+tx msg gc --acked-older-than 24
 ```
 
 </Tab>
@@ -617,11 +617,27 @@ const { expired, acked } = await tx.messages.gc({ ackedOlderThanHours: 24 })
 </Tab>
 <Tab value="MCP">
 
-There is no dedicated MCP tool for garbage collection. Use the REST API or CLI:
+```json
+{
+  "tool": "tx_msg_gc",
+  "arguments": {
+    "ackedOlderThanHours": 24
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `ackedOlderThanHours` | No | Remove acked messages older than N hours (positive integer) |
+
+### Returns
 
 ```json
 {
-  "note": "Use REST API endpoint POST /api/messages/gc or CLI: tx outbox gc"
+  "expired": 3,
+  "acked": 12
 }
 ```
 
@@ -688,12 +704,12 @@ Multiple agents can read from the same channel independently using cursor-based 
 ```bash
 # Agent 1 reads messages
 CURSOR_1=0
-MESSAGES=$(tx inbox shared-work --after $CURSOR_1 --json)
+MESSAGES=$(tx msg inbox shared-work --after $CURSOR_1 --json)
 CURSOR_1=$(echo "$MESSAGES" | jq -r '.[-1].id // 0')
 
 # Agent 2 reads the same messages independently
 CURSOR_2=0
-MESSAGES=$(tx inbox shared-work --after $CURSOR_2 --json)
+MESSAGES=$(tx msg inbox shared-work --after $CURSOR_2 --json)
 CURSOR_2=$(echo "$MESSAGES" | jq -r '.[-1].id // 0')
 ```
 
@@ -703,14 +719,14 @@ Use `correlationId` to match responses to requests:
 
 ```bash
 # Requester sends
-tx send reviewer "Please review PR #42" --correlation review-42
+tx msg send reviewer "Please review PR #42" --correlation review-42
 
 # Responder reads and replies
-tx inbox reviewer --json | jq -r '.[] | select(.correlationId == "review-42")'
-tx send requester "LGTM, approved" --correlation review-42
+tx msg inbox reviewer --json | jq -r '.[] | select(.correlationId == "review-42")'
+tx msg send requester "LGTM, approved" --correlation review-42
 
 # Requester reads the reply
-tx inbox requester --correlation review-42 --json
+tx msg inbox requester --correlation review-42 --json
 ```
 
 ### Task-Scoped Channels
@@ -719,11 +735,11 @@ Use `task:<id>` channel naming to scope messages to a task:
 
 ```bash
 # Send updates about a specific task
-tx send "task:tx-abc123" "Started implementation" --task tx-abc123
-tx send "task:tx-abc123" "Tests passing, ready for review" --task tx-abc123
+tx msg send "task:tx-abc123" "Started implementation" --task tx-abc123
+tx msg send "task:tx-abc123" "Tests passing, ready for review" --task tx-abc123
 
 # Read task-specific discussion
-tx inbox "task:tx-abc123"
+tx msg inbox "task:tx-abc123"
 ```
 
 ### Agent Loop with Inbox Polling
@@ -735,7 +751,7 @@ CURSOR=0
 
 while true; do
   # Check for new messages
-  MESSAGES=$(tx inbox "$AGENT_ID" --after $CURSOR --json)
+  MESSAGES=$(tx msg inbox "$AGENT_ID" --after $CURSOR --json)
   COUNT=$(echo "$MESSAGES" | jq length)
 
   if [ "$COUNT" -gt 0 ]; then
@@ -751,7 +767,7 @@ while true; do
       echo "Processing: $CONTENT"
 
       # Acknowledge when done
-      tx ack "$MSG_ID"
+      tx msg ack "$MSG_ID"
     done
   fi
 

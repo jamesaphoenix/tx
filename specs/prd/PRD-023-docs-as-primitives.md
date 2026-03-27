@@ -58,7 +58,7 @@ Key capabilities:
 - Invariants as first-class entities with enforcement type tracking
 - Deterministic YAML-to-markdown rendering per doc kind
 - Auto-render on create, update, lock, version, and patch operations
-- Index generation (index.yml + index.md) on every mutation
+- Index generation (`index.md`) on every mutation
 - Drift detection (hash mismatch between DB and disk)
 - Dashboard visualization via doc graph (nodes + edges)
 

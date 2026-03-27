@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite"
 import { describe, it, expect, afterEach } from "vitest"
 import { spawn, spawnSync, type SpawnSyncReturns } from "child_process"
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync } from "node:fs"
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fixtureId } from "../fixtures.js"
@@ -21,6 +21,7 @@ const describeIf = hasJq ? describe : describe.skip
 const itIfSqlite3 = hasSqlite3 ? it : it.skip
 
 const SOURCE_RALPH = resolve(__dirname, "../../scripts/ralph.sh")
+const FAST_TASK_TIMEOUT_ARGS = ["--task-timeout", "1", "--verify-timeout", "1", "--learnings-timeout", "1"] as const
 
 function writeExecutable(path: string, content: string): void {
   writeFileSync(path, content)
@@ -46,9 +47,12 @@ function setupHarness(options?: { withCodex?: boolean; withClaude?: boolean }): 
   mkdirSync(codexAgentsDir, { recursive: true })
   mkdirSync(claudeAgentsDir, { recursive: true })
 
-  // Minimal agent profiles needed by ralph.sh dispatch.
-  writeFileSync(join(codexAgentsDir, "tx-implementer.md"), "# codex implementer profile\n")
-  writeFileSync(join(claudeAgentsDir, "tx-implementer.md"), "# claude implementer profile\n")
+  // Minimal agent profiles needed by ralph.sh dispatch and auto-selection.
+  const agentProfiles = ["tx-implementer", "tx-tester", "tx-reviewer", "tx-decomposer"]
+  for (const profile of agentProfiles) {
+    writeFileSync(join(codexAgentsDir, `${profile}.md`), `# codex ${profile} profile\n`)
+    writeFileSync(join(claudeAgentsDir, `${profile}.md`), `# claude ${profile} profile\n`)
+  }
 
   // Script under test
   const scriptPath = join(scriptsDir, "ralph.sh")
@@ -75,13 +79,22 @@ case "$CMD" in
   ready)
     if [ -f "$STATE_DIR/ready_once_consumed" ]; then
       echo "[]"
+    elif [ "\${MOCK_SCOPE_FIXTURE:-0}" = "1" ]; then
+      touch "$STATE_DIR/ready_once_consumed"
+      echo '[{"id":"tx-other-1","title":"Other design task","score":900,"children":[],"linkedDocs":[{"docId":"doc-other-design","name":"other-design","title":"Other Design","kind":"design","version":1,"status":"changing","filePath":"design/other-design.md","linkType":"references"}]},{"id":"tx-test-1","title":"Scoped design task","score":500,"children":[],"linkedDocs":[{"docId":"doc-test-design","name":"test-design","title":"Test Design","kind":"design","version":1,"status":"changing","filePath":"design/test-design.md","linkType":"references"}]}]'
     else
       touch "$STATE_DIR/ready_once_consumed"
       echo '[{"id":"tx-test-1","title":"Test task","score":500,"children":[]}]'
     fi
     ;;
   list)
-    echo "[]"
+    if printf '%s\\n' "$*" | grep -q -- "--status active"; then
+      echo "[]"
+    elif [ "\${MOCK_SCOPE_FIXTURE:-0}" = "1" ]; then
+      echo '[{"id":"tx-test-1","title":"Scoped design task","status":"active","score":500,"linkedDocs":[{"docId":"doc-test-design","name":"test-design","title":"Test Design","kind":"design","version":1,"status":"changing","filePath":"design/test-design.md","linkType":"references"}]},{"id":"tx-test-3","title":"Scoped sibling task","status":"blocked","score":350,"linkedDocs":[{"docId":"doc-test-design","name":"test-design","title":"Test Design","kind":"design","version":1,"status":"changing","filePath":"design/test-design.md","linkType":"references"}]},{"id":"tx-other-1","title":"Other design task","status":"ready","score":900,"linkedDocs":[{"docId":"doc-other-design","name":"other-design","title":"Other Design","kind":"design","version":1,"status":"changing","filePath":"design/other-design.md","linkType":"references"}]}]'
+    else
+      echo '[{"id":"tx-test-1","title":"Test task","status":"active","score":500},{"id":"tx-test-2","title":"Sibling task","status":"backlog","score":350}]'
+    fi
     ;;
   claim)
     SUBCMD="\${1:-}"
@@ -97,7 +110,70 @@ case "$CMD" in
     ;;
   show)
     STATUS="\${MOCK_SHOW_STATUS:-done}"
-    echo "{\\"id\\":\\"tx-test-1\\",\\"status\\":\\"$STATUS\\",\\"score\\":500}"
+    TASK_ID="\${1:-tx-test-1}"
+    if [ "\${MOCK_SCOPE_FIXTURE:-0}" = "1" ]; then
+      case "$TASK_ID" in
+        tx-test-3)
+          echo "{\\"id\\":\\"tx-test-3\\",\\"title\\":\\"Scoped sibling task\\",\\"status\\":\\"blocked\\",\\"score\\":350,\\"linkedDocs\\":[{\\"docId\\":\\"doc-test-design\\",\\"name\\":\\"test-design\\",\\"title\\":\\"Test Design\\",\\"kind\\":\\"design\\",\\"version\\":1,\\"status\\":\\"changing\\",\\"filePath\\":\\"design/test-design.md\\",\\"linkType\\":\\"references\\"}]}"
+          ;;
+        tx-other-1)
+          echo "{\\"id\\":\\"tx-other-1\\",\\"title\\":\\"Other design task\\",\\"status\\":\\"$STATUS\\",\\"score\\":900,\\"linkedDocs\\":[{\\"docId\\":\\"doc-other-design\\",\\"name\\":\\"other-design\\",\\"title\\":\\"Other Design\\",\\"kind\\":\\"design\\",\\"version\\":1,\\"status\\":\\"changing\\",\\"filePath\\":\\"design/other-design.md\\",\\"linkType\\":\\"references\\"}]}"
+          ;;
+        *)
+          echo "{\\"id\\":\\"tx-test-1\\",\\"title\\":\\"Scoped design task\\",\\"status\\":\\"$STATUS\\",\\"score\\":500,\\"linkedDocs\\":[{\\"docId\\":\\"doc-test-design\\",\\"name\\":\\"test-design\\",\\"title\\":\\"Test Design\\",\\"kind\\":\\"design\\",\\"version\\":1,\\"status\\":\\"changing\\",\\"filePath\\":\\"design/test-design.md\\",\\"linkType\\":\\"references\\"}]}"
+          ;;
+      esac
+    else
+      echo "{\\"id\\":\\"tx-test-1\\",\\"title\\":\\"Test task\\",\\"status\\":\\"$STATUS\\",\\"score\\":500,\\"linkedDocs\\":[{\\"docId\\":\\"doc-test-design\\",\\"name\\":\\"test-design\\",\\"title\\":\\"Test Design\\",\\"kind\\":\\"design\\",\\"version\\":1,\\"status\\":\\"changing\\",\\"filePath\\":\\"design/test-design.md\\",\\"linkType\\":\\"references\\"}]}"
+    fi
+    ;;
+  doc)
+    SUBCMD="\${1:-}"
+    shift || true
+    case "$SUBCMD" in
+      show)
+        DOC_NAME="\${1:-}"
+        if [ "$DOC_NAME" = "test-design" ]; then
+          cat <<'EOF'
+---
+kind: spec
+spec_type: design
+name: test-design
+title: Test Design
+status: draft
+version: 1
+owners:
+  - core
+summary: Test design summary
+domain: test
+tags:
+  - design
+  - test
+depends_on: []
+supersedes: []
+implements: test-prd
+last_reviewed_at: 2026-03-27
+---
+
+# Summary
+Test design guidance from linked spec.
+
+# Architecture
+The worker should read this before coding.
+EOF
+        elif [ "$DOC_NAME" = "other-design" ]; then
+          cat <<'EOF'
+# Other Design
+This design doc should be excluded from the scoped prompt bundle.
+EOF
+        else
+          echo "# $DOC_NAME"
+        fi
+        ;;
+      *)
+        echo ""
+        ;;
+    esac
     ;;
   update)
     echo "$*" >> "$STATE_DIR/updates.log"
@@ -348,7 +424,7 @@ describeIf("ralph.sh integration", () => {
     const h = setupHarness()
     harnesses.push(h)
 
-    const result = h.run(["--runtime", "codex", "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
+    const result = h.run(["--runtime", "codex", "--all-tasks", "--max", "1", "--max-hours", "1", "--idle-rounds", "1", ...FAST_TASK_TIMEOUT_ARGS])
     expect(result.status).toBe(0)
 
     const log = readFileSync(join(h.tmpDir, ".tx", "ralph.log"), "utf-8")
@@ -380,7 +456,7 @@ describeIf("ralph.sh integration", () => {
     const h = setupHarness()
     harnesses.push(h)
 
-    const result = h.run(["--runtime", "codex", "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
+    const result = h.run(["--runtime", "codex", "--max", "1", "--max-hours", "1", "--idle-rounds", "1", ...FAST_TASK_TIMEOUT_ARGS])
     expect(result.status).toBe(0)
 
     // Retry briefly in case log file is not yet flushed to disk
@@ -400,7 +476,7 @@ describeIf("ralph.sh integration", () => {
     const h = setupHarness()
     harnesses.push(h)
 
-    const result = h.run(["--runtime", "claude", "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
+    const result = h.run(["--runtime", "claude", "--max", "1", "--max-hours", "1", "--idle-rounds", "1", ...FAST_TASK_TIMEOUT_ARGS])
     expect(result.status).toBe(0)
 
     const logPath = join(h.tmpDir, ".tx", "ralph.log")
@@ -415,11 +491,96 @@ describeIf("ralph.sh integration", () => {
     expect(log).toContain("Runtime: claude (Claude)")
   })
 
+  it("includes task-spec loop guidance in the agent prompt", () => {
+    const h = setupHarness()
+    harnesses.push(h)
+
+    const script = readFileSync(h.scriptPath, "utf-8")
+    expect(script).toContain("tx show $task_id")
+    expect(script).toContain("tx add ... --parent $task_id")
+    expect(script).toContain("tx dep block")
+    expect(script).toContain("tx dep unblock")
+    expect(script).toContain("paired PRD/design doc")
+    expect(script).toContain("tx doc attach $task_id <prd-doc> --type implements")
+    expect(script).toContain("tx doc attach $task_id <design-doc> --type references")
+    expect(script).toContain("create follow-up docs work or block the task")
+    expect(script).toContain("tx update $task_id --status blocked")
+  })
+
+  it("injects current task payload, linked design docs, and all tasks into prompt artifacts", () => {
+    const h = setupHarness()
+    harnesses.push(h)
+
+    const result = h.run(["--runtime", "codex", "--all-tasks", "--max", "1", "--max-hours", "1", "--idle-rounds", "1", ...FAST_TASK_TIMEOUT_ARGS])
+    expect(result.status).toBe(0)
+
+    const codexPrompt = h.readStateFile("codex.log")
+    expect(codexPrompt).toContain("===== BEGIN CURRENT TASK PAYLOAD (JSON) =====")
+    expect(codexPrompt).toContain('"id":"tx-test-1"')
+    expect(codexPrompt).toContain("===== BEGIN LINKED DESIGN DOCS (MARKDOWN) =====")
+    expect(codexPrompt).toContain("Test design guidance from linked spec.")
+    expect(codexPrompt).toContain("===== BEGIN ALL TASKS (JSON) =====")
+    expect(codexPrompt).toContain('"id":"tx-test-2"')
+    expect(codexPrompt).toContain("tx update <id> --score <n>")
+
+    const runsDir = join(h.tmpDir, ".tx", "runs")
+    expect(existsSync(runsDir)).toBe(true)
+    const runIds = readdirSync(runsDir)
+    expect(runIds.length).toBe(1)
+
+    const runDir = join(runsDir, runIds[0]!)
+    const currentTask = readFileSync(join(runDir, "current-task.json"), "utf-8")
+    const designDocs = readFileSync(join(runDir, "linked-design-docs.md"), "utf-8")
+    const allTasks = readFileSync(join(runDir, "all-tasks.json"), "utf-8")
+    const promptContext = readFileSync(join(runDir, "prompt-context.txt"), "utf-8")
+    const context = readFileSync(join(runDir, "context.md"), "utf-8")
+
+    expect(currentTask).toContain('"name":"test-design"')
+    expect(designDocs).toContain("Test design guidance from linked spec.")
+    expect(allTasks).toContain('"id":"tx-test-2"')
+    expect(promptContext).toContain("===== BEGIN CURRENT TASK PAYLOAD (JSON) =====")
+    expect(promptContext).toContain("===== BEGIN ALL TASKS (JSON) =====")
+    expect(context).toContain("===== BEGIN CURRENT TASK PAYLOAD (JSON) =====")
+    expect(context).toContain("===== BEGIN ALL TASKS (JSON) =====")
+  })
+
+  it("filters ready selection and injected queue state to the requested design doc", () => {
+    const h = setupHarness()
+    harnesses.push(h)
+
+    const result = h.run(
+      ["--runtime", "codex", "--design-doc", "test-design", "--max", "1", "--max-hours", "1", "--idle-rounds", "1", ...FAST_TASK_TIMEOUT_ARGS],
+      { MOCK_SCOPE_FIXTURE: "1" },
+    )
+    expect(result.status).toBe(0)
+
+    const runsDir = join(h.tmpDir, ".tx", "runs")
+    expect(existsSync(runsDir)).toBe(true)
+    const runIds = readdirSync(runsDir)
+    expect(runIds.length).toBe(1)
+
+    const runDir = join(runsDir, runIds[0]!)
+    const currentTask = readFileSync(join(runDir, "current-task.json"), "utf-8")
+    const designDocs = readFileSync(join(runDir, "linked-design-docs.md"), "utf-8")
+    const allTasks = readFileSync(join(runDir, "all-tasks.json"), "utf-8")
+    const promptContext = readFileSync(join(runDir, "prompt-context.txt"), "utf-8")
+    const context = readFileSync(join(runDir, "context.md"), "utf-8")
+
+    expect(currentTask).toContain('"id":"tx-test-1"')
+    expect(currentTask).not.toContain("tx-other-1")
+    expect(designDocs).toContain("Test design guidance from linked spec.")
+    expect(allTasks).toContain("tx-test-1")
+    expect(allTasks).toContain("tx-test-3")
+    expect(allTasks).not.toContain("tx-other-1")
+    expect(promptContext).toContain("design-doc:test-design")
+    expect(context).toContain("Task scope: design-doc:test-design")
+  })
+
   it("passes --claim-lease value through to tx claim", () => {
     const h = setupHarness()
     harnesses.push(h)
 
-    const result = h.run(["--runtime", "codex", "--max", "1", "--max-hours", "1", "--claim-lease", "45", "--idle-rounds", "1"])
+    const result = h.run(["--runtime", "codex", "--max", "1", "--max-hours", "1", "--claim-lease", "45", "--idle-rounds", "1", ...FAST_TASK_TIMEOUT_ARGS])
     expect(result.status).toBe(0)
 
     const claims = h.readStateFile("claims.log")
@@ -430,7 +591,7 @@ describeIf("ralph.sh integration", () => {
     const h = setupHarness()
     harnesses.push(h)
 
-    const result = h.run(["--runtime", "codex", "--workers", "2", "--max", "1", "--max-hours", "1", "--idle-rounds", "1"])
+    const result = h.run(["--runtime", "codex", "--workers", "2", "--max", "1", "--max-hours", "1", "--idle-rounds", "1", ...FAST_TASK_TIMEOUT_ARGS])
     expect(result.status).toBe(0)
 
     const log = readFileSync(join(h.tmpDir, ".tx", "ralph.log"), "utf-8")

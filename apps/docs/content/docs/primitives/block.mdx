@@ -1,11 +1,11 @@
 ---
-title: tx block
+title: tx dep block
 description: Add blocking dependencies between tasks
 ---
 
 ## Purpose
 
-`tx block` creates a dependency between two tasks. The blocked task cannot be ready until the blocker is marked done.
+`tx dep block` creates a dependency between two tasks. The blocked task cannot be ready until the blocker is marked done.
 
 tx enforces two rules to maintain consistency:
 1. **No self-blocking**: A task cannot block itself
@@ -18,10 +18,10 @@ tx enforces two rules to maintain consistency:
 
 ```bash
 # Add a blocker: blocker-id must complete before task-id can start
-tx block <task-id> <blocker-id> [options]
+tx dep block <task-id> <blocker-id> [options]
 
 # Remove a blocker
-tx unblock <task-id> <blocker-id>
+tx dep unblock <task-id> <blocker-id>
 ```
 
 ### Arguments
@@ -42,15 +42,15 @@ tx unblock <task-id> <blocker-id>
 
 ```bash
 # tx-def456 blocks tx-abc123
-tx block tx-abc123 tx-def456
+tx dep block tx-abc123 tx-def456
 
 # Add multiple blockers to a single task
-tx block tx-feature tx-design
-tx block tx-feature tx-api
-tx block tx-feature tx-tests
+tx dep block tx-feature tx-design
+tx dep block tx-feature tx-api
+tx dep block tx-feature tx-tests
 
 # Remove a blocker
-tx unblock tx-abc123 tx-def456
+tx dep unblock tx-abc123 tx-def456
 ```
 
 </Tab>
@@ -71,13 +71,13 @@ const task = await tx.tasks.unblock('tx-abc123', 'tx-def456')
 </Tab>
 <Tab value="MCP">
 
-### tx_block
+### tx_dep_block
 
 Add a blocking dependency between two tasks.
 
 ```json
 {
-  "tool": "tx_block",
+  "tool": "tx_dep_block",
   "arguments": {
     "taskId": "tx-abc123",
     "blockerId": "tx-def456"
@@ -85,13 +85,13 @@ Add a blocking dependency between two tasks.
 }
 ```
 
-### tx_unblock
+### tx_dep_unblock
 
 Remove a blocking dependency.
 
 ```json
 {
-  "tool": "tx_unblock",
+  "tool": "tx_dep_unblock",
   "arguments": {
     "taskId": "tx-abc123",
     "blockerId": "tx-def456"
@@ -168,9 +168,9 @@ tx uses BFS (Breadth-First Search) to detect cycles at insert time:
 
 ```bash
 # This would create a cycle and will be rejected
-tx block tx-a tx-b
-tx block tx-b tx-c
-tx block tx-c tx-a  # Error: Would create cycle A->B->C->A
+tx dep block tx-a tx-b
+tx dep block tx-b tx-c
+tx dep block tx-c tx-a  # Error: Would create cycle A->B->C->A
 ```
 
 Error output:
@@ -180,10 +180,10 @@ Error: Cannot add dependency - would create cycle: tx-a -> tx-b -> tx-c -> tx-a
 
 ## Dependency Visualization
 
-Use `tx tree` to visualize task dependencies:
+Use `tx dep tree` to visualize task dependencies:
 
 ```bash
-tx tree tx-feature
+tx dep tree tx-feature
 
 tx-feature (blocked)
 ├── tx-design (done) ✓
@@ -207,13 +207,13 @@ UI=$(tx add "Build profile UI component" --parent "$MAIN" --json | jq -r '.id')
 TEST=$(tx add "Write integration tests" --parent "$MAIN" --json | jq -r '.id')
 
 # Set dependencies: UI depends on API, tests depend on both
-tx block "$UI" "$API"
-tx block "$TEST" "$API"
-tx block "$TEST" "$UI"
+tx dep block "$UI" "$API"
+tx dep block "$TEST" "$API"
+tx dep block "$TEST" "$UI"
 ```
 
 ## Related Commands
 
-- [`tx unblock`](#) - Remove a blocking dependency
+- [`tx dep unblock`](#) - Remove a blocking dependency
 - [`tx ready`](/docs/primitives/ready) - List tasks with no blockers
 - [`tx done`](/docs/primitives/done) - Complete a task and unblock dependents

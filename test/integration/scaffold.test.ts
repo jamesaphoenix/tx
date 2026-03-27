@@ -1,10 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, statSync, chmodSync, mkdtempSync } from "node:fs"
+import {
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+  statSync,
+  chmodSync,
+  mkdtempSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog } from "../../apps/cli/src/commands/scaffold.js"
 
 let testDir = ""
+
+const BUNDLED_SPEC_SKILLS = ["decompose-spec", "design-doc", "overview-spec", "prd", "ralph-loop", "task-spec-loop", "verify-invariants"] as const
 
 function cleanup() {
   if (existsSync(testDir)) {
@@ -21,6 +32,19 @@ function createMockRuntime(name: string): string {
   return binDir
 }
 
+function skillRoot(target: "claude" | "codex"): string {
+  return target === "claude"
+    ? join(testDir, ".claude", "skills")
+    : join(testDir, ".codex", "skills")
+}
+
+function expectBundledSpecSkills(target: "claude" | "codex") {
+  const root = skillRoot(target)
+  for (const skillId of BUNDLED_SPEC_SKILLS) {
+    expect(existsSync(join(root, skillId, "SKILL.md"))).toBe(true)
+  }
+}
+
 describe("scaffold", () => {
   beforeEach(() => {
     testDir = mkdtempSync(join(tmpdir(), "tx-scaffold-test-"))
@@ -31,139 +55,61 @@ describe("scaffold", () => {
   })
 
   describe("scaffoldClaude", () => {
-    it("creates CLAUDE.md and skills in empty project", () => {
+    it("installs generated Claude skills and bundled spec skills by default", () => {
       const result = scaffoldClaude(testDir)
+      const root = skillRoot("claude")
 
       expect(result.copied.length).toBeGreaterThan(0)
       expect(result.skipped).toEqual([])
+      expect(result.copied).toContain(".claude/skills/manifest.json")
 
-      // CLAUDE.md created
-      const claudeMd = join(testDir, "CLAUDE.md")
-      expect(existsSync(claudeMd)).toBe(true)
-      const content = readFileSync(claudeMd, "utf-8")
+      expect(existsSync(join(testDir, "CLAUDE.md"))).toBe(false)
+      expect(existsSync(join(root, "manifest.json"))).toBe(true)
+      expect(existsSync(join(root, "tx-core-loop", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(root, "tx-core-loop", "references", "commands.md"))).toBe(true)
+      expect(existsSync(join(root, "tx-workflow", "SKILL.md"))).toBe(false)
+
+      const coreSkill = readFileSync(join(root, "tx-core-loop", "SKILL.md"), "utf-8")
+      expect(coreSkill).toContain("tx Core Loop")
+      expect(coreSkill).toContain("Claude Code")
+
+      const prdSkill = readFileSync(join(root, "prd", "SKILL.md"), "utf-8")
+      expect(prdSkill).toContain("~/.claude/plans/")
+      expect(existsSync(join(root, "skills-sync", "SKILL.md"))).toBe(true)
+
+      expectBundledSpecSkills("claude")
+    })
+
+    it("is idempotent and skips generated Claude skill files on rerun", () => {
+      scaffoldClaude(testDir)
+
+      const result = scaffoldClaude(testDir)
+
+      expect(result.copied).toEqual([])
+      expect(result.skipped).toContain(".claude/skills/manifest.json")
+      expect(result.skipped.some((file) => file.startsWith(".claude/skills/tx-core-loop/"))).toBe(true)
+    })
+
+    it("can still create CLAUDE.md as an opt-in compatibility file", () => {
+      const result = scaffoldClaude(testDir, { claudeMd: true })
+
+      expect(result.copied).toContain("CLAUDE.md")
+      expect(existsSync(join(testDir, "CLAUDE.md"))).toBe(true)
+
+      const content = readFileSync(join(testDir, "CLAUDE.md"), "utf-8")
       expect(content).toContain("Start Here")
       expect(content).toContain("tx ready")
-      expect(content).toContain("tx done")
-      expect(content).toContain("tx spec discover")
-      expect(content).toContain("tx group-context set <id> <context>")
-      expect(content).toContain("inherit the same context")
-      expect(content).toContain("Example Orchestration")
-      expect(content).toContain("Documentation Structure")
-      expect(content).toContain("specs/requirements/")
-      expect(content).toContain("REQ-NNN")
-      expect(content).toContain("specs/system-design/")
-      expect(content).toContain("SD-NNN")
-
-      // Bounded Autonomy section
-      expect(content).toContain("Bounded Autonomy")
-      expect(content).toContain("tx guard set")
-      expect(content).toContain("tx verify set")
-      expect(content).toContain("tx label add")
-      expect(content).toContain("tx label assign")
-      expect(content).toContain("tx reflect")
-
-      // Skills created
-      const workflowSkill = join(testDir, ".claude", "skills", "tx-workflow", "SKILL.md")
-      expect(existsSync(workflowSkill)).toBe(true)
-      expect(readFileSync(workflowSkill, "utf-8")).toContain("tx Workflow")
-
-      const cycleSkill = join(testDir, ".claude", "skills", "tx-cycle", "SKILL.md")
-      expect(existsSync(cycleSkill)).toBe(true)
-      expect(readFileSync(cycleSkill, "utf-8")).toContain("tx cycle")
-
-      // Verify-build skill created (bounded autonomy)
-      const verifyBuildSkill = join(testDir, ".claude", "skills", "verify-build", "SKILL.md")
-      expect(existsSync(verifyBuildSkill)).toBe(true)
-      expect(readFileSync(verifyBuildSkill, "utf-8")).toContain("tx verify run")
-      expect(readFileSync(verifyBuildSkill, "utf-8")).toContain("parent task")
     })
 
-    it("appends to existing CLAUDE.md without tx section", () => {
-      const claudeMd = join(testDir, "CLAUDE.md")
-      writeFileSync(claudeMd, "# My Project\n\nExisting content.\n")
-
-      const result = scaffoldClaude(testDir)
-
-      const content = readFileSync(claudeMd, "utf-8")
-      expect(content).toContain("# My Project")
-      expect(content).toContain("Existing content.")
-      expect(content).toContain("tx ready")
-      expect(content).toContain("tx group-context set <id> <context>")
-      expect(result.copied).toContain("CLAUDE.md (appended tx section)")
-    })
-
-    it("skips CLAUDE.md if tx section already present", () => {
-      const claudeMd = join(testDir, "CLAUDE.md")
-      writeFileSync(claudeMd, "# tx — Headless, Local Infra for AI Agents\n\nAlready here.\n")
-
-      const result = scaffoldClaude(testDir)
-
-      expect(result.skipped).toContain("CLAUDE.md (tx section already present)")
-      // Content should not be duplicated
-      const content = readFileSync(claudeMd, "utf-8")
-      expect(content).toBe("# tx — Headless, Local Infra for AI Agents\n\nAlready here.\n")
-    })
-
-    it("skips CLAUDE.md when tx heading uses hyphen variant", () => {
+    it("skips opt-in CLAUDE.md when the tx heading is already present", () => {
       const claudeMd = join(testDir, "CLAUDE.md")
       writeFileSync(claudeMd, "# tx - Headless, Local Infra for AI Agents\n\nAlready here.\n")
 
-      const result = scaffoldClaude(testDir)
+      const result = scaffoldClaude(testDir, { claudeMd: true })
 
       expect(result.skipped).toContain("CLAUDE.md (tx section already present)")
       const content = readFileSync(claudeMd, "utf-8")
       expect(content.match(/Headless, Local Infra for AI Agents/g)?.length ?? 0).toBe(1)
-    })
-
-    it("skips skill files that already exist", () => {
-      // First run
-      scaffoldClaude(testDir)
-
-      // Second run — everything should be skipped
-      const result = scaffoldClaude(testDir)
-
-      expect(result.copied).toEqual([])
-      expect(result.skipped.length).toBeGreaterThan(0)
-    })
-
-    it("respects options to exclude cycle skill", () => {
-      const result = scaffoldClaude(testDir, { cycleSkill: false })
-
-      // Workflow skill should exist
-      const workflowSkill = join(testDir, ".claude", "skills", "tx-workflow", "SKILL.md")
-      expect(existsSync(workflowSkill)).toBe(true)
-
-      // Cycle skill should NOT exist
-      const cycleSkill = join(testDir, ".claude", "skills", "tx-cycle", "SKILL.md")
-      expect(existsSync(cycleSkill)).toBe(false)
-
-      // CLAUDE.md should still be created
-      expect(existsSync(join(testDir, "CLAUDE.md"))).toBe(true)
-      expect(result.copied.some(f => f.includes("tx-cycle"))).toBe(false)
-    })
-
-    it("respects options to exclude verify-build skill", () => {
-      const result = scaffoldClaude(testDir, { verifyBuildSkill: false })
-
-      // Workflow skill should exist
-      const workflowSkill = join(testDir, ".claude", "skills", "tx-workflow", "SKILL.md")
-      expect(existsSync(workflowSkill)).toBe(true)
-
-      // Verify-build skill should NOT exist
-      const verifyBuildSkill = join(testDir, ".claude", "skills", "verify-build", "SKILL.md")
-      expect(existsSync(verifyBuildSkill)).toBe(false)
-      expect(result.copied.some(f => f.includes("verify-build"))).toBe(false)
-    })
-
-    it("respects options to exclude CLAUDE.md", () => {
-      const result = scaffoldClaude(testDir, { claudeMd: false })
-
-      // Skills should exist
-      expect(existsSync(join(testDir, ".claude", "skills", "tx-workflow", "SKILL.md"))).toBe(true)
-
-      // CLAUDE.md should NOT exist
-      expect(existsSync(join(testDir, "CLAUDE.md"))).toBe(false)
-      expect(result.copied.some(f => f.includes("CLAUDE.md"))).toBe(false)
     })
 
     it("copies ralph script when ralphScript option is true", () => {
@@ -171,15 +117,13 @@ describe("scaffold", () => {
 
       const ralphScript = join(testDir, "scripts", "ralph.sh")
       expect(existsSync(ralphScript)).toBe(true)
-      expect(result.copied.some(f => f.includes("ralph.sh"))).toBe(true)
+      expect(result.copied.some((file) => file.includes("ralph.sh"))).toBe(true)
 
-      // Verify it's executable (owner execute bit)
       if (process.platform !== "win32") {
         const stat = statSync(ralphScript)
         expect(stat.mode & 0o100).toBeTruthy()
       }
 
-      // Lock handling should be atomic and owner-safe.
       const content = readFileSync(ralphScript, "utf-8")
       expect(content).toContain("set -o noclobber")
       expect(content).toContain("remove_owned_lock_file")
@@ -193,80 +137,68 @@ describe("scaffold", () => {
   })
 
   describe("scaffoldCodex", () => {
-    it("creates AGENTS.md and codex agent profiles in empty project", () => {
+    it("installs generated Codex skills, bundled spec skills, and rules by default", () => {
       const result = scaffoldCodex(testDir)
+      const root = skillRoot("codex")
 
-      expect(result.copied).toContain("AGENTS.md")
+      expect(result.copied.length).toBeGreaterThan(0)
       expect(result.skipped).toEqual([])
+      expect(result.copied).toContain(".codex/skills/manifest.json")
 
-      const agentsMd = join(testDir, "AGENTS.md")
-      expect(existsSync(agentsMd)).toBe(true)
-      const content = readFileSync(agentsMd, "utf-8")
-      expect(content).toContain("Start Here")
-      expect(content).toContain("tx ready")
-      expect(content).toContain("tx done")
-      expect(content).toContain("tx spec discover")
-      expect(content).toContain("codex")
-      expect(content).toContain("tx group-context set <id> <context>")
-      expect(content).toContain("inherit the same context")
-      expect(content).toContain("Documentation Structure")
-      expect(content).toContain("specs/requirements/")
-      expect(content).toContain("REQ-NNN")
-      expect(content).toContain("specs/system-design/")
-      expect(content).toContain("SD-NNN")
+      expect(existsSync(join(testDir, "AGENTS.md"))).toBe(false)
+      expect(existsSync(join(testDir, ".codex", "agents"))).toBe(false)
+      expect(existsSync(join(root, "manifest.json"))).toBe(true)
+      expect(existsSync(join(root, "tx-core-loop", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(root, "tx-core-loop", "references", "commands.md"))).toBe(true)
+      expect(existsSync(join(testDir, ".codex", "rules", "default.rules"))).toBe(true)
 
-      // Bounded Autonomy section
-      expect(content).toContain("Bounded Autonomy")
-      expect(content).toContain("tx guard set")
-      expect(content).toContain("tx verify set")
-      expect(content).toContain("tx label add")
-      expect(content).toContain("tx label assign")
-      expect(content).toContain("tx reflect")
+      const designDocSkill = readFileSync(join(root, "design-doc", "SKILL.md"), "utf-8")
+      expect(designDocSkill).toContain("~/.codex/plans/")
+      expect(designDocSkill).not.toContain("~/.claude/plans/")
+      expect(designDocSkill).toContain("project instructions")
+      expect(designDocSkill).toContain("`prd`")
+      expect(existsSync(join(root, "skills-sync", "SKILL.md"))).toBe(true)
 
-      const codexImplementer = join(testDir, ".codex", "agents", "tx-implementer.md")
-      expect(existsSync(codexImplementer)).toBe(true)
-      expect(readFileSync(codexImplementer, "utf-8")).toContain("Read AGENTS.md")
+      expectBundledSpecSkills("codex")
     })
 
-    it("appends to existing AGENTS.md without tx section", () => {
-      const agentsMd = join(testDir, "AGENTS.md")
-      writeFileSync(agentsMd, "# Agents\n\nExisting instructions.\n")
-
+    it("is idempotent and skips generated Codex skill files on rerun", () => {
       scaffoldCodex(testDir)
 
-      const content = readFileSync(agentsMd, "utf-8")
-      expect(content).toContain("# Agents")
-      expect(content).toContain("Existing instructions.")
+      const result = scaffoldCodex(testDir)
+
+      expect(result.copied).toEqual([])
+      expect(result.skipped).toContain(".codex/skills/manifest.json")
+      expect(result.skipped.some((file) => file.startsWith(".codex/skills/tx-core-loop/"))).toBe(true)
+      expect(result.skipped.some((file) => file.startsWith(".codex/rules/"))).toBe(true)
+    })
+
+    it("can still create AGENTS.md as an opt-in compatibility file", () => {
+      const result = (scaffoldCodex as (projectDir: string, options?: { agentsMd?: boolean }) => ReturnType<typeof scaffoldCodex>)(
+        testDir,
+        { agentsMd: true }
+      )
+
+      expect(result.copied).toContain("AGENTS.md")
+      expect(existsSync(join(testDir, "AGENTS.md"))).toBe(true)
+
+      const content = readFileSync(join(testDir, "AGENTS.md"), "utf-8")
+      expect(content).toContain("Start Here")
       expect(content).toContain("tx ready")
     })
 
-    it("skips AGENTS.md if tx section already present", () => {
-      const agentsMd = join(testDir, "AGENTS.md")
-      writeFileSync(agentsMd, "# tx — Headless, Local Infra for AI Agents\n\nAlready here.\n")
-
-      const result = scaffoldCodex(testDir)
-
-      expect(result.skipped).toContain("AGENTS.md (tx section already present)")
-      expect(result.skipped.some(f => f.startsWith(".codex/agents/"))).toBe(false)
-    })
-
-    it("skips AGENTS.md when tx heading uses hyphen variant", () => {
+    it("skips opt-in AGENTS.md when the tx heading is already present", () => {
       const agentsMd = join(testDir, "AGENTS.md")
       writeFileSync(agentsMd, "# tx - Headless, Local Infra for AI Agents\n\nAlready here.\n")
 
-      const result = scaffoldCodex(testDir)
+      const result = (scaffoldCodex as (projectDir: string, options?: { agentsMd?: boolean }) => ReturnType<typeof scaffoldCodex>)(
+        testDir,
+        { agentsMd: true }
+      )
 
       expect(result.skipped).toContain("AGENTS.md (tx section already present)")
       const content = readFileSync(agentsMd, "utf-8")
       expect(content.match(/Headless, Local Infra for AI Agents/g)?.length ?? 0).toBe(1)
-    })
-
-    it("skips codex agent profiles that already exist", () => {
-      scaffoldCodex(testDir)
-
-      const result = scaffoldCodex(testDir)
-
-      expect(result.skipped.some(f => f.startsWith(".codex/agents/"))).toBe(true)
     })
 
     it("throws a clear error when .codex path collides with a file", () => {

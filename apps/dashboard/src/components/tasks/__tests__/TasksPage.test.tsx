@@ -151,7 +151,7 @@ describe("TasksPage", () => {
     })
   })
 
-  it("supports multi-status filter toggles with status URL param", async () => {
+  it("keeps task status filters single-select", async () => {
     window.history.replaceState({}, "", "/?status=ready")
 
     renderWithProviders(<TasksPage />)
@@ -160,9 +160,31 @@ describe("TasksPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Blocked/i }))
     await waitFor(() => {
-      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("ready,blocked")
-      expect(window.location.search).toContain("status=ready%2Cblocked")
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("blocked")
+      expect(window.location.search).toContain("status=blocked")
     })
+
+    fireEvent.click(screen.getByRole("button", { name: /Blocked/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("all")
+      expect(window.location.search).not.toContain("status=")
+    })
+  })
+
+  it("normalizes multi-status URL params to the last selected status", async () => {
+    window.history.replaceState({}, "", "/?status=planning,active,blocked")
+
+    renderWithProviders(<TasksPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("blocked")
+    })
+  })
+
+  it("clears the active status filter when clicking All", async () => {
+    window.history.replaceState({}, "", "/?status=ready")
+
+    renderWithProviders(<TasksPage />)
 
     fireEvent.click(screen.getByRole("button", { name: /^All/i }))
     await waitFor(() => {

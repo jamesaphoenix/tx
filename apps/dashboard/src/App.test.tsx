@@ -139,6 +139,68 @@ describe('App', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('tx')
   })
 
+  it('resets the tasks view to its base state when clicking Tasks in the header', async () => {
+    window.history.replaceState({}, '', '/?status=ready&taskSearch=ship&view=kanban')
+
+    renderWithProviders(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search tasks...')).toHaveValue('ship')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+
+    await waitFor(() => {
+      expect(window.location.search).toBe('')
+      expect(screen.getByPlaceholderText('Search tasks...')).toHaveValue('')
+    })
+  })
+
+  it('clears URL params when navigating to Specs, Cycles, and Runs from the header', async () => {
+    renderWithProviders(<App />)
+
+    for (const tab of ['Specs', 'Cycles', 'Runs'] as const) {
+      window.history.replaceState({}, '', '/?cycleId=cycle-1&runStatus=failed&taskSearch=carry-me')
+
+      fireEvent.click(screen.getByRole('button', { name: tab }))
+
+      await waitFor(() => {
+        expect(window.location.search).toBe('')
+      })
+    }
+  })
+
+  it('returns the runs view to the list state when clicking Runs in the header', async () => {
+    const runningRun = createRun({
+      id: 'run-reset',
+      taskId: 'tx-reset',
+      taskTitle: 'Resettable run',
+    })
+
+    mockRunsEndpoint([runningRun])
+    server.use(
+      http.get('/api/runs/:id', ({ params }) => {
+        if (params.id !== runningRun.id) {
+          return HttpResponse.json({ error: 'not found' }, { status: 404 })
+        }
+        return HttpResponse.json(createRunDetailResponse(runningRun))
+      }),
+    )
+
+    renderWithProviders(<App />)
+    await openRunsTabAndSelectRun('Resettable run')
+
+    await waitFor(() => {
+      expect(screen.queryByText('Select a run')).not.toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Select a run')).toBeInTheDocument()
+    })
+  })
+
   it('opens settings from header cog and saves default assignment type', async () => {
     renderWithProviders(<App />)
 

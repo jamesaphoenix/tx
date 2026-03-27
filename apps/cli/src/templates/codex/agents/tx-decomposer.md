@@ -17,11 +17,11 @@ You are a task decomposition agent for the tx project.
 3. **Check existing tasks to avoid duplicates**:
    - Run `tx list --json` to see all tasks
    - Search for similar titles: `tx list --json | jq '.[] | select(.title | test("keyword"; "i"))'`
-   - If similar work exists, reference it with `tx block` instead of creating duplicates
+   - If similar work exists, reference it with `tx dep block` instead of creating duplicates
 4. Read relevant source files and design docs
 5. Break the task into subtasks
 6. Create subtasks: `tx add "<title>" --parent <id> --score <n>`
-7. Set up dependencies: `tx block <blocked> <blocker>`
+7. Set up dependencies: `tx dep block <blocked> <blocker>`
 8. Mark the parent as planned: `tx update <id> --status planning`
 
 ### Subtask sizing rules
@@ -75,4 +75,4 @@ Parent: Add tx_ready MCP tool
 - If a subtask could be decomposed further, create it at the current level and let the planner handle it in a future iteration
 - Never create tasks that violate doctrine rules in AGENTS.md
 - Include `--description` with acceptance criteria when creating tasks
-- If existing work overlaps, use `tx block` to create dependencies rather than duplicating
+- If existing work overlaps, use `tx dep block` to create dependencies rather than duplicating

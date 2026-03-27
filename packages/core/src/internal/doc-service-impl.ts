@@ -27,6 +27,7 @@ import {
 import type { DatabaseError } from "../errors.js"
 import { computeDocHash } from "../utils/doc-hash.js"
 import { renderIndexToMarkdown } from "../utils/doc-renderer.js"
+import { generateDocStableId } from "../id.js"
 import {
   formatEarsValidationErrors,
   validateEarsRequirements,
@@ -47,6 +48,7 @@ import type {
   InvariantCheck,
   DocKind,
   DocLinkType,
+  DocStableId,
   TaskDocLinkType,
   DocGraph,
   DocGraphNode,
@@ -56,6 +58,7 @@ import type {
 
 // Local string arrays for .includes() (avoids readonly cast)
 const docKindStrings: readonly string[] = DOC_KINDS
+const DOC_STABLE_ID_PATTERN = /^doc-[a-f0-9]{12}$/
 
 /** Infer link type from doc kinds (from → to). */
 const inferLinkType = (
@@ -98,6 +101,256 @@ const resolveDocPath = (
     })
   }
   return resolvedDocPath
+}
+
+const isDocStableId = (value: string): value is DocStableId =>
+  DOC_STABLE_ID_PATTERN.test(value)
+
+const parseKindScopedDocReference = (
+  ref: string
+): { kind: DocKind; name: string } | null => {
+  const normalized = ref.replace(/^specs\//, "").replace(/\.md$/, "")
+  const slashIdx = normalized.indexOf("/")
+  if (slashIdx === -1) return null
+
+  const rawKind = normalized.slice(0, slashIdx)
+  const name = normalized.slice(slashIdx + 1)
+  if (!name) return null
+
+  const kind =
+    rawKind === "requirements"
+      ? "requirement"
+      : rawKind === "system-design"
+        ? "system_design"
+        : rawKind
+
+  if (!docKindStrings.includes(kind)) return null
+  return { kind: kind as DocKind, name }
+}
+
+const splitMarkdownFrontmatter = (
+  content: string
+): { frontmatter: string; body: string; newline: string } | null => {
+  const cleaned = content.startsWith("\uFEFF") ? content.slice(1) : content
+  const startsWithLf = cleaned.startsWith("---\n")
+  const startsWithCrLf = cleaned.startsWith("---\r\n")
+  if (!startsWithLf && !startsWithCrLf) return null
+
+  const newline = startsWithCrLf ? "\r\n" : "\n"
+  const openLength = startsWithCrLf ? 5 : 4
+  const rest = cleaned.slice(openLength)
+  const delimiter = `${newline}---`
+  const closeIdx = rest.indexOf(delimiter)
+  if (closeIdx === -1) return null
+
+  const frontmatter = rest.slice(0, closeIdx)
+  let bodyStart = closeIdx + delimiter.length
+  if (rest[bodyStart] === "\r") bodyStart++
+  if (rest[bodyStart] === "\n") bodyStart++
+
+  return {
+    frontmatter,
+    body: rest.slice(bodyStart),
+    newline,
+  }
+}
+
+const DOC_ID_FRONTMATTER_PATTERN = /^\s*doc_id\s*:\s*(.+?)\s*$/
+
+const normalizeFrontmatterScalar = (value: string): string => {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+const collectFrontmatterDocIdValues = (content: string): string[] => {
+  const split = splitMarkdownFrontmatter(content)
+  if (!split) return []
+
+  const values: string[] = []
+  for (const line of split.frontmatter.split(/\r?\n/)) {
+    const match = line.match(DOC_ID_FRONTMATTER_PATTERN)
+    if (!match) continue
+    const value = normalizeFrontmatterScalar(match[1] ?? "")
+    if (value) values.push(value)
+  }
+
+  return values
+}
+
+type SearchableIndexMetadata = {
+  readonly description: string
+  readonly domain: string
+  readonly tags: readonly string[]
+  readonly searchKeywords: readonly string[]
+}
+
+const INDEX_GENERIC_TAGS = new Set([
+  "prd",
+  "design",
+  "overview",
+  "runbook",
+  "decision",
+  "requirement",
+  "system_design",
+  "spec",
+])
+
+const PLACEHOLDER_DOMAIN = "product-area"
+
+const SEARCHABLE_SUMMARY_PREFIXES = [
+  "Architectural overview of ",
+  "One-line summary of ",
+  "Technical approach for ",
+] as const
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+const readStringField = (value: unknown): string => {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+const readStringArrayField = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== "string") continue
+    const trimmed = entry.trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(trimmed)
+  }
+  return out
+}
+
+const buildSearchKeywords = (domain: string, tags: readonly string[]): string[] => {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const candidate of [domain, ...tags]) {
+    const trimmed = candidate.trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(trimmed)
+  }
+  return out
+}
+
+const readSearchableIndexMetadata = (
+  docsPath: string,
+  doc: Doc
+): SearchableIndexMetadata => {
+  const docPath = resolvePathWithin(docsPath, doc.filePath, { useRealpath: true })
+  if (!docPath || !existsSync(docPath)) {
+    return { description: "", domain: "", tags: [], searchKeywords: [] }
+  }
+
+  const content = readFileSync(docPath, "utf8")
+  const split = splitMarkdownFrontmatter(content)
+  if (!split) {
+    return { description: "", domain: "", tags: [], searchKeywords: [] }
+  }
+
+  let parsedFrontmatter: unknown
+  try {
+    parsedFrontmatter = parseYaml(split.frontmatter)
+  } catch {
+    return { description: "", domain: "", tags: [], searchKeywords: [] }
+  }
+
+  const record = asRecord(parsedFrontmatter)
+  if (!record) {
+    return { description: "", domain: "", tags: [], searchKeywords: [] }
+  }
+
+  const description = readStringField(record.summary)
+  const domain = readStringField(record.domain)
+  const tags = readStringArrayField(record.tags)
+
+  return {
+    description,
+    domain,
+    tags,
+    searchKeywords: buildSearchKeywords(domain, tags),
+  }
+}
+
+const validateSearchableIndexMetadata = (
+  doc: Doc,
+  metadata: SearchableIndexMetadata
+): string[] => {
+  const warnings: string[] = []
+
+  if (!metadata.description) {
+    warnings.push(
+      `${doc.name}: missing frontmatter 'summary'. Add a one-sentence summary; it becomes the Description column in specs/index.md. Example: summary: "Technical design for ${doc.title}."`
+    )
+  } else if (SEARCHABLE_SUMMARY_PREFIXES.some((prefix) => metadata.description.startsWith(prefix))) {
+    warnings.push(
+      `${doc.name}: frontmatter 'summary' still looks templated (${JSON.stringify(metadata.description)}). Replace it with subsystem-specific wording; it becomes the Description column in specs/index.md.`
+    )
+  }
+
+  if (!metadata.domain) {
+    warnings.push(
+      `${doc.name}: missing frontmatter 'domain'. Add the subsystem/domain name; it is added to Search Keywords in specs/index.md. Example: domain: ${doc.name}`
+    )
+  } else if (metadata.domain === PLACEHOLDER_DOMAIN) {
+    warnings.push(
+      `${doc.name}: frontmatter 'domain' still uses placeholder '${PLACEHOLDER_DOMAIN}'. Replace it with the subsystem/domain name; it is added to Search Keywords in specs/index.md.`
+    )
+  }
+
+  if (metadata.tags.length === 0) {
+    warnings.push(
+      `${doc.name}: missing frontmatter 'tags'. Add search terms so agents can find this spec; they populate Search Keywords in specs/index.md. Example: tags: [${doc.kind}, ${doc.name}]`
+    )
+  } else if (metadata.tags.every((tag) => INDEX_GENERIC_TAGS.has(tag.toLowerCase()))) {
+    warnings.push(
+      `${doc.name}: frontmatter 'tags' only includes generic values (${metadata.tags.join(", ")}). Add subsystem-specific search terms; they populate Search Keywords in specs/index.md. Example: tags: [${doc.kind}, ${doc.name}, architecture]`
+    )
+  }
+
+  return warnings
+}
+
+const upsertDocIdInMarkdown = (content: string, docId: string): string => {
+  const split = splitMarkdownFrontmatter(content)
+  if (!split) return content
+
+  const frontmatterLines = split.frontmatter.split(/\r?\n/)
+  const nextLines = frontmatterLines.filter(
+    (line) => !DOC_ID_FRONTMATTER_PATTERN.test(line)
+  )
+  const docIdLine = `doc_id: ${docId}`
+
+  const specTypeIndex = nextLines.findIndex((line) => /^\s*spec_type\s*:/.test(line))
+  if (specTypeIndex >= 0) {
+    nextLines.splice(specTypeIndex + 1, 0, docIdLine)
+  } else {
+    const kindIndex = nextLines.findIndex((line) => /^\s*kind\s*:/.test(line))
+    if (kindIndex >= 0) {
+      nextLines.splice(kindIndex + 1, 0, docIdLine)
+    } else {
+      nextLines.unshift(docIdLine)
+    }
+  }
+
+  const nextFrontmatter = nextLines.join(split.newline)
+  const nextContent = `---${split.newline}${nextFrontmatter}${split.newline}---${split.newline}${split.body}`
+  return nextContent === content ? content : nextContent
 }
 
 const parseSpecTypeAsDocKind = (name: string, specType: string): DocKind => {
@@ -516,26 +769,27 @@ export class DocService extends Context.Tag("DocService")<
       title: string
       content: string
       metadata?: Record<string, unknown>
+      relFilePath?: string
     }) => Effect.Effect<Doc, ValidationError | InvalidDocYamlError | DatabaseError>
     get: (
       name: string,
       version?: number
-    ) => Effect.Effect<Doc, DocNotFoundError | DatabaseError>
+    ) => Effect.Effect<Doc, DocNotFoundError | ValidationError | DatabaseError>
     update: (
       name: string,
       content: string
-    ) => Effect.Effect<Doc, DocNotFoundError | DocLockedError | InvalidDocYamlError | DatabaseError>
-    lock: (name: string) => Effect.Effect<Doc, DocNotFoundError | DatabaseError>
+    ) => Effect.Effect<Doc, DocNotFoundError | DocLockedError | InvalidDocYamlError | ValidationError | DatabaseError>
+    lock: (name: string) => Effect.Effect<Doc, DocNotFoundError | ValidationError | DatabaseError>
     list: (filter?: {
       kind?: string
       status?: string
     }) => Effect.Effect<Doc[], DatabaseError>
     remove: (
       name: string
-    ) => Effect.Effect<void, DocNotFoundError | DocLockedError | DatabaseError>
+    ) => Effect.Effect<void, DocNotFoundError | DocLockedError | ValidationError | DatabaseError>
     render: (
       name?: string
-    ) => Effect.Effect<string[], DocNotFoundError | DatabaseError>
+    ) => Effect.Effect<string[], DocNotFoundError | ValidationError | DatabaseError>
     createVersion: (
       name: string
     ) => Effect.Effect<Doc, DocNotFoundError | ValidationError | DatabaseError>
@@ -548,20 +802,21 @@ export class DocService extends Context.Tag("DocService")<
       taskId: string,
       docName: string,
       linkType?: TaskDocLinkType
-    ) => Effect.Effect<void, DocNotFoundError | DatabaseError>
+    ) => Effect.Effect<void, DocNotFoundError | ValidationError | DatabaseError>
     createPatch: (
       designName: string,
       patchName: string,
       patchTitle: string
     ) => Effect.Effect<Doc, DocNotFoundError | ValidationError | DatabaseError>
     validate: () => Effect.Effect<string[], DatabaseError>
+    validateIndexSearchability: () => Effect.Effect<string[], DatabaseError>
     detectDrift: (
       name: string
-    ) => Effect.Effect<string[], DocNotFoundError | DatabaseError>
+    ) => Effect.Effect<string[], DocNotFoundError | ValidationError | DatabaseError>
     generateIndex: () => Effect.Effect<void, DatabaseError>
     syncInvariants: (
       docName?: string
-    ) => Effect.Effect<Invariant[], DocNotFoundError | DatabaseError>
+    ) => Effect.Effect<Invariant[], DocNotFoundError | ValidationError | DatabaseError>
     listInvariants: (filter?: {
       subsystem?: string
       enforcement?: string
@@ -616,15 +871,46 @@ export const DocServiceLive = Layer.effect(
       return parsedResult.right
     }
 
-    /** Validate a single markdown doc and return its canonical file path. */
-    const validateDocFile = (doc: Doc, docsPath: string): string => {
+    const ensurePersistedDocId = (doc: Doc) =>
+      Effect.gen(function* () {
+        yield* docRepo.update(doc.id, { docId: doc.docId })
+        const refreshed = yield* docRepo.findById(doc.id)
+        if (!refreshed) {
+          return yield* Effect.fail(new DocNotFoundError({ name: doc.name }))
+        }
+        return refreshed
+      })
+
+    const ensureDocIdInFile = (doc: Doc, docsPath: string): string => {
       const docPath = resolveDocPath(docsPath, doc.kind, doc.name)
       if (!existsSync(docPath)) {
         throw new DocNotFoundError({ name: doc.name })
       }
 
-      const content = readFileSync(docPath, "utf8")
-      const parsed = parseMarkdownSpecDocContent(doc.name, content)
+      const original = readFileSync(docPath, "utf8")
+      const rawDocIds = collectFrontmatterDocIdValues(original)
+      const uniqueRawDocIds = [...new Set(rawDocIds)]
+
+      if (uniqueRawDocIds.length > 1) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter contains conflicting doc_id values (${uniqueRawDocIds.join(", ")}). Keep exactly one doc_id entry matching stored doc_id '${doc.docId}'.`,
+        })
+      }
+
+      if (uniqueRawDocIds[0] && uniqueRawDocIds[0] !== doc.docId) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter doc_id '${uniqueRawDocIds[0]}' does not match stored doc_id '${doc.docId}'. Use exactly: doc_id: ${doc.docId}`,
+        })
+      }
+
+      const normalized = upsertDocIdInMarkdown(original, doc.docId)
+      if (normalized !== original) {
+        writeFileSync(docPath, normalized, "utf8")
+      }
+
+      const parsed = parseMarkdownSpecDocContent(doc.name, normalized)
       const parsedKind = parseSpecTypeAsDocKind(doc.name, parsed.frontmatter.spec_type)
 
       if (parsed.frontmatter.name !== doc.name) {
@@ -641,23 +927,108 @@ export const DocServiceLive = Layer.effect(
         })
       }
 
+      const frontmatterDocId = parsed.frontmatter.doc_id
+      if (frontmatterDocId && frontmatterDocId !== doc.docId) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter doc_id '${frontmatterDocId}' does not match stored doc_id '${doc.docId}'.`,
+        })
+      }
+
       return docPath
     }
 
-    /** Generate index.yml and index.md from all docs in DB. */
+    const resolveDocReference = (
+      ref: string,
+      version?: number
+    ): Effect.Effect<Doc, DocNotFoundError | ValidationError | DatabaseError> =>
+      Effect.gen(function* () {
+        const scoped = parseKindScopedDocReference(ref)
+        if (scoped) {
+          const scopedDoc = yield* docRepo.findLatestByKindAndName(
+            scoped.kind,
+            scoped.name
+          )
+          if (!scopedDoc) {
+            return yield* Effect.fail(new DocNotFoundError({ name: ref }))
+          }
+          return yield* ensurePersistedDocId(scopedDoc)
+        }
+
+        const direct = isDocStableId(ref)
+          ? yield* docRepo.findByDocId(ref, version)
+          : null
+        if (direct) {
+          return yield* ensurePersistedDocId(direct)
+        }
+
+        const matches = yield* docRepo.findAllByName(ref, version)
+        if (matches.length === 0) {
+          return yield* Effect.fail(new DocNotFoundError({ name: ref }))
+        }
+        const kinds = [...new Set(matches.map((doc) => doc.kind))]
+        if (kinds.length > 1) {
+          return yield* Effect.fail(
+            new ValidationError({
+              reason: `Doc reference '${ref}' is ambiguous across kinds (${kinds.join(", ")}). Use doc_id instead.`,
+            })
+          )
+        }
+        return yield* ensurePersistedDocId(matches[0]!)
+      })
+
+    /** Validate a single markdown doc and return its canonical file path. */
+    const validateDocFile = (doc: Doc, docsPath: string): string => {
+      return ensureDocIdInFile(doc, docsPath)
+    }
+
+    /** Generate index.md from all docs in DB and remove the legacy index.yml. */
     function generateIndexEffect(docsPath: string) {
       return Effect.gen(function* () {
         const allDocs = yield* docRepo.findAll()
         const allLinks = yield* docRepo.getAllLinks()
+        const indexMetadataByDocId = new Map<number, SearchableIndexMetadata>()
+
+        for (const doc of allDocs) {
+          indexMetadataByDocId.set(doc.id, readSearchableIndexMetadata(docsPath, doc))
+        }
 
         const overviewDoc = allDocs.find((d) => d.kind === "overview")
         const prds = allDocs
           .filter((d) => d.kind === "prd")
-          .map((d) => ({ name: d.name, title: d.title, status: d.status }))
+          .map((d) => {
+            const metadata = indexMetadataByDocId.get(d.id) ?? {
+              description: "",
+              domain: "",
+              tags: [],
+              searchKeywords: [],
+            }
+            return {
+              name: d.name,
+              title: d.title,
+              description: metadata.description,
+              search_keywords: [...metadata.searchKeywords],
+              status: d.status,
+            }
+          })
 
         const requirementDocs = allDocs
           .filter((d) => d.kind === "requirement")
-          .map((d) => ({ name: d.name, title: d.title, status: d.status }))
+          .map((d) => {
+            const metadata = indexMetadataByDocId.get(d.id) ?? {
+              description: "",
+              domain: "",
+              tags: [],
+              searchKeywords: [],
+            }
+            return {
+              name: d.name,
+              title: d.title,
+              description: metadata.description,
+              search_keywords: [...metadata.searchKeywords],
+              status: d.status,
+            }
+          })
 
         const designDocs = allDocs
           .filter((d) => d.kind === "design")
@@ -669,9 +1040,17 @@ export const DocServiceLive = Layer.effect(
             const implDoc = implLink
               ? allDocs.find((dd) => dd.id === implLink.fromDocId)
               : undefined
+            const metadata = indexMetadataByDocId.get(d.id) ?? {
+              description: "",
+              domain: "",
+              tags: [],
+              searchKeywords: [],
+            }
             return {
               name: d.name,
               title: d.title,
+              description: metadata.description,
+              search_keywords: [...metadata.searchKeywords],
               status: d.status,
               implements: implDoc?.name,
             }
@@ -679,7 +1058,21 @@ export const DocServiceLive = Layer.effect(
 
         const systemDesignDocs = allDocs
           .filter((d) => d.kind === "system_design")
-          .map((d) => ({ name: d.name, title: d.title, status: d.status }))
+          .map((d) => {
+            const metadata = indexMetadataByDocId.get(d.id) ?? {
+              description: "",
+              domain: "",
+              tags: [],
+              searchKeywords: [],
+            }
+            return {
+              name: d.name,
+              title: d.title,
+              description: metadata.description,
+              search_keywords: [...metadata.searchKeywords],
+              status: d.status,
+            }
+          })
 
         const links = allLinks.map((l) => {
           const from = allDocs.find((d) => d.id === l.fromDocId)
@@ -705,8 +1098,26 @@ export const DocServiceLive = Layer.effect(
           bySubsystem[sub] = (bySubsystem[sub] ?? 0) + 1
         }
 
+        const aggregateSearchKeywords = (): string[] => {
+          const seen = new Set<string>()
+          const out: string[] = []
+          for (const doc of allDocs) {
+            const metadata = indexMetadataByDocId.get(doc.id)
+            for (const keyword of [doc.name, doc.title, ...(metadata?.searchKeywords ?? [])]) {
+              const key = keyword.toLowerCase()
+              if (seen.has(key)) continue
+              seen.add(key)
+              out.push(keyword)
+            }
+          }
+          return out
+        }
+
         const indexData = {
           overview: overviewDoc?.name,
+          description:
+            "Search map for subsystem PRDs and design docs. Use this file to find the authoritative spec by feature area, domain term, or implementation concern.",
+          search_keywords: aggregateSearchKeywords(),
           requirements: requirementDocs,
           prds,
           design_docs: designDocs,
@@ -722,54 +1133,17 @@ export const DocServiceLive = Layer.effect(
               : undefined,
         }
 
-        // Write index.yml
-        const indexYamlObj: Record<string, unknown> = {
-          generated: true,
-          generated_at: new Date().toISOString(),
+        const legacyIndexYamlPath = resolve(docsPath, "index.yml")
+        try {
+          if (existsSync(legacyIndexYamlPath)) unlinkSync(legacyIndexYamlPath)
+        } catch {
+          /* non-fatal */
         }
-        if (indexData.overview) {
-          indexYamlObj.overview = indexData.overview
-        }
-        if (requirementDocs.length > 0) {
-          indexYamlObj.requirements = requirementDocs.map((r) => ({
-            name: r.name,
-            title: r.title,
-            status: r.status,
-          }))
-        }
-        if (prds.length > 0) {
-          indexYamlObj.prds = prds.map((p) => ({
-            name: p.name,
-            title: p.title,
-            status: p.status,
-          }))
-        }
-        if (designDocs.length > 0) {
-          indexYamlObj.design_docs = designDocs.map((dd) => {
-            const entry: Record<string, string> = {
-              name: dd.name,
-              title: dd.title,
-              status: dd.status,
-            }
-            if (dd.implements) entry.implements = dd.implements
-            return entry
-          })
-        }
-        if (systemDesignDocs.length > 0) {
-          indexYamlObj.system_designs = systemDesignDocs.map((sd) => ({
-            name: sd.name,
-            title: sd.title,
-            status: sd.status,
-          }))
-        }
-
-        const indexYamlPath = resolve(docsPath, "index.yml")
-        ensureDir(indexYamlPath)
-        writeFileSync(indexYamlPath, stringifyYaml(indexYamlObj), "utf8")
 
         // Write index.md
         const indexMd = renderIndexToMarkdown(indexData)
         const indexMdPath = resolve(docsPath, "index.md")
+        ensureDir(indexMdPath)
         writeFileSync(indexMdPath, indexMd, "utf8")
       })
     }
@@ -778,34 +1152,17 @@ export const DocServiceLive = Layer.effect(
     function syncInvariantsForDoc(doc: Doc) {
       return Effect.gen(function* () {
         const docsPath = getDocsPath()
-        const docPath = resolveDocPath(docsPath, doc.kind, doc.name)
-        if (!existsSync(docPath)) {
-          return []
-        }
+        const persistedDoc = yield* ensurePersistedDocId(doc)
+        const docPath = ensureDocIdInFile(persistedDoc, docsPath)
         const content = readFileSync(docPath, "utf8")
-        const parsed = parseMarkdownSpecDocContent(doc.name, content)
-        const parsedKind = parseSpecTypeAsDocKind(doc.name, parsed.frontmatter.spec_type)
-
-        if (parsed.frontmatter.name !== doc.name) {
-          throw new InvalidDocYamlError({
-            name: doc.name,
-            reason: `Frontmatter name '${parsed.frontmatter.name}' does not match doc name '${doc.name}'.`,
-          })
-        }
-
-        if (parsedKind !== doc.kind) {
-          throw new InvalidDocYamlError({
-            name: doc.name,
-            reason: `Frontmatter spec_type '${parsed.frontmatter.spec_type}' does not match doc kind '${doc.kind}'.`,
-          })
-        }
+        const parsed = parseMarkdownSpecDocContent(persistedDoc.name, content)
 
         const explicit = deriveEmbeddedInvariantCandidates(
-          doc,
+          persistedDoc,
           parsed.blocks.invariants
         )
         const derived = deriveEmbeddedEarsInvariantCandidates(
-          doc,
+          persistedDoc,
           parsed.blocks.ears_requirements
         )
 
@@ -818,7 +1175,7 @@ export const DocServiceLive = Layer.effect(
         }
 
         if (candidates.length === 0) {
-          yield* docRepo.deprecateInvariantsNotIn(doc.id, [])
+          yield* docRepo.deprecateInvariantsNotIn(persistedDoc.id, [])
           return []
         }
 
@@ -829,7 +1186,7 @@ export const DocServiceLive = Layer.effect(
             id: candidate.id,
             rule: candidate.rule,
             enforcement: candidate.enforcement,
-            docId: doc.id,
+            docId: persistedDoc.id,
             subsystem: candidate.subsystem,
             testRef: candidate.testRef,
             lintRule: candidate.lintRule,
@@ -852,7 +1209,7 @@ export const DocServiceLive = Layer.effect(
           activeIds.push(candidate.id)
         }
 
-        yield* docRepo.deprecateInvariantsNotIn(doc.id, activeIds)
+        yield* docRepo.deprecateInvariantsNotIn(persistedDoc.id, activeIds)
         return synced
       })
     }
@@ -860,7 +1217,7 @@ export const DocServiceLive = Layer.effect(
     return {
       create: (input) =>
         Effect.gen(function* () {
-          const { kind, name, title, content, metadata } = input
+          const { kind, name, title, content, metadata, relFilePath } = input
           if (!docKindStrings.includes(kind)) {
             return yield* Effect.fail(
               new ValidationError({ reason: `Invalid doc kind: ${kind}` })
@@ -873,9 +1230,24 @@ export const DocServiceLive = Layer.effect(
               })
             )
           }
-          const parsedDoc = parseMarkdownSpecDocContent(name, content)
+          const rawDocIds = collectFrontmatterDocIdValues(content)
+          const uniqueRawDocIds = [...new Set(rawDocIds)]
+          if (uniqueRawDocIds.length > 1) {
+            return yield* Effect.fail(
+              new ValidationError({
+                reason: `Frontmatter contains conflicting doc_id values (${uniqueRawDocIds.join(", ")}). Keep exactly one doc_id entry or remove them so tx can generate one.`,
+              })
+            )
+          }
+          const contentForParse =
+            rawDocIds.length > 1 && uniqueRawDocIds[0]
+              ? upsertDocIdInMarkdown(content, uniqueRawDocIds[0])
+              : content
+          const parsedDoc = parseMarkdownSpecDocContent(name, contentForParse)
           const frontmatter = parsedDoc.frontmatter
           const parsedKind = parseSpecTypeAsDocKind(name, frontmatter.spec_type)
+          const generatedDocId = (frontmatter.doc_id ??
+            (yield* generateDocStableId())) as DocStableId
 
           if (frontmatter.name !== name) {
             return yield* Effect.fail(
@@ -901,27 +1273,75 @@ export const DocServiceLive = Layer.effect(
             )
           }
 
-          const existing = yield* docRepo.findByName(frontmatter.name)
-          if (existing) {
+          if (frontmatter.doc_id && !isDocStableId(frontmatter.doc_id)) {
             return yield* Effect.fail(
               new ValidationError({
-                reason: `Doc '${frontmatter.name}' already exists (v${existing.version})`,
+                reason: `Invalid doc_id '${frontmatter.doc_id}'. Expected format doc-<12 hex>.`,
               })
             )
           }
 
-          const hash = computeDocHash(content)
-          const docsPath = getDocsPath()
-          const filePath = resolveDocPath(docsPath, parsedKind, frontmatter.name)
-          ensureDir(filePath)
-          writeFileSync(filePath, content, "utf8")
+          const existing = yield* docRepo.findLatestByKindAndName(parsedKind, frontmatter.name)
+          if (existing) {
+            return yield* Effect.fail(
+              new ValidationError({
+                reason: `Doc '${parsedKind}/${frontmatter.name}' already exists (v${existing.version})`,
+              })
+            )
+          }
+          const existingDocId = yield* docRepo.findByDocId(generatedDocId)
+          if (existingDocId) {
+            return yield* Effect.fail(
+              new ValidationError({
+                reason: `Doc ID '${generatedDocId}' already exists.`,
+              })
+            )
+          }
 
-          const sub = kindSubdir(parsedKind)
-          const relPath = sub
-            ? join(sub, `${frontmatter.name}.md`)
-            : `${frontmatter.name}.md`
+          const docsPath = getDocsPath()
+          let relPath: string
+          const contentWithDocId = upsertDocIdInMarkdown(
+            contentForParse,
+            generatedDocId
+          )
+
+          if (relFilePath) {
+            // Registering an existing file at a custom path
+            const absPath = resolve(docsPath, relFilePath)
+            if (!existsSync(absPath)) {
+              return yield* Effect.fail(
+                new ValidationError({
+                  reason: `File not found at ${absPath}. Provide a path relative to '${docsPath}'.`,
+                })
+              )
+            }
+            if (contentWithDocId !== contentForParse) {
+              writeFileSync(absPath, contentWithDocId, "utf8")
+            }
+            relPath = relFilePath
+          } else {
+            // Scaffolding a new file at the standard path
+            const filePath = resolveDocPath(docsPath, parsedKind, frontmatter.name)
+            if (existsSync(filePath)) {
+              return yield* Effect.fail(
+                new ValidationError({
+                  reason: `File already exists at ${filePath}. Edit it directly instead of re-creating. Then run 'tx doc sync' to update the DB hash.`,
+                })
+              )
+            }
+            ensureDir(filePath)
+            writeFileSync(filePath, contentWithDocId, "utf8")
+
+            const sub = kindSubdir(parsedKind)
+            relPath = sub
+              ? join(sub, `${frontmatter.name}.md`)
+              : `${frontmatter.name}.md`
+          }
+
+          const hash = computeDocHash(contentWithDocId)
 
           const doc = yield* docRepo.insert({
+            docId: generatedDocId,
             hash,
             kind: parsedKind,
             name: frontmatter.name,
@@ -938,33 +1358,47 @@ export const DocServiceLive = Layer.effect(
 
       get: (name, version?) =>
         Effect.gen(function* () {
-          const doc = yield* docRepo.findByName(name, version)
-          if (!doc) {
-            return yield* Effect.fail(new DocNotFoundError({ name }))
-          }
+          const doc = yield* resolveDocReference(name, version)
+          ensureDocIdInFile(doc, getDocsPath())
           return doc
         }),
 
       update: (name, content) =>
         Effect.gen(function* () {
-          const doc = yield* docRepo.findByName(name)
-          if (!doc) {
-            return yield* Effect.fail(new DocNotFoundError({ name }))
-          }
+          const doc = yield* resolveDocReference(name)
           if (doc.status === "locked") {
             return yield* Effect.fail(
               new DocLockedError({ name, version: doc.version })
             )
           }
-          const parsedDoc = parseMarkdownSpecDocContent(name, content)
-          const frontmatter = parsedDoc.frontmatter
-          const parsedKind = parseSpecTypeAsDocKind(name, frontmatter.spec_type)
-
-          if (frontmatter.name !== name) {
+          const rawDocIds = collectFrontmatterDocIdValues(content)
+          const uniqueRawDocIds = [...new Set(rawDocIds)]
+          if (uniqueRawDocIds.length > 1) {
             return yield* Effect.fail(
               new InvalidDocYamlError({
                 name,
-                reason: `Frontmatter name '${frontmatter.name}' does not match doc '${name}'.`,
+                reason: `Frontmatter contains conflicting doc_id values (${uniqueRawDocIds.join(", ")}). Keep exactly one doc_id entry matching doc_id '${doc.docId}'.`,
+              })
+            )
+          }
+          if (uniqueRawDocIds[0] && uniqueRawDocIds[0] !== doc.docId) {
+            return yield* Effect.fail(
+              new InvalidDocYamlError({
+                name,
+                reason: `Frontmatter doc_id '${uniqueRawDocIds[0]}' does not match doc_id '${doc.docId}'. Use exactly: doc_id: ${doc.docId}`,
+              })
+            )
+          }
+          const normalizedContent = upsertDocIdInMarkdown(content, doc.docId)
+          const parsedDoc = parseMarkdownSpecDocContent(name, normalizedContent)
+          const frontmatter = parsedDoc.frontmatter
+          const parsedKind = parseSpecTypeAsDocKind(name, frontmatter.spec_type)
+
+          if (frontmatter.name !== doc.name) {
+            return yield* Effect.fail(
+              new InvalidDocYamlError({
+                name,
+                reason: `Frontmatter name '${frontmatter.name}' does not match doc '${doc.name}'.`,
               })
             )
           }
@@ -978,14 +1412,23 @@ export const DocServiceLive = Layer.effect(
             )
           }
 
-          const hash = computeDocHash(content)
+          if (frontmatter.doc_id && frontmatter.doc_id !== doc.docId) {
+            return yield* Effect.fail(
+              new InvalidDocYamlError({
+                name,
+                reason: `Frontmatter doc_id '${frontmatter.doc_id}' does not match doc_id '${doc.docId}'.`,
+              })
+            )
+          }
+
+          const hash = computeDocHash(normalizedContent)
           const docsPath = getDocsPath()
-          const filePath = resolveDocPath(docsPath, doc.kind, name)
+          const filePath = resolveDocPath(docsPath, doc.kind, doc.name)
           ensureDir(filePath)
-          writeFileSync(filePath, content, "utf8")
+          writeFileSync(filePath, normalizedContent, "utf8")
 
           const title = frontmatter.title
-          yield* docRepo.update(doc.id, { hash, title })
+          yield* docRepo.update(doc.id, { docId: doc.docId, hash, title })
 
           const updated = yield* docRepo.findById(doc.id)
           if (!updated) {
@@ -998,10 +1441,7 @@ export const DocServiceLive = Layer.effect(
 
       lock: (name) =>
         Effect.gen(function* () {
-          const doc = yield* docRepo.findByName(name)
-          if (!doc) {
-            return yield* Effect.fail(new DocNotFoundError({ name }))
-          }
+          const doc = yield* resolveDocReference(name)
           if (doc.status === "locked") {
             return doc
           }
@@ -1021,10 +1461,7 @@ export const DocServiceLive = Layer.effect(
 
       remove: (name) =>
         Effect.gen(function* () {
-          const doc = yield* docRepo.findByName(name)
-          if (!doc) {
-            return yield* Effect.fail(new DocNotFoundError({ name }))
-          }
+          const doc = yield* resolveDocReference(name)
           if (doc.status === "locked") {
             return yield* Effect.fail(
               new DocLockedError({ name, version: doc.version })
@@ -1033,11 +1470,17 @@ export const DocServiceLive = Layer.effect(
           yield* docRepo.remove(doc.id)
 
           const docsPath = getDocsPath()
-          const docPath = resolveDocPath(docsPath, doc.kind, name)
-          try {
-            if (existsSync(docPath)) unlinkSync(docPath)
-          } catch {
-            /* non-fatal */
+          const remainingDocs = yield* docRepo.findAll()
+          const stillReferenced = remainingDocs.some(
+            (candidate) => candidate.filePath === doc.filePath
+          )
+          if (!stillReferenced) {
+            const docPath = resolveDocPath(docsPath, doc.kind, doc.name)
+            try {
+              if (existsSync(docPath)) unlinkSync(docPath)
+            } catch {
+              /* non-fatal */
+            }
           }
           yield* generateIndexEffect(docsPath)
         }),
@@ -1047,16 +1490,14 @@ export const DocServiceLive = Layer.effect(
           const docsPath = getDocsPath()
           const rendered: string[] = []
           if (name) {
-            const doc = yield* docRepo.findByName(name)
-            if (!doc) {
-              return yield* Effect.fail(new DocNotFoundError({ name }))
-            }
+            const doc = yield* resolveDocReference(name)
             rendered.push(validateDocFile(doc, docsPath))
           } else {
             const allDocs = yield* docRepo.findAll()
             for (const doc of allDocs) {
               try {
-                rendered.push(validateDocFile(doc, docsPath))
+                const persistedDoc = yield* ensurePersistedDocId(doc)
+                rendered.push(validateDocFile(persistedDoc, docsPath))
               } catch {
                 /* skip docs with invalid or missing markdown */
               }
@@ -1068,10 +1509,7 @@ export const DocServiceLive = Layer.effect(
 
       createVersion: (name) =>
         Effect.gen(function* () {
-          const doc = yield* docRepo.findByName(name)
-          if (!doc) {
-            return yield* Effect.fail(new DocNotFoundError({ name }))
-          }
+          const doc = yield* resolveDocReference(name)
           if (doc.status !== "locked") {
             return yield* Effect.fail(
               new ValidationError({
@@ -1080,7 +1518,7 @@ export const DocServiceLive = Layer.effect(
             )
           }
           const docsPath = getDocsPath()
-          const docPath = resolveDocPath(docsPath, doc.kind, name)
+          const docPath = ensureDocIdInFile(doc, docsPath)
           if (!existsSync(docPath)) {
             return yield* Effect.fail(
               new ValidationError({
@@ -1094,13 +1532,14 @@ export const DocServiceLive = Layer.effect(
 
           const versionSub = kindSubdir(doc.kind)
           const relPath = versionSub
-            ? join(versionSub, `${name}.md`)
-            : `${name}.md`
+            ? join(versionSub, `${doc.name}.md`)
+            : `${doc.name}.md`
 
           const newDoc = yield* docRepo.insert({
+            docId: doc.docId,
             hash,
             kind: doc.kind,
-            name,
+            name: doc.name,
             title: doc.title,
             version: newVersion,
             filePath: relPath,
@@ -1113,16 +1552,8 @@ export const DocServiceLive = Layer.effect(
 
       linkDocs: (fromName, toName, linkType?) =>
         Effect.gen(function* () {
-          const fromDoc = yield* docRepo.findByName(fromName)
-          if (!fromDoc) {
-            return yield* Effect.fail(
-              new DocNotFoundError({ name: fromName })
-            )
-          }
-          const toDoc = yield* docRepo.findByName(toName)
-          if (!toDoc) {
-            return yield* Effect.fail(new DocNotFoundError({ name: toName }))
-          }
+          const fromDoc = yield* resolveDocReference(fromName)
+          const toDoc = yield* resolveDocReference(toName)
 
           const resolvedType =
             linkType ?? inferLinkType(fromDoc.kind, toDoc.kind)
@@ -1142,23 +1573,13 @@ export const DocServiceLive = Layer.effect(
 
       attachTask: (taskId, docName, linkType = "implements") =>
         Effect.gen(function* () {
-          const doc = yield* docRepo.findByName(docName)
-          if (!doc) {
-            return yield* Effect.fail(
-              new DocNotFoundError({ name: docName })
-            )
-          }
+          const doc = yield* resolveDocReference(docName)
           yield* docRepo.createTaskLink(taskId, doc.id, linkType)
         }),
 
       createPatch: (designName, patchName, patchTitle) =>
         Effect.gen(function* () {
-          const parentDoc = yield* docRepo.findByName(designName)
-          if (!parentDoc) {
-            return yield* Effect.fail(
-              new DocNotFoundError({ name: designName })
-            )
-          }
+          const parentDoc = yield* resolveDocReference(designName)
           if (parentDoc.kind !== "design") {
             return yield* Effect.fail(
               new ValidationError({
@@ -1168,9 +1589,11 @@ export const DocServiceLive = Layer.effect(
           }
 
           const today = new Date().toISOString().slice(0, 10)
+          const patchDocId = (yield* generateDocStableId()) as DocStableId
           const patchFrontmatter = stringifyYaml({
             kind: "spec",
             spec_type: "design",
+            doc_id: patchDocId,
             name: patchName,
             title: patchTitle,
             status: "draft",
@@ -1195,6 +1618,7 @@ export const DocServiceLive = Layer.effect(
 
           const relPath = join("design", `${patchName}.md`)
           const patchDoc = yield* docRepo.insert({
+            docId: patchDocId,
             hash,
             kind: "design",
             name: patchName,
@@ -1220,15 +1644,35 @@ export const DocServiceLive = Layer.effect(
           return warnings
         }),
 
+      validateIndexSearchability: () =>
+        Effect.gen(function* () {
+          const docsPath = getDocsPath()
+          const docs = yield* docRepo.findAll()
+          const warnings: string[] = []
+          for (const doc of docs) {
+            warnings.push(
+              ...validateSearchableIndexMetadata(
+                doc,
+                readSearchableIndexMetadata(docsPath, doc)
+              )
+            )
+          }
+          return warnings
+        }),
+
       detectDrift: (name) =>
         Effect.gen(function* () {
-          const doc = yield* docRepo.findByName(name)
-          if (!doc) {
-            return yield* Effect.fail(new DocNotFoundError({ name }))
-          }
+          const doc = yield* resolveDocReference(name)
           const warnings: string[] = []
           const docsPath = getDocsPath()
-          const docPath = resolveDocPath(docsPath, doc.kind, name)
+          let docPath: string
+          try {
+            docPath = ensureDocIdInFile(doc, docsPath)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            warnings.push(`Unable to validate markdown structure for drift detection: ${message}`)
+            return warnings
+          }
 
           if (existsSync(docPath)) {
             const content = readFileSync(docPath, "utf8")
@@ -1244,7 +1688,7 @@ export const DocServiceLive = Layer.effect(
 
           const taskLinks = yield* docRepo.getTaskLinksForDoc(doc.id)
           if (taskLinks.length === 0 && doc.kind === "design") {
-            warnings.push(`Design doc '${name}' has no linked tasks`)
+            warnings.push(`Design doc '${doc.name}' has no linked tasks`)
           }
           return warnings
         }),
@@ -1255,12 +1699,7 @@ export const DocServiceLive = Layer.effect(
         Effect.gen(function* () {
           const synced: Invariant[] = []
           if (docName) {
-            const doc = yield* docRepo.findByName(docName)
-            if (!doc) {
-              return yield* Effect.fail(
-                new DocNotFoundError({ name: docName })
-              )
-            }
+            const doc = yield* resolveDocReference(docName)
             const result = yield* syncInvariantsForDoc(doc)
             synced.push(...result)
           } else {
@@ -1310,11 +1749,16 @@ export const DocServiceLive = Layer.effect(
 
           const nodes: DocGraphNode[] = []
           const edges: DocGraphEdge[] = []
+          const nameCounts = new Map<string, number>()
+
+          for (const doc of allDocs) {
+            nameCounts.set(doc.name, (nameCounts.get(doc.name) ?? 0) + 1)
+          }
 
           for (const doc of allDocs) {
             nodes.push({
               id: `doc:${doc.id}`,
-              label: doc.name,
+              label: (nameCounts.get(doc.name) ?? 0) > 1 ? `${doc.kind}/${doc.name}` : doc.name,
               kind: doc.kind,
               status: doc.status,
             })

@@ -178,11 +178,11 @@ Returns blockedBy (what blocks this task), blocks (what this task blocks), child
 }
 ```
 
-### tx_block
+### tx_dep_block
 
 ```typescript
 {
-  name: "tx_block",
+  name: "tx_dep_block",
   description: `Add a blocking dependency. Returns the blocked task with updated dependency info.`,
   inputSchema: z.object({
     taskId: z.string().describe("Task that will be blocked"),
@@ -195,11 +195,11 @@ Returns blockedBy (what blocks this task), blocks (what this task blocks), child
 }
 ```
 
-### tx_children
+### tx_dep_children
 
 ```typescript
 {
-  name: "tx_children",
+  name: "tx_dep_children",
   description: `List child tasks with dependency info.`,
   inputSchema: z.object({
     id: z.string()
@@ -425,8 +425,8 @@ export const createMcpServer = () => {
     }
   })
 
-  // tx_block — add dependency, returns TaskWithDeps
-  server.tool("tx_block", "Add blocking dependency", {
+  // tx_dep_block — add dependency, returns TaskWithDeps
+  server.tool("tx_dep_block", "Add blocking dependency", {
     taskId: z.string(),
     blockerId: z.string()
   }, async (args) => {
@@ -450,8 +450,8 @@ export const createMcpServer = () => {
     }
   })
 
-  // tx_unblock — remove dependency
-  server.tool("tx_unblock", "Remove blocking dependency", {
+  // tx_dep_unblock — remove dependency
+  server.tool("tx_dep_unblock", "Remove blocking dependency", {
     taskId: z.string(),
     blockerId: z.string()
   }, async (args) => {
@@ -469,8 +469,8 @@ export const createMcpServer = () => {
     }
   })
 
-  // tx_children — list child tasks
-  server.tool("tx_children", "List child tasks with dependency info", {
+  // tx_dep_children — list child tasks
+  server.tool("tx_dep_children", "List child tasks with dependency info", {
     id: z.string()
   }, async (args) => {
     try {
@@ -803,8 +803,8 @@ describe("MCP Tool Definitions (Unit)", () => {
     expect(toolNames).toContain("tx_add")
     expect(toolNames).toContain("tx_done")
     expect(toolNames).toContain("tx_update")
-    expect(toolNames).toContain("tx_block")
-    expect(toolNames).toContain("tx_children")
+    expect(toolNames).toContain("tx_dep_block")
+    expect(toolNames).toContain("tx_dep_children")
   })
 
   it("all tools have descriptions for LLM understanding", () => {
@@ -930,8 +930,8 @@ describe("MCP Server Integration", () => {
     expect(task.isReady).toBe(false)
   })
 
-  it("tx_block returns task with updated blockedBy", async () => {
-    const result = await callMcpTool(db, "tx_block", {
+  it("tx_dep_block returns task with updated blockedBy", async () => {
+    const result = await callMcpTool(db, "tx_dep_block", {
       taskId: FIXTURES.TASK_LOGIN,
       blockerId: FIXTURES.TASK_AUTH
     })
@@ -976,9 +976,9 @@ describe("MCP Server Integration", () => {
       .rejects.toThrow()
   })
 
-  it("tx_block returns error for circular dependency", async () => {
+  it("tx_dep_block returns error for circular dependency", async () => {
     await expect(
-      callMcpTool(db, "tx_block", {
+      callMcpTool(db, "tx_dep_block", {
         taskId: FIXTURES.TASK_JWT,
         blockerId: FIXTURES.TASK_BLOCKED
       })

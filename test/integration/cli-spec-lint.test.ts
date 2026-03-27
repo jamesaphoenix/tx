@@ -95,7 +95,7 @@ describe("CLI spec lint", () => {
       const result = runTx(cwd, dbPath, ["spec", "lint"])
       expect(result.status).toBe(0) // warnings don't cause exit 1
       expect(result.stdout).toContain("Coverage:  1 unlinked task(s)")
-      expect(result.stdout).toContain("[coverage]")
+      expect(result.stdout).toContain("Coverage:")
     })
 
     it("JSON reports coverage warnings", () => {
@@ -107,6 +107,31 @@ describe("CLI spec lint", () => {
       const json = JSON.parse(result.stdout)
       expect(json.coverage_warnings).toBe(2)
       expect(json.issues.filter((i: { section: string }) => i.section === "coverage")).toHaveLength(2)
+    })
+  })
+
+  describe("index searchability", () => {
+    it("warns when summary/domain/tags are not useful for generated specs/index.md", { timeout: 120_000 }, () => {
+      const add = runTx(cwd, dbPath, ["doc", "add", "design", "searchability-design", "--title", "Searchability Design"])
+      expect(add.status).toBe(0)
+
+      const docPath = join(cwd, "specs", "design", "searchability-design.md")
+      const content = readFileSync(docPath, "utf-8")
+        .replace('summary: "Technical design for Searchability Design."', 'summary: ""')
+        .replace("domain: searchability", "domain: product-area")
+        .replace("\n  - searchability", "")
+      writeFileSync(docPath, content, "utf-8")
+
+      const result = runTx(cwd, dbPath, ["spec", "lint", "--json"])
+      expect(result.status).toBe(0)
+      const json = JSON.parse(result.stdout)
+      expect(json.index_warnings).toBeGreaterThan(0)
+
+      const indexIssues = json.issues.filter((i: { section: string }) => i.section === "index")
+      expect(indexIssues.some((i: { message: string }) => i.message.includes("summary"))).toBe(true)
+      expect(indexIssues.some((i: { message: string }) => i.message.includes("domain"))).toBe(true)
+      expect(indexIssues.some((i: { message: string }) => i.message.includes("tags"))).toBe(true)
+      expect(indexIssues.some((i: { message: string }) => i.message.includes("specs/index.md"))).toBe(true)
     })
   })
 
@@ -125,7 +150,7 @@ describe("CLI spec lint", () => {
       const result = runTx(cwd, dbPath, ["spec", "lint"])
       // drift is a warning, not an error
       expect(result.stdout).toContain("1 drifted")
-      expect(result.stdout).toContain("[drift]")
+      expect(result.stdout).toContain("Drift:")
     })
   })
 
@@ -277,6 +302,7 @@ describe("CLI spec lint", () => {
       expect(result.stdout).toContain("Spec Lint:")
       expect(result.stdout).toContain("Docs:")
       expect(result.stdout).toContain("Coverage:")
+      expect(result.stdout).toContain("Index:")
       expect(result.stdout).toContain("EARS:")
       expect(result.stdout).toContain("Spec-Test:")
     })
@@ -289,6 +315,7 @@ describe("CLI spec lint", () => {
       expect(json).toHaveProperty("total_docs")
       expect(json).toHaveProperty("drift_count")
       expect(json).toHaveProperty("coverage_warnings")
+      expect(json).toHaveProperty("index_warnings")
       expect(json).toHaveProperty("fci")
       expect(json).toHaveProperty("phase")
       expect(json).toHaveProperty("issues")
@@ -303,12 +330,14 @@ describe("CLI spec lint", () => {
       const result = runTx(cwd, dbPath, ["spec", "lint", "--help"])
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("spec lint")
+      expect(result.stdout).toContain("Index searchability")
     })
 
     it("help spec lint shows subcommand help", () => {
       const result = runTx(cwd, dbPath, ["help", "spec", "lint"])
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("spec lint")
+      expect(result.stdout).toContain("Search Keywords")
     })
   })
 

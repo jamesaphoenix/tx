@@ -1,5 +1,5 @@
 ---
-title: tx gate
+title: tx auto gate
 description: Human-in-the-loop phase gates for orchestration transitions
 ---
 
@@ -12,7 +12,7 @@ import { Mermaid } from '@/components/mermaid'
 
 ## Purpose
 
-`tx gate` adds explicit human approval checkpoints between phases (for example, `docs_harden -> feature_build`).
+`tx auto gate` adds explicit human approval checkpoints between phases (for example, `docs_harden -> feature_build`).
 
 A gate is stored as a pin with ID `gate.<name>` and JSON state content.
 
@@ -44,7 +44,7 @@ Use `--task-id` to link the gate to a real human review task. The gate approval 
 <Cards>
   <Card
     title="Gate approval"
-    description="Controls whether the next phase may start. This is what tx gate check reads."
+    description="Controls whether the next phase may start. This is what tx auto gate check reads."
   />
   <Card
     title="Linked review task"
@@ -62,35 +62,35 @@ Use `--task-id` to link the gate to a real human review task. The gate approval 
 <Tab value="CLI">
 
 ```bash
-tx gate create <name> [--phase-from <phase>] [--phase-to <phase>] [--task-id <id>] [--force] [--json]
-tx gate approve <name> --by <approver> [--note <text>] [--json]
-tx gate revoke <name> --by <approver> [--reason <text>] [--json]
-tx gate check <name> [--json]
-tx gate status <name> [--json]
-tx gate list [--json]
-tx gate rm <name> [--json]
+tx auto gate create <name> [--phase-from <phase>] [--phase-to <phase>] [--task-id <id>] [--force] [--json]
+tx auto gate approve <name> --by <approver> [--note <text>] [--json]
+tx auto gate revoke <name> --by <approver> [--reason <text>] [--json]
+tx auto gate check <name> [--json]
+tx auto gate status <name> [--json]
+tx auto gate list [--json]
+tx auto gate rm <name> [--json]
 ```
 
 ```bash
 # Create gate
-tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+tx auto gate create docs-to-build --phase-from docs_harden --phase-to feature_build
 
 # Link a gate to a task so agents cannot mark it done
-tx gate create docs-to-build --task-id tx-a1b2c3d4
+tx auto gate create docs-to-build --task-id tx-a1b2c3d4
 
 # Approve gate
-tx gate approve docs-to-build --by james --note "spec + tests reviewed"
+tx auto gate approve docs-to-build --by james --note "spec + tests reviewed"
 
 # Block until approved (exit 0 if approved, 1 otherwise)
-tx gate check docs-to-build
+tx auto gate check docs-to-build
 
 # Revoke gate
-tx gate revoke docs-to-build --by james --reason "missing migration plan"
+tx auto gate revoke docs-to-build --by james --reason "missing migration plan"
 
 # Inspect and cleanup
-tx gate status docs-to-build
-tx gate list
-tx gate rm docs-to-build
+tx auto gate status docs-to-build
+tx auto gate list
+tx auto gate rm docs-to-build
 ```
 
 </Tab>
@@ -148,14 +148,117 @@ await tx.pins.remove(gateId('docs-to-build'))
 </Tab>
 <Tab value="MCP">
 
-There are no gate-specific MCP tools yet. Use pin tools with IDs prefixed by `gate.`.
+**Tool name:** `tx_auto_gate_create`
 
-```text
-tx_pin_set
-tx_pin_get
-tx_pin_list
-tx_pin_rm
+```json
+{
+  "name": "tx_auto_gate_create",
+  "arguments": {
+    "name": "docs-to-build",
+    "phaseFrom": "docs_harden",
+    "phaseTo": "feature_build",
+    "taskId": "tx-a1b2c3d4"
+  }
+}
 ```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Gate name (stored as pin `gate.<name>`) |
+| `phaseFrom` | `string` | No | Phase the gate guards exit from |
+| `phaseTo` | `string` | No | Phase the gate guards entry to |
+| `taskId` | `string` | No | Link gate to a human review task |
+| `force` | `boolean` | No | Overwrite existing gate if present |
+
+**Tool name:** `tx_auto_gate_approve`
+
+```json
+{
+  "name": "tx_auto_gate_approve",
+  "arguments": {
+    "name": "docs-to-build",
+    "by": "james",
+    "note": "spec + tests reviewed"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Gate name to approve |
+| `by` | `string` | Yes | Who is approving the gate |
+| `note` | `string` | No | Optional approval note |
+
+**Tool name:** `tx_auto_gate_revoke`
+
+```json
+{
+  "name": "tx_auto_gate_revoke",
+  "arguments": {
+    "name": "docs-to-build",
+    "by": "james",
+    "reason": "missing migration plan"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Gate name to revoke |
+| `by` | `string` | Yes | Who is revoking the gate |
+| `reason` | `string` | No | Reason for revocation |
+
+**Tool name:** `tx_auto_gate_check`
+
+```json
+{
+  "name": "tx_auto_gate_check",
+  "arguments": {
+    "name": "docs-to-build"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Gate name to check |
+
+Returns `{ "approved": true }` or `{ "approved": false }`.
+
+**Other tools:** `tx_auto_gate_status`, `tx_auto_gate_list`, `tx_auto_gate_rm`
+
+```json
+{
+  "name": "tx_auto_gate_status",
+  "arguments": {
+    "name": "docs-to-build"
+  }
+}
+```
+
+Returns the full gate state object (approved, phaseFrom, phaseTo, approvedBy, approvedAt, etc.).
+
+```json
+{
+  "name": "tx_auto_gate_list",
+  "arguments": {}
+}
+```
+
+Returns all gates. No parameters required.
+
+```json
+{
+  "name": "tx_auto_gate_rm",
+  "arguments": {
+    "name": "docs-to-build"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Gate name to remove |
 
 </Tab>
 <Tab value="REST API">
@@ -206,14 +309,14 @@ curl -X DELETE http://localhost:3456/api/pins/gate.docs-to-build
 
 | Primitive | What it controls |
 |-----------|------------------|
-| [`tx guard`](/docs/primitives/guard) | Task creation limits (quantity/depth constraints) |
-| `tx gate` | Human approval for phase transitions |
+| [`tx auto guard`](/docs/primitives/guard) | Task creation limits (quantity/depth constraints) |
+| `tx auto gate` | Human approval for phase transitions |
 
 ## Agent Loop Pattern
 
 ```bash
 # Require explicit approval between phases
-tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+tx auto gate create docs-to-build --phase-from docs_harden --phase-to feature_build
 
 while task=$(tx ready --label "phase:docs_harden" --json --limit 1 | jq -r '.[0].id // empty'); do
   [ -z "$task" ] && break
@@ -221,7 +324,7 @@ while task=$(tx ready --label "phase:docs_harden" --json --limit 1 | jq -r '.[0]
 done
 
 # Human approval checkpoint
-tx gate check docs-to-build
+tx auto gate check docs-to-build
 
 while task=$(tx ready --label "phase:feature_build" --json --limit 1 | jq -r '.[0].id // empty'); do
   [ -z "$task" ] && break
@@ -237,7 +340,7 @@ The strongest pattern is to make the gate visible in the task graph.
 2. Store that task ID on the gate with `--task-id`.
 3. Let agents finish the implementation phase.
 4. Require a human to approve the gate and complete the linked review task via the human path.
-5. Start the next phase only after `tx gate check` passes.
+5. Start the next phase only after `tx auto gate check` passes.
 
 This gives you three useful properties:
 
@@ -247,7 +350,7 @@ This gives you three useful properties:
 
 Important:
 
-- `tx gate approve` is what makes `tx gate check` pass.
+- `tx auto gate approve` is what makes `tx auto gate check` pass.
 - Completing the linked review task is separate. It records the review work in the task graph and ensures that an agent cannot silently close that checkpoint for you.
 
 ## Sequence Diagrams
@@ -309,7 +412,7 @@ Important:
 />
 
 <Callout type="warn" title="Two Separate Levers">
-`tx gate approve` and human completion of the linked task are intentionally separate.
+`tx auto gate approve` and human completion of the linked task are intentionally separate.
 
 - Approve the gate to let the next phase start.
 - Complete the linked task as a human to close the visible review checkpoint in the task graph.
@@ -325,7 +428,7 @@ Important:
 
     ```bash
     REVIEW_TASK=$(tx add "Human review: docs_harden -> feature_build" --json | jq -r '.id')
-    tx gate create docs-to-build \
+    tx auto gate create docs-to-build \
       --phase-from docs_harden \
       --phase-to feature_build \
       --task-id "$REVIEW_TASK"
@@ -350,8 +453,8 @@ Important:
 
     ```bash
     tx show "$REVIEW_TASK"
-    tx gate status docs-to-build
-    tx gate approve docs-to-build --by james --note "Docs phase reviewed and approved"
+    tx auto gate status docs-to-build
+    tx auto gate approve docs-to-build --by james --note "Docs phase reviewed and approved"
     ```
   </Step>
   <Step>
@@ -367,7 +470,7 @@ Important:
     ### Next phase starts only after the gate passes
 
     ```bash
-    tx gate check docs-to-build
+    tx auto gate check docs-to-build
     ```
   </Step>
 </Steps>
@@ -382,7 +485,7 @@ Keep the linked review task out of the agent phase queue. Do **not** assign it t
 REVIEW_TASK=$(tx add "Human review: docs_harden -> feature_build" --json | jq -r '.id')
 
 # 2. Link the gate to that review task
-tx gate create docs-to-build \
+tx auto gate create docs-to-build \
   --phase-from docs_harden \
   --phase-to feature_build \
   --task-id "$REVIEW_TASK"
@@ -395,12 +498,12 @@ done
 
 # 4. Human reviews the phase boundary task
 tx show "$REVIEW_TASK"
-tx gate status docs-to-build
-tx gate approve docs-to-build --by james --note "Docs phase reviewed and approved"
+tx auto gate status docs-to-build
+tx auto gate approve docs-to-build --by james --note "Docs phase reviewed and approved"
 tx done "$REVIEW_TASK" --human
 
 # 5. Only now allow the next phase to proceed
-tx gate check docs-to-build
+tx auto gate check docs-to-build
 
 while task=$(tx ready --label "phase:feature_build" --json --limit 1 | jq -r '.[0].id // empty'); do
   [ -z "$task" ] && break
@@ -444,7 +547,7 @@ curl -X POST http://localhost:3456/api/pins/gate.docs-to-build \
 curl -X POST "http://localhost:3456/api/tasks/$REVIEW_TASK/done"
 
 # Human operator approves and completes through the human path
-tx gate approve docs-to-build --by james --note "Reviewed in dashboard"
+tx auto gate approve docs-to-build --by james --note "Reviewed in dashboard"
 curl -X POST "http://localhost:3456/api/tasks/$REVIEW_TASK/done" \
   -H "x-tx-actor: human"
 ```
@@ -454,7 +557,7 @@ curl -X POST "http://localhost:3456/api/tasks/$REVIEW_TASK/done" \
 When a gate has a linked `taskId`, the agent loop should treat that task as a human-owned checkpoint.
 
 - The agent may surface the review task to a human with `tx show <task-id>`.
-- The agent may poll `tx gate check <name>` and stop when it exits non-zero.
+- The agent may poll `tx auto gate check <name>` and stop when it exits non-zero.
 - The agent must not try to force completion of the linked task.
 - The human should be the one who approves the gate and completes the linked review task.
 
@@ -466,7 +569,7 @@ Think of the two actions this way:
 If you want a simple contract to embed in prompts, use this:
 
 ```text
-If a gate pin contains taskId, treat that task as human-owned. Never mark it done yourself. Wait for tx gate check <name> to pass, or ask the human to review and complete the linked task via tx done <id> --human.
+If a gate pin contains taskId, treat that task as human-owned. Never mark it done yourself. Wait for tx auto gate check <name> to pass, or ask the human to review and complete the linked task via tx done <id> --human.
 ```
 
 ## Failure Modes And Recovery
@@ -482,7 +585,7 @@ If a gate pin contains taskId, treat that task as human-owned. Never mark it don
     - Ask the human to complete the linked task with `tx done <id> --human` or `x-tx-actor: human`.
   </Accordion>
   <Accordion title="Human approves the gate but forgets to complete the linked task">
-    `tx gate check` will pass, because approval controls the phase transition. The review task will still remain open in the task graph.
+    `tx auto gate check` will pass, because approval controls the phase transition. The review task will still remain open in the task graph.
 
     Recovery:
 
@@ -490,20 +593,20 @@ If a gate pin contains taskId, treat that task as human-owned. Never mark it don
     - Treat the linked task as your audit trail for the review step.
   </Accordion>
   <Accordion title="Human completes the review task but forgets to approve the gate">
-    The task graph will show the review as done, but `tx gate check` will still fail because the gate itself is not approved.
+    The task graph will show the review as done, but `tx auto gate check` will still fail because the gate itself is not approved.
 
     Recovery:
 
-    - Run `tx gate approve <name> --by <person>`.
-    - Re-run `tx gate check <name>`.
+    - Run `tx auto gate approve <name> --by <person>`.
+    - Re-run `tx auto gate check <name>`.
   </Accordion>
 </Accordions>
 
 ## Related Commands
 
-- [`tx guard`](/docs/primitives/guard) - Bound task proliferation
-- [`tx verify`](/docs/primitives/verify) - Attach executable done criteria
-- [`tx label`](/docs/primitives/label) - Scope queues by phase
+- [`tx auto guard`](/docs/primitives/guard) - Bound task proliferation
+- [`tx auto verify`](/docs/primitives/verify) - Attach executable done criteria
+- [`tx auto label`](/docs/primitives/label) - Scope queues by phase
 - [`tx pin`](/docs/primitives/pin) - Underlying storage primitive for gates
 
 ## Linked Tasks

@@ -392,8 +392,8 @@ describe("MCP Server Integration", () => {
     expect(result.structuredContent.nowReady).toContain(FIXTURES.TASK_BLOCKED)
   })
 
-  it("tx_block returns updated task with new dependency", async () => {
-    const result = await callMcpTool(db, "tx_block", {
+  it("tx_dep_block returns updated task with new dependency", async () => {
+    const result = await callMcpTool(db, "tx_dep_block", {
       taskId: FIXTURES.TASK_LOGIN,
       blockerId: FIXTURES.TASK_AUTH
     })

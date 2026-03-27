@@ -13,7 +13,7 @@ import {
   type CycleSettings,
 } from "./api/client"
 import { TasksPage } from "./components/tasks"
-import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
+import { RunsList, RunFilters, useRunFiltersWithUrl, type RunFiltersValues } from "./components/runs"
 import { CyclePage } from "./components/cycles"
 import { DocsPage } from "./components/docs"
 import { CommandProvider, useCommandContext, type Command } from "./components/command-palette/CommandContext"
@@ -569,6 +569,7 @@ function Stats() {
 
 type Tab = "tasks" | "docs" | "runs" | "cycles" | "settings"
 type ThemeMode = "light" | "dark"
+const DEFAULT_RUN_FILTERS: RunFiltersValues = { status: [], agent: "" }
 
 const THEME_STORAGE_KEY = "tx-dashboard-theme"
 
@@ -878,7 +879,7 @@ function SettingsPage({
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : String(error)
       if (rawMessage.includes("HTTP 404")) {
-        setLabelError("Delete labels endpoint not found. Restart `tx dashboard` and try again.")
+        setLabelError("Delete labels endpoint not found. Restart `tx diag dashboard` and try again.")
       } else {
         setLabelError(error instanceof Error ? error.message : "Failed to delete label")
       }
@@ -1313,26 +1314,27 @@ export default function App() {
 function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>("tasks")
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-
-  /** Switch tab and strip section-specific URL params so the URL stays clean. */
-  const navigateToTab = useCallback((tab: Tab) => {
-    const params = new URLSearchParams(window.location.search)
-    // Remove all section-specific params
-    for (const key of ["taskId", "cycleId", "runId", "status", "taskSearch", "taskAssignee", "taskLabels", "taskBucket", "view", "runStatus", "runAgent"]) {
-      params.delete(key)
-    }
-    const search = params.toString()
-    const url = search ? `${window.location.pathname}?${search}` : window.location.pathname
-    window.history.replaceState({}, "", url)
-    setActiveTab(tab)
-    if (tab !== "runs") setSelectedRunId(null)
-  }, [])
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme())
   const [newTaskRequestNonce, setNewTaskRequestNonce] = useState(0)
+  const [tabResetKey, setTabResetKey] = useState(0)
 
   const selectedRunIds = useStore(selectionStore, (s) => s.runIds)
 
   const queryClient = useQueryClient()
+
+  // URL state management for filters
+  const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
+
+  /** Switch tabs via the top-level shell and reset to each section's base view. */
+  const navigateToTab = useCallback((tab: Tab) => {
+    window.history.replaceState({}, "", window.location.pathname)
+    setTabResetKey((current) => current + 1)
+    setActiveTab(tab)
+    setSelectedRunId(null)
+    if (tab === "runs") {
+      setRunFilters(DEFAULT_RUN_FILTERS)
+    }
+  }, [setRunFilters])
 
   const handleToggleRun = useCallback((id: string) => {
     selectionActions.toggleRun(id)
@@ -1352,8 +1354,6 @@ function AppContent() {
     }
   }, [themeMode])
 
-  // URL state management for filters
-  const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null)
 
@@ -1673,15 +1673,16 @@ function AppContent() {
       <main className={`flex min-h-0 flex-1 flex-col ${activeTab === "settings" ? "overflow-y-auto" : "overflow-hidden"}`}>
         {activeTab === "tasks" ? (
           <TasksPage
+            key={`tasks:${tabResetKey}`}
             themeMode={themeMode}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
             defaultTaskView={defaultTaskView}
             newTaskRequestNonce={newTaskRequestNonce}
           />
         ) : activeTab === "docs" ? (
-          <DocsPage />
+          <DocsPage key={`docs:${tabResetKey}`} />
         ) : activeTab === "runs" ? (
-          <div className="flex h-full w-full overflow-hidden">
+          <div key={`runs:${tabResetKey}`} className="flex h-full w-full overflow-hidden">
             {/* Runs sidebar */}
             <div className="w-80 min-h-0 border-r border-gray-800/80 flex-shrink-0 flex flex-col">
               <div className="px-4 pt-4 pb-3">
@@ -1728,6 +1729,7 @@ function AppContent() {
           </div>
         ) : activeTab === "settings" ? (
           <SettingsPage
+            key={`settings:${tabResetKey}`}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
             defaultTaskView={defaultTaskView}
             cycleSettings={cycleSettings}
@@ -1745,7 +1747,7 @@ function AppContent() {
             }}
           />
         ) : (
-          <CyclePage themeMode={themeMode} />
+          <CyclePage key={`cycles:${tabResetKey}`} themeMode={themeMode} />
         )}
       </main>
     </div>

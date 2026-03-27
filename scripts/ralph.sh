@@ -17,6 +17,8 @@
 #   ./scripts/ralph.sh --workers 4          # Run 4 parallel workers
 #   ./scripts/ralph.sh --runtime codex     # Force Codex runtime
 #   ./scripts/ralph.sh --runtime claude    # Force Claude runtime
+#   ./scripts/ralph.sh --all-tasks         # Run against the full repo queue (default)
+#   ./scripts/ralph.sh --design-doc core-auth-design  # Scope to tasks linked to one design doc
 #   ./scripts/ralph.sh --task-timeout 2700 # 45 minutes max per task
 #   ./scripts/ralph.sh --verify-timeout 180 --learnings-timeout 180
 #   ./scripts/ralph.sh --no-commit         # Never auto-commit changes
@@ -86,6 +88,8 @@ LAST_RUN_STATUS=""
 LAST_RUN_ERROR=""
 LAST_RUN_INFRA_ABORT=false
 IGNORE_HUP=false
+TASK_SCOPE_MODE=${TASK_SCOPE_MODE:-all}
+DESIGN_DOC_SCOPE="${DESIGN_DOC_SCOPE:-}"
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -105,6 +109,9 @@ while [[ $# -gt 0 ]]; do
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
     --worker-id) WORKER_ID="$2"; shift 2 ;;
     --runtime) RUNTIME_MODE="$2"; shift 2 ;;
+    --scope) TASK_SCOPE_MODE="$2"; shift 2 ;;
+    --design-doc) TASK_SCOPE_MODE="design-doc"; DESIGN_DOC_SCOPE="$2"; shift 2 ;;
+    --all-tasks) TASK_SCOPE_MODE="all"; DESIGN_DOC_SCOPE=""; shift ;;
     --lock-scope) LOCK_SCOPE="$2"; shift 2 ;;
     --lock-key) LOCK_KEY_OVERRIDE="$2"; shift 2 ;;
     --task-timeout) TASK_TIMEOUT="$2"; shift 2 ;;
@@ -189,6 +196,19 @@ case "$LOCK_SCOPE" in
     ;;
 esac
 
+case "$TASK_SCOPE_MODE" in
+  all|design-doc) ;;
+  *)
+    echo "Invalid --scope value: $TASK_SCOPE_MODE (expected: all|design-doc)" >&2
+    exit 1
+    ;;
+esac
+
+if [ "$TASK_SCOPE_MODE" = "design-doc" ] && [ -z "$DESIGN_DOC_SCOPE" ]; then
+  echo "Missing design doc name: use --design-doc <name> or set DESIGN_DOC_SCOPE with --scope design-doc" >&2
+  exit 1
+fi
+
 if [ -z "$WORKER_ID" ]; then
   if [ "$CHILD_MODE" = true ]; then
     WORKER_ID="${WORKER_PREFIX}-child"
@@ -208,6 +228,14 @@ mkdir -p "$PROJECT_DIR/.tx"
 # This ensures changes are immediately reflected without rebuilding
 tx() {
   bun "$PROJECT_DIR/apps/cli/src/cli.ts" "$@"
+}
+
+scope_label() {
+  if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+    printf 'design-doc:%s' "$DESIGN_DOC_SCOPE"
+  else
+    printf 'all-tasks'
+  fi
 }
 
 # ==============================================================================
@@ -1533,6 +1561,136 @@ update_run_heartbeat() {
     --delta-bytes "$delta_bytes" >/dev/null 2>&1 || true
 }
 
+capture_current_task_payload() {
+  local task_id="$1"
+  local output_path="$2"
+
+  if ! tx show "$task_id" --json > "$output_path" 2>/dev/null; then
+    printf '{}\n' > "$output_path"
+  fi
+}
+
+filter_tasks_for_scope() {
+  local input_path="$1"
+  local output_path="$2"
+
+  if [ "$TASK_SCOPE_MODE" = "all" ]; then
+    cp "$input_path" "$output_path"
+    return 0
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '[]\n' > "$output_path"
+    return 1
+  fi
+
+  if ! jq --arg doc "$DESIGN_DOC_SCOPE" '
+    map(select(any(.linkedDocs[]?; .kind == "design" and .name == $doc)))
+  ' "$input_path" > "$output_path" 2>/dev/null; then
+    printf '[]\n' > "$output_path"
+    return 1
+  fi
+
+  return 0
+}
+
+capture_all_tasks_payload() {
+  local output_path="$1"
+  local raw_output_path="${output_path}.raw"
+
+  if ! tx list --json > "$raw_output_path" 2>/dev/null; then
+    printf '[]\n' > "$output_path"
+    rm -f "$raw_output_path"
+    return 0
+  fi
+
+  filter_tasks_for_scope "$raw_output_path" "$output_path" || true
+  rm -f "$raw_output_path"
+}
+
+capture_ready_queue_payload() {
+  if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+    tx ready --json 2>/dev/null || echo "[]"
+  else
+    tx ready --json --limit 1 2>/dev/null || echo "[]"
+  fi
+}
+
+select_task_from_ready_queue() {
+  local ready_json="$1"
+
+  if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+    echo "$ready_json" | jq --arg doc "$DESIGN_DOC_SCOPE" '
+      [ .[] | select(any(.linkedDocs[]?; .kind == "design" and .name == $doc)) ][0] // empty
+    ' 2>/dev/null
+  else
+    echo "$ready_json" | jq '.[0] // empty' 2>/dev/null
+  fi
+}
+
+capture_linked_design_docs() {
+  local task_payload_path="$1"
+  local output_path="$2"
+  local doc_names=""
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '_jq is unavailable; cannot resolve linked design docs._\n' > "$output_path"
+    return 0
+  fi
+
+  doc_names=$(jq -r '.linkedDocs[]? | select(.kind == "design") | .name' "$task_payload_path" 2>/dev/null || true)
+
+  if [ -z "$doc_names" ]; then
+    printf '_No linked design docs found for this task._\n' > "$output_path"
+    return 0
+  fi
+
+  : > "$output_path"
+
+  while IFS= read -r doc_name; do
+    [ -z "$doc_name" ] && continue
+    {
+      printf '## %s\n\n' "$doc_name"
+      if ! tx doc show "$doc_name" --md 2>/dev/null; then
+        printf '_Failed to load linked design doc: %s._\n' "$doc_name"
+      fi
+      printf '\n'
+    } >> "$output_path"
+  done <<EOF
+$doc_names
+EOF
+
+  if [ ! -s "$output_path" ]; then
+    printf '_No linked design docs found for this task._\n' > "$output_path"
+  fi
+}
+
+build_prompt_context_bundle() {
+  local current_task_path="$1"
+  local design_docs_path="$2"
+  local all_tasks_path="$3"
+  local output_path="$4"
+  local scope_path="$5"
+
+  {
+    printf '===== BEGIN RALPH TASK SCOPE =====\n'
+    cat "$scope_path"
+    printf '\n===== END RALPH TASK SCOPE =====\n\n'
+
+    printf '===== BEGIN CURRENT TASK PAYLOAD (JSON) =====\n'
+    cat "$current_task_path"
+    printf '\n===== END CURRENT TASK PAYLOAD (JSON) =====\n\n'
+
+    printf '===== BEGIN LINKED DESIGN DOCS (MARKDOWN) =====\n'
+    cat "$design_docs_path"
+    printf '\n===== END LINKED DESIGN DOCS (MARKDOWN) =====\n\n'
+
+    printf '===== BEGIN ALL TASKS (JSON) =====\n'
+    cat "$all_tasks_path"
+    printf '\n===== END ALL TASKS (JSON) =====\n'
+  } > "$output_path"
+}
+
 # ==============================================================================
 # Run Task Agent
 # ==============================================================================
@@ -1556,21 +1714,6 @@ run_agent() {
     profile_display="${profile_path#"$PROJECT_DIR"/}"
   fi
 
-  local prompt="Read $profile_display for your instructions.
-
-Your assigned task: $task_id
-Task title: $task_title
-
-Follow the profile instructions first.
-Helpful commands if needed:
-- \`tx show $task_id\` for full task details
-- \`tx memory context $task_id\` for related learnings
-
-When complete, run \`tx done $task_id\`.
-If you discover new work, create subtasks with \`tx add\`.
-If blocked, run \`tx update $task_id --status blocked\`.
-Optionally record useful insights with \`tx memory add \"<what you learned>\" --source-ref $task_id\`."
-
   log "Dispatching to $ACTIVE_RUNTIME_LABEL..."
 
   # Create run record
@@ -1585,6 +1728,46 @@ Optionally record useful insights with \`tx memory add \"<what you learned>\" --
   # Create per-run log directory
   local run_dir="$PROJECT_DIR/.tx/runs/$CURRENT_RUN_ID"
   mkdir -p "$run_dir"
+
+  local current_task_path="$run_dir/current-task.json"
+  local all_tasks_path="$run_dir/all-tasks.json"
+  local design_docs_path="$run_dir/linked-design-docs.md"
+  local prompt_context_path="$run_dir/prompt-context.txt"
+  local scope_path="$run_dir/task-scope.txt"
+  local prompt_context=""
+  local task_scope=""
+
+  task_scope=$(scope_label)
+  printf '%s\n' "$task_scope" > "$scope_path"
+  capture_current_task_payload "$task_id" "$current_task_path"
+  capture_all_tasks_payload "$all_tasks_path"
+  capture_linked_design_docs "$current_task_path" "$design_docs_path"
+  build_prompt_context_bundle "$current_task_path" "$design_docs_path" "$all_tasks_path" "$prompt_context_path" "$scope_path"
+  prompt_context=$(cat "$prompt_context_path" 2>/dev/null || echo "")
+
+  local prompt="Read $profile_display for your instructions.
+
+Your assigned task: $task_id
+Task title: $task_title
+Task scope: $task_scope
+
+You are given direct working context below. Read it before changing code:
+
+$prompt_context
+
+Follow the profile instructions first.
+Helpful commands if needed:
+- \`tx show $task_id\` for full task details, including any linked docs/specs
+- \`tx memory context $task_id\` for related learnings
+
+When complete, run \`tx done $task_id\`.
+If you discover new work, create follow-up tasks with \`tx add\` and subtasks with \`tx add ... --parent $task_id\`.
+If dependencies need to change, use \`tx dep block\` and \`tx dep unblock\`.
+If the queue needs reordering, update scores with \`tx update <id> --score <n>\` or \`tx bulk score <n> <id...>\`.
+If a non-trivial task needs specs, prefer a paired PRD/design doc: attach the PRD with \`tx doc attach $task_id <prd-doc> --type implements\` and the design doc with \`tx doc attach $task_id <design-doc> --type references\`.
+If one half of the PRD/design pair is missing, create follow-up docs work or block the task before large implementation proceeds.
+If blocked, run \`tx update $task_id --status blocked\`.
+Optionally record useful insights with \`tx memory add \"<what you learned>\" --source-ref $task_id\`."
 
   # Save injected context
   echo "$prompt" > "$run_dir/context.md"
@@ -2051,16 +2234,16 @@ run_worker_loop() {
     log "[$worker_id] --- Iteration $iteration ---"
 
     # Get highest-priority ready task
-    READY_JSON=$(tx ready --json --limit 1 2>/dev/null || echo "[]")
-    TASK=$(echo "$READY_JSON" | jq '.[0] // empty' 2>/dev/null)
+    READY_JSON=$(capture_ready_queue_payload)
+    TASK=$(select_task_from_ready_queue "$READY_JSON")
 
     if [ -z "$TASK" ] || [ "$TASK" = "null" ]; then
       idle_rounds=$((idle_rounds + 1))
       if [ "$idle_rounds" -ge "$MAX_IDLE_ROUNDS" ]; then
-        log "[$worker_id] No ready tasks after $MAX_IDLE_ROUNDS checks. Worker exiting."
+        log "[$worker_id] No ready tasks in scope $(scope_label) after $MAX_IDLE_ROUNDS checks. Worker exiting."
         break
       fi
-      log "[$worker_id] No ready tasks. Sleeping (${idle_rounds}/${MAX_IDLE_ROUNDS})..."
+      log "[$worker_id] No ready tasks in scope $(scope_label). Sleeping (${idle_rounds}/${MAX_IDLE_ROUNDS})..."
       sleep "$SLEEP_BETWEEN"
       continue
     fi
@@ -2269,6 +2452,10 @@ spawn_parallel_workers() {
       child_args+=(--runtime "$RUNTIME_MODE")
     fi
 
+    if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+      child_args+=(--design-doc "$DESIGN_DOC_SCOPE")
+    fi
+
     if [ -n "$AGENT_COMMAND_OVERRIDE" ]; then
       child_args+=(--agent-cmd "$AGENT_COMMAND_OVERRIDE")
     fi
@@ -2323,6 +2510,7 @@ log "RALPH Loop Started"
 log "========================================"
 log "Project: $PROJECT_DIR"
 log "Runtime: $ACTIVE_RUNTIME ($ACTIVE_RUNTIME_LABEL)"
+log "Task scope: $(scope_label)"
 if [ "$ACTIVE_RUNTIME" = "claude" ]; then
   log "Claude stream-json output: $CLAUDE_STREAM_JSON_ENABLED (mode=$CLAUDE_STREAM_JSON_MODE)"
 fi

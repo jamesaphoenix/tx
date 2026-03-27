@@ -460,8 +460,9 @@ export interface CycleDetailResponse {
 // Doc types
 export interface DocSerialized {
   id: number
+  docId: string
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
   name: string
   title: string
   version: number
@@ -475,7 +476,7 @@ export interface DocSerialized {
 export interface DocGraphNode {
   id: string
   label: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "task"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "task"
   status?: string
 }
 
@@ -499,13 +500,25 @@ export interface DocRenderResponse {
 }
 
 export interface DocSourceResponse {
+  docId: string | null
   name: string
+  version: number | null
   filePath: string
   yamlContent: string | null
   renderedContent: string | null
 }
 
+const appendDocVersion = (url: string, version?: number): string => {
+  if (!version) return url
+  const qs = new URLSearchParams({ version: String(version) })
+  return `${url}?${qs.toString()}`
+}
+
+export const docSelectionKey = (doc: Pick<DocSerialized, "docId" | "version">): string =>
+  `${doc.docId}:${doc.version}`
+
 export interface DocHealthIssue {
+  docId: string
   docName: string
   kind: string
   problems: string[]
@@ -610,8 +623,8 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
-  docDetail: async (name: string): Promise<DocSerialized> => {
-    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`)
+  docDetail: async (docId: string, version?: number): Promise<DocSerialized> => {
+    const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}`, version))
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
@@ -624,8 +637,8 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
-  docSource: async (name: string): Promise<DocSourceResponse> => {
-    const res = await fetch(`/api/docs/${encodeURIComponent(name)}/source`)
+  docSource: async (docId: string, version?: number): Promise<DocSourceResponse> => {
+    const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}/source`, version))
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
@@ -639,8 +652,8 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
-  deleteDoc: async (name: string): Promise<{ success: boolean; name: string }> => {
-    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`, { method: "DELETE" })
+  deleteDoc: async (docId: string, version?: number): Promise<{ success: boolean; docId: string | null; name: string; version: number | null }> => {
+    const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}`, version), { method: "DELETE" })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },

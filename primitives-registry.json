@@ -125,5 +125,12 @@
     "api": "apps/api-server/src/routes/decisions.ts",
     "sdk": "apps/agent-sdk/src/client.ts",
     "required": ["cli", "mcp", "api", "sdk"]
+  },
+  "decompose": {
+    "cli": "apps/cli/src/commands/decompose.ts",
+    "mcp": "apps/mcp-server/src/tools/decompose.ts",
+    "api": "apps/api-server/src/routes/decompose.ts",
+    "sdk": "apps/agent-sdk/src/client.ts",
+    "required": ["cli", "mcp", "api", "sdk"]
   }
 }

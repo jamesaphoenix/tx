@@ -6,7 +6,7 @@
 
 import type { TaskId } from "@jamesaphoenix/tx-types"
 import { isValidTaskId } from "@jamesaphoenix/tx-types"
-import { CliExitError } from "../cli-exit.js"
+import { CliUserError } from "../cli-errors.js"
 
 export type Flags = Record<string, string | boolean>
 
@@ -48,13 +48,29 @@ export function parseIntOpt(
   if (val === undefined) return undefined
   const parsed = parseInt(val, 10)
   if (!Number.isFinite(parsed)) {
-    console.error(`Invalid value for --${flagName}: "${val}" is not a valid finite number`)
-    throw new CliExitError(1)
+    throw new CliUserError({
+      code: "cli/invalid-flag-value",
+      message: `Invalid value for --${flagName}: "${val}" is not a valid finite number.`,
+      hint: `Pass a finite integer to --${flagName}.`,
+      details: {
+        flag: flagName,
+        received: val,
+        expected: "finite-integer",
+      },
+    })
   }
   // Reject float values: parseInt("3.7") silently truncates to 3
   if (String(parsed) !== val.trim()) {
-    console.error(`Invalid value for --${flagName}: "${val}" is not an integer`)
-    throw new CliExitError(1)
+    throw new CliUserError({
+      code: "cli/invalid-flag-value",
+      message: `Invalid value for --${flagName}: "${val}" is not an integer.`,
+      hint: `Pass an integer to --${flagName}.`,
+      details: {
+        flag: flagName,
+        received: val,
+        expected: "integer",
+      },
+    })
   }
   return parsed
 }
@@ -77,8 +93,16 @@ export function parseFloatOpt(
   if (val === undefined) return undefined
   const parsed = parseFloat(val)
   if (!Number.isFinite(parsed)) {
-    console.error(`Invalid value for --${flagName}: "${val}" is not a valid finite number`)
-    throw new CliExitError(1)
+    throw new CliUserError({
+      code: "cli/invalid-flag-value",
+      message: `Invalid value for --${flagName}: "${val}" is not a valid finite number.`,
+      hint: `Pass a finite number to --${flagName}.`,
+      details: {
+        flag: flagName,
+        received: val,
+        expected: "finite-number",
+      },
+    })
   }
   return parsed
 }
@@ -91,8 +115,15 @@ export function parseFloatOpt(
  */
 export function parseTaskId(id: string): TaskId {
   if (!isValidTaskId(id)) {
-    console.error(`Invalid task ID: "${id}". Expected format: tx-[a-z0-9]{6,12}`)
-    throw new CliExitError(1)
+    throw new CliUserError({
+      code: "cli/invalid-task-id",
+      message: `Invalid task ID: "${id}".`,
+      hint: "Expected format: tx-[a-z0-9]{6,12}.",
+      details: {
+        received: id,
+        expected: "tx-[a-z0-9]{6,12}",
+      },
+    })
   }
   return id
 }

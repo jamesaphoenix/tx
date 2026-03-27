@@ -25,16 +25,21 @@ Why EARS is mandatory:
 - tx validates EARS early with `tx spec lint` before implementation starts.
 - EARS-structured invariants populate provenance fields for full traceability.
 
-EARS requirements use the `REQ-<SCOPE>-NNN` ID format and a `statement` field containing the full EARS sentence:
+EARS requirements use the `REQ-<SCOPE>-NNN` ID format with markdown-native clause fields plus a `statement` field for the action clause:
 
 | Kind | Sentence Pattern |
 |------|-----------------|
 | `ubiquitous` | The system shall ... |
-| `event_driven` | When \<trigger\>, the system shall ... |
-| `state_driven` | While \<state\>, the system shall ... |
+| `event-driven` | `when: <trigger>` + `statement: the system shall ...` |
+| `state-driven` | `while: <state>` + `statement: the system shall ...` |
 | `optional` | Where \<feature\>, the system shall ... |
 | `unwanted` | If \<condition\>, then the system shall ... |
 | `complex` | Combination of When/While/If/Where clauses |
+
+- Required clause fields are `when` for `event-driven`, `while` for `state-driven`, `if` for `unwanted`, and `where` for `optional`.
+- `complex` requires at least one of `when`, `while`, `if`, or `where`.
+- `statement` should contain only the action clause, such as `the authentication service shall issue tokens`.
+- Legacy decomposed EARS using `pattern:` and underscored values such as `event_driven` is supported only for backward compatibility and migration.
 
 ## Spec Types
 
@@ -47,6 +52,8 @@ Docs use `kind: spec` with a `spec_type` field in frontmatter:
 | `overview` | Project-level overview (one per project) |
 | `runbook` | Operational procedures (symptoms, diagnosis, mitigation) |
 | `decision` | Architecture Decision Records (ADRs) |
+
+Docs now have an immutable `doc_id` in frontmatter and the database. The human `name` slug only needs to be unique within its doc kind, so `prd/auth` and `design/auth` can coexist without suffix conventions.
 
 ## Lifecycle
 
@@ -68,23 +75,27 @@ draft → review → approved → locked
 
 ```bash
 # Create docs (generates markdown template with frontmatter)
-tx doc add prd auth-system --title "Authentication System"
-tx doc add design auth-design --title "Auth Design"
+tx doc add prd auth-system-prd --title "Authentication System PRD"
+tx doc add design auth-system-design --title "Authentication System Design"
+tx doc link auth-system-prd auth-system-design
 tx doc add overview system-overview --title "System Overview"
 
 # Edit a doc (opens markdown in $EDITOR)
-tx doc edit auth-system
+tx doc edit auth-system-prd
 
 # Show doc metadata
-tx doc show auth-system
+tx doc show auth-system-prd
 
 # Show doc source markdown
-tx doc show auth-system --md
+tx doc show auth-system-prd --md
 
 # List all docs
 tx doc list
 tx doc list --kind prd
 tx doc list --status draft
+
+# Remove latest mutable doc version
+tx doc rm auth-system
 
 # Lock a doc (makes it immutable)
 tx doc lock auth-system
@@ -93,13 +104,14 @@ tx doc lock auth-system
 tx doc version auth-system
 
 # Link two docs
-tx doc link overview auth-system
+tx doc link system-overview auth-system-prd
 
-# Attach a task to a doc
-tx doc attach tx-abc123 auth-system
+# Attach a task to the PRD/DD pair
+tx doc attach tx-abc123 auth-system-prd --type implements
+tx doc attach tx-abc123 auth-system-design --type references
 
 # Create a design patch
-tx doc patch auth-design auth-patch-001 "Fix auth flow"
+tx doc patch auth-system-design auth-patch-001 "Fix auth flow"
 
 # Run all doc/spec checks (drift, EARS, coverage, spec-test status)
 tx spec lint
@@ -163,7 +175,7 @@ const graph = await tx.docs.graph()
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
-| `name` | `string` | Yes | Doc name |
+| `ref` | `string` | Yes | Doc reference (`doc_id`, `kind/name`, or unambiguous legacy bare name) |
 | `version` | `number` | No | Specific version to retrieve |
 
 **Example request:**
@@ -172,7 +184,7 @@ const graph = await tx.docs.graph()
 {
   "name": "tx_doc_get",
   "arguments": {
-    "name": "auth-system"
+    "ref": "doc-1a2b3c4d5e6f"
   }
 }
 ```
@@ -182,7 +194,7 @@ const graph = await tx.docs.graph()
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
 | `kind` | `string` | Yes | Doc kind (overview, prd, design, runbook, decision) |
-| `name` | `string` | Yes | Unique doc name |
+| `name` | `string` | Yes | Human slug / filename component (unique within its kind) |
 | `title` | `string` | Yes | Human-readable title |
 | `content` | `string` | Yes | Full markdown content (YAML frontmatter + prose + embedded YAML blocks) |
 
@@ -190,21 +202,21 @@ const graph = await tx.docs.graph()
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
-| `name` | `string` | Yes | Doc name to lock |
+| `ref` | `string` | Yes | Doc reference to lock |
 
 **Tool name:** `tx_doc_link`
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
-| `fromName` | `string` | Yes | Source doc name |
-| `toName` | `string` | Yes | Target doc name |
+| `fromRef` | `string` | Yes | Source doc reference |
+| `toRef` | `string` | Yes | Target doc reference |
 | `linkType` | `string` | No | Link type (auto-inferred from kinds) |
 
 **Tool name:** `tx_doc_update`
 
 | Arg | Type | Required | Description |
 |-----|------|----------|-------------|
-| `name` | `string` | Yes | Doc name to update |
+| `ref` | `string` | Yes | Doc reference to update |
 | `content` | `string` | Yes | New markdown content |
 
 
@@ -324,8 +336,9 @@ Excluded: OAuth, SSO
 ```yaml
 ears_requirements:
   - id: REQ-AUTH-001
-    kind: event_driven
-    statement: When a user submits valid credentials, the authentication service shall issue access and refresh tokens
+    kind: event-driven
+    when: a user submits valid credentials
+    statement: the authentication service shall issue access and refresh tokens
     priority: must
     rationale: core login success path
 ```
@@ -347,6 +360,36 @@ acceptance_criteria:
 - OAuth/SSO integration
 - Multi-factor authentication
 ````
+
+## Index Searchability
+
+tx builds `specs/index.md` from doc frontmatter. Three fields determine whether
+PRDs and design docs stay easy to find later:
+
+- `summary`: becomes the Description column in `specs/index.md`
+- `domain`: contributes subsystem terms to Search Keywords
+- `tags`: contributes additional Search Keywords
+
+This metadata is enforced as part of doc linting. `tx spec lint` warns when:
+
+- `summary` is missing or still templated,
+- `domain` is missing or still a placeholder,
+- `tags` are missing or only generic values.
+
+Use subsystem-specific wording so agents can find the right spec by feature
+area, domain term, or implementation concern.
+
+Example:
+
+```yaml
+summary: Transactional auth token issuance for login and refresh flows
+domain: auth
+tags:
+  - auth
+  - tokens
+  - refresh
+  - session-management
+```
 
 Use `tx spec lint` to validate EARS requirement compliance.
 

@@ -304,33 +304,31 @@ describe("doc system with markdown-first spec types", () => {
     expect(md).toContain("spec_type: design")
   })
 
-  it("index.yml includes all doc names", () => {
+  it("does not generate index.yml when docs are created", () => {
     runTx(["doc", "add", "prd", "idx-prd", "--title", "Idx PRD"], tmpDir)
     runTx(["doc", "add", "design", "idx-dd", "--title", "Idx DD"], tmpDir)
     runTx(["doc", "add", "overview", "idx-overview", "--title", "Idx Overview"], tmpDir)
 
-    // Index gets regenerated on each doc add
     const indexPath = join(tmpDir, "specs", "index.yml")
-    expect(existsSync(indexPath)).toBe(true)
-    const indexContent = readFileSync(indexPath, "utf-8")
-    expect(indexContent).toContain("idx-prd")
-    expect(indexContent).toContain("idx-dd")
-    expect(indexContent).toContain("idx-overview")
-    // Markdown-first uses prd_docs: / design_docs: sections
-    expect(indexContent).toContain("prd")
-    expect(indexContent).toContain("design")
+    expect(existsSync(indexPath)).toBe(false)
   })
 
   it("index.md includes PRD and Design tables", () => {
     runTx(["doc", "add", "prd", "md-idx-prd", "--title", "MD Idx PRD"], tmpDir)
-    runTx(["doc", "add", "design", "md-idx-dd", "--title", "MD Idx DD"], tmpDir)
+    runTx(["doc", "add", "design", "md-idx-design", "--title", "MD Idx Design"], tmpDir)
 
     const indexMdPath = join(tmpDir, "specs", "index.md")
     expect(existsSync(indexMdPath)).toBe(true)
     const indexMd = readFileSync(indexMdPath, "utf-8")
+    expect(indexMd).toContain("**Description**:")
+    expect(indexMd).toContain("**Search Keywords**:")
     expect(indexMd).toContain("Product Requirements Documents")
     expect(indexMd).toContain("Design Documents")
+    expect(indexMd).toContain("| Name | Title | Description | Search Keywords | Status |")
+    expect(indexMd).toContain("| Name | Title | Description | Search Keywords | Implements | Status |")
     expect(indexMd).toContain("md-idx-prd")
-    expect(indexMd).toContain("md-idx-dd")
+    expect(indexMd).toContain("md-idx-design")
+    expect(indexMd).toContain("Product requirements for MD Idx PRD.")
+    expect(indexMd).toContain("Technical design for MD Idx Design.")
   })
 })

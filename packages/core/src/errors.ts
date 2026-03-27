@@ -330,7 +330,7 @@ export class UnexpectedRowCountError extends Data.TaggedError("UnexpectedRowCoun
 export class EntityFetchError extends Data.TaggedError("EntityFetchError")<{
   readonly entity: string
   readonly id: string | number
-  readonly operation: "insert" | "update"
+  readonly operation: "insert" | "update" | "join-read"
 }> {
   get message() {
     return `Entity fetch failed: ${this.entity} after ${this.operation}, id=${this.id}`

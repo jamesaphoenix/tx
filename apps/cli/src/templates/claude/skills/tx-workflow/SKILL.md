@@ -41,10 +41,10 @@ tx add "Sub-task title" --parent <parent-id> --description "Details"
 
 ```bash
 # Task B can't start until Task A is done
-tx block <task-B-id> <task-A-id>
+tx dep block <task-B-id> <task-A-id>
 
 # Remove a dependency
-tx unblock <task-B-id> <task-A-id>
+tx dep unblock <task-B-id> <task-A-id>
 ```
 
 ## Recording Learnings

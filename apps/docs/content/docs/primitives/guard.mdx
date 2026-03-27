@@ -1,5 +1,5 @@
 ---
-title: tx guard
+title: tx auto guard
 description: Set task creation limits to prevent unbounded proliferation
 ---
 
@@ -7,7 +7,7 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
 
 ## Purpose
 
-`tx guard` sets limits on task creation to prevent unbounded proliferation. Guards are checked every time `tx add` creates a task.
+`tx auto guard` sets limits on task creation to prevent unbounded proliferation. Guards are checked every time `tx add` creates a task.
 
 Guards support two modes:
 - **Advisory (default)**: Tasks are created with warnings. Agents see the warning and can self-correct.
@@ -20,26 +20,26 @@ Guards support two modes:
 <Tab value="CLI">
 
 ```bash
-tx guard set [options]
-tx guard show [--json]
-tx guard clear [--scope <scope>]
+tx auto guard set [options]
+tx auto guard show [--json]
+tx auto guard clear [--scope <scope>]
 ```
 
 ```bash
 # Set global limits (advisory mode)
-tx guard set --max-pending 50 --max-children 10 --max-depth 4
+tx auto guard set --max-pending 50 --max-children 10 --max-depth 4
 
 # Enable enforcement
-tx guard set --max-pending 30 --enforce
+tx auto guard set --max-pending 30 --enforce
 
 # Scope limits to a parent task
-tx guard set --scope parent:tx-abc123 --max-children 5
+tx auto guard set --scope parent:tx-abc123 --max-children 5
 
 # Show current guards
-tx guard show
+tx auto guard show
 
 # Clear all guards
-tx guard clear
+tx auto guard clear
 ```
 
 </Tab>
@@ -74,11 +74,11 @@ await tx.guards.clear()
 
 <Tab value="MCP">
 
-**Tool name:** `tx_guard_set`
+**Tool name:** `tx_auto_guard_set`
 
 ```json
 {
-  "name": "tx_guard_set",
+  "name": "tx_auto_guard_set",
   "arguments": {
     "scope": "global",
     "maxPending": 50,
@@ -97,11 +97,11 @@ await tx.guards.clear()
 | `maxDepth` | `number` | No | Maximum hierarchy nesting depth |
 | `enforce` | `boolean` | No | true = hard block, false = advisory |
 
-**Other tools:** `tx_guard_show`, `tx_guard_clear`, `tx_guard_check`
+**Other tools:** `tx_auto_guard_show`, `tx_auto_guard_clear`, `tx_auto_guard_check`
 
 ```json
 {
-  "name": "tx_guard_check",
+  "name": "tx_auto_guard_check",
   "arguments": {
     "parentId": "tx-abc123"
   }
@@ -153,7 +153,7 @@ curl http://localhost:3456/api/guards/check
 | Advisory (default) | Tasks are created. Warning metadata is added. Stderr shows warning. |
 | Enforce | `tx add` fails with `GuardExceededError`. Task is NOT created. |
 
-**Recommended workflow:** Deploy advisory first, observe patterns with `tx reflect`, then tighten limits and enable enforcement.
+**Recommended workflow:** Deploy advisory first, observe patterns with `tx auto reflect`, then tighten limits and enable enforcement.
 
 ## Configuration
 
@@ -172,7 +172,7 @@ mode = "advisory"     # "advisory" or "enforce"
 ```bash
 #!/bin/bash
 # Set up guardrails before starting agent loop
-tx guard set --max-pending 30 --max-depth 3 --enforce
+tx auto guard set --max-pending 30 --max-depth 3 --enforce
 
 while task=$(tx ready --json --limit 1 | jq -r '.[0].id // empty'); do
   [ -z "$task" ] && break
@@ -182,8 +182,8 @@ done
 
 ## Related Commands
 
-- [`tx gate`](/docs/primitives/gate): Human approval checkpoints between phases
-- [`tx reflect`](/docs/primitives/reflect): Analyze session metrics to tune guard limits
+- [`tx auto gate`](/docs/primitives/gate): Human approval checkpoints between phases
+- [`tx auto reflect`](/docs/primitives/reflect): Analyze session metrics to tune guard limits
 - [`tx ready`](/docs/primitives/ready): Get next workable task
-- [`tx verify`](/docs/primitives/verify): Attach machine-checkable done criteria
-- [`tx label`](/docs/primitives/label): Scope the ready queue by phase
+- [`tx auto verify`](/docs/primitives/verify): Attach machine-checkable done criteria
+- [`tx auto label`](/docs/primitives/label): Scope the ready queue by phase

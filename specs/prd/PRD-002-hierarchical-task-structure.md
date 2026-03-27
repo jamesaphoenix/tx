@@ -74,8 +74,8 @@ Task: Add dark mode (tx-200)
 |----|-------------|-------------|
 | H-001 | Any task can have a `parent_id` pointing to another task | `tx add "Task" --parent=<id>` |
 | H-002 | No limit on nesting depth | N/A (architectural) |
-| H-003 | Get all children of a task (direct) | `tx children <id>` |
-| H-004 | Get all descendants (recursive subtree) | `tx tree <id>` |
+| H-003 | Get all children of a task (direct) | `tx dep children <id>` |
+| H-004 | Get all descendants (recursive subtree) | `tx dep tree <id>` |
 | H-005 | Get all ancestors of a task (path to root) | `tx path <id>` |
 | H-006 | Move task to different parent | `tx update <id> --parent=<new-parent>` |
 | H-007 | Orphan detection (parent deleted but children remain) | `tx list --orphaned` |
@@ -84,8 +84,8 @@ Task: Add dark mode (tx-200)
 
 | Query | Command | Output |
 |-------|---------|--------|
-| List direct children | `tx children <id>` | Task list |
-| Show full subtree | `tx tree <id>` | Tree visualization |
+| List direct children | `tx dep children <id>` | Task list |
+| Show full subtree | `tx dep tree <id>` | Tree visualization |
 | List root tasks | `tx list --roots` | Tasks with no parent |
 | Show ancestors | `tx path <id>` | Path from task to root |
 
@@ -125,7 +125,7 @@ tx add "Write unit tests" --parent=tx-a1b2c3 --score=600
 ### View Hierarchy
 ```bash
 # Show tree
-$ tx tree tx-a1b2c3
+$ tx dep tree tx-a1b2c3
 tx-a1b2c3: Implement JWT service [active]
 ├── tx-d4e5f6: Add token generation [done]
 ├── tx-g7h8i9: Add token validation [active]

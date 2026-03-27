@@ -1,6 +1,15 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { spawnSync } from "child_process"
-import { mkdtempSync, rmSync, symlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs"
+import {
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  chmodSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
@@ -10,6 +19,7 @@ interface Sandbox {
 
 const REPO_ROOT = resolve(__dirname, "..", "..")
 const BUN_BIN = process.execPath.includes("bun") ? process.execPath : "bun"
+const BUNDLED_SPEC_SKILLS = ["decompose-spec", "design-doc", "overview-spec", "prd", "verify-invariants"] as const
 const sandboxes: Sandbox[] = []
 
 function createSandbox(): Sandbox {
@@ -27,7 +37,7 @@ function createSandbox(): Sandbox {
 function runInit(
   sandbox: Sandbox,
   args: string[],
-  options?: { env?: NodeJS.ProcessEnv; input?: string }
+  options?: { env?: NodeJS.ProcessEnv; input?: string },
 ) {
   return spawnSync(BUN_BIN, ["apps/cli/src/cli.ts", "init", ...args], {
     cwd: sandbox.dir,
@@ -51,6 +61,16 @@ function createMockRuntime(sandbox: Sandbox, name: string): string {
   return binDir
 }
 
+function expectBundledSpecSkills(sandbox: Sandbox, target: "claude" | "codex") {
+  const root = target === "claude"
+    ? join(sandbox.dir, ".claude", "skills")
+    : join(sandbox.dir, ".codex", "skills")
+
+  for (const skillId of BUNDLED_SPEC_SKILLS) {
+    expect(existsSync(join(root, skillId, "SKILL.md"))).toBe(true)
+  }
+}
+
 afterEach(() => {
   for (const sandbox of sandboxes.splice(0, sandboxes.length)) {
     if (existsSync(sandbox.dir)) {
@@ -60,30 +80,54 @@ afterEach(() => {
 })
 
 describe("tx init onboarding edge cases", () => {
-  it("init --codex creates AGENTS.md and codex agent profiles", () => {
+  it("init --codex installs generated Codex skills and rules only", () => {
     const sandbox = createSandbox()
     const result = runInit(sandbox, ["--codex"])
+
     expect(result.status).toBe(0)
-    expect(existsSync(join(sandbox.dir, "AGENTS.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "agents", "tx-implementer.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, "AGENTS.md"))).toBe(false)
+    expect(existsSync(join(sandbox.dir, ".codex", "agents"))).toBe(false)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "manifest.json"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "skills-sync", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "rules", "default.rules"))).toBe(true)
+
+    const designDocSkill = readFileSync(
+      join(sandbox.dir, ".codex", "skills", "design-doc", "SKILL.md"),
+      "utf-8",
+    )
+    expect(designDocSkill).toContain("~/.codex/plans/")
+    expect(designDocSkill).not.toContain("~/.claude/plans/")
+    expect(designDocSkill).toContain("project instructions")
+
+    expectBundledSpecSkills(sandbox, "codex")
   })
 
-  it("init --claude creates CLAUDE.md and claude skills", () => {
+  it("init --claude installs generated Claude skills only", () => {
     const sandbox = createSandbox()
     const result = runInit(sandbox, ["--claude"])
+
     expect(result.status).toBe(0)
-    expect(existsSync(join(sandbox.dir, "CLAUDE.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-workflow", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, "CLAUDE.md"))).toBe(false)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "manifest.json"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "skills-sync", "SKILL.md"))).toBe(true)
+
+    expectBundledSpecSkills(sandbox, "claude")
   })
 
-  it("init --claude --codex creates both integrations", () => {
+  it("init --claude --codex installs both generated integrations without legacy markdown files", () => {
     const sandbox = createSandbox()
     const result = runInit(sandbox, ["--claude", "--codex"])
+
     expect(result.status).toBe(0)
-    expect(existsSync(join(sandbox.dir, "CLAUDE.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, "AGENTS.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-workflow", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "agents", "tx-implementer.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, "CLAUDE.md"))).toBe(false)
+    expect(existsSync(join(sandbox.dir, "AGENTS.md"))).toBe(false)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "skills-sync", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "skills-sync", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "rules", "default.rules"))).toBe(true)
   })
 
   it("init --watchdog scaffolds watchdog assets with runtime auto-detect", () => {
@@ -142,22 +186,17 @@ describe("tx init onboarding edge cases", () => {
     expect(existsSync(join(sandbox.dir, ".tx", "watchdog.env"))).toBe(false)
   })
 
-  it("init --codex is idempotent and does not duplicate tx section", () => {
+  it("init --codex is idempotent and reports generated skills as existing on rerun", () => {
     const sandbox = createSandbox()
     const first = runInit(sandbox, ["--codex"])
     expect(first.status).toBe(0)
-    // Verify first init wrote AGENTS.md before running second init
-    const agentsPath = join(sandbox.dir, "AGENTS.md")
-    expect(existsSync(agentsPath)).toBe(true)
-    const firstContent = readFileSync(agentsPath, "utf-8")
-    expect(firstContent).toContain("tx")
 
     const second = runInit(sandbox, ["--codex"])
     expect(second.status).toBe(0)
 
-    const agents = readFileSync(agentsPath, "utf-8")
-    const headingMatches = agents.match(/# tx [—-] Headless, Local Infra for AI Agents/g) ?? []
-    expect(headingMatches).toHaveLength(1)
+    const output = `${second.stdout}\n${second.stderr}`
+    expect(output).toContain(".codex/skills/manifest.json (exists)")
+    expect(output).toContain(".codex/rules/default.rules (exists)")
   })
 
   it("fails with actionable error when explicit watchdog runtime is missing", () => {
@@ -178,17 +217,6 @@ describe("tx init onboarding edge cases", () => {
     const result = runInit(sandbox, ["--watchdog-runtime", "auto", "--codex"])
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain("--watchdog-runtime requires --watchdog")
-  })
-
-  it("does not duplicate AGENTS tx section when heading uses hyphen variant", () => {
-    const sandbox = createSandbox()
-    writeFileSync(join(sandbox.dir, "AGENTS.md"), "# tx - Headless, Local Infra for AI Agents\n\ncustom\n")
-
-    const result = runInit(sandbox, ["--codex"])
-    expect(result.status).toBe(0)
-
-    const agents = readFileSync(join(sandbox.dir, "AGENTS.md"), "utf-8")
-    expect(agents.match(/Headless, Local Infra for AI Agents/g)?.length ?? 0).toBe(1)
   })
 
   it("fails with a clear error when .codex path collides with a file", () => {

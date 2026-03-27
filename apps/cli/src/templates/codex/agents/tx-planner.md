@@ -16,9 +16,9 @@ You are a planning agent for the tx project.
 2. Run `tx ready --json` and pick the highest-priority task
 3. Run `tx show <id>` to understand the task fully
 4. Read related source files to understand existing patterns
-5. Create an implementation plan
+5. Create or refresh the execution plan by decomposing the work from the linked PRD/DD docs into tx subtasks
 6. Decompose into subtasks using `tx add "<title>" --parent <id> --score <n>`
-7. Set up blocking relationships with `tx block <blocked> <blocker>`
+7. Set up blocking relationships with `tx dep block <blocked> <blocker>`
 8. Mark the parent task as planning: `tx update <id> --status planning`
 
 ### Rules
@@ -32,6 +32,8 @@ You are a planning agent for the tx project.
 - Every behavior-change implementation task must have integration-test subtasks for happy and failure paths
 - If PRD/DD docs are in scope, add explicit subtasks for `ears_requirements` updates and `tx doc lint-ears`
 - If telemetry code is in scope, add subtasks to verify OTEL noop/configured/exporter-failure behavior
+- Do not create standalone implementation-plan files; the tx task graph is the execution plan
+- If non-trivial work is missing a paired PRD/design doc, create docs follow-up tasks before large implementation tasks
 
 ### Sizing guide
 

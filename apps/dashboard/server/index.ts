@@ -10,6 +10,7 @@ import { parse as parseYaml } from "yaml"
 import {
   applyMigrations,
   computeDocHash,
+  deriveDocStableId,
   escapeLikePattern,
   isPathWithin,
   isValidDocKind,
@@ -93,6 +94,7 @@ const DEFAULT_TASK_LABELS = [
   "Testing",
   "Documentation",
 ] as const
+const DOC_STABLE_ID_PATTERN = /^doc-[a-f0-9]{12}$/
 const LEGACY_LABEL_RENAMES = [
   { from: "DevOFps", to: "DevOps" },
 ] as const
@@ -543,6 +545,7 @@ interface AssignLabelPayload {
 
 interface DocRow {
   id: number
+  doc_id: string | null
   hash: string
   kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
   name: string
@@ -569,6 +572,7 @@ interface TaskDocLinkRow {
 
 interface DocResponse {
   id: number
+  docId: string
   hash: string
   kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
   name: string
@@ -1266,6 +1270,73 @@ function getNextUpcomingCycle(db: Database): CycleRow | null {
   return row ?? null
 }
 
+function getLatestCycleWindow(db: Database): { end_date: string } | null {
+  const row = db.prepare(`
+    SELECT end_date
+    FROM cycles
+    ORDER BY start_date DESC, created_at DESC
+    LIMIT 1
+  `).get() as { end_date: string } | undefined
+
+  return row ?? null
+}
+
+function computeCycleWindowAfter(endDate: string, config: DashboardCycleSettings): { startDate: string; endDate: string } {
+  const parsed = parseDateOnly(endDate)
+  if (!parsed) {
+    return computeDefaultCycleWindow(config)
+  }
+
+  const startDate = formatDateOnly(startOfUtcDay(parsed))
+  const nextEndDate = formatDateOnly(addUtcDays(parsed, config.cycleLengthDays))
+  return { startDate, endDate: nextEndDate }
+}
+
+function getOrCreateNextCycle(db: Database, config: DashboardCycleSettings): CycleRow {
+  const existingUpcoming = getNextUpcomingCycle(db)
+  if (existingUpcoming) {
+    return existingUpcoming
+  }
+
+  const latestCycle = getLatestCycleWindow(db)
+  const window = latestCycle?.end_date
+    ? computeCycleWindowAfter(latestCycle.end_date, config)
+    : computeDefaultCycleWindow(config)
+  const status: CycleStatus = hasCurrentCycle(db) ? "upcoming" : "current"
+
+  return insertCycle(db, {
+    startDate: window.startDate,
+    endDate: window.endDate,
+    status,
+  })
+}
+
+function hasActiveCycleAssignment(db: Database, taskId: string): boolean {
+  const row = db.prepare(`
+    SELECT 1
+    FROM cycle_tasks ct
+    JOIN cycles c ON c.id = ct.cycle_id
+    WHERE ct.task_id = ?
+      AND c.status IN ('current', 'upcoming')
+    LIMIT 1
+  `).get(taskId) as { 1: number } | undefined
+
+  return Boolean(row)
+}
+
+function maybeAddTaskToNextCycle(db: Database, taskId: string, taskStatus: string): void {
+  if (taskStatus === "backlog" || hasActiveCycleAssignment(db, taskId)) {
+    return
+  }
+
+  const config = readDashboardCycleSettings(process.cwd())
+  const cycle = getOrCreateNextCycle(db, config)
+  db.prepare(`
+    INSERT OR IGNORE INTO cycle_tasks (cycle_id, task_id)
+    VALUES (?, ?)
+  `).run(cycle.id, taskId)
+}
+
 function nextCycleName(db: Database): string {
   const row = db.prepare("SELECT COUNT(*) as count FROM cycles").get() as { count: number }
   return `Cycle ${row.count + 1}`
@@ -1324,6 +1395,7 @@ function shouldAutoCreateCurrentCycle(autoCreateQueryValue: string | undefined):
 function serializeDoc(doc: DocRow): DocResponse {
   return {
     id: doc.id,
+    docId: doc.doc_id ?? deriveDocStableId(`${doc.name}:${doc.version}`),
     hash: doc.hash,
     kind: doc.kind,
     name: doc.name,
@@ -1335,6 +1407,81 @@ function serializeDoc(doc: DocRow): DocResponse {
     createdAt: doc.created_at,
     lockedAt: doc.locked_at,
   }
+}
+
+function materializeDocId(doc: Pick<DocRow, "doc_id" | "name" | "version">): string {
+  return doc.doc_id ?? deriveDocStableId(`${doc.name}:${doc.version}`)
+}
+
+function parseDocVersionQuery(c: Context): number | undefined {
+  const raw = c.req.query("version")
+  if (!raw) return undefined
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+}
+
+function parseKindScopedDocRef(ref: string): { kind: string; name: string } | null {
+  const normalized = ref.replace(/^specs\//, "").replace(/\.md$/i, "")
+  const slashIndex = normalized.indexOf("/")
+  if (slashIndex <= 0) return null
+  const kind = normalized.slice(0, slashIndex)
+  const name = normalized.slice(slashIndex + 1)
+  if (!kind || !name || !isValidDocKind(kind)) return null
+  return { kind, name }
+}
+
+function resolveDocRowByRef(db: Database, ref: string, version?: number): { row?: DocRow; error?: JsonResponse } {
+  const selectBase = `
+    SELECT id, doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+    FROM docs
+  `
+
+  if (DOC_STABLE_ID_PATTERN.test(ref)) {
+    const query = version
+      ? `${selectBase} WHERE doc_id = ? AND version = ? LIMIT 1`
+      : `${selectBase} WHERE doc_id = ? ORDER BY version DESC LIMIT 1`
+    const row = (version
+      ? db.prepare(query).get(ref, version)
+      : db.prepare(query).get(ref)) as DocRow | undefined
+    if (row) return { row }
+
+    const legacyCandidates = (version
+      ? db.prepare(`${selectBase} WHERE version = ?`).all(version)
+      : db.prepare(`${selectBase} ORDER BY version DESC`).all()) as DocRow[]
+    const fallback = legacyCandidates.find((candidate) => materializeDocId(candidate) === ref)
+    return fallback ? { row: fallback } : {}
+  }
+
+  const scoped = parseKindScopedDocRef(ref)
+  if (scoped) {
+    const query = version
+      ? `${selectBase} WHERE kind = ? AND name = ? AND version = ? LIMIT 1`
+      : `${selectBase} WHERE kind = ? AND name = ? ORDER BY version DESC LIMIT 1`
+    const row = (version
+      ? db.prepare(query).get(scoped.kind, scoped.name, version)
+      : db.prepare(query).get(scoped.kind, scoped.name)) as DocRow | undefined
+    return row ? { row } : {}
+  }
+
+  const rows = (version
+    ? db.prepare(`${selectBase} WHERE name = ? AND version = ? ORDER BY kind ASC LIMIT 10`).all(ref, version)
+    : db.prepare(`${selectBase} WHERE name = ? ORDER BY version DESC, kind ASC LIMIT 10`).all(ref)) as DocRow[]
+  if (rows.length === 0) return {}
+
+  const distinctKinds = [...new Set(rows.map((row) => row.kind))]
+  if (distinctKinds.length > 1) {
+    return {
+      error: {
+        status: 409,
+        body: JSON.stringify({
+          error: `Doc reference '${ref}' is ambiguous across kinds (${distinctKinds.join(", ")}). Use docId instead.`,
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+    }
+  }
+
+  return { row: rows[0] }
 }
 
 function extractYamlScalar(yamlContent: string, key: string): string | null {
@@ -2206,6 +2353,10 @@ app.post("/api/tasks", async (c) => {
       JSON.stringify(metadata),
     )
 
+    if (assignedBy !== "dashboard:cycle-composer") {
+      maybeAddTaskToNextCycle(db, id, status)
+    }
+
     const task = getTaskWithDeps(db, id)
     if (!task) {
       return c.json({ error: "Failed to load created task" }, 500)
@@ -2335,6 +2486,8 @@ app.patch("/api/tasks/:id", async (c) => {
       JSON.stringify(mergedMetadata),
       id,
     )
+
+    maybeAddTaskToNextCycle(db, id, nextStatus)
 
     const task = getTaskWithDeps(db, id)
     if (!task) {
@@ -2769,7 +2922,7 @@ app.get("/api/docs", (c) => {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
     const rows = db.prepare(`
-      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+      SELECT id, doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
       FROM docs
       ${whereClause}
       ORDER BY kind, name, version
@@ -2790,10 +2943,14 @@ app.get("/api/docs/graph", (c) => {
     }
 
     const docs = db.prepare(`
-      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+      SELECT id, doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
       FROM docs
       ORDER BY kind, name, version
     `).all() as DocRow[]
+    const nameCounts = new Map<string, number>()
+    for (const doc of docs) {
+      nameCounts.set(doc.name, (nameCounts.get(doc.name) ?? 0) + 1)
+    }
 
     const nodes: Array<{
       id: string
@@ -2802,7 +2959,7 @@ app.get("/api/docs/graph", (c) => {
       status?: "changing" | "locked"
     }> = docs.map((doc) => ({
       id: `doc:${doc.id}`,
-      label: doc.name,
+      label: (nameCounts.get(doc.name) ?? 0) > 1 ? `${doc.kind}/${doc.name}` : doc.name,
       kind: doc.kind,
       status: doc.status,
     }))
@@ -2887,25 +3044,24 @@ app.get("/api/docs/health", (c) => {
     }
 
     const docs = db.prepare(`
-      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
+      SELECT id, doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
       FROM docs
       ORDER BY kind, name, version
     `).all() as DocRow[]
 
-    const issues: Array<{ docName: string; kind: string; problems: string[] }> = []
+    const issues: Array<{ docId: string; docName: string; kind: string; problems: string[] }> = []
     const unhealthyDocs = new Set<string>()
     const docsRoot = getDocsRootPath()
 
-    const docNodeById = new Map<number, { name: string; kind: string }>()
+    const docNodeById = new Map<number, { docId: string; name: string; kind: string }>()
     for (const doc of docs) {
-      docNodeById.set(doc.id, { name: doc.name, kind: doc.kind })
+      docNodeById.set(doc.id, { docId: materializeDocId(doc), name: doc.name, kind: doc.kind })
     }
 
     const incomingDocLinkCount = new Map<string, number>()
     const prdsLinkedToDesign = new Set<string>()
-    const designsLinkedFromPrd = new Set<string>()
     for (const doc of docs) {
-      incomingDocLinkCount.set(doc.name, 0)
+      incomingDocLinkCount.set(materializeDocId(doc), 0)
     }
 
     const hasDocLinks = hasDocLinksSchema(db)
@@ -2922,13 +3078,12 @@ app.get("/api/docs/health", (c) => {
         if (!source || !target) continue
 
         incomingDocLinkCount.set(
-          target.name,
-          (incomingDocLinkCount.get(target.name) ?? 0) + 1
+          target.docId,
+          (incomingDocLinkCount.get(target.docId) ?? 0) + 1
         )
 
         if (edge.link_type === "prd_to_design" && source.kind === "prd" && (target.kind === "design" || target.kind === "system_design")) {
-          prdsLinkedToDesign.add(source.name)
-          designsLinkedFromPrd.add(target.name)
+          prdsLinkedToDesign.add(source.docId)
         }
       }
     }
@@ -2940,6 +3095,7 @@ app.get("/api/docs/health", (c) => {
 
       if (!mdPath || !existsSync(mdPath)) {
         issues.push({
+          docId: materializeDocId(doc),
           docName: doc.name,
           kind: "hash_drift",
           problems: [`Markdown file missing on disk: ${mdRelPath}`],
@@ -2949,6 +3105,7 @@ app.get("/api/docs/health", (c) => {
         const currentHash = computeDocHash(content)
         if (currentHash !== doc.hash) {
           issues.push({
+            docId: materializeDocId(doc),
             docName: doc.name,
             kind: "hash_drift",
             problems: [
@@ -2962,6 +3119,7 @@ app.get("/api/docs/health", (c) => {
         const parsedResult = parseMdDocSync(content)
         if (parsedResult._tag === "Left") {
           issues.push({
+            docId: materializeDocId(doc),
             docName: doc.name,
             kind: "parse",
             problems: [formatMarkdownParseProblem(parsedResult.left)],
@@ -2970,6 +3128,7 @@ app.get("/api/docs/health", (c) => {
           const problems = findPlaceholderProblems(doc.kind, parsedResult.right)
           if (problems.length > 0) {
             issues.push({
+              docId: materializeDocId(doc),
               docName: doc.name,
               kind: "placeholder",
               problems,
@@ -2983,16 +3142,18 @@ app.get("/api/docs/health", (c) => {
         // Only design docs should warn about missing incoming links.
         // PRDs, overviews, system_design, requirements, runbooks, decisions are root-level.
         const isDesignKind = doc.kind === "design" || doc.kind === "system_design"
-        if (isDesignKind && (incomingDocLinkCount.get(doc.name) ?? 0) === 0) {
+        if (isDesignKind && (incomingDocLinkCount.get(materializeDocId(doc)) ?? 0) === 0) {
           issues.push({
+            docId: materializeDocId(doc),
             docName: doc.name,
             kind: "orphaned",
             problems: ["Design doc has no incoming links — expected a 'prd_to_design' link from a PRD."],
           })
         }
 
-        if (doc.kind === "prd" && !prdsLinkedToDesign.has(doc.name)) {
+        if (doc.kind === "prd" && !prdsLinkedToDesign.has(materializeDocId(doc))) {
           issues.push({
+            docId: materializeDocId(doc),
             docName: doc.name,
             kind: "cross_link",
             problems: ["PRD has no outgoing 'prd_to_design' link to a design doc."],
@@ -3002,7 +3163,7 @@ app.get("/api/docs/health", (c) => {
     }
 
     for (const issue of issues) {
-      unhealthyDocs.add(issue.docName)
+      unhealthyDocs.add(issue.docId)
     }
 
     return c.json({
@@ -3092,6 +3253,119 @@ app.post("/api/docs/render", async (c) => {
   }
 })
 
+// GET /api/docs/by-id/:docId - fetch latest or specific version by stable doc_id
+app.get("/api/docs/by-id/:docId", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+    }
+
+    const docId = c.req.param("docId")
+    const version = parseDocVersionQuery(c)
+    const resolved = resolveDocRowByRef(db, docId, version)
+    if (resolved.error) return resolved.error
+    if (!resolved.row) {
+      return c.json({ error: "Doc not found" }, 404)
+    }
+
+    return c.json(serializeDoc(resolved.row))
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// GET /api/docs/by-id/:docId/source - fetch source for latest or specific version by stable doc_id
+app.get("/api/docs/by-id/:docId/source", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+    }
+
+    const docId = c.req.param("docId")
+    const version = parseDocVersionQuery(c)
+    const resolved = resolveDocRowByRef(db, docId, version)
+    if (resolved.error) return resolved.error
+    if (!resolved.row) {
+      return c.json({ error: "Doc not found" }, 404)
+    }
+
+    const row = resolved.row
+    const docsRoot = getDocsRootPath()
+    const fp = normalizeDocFilePath(row.file_path)
+    const isMdFile = /\.md$/i.test(fp)
+
+    if (isMdFile) {
+      const mdPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
+      const content = mdPath && existsSync(mdPath)
+        ? readFileSync(mdPath, "utf-8")
+        : null
+      return c.json({
+        docId: materializeDocId(row),
+        name: row.name,
+        version: row.version,
+        yamlContent: null,
+        renderedContent: content ? stripFrontmatter(content) : null,
+        filePath: fp,
+      })
+    }
+
+    const yamlPath = resolvePathWithin(docsRoot, fp, { useRealpath: true })
+    if (!yamlPath) {
+      return c.json({ error: "Invalid doc source path" }, 400)
+    }
+    const mdRelativePath = fp.replace(/\.yml$/i, ".md")
+    const mdPath = resolvePathWithin(docsRoot, mdRelativePath, { useRealpath: true })
+
+    const yamlContent = existsSync(yamlPath) ? readFileSync(yamlPath, "utf-8") : null
+    const renderedContent = yamlContent
+      ? renderMarkdownFromYaml(yamlContent, fp)
+      : mdPath && existsSync(mdPath)
+        ? stripFrontmatter(readFileSync(mdPath, "utf-8"))
+        : null
+
+    return c.json({
+      docId: materializeDocId(row),
+      name: row.name,
+      version: row.version,
+      yamlContent,
+      renderedContent,
+      filePath: fp,
+    })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// DELETE /api/docs/by-id/:docId - delete latest or specific version by stable doc_id
+app.delete("/api/docs/by-id/:docId", (c) => {
+  try {
+    const db = getDb()
+    if (!hasDocsSchema(db)) {
+      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+    }
+
+    const docId = c.req.param("docId")
+    const version = parseDocVersionQuery(c)
+    const resolved = resolveDocRowByRef(db, docId, version)
+    if (resolved.error) return resolved.error
+    if (!resolved.row) {
+      return c.json({ error: "Doc not found" }, 404)
+    }
+
+    const row = resolved.row
+    if (row.status === "locked") {
+      return c.json({ error: "Cannot delete a locked doc version" }, 409)
+    }
+
+    db.prepare("DELETE FROM docs WHERE id = ?").run(row.id)
+    return c.json({ success: true, docId: materializeDocId(row), name: row.name, version: row.version })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
 // GET /api/docs/:name - fetch latest version of a doc by name
 app.get("/api/docs/:name", (c) => {
   try {
@@ -3101,18 +3375,13 @@ app.get("/api/docs/:name", (c) => {
     }
 
     const name = c.req.param("name")
-    const row = db.prepare(`
-      SELECT id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, locked_at
-      FROM docs
-      WHERE name = ?
-      ORDER BY version DESC
-      LIMIT 1
-    `).get(name) as DocRow | undefined
-
-    if (!row) {
+    const version = parseDocVersionQuery(c)
+    const resolved = resolveDocRowByRef(db, name, version)
+    if (resolved.error) return resolved.error
+    if (!resolved.row) {
       return c.json({ error: "Doc not found" }, 404)
     }
-    return c.json(serializeDoc(row))
+    return c.json(serializeDoc(resolved.row))
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -3127,20 +3396,15 @@ app.get("/api/docs/:name/source", (c) => {
     }
 
     const name = c.req.param("name")
-    const row = db.prepare(`
-      SELECT file_path
-      FROM docs
-      WHERE name = ?
-      ORDER BY version DESC
-      LIMIT 1
-    `).get(name) as { file_path: string } | undefined
-
-    if (!row) {
+    const version = parseDocVersionQuery(c)
+    const resolved = resolveDocRowByRef(db, name, version)
+    if (resolved.error) return resolved.error
+    if (!resolved.row) {
       return c.json({ error: "Doc not found" }, 404)
     }
 
     const docsRoot = getDocsRootPath()
-    const fp = normalizeDocFilePath(row.file_path)
+    const fp = normalizeDocFilePath(resolved.row.file_path)
     const isMdFile = /\.md$/i.test(fp)
 
     if (isMdFile) {
@@ -3149,7 +3413,7 @@ app.get("/api/docs/:name/source", (c) => {
       const renderedContent = mdPath && existsSync(mdPath)
         ? stripFrontmatter(readFileSync(mdPath, "utf-8"))
         : null
-      return c.json({ name, yamlContent: null, renderedContent, filePath: fp })
+      return c.json({ docId: materializeDocId(resolved.row), name: resolved.row.name, version: resolved.row.version, yamlContent: null, renderedContent, filePath: fp })
     }
 
     // Legacy YAML doc
@@ -3168,7 +3432,9 @@ app.get("/api/docs/:name/source", (c) => {
         : null
 
     return c.json({
-      name,
+      docId: materializeDocId(resolved.row),
+      name: resolved.row.name,
+      version: resolved.row.version,
       yamlContent,
       renderedContent,
       filePath: fp,
@@ -3187,23 +3453,19 @@ app.delete("/api/docs/:name", (c) => {
     }
 
     const name = c.req.param("name")
-    const row = db.prepare(`
-      SELECT id, status
-      FROM docs
-      WHERE name = ?
-      ORDER BY version DESC
-      LIMIT 1
-    `).get(name) as { id: number; status: "changing" | "locked" } | undefined
-
-    if (!row) {
+    const version = parseDocVersionQuery(c)
+    const resolved = resolveDocRowByRef(db, name, version)
+    if (resolved.error) return resolved.error
+    if (!resolved.row) {
       return c.json({ error: "Doc not found" }, 404)
     }
+    const row = resolved.row
     if (row.status === "locked") {
       return c.json({ error: "Cannot delete a locked doc version" }, 409)
     }
 
     db.prepare("DELETE FROM docs WHERE id = ?").run(row.id)
-    return c.json({ success: true, name })
+    return c.json({ success: true, docId: materializeDocId(row), name: row.name, version: row.version })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

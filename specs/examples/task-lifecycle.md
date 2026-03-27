@@ -75,7 +75,7 @@ tx add "Implement login endpoint" --parent tx-parent01 --score 800
 tx add "Add session management" --parent tx-parent01 --score 600
 
 # View the hierarchy
-tx tree tx-parent01
+tx dep tree tx-parent01
 
 # Complete subtasks one by one
 tx done tx-subtask1

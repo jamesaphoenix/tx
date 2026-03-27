@@ -21,6 +21,7 @@ import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 
 interface SerializedDoc {
   id: number
+  docId: string
   hash: string
   kind: DocKind
   name: string
@@ -47,6 +48,7 @@ interface SerializedDocLink {
  */
 export const serializeDoc = (doc: Doc): SerializedDoc => ({
   id: doc.id,
+  docId: doc.docId,
   hash: doc.hash,
   kind: doc.kind,
   name: doc.name,
@@ -101,18 +103,18 @@ const handleDocList = async (args: { kind?: string; status?: string; limit?: num
   }
 }
 
-const handleDocGet = async (args: { name: string; version?: number }): Promise<McpToolResult> => {
+const handleDocGet = async (args: { ref: string; version?: number }): Promise<McpToolResult> => {
   try {
     const doc = await runEffect(
       Effect.gen(function* () {
         const docService = yield* DocService
-        return yield* docService.get(args.name, args.version)
+        return yield* docService.get(args.ref, args.version)
       })
     )
     const serialized = serializeDoc(doc)
     return {
       content: [
-        { type: "text", text: `Doc: ${doc.name} (v${doc.version}, ${doc.status})` },
+        { type: "text", text: `Doc: ${doc.name} [${doc.docId}] (v${doc.version}, ${doc.status})` },
         { type: "text", text: JSON.stringify(serialized) }
       ],
       isError: false
@@ -148,12 +150,12 @@ const handleDocCreate = async (args: { kind: string; name: string; title: string
   }
 }
 
-const handleDocUpdate = async (args: { name: string; content: string }): Promise<McpToolResult> => {
+const handleDocUpdate = async (args: { ref: string; content: string }): Promise<McpToolResult> => {
   try {
     const doc = await runEffect(
       Effect.gen(function* () {
         const docService = yield* DocService
-        return yield* docService.update(args.name, args.content)
+        return yield* docService.update(args.ref, args.content)
       })
     )
     const serialized = serializeDoc(doc)
@@ -169,12 +171,12 @@ const handleDocUpdate = async (args: { name: string; content: string }): Promise
   }
 }
 
-const handleDocLock = async (args: { name: string }): Promise<McpToolResult> => {
+const handleDocLock = async (args: { ref: string }): Promise<McpToolResult> => {
   try {
     const doc = await runEffect(
       Effect.gen(function* () {
         const docService = yield* DocService
-        return yield* docService.lock(args.name)
+        return yield* docService.lock(args.ref)
       })
     )
     const serialized = serializeDoc(doc)
@@ -190,14 +192,14 @@ const handleDocLock = async (args: { name: string }): Promise<McpToolResult> => 
   }
 }
 
-const handleDocLink = async (args: { fromName: string; toName: string; linkType?: string }): Promise<McpToolResult> => {
+const handleDocLink = async (args: { fromRef: string; toRef: string; linkType?: string }): Promise<McpToolResult> => {
   try {
     const link = await runEffect(
       Effect.gen(function* () {
         const docService = yield* DocService
         return yield* docService.linkDocs(
-          args.fromName,
-          args.toName,
+          args.fromRef,
+          args.toRef,
           args.linkType ? assertDocLinkType(args.linkType) : undefined
         )
       })
@@ -205,7 +207,7 @@ const handleDocLink = async (args: { fromName: string; toName: string; linkType?
     const serialized = serializeDocLink(link)
     return {
       content: [
-        { type: "text", text: `Linked: ${args.fromName} -> ${args.toName} (${link.linkType})` },
+        { type: "text", text: `Linked: ${args.fromRef} -> ${args.toRef} (${link.linkType})` },
         { type: "text", text: JSON.stringify(serialized) }
       ],
       isError: false
@@ -215,12 +217,12 @@ const handleDocLink = async (args: { fromName: string; toName: string; linkType?
   }
 }
 
-const handleDocRender = async (args: { name?: string }): Promise<McpToolResult> => {
+const handleDocRender = async (args: { ref?: string }): Promise<McpToolResult> => {
   try {
     const rendered = await runEffect(
       Effect.gen(function* () {
         const docService = yield* DocService
-        return yield* docService.render(args.name)
+        return yield* docService.render(args.ref)
       })
     )
     return {
@@ -255,12 +257,12 @@ export const registerDocTools = (server: McpServer): void => {
     handleDocList
   )
 
-  // tx_doc_get - Get a doc by name
+  // tx_doc_get - Get a doc by ref
   registerEffectTool(server,
     "tx_doc_get",
-    "Get detailed information about a doc by name, optionally at a specific version",
+    "Get detailed information about a doc by ref (doc_id, kind/name, or legacy bare name when unambiguous), optionally at a specific version",
     {
-      name: z.string().describe("Doc name (e.g. 'PRD-001-feature')"),
+      ref: z.string().describe("Doc ref (preferred: doc_id, e.g. 'doc-1a2b3c4d5e6f'; also accepts 'prd/feature' or an unambiguous legacy bare name)"),
       version: z.number().int().positive().optional().describe("Specific version to retrieve (default: latest)")
     },
     handleDocGet
@@ -272,7 +274,7 @@ export const registerDocTools = (server: McpServer): void => {
     "Create a new doc with markdown content (YAML frontmatter + prose sections). Writes .md to specs/ and stores metadata in DB.",
     {
       kind: z.enum(DOC_KINDS).describe(`Doc kind: ${DOC_KINDS.join(", ")}`),
-      name: z.string().max(200).describe("Unique doc name (alphanumeric with dashes/dots, e.g. 'PRD-001-feature')"),
+      name: z.string().max(200).describe("Human slug / filename component (unique only within its kind)"),
       title: z.string().max(500).describe("Human-readable title"),
       content: z.string().max(100000).describe("Full markdown content for the doc (YAML frontmatter + prose sections + embedded YAML blocks)")
     },
@@ -284,7 +286,7 @@ export const registerDocTools = (server: McpServer): void => {
     "tx_doc_update",
     "Update a doc's markdown content. Fails if the doc is locked.",
     {
-      name: z.string().describe("Doc name to update"),
+      ref: z.string().describe("Doc ref to update (preferred: doc_id)"),
       content: z.string().max(100000).describe("New markdown content for the doc (YAML frontmatter + prose sections + embedded YAML blocks)")
     },
     handleDocUpdate
@@ -295,7 +297,7 @@ export const registerDocTools = (server: McpServer): void => {
     "tx_doc_lock",
     "Lock a doc to make it immutable. Locked docs cannot be updated.",
     {
-      name: z.string().describe("Doc name to lock")
+      ref: z.string().describe("Doc ref to lock (preferred: doc_id)")
     },
     handleDocLock
   )
@@ -305,8 +307,8 @@ export const registerDocTools = (server: McpServer): void => {
     "tx_doc_link",
     "Create a directed link between two docs. Link type is auto-inferred from doc kinds if not provided.",
     {
-      fromName: z.string().describe("Source doc name"),
-      toName: z.string().describe("Target doc name"),
+      fromRef: z.string().describe("Source doc ref (preferred: doc_id)"),
+      toRef: z.string().describe("Target doc ref (preferred: doc_id)"),
       linkType: z.enum(DOC_LINK_TYPES).optional().describe(`Link type: ${DOC_LINK_TYPES.join(", ")} (auto-inferred if omitted)`)
     },
     handleDocLink
@@ -317,7 +319,7 @@ export const registerDocTools = (server: McpServer): void => {
     "tx_doc_render",
     "Validate doc markdown files and regenerate the index. Validates a single doc if name is provided, otherwise validates all docs.",
     {
-      name: z.string().optional().describe("Doc name to validate (omit to validate all)")
+      ref: z.string().optional().describe("Doc ref to validate (omit to validate all)")
     },
     handleDocRender
   )

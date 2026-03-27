@@ -36,6 +36,8 @@ import {
   FciResultSchema,
   BatchRunInputSchema,
   DecisionSerializedSchema,
+  DecomposeRequestSchema,
+  DecomposeResultSerializedSchema,
 } from "@jamesaphoenix/tx-types"
 
 // =============================================================================
@@ -989,6 +991,7 @@ const DocNameParam = HttpApiSchema.param("name", Schema.String.pipe(Schema.minLe
 
 const DocSerializedSchema = Schema.Struct({
   id: Schema.Number.pipe(Schema.int()),
+  docId: Schema.String,
   hash: Schema.String,
   kind: Schema.Literal(...DOC_KINDS),
   name: Schema.String,
@@ -1045,7 +1048,9 @@ const RenderDocsResponse = Schema.Struct({
 })
 
 const DocSourceResponse = Schema.Struct({
+  docId: Schema.String,
   name: Schema.String,
+  version: Schema.Number.pipe(Schema.int()),
   filePath: Schema.String,
   content: Schema.NullOr(Schema.String),
   renderedContent: Schema.NullOr(Schema.String),
@@ -1057,6 +1062,7 @@ const DocGraphResponse = Schema.Struct({
 })
 
 const DocHealthIssueResponse = Schema.Struct({
+  docId: Schema.String,
   docName: Schema.String,
   kind: Schema.String,
   problems: Schema.Array(Schema.String),
@@ -1070,7 +1076,9 @@ const DocHealthResponse = Schema.Struct({
 
 const DocDeleteResponse = Schema.Struct({
   success: Schema.Boolean,
+  docId: Schema.String,
   name: Schema.String,
+  version: Schema.Number.pipe(Schema.int()),
 })
 
 export const DocsGroup = HttpApiGroup.make("docs")
@@ -1883,6 +1891,17 @@ export const DecisionsGroup = HttpApiGroup.make("decisions")
   )
 
 // =============================================================================
+// DECOMPOSE GROUP
+// =============================================================================
+
+export const DecomposeGroup = HttpApiGroup.make("decompose")
+  .add(
+    HttpApiEndpoint.post("runDecompose", "/api/decompose")
+      .setPayload(DecomposeRequestSchema)
+      .addSuccess(DecomposeResultSerializedSchema)
+  )
+
+// =============================================================================
 // TOP-LEVEL API
 // =============================================================================
 
@@ -1908,4 +1927,5 @@ export class TxApi extends HttpApi.make("tx")
   .add(GuardsGroup)
   .add(VerifyGroup)
   .add(ReflectGroup)
-  .add(DecisionsGroup) {}
+  .add(DecisionsGroup)
+  .add(DecomposeGroup) {}

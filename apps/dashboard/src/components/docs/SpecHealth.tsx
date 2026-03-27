@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { fetchers } from "../../api/client"
 
 interface SpecHealthProps {
-  onSelectDoc: (name: string) => void
+  onSelectDoc: (docId: string) => void
 }
 
 type PanelTone = "healthy" | "warning" | "critical"
@@ -47,20 +47,21 @@ const formatKind = (kind: string): string => {
 }
 
 interface SpecIssue {
+  docId: string
   docName: string
   kind: string
   problems: string[]
 }
 
-/** Group issues by docName for a cleaner display. */
-function groupByDoc(issues: SpecIssue[]): Map<string, SpecIssue[]> {
-  const map = new Map<string, SpecIssue[]>()
+/** Group issues by docId for a cleaner display. */
+function groupByDoc(issues: SpecIssue[]): Map<string, { docName: string; issues: SpecIssue[] }> {
+  const map = new Map<string, { docName: string; issues: SpecIssue[] }>()
   for (const issue of issues) {
-    const existing = map.get(issue.docName)
+    const existing = map.get(issue.docId)
     if (existing) {
-      existing.push(issue)
+      existing.issues.push(issue)
     } else {
-      map.set(issue.docName, [issue])
+      map.set(issue.docId, { docName: issue.docName, issues: [issue] })
     }
   }
   return map
@@ -185,29 +186,29 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
 
           {expanded && (
             <div className="mt-2 max-h-72 space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:#4b556388_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-600/70 [&::-webkit-scrollbar-thumb:hover]:bg-gray-500/70 [&::-webkit-scrollbar-track]:bg-transparent">
-              {Array.from(grouped.entries()).map(([docName, docIssues]) => (
+              {Array.from(grouped.entries()).map(([docId, group]) => (
                 <div
-                  key={docName}
+                  key={docId}
                   className="rounded-lg border border-gray-700/60 bg-gray-900/70 overflow-hidden"
                 >
                   {/* Doc header */}
                   <button
-                    onClick={() => onSelectDoc(docName)}
+                    onClick={() => onSelectDoc(docId)}
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800/60 transition text-left"
                   >
                     <span className="text-xs font-medium text-blue-300 hover:text-blue-200 truncate">
-                      {docName}
+                      {group.docName}
                     </span>
                     <span className="ml-auto text-[10px] text-gray-500">
-                      {docIssues.length} {docIssues.length === 1 ? "issue" : "issues"}
+                      {group.issues.length} {group.issues.length === 1 ? "issue" : "issues"}
                     </span>
                   </button>
 
                   {/* Issues for this doc */}
                   <div className="border-t border-gray-800/80 px-3 py-1.5 space-y-1.5">
-                    {docIssues.map((issue, issueIdx) =>
+                    {group.issues.map((issue, issueIdx) =>
                       issue.problems.map((problem, problemIdx) => {
-                        const problemKey = `${docName}:${issue.kind}:${issueIdx}:${problemIdx}`
+                        const problemKey = `${docId}:${issue.kind}:${issueIdx}:${problemIdx}`
                         const isCopied = copiedProblemKey === problemKey
                         const kindStyle = ISSUE_KIND_STYLES[issue.kind] ?? { bg: "bg-gray-500/15", text: "text-gray-400" }
                         return (
@@ -224,7 +225,7 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
                             </span>
                             {/* Copy button */}
                             <button
-                              onClick={() => handleCopyProblem(problemKey, `${docName} [${issue.kind}]: ${problem}`)}
+                              onClick={() => handleCopyProblem(problemKey, `${issue.docName} [${issue.kind}]: ${problem}`)}
                               className={`mt-0.5 inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition opacity-0 group-hover:opacity-100 ${
                                 isCopied
                                   ? "opacity-100 text-emerald-400"

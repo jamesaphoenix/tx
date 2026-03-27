@@ -236,8 +236,8 @@ function parseTaskStatuses(value: string | null): TaskStatusValue[] {
     .map((part) => part.trim())
     .filter((status): status is TaskStatusValue => TASK_STATUS_SET.has(status as TaskStatusValue))
 
-  const deduped = new Set(statuses)
-  return TASK_STATUS_VALUES.filter((status) => deduped.has(status))
+  const selectedStatus = statuses.at(-1)
+  return selectedStatus ? [selectedStatus] : []
 }
 
 function parseLegacyBucketStatuses(value: string | null): TaskStatusValue[] {
@@ -557,14 +557,8 @@ export function TasksPage({
   }, [viewState.taskId, composer, closeTask, selectedChildIds])
 
   const toggleStatusFilter = useCallback((status: TaskStatusValue) => {
-    const selected = new Set(viewState.statuses)
-    if (selected.has(status)) {
-      selected.delete(status)
-    } else {
-      selected.add(status)
-    }
-
-    const statuses = TASK_STATUS_VALUES.filter((value) => selected.has(value))
+    const isSelected = viewState.statuses.length === 1 && viewState.statuses[0] === status
+    const statuses = isSelected ? [] : [status]
     writeViewState({ ...viewState, statuses, taskId: null }, "replace")
   }, [viewState, writeViewState])
 
@@ -607,6 +601,7 @@ export function TasksPage({
       queryClient.invalidateQueries({ queryKey: ["task"] }),
       queryClient.invalidateQueries({ queryKey: ["stats"] }),
       queryClient.invalidateQueries({ queryKey: ["labels"] }),
+      queryClient.invalidateQueries({ queryKey: ["cycles"] }),
     ])
   }, [queryClient])
 

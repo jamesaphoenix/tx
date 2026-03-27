@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { TASK_STATUSES, VALID_TRANSITIONS, type TaskStatus } from "@jamesaphoenix/tx-types/task"
 import { fetchers, type TaskWithDeps } from "../../api/client"
 import { useInfiniteTasks } from "../../hooks/useInfiniteTasks"
@@ -97,6 +98,7 @@ export function KanbanBoard({
   search,
   clientFilters,
 }: KanbanBoardProps) {
+  const queryClient = useQueryClient()
   const [doneVisibleCount, setDoneVisibleCount] = useState(INITIAL_DONE_VISIBLE)
   const [optimisticTasksById, setOptimisticTasksById] = useState<Record<string, TaskWithDeps>>({})
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -251,7 +253,11 @@ export function KanbanBoard({
 
       try {
         await fetchers.updateTask(taskId, { status: nextStatus })
-        await Promise.all([refetchNonDone(), refetchDone()])
+        await Promise.all([
+          refetchNonDone(),
+          refetchDone(),
+          queryClient.invalidateQueries({ queryKey: ["cycles"] }),
+        ])
         setOptimisticTasksById((current) => {
           const { [taskId]: _removed, ...rest } = current
           return rest
@@ -265,7 +271,7 @@ export function KanbanBoard({
         showError(`Could not move task: ${message}`)
       }
     },
-    [mergedTasksById, refetchDone, refetchNonDone, showError],
+    [mergedTasksById, queryClient, refetchDone, refetchNonDone, showError],
   )
 
   const handleDragStart = useCallback((event: DragEvent<HTMLDivElement>, taskId: string) => {

@@ -347,6 +347,84 @@ describe("Migration system", () => {
       // Indexes from migration 33 (sync events)
       expect(indexNames).toContain("idx_sync_events_ts_event")
       expect(indexNames).toContain("idx_sync_events_entity")
+
+      // Indexes from migrations 041/042 (doc stable ids + repair)
+      expect(indexNames).toContain("idx_docs_doc_id")
+      expect(indexNames).toContain("idx_docs_doc_id_version")
+      expect(indexNames).toContain("idx_docs_kind_name_version")
+    })
+
+    it("repairs legacy UNIQUE(doc_id) docs schemas so versions can share one stable doc_id", () => {
+      const db = new Database(":memory:")
+      db.run("PRAGMA foreign_keys = ON")
+      applyMigrationsThroughVersion(db, 41)
+      db.exec("DROP INDEX IF EXISTS idx_docs_doc_id")
+      db.exec("DROP INDEX IF EXISTS idx_docs_doc_id_version")
+      db.exec(
+        `CREATE UNIQUE INDEX idx_docs_doc_id
+           ON docs(doc_id)
+           WHERE doc_id IS NOT NULL`
+      )
+
+      const insertDoc = db.prepare(
+        `INSERT INTO docs (
+          doc_id,
+          hash,
+          kind,
+          name,
+          title,
+          version,
+          status,
+          file_path,
+          parent_doc_id,
+          created_at,
+          metadata
+        ) VALUES (?, ?, 'prd', ?, ?, ?, 'changing', ?, NULL, ?, '{}')`
+      )
+      const nowIso = new Date().toISOString()
+      insertDoc.run(
+        "doc-aaaaaaaaaaaa",
+        "hash-v1",
+        "doc-lineage",
+        "Doc Lineage",
+        1,
+        "prd/doc-lineage.md",
+        nowIso
+      )
+      expect(() =>
+        insertDoc.run(
+          "doc-aaaaaaaaaaaa",
+          "hash-v2",
+          "doc-lineage",
+          "Doc Lineage",
+          2,
+          "prd/doc-lineage.md",
+          nowIso
+        )
+      ).toThrow(/UNIQUE constraint failed: docs\.doc_id/)
+
+      applyMigrations(db)
+
+      expect(() =>
+        insertDoc.run(
+          "doc-aaaaaaaaaaaa",
+          "hash-v2",
+          "doc-lineage",
+          "Doc Lineage",
+          2,
+          "prd/doc-lineage.md",
+          nowIso
+        )
+      ).not.toThrow()
+
+      const rows = db.prepare(
+        "SELECT doc_id, version FROM docs WHERE doc_id = ? ORDER BY version"
+      ).all("doc-aaaaaaaaaaaa") as Array<{ doc_id: string; version: number }>
+      expect(rows).toEqual([
+        { doc_id: "doc-aaaaaaaaaaaa", version: 1 },
+        { doc_id: "doc-aaaaaaaaaaaa", version: 2 },
+      ])
+      expect(getSchemaVersion(db)).toBe(getLatestVersion())
     })
 
     it("uses composite task-order indexes without temp B-tree for dashboard task list query shapes", () => {

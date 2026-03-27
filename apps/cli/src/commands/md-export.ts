@@ -8,7 +8,7 @@ import { resolve, dirname } from "node:path"
 import { createHash } from "node:crypto"
 import { TaskService, ReadyService, LearningService } from "@jamesaphoenix/tx-core"
 import type { TaskWithDeps, ContextResult, TaskStatus } from "@jamesaphoenix/tx-types"
-import { isValidTaskStatus } from "@jamesaphoenix/tx-types"
+import { isValidTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx-types"
 import { toJson, formatTasksMarkdown } from "../output.js"
 import type { TasksMarkdownCounts } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
@@ -24,8 +24,8 @@ export const mdExport = (_pos: string[], flags: Flags) =>
     const jsonOutput = flag(flags, "json")
 
     // Validate filter
-    if (filter !== "ready" && filter !== "all" && !isValidTaskStatus(filter)) {
-      console.error(`Invalid --filter value: "${filter}". Must be "ready", "all", or a valid task status.`)
+    if (filter !== "ready" && filter !== "open" && filter !== "all" && !isValidTaskStatus(filter)) {
+      console.error(`Invalid --filter value: "${filter}". Must be "ready", "open", "all", or a valid task status.`)
       process.exit(1)
     }
 
@@ -41,9 +41,19 @@ export const mdExport = (_pos: string[], flags: Flags) =>
     // Dynamic section title based on filter
     const sectionTitle = filter === "ready"
       ? "Ready Tasks"
+      : filter === "open"
+        ? "Open Tasks"
       : filter === "all"
         ? "All Tasks"
         : `Tasks — ${filter}`
+
+    const emptyStateMessage = filter === "ready"
+      ? "_No ready tasks._"
+      : filter === "open"
+        ? "_No open tasks._"
+        : filter === "all"
+          ? "_No tasks found._"
+          : `_No ${filter} tasks._`
 
     // Label for console output messages
     const filterLabel = filter === "ready" ? "ready" : filter === "all" ? "total" : filter
@@ -78,7 +88,11 @@ export const mdExport = (_pos: string[], flags: Flags) =>
           return yield* readySvc.getReady(limit)
         }
         // For "all" or specific status, use listWithDeps
-        const statusFilter: TaskStatus[] | undefined = filter === "all" ? undefined : [filter as TaskStatus]
+        const statusFilter: TaskStatus[] | undefined = filter === "all"
+          ? undefined
+          : filter === "open"
+            ? TASK_STATUSES.filter((status): status is TaskStatus => status !== "done")
+            : [filter as TaskStatus]
         const tasks = yield* taskSvc.listWithDeps({ status: statusFilter, limit })
         return tasks
       })
@@ -134,6 +148,7 @@ export const mdExport = (_pos: string[], flags: Flags) =>
         const markdown = formatTasksMarkdown(filteredTasks, completedTasks, counts, {
           includeContext: contextMap,
           sectionTitle,
+          emptyStateMessage,
         })
 
         yield* writeMarkdown(markdown)
@@ -157,20 +172,26 @@ export const mdExport = (_pos: string[], flags: Flags) =>
       const exportAndHash = () =>
         Effect.gen(function* () {
           const filteredTasks = yield* getFilteredTasks(100)
+          const completedTasks = yield* getCompletedTasks(includeDone)
+          const counts = yield* getCounts(filteredTasks.length)
 
-          // Hash task IDs + statuses to detect changes
-          const hashInput = filteredTasks.map(t => `${t.id}:${t.status}:${t.score}`).join("|")
+          // Hash the full rendered task payload so doc attachments, dependency
+          // changes, and summary count changes trigger a rewrite.
+          const hashInput = JSON.stringify({
+            filteredTasks,
+            completedTasks,
+            counts,
+          })
           const currentHash = createHash("sha256").update(hashInput).digest("hex")
 
           if (currentHash !== previousHash) {
             previousHash = currentHash
-            const completedTasks = yield* getCompletedTasks(includeDone)
-            const counts = yield* getCounts(filteredTasks.length)
             const contextMap = yield* getContextMap(filteredTasks)
 
             const markdown = formatTasksMarkdown(filteredTasks, completedTasks, counts, {
               includeContext: contextMap,
               sectionTitle,
+              emptyStateMessage,
             })
 
             yield* writeMarkdown(markdown)

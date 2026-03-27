@@ -1,14 +1,16 @@
 /**
  * Scaffold Claude Code or Codex integration files into the current project.
  *
- * Copies template files (CLAUDE.md / AGENTS.md, skills, scripts, codex rules) into the
- * user's project, skipping any files that already exist.
+ * Installs generated skills by default, with optional legacy CLAUDE.md / AGENTS.md
+ * compatibility shims available through the lower-level scaffold helpers.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, chmodSync, accessSync, constants as fsConstants } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, statSync, chmodSync, accessSync, constants as fsConstants } from "node:fs"
+import { tmpdir } from "node:os"
 import { resolve, join, dirname, relative, delimiter } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as p from "@clack/prompts"
+import { generateSkillBundles, type SkillTarget } from "../skills/generate.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -87,10 +89,11 @@ export interface ScaffoldResult {
 
 export interface ClaudeOptions {
   claudeMd?: boolean
-  workflowSkill?: boolean
-  cycleSkill?: boolean
-  verifyBuildSkill?: boolean
   ralphScript?: boolean
+}
+
+interface CodexOptions {
+  agentsMd?: boolean
 }
 
 export type WatchdogRuntimeMode = "auto" | "codex" | "claude" | "both"
@@ -243,29 +246,41 @@ function renderWatchdogEnv(
   return `${lines.join("\n")}\n`
 }
 
+function installRoot(target: SkillTarget): string {
+  return target === "claude" ? ".claude/skills" : ".codex/skills"
+}
+
+function scaffoldGeneratedSkills(projectDir: string, target: SkillTarget): ScaffoldResult {
+  const tempDir = mkdtempSync(join(tmpdir(), `tx-generated-skills-${target}-`))
+
+  try {
+    generateSkillBundles({ target, outputDir: tempDir, clean: true })
+    const root = installRoot(target)
+    const src = join(tempDir, target, root)
+    const dest = join(projectDir, root)
+    const result = copyTree(src, dest)
+
+    return {
+      copied: result.copied.map((path) => `${root}/${path}`),
+      skipped: result.skipped.map((path) => `${root}/${path}`),
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
 /**
  * Scaffold Claude Code integration into the current project.
  */
 export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): ScaffoldResult {
-  const opts = { claudeMd: true, workflowSkill: true, cycleSkill: true, verifyBuildSkill: true, ralphScript: false, ...options }
+  const opts = { claudeMd: false, ralphScript: false, ...options }
   const allCopied: string[] = []
   const allSkipped: string[] = []
   const templates = templatesDir()
 
-  // Copy individual skills based on options
-  const skillsDest = join(projectDir, ".claude", "skills")
-  const skillsToInclude: string[] = []
-  if (opts.workflowSkill) skillsToInclude.push("tx-workflow")
-  if (opts.cycleSkill) skillsToInclude.push("tx-cycle")
-  if (opts.verifyBuildSkill) skillsToInclude.push("verify-build")
-
-  for (const skill of skillsToInclude) {
-    const src = join(templates, "claude", "skills", skill)
-    const dest = join(skillsDest, skill)
-    const result = copyTree(src, dest)
-    allCopied.push(...result.copied.map(p => `.claude/skills/${skill}/${p}`))
-    allSkipped.push(...result.skipped.map(p => `.claude/skills/${skill}/${p}`))
-  }
+  const generated = scaffoldGeneratedSkills(projectDir, "claude")
+  allCopied.push(...generated.copied)
+  allSkipped.push(...generated.skipped)
 
   // Copy ralph script
   if (opts.ralphScript) {
@@ -302,17 +317,15 @@ export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): Sca
 /**
  * Scaffold Codex integration into the current project.
  */
-export function scaffoldCodex(projectDir: string): ScaffoldResult {
+export function scaffoldCodex(projectDir: string, options?: CodexOptions): ScaffoldResult {
   const allCopied: string[] = []
   const allSkipped: string[] = []
   const templates = templatesDir()
+  const opts = { agentsMd: false, ...options }
 
-  // Copy codex agent profiles
-  const codexAgentsSrc = join(templates, "codex", "agents")
-  const codexAgentsDest = join(projectDir, ".codex", "agents")
-  const agentsResult = copyTree(codexAgentsSrc, codexAgentsDest)
-  allCopied.push(...agentsResult.copied.map(p => `.codex/agents/${p}`))
-  allSkipped.push(...agentsResult.skipped.map(p => `.codex/agents/${p}`))
+  const generated = scaffoldGeneratedSkills(projectDir, "codex")
+  allCopied.push(...generated.copied)
+  allSkipped.push(...generated.skipped)
 
   // Copy codex command policy rules
   const codexRulesSrc = join(templates, "codex", "rules")
@@ -321,21 +334,23 @@ export function scaffoldCodex(projectDir: string): ScaffoldResult {
   allCopied.push(...rulesResult.copied.map(p => `.codex/rules/${p}`))
   allSkipped.push(...rulesResult.skipped.map(p => `.codex/rules/${p}`))
 
-  const agentsMdSrc = join(templates, "codex", "AGENTS.md")
-  const agentsMdDest = join(projectDir, "AGENTS.md")
+  if (opts.agentsMd) {
+    const agentsMdSrc = join(templates, "codex", "AGENTS.md")
+    const agentsMdDest = join(projectDir, "AGENTS.md")
 
-  if (existsSync(agentsMdDest)) {
-    const existing = readFileSync(agentsMdDest, "utf-8")
-    if (hasTxSection(existing)) {
-      allSkipped.push("AGENTS.md (tx section already present)")
+    if (existsSync(agentsMdDest)) {
+      const existing = readFileSync(agentsMdDest, "utf-8")
+      if (hasTxSection(existing)) {
+        allSkipped.push("AGENTS.md (tx section already present)")
+      } else {
+        const txSection = readFileSync(agentsMdSrc, "utf-8")
+        writeFileSync(agentsMdDest, existing + "\n\n" + txSection)
+        allCopied.push("AGENTS.md (appended tx section)")
+      }
     } else {
-      const txSection = readFileSync(agentsMdSrc, "utf-8")
-      writeFileSync(agentsMdDest, existing + "\n\n" + txSection)
-      allCopied.push("AGENTS.md (appended tx section)")
+      writeFileSync(agentsMdDest, readFileSync(agentsMdSrc, "utf-8"))
+      allCopied.push("AGENTS.md")
     }
-  } else {
-    writeFileSync(agentsMdDest, readFileSync(agentsMdSrc, "utf-8"))
-    allCopied.push("AGENTS.md")
   }
 
   return { copied: allCopied, skipped: allSkipped }
@@ -402,7 +417,7 @@ function formatResults(results: ScaffoldResult[]): string {
 export async function interactiveScaffold(projectDir: string, options?: InteractiveScaffoldOptions): Promise<void> {
   const watchdogRuntimeMode = options?.watchdogRuntimeMode ?? "auto"
   const wantsClaude = await p.confirm({
-    message: "Add Claude Code integration? (CLAUDE.md + skills)",
+    message: "Add Claude Code integration? (generated .claude/skills)",
     initialValue: true,
   })
   if (p.isCancel(wantsClaude)) { p.cancel("Setup cancelled."); return }
@@ -410,12 +425,6 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
   const results: ScaffoldResult[] = []
 
   if (wantsClaude) {
-    const wantsCycle = await p.confirm({
-      message: "Include cycle sub-agent skill? (automated issue discovery)",
-      initialValue: true,
-    })
-    if (p.isCancel(wantsCycle)) { p.cancel("Setup cancelled."); return }
-
     const wantsRalph = await p.confirm({
       message: "Include ralph script? (autonomous task loop)",
       initialValue: false,
@@ -423,17 +432,14 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
     if (p.isCancel(wantsRalph)) { p.cancel("Setup cancelled."); return }
 
     const result = scaffoldClaude(projectDir, {
-      claudeMd: true,
-      workflowSkill: true,
-      cycleSkill: !!wantsCycle,
-      verifyBuildSkill: true,
+      claudeMd: false,
       ralphScript: !!wantsRalph,
     })
     results.push(result)
   }
 
   const wantsCodex = await p.confirm({
-    message: "Add Codex integration? (AGENTS.md + .codex/agents + .codex/rules)",
+    message: "Add Codex integration? (generated .codex/skills + .codex/rules)",
     initialValue: true,
   })
   if (p.isCancel(wantsCodex)) { p.cancel("Setup cancelled."); return }

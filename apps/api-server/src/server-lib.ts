@@ -9,7 +9,7 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
-import { Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { createServer } from "node:http"
 import { makeAppLayer, LlmServiceNoop } from "@jamesaphoenix/tx-core"
 import { TasksLive } from "./routes/tasks.js"
@@ -28,6 +28,7 @@ import { GuardsLive } from "./routes/guards.js"
 import { VerifyLive } from "./routes/verify.js"
 import { ReflectLive } from "./routes/reflect.js"
 import { DecisionsLive } from "./routes/decisions.js"
+import { DecomposeLive } from "./routes/decompose.js"
 import { TxApi } from "./api.js"
 import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
@@ -57,6 +58,7 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(VerifyLive),
   Layer.provide(ReflectLive),
   Layer.provide(DecisionsLive),
+  Layer.provide(DecomposeLive),
 )
 
 // -----------------------------------------------------------------------------
@@ -167,5 +169,5 @@ export const main = (): void => {
     hostname: resolvedHost,
   })
 
-  NodeRuntime.runMain(Layer.launch(ServerLive))
+  NodeRuntime.runMain(Layer.launch(ServerLive).pipe(Effect.asVoid))
 }

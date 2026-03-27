@@ -664,7 +664,7 @@ agents = 3
 model = "claude-opus-4-6"
 
 # ─── Dashboard ──────────────────────────────────────────────────────
-# Settings for the tx dashboard web UI (\`tx dashboard\`).
+# Settings for the tx dashboard web UI (\`tx diag dashboard\`).
 # The dashboard provides a visual interface for task management,
 # doc browsing, run inspection, and cycle results.
 # Docs: https://txdocs.dev/docs/headful/filters-and-settings
@@ -714,7 +714,7 @@ block_agent_done_when_task_id_present = true
 # ─── Guard ─────────────────────────────────────────────────────────
 # Task creation guards — lightweight limits checked at \`tx add\` time.
 # Prevents unbounded task proliferation in agent loops.
-# Commands: tx guard set, tx guard show, tx guard clear
+# Commands: tx auto guard set, tx auto guard show, tx auto guard clear
 [guard]
 
 # Guard mode: "advisory" (default) or "enforce"
@@ -722,16 +722,16 @@ block_agent_done_when_task_id_present = true
 # Enforce: tx add fails with GuardExceededError when limits are hit
 mode = "advisory"
 
-# Default limits (can be overridden per-scope via tx guard set)
+# Default limits (can be overridden per-scope via tx auto guard set)
 # max_pending = 50
 # max_children = 10
 # max_depth = 4
 
 # ─── Verify ────────────────────────────────────────────────────────
 # Machine-checkable done criteria attached to tasks.
-# Attach a shell command to a task; \`tx verify run <id>\` executes it.
+# Attach a shell command to a task; \`tx auto verify run <id>\` executes it.
 # Exit 0 = pass, non-zero = fail.
-# Commands: tx verify set, tx verify show, tx verify run, tx verify clear
+# Commands: tx auto verify set, tx auto verify show, tx auto verify run, tx auto verify clear
 [verify]
 
 # Default timeout in seconds for verification commands.
@@ -744,10 +744,10 @@ timeout = 300
 # ─── Reflect ───────────────────────────────────────────────────────
 # Macro-level session retrospective — look at recent sessions,
 # assess what is working, and surface machine-readable signals.
-# Commands: tx reflect
+# Commands: tx auto reflect
 [reflect]
 
-# LLM provider for \`tx reflect --analyze\`
+# LLM provider for \`tx auto reflect --analyze\`
 # "auto" = auto-detect from available env vars (default)
 # "claude" = uses ANTHROPIC_API_KEY
 # "codex" = uses OPENAI_API_KEY

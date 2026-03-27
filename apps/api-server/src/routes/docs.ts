@@ -133,6 +133,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         return {
           docs: docs.map((d) => ({
             id: d.id,
+            docId: d.docId,
             hash: d.hash,
             kind: d.kind,
             name: d.name,
@@ -157,19 +158,20 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         const config = readTxConfig()
         const docsPath = resolve(config.docs.path)
 
-        const issues: Array<{ docName: string; kind: string; problems: string[] }> = []
+        const issues: Array<{ docId: string; docName: string; kind: string; problems: string[] }> = []
         const unhealthyDocs = new Set<string>()
 
-        const docNodeById = new Map<string, { name: string; kind: string }>()
+        const docNodeById = new Map<string, { docId: string; name: string; kind: string }>()
         for (const node of graph.nodes) {
           if (!node.id.startsWith("doc:")) continue
-          docNodeById.set(node.id, { name: node.label, kind: node.kind })
+          const doc = docs.find((candidate) => `doc:${candidate.id}` === node.id)
+          if (!doc) continue
+          docNodeById.set(node.id, { docId: doc.docId, name: doc.name, kind: doc.kind })
         }
 
         const incomingDocLinkCount = new Map<string, number>()
         const prdsLinkedToDesign = new Set<string>()
-        const designsLinkedFromPrd = new Set<string>()
-        for (const doc of docs) incomingDocLinkCount.set(doc.name, 0)
+        for (const doc of docs) incomingDocLinkCount.set(doc.docId, 0)
 
         for (const edge of graph.edges) {
           if (!edge.source.startsWith("doc:") || !edge.target.startsWith("doc:")) continue
@@ -179,13 +181,12 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
           if (!source || !target) continue
 
           incomingDocLinkCount.set(
-            target.name,
-            (incomingDocLinkCount.get(target.name) ?? 0) + 1
+            target.docId,
+            (incomingDocLinkCount.get(target.docId) ?? 0) + 1
           )
 
           if (edge.type === "prd_to_design" && source.kind === "prd" && target.kind === "design") {
-            prdsLinkedToDesign.add(source.name)
-            designsLinkedFromPrd.add(target.name)
+            prdsLinkedToDesign.add(source.docId)
           }
         }
 
@@ -196,6 +197,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
 
           if (!existsSync(mdPath)) {
             issues.push({
+              docId: doc.docId,
               docName: doc.name,
               kind: "hash_drift",
               problems: [`Markdown file missing on disk: ${mdRelPath}`],
@@ -205,6 +207,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
             const currentHash = computeDocHash(content)
             if (currentHash !== doc.hash) {
               issues.push({
+                docId: doc.docId,
                 docName: doc.name,
                 kind: "hash_drift",
                 problems: [
@@ -219,6 +222,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
 
             if (parsedResult._tag === "Left") {
               issues.push({
+                docId: doc.docId,
                 docName: doc.name,
                 kind: "parse",
                 problems: [formatMarkdownParseProblem(parsedResult.left)],
@@ -227,6 +231,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
               const problems = findPlaceholderProblems(doc.kind, parsedResult.right)
               if (problems.length > 0) {
                 issues.push({
+                  docId: doc.docId,
                   docName: doc.name,
                   kind: "placeholder",
                   problems,
@@ -235,33 +240,27 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
             }
           }
 
-          if ((incomingDocLinkCount.get(doc.name) ?? 0) === 0) {
+          if ((incomingDocLinkCount.get(doc.docId) ?? 0) === 0) {
             issues.push({
+              docId: doc.docId,
               docName: doc.name,
               kind: "orphaned",
               problems: ["No incoming doc links."],
             })
           }
 
-          if (doc.kind === "prd" && !prdsLinkedToDesign.has(doc.name)) {
+          if (doc.kind === "prd" && !prdsLinkedToDesign.has(doc.docId)) {
             issues.push({
+              docId: doc.docId,
               docName: doc.name,
               kind: "cross_link",
               problems: ["PRD is not linked to any design doc via 'prd_to_design'."],
             })
           }
-
-          if (doc.kind === "design" && !designsLinkedFromPrd.has(doc.name)) {
-            issues.push({
-              docName: doc.name,
-              kind: "cross_link",
-              problems: ["Design doc has no incoming PRD link via 'prd_to_design'."],
-            })
-          }
         }
 
         for (const issue of issues) {
-          unhealthyDocs.add(issue.docName)
+          unhealthyDocs.add(issue.docId)
         }
 
         return {
@@ -285,6 +284,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         })
         return {
           id: doc.id,
+          docId: doc.docId,
           hash: doc.hash,
           kind: doc.kind,
           name: doc.name,
@@ -305,6 +305,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         const doc = yield* svc.get(name)
         return {
           id: doc.id,
+          docId: doc.docId,
           hash: doc.hash,
           kind: doc.kind,
           name: doc.name,
@@ -322,8 +323,14 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
     .handle("deleteDoc", ({ path: { name } }) =>
       Effect.gen(function* () {
         const svc = yield* DocService
+        const doc = yield* svc.get(name)
         yield* svc.remove(name)
-        return { success: true, name }
+        return {
+          success: true,
+          docId: doc.docId,
+          name: doc.name,
+          version: doc.version,
+        }
       }).pipe(Effect.mapError(mapCoreError))
     )
 
@@ -334,6 +341,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         const doc = yield* svc.update(name, content)
         return {
           id: doc.id,
+          docId: doc.docId,
           hash: doc.hash,
           kind: doc.kind,
           name: doc.name,
@@ -354,6 +362,7 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         const doc = yield* svc.lock(name)
         return {
           id: doc.id,
+          docId: doc.docId,
           hash: doc.hash,
           kind: doc.kind,
           name: doc.name,
@@ -410,7 +419,9 @@ export const DocsLive = HttpApiBuilder.group(TxApi, "docs", (handlers) =>
         const content = existsSync(mdPath) ? readFileSync(mdPath, "utf8") : null
 
         return {
+          docId: doc.docId,
           name: doc.name,
+          version: doc.version,
           filePath: doc.filePath,
           content,
           renderedContent: content,

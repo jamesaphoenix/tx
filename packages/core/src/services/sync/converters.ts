@@ -168,15 +168,16 @@ export const edgeToUpsertOp = (edge: Edge): EdgeUpsertOp => ({
 
 /**
  * Convert a Doc to a DocUpsertOp for JSONL export.
- * Uses parentDocKeyMap to resolve integer parent_doc_id to stable name:version key.
+ * Uses parentDocKeyMap to resolve integer parent_doc_id to stable doc_id:version key.
  */
 export const docToUpsertOp = (doc: Doc, parentDocKeyMap: Map<number, string>): DocUpsertOp => ({
   v: 1,
   op: "doc_upsert",
   ts: doc.createdAt.toISOString(),
   id: doc.id as number,
-  contentHash: contentHash(doc.kind, doc.name, String(doc.version)),
+  contentHash: contentHash(doc.docId, String(doc.version), doc.hash),
   data: {
+    docId: doc.docId,
     hash: doc.hash,
     kind: doc.kind,
     name: doc.name,
@@ -192,7 +193,7 @@ export const docToUpsertOp = (doc: Doc, parentDocKeyMap: Map<number, string>): D
 
 /**
  * Convert a DocLink to a DocLinkUpsertOp for JSONL export.
- * Uses docKeyMap to resolve integer doc IDs to stable name:version keys.
+ * Uses docKeyMap to resolve integer doc IDs to stable doc_id:version keys.
  */
 export const docLinkToUpsertOp = (link: DocLink, docKeyMap: Map<number, string>): DocLinkUpsertOp | null => {
   const fromDocKey = docKeyMap.get(link.fromDocId as number)
@@ -214,7 +215,7 @@ export const docLinkToUpsertOp = (link: DocLink, docKeyMap: Map<number, string>)
 
 /**
  * Convert a TaskDocLink to a TaskDocLinkUpsertOp for JSONL export.
- * Uses docKeyMap to resolve integer doc IDs to stable name:version keys.
+ * Uses docKeyMap to resolve integer doc IDs to stable doc_id:version keys.
  */
 export const taskDocLinkToUpsertOp = (link: TaskDocLink, docKeyMap: Map<number, string>): TaskDocLinkUpsertOp | null => {
   const docKey = docKeyMap.get(link.docId as number)
@@ -235,7 +236,7 @@ export const taskDocLinkToUpsertOp = (link: TaskDocLink, docKeyMap: Map<number, 
 
 /**
  * Convert an Invariant to an InvariantUpsertOp for JSONL export.
- * Uses docKeyMap to resolve integer doc IDs to stable name:version keys.
+ * Uses docKeyMap to resolve integer doc IDs to stable doc_id:version keys.
  */
 export const invariantToUpsertOp = (inv: Invariant, docKeyMap: Map<number, string>): InvariantUpsertOp | null => {
   const docKey = docKeyMap.get(inv.docId as number)
@@ -311,7 +312,7 @@ export const labelAssignmentToUpsertOp = (row: LabelAssignmentRow, labelNameMap:
 
 /**
  * Convert a Decision to a DecisionUpsertOp for JSONL export.
- * Uses docKeyMap to resolve integer doc IDs to stable name:version keys.
+ * Uses docKeyMap to resolve integer doc IDs to stable doc_id:version keys.
  */
 export const decisionToUpsertOp = (d: Decision, docKeyMap: Map<number, string>): DecisionUpsertOp => ({
   v: 1,

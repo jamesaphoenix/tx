@@ -53,15 +53,15 @@ TanStack won by saying: "Here's headless table logic. Style it yourself."
 tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Your Orchestration (your code, your rules)             │
-├─────────────────────────────────────────────────────────┤
-│  tx primitives                                          │
-│                                                         │
-│   tx ready     tx done      tx memory     tx pin        │
-│   tx send      tx block     tx inbox      tx sync       │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Your Orchestration (your code, your rules)                      │
+├──────────────────────────────────────────────────────────────────┤
+│  tx primitives                                                   │
+│                                                                  │
+│   tx ready       tx done        tx memory       tx pin           │
+│   tx msg send    tx dep block   tx msg inbox    tx sync          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Design Principles
@@ -78,12 +78,12 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 |-----------|---------|
 | `tx ready` | Get next workable task (unblocked, highest priority) |
 | `tx done <id>` | Complete task, potentially unblocking others |
-| `tx block <id> <blocker>` | Declare dependencies |
+| `tx dep block <id> <blocker>` | Declare dependencies |
 | `tx memory context <id>` | Get relevant memory + learnings for prompt injection |
 | `tx memory add` | Record knowledge for future agents |
-| `tx send <channel> <content>` | Send a message to an agent channel |
-| `tx inbox <channel>` | Read messages (read-only, cursor-based) |
-| `tx ack <id>` | Acknowledge a message |
+| `tx msg send <channel> <content>` | Send a message to an agent channel |
+| `tx msg inbox <channel>` | Read messages (read-only, cursor-based) |
+| `tx msg ack <id>` | Acknowledge a message |
 | `tx claim <id> <worker>` | Claim a task with a lease for worker coordination |
 | `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
 | `tx memory recall [path]` | Query file-specific learnings by path |
@@ -113,10 +113,11 @@ wait
 
 ```bash
 # Human-in-loop: agent proposes, human approves
-task=$(tx ready --limit 1)
-codex "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " && codex "Execute plan.md"
-tx done $task
+task=$(tx ready --limit 1 --json | jq -r '.[0].id')
+codex "Read AGENTS.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+codex "Read AGENTS.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
 ```
 
 **You own your orchestration. tx owns the primitives.**
@@ -177,7 +178,7 @@ interface TaskWithDeps extends Task {
 
 ### RULE 2: Compaction MUST export learnings to a file agents can read
 
-`tx compact` MUST append learnings to a markdown file (default: `AGENTS.md`). Storing only in `compaction_log` table is insufficient.
+`tx sync compact` MUST append learnings to a markdown file (default: `AGENTS.md`). Storing only in `compaction_log` table is insufficient.
 
 ```markdown
 ## Agent Learnings (YYYY-MM-DD)
@@ -225,7 +226,7 @@ All business logic MUST use Effect-TS:
 
 ### RULE 7: ANTHROPIC_API_KEY is optional for core commands
 
-LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Core commands do not.
+LLM features (`tx dedupe`, `tx sync compact`, `tx reprioritize`) require the key. Core commands do not.
 
 | Layer | LLM | Used By |
 |-------|-----|---------|
@@ -287,7 +288,7 @@ All git commits MUST follow the [Conventional Commits](https://www.conventionalc
 
 **Examples:**
 ```bash
-feat(cli): add tx send command for agent messaging
+feat(cli): add tx msg send command for agent messaging
 fix(api): prevent path traversal in sync routes
 refactor(core): extract shared validation utilities
 test(mcp): add integration tests for sync tools
@@ -474,10 +475,10 @@ tx reset <id>              # Reset to ready
 tx delete <id>             # Delete task
 
 # Dependencies & Hierarchy
-tx block <id> <blocker>    # Add blocking dependency
-tx unblock <id> <blocker>  # Remove dependency
-tx children <id>           # List child tasks
-tx tree <id>               # Show task subtree
+tx dep block <id> <blocker>    # Add blocking dependency
+tx dep unblock <id> <blocker>  # Remove dependency
+tx dep children <id>           # List child tasks
+tx dep tree <id>               # Show task subtree
 
 # Memory (filesystem-backed .md search)
 tx memory source add <dir> # Register directory for indexing
@@ -492,12 +493,12 @@ tx memory learn <p> <note> # Attach learning to file path/glob
 tx memory recall [path]    # Query file-specific learnings
 
 # Messages (Agent Outbox)
-tx send <channel> <msg>    # Send to channel
-tx inbox <channel>         # Read messages
-tx ack <id>                # Acknowledge message
-tx ack all <channel>       # Acknowledge all on channel
-tx outbox pending <ch>     # Count pending messages
-tx outbox gc               # Garbage collect old messages
+tx msg send <channel> <msg>    # Send to channel
+tx msg inbox <channel>         # Read messages
+tx msg ack <id>                # Acknowledge message
+tx msg ack all <channel>       # Acknowledge all on channel
+tx msg pending <ch>     # Count pending messages
+tx msg gc               # Garbage collect old messages
 
 # Docs & Invariants
 tx doc <sub>               # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
@@ -520,9 +521,9 @@ tx sync export             # SQLite → JSONL (git-friendly)
 tx sync import             # JSONL → SQLite
 tx sync status             # Show sync status
 tx sync codex             # Push to Codex team dir
-tx compact                 # Compact done tasks + export learnings
-tx history                 # View compaction history
-tx migrate status          # Database migration status
+tx sync compact                 # Compact done tasks + export learnings
+tx sync history                 # View compaction history
+tx sync migrate status          # Database migration status
 
 # Bulk Operations
 tx bulk done <id...>       # Complete multiple tasks
@@ -534,10 +535,10 @@ tx bulk delete <id...>     # Delete multiple tasks
 tx cycle                   # Issue discovery with sub-agent swarms
 
 # Tools
-tx stats                   # Queue metrics and health
-tx validate                # Database health checks (--fix)
-tx doctor                  # System diagnostics
-tx dashboard               # Start API server + dashboard UI
+tx diag stats                   # Queue metrics and health
+tx diag doctor                # Database health checks (--fix)
+tx diag doctor                  # System diagnostics
+tx diag dashboard               # Start API server + dashboard UI
 ```
 
 ### Cycle vs Teams vs Sub-agents — Disambiguation
@@ -643,7 +644,7 @@ Task-layer source of truth policy:
 - If pulling work from a queue, use `tx ready` as the primary place to get work.
 - Every create/update/complete/block action in native task tools **must be mirrored back to `tx`**.
 - Mirror creates with `tx add` (and `--parent` for subtasks).
-- Mirror updates with `tx update`, `tx block`, `tx unblock`, `tx done`, and `tx reset`.
+- Mirror updates with `tx update`, `tx dep block`, `tx dep unblock`, `tx done`, and `tx reset`.
 - If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
 - Before handoff, commit, or session end, run `tx sync export`.
 
@@ -889,7 +890,7 @@ Task-layer source of truth policy:
 
 Required sync behavior:
 - Mirror native creates to `tx add` (use `--parent` for subtasks).
-- Mirror native state updates to `tx update`, `tx block`, `tx unblock`, `tx done`, or `tx reset`.
+- Mirror native state updates to `tx update`, `tx dep block`, `tx dep unblock`, `tx done`, or `tx reset`.
 - Before handoff, commit, or session end, run `tx sync export`.
 - If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
 
@@ -910,13 +911,15 @@ tx sync export
 When you are ready to add docs-first specs:
 
 ```bash
-tx doc add prd auth-flow --title "Auth Flow"
+tx doc add prd auth-flow-prd --title "Auth Flow PRD"
+tx doc add design auth-flow-design --title "Auth Flow Design"
+tx doc link auth-flow-prd auth-flow-design
 tx spec discover
-tx spec status --doc auth-flow
-tx spec complete --doc auth-flow --by <human>
+tx spec status --doc auth-flow-design
+tx spec complete --doc auth-flow-design --by <human>
 ```
 
-`tx doc add prd auth-flow --title "Auth Flow"` creates a markdown-first spec at `specs/prd/auth-flow.md` with frontmatter.
+These commands create a paired markdown-first spec set at `specs/prd/auth-flow-prd.md` and `specs/design/auth-flow-design.md`, then link the pair before verification.
 
 ### Core Commands
 
@@ -926,7 +929,7 @@ tx spec complete --doc auth-flow --by <human>
 | `tx done <id>` | Complete task, potentially unblocking others |
 | `tx add <title>` | Create a new task (`--parent`, `--score`, `--description`) |
 | `tx show <id>` | Show task details with dependencies |
-| `tx block <id> <blocker>` | Declare task dependencies |
+| `tx dep block <id> <blocker>` | Declare task dependencies |
 | `tx group-context set <id> <context>` | Attach shared task-group context for related tasks |
 | `tx group-context clear <id>` | Clear task-group context from a task |
 | `tx memory context <id>` | Get relevant memory + history |
@@ -936,15 +939,15 @@ tx spec complete --doc auth-flow --by <human>
 
 | Command | Purpose |
 |---------|---------|
-| `tx gate create <name>` | Create a human approval gate for phase transitions |
-| `tx guard set` | Set task creation limits (`--max-pending`, `--max-children`, `--max-depth`, `--enforce`) |
-| `tx guard show` | Show current guard configuration |
-| `tx verify set <id> <cmd>` | Attach a shell verification command to a task |
-| `tx verify run <id>` | Run verification (exit 0 = pass) |
-| `tx label add <name>` | Create a label for scoping the ready queue |
-| `tx label assign <id> <name>` | Assign a label to a task |
+| `tx auto gate create <name>` | Create a human approval gate for phase transitions |
+| `tx auto guard set` | Set task creation limits (`--max-pending`, `--max-children`, `--max-depth`, `--enforce`) |
+| `tx auto guard show` | Show current guard configuration |
+| `tx auto verify set <id> <cmd>` | Attach a shell verification command to a task |
+| `tx auto verify run <id>` | Run verification (exit 0 = pass) |
+| `tx auto label add <name>` | Create a label for scoping the ready queue |
+| `tx auto label assign <id> <name>` | Assign a label to a task |
 | `tx ready --label <name>` | Filter ready queue by label |
-| `tx reflect` | Session retrospective (throughput, signals, stuck tasks) |
+| `tx auto reflect` | Session retrospective (throughput, signals, stuck tasks) |
 
 ### Memory & Learnings
 
@@ -961,9 +964,9 @@ tx spec complete --doc auth-flow --by <human>
 
 | Command | Purpose |
 |---------|---------|
-| `tx send <channel> <msg>` | Send a message to an agent channel |
-| `tx inbox <channel>` | Read messages |
-| `tx ack <id>` | Acknowledge a message |
+| `tx msg send <channel> <msg>` | Send a message to an agent channel |
+| `tx msg inbox <channel>` | Read messages |
+| `tx msg ack <id>` | Acknowledge a message |
 
 ### Worker Coordination
 
@@ -979,7 +982,7 @@ tx spec complete --doc auth-flow --by <human>
 |---------|---------|
 | `tx sync export` | SQLite to git-friendly JSONL |
 | `tx sync import` | JSONL to SQLite |
-| `tx compact` | Compact done tasks + export learnings |
+| `tx sync compact` | Compact done tasks + export learnings |
 
 ### Docs-First Specs
 
@@ -1027,9 +1030,10 @@ wait
 
 ```bash
 task=$(tx ready --limit 1 --json | jq -r '.[0].id')
-codex "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " answer
-[ "$answer" = "y" ] && codex "Execute plan.md" && tx done $task
+codex "Read AGENTS.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+codex "Read AGENTS.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
 ```
 
 Do not bypass hooks in this workflow. Keep git verification enabled for commits and pushes.
@@ -1042,12 +1046,16 @@ If related tasks share rollout/migration notes, set them once via `tx group-cont
   ```yaml
   ears_requirements:
     - id: REQ-API-001
-      kind: ubiquitous
-      statement: the system shall ...
+      kind: event-driven
+      when: a user submits valid credentials
+      statement: the authentication service shall issue access and refresh tokens
       priority: must
   ```
 - Use deterministic IDs in the form `REQ-<AREA>-NNN` (example: `REQ-API-001`).
-- Use valid patterns only: `ubiquitous`, `event-driven`, `state-driven`, `optional`, `unwanted`, `complex`.
+- Use markdown-native `kind` values only for new PRDs: `ubiquitous`, `event-driven`, `state-driven`, `optional`, `unwanted`, `complex`.
+- Required clause fields are `when` for `event-driven`, `while` for `state-driven`, `if` for `unwanted`, and `where` for `optional`. `complex` requires at least one of those clause fields.
+- Keep `statement` to the action clause only, such as `the system shall persist the draft`. Do not repeat trigger/state text inside `statement`.
+- The legacy decomposed EARS format with `pattern:` and underscored values such as `event_driven` is backward compatibility only.
 - Run `tx doc lint-ears <doc-name-or-markdown-path>` before implementation and before review.
 - Example: `tx doc lint-ears specs/prd/auth-flow.md`
 - Keep legacy `requirements` only for backward compatibility or migration.
@@ -1063,9 +1071,17 @@ If related tasks share rollout/migration notes, set them once via `tx group-cont
 | `decision` | `specs/` | `<name>.md` | Architectural decisions (ADRs) |
 
 - `tx doc` markdown-first docs are canonical `.md` files with frontmatter and embedded YAML blocks.
+- Doc names are globally unique across spec types. Use distinct slugs such as `<feature>-prd` and `<feature>-design` rather than reusing the same name for multiple docs.
 - Create docs for non-trivial features and plans; formalize product intent, design, and operational/decision context when needed.
 - Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
 - Link docs with frontmatter references (`depends_on`, `supersedes`, `implements`) to preserve graph structure.
+- When migrating existing markdown into tx-managed docs, preserve the source wording first, then normalize structure. Use fence-aware extraction; headings inside fenced code blocks are content, not section boundaries.
+
+## Design Doc Interface Semantics
+
+- In design docs, `interfaces:` captures runtime contracts and boundaries, not entities.
+- Use `http` for routes, `queue` for async workflow or worker boundaries, `event` for event contracts, `rpc` for Effect services/ports/adapters and internal request-response boundaries, and `cron` for scheduled jobs.
+- Entities, value objects, and aggregate state belong in data-model or domain sections, not the `interfaces:` block.
 
 ## Testing + OTEL Quality Bar
 
@@ -1083,6 +1099,8 @@ For design specs (`spec_type: design`, usually under `specs/design/*.md`), the `
 - When PRDs use EARS blocks, map each `REQ-*` ID to one or more tests in the traceability matrix.
 - Include at least 8 numbered integration scenarios with setup, action, and assertions.
 - Include failure-path testing (timeouts, malformed input, partial failures, retries/idempotency where relevant).
+- Cover auth/permission, validation, dependency failure, and data-integrity cases wherever they are in scope.
+- Cover concurrency, duplicate delivery, or retry behavior whenever the design includes queues, workflows, or idempotent APIs.
 - Include OTEL/non-OTEL behavior assertions when observability paths are touched.
 - Name exact test files to add or update.
 - Use concrete expected outcomes (DB rows, API responses, emitted events/metrics, task state transitions).

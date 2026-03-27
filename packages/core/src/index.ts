@@ -89,7 +89,7 @@ export {
 // =============================================================================
 // ID Generation
 // =============================================================================
-export { generateTaskId, fixtureId } from "./id.js"
+export { generateTaskId, generateDocStableId, deriveDocStableId, fixtureId } from "./id.js"
 export { generateUlid, isUlid } from "./utils/ulid.js"
 
 // =============================================================================
@@ -318,6 +318,9 @@ export {
   AgentService,
   AgentServiceLive,
   AgentServiceNoop,
+  DecomposeService,
+  DecomposeServiceLive,
+  type DecomposeError,
   type AgentRunConfig,
   type AgentRunResult,
   type AgentMessageCallback,

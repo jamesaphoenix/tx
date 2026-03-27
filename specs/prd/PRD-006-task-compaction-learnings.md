@@ -43,7 +43,7 @@ Tasks eligible for compaction:
 
 ### Step 2: Generate Summary
 ```bash
-tx compact --before 2024-01-01
+tx sync compact --before 2024-01-01
 ```
 
 LLM generates:
@@ -69,7 +69,7 @@ Learnings:
 1. Store summary in `compaction_log` table
 2. **Append learnings to CLAUDE.md or agents.md** (configurable target file)
 3. Delete compacted tasks (optional, can keep in archive)
-4. Keep summary accessible via `tx history`
+4. Keep summary accessible via `tx sync history`
 
 ---
 
@@ -95,11 +95,11 @@ Learnings are appended to the configured file (default: `CLAUDE.md`) in a struct
 
 | ID | Requirement | CLI Command |
 |----|-------------|-------------|
-| CO-001 | Compact tasks older than 7 days | `tx compact` |
-| CO-002 | Compact tasks before specific date | `tx compact --before <date>` |
-| CO-003 | Preview without compacting | `tx compact --dry-run` |
-| CO-004 | Specify learnings output file | `tx compact --output=CLAUDE.md` |
-| CO-005 | View compaction history | `tx history` |
+| CO-001 | Compact tasks older than 7 days | `tx sync compact` |
+| CO-002 | Compact tasks before specific date | `tx sync compact --before <date>` |
+| CO-003 | Preview without compacting | `tx sync compact --dry-run` |
+| CO-004 | Specify learnings output file | `tx sync compact --output=CLAUDE.md` |
+| CO-005 | View compaction history | `tx sync history` |
 
 ### Compaction API
 
@@ -134,7 +134,7 @@ Learnings are appended to the configured file (default: `CLAUDE.md`) in a struct
 |----|------------|-----------|
 | CO-014 | Never compact tasks with open children | Preserve context |
 | CO-015 | Store summaries permanently | They're valuable |
-| CO-016 | `ANTHROPIC_API_KEY` is optional — `tx compact` fails gracefully without it | Not all users have API keys. If set as env var, use automatically. |
+| CO-016 | `ANTHROPIC_API_KEY` is optional — `tx sync compact` fails gracefully without it | Not all users have API keys. If set as env var, use automatically. |
 | CO-017 | Default learnings file: CLAUDE.md | Agent reads this |
 | CO-018 | Compaction must be atomic (transaction-wrapped) | Export + delete must succeed together or not at all |
 | CO-019 | LLM output must be robustly parsed (handle markdown fences) | LLMs return non-deterministic formats |
@@ -145,7 +145,7 @@ Learnings are appended to the configured file (default: `CLAUDE.md`) in a struct
 
 ### Preview Compaction
 ```bash
-$ tx compact --dry-run --before 2024-01-15
+$ tx sync compact --dry-run --before 2024-01-15
 Would compact 15 task(s):
   - tx-a1b2c3: Implement authentication [done]
     - tx-d4e5f6: Add JWT service [done]
@@ -164,7 +164,7 @@ Learnings preview:
 
 ### Execute Compaction
 ```bash
-$ tx compact --before 2024-01-15 --output=CLAUDE.md
+$ tx sync compact --before 2024-01-15 --output=CLAUDE.md
 Compacting 15 tasks...
 
 Summary:
@@ -181,7 +181,7 @@ Done. 15 tasks compacted.
 
 ### View History
 ```bash
-$ tx history
+$ tx sync history
 Compaction History:
 
 2024-01-15: 15 tasks → Authentication System, Bug Fixes
@@ -277,10 +277,10 @@ This ensures future agent sessions benefit from past learnings automatically.
 ## Graceful Degradation
 
 When `ANTHROPIC_API_KEY` is not set:
-- `tx compact` prints: `"Task compaction requires ANTHROPIC_API_KEY. Set it as an environment variable to enable this feature."`
+- `tx sync compact` prints: `"Task compaction requires ANTHROPIC_API_KEY. Set it as an environment variable to enable this feature."`
 - Exit code: 1
-- `tx compact --dry-run` still works (just lists eligible tasks, no LLM needed)
-- `tx history` still works (reads from database, no LLM needed)
+- `tx sync compact --dry-run` still works (just lists eligible tasks, no LLM needed)
+- `tx sync history` still works (reads from database, no LLM needed)
 
 ---
 

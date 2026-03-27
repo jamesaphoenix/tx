@@ -1,5 +1,5 @@
 /**
- * Sync commands: export, import, stream, hydrate, status, auto
+ * Sync commands: export, import, stream, hydrate, status, auto, compact, history, migrate
  */
 
 import { Effect } from "effect"
@@ -7,7 +7,10 @@ import { SyncService } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
+import { unknownSubcommandError, usageError } from "../cli-errors.js"
 import { syncClaude, syncCodex } from "./sync-platform.js"
+import { compact, history } from "./compact.js"
+import { migrate } from "./migrate.js"
 
 export const sync = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -34,12 +37,30 @@ export const sync = (pos: string[], flags: Flags) =>
       return yield* syncCodex(pos.slice(1), flags)
     }
 
+    // Absorbed commands: compact, history, migrate
+    if (subcommand === "compact") {
+      return yield* compact(pos.slice(1), flags)
+    } else if (subcommand === "history") {
+      return yield* history(pos.slice(1), flags)
+    } else if (subcommand === "migrate") {
+      return yield* migrate(pos.slice(1), flags)
+    }
+
     const syncSvc = yield* SyncService
 
     if (subcommand === "export") {
       if (opt(flags, "path") || flag(flags, "tasks-only")) {
-        console.error("legacy file options (--path, --tasks-only) are no longer supported; tx sync export uses stream events only")
-        process.exit(1)
+        return yield* Effect.fail(usageError({
+          code: "cli/legacy-option",
+          command: "sync export",
+          message: "Legacy file options are no longer supported for `tx sync export`.",
+          hint: "Run `tx sync export` without --path or --tasks-only. Export now writes stream events automatically.",
+          usage: "tx sync export [--json]",
+          examples: [
+            "tx sync export",
+            "tx sync export --json",
+          ],
+        }))
       }
       const result = yield* syncSvc.export()
       if (flag(flags, "json")) {
@@ -49,8 +70,17 @@ export const sync = (pos: string[], flags: Flags) =>
       }
     } else if (subcommand === "import") {
       if (opt(flags, "path") || flag(flags, "tasks-only")) {
-        console.error("legacy file options (--path, --tasks-only) are no longer supported; tx sync import uses stream events only")
-        process.exit(1)
+        return yield* Effect.fail(usageError({
+          code: "cli/legacy-option",
+          command: "sync import",
+          message: "Legacy file options are no longer supported for `tx sync import`.",
+          hint: "Run `tx sync import` without --path or --tasks-only. Import now reads stream events automatically.",
+          usage: "tx sync import [--json]",
+          examples: [
+            "tx sync import",
+            "tx sync import --json",
+          ],
+        }))
       }
       const result = yield* syncSvc.import()
       if (flag(flags, "json")) {
@@ -95,8 +125,17 @@ export const sync = (pos: string[], flags: Flags) =>
       const disableFlag = flag(flags, "disable")
 
       if (enableFlag && disableFlag) {
-        console.error("Cannot specify both --enable and --disable")
-        process.exit(1)
+        return yield* Effect.fail(usageError({
+          code: "cli/conflicting-flags",
+          command: "sync auto",
+          message: "Cannot specify both --enable and --disable.",
+          hint: "Choose one mode or omit both flags to inspect the current auto-sync state.",
+          usage: "tx sync auto [--enable | --disable] [--json]",
+          examples: [
+            "tx sync auto --enable",
+            "tx sync auto --disable --json",
+          ],
+        }))
       }
 
       if (enableFlag) {
@@ -122,8 +161,14 @@ export const sync = (pos: string[], flags: Flags) =>
         }
       }
     } else {
-      console.error(`Unknown sync subcommand: ${subcommand}`)
-      console.error(`Run 'tx sync --help' for usage information`)
-      process.exit(1)
+      return yield* Effect.fail(unknownSubcommandError({
+        command: "sync",
+        subcommand,
+        usage: "tx sync <export|import|stream|hydrate|status|auto|claude|codex|compact|history|migrate>",
+        examples: [
+          "tx sync export",
+          "tx sync status --json",
+        ],
+      }))
     }
   })

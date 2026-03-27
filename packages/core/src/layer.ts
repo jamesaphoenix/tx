@@ -59,6 +59,7 @@ import { CompactionServiceLive, CompactionServiceNoop } from "./services/compact
 import { ValidationServiceLive } from "./services/validation-service.js"
 import { MessageRepositoryLive } from "./repo/message-repo.js"
 import { MessageServiceLive } from "./services/message-service.js"
+import { AgentServiceLive } from "./services/agent-service.js"
 import { DocRepositoryLive } from "./repo/doc-repo.js"
 import { DocServiceLive } from "./services/doc-service.js"
 import { MemoryDocumentRepositoryLive, MemoryLinkRepositoryLive, MemoryPropertyRepositoryLive, MemorySourceRepositoryLive } from "./repo/memory-repo.js"
@@ -75,9 +76,7 @@ import { SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
 import { SpecTraceServiceLive } from "./services/spec-trace-service.js"
 import { DecisionRepositoryLive } from "./repo/decision-repo.js"
 import { DecisionServiceLive } from "./services/decision-service.js"
-// AgentService + CycleScanService are NOT in the default layer.
-// They are provided by the cycle CLI command via Effect.provide overlay.
-// Re-exports below make them available from @jamesaphoenix/tx-core.
+import { DecomposeServiceLive } from "./services/decompose-service.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync/index.js"
@@ -121,6 +120,7 @@ export { DeduplicationService, DeduplicationServiceLive } from "./services/dedup
 export { MessageService, MessageServiceLive } from "./services/message-service.js"
 export { AgentService, AgentServiceLive, AgentServiceNoop } from "./services/agent-service.js"
 export { CycleScanService, CycleScanServiceLive } from "./services/cycle-scan-service.js"
+export { DecomposeService, DecomposeServiceLive } from "./services/decompose-service.js"
 export { DocService, DocServiceLive } from "./services/doc-service.js"
 export { MemoryService, MemoryServiceLive } from "./services/memory-service.js"
 export {
@@ -411,6 +411,14 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   // DocServiceLive needs DocRepository (from repos)
   const docService = DocServiceLive.pipe(Layer.provide(repos))
 
+  // AgentServiceLive is lazy and only does real work when invoked.
+  const agentService = AgentServiceLive
+
+  // DecomposeServiceLive needs AgentService + task/dep/doc services.
+  const decomposeService = DecomposeServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(services, docService, agentService))
+  )
+
   // SpecTraceServiceLive needs SpecTraceRepository + DocService
   const specTraceService = SpecTraceServiceLive.pipe(
     Layer.provide(Layer.merge(repos, docService))
@@ -432,7 +440,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, agentService, decomposeService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(

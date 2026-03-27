@@ -57,7 +57,9 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
 
   it("supports the recommended first task loop and docs-first spec loop", () => {
     expectOk(runTx(cwd, ["init", "--codex"]), "tx init --codex")
-    expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "skills", "manifest.json"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "rules", "default.rules"))).toBe(true)
 
     writeRelative(cwd, ".tx/config.toml", [
       "[docs]",
@@ -97,10 +99,14 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
     expect(readyAfter.map((task) => task.id)).toContain(implementTask.id)
 
     expectOk(runTx(cwd, ["doc", "add", "prd", "auth-flow", "--title", "Auth Flow"]), "tx doc add prd auth-flow")
+    const authFlowDoc = parseJson<{ docId: string }>(
+      expectOk(runTx(cwd, ["doc", "show", "auth-flow", "--json"]), "tx doc show auth-flow"),
+    )
     writeRelative(cwd, "specs/prd/auth-flow.md", [
       "---",
       "kind: spec",
       "spec_type: prd",
+      `doc_id: ${authFlowDoc.docId}`,
       "name: auth-flow",
       'title: "Auth Flow"',
       "status: draft",
@@ -195,8 +201,8 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
     expect(existsSync(join(cwd, ".tx", "stream.json"))).toBe(true)
     expect(existsSync(join(cwd, ".tx", "streams"))).toBe(true)
 
-    const agentsContent = readFileSync(join(cwd, "AGENTS.md"), "utf-8")
-    expect(agentsContent).toContain("Start Here")
-    expect(agentsContent).toContain("tx spec discover")
+    const codexSkillContent = readFileSync(join(cwd, ".codex", "skills", "tx-core-loop", "SKILL.md"), "utf-8")
+    expect(codexSkillContent).toContain("Quick Start")
+    expect(codexSkillContent).toContain("tx ready --limit 1 --json")
   })
 })

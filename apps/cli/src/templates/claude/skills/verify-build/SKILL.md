@@ -1,6 +1,6 @@
 ---
 name: verify-build
-description: Build a verification script that defines "done" for a parent task or project phase. Creates a .sh script and attaches it via tx verify set.
+description: Build a verification script that defines "done" for a parent task or project phase. Creates a .sh script and attaches it via tx auto verify set.
 disable-model-invocation: true
 argument-hint: [task-id]
 ---
@@ -33,7 +33,7 @@ The most common parent task check — verify all subtasks have been completed:
 #!/usr/bin/env bash
 set -euo pipefail
 PARENT_ID="${1:-tx-xxxxxx}"  # pass as arg or hard-code
-CHILDREN=$(tx children "$PARENT_ID" --json 2>/dev/null)
+CHILDREN=$(tx dep children "$PARENT_ID" --json 2>/dev/null)
 TOTAL=$(echo "$CHILDREN" | jq 'length')
 INCOMPLETE=$(echo "$CHILDREN" | jq '[.[] | select(.status != "done")] | length')
 if [ "$INCOMPLETE" -gt 0 ]; then
@@ -63,7 +63,7 @@ check() {
 }
 
 # Check all children done
-INCOMPLETE=$(tx children "$PARENT_ID" --json 2>/dev/null | jq '[.[] | select(.status != "done")] | length')
+INCOMPLETE=$(tx dep children "$PARENT_ID" --json 2>/dev/null | jq '[.[] | select(.status != "done")] | length')
 if [ "$INCOMPLETE" -eq 0 ]; then
   PASS=$((PASS+1)); echo "  PASS: All children done"
 else
@@ -86,7 +86,7 @@ For richer verification data (use with `--schema` for machine validation):
 #!/usr/bin/env bash
 set -euo pipefail
 PARENT_ID="${1:-tx-xxxxxx}"
-CHILDREN=$(tx children "$PARENT_ID" --json 2>/dev/null)
+CHILDREN=$(tx dep children "$PARENT_ID" --json 2>/dev/null)
 TOTAL=$(echo "$CHILDREN" | jq 'length')
 DONE=$(echo "$CHILDREN" | jq '[.[] | select(.status == "done")] | length')
 INCOMPLETE=$((TOTAL - DONE))
@@ -146,12 +146,12 @@ After creating the script, make it executable and attach it to the parent task:
 
 ```bash
 chmod +x .tx/verify/<name>.sh
-tx verify set <parent-task-id> ".tx/verify/<name>.sh"
+tx auto verify set <parent-task-id> ".tx/verify/<name>.sh"
 ```
 
 Optional: attach a JSON schema to validate structured output from the script:
 ```bash
-tx verify set <parent-task-id> ".tx/verify/<name>.sh" --schema ".tx/verify/<name>.schema.json"
+tx auto verify set <parent-task-id> ".tx/verify/<name>.sh" --schema ".tx/verify/<name>.schema.json"
 ```
 
 Example schema (`.tx/verify/<name>.schema.json`):
@@ -173,9 +173,9 @@ If no task ID was provided, ask which parent task to attach it to.
 
 Run the verification to confirm it works:
 ```bash
-tx verify run <parent-task-id>
-tx verify run <parent-task-id> --json       # machine-readable output
-tx verify run <parent-task-id> --timeout 600  # longer timeout for heavy checks
+tx auto verify run <parent-task-id>
+tx auto verify run <parent-task-id> --json       # machine-readable output
+tx auto verify run <parent-task-id> --timeout 600  # longer timeout for heavy checks
 ```
 
 Show the user the output and ask if adjustments are needed.
@@ -183,10 +183,10 @@ Show the user the output and ask if adjustments are needed.
 ## CLI Reference
 
 ```
-tx verify set <id> <command> [--schema <path>]   # Attach verify script
-tx verify show <id>                              # Inspect what's attached
-tx verify run <id> [--timeout <seconds>] [--json]  # Execute and check
-tx verify clear <id>                             # Remove verify script
+tx auto verify set <id> <command> [--schema <path>]   # Attach verify script
+tx auto verify show <id>                              # Inspect what's attached
+tx auto verify run <id> [--timeout <seconds>] [--json]  # Execute and check
+tx auto verify clear <id>                             # Remove verify script
 ```
 
 ## Agent Workflow Pattern
@@ -198,12 +198,12 @@ The parent task verification pattern fits into the agent loop like this:
 PARENT_ID="tx-abc123"
 
 # Work on children...
-for child in $(tx children "$PARENT_ID" --json | jq -r '.[].id'); do
+for child in $(tx dep children "$PARENT_ID" --json | jq -r '.[].id'); do
   # ... agent works on each child, calls tx done $child
 done
 
 # Gate: only mark parent done if verification passes
-if tx verify run "$PARENT_ID"; then
+if tx auto verify run "$PARENT_ID"; then
   tx done "$PARENT_ID"
 else
   echo "Parent verification failed — check remaining work"

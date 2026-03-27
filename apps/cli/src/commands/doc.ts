@@ -1,7 +1,7 @@
 /**
- * Doc commands: doc add, doc edit, doc show, doc list, doc lock,
- * doc version, doc link, doc attach, doc patch, doc validate, doc drift,
- * doc lint-ears
+ * Doc commands: doc add, doc edit, doc show, doc list, doc rm,
+ * doc lock, doc version, doc link, doc attach, doc patch,
+ * doc validate, doc drift, doc lint-ears
  */
 
 import { Effect, Either } from "effect"
@@ -41,6 +41,57 @@ const normalizeDocKind = (kind: DocKind): DocKind => {
   return kind
 }
 
+type ListedDoc = {
+  docId: string
+  name: string
+  kind: DocKind
+  version: number
+  filePath: string
+}
+
+const selectLatestDoc = <T extends { version: number }>(docs: readonly T[]): T =>
+  [...docs].sort((left, right) => right.version - left.version)[0]!
+
+const resolveDocRefFromList = (
+  docs: readonly ListedDoc[],
+  ref: string,
+): { doc: ListedDoc | null; reason?: string } => {
+  const scopedMatch = ref.match(/^([^/]+)\/(.+)$/)
+  if (scopedMatch) {
+    const scope = scopedMatch[1]
+    const name = scopedMatch[2]
+    if (docKindStrings.includes(scope as DocKind)) {
+      const normalizedScope = normalizeDocKind(scope as DocKind)
+      const matches = docs.filter((doc) =>
+        normalizeDocKind(doc.kind) === normalizedScope && doc.name === name
+      )
+      return matches.length > 0 ? { doc: selectLatestDoc(matches) } : { doc: null }
+    }
+  }
+
+  const docIdMatches = docs.filter((doc) => doc.docId === ref)
+  if (docIdMatches.length > 0) {
+    return { doc: selectLatestDoc(docIdMatches) }
+  }
+
+  const nameMatches = docs.filter((doc) => doc.name === ref)
+  if (nameMatches.length === 0) {
+    return { doc: null }
+  }
+
+  const normalizedKinds = Array.from(
+    new Set(nameMatches.map((doc) => normalizeDocKind(doc.kind)))
+  )
+  if (normalizedKinds.length > 1) {
+    return {
+      doc: null,
+      reason: `Doc reference '${ref}' is ambiguous across kinds (${normalizedKinds.join(", ")}). Use doc_id instead.`,
+    }
+  }
+
+  return { doc: selectLatestDoc(nameMatches) }
+}
+
 /** Dispatch doc subcommands. */
 export const doc = (pos: string[], flags: Flags) => {
   const sub = pos[0]
@@ -53,6 +104,9 @@ export const doc = (pos: string[], flags: Flags) => {
     case "edit": return docEdit(rest, flags)
     case "show": return docShow(rest, flags)
     case "list": return docList(rest, flags)
+    case "rm":
+    case "remove":
+      return docRemove(rest, flags)
     case "lock": return docLock(rest, flags)
     case "version": return docVersion(rest, flags)
     case "link": return docLink(rest, flags)
@@ -61,6 +115,7 @@ export const doc = (pos: string[], flags: Flags) => {
     case "validate": return docValidate(rest, flags)
     case "drift": return docDrift(rest, flags)
     case "lint-ears": return docLintEars(rest, flags)
+    case "sync": return docSync(rest, flags)
     default:
       return Effect.sync(() => {
         console.error(`Unknown doc subcommand: ${sub ?? "(none)"}`)
@@ -75,8 +130,9 @@ const docAdd = (pos: string[], flags: Flags) =>
     const kind = pos[0]
     const name = pos[1]
     if (!kind || !name) {
-      console.error("Usage: tx doc add <kind> <name> [--title <title>]")
+      console.error("Usage: tx doc add <kind> <name> [--title <title>] [--path <file>]")
       console.error("  Kinds: overview, prd, design")
+      console.error("  --path: register an existing file instead of scaffolding")
       throw new CliExitError(1)
     }
     if (!docKindStrings.includes(kind)) {
@@ -84,14 +140,33 @@ const docAdd = (pos: string[], flags: Flags) =>
       throw new CliExitError(1)
     }
 
-    const title = opt(flags, "title", "t") ?? name
+    const pathFlag = opt(flags, "path", "p")
     const requestedKind = kind as DocKind
     const normalizedKind = normalizeDocKind(requestedKind)
-    const content = generateTemplate(
-      kind as DocKind,
-      name,
-      title
-    )
+
+    let content: string
+    let relFilePath: string | undefined
+    if (pathFlag) {
+      // Register an existing file at a custom path
+      const config = readTxConfig()
+      const absPath = resolve(config.docs.path, pathFlag)
+      if (!existsSync(absPath)) {
+        console.error(`File not found: ${absPath}`)
+        console.error(`Provide a path relative to '${config.docs.path}'`)
+        throw new CliExitError(1)
+      }
+      content = readFileSync(absPath, "utf8")
+      relFilePath = pathFlag
+    } else {
+      const title = opt(flags, "title", "t") ?? name
+      content = generateTemplate(kind as DocKind, name, title)
+    }
+
+    // Parse frontmatter to get title (used for both modes)
+    const parsed = parseMdDocSync(content)
+    const title = Either.isRight(parsed) && parsed.right.kind === "spec"
+      ? parsed.right.frontmatter.title ?? name
+      : opt(flags, "title", "t") ?? name
 
     const svc = yield* DocService
     const doc = yield* svc.create({
@@ -99,12 +174,14 @@ const docAdd = (pos: string[], flags: Flags) =>
       name,
       title,
       content,
+      relFilePath,
     })
 
     if (flag(flags, "json")) {
       console.log(toJson(doc))
     } else {
-      console.log(`Created doc: ${doc.name} (${doc.kind} v${doc.version})`)
+      const verb = pathFlag ? "Registered" : "Created"
+      console.log(`${verb} doc: ${doc.name} (${doc.kind} v${doc.version})`)
       console.log(`  File: ${doc.filePath}`)
       console.log(`  Hash: ${doc.hash.slice(0, 12)}...`)
     }
@@ -112,14 +189,14 @@ const docAdd = (pos: string[], flags: Flags) =>
 
 const docEdit = (pos: string[], _flags: Flags) =>
   Effect.gen(function* () {
-    const name = pos[0]
-    if (!name) {
-      console.error("Usage: tx doc edit <name>")
+    const ref = pos[0]
+    if (!ref) {
+      console.error("Usage: tx doc edit <ref>")
       throw new CliExitError(1)
     }
 
     const svc = yield* DocService
-    const doc = yield* svc.get(name)
+    const doc = yield* svc.get(ref)
     const editor = process.env.EDITOR ?? "vi"
     const config = readTxConfig()
     const absPath = resolve(config.docs.path, doc.filePath)
@@ -134,20 +211,20 @@ const docEdit = (pos: string[], _flags: Flags) =>
     // Re-sync DB hash after editor closes (markdown-first docs only)
     if (!doc.filePath.endsWith(".yml") && existsSync(absPath)) {
       const content = readFileSync(absPath, "utf8")
-      yield* svc.update(name, content)
+      yield* svc.update(ref, content)
     }
   })
 
 const docShow = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const name = pos[0]
-    if (!name) {
-      console.error("Usage: tx doc show <name> [--md] [--json]")
+    const ref = pos[0]
+    if (!ref) {
+      console.error("Usage: tx doc show <ref> [--md] [--json]")
       throw new CliExitError(1)
     }
 
     const svc = yield* DocService
-    const doc = yield* svc.get(name)
+    const doc = yield* svc.get(ref)
 
     if (flag(flags, "json")) {
       console.log(toJson(doc))
@@ -161,6 +238,7 @@ const docShow = (pos: string[], flags: Flags) =>
       console.log(readFileSync(markdownPath, "utf8"))
     } else {
       console.log(`Doc: ${doc.name}`)
+      console.log(`  Doc ID: ${doc.docId}`)
       console.log(`  Kind: ${doc.kind}`)
       console.log(`  Title: ${doc.title}`)
       console.log(`  Version: ${doc.version}`)
@@ -196,17 +274,45 @@ const docList = (_pos: string[], flags: Flags) =>
     }
   })
 
-const docLock = (pos: string[], flags: Flags) =>
+const docRemove = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const name = pos[0]
-    if (!name) {
-      console.error("Usage: tx doc lock <name>")
+    const ref = pos[0]
+    if (!ref) {
+      console.error("Usage: tx doc rm <ref> [--json]")
       throw new CliExitError(1)
     }
 
     const svc = yield* DocService
-    const doc = yield* svc.lock(name)
-    yield* svc.render(name)
+    const doc = yield* svc.get(ref)
+    yield* svc.remove(ref)
+
+    const payload = {
+      deleted: true,
+      name: doc.name,
+      kind: doc.kind,
+      version: doc.version,
+      filePath: doc.filePath,
+    }
+
+    if (flag(flags, "json")) {
+      console.log(toJson(payload))
+    } else {
+      console.log(`Removed doc: ${doc.name} (${doc.kind} v${doc.version})`)
+      console.log(`  File: ${doc.filePath}`)
+    }
+  })
+
+const docLock = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const ref = pos[0]
+    if (!ref) {
+      console.error("Usage: tx doc lock <ref>")
+      throw new CliExitError(1)
+    }
+
+    const svc = yield* DocService
+    const doc = yield* svc.lock(ref)
+    yield* svc.render(ref)
 
     if (flag(flags, "json")) {
       console.log(toJson(doc))
@@ -219,14 +325,14 @@ const docLock = (pos: string[], flags: Flags) =>
 
 const docVersion = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
-    const name = pos[0]
-    if (!name) {
-      console.error("Usage: tx doc version <name>")
+    const ref = pos[0]
+    if (!ref) {
+      console.error("Usage: tx doc version <ref>")
       throw new CliExitError(1)
     }
 
     const svc = yield* DocService
-    const doc = yield* svc.createVersion(name)
+    const doc = yield* svc.createVersion(ref)
 
     if (flag(flags, "json")) {
       console.log(toJson(doc))
@@ -242,7 +348,7 @@ const docLink = (pos: string[], flags: Flags) =>
     const from = pos[0]
     const to = pos[1]
     if (!from || !to) {
-      console.error("Usage: tx doc link <from-name> <to-name> [--type <link-type>]")
+      console.error("Usage: tx doc link <from-ref> <to-ref> [--type <link-type>]")
       throw new CliExitError(1)
     }
 
@@ -262,7 +368,7 @@ const docAttach = (pos: string[], flags: Flags) =>
     const taskId = pos[0]
     const docName = pos[1]
     if (!taskId || !docName) {
-      console.error("Usage: tx doc attach <task-id> <doc-name> [--type implements|references]")
+      console.error("Usage: tx doc attach <task-id> <doc-ref> [--type implements|references]")
       throw new CliExitError(1)
     }
 
@@ -302,13 +408,15 @@ const docPatch = (pos: string[], flags: Flags) =>
 const docValidate = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const svc = yield* DocService
-    const warnings = yield* svc.validate()
+    const coverageWarnings = yield* svc.validate()
+    const indexWarnings = yield* svc.validateIndexSearchability()
+    const warnings = [...coverageWarnings, ...indexWarnings]
 
     if (flag(flags, "json")) {
       console.log(toJson({ warnings }))
     } else {
       if (warnings.length === 0) {
-        console.log("All tasks are linked to docs")
+        console.log("Docs validation passed: all tasks are linked and searchable index metadata is populated")
       } else {
         console.log(`${warnings.length} warning(s):`)
         for (const w of warnings) {
@@ -347,6 +455,32 @@ const docLintEars = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const target = pos[0]
     const jsonMode = flag(flags, "json")
+    const emitLintFailure = (payload: {
+      doc: string | null
+      path?: string
+      errors: Array<{ field: string; message: string }>
+    }): never => {
+      if (jsonMode) {
+        console.log(
+          toJson({
+            valid: false,
+            doc: payload.doc,
+            path: payload.path,
+            errors: payload.errors,
+          })
+        )
+      } else {
+        for (const error of payload.errors) {
+          if (payload.path) {
+            console.error(`${error.field === "markdown" ? "Markdown parse error" : "Validation error"} in ${payload.path}: ${error.message}`)
+          } else {
+            console.error(error.message)
+          }
+        }
+      }
+      throw new CliExitError(1)
+    }
+
     if (!target) {
       console.error("Usage: tx doc lint-ears <doc-name-or-markdown-path> [--json]")
       throw new CliExitError(1)
@@ -356,99 +490,75 @@ const docLintEars = (pos: string[], flags: Flags) =>
     let docName: string | null = null
     if (!existsSync(docPath)) {
       const svc = yield* DocService
-      const doc = yield* svc.get(target)
+      const docs = yield* svc.list()
+      const resolution = resolveDocRefFromList(docs, target)
+      const doc = resolution.doc ?? emitLintFailure({
+        doc: target,
+        errors: [{
+          field: "ref",
+          message: resolution.reason ?? `Doc not found: ${target}`,
+        }],
+      })
       if (doc.kind !== "prd") {
         const message = `Doc '${target}' is kind '${doc.kind}'. EARS validation is only supported for PRD docs.`
-        if (jsonMode) {
-          console.log(toJson({ valid: false, doc: target, errors: [{ field: "kind", message }] }))
-        } else {
-          console.error(message)
-        }
-        throw new CliExitError(1)
+        emitLintFailure({
+          doc: target,
+          path: resolve(readTxConfig().docs.path, doc.filePath),
+          errors: [{ field: "kind", message }],
+        })
       }
       docName = doc.name
       docPath = resolve(readTxConfig().docs.path, doc.filePath)
     }
 
-    let markdownContent: string
+    let markdownContent = ""
     try {
       markdownContent = readFileSync(docPath, "utf8")
     } catch (error) {
-      if (jsonMode) {
-        console.log(
-          toJson({
-            valid: false,
-            doc: docName ?? null,
-            path: docPath,
-            errors: [
-              {
-                field: "markdown",
-                message: `Read error: ${String(error)}`,
-              },
-            ],
-          })
-        )
-      } else {
-        console.error(`Read error in ${docPath}: ${String(error)}`)
-      }
-      throw new CliExitError(1)
+      emitLintFailure({
+        doc: docName ?? null,
+        path: docPath,
+        errors: [
+          {
+            field: "markdown",
+            message: `Read error: ${String(error)}`,
+          },
+        ],
+      })
     }
 
     const parsed = parseMdDocSync(markdownContent)
-    if (Either.isLeft(parsed)) {
-      if (jsonMode) {
-        console.log(
-          toJson({
-            valid: false,
-            doc: docName ?? null,
-            path: docPath,
-            errors: [{ field: "markdown", message: parsed.left.reason }],
-          })
-        )
-      } else {
-        console.error(`Markdown parse error in ${docPath}: ${parsed.left.reason}`)
-      }
-      throw new CliExitError(1)
-    }
+    const parsedDoc = Either.isRight(parsed)
+      ? parsed.right
+      : emitLintFailure({
+        doc: docName ?? null,
+        path: docPath,
+        errors: [{ field: "markdown", message: parsed.left.reason }],
+      })
+    const parsedDocName = String(parsedDoc.frontmatter.name)
 
-    if (parsed.right.kind !== "spec") {
+    if (parsedDoc.kind !== "spec") {
       const message = "Only markdown spec docs are supported for EARS validation."
-      if (jsonMode) {
-        console.log(
-          toJson({
-            valid: false,
-            doc: docName ?? null,
-            path: docPath,
-            errors: [{ field: "kind", message }],
-          })
-        )
-      } else {
-        console.error(message)
-      }
-      throw new CliExitError(1)
+      emitLintFailure({
+        doc: docName ?? null,
+        path: docPath,
+        errors: [{ field: "kind", message }],
+      })
     }
 
-    if (parsed.right.frontmatter.spec_type !== "prd") {
+    if (parsedDoc.frontmatter.spec_type !== "prd") {
       const message =
-        `Doc is spec_type '${parsed.right.frontmatter.spec_type}'. ` +
+        `Doc is spec_type '${parsedDoc.frontmatter.spec_type}'. ` +
         "EARS validation is only supported for PRD docs."
-      if (jsonMode) {
-        console.log(
-          toJson({
-            valid: false,
-            doc: docName ?? parsed.right.frontmatter.name,
-            path: docPath,
-            errors: [{ field: "spec_type", message }],
-          })
-        )
-      } else {
-        console.error(message)
-      }
-      throw new CliExitError(1)
+      emitLintFailure({
+        doc: docName ?? parsedDocName,
+        path: docPath,
+        errors: [{ field: "spec_type", message }],
+      })
     }
 
-    docName = docName ?? parsed.right.frontmatter.name
-    const earsRequirements = parsed.right.blocks.ears_requirements ?? []
+    docName = docName ?? parsedDocName
+    const earsRequirements = parsedDoc.blocks.ears_requirements ?? []
     if (earsRequirements.length === 0) {
       if (jsonMode) {
         console.log(
@@ -494,6 +604,76 @@ const docLintEars = (pos: string[], flags: Flags) =>
     }
   })
 
+const docSync = (pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const svc = yield* DocService
+    const config = readTxConfig()
+    const targetName = pos[0]
+
+    const docs = targetName
+      ? [yield* svc.get(targetName)]
+      : yield* svc.list()
+
+    let synced = 0
+    let skipped = 0
+    const results: Array<{ name: string; status: string }> = []
+
+    for (const doc of docs) {
+      const absPath = resolve(config.docs.path, doc.filePath)
+      if (!existsSync(absPath)) {
+        results.push({ name: doc.name, status: "file_missing" })
+        skipped++
+        continue
+      }
+      const content = readFileSync(absPath, "utf8")
+      yield* svc.update(doc.docId, content)
+      results.push({ name: doc.name, status: "synced" })
+      synced++
+    }
+
+    if (flag(flags, "json")) {
+      console.log(toJson({ synced, skipped, results }))
+    } else {
+      console.log(`Synced ${synced} doc(s)${skipped > 0 ? `, ${skipped} skipped (file missing)` : ""}`)
+      for (const r of results) {
+        const icon = r.status === "synced" ? "\u2713" : "\u2717"
+        console.log(`  ${icon} ${r.name}`)
+      }
+    }
+  })
+
+const defaultSummary = (kind: DocKind, title: string): string => {
+  switch (kind) {
+    case "overview":
+      return `System overview for ${title}.`
+    case "prd":
+    case "requirement":
+      return `Product requirements for ${title}.`
+    case "design":
+    case "system_design":
+      return `Technical design for ${title}.`
+    case "runbook":
+      return `Operational runbook for ${title}.`
+    case "decision":
+      return `Architecture decision for ${title}.`
+  }
+}
+
+const defaultDomain = (name: string, kind: DocKind): string => {
+  const normalizedKind = normalizeDocKind(kind)
+  return name.replace(new RegExp(`-(?:${normalizedKind}|overview|runbook|decision)$`), "") || name
+}
+
+const defaultTags = (kind: DocKind, domain: string): string[] => {
+  const baseKind = normalizeDocKind(kind)
+  const tokens = domain
+    .split("-")
+    .map((token) => token.trim())
+    .filter(Boolean)
+
+  return Array.from(new Set([baseKind, ...tokens]))
+}
+
 /** Generate markdown-first template content for a doc kind. */
 function generateTemplate(
   kind: DocKind,
@@ -501,6 +681,9 @@ function generateTemplate(
   title: string
 ): string {
   const today = new Date().toISOString().slice(0, 10)
+  const summary = defaultSummary(kind, title)
+  const domain = defaultDomain(name, kind)
+  const tags = defaultTags(kind, domain)
 
   switch (kind) {
     case "overview":
@@ -514,10 +697,10 @@ function generateTemplate(
         `version: 1`,
         `owners:`,
         `  - docs-team`,
-        `summary: Architectural overview of ${title}`,
-        `domain: product-area`,
+        `summary: ${JSON.stringify(summary)}`,
+        `domain: ${domain}`,
         `tags:`,
-        `  - overview`,
+        ...tags.map((tag) => `  - ${tag}`),
         `depends_on: []`,
         `supersedes: []`,
         `implements: null`,
@@ -561,10 +744,10 @@ function generateTemplate(
         `version: 1`,
         `owners:`,
         `  - docs-team`,
-        `summary: One-line summary of ${title}`,
-        `domain: product-area`,
+        `summary: ${JSON.stringify(summary)}`,
+        `domain: ${domain}`,
         `tags:`,
-        `  - prd`,
+        ...tags.map((tag) => `  - ${tag}`),
         `depends_on: []`,
         `supersedes: []`,
         `implements: null`,
@@ -614,10 +797,10 @@ function generateTemplate(
         `version: 1`,
         `owners:`,
         `  - docs-team`,
-        `summary: Technical approach for ${title}`,
-        `domain: product-area`,
+        `summary: ${JSON.stringify(summary)}`,
+        `domain: ${domain}`,
         `tags:`,
-        `  - design`,
+        ...tags.map((tag) => `  - ${tag}`),
         `depends_on: []`,
         `supersedes: []`,
         `implements: null`,
@@ -676,10 +859,10 @@ function generateTemplate(
         `version: 1`,
         `owners:`,
         `  - docs-team`,
-        `summary: Operational runbook for ${title}`,
-        `domain: product-area`,
+        `summary: ${JSON.stringify(summary)}`,
+        `domain: ${domain}`,
         `tags:`,
-        `  - runbook`,
+        ...tags.map((tag) => `  - ${tag}`),
         `depends_on: []`,
         `supersedes: []`,
         `implements: null`,
@@ -713,10 +896,10 @@ function generateTemplate(
         `version: 1`,
         `owners:`,
         `  - docs-team`,
-        `summary: Architecture decision for ${title}`,
-        `domain: product-area`,
+        `summary: ${JSON.stringify(summary)}`,
+        `domain: ${domain}`,
         `tags:`,
-        `  - decision`,
+        ...tags.map((tag) => `  - ${tag}`),
         `depends_on: []`,
         `supersedes: []`,
         `implements: null`,

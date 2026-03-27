@@ -1,0 +1,104 @@
+---
+title: Ralph Loop
+description: Run the manual tx-based Ralph loop against the full queue or one design-doc scope
+---
+
+## Purpose
+
+`scripts/ralph.sh` is the manual tx-based Ralph workflow. It pulls work from the
+tx task graph, injects the current task plus spec context into a fresh agent
+run, and lets the agent update tx as it works.
+
+Use it when you want a shell-driven loop on top of tx rather than a detached
+watchdog or a custom orchestrator.
+
+## Scope Modes
+
+Ralph supports two task scopes:
+
+| Mode | Command | What It Operates On |
+|------|---------|---------------------|
+| Global queue | `./scripts/ralph.sh --all-tasks` | The repo-wide tx queue |
+| Design-doc scope | `./scripts/ralph.sh --design-doc <name>` | Only tasks whose `linkedDocs` include that design doc |
+
+If neither flag is passed, Ralph defaults to the global queue.
+
+## Design-Doc Scoped Runs
+
+Use design-doc mode when you want one Ralph run to stay inside a single
+spec-defined slice of work.
+
+Attach docs explicitly before running:
+
+```bash
+tx doc attach <task-id> <prd-doc> --type implements
+tx doc attach <task-id> <design-doc> --type references
+```
+
+Ralph scopes by the linked design doc name, not by filename guesses or folder
+layout.
+
+## What Ralph Injects
+
+For each dispatched task, Ralph writes and injects:
+
+- the current task payload as JSON,
+- linked design docs as markdown,
+- the current queue snapshot as JSON for the selected scope.
+
+That means:
+
+- `--all-tasks` injects the repo-wide queue snapshot,
+- `--design-doc <name>` injects only tasks linked to that design doc.
+
+## Common Commands
+
+Run against the full queue:
+
+```bash
+./scripts/ralph.sh --runtime codex --all-tasks
+./scripts/ralph.sh --runtime claude --all-tasks
+```
+
+Run against one design doc:
+
+```bash
+./scripts/ralph.sh --runtime codex --design-doc auth-flow-design
+./scripts/ralph.sh --runtime claude --design-doc auth-flow-design
+```
+
+Other commonly used flags:
+
+- `--workers <n>`
+- `--task-timeout <seconds>`
+- `--verify-timeout <seconds>`
+- `--learnings-timeout <seconds>`
+- `--no-commit`
+- `--dry-run`
+
+## Relationship To tx Flows
+
+Ralph is tx-native rather than an isolated sidecar.
+
+It works from:
+
+- `tx ready` / `tx list` queue state,
+- `linkedDocs` on tasks,
+- `tx doc show --md` for injected design-doc context,
+- normal tx updates during execution.
+
+In practice that means it works for both:
+
+- repo-wide task flows,
+- spec-scoped flows driven by PRD/design-doc attachments.
+
+## Relationship To Skills And Watchdog
+
+The generated onboarding bundles include a `ralph-loop` skill that teaches this
+workflow directly to Claude Code and Codex. If you later refresh installed
+bundles with [`tx skills sync`](/docs/primitives/skills), that skill is updated
+with the rest of the tx-managed bundle.
+
+Use this page for the manual loop itself. Use the
+[Watchdog Runbook](/docs/watchdog-runbook) only when you want detached
+supervision, restart policy, and service-manager setup layered on top of Ralph.

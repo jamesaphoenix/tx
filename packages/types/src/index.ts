@@ -29,6 +29,7 @@ export {
   OrchestrationStatusSchema,
   TaskIdSchema,
   TaskSchema,
+  TaskLinkedDocRefSchema,
   TaskWithDepsSchema,
   TaskTreeSchema,
   TaskDependencySchema,
@@ -47,6 +48,7 @@ export {
   type OrchestrationStatus,
   type TaskId,
   type Task,
+  type TaskLinkedDocRef,
   type TaskWithDeps,
   type TaskTree,
   type TaskDependency,
@@ -308,8 +310,27 @@ export {
   type CycleProgressEvent,
 } from "./cycle.js"
 
+// Decompose types & schemas (spec-driven task graph creation)
+export {
+  DecomposeDocSummarySchema,
+  DecomposeRootPreviewSchema,
+  DecompositionTaskSchema,
+  DecompositionPlanSchema,
+  DecomposeRequestSchema,
+  MaterializedDecomposeTaskSchema,
+  DecomposeResultSchema,
+  type DecomposeDocSummary,
+  type DecomposeRootPreview,
+  type DecompositionTask,
+  type DecompositionPlan,
+  type DecomposeRequest,
+  type MaterializedDecomposeTask,
+  type DecomposeResult,
+} from "./decompose.js"
+
 // Doc types & schemas (docs-as-primitives, DD-023)
 export {
+  DOC_STABLE_ID_PATTERN,
   DOC_KINDS,
   DOC_STATUSES,
   DOC_LINK_TYPES,
@@ -335,6 +356,7 @@ export {
   DocLinkTypeSchema,
   TaskDocLinkTypeSchema,
   DocIdSchema,
+  DocStableIdSchema,
   DocSchema,
   DocWithLinksSchema,
   DocLinkSchema,
@@ -412,6 +434,7 @@ export {
   type DocLinkType,
   type TaskDocLinkType,
   type DocId,
+  type DocStableId,
   type Doc,
   type DocWithLinks,
   type DocLink,
@@ -596,6 +619,7 @@ export {
   FileLearningsSerializedSchema,
   RunSerializedSchema,
   AttemptSerializedSchema,
+  DecomposeResultSerializedSchema,
   // Serialized entity types
   type TaskWithDepsSerialized,
   type LearningSerialized,
@@ -603,6 +627,7 @@ export {
   type FileLearningsSerialized,
   type RunSerialized,
   type AttemptSerialized,
+  type DecomposeResultSerialized,
   // Serialization functions
   serializeTask,
   serializeLearning,
@@ -610,6 +635,7 @@ export {
   serializeFileLearning,
   serializeRun,
   serializeAttempt,
+  serializeDecomposeResult,
   // Message serialized schemas & types
   MessageSerializedSchema,
   type MessageSerialized,

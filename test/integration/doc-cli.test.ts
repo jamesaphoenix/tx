@@ -283,6 +283,199 @@ describe("tx doc lifecycle coverage", () => {
     expect(doc.status).toBe("changing")
   })
 
+  it("resolves duplicate slugs through scoped refs and stable doc ids", () => {
+    const addPrd = runTx(["doc", "add", "prd", "shared-slug", "--title", "Shared PRD"], tmpProjectDir)
+    const addDesign = runTx(["doc", "add", "design", "shared-slug", "--title", "Shared Design"], tmpProjectDir)
+    expect(addPrd.status).toBe(0)
+    expect(addDesign.status).toBe(0)
+
+    const ambiguous = runTx(["doc", "show", "shared-slug", "--json"], tmpProjectDir)
+    expect(ambiguous.status).toBe(1)
+    const ambiguousError = JSON.parse(ambiguous.stdout) as {
+      ok: false
+      error: { message: string }
+    }
+    expect(ambiguousError.ok).toBe(false)
+    expect(ambiguousError.error.message).toContain("ambiguous across kinds")
+    expect(ambiguousError.error.message).toContain("Use doc_id instead")
+
+    const prdShow = runTx(["doc", "show", "prd/shared-slug", "--json"], tmpProjectDir)
+    const designShow = runTx(["doc", "show", "design/shared-slug", "--json"], tmpProjectDir)
+    expect(prdShow.status).toBe(0)
+    expect(designShow.status).toBe(0)
+
+    const prdDoc = JSON.parse(prdShow.stdout) as {
+      docId: string
+      name: string
+      kind: string
+      filePath: string
+    }
+    const designDoc = JSON.parse(designShow.stdout) as {
+      docId: string
+      name: string
+      kind: string
+      filePath: string
+    }
+
+    expect(prdDoc).toMatchObject({
+      name: "shared-slug",
+      kind: "prd",
+      filePath: "prd/shared-slug.md",
+    })
+    expect(designDoc).toMatchObject({
+      name: "shared-slug",
+      kind: "design",
+      filePath: "design/shared-slug.md",
+    })
+    expect(prdDoc.docId).not.toBe(designDoc.docId)
+
+    const byIdShow = runTx(["doc", "show", prdDoc.docId, "--json"], tmpProjectDir)
+    expect(byIdShow.status).toBe(0)
+    const byIdDoc = JSON.parse(byIdShow.stdout) as {
+      docId: string
+      name: string
+      kind: string
+    }
+    expect(byIdDoc).toMatchObject({
+      docId: prdDoc.docId,
+      name: "shared-slug",
+      kind: "prd",
+    })
+  })
+
+  it("syncs and versions duplicate-slug docs without falling back to bare names", () => {
+    const addPrd = runTx(["doc", "add", "prd", "shared-sync", "--title", "Shared Sync PRD"], tmpProjectDir)
+    const addDesign = runTx(["doc", "add", "design", "shared-sync", "--title", "Shared Sync Design"], tmpProjectDir)
+    expect(addPrd.status).toBe(0)
+    expect(addDesign.status).toBe(0)
+
+    const prdShow = runTx(["doc", "show", "prd/shared-sync", "--json"], tmpProjectDir)
+    expect(prdShow.status).toBe(0)
+    const prdDoc = JSON.parse(prdShow.stdout) as {
+      docId: string
+      name: string
+      kind: string
+      filePath: string
+      version: number
+    }
+
+    const prdPath = join(tmpProjectDir, "specs", "prd", "shared-sync.md")
+    const designPath = join(tmpProjectDir, "specs", "design", "shared-sync.md")
+    writeFileSync(prdPath, readFileSync(prdPath, "utf-8") + "\n# PRD Extra Section\n", "utf-8")
+    writeFileSync(designPath, readFileSync(designPath, "utf-8") + "\n# Design Extra Section\n", "utf-8")
+
+    const sync = runTx(["doc", "sync"], tmpProjectDir)
+    expect(sync.status).toBe(0)
+    expect(sync.stdout).toContain("Synced 2 doc(s)")
+
+    const lock = runTx(["doc", "lock", "prd/shared-sync", "--json"], tmpProjectDir)
+    expect(lock.status).toBe(0)
+    const locked = JSON.parse(lock.stdout) as { docId: string; status: string }
+    expect(locked).toMatchObject({
+      docId: prdDoc.docId,
+      status: "locked",
+    })
+
+    const version = runTx(["doc", "version", prdDoc.docId, "--json"], tmpProjectDir)
+    expect(version.status).toBe(0)
+    const versioned = JSON.parse(version.stdout) as {
+      docId: string
+      name: string
+      kind: string
+      version: number
+      filePath: string
+    }
+    expect(versioned).toMatchObject({
+      docId: prdDoc.docId,
+      name: "shared-sync",
+      kind: "prd",
+      version: 2,
+      filePath: "prd/shared-sync.md",
+    })
+
+    const latest = runTx(["doc", "show", prdDoc.docId, "--json"], tmpProjectDir)
+    expect(latest.status).toBe(0)
+    const latestDoc = JSON.parse(latest.stdout) as {
+      docId: string
+      version: number
+      filePath: string
+    }
+    expect(latestDoc).toMatchObject({
+      docId: prdDoc.docId,
+      version: 2,
+      filePath: "prd/shared-sync.md",
+    })
+  })
+
+  it("keeps the shared markdown file when removing a newer mutable version", () => {
+    const add = runTx(["doc", "add", "prd", "versioned-delete", "--title", "Versioned Delete"], tmpProjectDir)
+    expect(add.status).toBe(0)
+
+    const lock = runTx(["doc", "lock", "versioned-delete"], tmpProjectDir)
+    expect(lock.status).toBe(0)
+
+    const version = runTx(["doc", "version", "versioned-delete"], tmpProjectDir)
+    expect(version.status).toBe(0)
+
+    const mdPath = join(tmpProjectDir, "specs", "prd", "versioned-delete.md")
+    expect(existsSync(mdPath)).toBe(true)
+
+    const remove = runTx(["doc", "rm", "versioned-delete"], tmpProjectDir)
+    expect(remove.status).toBe(0)
+    expect(existsSync(mdPath)).toBe(true)
+
+    const show = runTx(["doc", "show", "versioned-delete", "--json"], tmpProjectDir)
+    expect(show.status).toBe(0)
+    const doc = JSON.parse(show.stdout) as { version: number; status: string }
+    expect(doc.version).toBe(1)
+    expect(doc.status).toBe("locked")
+  })
+
+  it("removes the latest mutable doc version and deletes its markdown file", () => {
+    const add = runTx(["doc", "add", "design", "delete-me", "--title", "Delete Me"], tmpProjectDir)
+    expect(add.status).toBe(0)
+
+    const mdPath = join(tmpProjectDir, "specs", "design", "delete-me.md")
+    expect(existsSync(mdPath)).toBe(true)
+
+    const remove = runTx(["doc", "rm", "delete-me", "--json"], tmpProjectDir)
+    expect(remove.status).toBe(0)
+    const removed = JSON.parse(remove.stdout) as {
+      deleted: boolean
+      name: string
+      kind: string
+      filePath: string
+    }
+    expect(removed).toMatchObject({
+      deleted: true,
+      name: "delete-me",
+      kind: "design",
+      filePath: "design/delete-me.md",
+    })
+
+    expect(existsSync(mdPath)).toBe(false)
+
+    const list = runTx(["doc", "list", "--json"], tmpProjectDir)
+    expect(list.status).toBe(0)
+    const docs = JSON.parse(list.stdout) as Array<{ name: string }>
+    expect(docs.some((doc) => doc.name === "delete-me")).toBe(false)
+  })
+
+  it("rejects removing locked docs", () => {
+    const add = runTx(["doc", "add", "prd", "locked-delete", "--title", "Locked Delete"], tmpProjectDir)
+    expect(add.status).toBe(0)
+
+    const lock = runTx(["doc", "lock", "locked-delete"], tmpProjectDir)
+    expect(lock.status).toBe(0)
+
+    const remove = runTx(["doc", "remove", "locked-delete"], tmpProjectDir)
+    expect(remove.status).toBe(1)
+    expect(remove.stderr).toContain("Doc is locked: locked-delete v1")
+
+    const show = runTx(["doc", "show", "locked-delete", "--json"], tmpProjectDir)
+    expect(show.status).toBe(0)
+  })
+
   it("supports doc linking, patch creation, and rendering", () => {
     const addPrd = runTx(["doc", "add", "prd", "prd-feature", "--title", "PRD Feature"], tmpProjectDir)
     const addDesign = runTx(["doc", "add", "design", "dd-feature", "--title", "DD Feature"], tmpProjectDir)
@@ -300,16 +493,18 @@ describe("tx doc lifecycle coverage", () => {
     expect(patch.status).toBe(0)
     expect(patch.stdout).toContain("Created patch: dd-feature-patch → dd-feature")
 
-    // Lock triggers render internally (index regeneration)
-    const lockResult = runTx(["doc", "lock", "dd-feature-patch"], tmpProjectDir)
-    expect(lockResult.status).toBe(0)
     const indexMd = join(tmpProjectDir, "specs", "index.md")
     const indexYml = join(tmpProjectDir, "specs", "index.yml")
-    for (let i = 0; i < 10 && (!existsSync(indexMd) || !existsSync(indexYml)); i++) {
+    writeFileSync(indexYml, "legacy: true\n", "utf-8")
+
+    // Lock triggers render internally (index regeneration + legacy YAML cleanup)
+    const lockResult = runTx(["doc", "lock", "dd-feature-patch"], tmpProjectDir)
+    expect(lockResult.status).toBe(0)
+    for (let i = 0; i < 10 && !existsSync(indexMd); i++) {
       spawnSync("sleep", ["0.05"])
     }
     expect(existsSync(indexMd)).toBe(true)
-    expect(existsSync(indexYml)).toBe(true)
+    expect(existsSync(indexYml)).toBe(false)
   })
 
   it("validate reflects unlinked tasks and clears after attach", () => {
@@ -333,6 +528,27 @@ describe("tx doc lifecycle coverage", () => {
     expect(validateAfter.status).toBe(0)
     const after = JSON.parse(validateAfter.stdout) as { warnings: string[] }
     expect(after.warnings).toEqual([])
+  })
+
+  it("doc validate explains how to fix searchable index metadata", () => {
+    const addDesign = runTx(["doc", "add", "design", "searchability-design", "--title", "Searchability Design"], tmpProjectDir)
+    expect(addDesign.status).toBe(0)
+
+    const mdPath = join(tmpProjectDir, "specs", "design", "searchability-design.md")
+    const degraded = readFileSync(mdPath, "utf-8")
+      .replace('summary: "Technical design for Searchability Design."', 'summary: ""')
+      .replace("domain: searchability", "domain: product-area")
+      .replace("  - searchability", "")
+      .replace("  - design", "")
+    writeFileSync(mdPath, degraded, "utf-8")
+
+    const validate = runTx(["doc", "validate", "--json"], tmpProjectDir)
+    expect(validate.status).toBe(0)
+    const payload = JSON.parse(validate.stdout) as { warnings: string[] }
+    expect(payload.warnings.some((warning) => warning.includes("summary"))).toBe(true)
+    expect(payload.warnings.some((warning) => warning.includes("domain"))).toBe(true)
+    expect(payload.warnings.some((warning) => warning.includes("tags"))).toBe(true)
+    expect(payload.warnings.some((warning) => warning.includes("specs/index.md"))).toBe(true)
   })
 
   it("detects content drift after markdown mutation", () => {
@@ -853,5 +1069,121 @@ describe("tx doc lifecycle coverage", () => {
     const syncDoc = runTx(["invariant", "sync", "--doc", "bad-only-prd"], tmpProjectDir)
     expect(syncDoc.status).not.toBe(0)
     expect(syncDoc.stderr).toContain("Invalid YAML for doc 'bad-only-prd'")
+  })
+})
+
+describe("tx doc add file-exists guard", () => {
+  let tmpProjectDir: string
+
+  beforeEach(() => {
+    tmpProjectDir = mkdtempSync(join(tmpdir(), "tx-doc-guard-"))
+    const init = runTx(["init", "--codex"], tmpProjectDir)
+    expect(init.status).toBe(0)
+    writeDocsConfig(tmpProjectDir, false)
+  })
+
+  afterEach(() => {
+    if (existsSync(tmpProjectDir)) {
+      rmSync(tmpProjectDir, { recursive: true, force: true })
+    }
+  })
+
+  it("refuses to overwrite an existing file on disk", () => {
+    // Create a file on disk manually (not via tx doc add)
+    const prdDir = join(tmpProjectDir, "specs", "prd")
+    const { mkdirSync: mkDir } = require("node:fs")
+    mkDir(prdDir, { recursive: true })
+    const filePath = join(prdDir, "existing-doc.md")
+    const originalContent = "# My existing content\nDo not overwrite me.\n"
+    writeFileSync(filePath, originalContent, "utf-8")
+
+    // tx doc add should fail because the file already exists
+    const result = runTx(
+      ["doc", "add", "prd", "existing-doc", "--title", "Existing Doc"],
+      tmpProjectDir,
+    )
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("File already exists")
+    expect(result.stderr).toContain("Edit it directly")
+
+    // Original content must be preserved
+    const afterContent = readFileSync(filePath, "utf-8")
+    expect(afterContent).toBe(originalContent)
+  })
+
+  it("succeeds when no file exists on disk", () => {
+    const result = runTx(
+      ["doc", "add", "prd", "fresh-doc", "--title", "Fresh Doc"],
+      tmpProjectDir,
+    )
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("Created doc: fresh-doc")
+
+    const filePath = join(tmpProjectDir, "specs", "prd", "fresh-doc.md")
+    expect(existsSync(filePath)).toBe(true)
+  })
+})
+
+describe("tx doc sync", () => {
+  let tmpProjectDir: string
+
+  beforeEach(() => {
+    tmpProjectDir = mkdtempSync(join(tmpdir(), "tx-doc-sync-"))
+    const init = runTx(["init", "--codex"], tmpProjectDir)
+    expect(init.status).toBe(0)
+    writeDocsConfig(tmpProjectDir, false)
+  })
+
+  afterEach(() => {
+    if (existsSync(tmpProjectDir)) {
+      rmSync(tmpProjectDir, { recursive: true, force: true })
+    }
+  })
+
+  it("re-syncs all doc hashes from disk", () => {
+    // Create a doc
+    const add = runTx(
+      ["doc", "add", "prd", "sync-test", "--title", "Sync Test"],
+      tmpProjectDir,
+    )
+    expect(add.status).toBe(0)
+
+    // Modify file on disk
+    const filePath = join(tmpProjectDir, "specs", "prd", "sync-test.md")
+    const original = readFileSync(filePath, "utf-8")
+    writeFileSync(filePath, original + "\n# Extra section\n", "utf-8")
+
+    // Verify drift exists before sync
+    const drift = runTx(["doc", "drift", "sync-test"], tmpProjectDir)
+    expect(drift.stdout).toContain("drift warning")
+
+    // Sync should clear the drift
+    const sync = runTx(["doc", "sync"], tmpProjectDir)
+    expect(sync.status).toBe(0)
+    expect(sync.stdout).toContain("Synced 1 doc(s)")
+    const docIdMatches = readFileSync(filePath, "utf-8").match(/^\s*doc_id\s*:/gm) ?? []
+    expect(docIdMatches).toHaveLength(1)
+
+    // No drift after sync
+    const driftAfter = runTx(["doc", "drift", "sync-test"], tmpProjectDir)
+    expect(driftAfter.stdout).toContain("No drift")
+  })
+
+  it("syncs a single doc by name", () => {
+    const add = runTx(
+      ["doc", "add", "design", "sync-single", "--title", "Sync Single"],
+      tmpProjectDir,
+    )
+    expect(add.status).toBe(0)
+
+    // Modify file
+    const filePath = join(tmpProjectDir, "specs", "design", "sync-single.md")
+    const original = readFileSync(filePath, "utf-8")
+    writeFileSync(filePath, original + "\n# Added\n", "utf-8")
+
+    const sync = runTx(["doc", "sync", "sync-single"], tmpProjectDir)
+    expect(sync.status).toBe(0)
+    expect(sync.stdout).toContain("Synced 1 doc(s)")
+    expect(sync.stdout).toContain("sync-single")
   })
 })

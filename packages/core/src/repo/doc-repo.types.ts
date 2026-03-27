@@ -4,9 +4,11 @@ import type {
   Doc,
   DocLink,
   TaskDocLink,
+  TaskLinkedDocRef,
   Invariant,
   InvariantCheck,
   DocId,
+  DocStableId,
   DocKind,
   DocStatus,
   DocLinkType,
@@ -14,6 +16,7 @@ import type {
 } from "@jamesaphoenix/tx-types"
 
 export type DocInsertInput = {
+  docId: DocStableId
   hash: string
   kind: DocKind
   name: string
@@ -25,6 +28,7 @@ export type DocInsertInput = {
 }
 
 export type DocUpdateInput = {
+  docId?: DocStableId
   hash?: string
   title?: string
   status?: DocStatus
@@ -70,7 +74,10 @@ export type InvariantUpsertInput = {
 export type DocRepositoryService = {
   insert: (input: DocInsertInput) => Effect.Effect<Doc, DatabaseError>
   findById: (id: DocId) => Effect.Effect<Doc | null, DatabaseError>
+  findByDocId: (docId: DocStableId, version?: number) => Effect.Effect<Doc | null, DatabaseError>
   findByName: (name: string, version?: number) => Effect.Effect<Doc | null, DatabaseError>
+  findAllByName: (name: string, version?: number) => Effect.Effect<Doc[], DatabaseError>
+  findLatestByKindAndName: (kind: DocKind, name: string) => Effect.Effect<Doc | null, DatabaseError>
   findAll: (filter?: DocFilter) => Effect.Effect<Doc[], DatabaseError>
   update: (id: DocId, input: DocUpdateInput) => Effect.Effect<void, DatabaseError>
   lock: (id: DocId, lockedAt: string) => Effect.Effect<void, DatabaseError>
@@ -81,6 +88,9 @@ export type DocRepositoryService = {
   getAllLinks: () => Effect.Effect<DocLink[], DatabaseError>
   createTaskLink: (taskId: string, docId: DocId, linkType: TaskDocLinkType) => Effect.Effect<TaskDocLink, DatabaseError>
   getTaskLinksForDoc: (docId: DocId) => Effect.Effect<TaskDocLink[], DatabaseError>
+  getTaskLinksForTask: (taskId: string) => Effect.Effect<TaskDocLink[], DatabaseError>
+  getDocsForTask: (taskId: string) => Effect.Effect<TaskLinkedDocRef[], DatabaseError>
+  getDocsForManyTasks: (taskIds: readonly string[]) => Effect.Effect<ReadonlyMap<string, readonly TaskLinkedDocRef[]>, DatabaseError>
   getDocForTask: (taskId: string) => Effect.Effect<Doc | null, DatabaseError>
   getUnlinkedTaskIds: () => Effect.Effect<string[], DatabaseError>
   upsertInvariant: (input: InvariantUpsertInput) => Effect.Effect<Invariant, DatabaseError>
