@@ -7,6 +7,7 @@ import type { Readable } from "node:stream"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 const DOCS_APP_DIR = resolve(ROOT, "apps/docs")
+const NEXT_BIN = require.resolve("next/dist/bin/next")
 
 type DocsProcess = ChildProcessByStdio<null, Readable, Readable>
 
@@ -81,7 +82,7 @@ describe("docs search route", { timeout: 180_000 }, () => {
   let serverLogs = ""
 
   beforeAll(async () => {
-    const build = spawnSync("bun", ["run", "build"], {
+    const build = spawnSync("node", [NEXT_BIN, "build"], {
       cwd: DOCS_APP_DIR,
       encoding: "utf-8",
       timeout: 180_000,
@@ -94,7 +95,7 @@ describe("docs search route", { timeout: 180_000 }, () => {
     const port = await getFreePort()
     baseUrl = `http://127.0.0.1:${port}`
 
-    docsProc = spawn("bun", ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)], {
+    docsProc = spawn("node", [NEXT_BIN, "start", "--hostname", "127.0.0.1", "--port", String(port)], {
       cwd: DOCS_APP_DIR,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
