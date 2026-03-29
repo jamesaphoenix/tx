@@ -2083,7 +2083,7 @@ This is iteration $iteration of the RALPH loop."
   [[ "$test_runner_profile" == "$PROJECT_DIR/"* ]] && test_runner_display="${test_runner_profile#"$PROJECT_DIR"/}"
   run_review_agent "test-runner" "Read $test_runner_display for your instructions.
 
-Run ONLY targeted tests for recently changed files. Do NOT run the full test suite.
+Run the full test suite to catch regressions. Do NOT limit to targeted tests only.
 This is iteration $iteration of the RALPH loop."
 
   # 3. Quality Checker

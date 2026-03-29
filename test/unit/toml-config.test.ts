@@ -59,6 +59,17 @@ const DEFAULTS = {
     defaultSessions: 10,
     includeTranscripts: false,
   },
+  reviews: {
+    designDocs: {
+      enabled: false,
+      runtime: "pi",
+      transport: "rpc",
+      template: "double-check",
+      blocking: false,
+      createFollowupTasks: true,
+      retriggerOnTaskReopen: true,
+    },
+  },
 } as const;
 
 function makeTempDir(): string {

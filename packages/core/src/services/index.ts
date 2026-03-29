@@ -339,3 +339,10 @@ export {
   type SpecTraceStatus,
 } from "./spec-trace-service.js"
 export { DecisionService, DecisionServiceLive } from "./decision-service.js"
+export {
+  ReviewRuntime,
+  ReviewRuntimeNoop,
+  type ReviewExecutionParams,
+  ReviewExecutionParamsSchema,
+} from "./review-runtime.js"
+export { PiReviewRuntimeLive } from "./pi-review-runtime.js"

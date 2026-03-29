@@ -336,6 +336,11 @@ export {
   type SpecTraceStatus,
   DecisionService,
   DecisionServiceLive,
+  ReviewRuntime,
+  ReviewRuntimeNoop,
+  ReviewExecutionParamsSchema,
+  type ReviewExecutionParams,
+  PiReviewRuntimeLive,
   // Runtime interface validators for optional peer dependencies
   isValidLlama,
   isValidLlamaModel,
@@ -551,6 +556,9 @@ export {
   type DashboardDefaultTaskView,
   type DashboardCycleStartDay,
   type DashboardCyclesConfig,
+  type ReviewDesignDocsConfig,
+  type ReviewRuntimeType,
+  type ReviewTransportType,
 } from "./utils/toml-config.js"
 export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
 export {
