@@ -333,7 +333,7 @@ function ChatView({ runId }: { runId: string }) {
   }
 
   if (error) {
-    return <div className="text-red-400 p-4">Error loading run: {String(error)}</div>
+    return <div className="text-red-400 p-4 break-words overflow-hidden">Error loading run: {String(error)}</div>
   }
 
   return (
@@ -702,6 +702,7 @@ const DEFAULT_CYCLE_SETTINGS: CycleSettings = {
   cycleLengthDays: 7,
   cycleStartDay: "monday",
   carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+  autoAddStatuses: ["backlog", "ready"],
 }
 
 function normalizeCarryStatuses(statuses: readonly string[]): CycleCarryStatus[] {
@@ -739,10 +740,16 @@ function SettingsPage({
     () => normalizeCarryStatuses(cycleSettings.carryStatuses),
     [cycleSettings.carryStatuses]
   )
+  const normalizedCurrentAutoAddStatuses = useMemo(
+    () => normalizeCarryStatuses(cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses),
+    [cycleSettings.autoAddStatuses]
+  )
   const currentCarryStatusesKey = normalizedCurrentCarryStatuses.join(",")
+  const currentAutoAddStatusesKey = normalizedCurrentAutoAddStatuses.join(",")
   const [draftCycleLengthDays, setDraftCycleLengthDays] = useState(String(cycleSettings.cycleLengthDays))
   const [draftCycleStartDay, setDraftCycleStartDay] = useState(normalizedCycleStartDay)
   const [draftCarryStatuses, setDraftCarryStatuses] = useState<CycleCarryStatus[]>(normalizedCurrentCarryStatuses)
+  const [draftAutoAddStatuses, setDraftAutoAddStatuses] = useState<CycleCarryStatus[]>(normalizedCurrentAutoAddStatuses)
 
   useEffect(() => {
     setDraftType(defaultTaskAssigmentType)
@@ -756,7 +763,8 @@ function SettingsPage({
     setDraftCycleLengthDays(String(cycleSettings.cycleLengthDays))
     setDraftCycleStartDay(normalizedCycleStartDay)
     setDraftCarryStatuses(normalizedCurrentCarryStatuses)
-  }, [cycleSettings.cycleLengthDays, normalizedCycleStartDay, currentCarryStatusesKey, normalizedCurrentCarryStatuses])
+    setDraftAutoAddStatuses(normalizedCurrentAutoAddStatuses)
+  }, [cycleSettings.cycleLengthDays, normalizedCycleStartDay, currentCarryStatusesKey, normalizedCurrentCarryStatuses, currentAutoAddStatusesKey, normalizedCurrentAutoAddStatuses])
 
   const hasAssigmentTypeChanges = draftType !== defaultTaskAssigmentType
   const hasDefaultTaskViewChanges = draftTaskView !== defaultTaskView

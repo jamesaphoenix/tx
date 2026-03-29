@@ -23,6 +23,7 @@ export interface CycleSettings {
   cycleLengthDays: number
   cycleStartDay: string
   carryStatuses: string[]
+  autoAddStatuses: string[]
 }
 
 export interface TaskRow {
