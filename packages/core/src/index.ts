@@ -166,6 +166,22 @@ export {
   GuardRepositoryLive,
   LabelRepository,
   LabelRepositoryLive,
+  DomainEventRepository,
+  DomainEventRepositoryLive,
+  SupervisionRepository,
+  SupervisionRepositoryLive,
+  DocReviewRepository,
+  DocReviewRepositoryLive,
+  DomainEventService,
+  DomainEventServiceLive,
+  type PublishDomainEventInput,
+  SupervisionService,
+  SupervisionServiceLive,
+  DocReviewService,
+  DocReviewServiceLive,
+  type DocReviewConfig,
+  DEFAULT_REVIEW_CONFIG,
+  type CompletionStateResult,
 } from "./layer.js"
 
 // =============================================================================

@@ -346,3 +346,19 @@ export {
   ReviewExecutionParamsSchema,
 } from "./review-runtime.js"
 export { PiReviewRuntimeLive } from "./pi-review-runtime.js"
+export {
+  DomainEventService,
+  DomainEventServiceLive,
+  type PublishDomainEventInput
+} from "./domain-event-service.js"
+export {
+  SupervisionService,
+  SupervisionServiceLive
+} from "./supervision-service.js"
+export {
+  DocReviewService,
+  DocReviewServiceLive,
+  type DocReviewConfig,
+  DEFAULT_REVIEW_CONFIG,
+  type CompletionStateResult
+} from "./doc-review-service.js"
