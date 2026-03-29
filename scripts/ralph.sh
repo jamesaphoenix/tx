@@ -39,7 +39,7 @@ REVIEW_TIMEOUT=${REVIEW_TIMEOUT:-300}  # 5 minutes max per review agent
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 TASK_TIMEOUT=${TASK_TIMEOUT:-1800}  # 30 minutes max per task
 VERIFY_TIMEOUT=${VERIFY_TIMEOUT:-180}
-LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-180}
+LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-300}
 WORKERS=${WORKERS:-1}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
 CLAIM_RENEW_INTERVAL=${CLAIM_RENEW_INTERVAL:-300}
@@ -1767,7 +1767,9 @@ If the queue needs reordering, update scores with \`tx update <id> --score <n>\`
 If a non-trivial task needs specs, prefer a paired PRD/design doc: attach the PRD with \`tx doc attach $task_id <prd-doc> --type implements\` and the design doc with \`tx doc attach $task_id <design-doc> --type references\`.
 If one half of the PRD/design pair is missing, create follow-up docs work or block the task before large implementation proceeds.
 If blocked, run \`tx update $task_id --status blocked\`.
-Optionally record useful insights with \`tx memory add \"<what you learned>\" --source-ref $task_id\`."
+Optionally record useful insights:
+- File-specific: \`tx memory learn \"<file-path>\" \"<gotcha or convention>\"\`
+- Broader: \`tx memory add \"<title>\" -c \"<detail>\" -t learnings -d docs/learnings\`"
 
   # Save injected context
   echo "$prompt" > "$run_dir/context.md"
@@ -2368,18 +2370,27 @@ Be honest - only mark done if the acceptance criteria are met."
       log "[$worker_id] Extracting learnings from session transcript..."
       local learnings_exit=0
       if run_runtime_sync_with_timeout \
-        "You are a learnings extractor. Read the transcript at $LAST_TRANSCRIPT_PATH.
+        "You are a learnings extractor for task $TASK_ID ($TASK_TITLE).
+Read the transcript at $LAST_TRANSCRIPT_PATH. Be fast — skim for surprises, skip boilerplate.
 
-Extract all key learnings — things that would help a future agent working on this codebase. Focus on:
-- Bugs discovered and their root causes
-- Patterns that worked or failed
-- Codebase-specific knowledge (file locations, gotchas, conventions)
-- Tool/API quirks encountered
+Record ONLY non-obvious, project-specific insights using THREE methods:
 
-For each learning, record it with:
-  tx memory add \"<learning>\" --source-ref $TASK_ID
+1. File-specific learnings (preferred — attach knowledge to the file that needs it):
+   bun apps/cli/src/cli.ts memory learn \"<file-path-or-glob>\" \"<what future agents need to know>\"
 
-Skip obvious or generic observations. Only record insights specific to this project." \
+2. Cross-cutting codebase learnings (for patterns, conventions, gotchas):
+   bun apps/cli/src/cli.ts memory add \"<concise title>\" -c \"<1-2 sentence explanation>\" -t learnings -d docs/learnings
+
+3. Episodic task log (one per task — what was tried, what worked, key decisions):
+   bun apps/cli/src/cli.ts memory add \"Episode: $TASK_TITLE\" -c \"## Task $TASK_ID
+Approach: <what the agent did>
+Outcome: <success/failure and why>
+Decisions: <key choices made>
+Surprises: <anything unexpected>\" -t episode -d docs/episodes
+
+Focus on: bugs and root causes, patterns that worked or failed, gotchas, conventions discovered.
+Skip: obvious observations, generic best practices, things already in CLAUDE.md.
+Aim for 1 episode + 2-5 learnings max. Speed matters more than completeness." \
         "$LEARNINGS_TIMEOUT" \
         "Learnings extractor"
       then
