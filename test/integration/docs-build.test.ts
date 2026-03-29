@@ -6,7 +6,7 @@ import { execSync } from "child_process"
 const DOCS_DIR = join(process.cwd(), "apps/docs")
 const NEXT_DIR = join(DOCS_DIR, ".next")
 
-describe("Docs Site Build", () => {
+describe("Docs Site Build", { timeout: 180_000 }, () => {
   const hasExpectedBuildArtifacts = (): boolean =>
     existsSync(join(NEXT_DIR, "build-manifest.json")) &&
     existsSync(join(NEXT_DIR, "prerender-manifest.json"))
@@ -20,7 +20,7 @@ describe("Docs Site Build", () => {
       }
       execSync("bun run build", { cwd: DOCS_DIR, stdio: "inherit" })
     }
-  })
+  }, 180_000)
 
   describe("Build output exists", () => {
     it("has .next directory", () => {

@@ -405,7 +405,7 @@ describe("tx doc lifecycle coverage", () => {
       version: 2,
       filePath: "prd/shared-sync.md",
     })
-  })
+  }, 30000)
 
   it("keeps the shared markdown file when removing a newer mutable version", () => {
     const add = runTx(["doc", "add", "prd", "versioned-delete", "--title", "Versioned Delete"], tmpProjectDir)

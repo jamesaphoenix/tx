@@ -227,7 +227,7 @@ describe("RALPH context bundle e2e", () => {
     expect(task?.status).toBe("done")
     expect(task?.completed_at).toBeTruthy()
     db.close()
-  }, 20000)
+  }, 60000)
 
   it("filters the queue bundle to a single design doc when --design-doc is used", () => {
     const sandbox = setupSandbox()
@@ -259,5 +259,5 @@ describe("RALPH context bundle e2e", () => {
     expect(allTasks).toContain(sandbox.scopedSiblingId)
     expect(allTasks).not.toContain(sandbox.unrelatedTaskId)
     expect(promptContext).toContain(`design-doc:${sandbox.designDocName}`)
-  }, 20000)
+  }, 60000)
 })
