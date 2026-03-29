@@ -255,8 +255,9 @@ function ChatMessageComponent({ message }: { message: ChatMessage }) {
 
 function SourcePathRow({ label, path }: { label: string; path: string }) {
   return (
-    <div className="text-xs text-gray-500 truncate" title={path}>
-      <span className="text-gray-400">{label}:</span> <code className="text-[11px]">{path}</code>
+    <div className="text-xs text-gray-500 flex min-w-0" title={path}>
+      <span className="text-gray-400 shrink-0">{label}:</span>{" "}
+      <code className="text-[11px] truncate ml-1">{path}</code>
     </div>
   )
 }
@@ -340,9 +341,9 @@ function ChatView({ runId }: { runId: string }) {
     <div className="flex flex-col h-full">
       {/* Run Header */}
       {run && (
-        <div className="p-4 border-b border-gray-700 bg-gray-800/50">
+        <div className="p-4 border-b border-gray-700 bg-gray-800/50 overflow-hidden">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <code className="text-sm text-gray-400">{run.id}</code>
               <span className="text-purple-400">{run.agent}</span>
               {isRunning && (

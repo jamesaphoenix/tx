@@ -4,6 +4,32 @@ import { spawn, spawnSync, type SpawnSyncReturns } from "child_process"
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { createHash } from "node:crypto"
+import { Effect, Layer } from "effect"
+import type { ReviewTriggerCause } from "@jamesaphoenix/tx-types"
+import {
+  SqliteClientLive,
+  TaskRepositoryLive,
+  DependencyRepositoryLive,
+  SqliteClient,
+} from "@jamesaphoenix/tx-core"
+import {
+  DocRepositoryLive,
+  DomainEventRepositoryLive,
+  DocReviewRepositoryLive,
+} from "@jamesaphoenix/tx-core/repo"
+import {
+  SupervisionRepository,
+  SupervisionRepositoryLive,
+} from "../../packages/core/src/repo/supervision-repo.js"
+import {
+  DomainEventService,
+  DomainEventServiceLive,
+} from "../../packages/core/src/services/domain-event-service.js"
+import {
+  DocReviewService,
+  DocReviewServiceLive,
+} from "../../packages/core/src/services/doc-review-service.js"
 import { fixtureId } from "../fixtures.js"
 
 interface Harness {
@@ -762,5 +788,843 @@ describeIf("ralph.sh integration", () => {
 
     const log = readFileSync(join(h.tmpDir, ".tx", "ralph.log"), "utf-8")
     expect(log).toContain("Reset 1 orphaned active task(s)")
+  })
+})
+
+// =============================================================================
+// Supervision Bridge Integration Tests
+//
+// Tests the core service calls that ralph-supervision-bridge.ts makes, exercised
+// against real in-memory SQLite. Verifies INV-SUP-001 (clean shutdown when no
+// eligible tasks remain in scope).
+//
+// @see DD-039 for specification
+// @see DD-007 for testing strategy
+// @spec INV-SUP-001
+// =============================================================================
+
+const BRIDGE_NAMESPACE = "ralph-bridge-test"
+
+const bridgeFixtureId = (name: string): string => {
+  const hash = createHash("sha256")
+    .update(`${BRIDGE_NAMESPACE}:${name}`)
+    .digest("hex")
+    .substring(0, 8)
+  return `tx-${hash}`
+}
+
+const bridgeFixtureSessionId = (name: string): string => {
+  const hash = createHash("sha256")
+    .update(`${BRIDGE_NAMESPACE}:session:${name}`)
+    .digest("hex")
+    .substring(0, 12)
+  return `ws-${hash}`
+}
+
+const bridgeFixtureDocId = (name: string): string => {
+  const hash = createHash("sha256")
+    .update(`${BRIDGE_NAMESPACE}:doc:${name}`)
+    .digest("hex")
+    .substring(0, 12)
+  return `doc-${hash}`
+}
+
+const BF = {
+  WORKER_1: bridgeFixtureId("worker-1"),
+  WORKER_2: bridgeFixtureId("worker-2"),
+  SESSION_1: bridgeFixtureSessionId("session-1"),
+  SESSION_2: bridgeFixtureSessionId("session-2"),
+  TASK_1: bridgeFixtureId("task-1"),
+  TASK_2: bridgeFixtureId("task-2"),
+  TASK_3: bridgeFixtureId("task-3"),
+  DOC_STABLE_1: bridgeFixtureDocId("design-doc-1"),
+  DOC_NAME_1: "test-ralph-bridge-doc",
+} as const
+
+function makeBridgeTestLayer() {
+  const infra = SqliteClientLive(":memory:")
+
+  const repos = Layer.mergeAll(
+    TaskRepositoryLive,
+    DependencyRepositoryLive,
+    DocRepositoryLive,
+    DomainEventRepositoryLive,
+    SupervisionRepositoryLive,
+    DocReviewRepositoryLive,
+  ).pipe(Layer.provide(infra))
+
+  const domainEventService = DomainEventServiceLive.pipe(Layer.provide(repos))
+
+  const docReviewService = DocReviewServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, domainEventService, infra))
+  )
+
+  return Layer.mergeAll(repos, domainEventService, docReviewService, infra)
+}
+
+const runBridge = <A>(effect: Effect.Effect<A, unknown, unknown>) =>
+  Effect.runPromise(
+    effect.pipe(Effect.provide(makeBridgeTestLayer())) as Effect.Effect<A, never, never>
+  )
+
+const BRIDGE_NOW = new Date().toISOString()
+
+const seedBridgeWorker = (workerId: string, name: string, status = "idle") =>
+  Effect.gen(function* () {
+    const db = yield* SqliteClient
+    db.prepare(
+      `INSERT INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at, metadata)
+       VALUES (?, ?, 'test-host', 12345, ?, ?, ?, '{}')`
+    ).run(workerId, name, status, BRIDGE_NOW, BRIDGE_NOW)
+  })
+
+const seedBridgeTask = (taskId: string, title: string, status = "active") =>
+  Effect.gen(function* () {
+    const db = yield* SqliteClient
+    const completedAt = status === "done" ? BRIDGE_NOW : null
+    db.prepare(
+      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
+       VALUES (?, ?, 'Test task', ?, NULL, 500, ?, ?, ?, '{}')`
+    ).run(taskId, title, status, BRIDGE_NOW, BRIDGE_NOW, completedAt)
+  })
+
+const seedBridgeDoc = (docStableId: string, name: string, version = 1) =>
+  Effect.gen(function* () {
+    const db = yield* SqliteClient
+    const hash = createHash("sha256").update(`${name}:${version}`).digest("hex").substring(0, 16)
+    db.prepare(
+      `INSERT INTO docs (doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, metadata)
+       VALUES (?, ?, 'design', ?, ?, ?, 'changing', ?, NULL, ?, '{}')`
+    ).run(docStableId, hash, name, `Test: ${name}`, version, `design/${name}.md`, BRIDGE_NOW)
+  })
+
+const seedBridgeRun = (runId: string, taskId: string, status = "running") =>
+  Effect.gen(function* () {
+    const db = yield* SqliteClient
+    db.prepare(
+      `INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
+       VALUES (?, ?, 'tx-tester', ?, ?, '{}')`
+    ).run(runId, taskId, BRIDGE_NOW, status)
+  })
+
+const bridgeLinkTaskToDoc = (taskId: string, docName: string) =>
+  Effect.gen(function* () {
+    const db = yield* SqliteClient
+    const docRow = db.prepare(
+      "SELECT id FROM docs WHERE name = ? ORDER BY version DESC LIMIT 1"
+    ).get(docName) as { id: number } | null
+    if (!docRow) throw new Error(`Doc not found: ${docName}`)
+    db.prepare(
+      "INSERT INTO task_doc_links (task_id, doc_id, link_type, created_at) VALUES (?, ?, 'references', ?)"
+    ).run(taskId, docRow.id, BRIDGE_NOW)
+  })
+
+/** Mirror of ralph-supervision-bridge.ts sessionCreate() */
+const bridgeSessionCreate = (opts: {
+  sessionId: string
+  workerId: string
+  scopeMode?: string
+  scopeRef?: string | null
+  runtime?: string
+  tmuxSessionName?: string | null
+}) =>
+  Effect.gen(function* () {
+    const repo = yield* SupervisionRepository
+    const events = yield* DomainEventService
+
+    const session = yield* repo.createSession({
+      id: opts.sessionId,
+      workerId: opts.workerId,
+      scopeMode: opts.scopeMode ?? "all",
+      scopeRef: opts.scopeRef ?? null,
+      orchestrator: "ralph",
+      runtime: opts.runtime ?? "claude",
+      terminalBackend: "tmux",
+      tmuxSessionName: opts.tmuxSessionName ?? null,
+      tmuxWindowName: "main",
+      tmuxPaneId: "%0",
+      controlMode: "agent",
+      currentTaskId: null,
+      currentRunId: null,
+      activeTerminalController: null,
+      startedAt: BRIDGE_NOW,
+      lastHeartbeatAt: BRIDGE_NOW,
+      metadata: { pid: 12345, source: "ralph.sh" },
+    })
+
+    yield* events.publish({
+      eventType: "worker.session_created",
+      streamType: "worker_session",
+      streamId: session.id,
+      aggregateType: "worker",
+      aggregateId: opts.workerId,
+      actorType: "system",
+      actorId: "ralph",
+      schemaVersion: 1,
+      payload: {
+        sessionId: session.id,
+        workerId: opts.workerId,
+        scopeMode: opts.scopeMode ?? "all",
+        scopeRef: opts.scopeRef ?? null,
+        runtime: opts.runtime ?? "claude",
+        tmuxSessionName: opts.tmuxSessionName ?? null,
+      },
+      metadata: {},
+    })
+
+    return session
+  })
+
+/** Mirror of ralph-supervision-bridge.ts sessionUpdate() */
+const bridgeSessionUpdate = (sessionId: string, fields: {
+  currentTaskId?: string | null
+  currentRunId?: string | null
+}) =>
+  Effect.gen(function* () {
+    const repo = yield* SupervisionRepository
+    yield* repo.updateSession(sessionId, {
+      currentTaskId: fields.currentTaskId,
+      currentRunId: fields.currentRunId,
+      lastHeartbeatAt: new Date().toISOString(),
+    })
+  })
+
+/** Mirror of ralph-supervision-bridge.ts sessionEnd() */
+const bridgeSessionEnd = (sessionId: string) =>
+  Effect.gen(function* () {
+    const repo = yield* SupervisionRepository
+    const events = yield* DomainEventService
+    const now = new Date().toISOString()
+
+    const session = yield* repo.getSessionById(sessionId)
+    if (!session || session.endedAt) return
+
+    yield* repo.endSession(sessionId, now)
+
+    yield* events.publish({
+      eventType: "worker.session_ended",
+      streamType: "worker_session",
+      streamId: sessionId,
+      aggregateType: "worker",
+      aggregateId: session.workerId,
+      actorType: "system",
+      actorId: "ralph",
+      schemaVersion: 1,
+      payload: { sessionId, workerId: session.workerId, endedAt: now },
+      metadata: {},
+    })
+  })
+
+/** Mirror of ralph.sh handle_scope_drain() */
+const bridgeHandleScopeDrain = (opts: {
+  workerId: string
+  sessionId: string
+  scopeMode: string
+  scopeRef?: string | null
+}) =>
+  Effect.gen(function* () {
+    const events = yield* DomainEventService
+    const drainPayload = {
+      sessionId: opts.sessionId,
+      workerId: opts.workerId,
+      scopeMode: opts.scopeMode,
+      scopeRef: opts.scopeRef ?? null,
+    }
+
+    yield* events.publish({
+      eventType: "worker.scope_drained",
+      streamType: "worker_session",
+      streamId: opts.sessionId,
+      aggregateType: "worker",
+      aggregateId: opts.workerId,
+      actorType: "system",
+      actorId: "ralph",
+      schemaVersion: 1,
+      payload: drainPayload,
+      metadata: {},
+    })
+
+    yield* events.publish({
+      eventType: "worker.shutdown_requested",
+      streamType: "worker_session",
+      streamId: opts.sessionId,
+      aggregateType: "worker",
+      aggregateId: opts.workerId,
+      actorType: "system",
+      actorId: "ralph",
+      schemaVersion: 1,
+      payload: drainPayload,
+      metadata: {},
+    })
+
+    let triggerResult = null
+    if (opts.scopeMode === "design-doc" && opts.scopeRef) {
+      const docReview = yield* DocReviewService
+      triggerResult = yield* docReview.maybeTrigger(
+        opts.scopeRef,
+        "scope_drained" as ReviewTriggerCause
+      )
+    }
+
+    yield* events.publish({
+      eventType: "worker.shutdown_completed",
+      streamType: "worker_session",
+      streamId: opts.sessionId,
+      aggregateType: "worker",
+      aggregateId: opts.workerId,
+      actorType: "system",
+      actorId: "ralph",
+      schemaVersion: 1,
+      payload: drainPayload,
+      metadata: {},
+    })
+
+    return triggerResult
+  })
+
+describe("Ralph Supervision Bridge Integration [INV-SUP-001]", () => {
+
+  // ---------------------------------------------------------------------------
+  // 1. tmux session creation hook
+  // ---------------------------------------------------------------------------
+  describe("tmux session creation hook", () => {
+
+    it("creates a worker_sessions row with correct tmux metadata", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        const session = yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "all",
+          runtime: "claude",
+          tmuxSessionName: "ralph-worker-1",
+        })
+
+        expect(session.id).toBe(BF.SESSION_1)
+        expect(session.workerId).toBe(BF.WORKER_1)
+        expect(session.scopeMode).toBe("all")
+        expect(session.orchestrator).toBe("ralph")
+        expect(session.runtime).toBe("claude")
+        expect(session.terminalBackend).toBe("tmux")
+        expect(session.tmuxSessionName).toBe("ralph-worker-1")
+        expect(session.controlMode).toBe("agent")
+        expect(session.currentTaskId).toBeNull()
+        expect(session.endedAt).toBeNull()
+      })))
+
+    it("emits worker.session_created domain event with tmux session name", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "design-doc",
+          scopeRef: "my-design-doc",
+          runtime: "codex",
+          tmuxSessionName: "ralph-worker-1",
+        })
+
+        const eventSvc = yield* DomainEventService
+        const sessionEvents = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+
+        expect(sessionEvents.length).toBe(1)
+        expect(sessionEvents[0].eventType).toBe("worker.session_created")
+        expect(sessionEvents[0].aggregateId).toBe(BF.WORKER_1)
+        expect(sessionEvents[0].actorId).toBe("ralph")
+
+        const payload = sessionEvents[0].payload as Record<string, unknown>
+        expect(payload.tmuxSessionName).toBe("ralph-worker-1")
+        expect(payload.scopeMode).toBe("design-doc")
+        expect(payload.scopeRef).toBe("my-design-doc")
+      })))
+
+    it("handles null tmux fields when tmux is unavailable", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        const session = yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          tmuxSessionName: null,
+        })
+
+        expect(session.tmuxSessionName).toBeNull()
+      })))
+  })
+
+  // ---------------------------------------------------------------------------
+  // 2. Session creation/update/end calls to core
+  // ---------------------------------------------------------------------------
+  describe("session creation/update/end lifecycle", () => {
+
+    it("update sets currentTaskId and currentRunId on the session row", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeTask(BF.TASK_1, "task-1", "active")
+        yield* seedBridgeRun("run-abc", BF.TASK_1)
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+        })
+
+        yield* bridgeSessionUpdate(BF.SESSION_1, {
+          currentTaskId: BF.TASK_1,
+          currentRunId: null,
+        })
+
+        const repo = yield* SupervisionRepository
+        const s1 = yield* repo.getSessionById(BF.SESSION_1)
+        expect(s1!.currentTaskId).toBe(BF.TASK_1)
+        expect(s1!.currentRunId).toBeNull()
+
+        yield* bridgeSessionUpdate(BF.SESSION_1, {
+          currentTaskId: BF.TASK_1,
+          currentRunId: "run-abc",
+        })
+
+        const s2 = yield* repo.getSessionById(BF.SESSION_1)
+        expect(s2!.currentRunId).toBe("run-abc")
+      })))
+
+    it("update clears task/run fields after task completion", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeTask(BF.TASK_1, "task-1", "active")
+        yield* seedBridgeRun("run-1", BF.TASK_1)
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+        })
+
+        yield* bridgeSessionUpdate(BF.SESSION_1, {
+          currentTaskId: BF.TASK_1,
+          currentRunId: "run-1",
+        })
+
+        yield* bridgeSessionUpdate(BF.SESSION_1, {
+          currentTaskId: null,
+          currentRunId: null,
+        })
+
+        const repo = yield* SupervisionRepository
+        const session = yield* repo.getSessionById(BF.SESSION_1)
+        expect(session!.currentTaskId).toBeNull()
+        expect(session!.currentRunId).toBeNull()
+      })))
+
+    it("heartbeat updates lastHeartbeatAt timestamp", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+        })
+
+        const repo = yield* SupervisionRepository
+        const before = yield* repo.getSessionById(BF.SESSION_1)
+
+        yield* Effect.sleep("10 millis")
+        yield* repo.updateHeartbeat(BF.SESSION_1, new Date().toISOString())
+
+        const after = yield* repo.getSessionById(BF.SESSION_1)
+        expect(after!.lastHeartbeatAt).not.toBe(before!.lastHeartbeatAt)
+      })))
+
+    it("end sets endedAt and emits worker.session_ended event", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+        })
+
+        yield* bridgeSessionEnd(BF.SESSION_1)
+
+        const repo = yield* SupervisionRepository
+        const ended = yield* repo.getSessionById(BF.SESSION_1)
+        expect(ended!.endedAt).toBeTruthy()
+
+        const eventSvc = yield* DomainEventService
+        const events = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+        const endedEvent = events.find(e => e.eventType === "worker.session_ended")
+        expect(endedEvent).toBeDefined()
+        expect((endedEvent!.payload as Record<string, unknown>).sessionId).toBe(BF.SESSION_1)
+      })))
+
+    it("ending an already-ended session is idempotent", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+        })
+
+        yield* bridgeSessionEnd(BF.SESSION_1)
+        yield* bridgeSessionEnd(BF.SESSION_1)
+
+        const eventSvc = yield* DomainEventService
+        const events = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+        const endedEvents = events.filter(e => e.eventType === "worker.session_ended")
+        expect(endedEvents.length).toBe(1)
+      })))
+
+    it("full lifecycle: create → update → end produces expected events", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeTask(BF.TASK_1, "task-1", "active")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          tmuxSessionName: "ralph-worker-1",
+        })
+
+        yield* bridgeSessionUpdate(BF.SESSION_1, { currentTaskId: BF.TASK_1 })
+        yield* bridgeSessionUpdate(BF.SESSION_1, { currentTaskId: null, currentRunId: null })
+        yield* bridgeSessionEnd(BF.SESSION_1)
+
+        const eventSvc = yield* DomainEventService
+        const events = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+        const types = events.map(e => e.eventType)
+
+        expect(types).toContain("worker.session_created")
+        expect(types).toContain("worker.session_ended")
+        expect(events.length).toBe(2)
+      })))
+  })
+
+  // ---------------------------------------------------------------------------
+  // 3. Scope-drain shutdown (INV-SUP-001)
+  // ---------------------------------------------------------------------------
+  describe("scope-drain shutdown [INV-SUP-001]", () => {
+
+    it("emits scope_drained, shutdown_requested, and shutdown_completed events", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "all",
+        })
+
+        yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "all",
+        })
+
+        const eventSvc = yield* DomainEventService
+        const events = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+
+        const drainTypes = events
+          .filter(e => ["worker.scope_drained", "worker.shutdown_requested", "worker.shutdown_completed"].includes(e.eventType))
+          .map(e => e.eventType)
+
+        expect(drainTypes).toContain("worker.scope_drained")
+        expect(drainTypes).toContain("worker.shutdown_requested")
+        expect(drainTypes).toContain("worker.shutdown_completed")
+        expect(drainTypes.length).toBe(3)
+      })))
+
+    it("scope_drained payload includes session, worker, and scope details", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        const eventSvc = yield* DomainEventService
+        const events = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+        const drained = events.find(e => e.eventType === "worker.scope_drained")!
+
+        const payload = drained.payload as Record<string, unknown>
+        expect(payload.sessionId).toBe(BF.SESSION_1)
+        expect(payload.workerId).toBe(BF.WORKER_1)
+        expect(payload.scopeMode).toBe("design-doc")
+        expect(payload.scopeRef).toBe(BF.DOC_NAME_1)
+      })))
+
+    it("all drain events are queryable by worker aggregate", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+        })
+
+        yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "all",
+        })
+
+        const eventSvc = yield* DomainEventService
+        const workerEvents = yield* eventSvc.listByAggregate("worker", BF.WORKER_1)
+        const drainTypes = workerEvents
+          .filter(e => e.eventType.startsWith("worker.shutdown") || e.eventType === "worker.scope_drained")
+          .map(e => e.eventType)
+
+        expect(drainTypes).toContain("worker.scope_drained")
+        expect(drainTypes).toContain("worker.shutdown_requested")
+        expect(drainTypes).toContain("worker.shutdown_completed")
+      })))
+
+    it("all-scope drain does not invoke maybeTrigger or emit design_doc events", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "all",
+        })
+
+        const result = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "all",
+        })
+
+        expect(result).toBeNull()
+
+        const eventSvc = yield* DomainEventService
+        const events = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+        expect(events.filter(e => e.eventType.startsWith("design_doc.")).length).toBe(0)
+      })))
+  })
+
+  // ---------------------------------------------------------------------------
+  // 4. Design-doc maybe-trigger hook on drain
+  // ---------------------------------------------------------------------------
+  describe("design-doc maybe-trigger on drain", () => {
+
+    it("triggers review when all linked tasks are done", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeDoc(BF.DOC_STABLE_1, BF.DOC_NAME_1)
+        yield* seedBridgeTask(BF.TASK_1, "task-1", "done")
+        yield* seedBridgeTask(BF.TASK_2, "task-2", "done")
+        yield* bridgeLinkTaskToDoc(BF.TASK_1, BF.DOC_NAME_1)
+        yield* bridgeLinkTaskToDoc(BF.TASK_2, BF.DOC_NAME_1)
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        const triggerResult = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        expect(triggerResult!.outcome).toBe("triggered")
+        expect(triggerResult!.reviewRunId).toBeTruthy()
+
+        const eventSvc = yield* DomainEventService
+        const docEvents = yield* eventSvc.listByStream("design_doc", BF.DOC_STABLE_1)
+        const docTypes = docEvents.map(e => e.eventType)
+        expect(docTypes).toContain("design_doc.review_eligible")
+        expect(docTypes).toContain("design_doc.review_triggered")
+      })))
+
+    it("returns not_all_done when linked tasks are incomplete", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeDoc(BF.DOC_STABLE_1, BF.DOC_NAME_1)
+        yield* seedBridgeTask(BF.TASK_1, "task-1", "done")
+        yield* seedBridgeTask(BF.TASK_2, "task-2", "active")
+        yield* bridgeLinkTaskToDoc(BF.TASK_1, BF.DOC_NAME_1)
+        yield* bridgeLinkTaskToDoc(BF.TASK_2, BF.DOC_NAME_1)
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        const triggerResult = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        expect(triggerResult!.outcome).toBe("not_all_done")
+        expect(triggerResult!.reviewRunId).toBeNull()
+      })))
+
+    it("returns no_linked_tasks when design doc has no linked tasks", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeDoc(BF.DOC_STABLE_1, BF.DOC_NAME_1)
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        const triggerResult = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        expect(triggerResult!.outcome).toBe("no_linked_tasks")
+      })))
+
+    it("second drain with same task snapshot is idempotent (already_active)", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeDoc(BF.DOC_STABLE_1, BF.DOC_NAME_1)
+        yield* seedBridgeTask(BF.TASK_1, "task-1", "done")
+        yield* bridgeLinkTaskToDoc(BF.TASK_1, BF.DOC_NAME_1)
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+
+        const first = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+        expect(first!.outcome).toBe("triggered")
+
+        const second = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+        expect(second!.outcome).toBe("already_active")
+      })))
+  })
+
+  // ---------------------------------------------------------------------------
+  // 5. Full worker lifecycle (INV-SUP-001)
+  // ---------------------------------------------------------------------------
+  describe("full worker lifecycle [INV-SUP-001]", () => {
+
+    it("create → work → drain → trigger → end produces correct event sequence", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+        yield* seedBridgeDoc(BF.DOC_STABLE_1, BF.DOC_NAME_1)
+        yield* seedBridgeTask(BF.TASK_1, "implement-auth", "done")
+        yield* seedBridgeTask(BF.TASK_2, "implement-api", "done")
+        yield* bridgeLinkTaskToDoc(BF.TASK_1, BF.DOC_NAME_1)
+        yield* bridgeLinkTaskToDoc(BF.TASK_2, BF.DOC_NAME_1)
+
+        // 1. Start
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+          tmuxSessionName: "ralph-worker-1",
+        })
+
+        // 2. Work on tasks
+        yield* bridgeSessionUpdate(BF.SESSION_1, { currentTaskId: BF.TASK_1 })
+        yield* bridgeSessionUpdate(BF.SESSION_1, { currentTaskId: BF.TASK_2 })
+        yield* bridgeSessionUpdate(BF.SESSION_1, { currentTaskId: null, currentRunId: null })
+
+        // 3. Drain + trigger
+        const trigger = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "design-doc",
+          scopeRef: BF.DOC_NAME_1,
+        })
+        expect(trigger!.outcome).toBe("triggered")
+
+        // 4. End
+        yield* bridgeSessionEnd(BF.SESSION_1)
+
+        // Verify session state
+        const repo = yield* SupervisionRepository
+        const session = yield* repo.getSessionById(BF.SESSION_1)
+        expect(session!.endedAt).toBeTruthy()
+        expect(session!.currentTaskId).toBeNull()
+
+        // Verify worker_session event stream
+        const eventSvc = yield* DomainEventService
+        const wsEvents = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+        const wsTypes = wsEvents.map(e => e.eventType)
+
+        expect(wsTypes).toContain("worker.session_created")
+        expect(wsTypes).toContain("worker.scope_drained")
+        expect(wsTypes).toContain("worker.shutdown_requested")
+        expect(wsTypes).toContain("worker.shutdown_completed")
+        expect(wsTypes).toContain("worker.session_ended")
+
+        // Verify design_doc event stream
+        const docEvents = yield* eventSvc.listByStream("design_doc", BF.DOC_STABLE_1)
+        const docTypes = docEvents.map(e => e.eventType)
+        expect(docTypes).toContain("design_doc.review_eligible")
+        expect(docTypes).toContain("design_doc.review_triggered")
+      })))
+
+    it("all-scope worker lifecycle drains cleanly without review", () =>
+      runBridge(Effect.gen(function* () {
+        yield* seedBridgeWorker(BF.WORKER_1, "ralph-worker-1")
+
+        yield* bridgeSessionCreate({
+          sessionId: BF.SESSION_1,
+          workerId: BF.WORKER_1,
+          scopeMode: "all",
+        })
+
+        const trigger = yield* bridgeHandleScopeDrain({
+          workerId: BF.WORKER_1,
+          sessionId: BF.SESSION_1,
+          scopeMode: "all",
+        })
+        expect(trigger).toBeNull()
+
+        yield* bridgeSessionEnd(BF.SESSION_1)
+
+        const repo = yield* SupervisionRepository
+        const session = yield* repo.getSessionById(BF.SESSION_1)
+        expect(session!.endedAt).toBeTruthy()
+
+        const eventSvc = yield* DomainEventService
+        const events = yield* eventSvc.listByStream("worker_session", BF.SESSION_1)
+        expect(events.filter(e => e.eventType.startsWith("design_doc.")).length).toBe(0)
+        expect(events.some(e => e.eventType === "worker.session_created")).toBe(true)
+        expect(events.some(e => e.eventType === "worker.shutdown_completed")).toBe(true)
+        expect(events.some(e => e.eventType === "worker.session_ended")).toBe(true)
+      })))
   })
 })
