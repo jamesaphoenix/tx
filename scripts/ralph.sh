@@ -1745,6 +1745,17 @@ run_agent() {
   build_prompt_context_bundle "$current_task_path" "$design_docs_path" "$all_tasks_path" "$prompt_context_path" "$scope_path"
   prompt_context=$(cat "$prompt_context_path" 2>/dev/null || echo "")
 
+  # Auto-inject episodic memory and learnings for this task
+  local memory_context=""
+  memory_context=$(bun apps/cli/src/cli.ts memory context "$task_id" --limit 5 2>/dev/null || echo "")
+  if [ -n "$memory_context" ]; then
+    prompt_context="$prompt_context
+
+===== BEGIN MEMORY CONTEXT (episodes + learnings) =====
+$memory_context
+===== END MEMORY CONTEXT ====="
+  fi
+
   local prompt="Read $profile_display for your instructions.
 
 Your assigned task: $task_id
