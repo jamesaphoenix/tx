@@ -1745,15 +1745,32 @@ run_agent() {
   build_prompt_context_bundle "$current_task_path" "$design_docs_path" "$all_tasks_path" "$prompt_context_path" "$scope_path"
   prompt_context=$(cat "$prompt_context_path" 2>/dev/null || echo "")
 
-  # Auto-inject episodic memory and learnings for this task
-  local memory_context=""
-  memory_context=$(bun apps/cli/src/cli.ts memory context "$task_id" --limit 5 2>/dev/null || echo "")
-  if [ -n "$memory_context" ]; then
+  # Auto-inject memory index (titles + paths only — progressive disclosure)
+  local memory_index=""
+  memory_index=$(bun apps/cli/src/cli.ts memory context "$task_id" --limit 15 --json 2>/dev/null | \
+    node -e "
+      let buf=''; process.stdin.on('data',c=>buf+=c); process.stdin.on('end',()=>{
+        try {
+          const d = JSON.parse(buf);
+          if (!d.results || !d.results.length) { process.exit(0); }
+          const lines = d.results.map((r,i) =>
+            '  ' + (i+1) + '. [' + Math.round(r.relevanceScore*100) + '%] ' +
+            r.tags.join(',') + ' — ' + r.title +
+            ' (docs/' + r.filePath + ')'
+          );
+          console.log(lines.join('\n'));
+        } catch(e) { process.exit(0); }
+      });
+    " 2>/dev/null || echo "")
+  if [ -n "$memory_index" ]; then
     prompt_context="$prompt_context
 
-===== BEGIN MEMORY CONTEXT (episodes + learnings) =====
-$memory_context
-===== END MEMORY CONTEXT ====="
+===== BEGIN RELEVANT MEMORY (titles only — read any with Read tool if useful) =====
+$memory_index
+
+To search for more: bun apps/cli/src/cli.ts memory search \"<query>\" --limit 10
+To read a specific doc: read the file path shown above (e.g. docs/episodes/episode-*.md)
+===== END RELEVANT MEMORY ====="
   fi
 
   local prompt="Read $profile_display for your instructions.

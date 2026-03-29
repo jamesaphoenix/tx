@@ -98,7 +98,7 @@ const SESSION_DETAIL_SQL = `
     t.status AS current_task_status,
     r.status AS current_run_status,
     tc.worker_id AS claim_owner,
-    tc.expires_at AS claim_expires_at
+    tc.lease_expires_at AS claim_expires_at
   FROM worker_sessions ws
   JOIN workers w ON w.id = ws.worker_id
   LEFT JOIN tasks t ON t.id = ws.current_task_id
