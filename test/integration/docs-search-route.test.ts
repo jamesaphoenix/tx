@@ -113,7 +113,7 @@ describe("docs search route", { timeout: 180_000 }, () => {
     } catch (error) {
       throw new Error(`${error instanceof Error ? error.message : String(error)}\nLogs:\n${serverLogs}`)
     }
-  })
+  }, 180_000)
 
   afterAll(async () => {
     if (docsProc && docsProc.exitCode === null) {

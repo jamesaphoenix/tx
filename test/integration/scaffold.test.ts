@@ -45,6 +45,17 @@ function expectBundledSpecSkills(target: "claude" | "codex") {
   }
 }
 
+function readManifest(target: "claude" | "codex") {
+  const manifestPath = target === "claude"
+    ? join(testDir, ".claude", "skills", "manifest.json")
+    : join(testDir, ".codex", "skills", "manifest.json")
+
+  return JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+    skillCount: number
+    skills: Array<{ id: string }>
+  }
+}
+
 describe("scaffold", () => {
   beforeEach(() => {
     testDir = mkdtempSync(join(tmpdir(), "tx-scaffold-test-"))
@@ -88,6 +99,27 @@ describe("scaffold", () => {
       expect(result.copied).toEqual([])
       expect(result.skipped).toContain(".claude/skills/manifest.json")
       expect(result.skipped.some((file) => file.startsWith(".claude/skills/tx-core-loop/"))).toBe(true)
+    })
+
+    it("lets onboarding install only the selected Claude skills", () => {
+      const result = scaffoldClaude(testDir, {
+        skills: ["tx-core-loop", "skills-sync", "design-doc"],
+      })
+
+      expect(result.copied).toContain(".claude/skills/manifest.json")
+      expect(existsSync(join(skillRoot("claude"), "tx-core-loop", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("claude"), "skills-sync", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("claude"), "design-doc", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("claude"), "tx-docs-specs", "SKILL.md"))).toBe(false)
+      expect(existsSync(join(skillRoot("claude"), "ralph-loop", "SKILL.md"))).toBe(false)
+
+      const manifest = readManifest("claude")
+      expect(manifest.skillCount).toBe(3)
+      expect(manifest.skills.map((skill) => skill.id)).toEqual([
+        "tx-core-loop",
+        "design-doc",
+        "skills-sync",
+      ])
     })
 
     it("can still create CLAUDE.md as an opt-in compatibility file", () => {
@@ -171,6 +203,25 @@ describe("scaffold", () => {
       expect(result.skipped).toContain(".codex/skills/manifest.json")
       expect(result.skipped.some((file) => file.startsWith(".codex/skills/tx-core-loop/"))).toBe(true)
       expect(result.skipped.some((file) => file.startsWith(".codex/rules/"))).toBe(true)
+    })
+
+    it("lets onboarding install only the selected Codex skills while keeping rules", () => {
+      const result = scaffoldCodex(testDir, {
+        skills: ["tx-core-loop", "ralph-loop"],
+      })
+
+      expect(result.copied).toContain(".codex/skills/manifest.json")
+      expect(existsSync(join(skillRoot("codex"), "tx-core-loop", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("codex"), "ralph-loop", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("codex"), "skills-sync", "SKILL.md"))).toBe(false)
+      expect(existsSync(join(testDir, ".codex", "rules", "default.rules"))).toBe(true)
+
+      const manifest = readManifest("codex")
+      expect(manifest.skillCount).toBe(2)
+      expect(manifest.skills.map((skill) => skill.id)).toEqual([
+        "tx-core-loop",
+        "ralph-loop",
+      ])
     })
 
     it("can still create AGENTS.md as an opt-in compatibility file", () => {

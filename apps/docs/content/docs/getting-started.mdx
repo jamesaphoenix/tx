@@ -143,8 +143,12 @@ tx init --watchdog          # later only: watchdog scripts + launcher + service 
 tx init --watchdog --watchdog-runtime codex
 ```
 
-By default, `tx init --claude` and `tx init --codex` install generated skill
-bundles, not legacy top-level `CLAUDE.md` or `AGENTS.md` shims. Use
+Plain `tx init` now includes an onboarding step where you choose the exact
+Claude and Codex tx skills to install. If you pass `--claude` or `--codex`,
+tx skips the prompt and installs the full default bundle for that runtime.
+
+`tx init --claude` and `tx init --codex` install generated skill bundles, not
+legacy top-level `CLAUDE.md` or `AGENTS.md` shims. Use
 [`tx skills`](/docs/primitives/skills) to inspect the bundle model and
 `tx skills sync` to refresh installed tx-managed skills later without removing
 unrelated custom skills.

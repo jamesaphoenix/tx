@@ -132,5 +132,9 @@
     "api": "apps/api-server/src/routes/decompose.ts",
     "sdk": "apps/agent-sdk/src/client.ts",
     "required": ["cli", "mcp", "api", "sdk"]
+  },
+  "skills": {
+    "cli": "apps/cli/src/commands/skills.ts",
+    "required": ["cli"]
   }
 }
