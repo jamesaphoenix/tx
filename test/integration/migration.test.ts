@@ -272,6 +272,10 @@ describe("Migration system", () => {
         // Migration 038+ — cycles
         "cycles",
         "cycle_tasks",
+        // Migration 039+ — supervision
+        "domain_events",
+        "worker_sessions",
+        "doc_review_runs",
       ]
 
       for (const table of expectedTables) {
