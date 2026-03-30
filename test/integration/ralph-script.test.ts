@@ -21,15 +21,11 @@ import {
 import {
   SupervisionRepository,
   SupervisionRepositoryLive,
-} from "../../packages/core/src/repo/supervision-repo.js"
-import {
   DomainEventService,
   DomainEventServiceLive,
-} from "../../packages/core/src/services/domain-event-service.js"
-import {
   DocReviewService,
   DocReviewServiceLive,
-} from "../../packages/core/src/services/doc-review-service.js"
+} from "@jamesaphoenix/tx-core"
 import { fixtureId } from "../fixtures.js"
 
 interface Harness {

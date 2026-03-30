@@ -26,7 +26,7 @@ import { DomainEventRepositoryLive } from "@jamesaphoenix/tx-core/repo"
 import {
   DomainEventService,
   DomainEventServiceLive,
-} from "../../packages/core/src/services/domain-event-service.js"
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

@@ -27,19 +27,13 @@ import {
 } from "@jamesaphoenix/tx-core"
 import {
   DomainEventRepositoryLive,
-} from "../../packages/core/src/repo/domain-event-repo.js"
-import {
   SupervisionRepository,
   SupervisionRepositoryLive,
-} from "../../packages/core/src/repo/supervision-repo.js"
-import {
   DomainEventService,
   DomainEventServiceLive,
-} from "../../packages/core/src/services/domain-event-service.js"
-import {
   SupervisionService,
   SupervisionServiceLive,
-} from "../../packages/core/src/services/supervision-service.js"
+} from "@jamesaphoenix/tx-core"
 import type { ActorRef } from "@jamesaphoenix/tx-types"
 
 // =============================================================================

@@ -34,12 +34,10 @@ import {
 import {
   DomainEventService,
   DomainEventServiceLive,
-} from "../../packages/core/src/services/domain-event-service.js"
-import {
   DocReviewService,
   DocReviewServiceLive,
   DEFAULT_REVIEW_CONFIG,
-} from "../../packages/core/src/services/doc-review-service.js"
+} from "@jamesaphoenix/tx-core"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
