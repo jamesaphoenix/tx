@@ -535,6 +535,8 @@ export {
   resolvePathForComparison,
   isPathWithin,
   resolvePathWithin,
+  findTxRoot,
+  resolveTxDbPath,
   type PathWithinOptions,
 } from "./utils/file-path.js"
 export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"

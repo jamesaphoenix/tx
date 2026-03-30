@@ -8,7 +8,7 @@
 import { Effect, Cause, Option, Layer } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient } from "@jamesaphoenix/tx-core"
+import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient, findTxRoot, resolveTxDbPath } from "@jamesaphoenix/tx-core"
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
 import { CliUserError, emitCliError, movedCommandError, unknownCommandError, usageError } from "./cli-errors.js"
@@ -426,11 +426,11 @@ if (!handler) {
 
 const dbPath = typeof parsedFlags.db === "string"
   ? resolve(parsedFlags.db)
-  : resolve(process.cwd(), ".tx", "tasks.db")
+  : resolveTxDbPath()
 
 // For init, ensure directory exists
 if (command === "init") {
-  const dir = resolve(process.cwd(), ".tx")
+  const dir = resolve(findTxRoot(), ".tx")
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
@@ -440,7 +440,7 @@ if (command === "init") {
     writeFileSync(gitignorePath, "tasks.db\ntasks.db-wal\ntasks.db-shm\n")
   }
   // Scaffold default config.toml with annotated defaults (no-op if exists)
-  scaffoldConfigToml(process.cwd())
+  scaffoldConfigToml(findTxRoot())
 }
 
 const layer = makeAppLayer(dbPath)

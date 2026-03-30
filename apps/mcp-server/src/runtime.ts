@@ -30,6 +30,7 @@ import {
   DecisionService,
   LabelRepository,
   SqliteClient,
+  resolveTxDbPath,
 } from "@jamesaphoenix/tx-core"
 
 // -----------------------------------------------------------------------------
@@ -74,7 +75,7 @@ let managedRuntime: ManagedRuntime.ManagedRuntime<McpServices, any> | null = nul
  * Initialize the Effect runtime ONCE at server startup.
  * Creates the full service layer with database connection.
  */
-export const initRuntime = async (dbPath = ".tx/tasks.db"): Promise<void> => {
+export const initRuntime = async (dbPath = resolveTxDbPath()): Promise<void> => {
   if (managedRuntime) {
     return // Already initialized
   }
