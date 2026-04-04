@@ -31,7 +31,8 @@
 import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 import {
   makeAppLayer,
-  RetrieverService
+  RetrieverService,
+  resolveTxDbPath
 } from "@jamesaphoenix/tx-core"
 
 /**
@@ -155,7 +156,7 @@ export type TxClient = {
  */
 export const createTx = (options: CreateTxOptions = {}): TxClient => {
   const {
-    dbPath = ".tx/tasks.db",
+    dbPath = resolveTxDbPath(),
     retriever
   } = options
 

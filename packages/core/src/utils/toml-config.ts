@@ -21,6 +21,18 @@ export type DashboardCyclesConfig = {
   carryStatuses: string[]
 }
 export type GuardMode = "advisory" | "enforce"
+export type ReviewRuntimeType = "pi" | "custom"
+export type ReviewTransportType = "rpc" | "sdk"
+
+export type ReviewDesignDocsConfig = {
+  enabled: boolean
+  runtime: ReviewRuntimeType
+  transport: ReviewTransportType
+  template: string
+  blocking: boolean
+  createFollowupTasks: boolean
+  retriggerOnTaskReopen: boolean
+}
 
 export type TxConfig = {
   docs: { path: string }
@@ -35,7 +47,9 @@ export type TxConfig = {
   pins: { targetFiles: string[]; blockAgentDoneWhenTaskIdPresent: boolean }
   guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
   verify: { timeout: number; defaultSchema: string | null }
-  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }};
+  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }
+  reviews: { designDocs: ReviewDesignDocsConfig }
+};
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
 export const DASHBOARD_DEFAULT_TASK_VIEW_KEY = "default_task_view"
@@ -52,9 +66,16 @@ const MEMORY_SECTION = "memory"
 const GUARD_SECTION = "guard"
 const VERIFY_SECTION = "verify"
 const REFLECT_SECTION = "reflect"
+const REVIEWS_DESIGN_DOCS_SECTION = "reviews.design_docs"
 
 const isGuardMode = (v: string | null): v is GuardMode =>
   v === "advisory" || v === "enforce"
+
+const isReviewRuntime = (v: string | null): v is ReviewRuntimeType =>
+  v === "pi" || v === "custom"
+
+const isReviewTransport = (v: string | null): v is ReviewTransportType =>
+  v === "rpc" || v === "sdk"
 
 const DEFAULT_CONFIG: TxConfig = {
   docs: { path: "specs" },
@@ -88,6 +109,17 @@ const DEFAULT_CONFIG: TxConfig = {
   guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
   verify: { timeout: 300, defaultSchema: null },
   reflect: { provider: "auto", model: null, defaultSessions: 10, includeTranscripts: false },
+  reviews: {
+    designDocs: {
+      enabled: false,
+      runtime: "pi",
+      transport: "rpc",
+      template: "double-check",
+      blocking: false,
+      createFollowupTasks: true,
+      retriggerOnTaskReopen: true,
+    },
+  },
 }
 
 const isDashboardDefaultTaskAssigmentType = (
@@ -211,6 +243,15 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     const reflectDefaultSessions = extractTomlValue(raw, REFLECT_SECTION, "default_sessions")
     const reflectIncludeTranscripts = extractTomlValue(raw, REFLECT_SECTION, "include_transcripts")
 
+    // Reviews section
+    const reviewsEnabled = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "enabled")
+    const reviewsRuntime = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "runtime")
+    const reviewsTransport = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "transport")
+    const reviewsTemplate = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "template")
+    const reviewsBlocking = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "blocking")
+    const reviewsCreateFollowup = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "create_followup_tasks")
+    const reviewsRetrigger = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "retrigger_on_task_reopen")
+
     return {
       docs: {
         path: docsPath ?? DEFAULT_CONFIG.docs.path,
@@ -261,6 +302,17 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
         model: reflectModel ?? DEFAULT_CONFIG.reflect.model,
         defaultSessions: reflectDefaultSessions ? parseInt(reflectDefaultSessions, 10) : DEFAULT_CONFIG.reflect.defaultSessions,
         includeTranscripts: reflectIncludeTranscripts === "true" ? true : DEFAULT_CONFIG.reflect.includeTranscripts,
+      },
+      reviews: {
+        designDocs: {
+          enabled: parseBooleanOrDefault(reviewsEnabled, DEFAULT_CONFIG.reviews.designDocs.enabled),
+          runtime: isReviewRuntime(reviewsRuntime) ? reviewsRuntime : DEFAULT_CONFIG.reviews.designDocs.runtime,
+          transport: isReviewTransport(reviewsTransport) ? reviewsTransport : DEFAULT_CONFIG.reviews.designDocs.transport,
+          template: reviewsTemplate ?? DEFAULT_CONFIG.reviews.designDocs.template,
+          blocking: parseBooleanOrDefault(reviewsBlocking, DEFAULT_CONFIG.reviews.designDocs.blocking),
+          createFollowupTasks: parseBooleanOrDefault(reviewsCreateFollowup, DEFAULT_CONFIG.reviews.designDocs.createFollowupTasks),
+          retriggerOnTaskReopen: parseBooleanOrDefault(reviewsRetrigger, DEFAULT_CONFIG.reviews.designDocs.retriggerOnTaskReopen),
+        },
       },
     }
   } catch {
@@ -761,6 +813,35 @@ default_sessions = 10
 
 # Whether to include transcript parsing by default
 include_transcripts = false
+
+# ─── Reviews ──────────────────────────────────────────────────────
+# Config-gated design-doc review triggers.
+# When all linked tasks for a design doc are completed, Ralph can
+# trigger an automated review via a configured runtime (e.g. Pi).
+# See DD-039 for specification.
+[reviews.design_docs]
+
+# Whether design-doc reviews are enabled.
+enabled = false
+
+# Review runtime: "pi" or "custom".
+runtime = "pi"
+
+# Transport for review execution: "rpc" (preferred) or "sdk".
+transport = "rpc"
+
+# Prompt template name for the review (e.g. "double-check").
+template = "double-check"
+
+# Whether a failing review blocks the design doc from being verified.
+blocking = false
+
+# Whether to create follow-up tasks when a review fails.
+create_followup_tasks = true
+
+# Whether to re-trigger a review when linked tasks are reopened
+# after a previous review passed.
+retrigger_on_task_reopen = true
 `
 
 /**

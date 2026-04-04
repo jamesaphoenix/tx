@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, JSONSchema, Layer, Schema } from "effect"
 import type {
   DecomposeRequest,
   DecomposeResult,
@@ -30,7 +30,7 @@ import {
 } from "../errors.js"
 import { readTxConfig } from "../utils/toml-config.js"
 
-const DEFAULT_MAX_TASKS = 12
+const SANITY_MAX_TASKS = 200
 const DEFAULT_ROOT_SCORE = 800
 
 const failValidation = (reason: string) =>
@@ -74,7 +74,7 @@ const buildPrompt = (
   doc: Doc,
   markdown: string,
   parentTask: TaskWithDeps | null,
-  maxTasks: number
+  maxTasks: number | null
 ): string => {
   const parentBlock = parentTask
     ? [
@@ -101,7 +101,9 @@ const buildPrompt = (
     "You are decomposing a tx design spec into an explicit task graph.",
     "",
     "Return only JSON matching the provided schema.",
-    `Create between 1 and ${maxTasks} tasks.`,
+    maxTasks != null
+      ? `Create between 1 and ${maxTasks} tasks.`
+      : "Create as many tasks as the design doc warrants. Each task should be atomic enough for a single agent iteration.",
     "",
     "Rules:",
     "- Tasks must be atomic enough for a single agent iteration.",
@@ -141,15 +143,18 @@ const decodePlan = (
 
 const validatePlan = (
   plan: DecompositionPlan,
-  maxTasks: number
+  maxTasks: number | null
 ): Effect.Effect<Map<string, DecompositionTask>, ValidationError> =>
   Effect.gen(function* () {
     if (plan.tasks.length === 0) {
       return yield* failValidation("Decomposition plan returned no tasks.")
     }
-    if (plan.tasks.length > maxTasks) {
+    const effectiveMax = maxTasks ?? SANITY_MAX_TASKS
+    if (plan.tasks.length > effectiveMax) {
       return yield* failValidation(
-        `Decomposition plan returned ${plan.tasks.length} tasks, exceeding maxTasks ${maxTasks}.`
+        maxTasks != null
+          ? `Decomposition plan returned ${plan.tasks.length} tasks, exceeding maxTasks ${maxTasks}.`
+          : `Decomposition plan returned ${plan.tasks.length} tasks, exceeding sanity limit ${SANITY_MAX_TASKS}. Use --max-tasks to set an explicit cap.`
       )
     }
 
@@ -282,7 +287,7 @@ export const DecomposeServiceLive = Layer.effect(
 
           const runtime = request.runtime ?? "auto"
           const model = request.model?.trim() || null
-          const maxTasks = request.maxTasks ?? DEFAULT_MAX_TASKS
+          const maxTasks = request.maxTasks ?? null
           const rootTitleOverride = request.rootTitle?.trim() || null
           const rootScoreOverride = request.rootScore ?? null
           const dryRun = request.dryRun ?? false
@@ -301,7 +306,7 @@ export const DecomposeServiceLive = Layer.effect(
               model: model ?? undefined,
               outputFormat: {
                 type: "json_schema",
-                schema: Schema.standardSchemaV1(DecompositionPlanSchema) as unknown as Record<string, unknown>,
+                schema: JSONSchema.make(DecompositionPlanSchema) as unknown as Record<string, unknown>,
               },
             },
           })

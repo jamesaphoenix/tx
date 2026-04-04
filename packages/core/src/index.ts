@@ -166,6 +166,22 @@ export {
   GuardRepositoryLive,
   LabelRepository,
   LabelRepositoryLive,
+  DomainEventRepository,
+  DomainEventRepositoryLive,
+  SupervisionRepository,
+  SupervisionRepositoryLive,
+  DocReviewRepository,
+  DocReviewRepositoryLive,
+  DomainEventService,
+  DomainEventServiceLive,
+  type PublishDomainEventInput,
+  SupervisionService,
+  SupervisionServiceLive,
+  DocReviewService,
+  DocReviewServiceLive,
+  type DocReviewConfig,
+  DEFAULT_REVIEW_CONFIG,
+  type CompletionStateResult,
 } from "./layer.js"
 
 // =============================================================================
@@ -336,6 +352,11 @@ export {
   type SpecTraceStatus,
   DecisionService,
   DecisionServiceLive,
+  ReviewRuntime,
+  ReviewRuntimeNoop,
+  ReviewExecutionParamsSchema,
+  type ReviewExecutionParams,
+  PiReviewRuntimeLive,
   // Runtime interface validators for optional peer dependencies
   isValidLlama,
   isValidLlamaModel,
@@ -514,6 +535,8 @@ export {
   resolvePathForComparison,
   isPathWithin,
   resolvePathWithin,
+  findTxRoot,
+  resolveTxDbPath,
   type PathWithinOptions,
 } from "./utils/file-path.js"
 export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"
@@ -551,6 +574,9 @@ export {
   type DashboardDefaultTaskView,
   type DashboardCycleStartDay,
   type DashboardCyclesConfig,
+  type ReviewDesignDocsConfig,
+  type ReviewRuntimeType,
+  type ReviewTransportType,
 } from "./utils/toml-config.js"
 export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
 export {

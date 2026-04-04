@@ -77,6 +77,13 @@ import { SpecTraceServiceLive } from "./services/spec-trace-service.js"
 import { DecisionRepositoryLive } from "./repo/decision-repo.js"
 import { DecisionServiceLive } from "./services/decision-service.js"
 import { DecomposeServiceLive } from "./services/decompose-service.js"
+import { DomainEventRepositoryLive } from "./repo/domain-event-repo.js"
+import { SupervisionRepositoryLive } from "./repo/supervision-repo.js"
+import { DocReviewRepositoryLive } from "./repo/doc-review-repo.js"
+import { DomainEventServiceLive } from "./services/domain-event-service.js"
+import { SupervisionServiceLive } from "./services/supervision-service.js"
+import { DocReviewServiceLive } from "./services/doc-review-service.js"
+import { ReviewRuntimeNoop } from "./services/review-runtime.js"
 
 // Re-export services for cleaner imports
 export { SyncService } from "./services/sync/index.js"
@@ -248,6 +255,14 @@ export { LabelRepository, LabelRepositoryLive } from "./repo/label-repo.js"
 export { SpecTraceRepository, SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
 export { DecisionRepository, DecisionRepositoryLive } from "./repo/decision-repo.js"
 export { DecisionService, DecisionServiceLive } from "./services/decision-service.js"
+export { DomainEventRepository, DomainEventRepositoryLive } from "./repo/domain-event-repo.js"
+export { SupervisionRepository, SupervisionRepositoryLive } from "./repo/supervision-repo.js"
+export { DocReviewRepository, DocReviewRepositoryLive } from "./repo/doc-review-repo.js"
+export { DomainEventService, DomainEventServiceLive, type PublishDomainEventInput } from "./services/domain-event-service.js"
+export { SupervisionService, SupervisionServiceLive } from "./services/supervision-service.js"
+export { DocReviewService, DocReviewServiceLive, type DocReviewConfig, DEFAULT_REVIEW_CONFIG, type CompletionStateResult } from "./services/doc-review-service.js"
+export { ReviewRuntime, ReviewRuntimeNoop, ReviewExecutionParamsSchema, type ReviewExecutionParams } from "./services/review-runtime.js"
+export { PiReviewRuntimeLive } from "./services/pi-review-runtime.js"
 
 /**
  * Create the full application layer from an existing SqliteClient infra layer.
@@ -287,7 +302,10 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     GuardRepositoryLive,
     LabelRepositoryLive,
     SpecTraceRepositoryLive,
-    DecisionRepositoryLive
+    DecisionRepositoryLive,
+    DomainEventRepositoryLive,
+    SupervisionRepositoryLive,
+    DocReviewRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -435,12 +453,28 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     Layer.provide(Layer.mergeAll(repos, embeddingService))
   )
 
+  // DomainEventServiceLive needs DomainEventRepository (from repos)
+  const domainEventService = DomainEventServiceLive.pipe(Layer.provide(repos))
+
+  // SupervisionServiceLive needs SupervisionRepository (from repos) + DomainEventService
+  const supervisionService = SupervisionServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, domainEventService))
+  )
+
+  // DocReviewServiceLive needs DocReviewRepository + DomainEventService + DocRepository (from repos) + SqliteClient (from infra)
+  const docReviewService = DocReviewServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, domainEventService, infra))
+  )
+
+  // ReviewRuntimeNoop as default (no external review runtime configured)
+  const reviewRuntime = ReviewRuntimeNoop
+
   // Merge all services
   const runHeartbeatService = RunHeartbeatServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, agentService, decomposeService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceLive, tracingService, compactionService, validationService, messageService, docService, agentService, decomposeService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService, domainEventService, supervisionService, docReviewService, reviewRuntime)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
@@ -503,7 +537,10 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     GuardRepositoryLive,
     LabelRepositoryLive,
     SpecTraceRepositoryLive,
-    DecisionRepositoryLive
+    DecisionRepositoryLive,
+    DomainEventRepositoryLive,
+    SupervisionRepositoryLive,
+    DocReviewRepositoryLive
   ).pipe(
     Layer.provide(infra)
   )
@@ -623,12 +660,28 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   // ReflectServiceLive needs RunRepository, TaskRepository, AttemptRepository, GuardRepository, and LlmService
   const reflectService = ReflectServiceLive.pipe(Layer.provide(Layer.merge(repos, LlmServiceNoop)))
 
+  // DomainEventServiceLive needs DomainEventRepository (from repos)
+  const domainEventService = DomainEventServiceLive.pipe(Layer.provide(repos))
+
+  // SupervisionServiceLive needs SupervisionRepository (from repos) + DomainEventService
+  const supervisionService = SupervisionServiceLive.pipe(
+    Layer.provide(Layer.merge(repos, domainEventService))
+  )
+
+  // DocReviewServiceLive needs DocReviewRepository + DomainEventService + DocRepository (from repos) + SqliteClient (from infra)
+  const docReviewService = DocReviewServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(repos, domainEventService, infra))
+  )
+
+  // ReviewRuntimeNoop as default (no external review runtime configured)
+  const reviewRuntime = ReviewRuntimeNoop
+
   // Merge all services
   const runHeartbeatService = RunHeartbeatServiceLive.pipe(
     Layer.provide(Layer.mergeAll(repos, services, infra))
   )
 
-  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService)
+  const allServices = Layer.mergeAll(services, edgeService, graphExpansionService, anchorVerificationService, swarmVerificationService, promotionService, feedbackTrackerService, retrieverService, DiversifierServiceLive, workerService, runHeartbeatService, claimService, processRegistryService, orchestratorService, DaemonServiceNoop, TracingServiceNoop, compactionService, validationService, messageService, docService, specTraceService, decisionService, memoryService, memoryRetrieverService, pinService, guardService, verifyService, reflectService, domainEventService, supervisionService, docReviewService, reviewRuntime)
 
   // MigrationService only needs SqliteClient
   const migrationService = MigrationServiceLive.pipe(
