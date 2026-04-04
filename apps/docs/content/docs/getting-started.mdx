@@ -136,12 +136,22 @@ tx init
 Optional agent onboarding scaffolds:
 
 ```bash
-tx init --claude            # CLAUDE.md + .claude/skills
-tx init --codex             # AGENTS.md + .codex/agents
-tx init --claude --codex    # scaffold both
+tx init --claude            # generated .claude/skills bundle
+tx init --codex             # generated .codex/skills bundle + .codex/rules
+tx init --claude --codex    # scaffold both generated bundles
 tx init --watchdog          # later only: watchdog scripts + launcher + service templates
 tx init --watchdog --watchdog-runtime codex
 ```
+
+Plain `tx init` now includes an onboarding step where you choose the exact
+Claude and Codex tx skills to install. If you pass `--claude` or `--codex`,
+tx skips the prompt and installs the full default bundle for that runtime.
+
+`tx init --claude` and `tx init --codex` install generated skill bundles, not
+legacy top-level `CLAUDE.md` or `AGENTS.md` shims. Use
+[`tx skills`](/docs/primitives/skills) to inspect the bundle model and
+`tx skills sync` to refresh installed tx-managed skills later without removing
+unrelated custom skills.
 
 This creates a `.tx/` directory:
 
@@ -188,7 +198,7 @@ If you are new to tx, start with the CLI even if you eventually want MCP, SDK, o
 tx init --codex                  # or: tx init --claude, or plain tx init
 tx add "Write auth PRD" --json
 tx add "Implement auth flow" --json
-tx block <implement-task-id> <prd-task-id>
+tx dep block <implement-task-id> <prd-task-id>
 tx ready
 tx show <prd-task-id>
 tx done <prd-task-id>
@@ -208,16 +218,21 @@ This proves the core of tx is working:
 Once the task loop feels normal, add the spec loop:
 
 ```bash
-tx doc add prd auth-flow --title "Auth Flow"
+tx doc add prd auth-flow-prd --title "Auth Flow PRD"
+tx doc add design auth-flow-design --title "Auth Flow Design"
+tx doc link auth-flow-prd auth-flow-design
 # add or update tests in your repo with [INV-*], _INV_*, @spec, or .tx/spec-tests.yml mappings
 tx spec discover
-tx spec status --doc auth-flow
+tx spec status --doc auth-flow-design
+tx decompose auth-flow-design --dry-run
+tx decompose auth-flow-design
 vitest run --reporter=json | tx spec batch --from vitest
-tx spec complete --doc auth-flow --by you
+tx spec complete --doc auth-flow-design --by you
 ```
 
 Use the spec primitives like this:
 
+- `tx decompose`: turn a stable design doc into a first-pass task graph
 - `tx spec fci`: compact machine score for agents and automation
 - `tx spec status`: human-readable blocker view for one scope
 - `tx spec health`: repo rollup, not part of the minimum day-1 loop
@@ -228,7 +243,7 @@ After the two loops above are working, then decide whether you actually need:
 
 - MCP or Agent SDK integration
 - `claim` for parallel workers
-- `guard`, `verify`, `label`, `gate`, and `reflect`
+- `auto guard`, `auto verify`, `auto label`, `auto gate`, and `auto reflect`
 - optional watchdog supervision only if you need unattended long-running loops
 
 ## Optional: Watchdog Later
@@ -276,7 +291,9 @@ Initial rollout check:
 tail -n 50 .tx/ralph-watchdog.log
 ```
 
-For detached service setup (`launchd`/`systemd`), rollback, stale PID cleanup, and troubleshooting, see:
+For generated bundles, manual Ralph workflows, and detached service setup, see:
+- **[tx skills](/docs/primitives/skills)**
+- **[Ralph Loop](/docs/ralph-loop)**
 - **[Watchdog Runbook](/docs/watchdog-runbook)**
 
 ## Quick Start
@@ -295,7 +312,7 @@ tx ready
 tx done tx-abc123
 
 # Add a dependency: tx-b waits for tx-a
-tx block tx-b tx-a
+tx dep block tx-b tx-a
 ```
 
 </Tab>
@@ -333,7 +350,7 @@ Once configured, your AI assistant has access to these tools:
 | `tx_add` | Create a task |
 | `tx_ready` | List unblocked tasks |
 | `tx_done` | Complete a task |
-| `tx_block` | Add a dependency |
+| `tx_dep_block` | Add a dependency |
 | `tx_group_context_set` | Set task-group context |
 | `tx_group_context_clear` | Clear task-group context |
 | `tx_show` | View task details |
@@ -344,11 +361,24 @@ Once configured, your AI assistant has access to these tools:
 | `tx_pin_set` | Set a persistent pin |
 | `tx_pin_get` | Get a pin by ID |
 | `tx_pin_list` | List all pins |
-| `tx_guard_set` | Set task creation limits |
-| `tx_guard_show` | Show current guards |
-| `tx_guard_check` | Check if creation would pass limits |
-| `tx_verify_set` | Attach verification command to task |
-| `tx_verify_run` | Run verification command |
+| `tx_auto_guard_set` | Set task creation limits |
+| `tx_auto_guard_show` | Show current guards |
+| `tx_auto_guard_check` | Check if creation would pass limits |
+| `tx_auto_gate_create` | Create a HITL phase gate |
+| `tx_auto_gate_approve` | Approve a gate |
+| `tx_auto_gate_revoke` | Revoke a gate |
+| `tx_auto_gate_check` | Check if gate is approved |
+| `tx_auto_gate_status` | Get full gate state |
+| `tx_auto_gate_list` | List all gates |
+| `tx_auto_gate_rm` | Remove a gate |
+| `tx_auto_label_add` | Create a label |
+| `tx_auto_label_delete` | Delete a label |
+| `tx_auto_label_assign` | Assign label to task |
+| `tx_auto_label_unassign` | Remove label from task |
+| `tx_auto_label_list` | List all labels |
+| `tx_auto_verify_set` | Attach verification command to task |
+| `tx_auto_verify_run` | Run verification command |
+| `tx_decompose` | Preview or materialize a task graph from a design doc |
 | `tx_spec_discover` | Discover invariant-to-test mappings |
 | `tx_spec_link` | Manually link an invariant to a test |
 | `tx_spec_unlink` | Remove an invariant-to-test mapping |
@@ -361,7 +391,8 @@ Once configured, your AI assistant has access to these tools:
 | `tx_spec_record_run` | Record a single test run result |
 | `tx_spec_batch_run` | Ingest framework/generic batch results |
 | `tx_spec_complete` | Record human COMPLETE sign-off |
-| `tx_reflect` | Session retrospective with signals |
+| `tx_auto_reflect` | Session retrospective with signals |
+| `tx_msg_gc` | Garbage collect old messages |
 
 Example prompt: *"Use tx_ready to find the highest priority task, then work on it and mark it done with tx_done."*
 
@@ -532,7 +563,7 @@ Add guards, verification, and phase scoping for production loops:
 ```bash
 #!/bin/bash
 # Set up guardrails
-tx guard set --max-pending 30 --max-depth 3 --enforce
+tx auto guard set --max-pending 30 --max-depth 3 --enforce
 
 # Phase 1: Discovery (scoped by label)
 while task=$(tx ready --label "phase:discovery" --json --limit 1 | jq -r '.[0].id // empty'); do
@@ -543,11 +574,11 @@ done
 # Phase 2: Implementation (with verification gates)
 while task=$(tx ready --label "phase:implement" --json --limit 1 | jq -r '.[0].id // empty'); do
   [ -z "$task" ] && break
-  claude "Implement $task. Verify with: tx verify run $task && tx done $task"
+  claude "Implement $task. Verify with: tx auto verify run $task && tx done $task"
 done
 
 # Check session health
-tx reflect --json | jq '.signals'
+tx auto reflect --json | jq '.signals'
 ```
 
 ## Store and Retrieve Knowledge
@@ -611,11 +642,10 @@ Agent proposes, human approves:
 ```bash
 AGENT_CMD=${AGENT_CMD:-codex}  # or: claude
 task=$(tx ready --json --limit 1 | jq -r '.[0].id')
-"$AGENT_CMD" "Plan implementation for $task" > plan.md
-echo "Review plan.md, then press Enter to continue..."
+"$AGENT_CMD" "Read the project instructions (for example AGENTS.md if present). For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
 read
-"$AGENT_CMD" "Execute plan.md"
-tx done $task
+"$AGENT_CMD" "Read the project instructions (for example AGENTS.md if present). For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
 ```
 
 ### File-Based
@@ -643,8 +673,9 @@ your-project/
 │   └── streams/           # Append-only sync event logs
 ├── CLAUDE.md              # Claude instructions (optional)
 ├── AGENTS.md              # Codex instructions (optional)
-├── .claude/               # Claude skills/hooks (optional)
-├── .codex/agents/         # Codex agent profiles (optional)
+├── .claude/skills/        # Generated Claude skill bundle (optional)
+├── .codex/skills/         # Generated Codex skill bundle (optional)
+├── .codex/rules/          # Codex command policy rules (optional)
 └── ...your code
 ```
 
@@ -652,12 +683,15 @@ your-project/
 
 You now have tx running. Keep moving in this order so each step builds on the last one:
 
-1. **Task Management**: stay with [Primitives](/docs/primitives) and focus on `ready`, `done`, `block`, `show`, and `sync`.
+1. **Task Management**: stay with [Primitives](/docs/primitives) and focus on `ready`, `done`, `dep block`, `show`, and `sync`.
 2. **Spec-Driven Development**: continue into [`tx doc`](/docs/primitives/docs), [`tx spec`](/docs/primitives/spec-trace), and [`tx decision`](/docs/primitives/decision).
 3. **Memory & Context**: add [`tx memory`](/docs/primitives/memory) and [`tx pin`](/docs/primitives/pin) once you want durable context.
-4. **Bounded Autonomy**: add [`tx label`](/docs/primitives/label), [`tx guard`](/docs/primitives/guard), [`tx verify`](/docs/primitives/verify), [`tx reflect`](/docs/primitives/reflect), and [`tx gate`](/docs/primitives/gate).
-5. **Coordination**: add [`tx claim`](/docs/primitives/claim), channel messaging via [`tx inbox`](/docs/primitives/inbox), and shared group context when multiple actors are involved.
+4. **Bounded Autonomy**: add [`tx auto label`](/docs/primitives/label), [`tx auto guard`](/docs/primitives/guard), [`tx auto verify`](/docs/primitives/verify), [`tx auto reflect`](/docs/primitives/reflect), and [`tx auto gate`](/docs/primitives/gate).
+5. **Coordination**: add [`tx claim`](/docs/primitives/claim), channel messaging via [`tx msg inbox`](/docs/primitives/inbox), and shared group context when multiple actors are involved.
 6. **Observability**: add [`tx trace`](/docs/primitives/traces), [`tx spec health`](/docs/primitives/decision), and the [Headful Experience](/docs/headful) when you need repo-level visibility.
+
+If you later need generated agent bundles or manual long-running loops, continue
+with **[tx skills](/docs/primitives/skills)** and **[Ralph Loop](/docs/ralph-loop)**.
 
 If you later need detached supervision and recovery playbooks, use the **[Watchdog Runbook](/docs/watchdog-runbook)**.
 
@@ -665,11 +699,11 @@ Interface-specific deep dives:
 
 - **[Agent SDK](/docs/agent-sdk)**: build your own TypeScript agents.
 - **[tx ready](/docs/primitives/ready)**: readiness detection details.
-- **[tx label](/docs/primitives/label)**: ready queue scoping by phase.
-- **[tx guard](/docs/primitives/guard)**: task creation limits.
-- **[tx verify](/docs/primitives/verify)**: machine-checkable done criteria.
-- **[tx reflect](/docs/primitives/reflect)**: session retrospective and signals.
-- **[tx gate](/docs/primitives/gate)**: human-in-the-loop phase approvals.
+- **[tx auto label](/docs/primitives/label)**: ready queue scoping by phase.
+- **[tx auto guard](/docs/primitives/guard)**: task creation limits.
+- **[tx auto verify](/docs/primitives/verify)**: machine-checkable done criteria.
+- **[tx auto reflect](/docs/primitives/reflect)**: session retrospective and signals.
+- **[tx auto gate](/docs/primitives/gate)**: human-in-the-loop phase approvals.
 - **[tx sync](/docs/primitives/sync)**: git synchronization behavior.
 
 ## Quick Reference
@@ -679,8 +713,8 @@ Interface-specific deep dives:
 tx add <title>              # Create task
 tx ready                    # List unblocked tasks
 tx done <id>                # Complete task
-tx block <id> <blocker>     # Add dependency
-tx tree <id>                # Show hierarchy
+tx dep block <id> <blocker>  # Add dependency
+tx dep tree <id>            # Show hierarchy
 tx show <id>                # View task details
 tx md-export               # Export tasks to markdown file
 tx group-context set <id> <context>   # Attach shared task-group context
@@ -695,16 +729,16 @@ tx memory search <query>       # Search memory
 tx memory context <task-id>    # Get relevant context
 
 # Bounded Autonomy
-tx label add "phase:discovery"      # Create a label
-tx label assign <id> "phase:discovery"  # Assign label to task
+tx auto label add "phase:discovery"      # Create a label
+tx auto label assign <id> "phase:discovery"  # Assign label to task
 tx ready --label "phase:discovery"  # Scope ready queue by label
-tx guard set --max-pending 30       # Set task creation limits
-tx verify set <id> "bun test"       # Attach verification command
-tx verify run <id>                  # Run verification
-tx reflect                          # Session retrospective
-tx reflect --analyze                # With LLM analysis
-tx gate create docs-to-build --phase-from docs_harden --phase-to feature_build
-tx gate check docs-to-build         # exit 0 approved, 1 blocked
+tx auto guard set --max-pending 30       # Set task creation limits
+tx auto verify set <id> "bun test"       # Attach verification command
+tx auto verify run <id>                  # Run verification
+tx auto reflect                          # Session retrospective
+tx auto reflect --analyze                # With LLM analysis
+tx auto gate create docs-to-build --phase-from docs_harden --phase-to feature_build
+tx auto gate check docs-to-build         # exit 0 approved, 1 blocked
 
 # Sync
 tx sync export              # Materialize current state into stream event logs

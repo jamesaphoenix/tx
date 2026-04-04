@@ -6,21 +6,58 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 
 export type DashboardDefaultTaskAssigmentType = "human" | "agent"
+export type DashboardDefaultTaskView = "list" | "kanban"
+export type DashboardCycleStartDay =
+  | "sunday"
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+export type DashboardCyclesConfig = {
+  cycleLengthDays: number
+  cycleStartDay: DashboardCycleStartDay
+  carryStatuses: string[]
+}
 export type GuardMode = "advisory" | "enforce"
+export type ReviewRuntimeType = "pi" | "custom"
+export type ReviewTransportType = "rpc" | "sdk"
+
+export type ReviewDesignDocsConfig = {
+  enabled: boolean
+  runtime: ReviewRuntimeType
+  transport: ReviewTransportType
+  template: string
+  blocking: boolean
+  createFollowupTasks: boolean
+  retriggerOnTaskReopen: boolean
+}
 
 export type TxConfig = {
   docs: { path: string }
   spec: { testPatterns: string[] }
   memory: { defaultDir: string }
   cycles: { scanPrompt: string | null; agents: number; model: string }
-  dashboard: { defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType }
+  dashboard: {
+    defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
+    defaultTaskView: DashboardDefaultTaskView
+    cycles: DashboardCyclesConfig
+  }
   pins: { targetFiles: string[]; blockAgentDoneWhenTaskIdPresent: boolean }
   guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
   verify: { timeout: number; defaultSchema: string | null }
-  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }};
+  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }
+  reviews: { designDocs: ReviewDesignDocsConfig }
+};
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
+export const DASHBOARD_DEFAULT_TASK_VIEW_KEY = "default_task_view"
 const DASHBOARD_SECTION = "dashboard"
+const DASHBOARD_CYCLES_SECTION = "dashboard.cycles"
+export const DASHBOARD_CYCLE_LENGTH_DAYS_KEY = "cycle_length_days"
+export const DASHBOARD_CYCLE_START_DAY_KEY = "cycle_start_day"
+export const DASHBOARD_CARRY_STATUSES_KEY = "carry_statuses"
 const DOCS_SECTION = "docs"
 const SPEC_SECTION = "spec"
 const CYCLES_SECTION = "cycles"
@@ -29,9 +66,16 @@ const MEMORY_SECTION = "memory"
 const GUARD_SECTION = "guard"
 const VERIFY_SECTION = "verify"
 const REFLECT_SECTION = "reflect"
+const REVIEWS_DESIGN_DOCS_SECTION = "reviews.design_docs"
 
 const isGuardMode = (v: string | null): v is GuardMode =>
   v === "advisory" || v === "enforce"
+
+const isReviewRuntime = (v: string | null): v is ReviewRuntimeType =>
+  v === "pi" || v === "custom"
+
+const isReviewTransport = (v: string | null): v is ReviewTransportType =>
+  v === "rpc" || v === "sdk"
 
 const DEFAULT_CONFIG: TxConfig = {
   docs: { path: "specs" },
@@ -52,11 +96,30 @@ const DEFAULT_CONFIG: TxConfig = {
   },
   memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
-  dashboard: { defaultTaskAssigmentType: "human" },
+  dashboard: {
+    defaultTaskAssigmentType: "human",
+    defaultTaskView: "list",
+    cycles: {
+      cycleLengthDays: 7,
+      cycleStartDay: "monday",
+      carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+    },
+  },
   pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
   guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
   verify: { timeout: 300, defaultSchema: null },
   reflect: { provider: "auto", model: null, defaultSessions: 10, includeTranscripts: false },
+  reviews: {
+    designDocs: {
+      enabled: false,
+      runtime: "pi",
+      transport: "rpc",
+      template: "double-check",
+      blocking: false,
+      createFollowupTasks: true,
+      retriggerOnTaskReopen: true,
+    },
+  },
 }
 
 const isDashboardDefaultTaskAssigmentType = (
@@ -64,10 +127,53 @@ const isDashboardDefaultTaskAssigmentType = (
 ): value is DashboardDefaultTaskAssigmentType =>
   value === "human" || value === "agent"
 
+const isDashboardDefaultTaskView = (
+  value: string | null
+): value is DashboardDefaultTaskView =>
+  value === "list" || value === "kanban"
+
+const DASHBOARD_CYCLE_START_DAYS = new Set<DashboardCycleStartDay>([
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+])
+
 const parseTaskAssigmentTypeOrDefault = (value: string | null): DashboardDefaultTaskAssigmentType =>
   isDashboardDefaultTaskAssigmentType(value)
     ? value
     : DEFAULT_CONFIG.dashboard.defaultTaskAssigmentType
+
+const parseDashboardDefaultTaskViewOrDefault = (
+  value: string | null
+): DashboardDefaultTaskView =>
+  isDashboardDefaultTaskView(value)
+    ? value
+    : DEFAULT_CONFIG.dashboard.defaultTaskView
+
+const parseDashboardCycleLengthOrDefault = (value: string | null): number => {
+  if (!value) return DEFAULT_CONFIG.dashboard.cycles.cycleLengthDays
+  const parsed = parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_CONFIG.dashboard.cycles.cycleLengthDays
+}
+
+const parseDashboardCycleStartDayOrDefault = (value: string | null): DashboardCycleStartDay => {
+  if (!value) return DEFAULT_CONFIG.dashboard.cycles.cycleStartDay
+  const normalized = value.toLowerCase() as DashboardCycleStartDay
+  return DASHBOARD_CYCLE_START_DAYS.has(normalized)
+    ? normalized
+    : DEFAULT_CONFIG.dashboard.cycles.cycleStartDay
+}
+
+const parseDashboardCarryStatusesOrDefault = (values: string[]): string[] => {
+  const normalized = values.map((value) => value.trim()).filter((value) => value.length > 0)
+  return normalized.length > 0 ? normalized : DEFAULT_CONFIG.dashboard.cycles.carryStatuses
+}
 
 const parseBooleanOrDefault = (value: string | null, fallback: boolean): boolean => {
   if (value === "true") return true
@@ -97,6 +203,26 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       DASHBOARD_SECTION,
       DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY
     )
+    const defaultTaskView = extractTomlValue(
+      raw,
+      DASHBOARD_SECTION,
+      DASHBOARD_DEFAULT_TASK_VIEW_KEY
+    )
+    const dashboardCycleLengthDays = extractTomlValue(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CYCLE_LENGTH_DAYS_KEY
+    )
+    const dashboardCycleStartDay = extractTomlValue(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CYCLE_START_DAY_KEY
+    )
+    const dashboardCarryStatuses = extractTomlArray(
+      raw,
+      DASHBOARD_CYCLES_SECTION,
+      DASHBOARD_CARRY_STATUSES_KEY
+    )
     const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
     const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
     const pinsBlockAgentDone = extractTomlValue(raw, PINS_SECTION, "block_agent_done_when_task_id_present")
@@ -117,6 +243,15 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     const reflectDefaultSessions = extractTomlValue(raw, REFLECT_SECTION, "default_sessions")
     const reflectIncludeTranscripts = extractTomlValue(raw, REFLECT_SECTION, "include_transcripts")
 
+    // Reviews section
+    const reviewsEnabled = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "enabled")
+    const reviewsRuntime = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "runtime")
+    const reviewsTransport = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "transport")
+    const reviewsTemplate = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "template")
+    const reviewsBlocking = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "blocking")
+    const reviewsCreateFollowup = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "create_followup_tasks")
+    const reviewsRetrigger = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "retrigger_on_task_reopen")
+
     return {
       docs: {
         path: docsPath ?? DEFAULT_CONFIG.docs.path,
@@ -136,6 +271,12 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       },
       dashboard: {
         defaultTaskAssigmentType: parseTaskAssigmentTypeOrDefault(defaultTaskAssigmentType),
+        defaultTaskView: parseDashboardDefaultTaskViewOrDefault(defaultTaskView),
+        cycles: {
+          cycleLengthDays: parseDashboardCycleLengthOrDefault(dashboardCycleLengthDays),
+          cycleStartDay: parseDashboardCycleStartDayOrDefault(dashboardCycleStartDay),
+          carryStatuses: parseDashboardCarryStatusesOrDefault(dashboardCarryStatuses),
+        },
       },
       pins: {
         targetFiles: pinsTargetFiles
@@ -162,6 +303,17 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
         defaultSessions: reflectDefaultSessions ? parseInt(reflectDefaultSessions, 10) : DEFAULT_CONFIG.reflect.defaultSessions,
         includeTranscripts: reflectIncludeTranscripts === "true" ? true : DEFAULT_CONFIG.reflect.includeTranscripts,
       },
+      reviews: {
+        designDocs: {
+          enabled: parseBooleanOrDefault(reviewsEnabled, DEFAULT_CONFIG.reviews.designDocs.enabled),
+          runtime: isReviewRuntime(reviewsRuntime) ? reviewsRuntime : DEFAULT_CONFIG.reviews.designDocs.runtime,
+          transport: isReviewTransport(reviewsTransport) ? reviewsTransport : DEFAULT_CONFIG.reviews.designDocs.transport,
+          template: reviewsTemplate ?? DEFAULT_CONFIG.reviews.designDocs.template,
+          blocking: parseBooleanOrDefault(reviewsBlocking, DEFAULT_CONFIG.reviews.designDocs.blocking),
+          createFollowupTasks: parseBooleanOrDefault(reviewsCreateFollowup, DEFAULT_CONFIG.reviews.designDocs.createFollowupTasks),
+          retriggerOnTaskReopen: parseBooleanOrDefault(reviewsRetrigger, DEFAULT_CONFIG.reviews.designDocs.retriggerOnTaskReopen),
+        },
+      },
     }
   } catch {
     return DEFAULT_CONFIG
@@ -179,7 +331,10 @@ export const writeDashboardDefaultTaskAssigmentType = (
   const configDir = resolve(cwd, ".tx")
   const configPath = resolve(configDir, "config.toml")
   const current = readTxConfig(cwd)
-  const nextConfig: TxConfig = { ...current, dashboard: { defaultTaskAssigmentType: value } }
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: { ...current.dashboard, defaultTaskAssigmentType: value },
+  }
 
   mkdirSync(dirname(configPath), { recursive: true })
   const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
@@ -188,6 +343,150 @@ export const writeDashboardDefaultTaskAssigmentType = (
     DASHBOARD_SECTION,
     DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
     `"${value}"`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Patch the dashboard default task view in .tx/config.toml.
+ * Preserves unrelated sections and comments.
+ */
+export const writeDashboardDefaultTaskView = (
+  value: DashboardDefaultTaskView,
+  cwd: string = process.cwd()
+): TxConfig => {
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: { ...current.dashboard, defaultTaskView: value },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_SECTION,
+    DASHBOARD_DEFAULT_TASK_VIEW_KEY,
+    `"${value}"`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Read dashboard cycle settings from .tx/config.toml.
+ */
+export const readDashboardCyclesConfig = (
+  cwd: string = process.cwd()
+): DashboardCyclesConfig => readTxConfig(cwd).dashboard.cycles
+
+/**
+ * Patch dashboard cycle length in .tx/config.toml.
+ */
+export const writeDashboardCycleLengthDays = (
+  value: number,
+  cwd: string = process.cwd()
+): TxConfig => {
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const normalizedValue =
+    Number.isFinite(value) && Number.isInteger(value) && value > 0
+      ? value
+      : current.dashboard.cycles.cycleLengthDays
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: {
+      ...current.dashboard,
+      cycles: { ...current.dashboard.cycles, cycleLengthDays: normalizedValue },
+    },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CYCLE_LENGTH_DAYS_KEY,
+    `${normalizedValue}`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Patch dashboard cycle start day in .tx/config.toml.
+ */
+export const writeDashboardCycleStartDay = (
+  value: DashboardCycleStartDay,
+  cwd: string = process.cwd()
+): TxConfig => {
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const normalizedValue = DASHBOARD_CYCLE_START_DAYS.has(value)
+    ? value
+    : current.dashboard.cycles.cycleStartDay
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: {
+      ...current.dashboard,
+      cycles: { ...current.dashboard.cycles, cycleStartDay: normalizedValue },
+    },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CYCLE_START_DAY_KEY,
+    `"${normalizedValue}"`
+  )
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+
+  return nextConfig
+}
+
+/**
+ * Patch dashboard cycle carry statuses in .tx/config.toml.
+ */
+export const writeDashboardCarryStatuses = (
+  value: readonly string[],
+  cwd: string = process.cwd()
+): TxConfig => {
+  const normalized = value
+    .map((status) => status.trim())
+    .filter((status) => status.length > 0)
+
+  const configDir = resolve(cwd, ".tx")
+  const configPath = resolve(configDir, "config.toml")
+  const current = readTxConfig(cwd)
+  const nextCarryStatuses = normalized.length > 0
+    ? normalized
+    : current.dashboard.cycles.carryStatuses
+  const nextConfig: TxConfig = {
+    ...current,
+    dashboard: {
+      ...current.dashboard,
+      cycles: { ...current.dashboard.cycles, carryStatuses: [...nextCarryStatuses] },
+    },
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true })
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const renderedStatuses = `[${nextCarryStatuses.map((status) => JSON.stringify(status)).join(", ")}]`
+  const nextRaw = patchTomlKey(
+    existingRaw,
+    DASHBOARD_CYCLES_SECTION,
+    DASHBOARD_CARRY_STATUSES_KEY,
+    renderedStatuses
   )
   writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
 
@@ -417,7 +716,7 @@ agents = 3
 model = "claude-opus-4-6"
 
 # ─── Dashboard ──────────────────────────────────────────────────────
-# Settings for the tx dashboard web UI (\`tx dashboard\`).
+# Settings for the tx dashboard web UI (\`tx diag dashboard\`).
 # The dashboard provides a visual interface for task management,
 # doc browsing, run inspection, and cycle results.
 # Docs: https://txdocs.dev/docs/headful/filters-and-settings
@@ -428,6 +727,23 @@ model = "claude-opus-4-6"
 # "agent" = tasks are assigned to agents by default.
 # Can be toggled per-task with Cmd+K in the dashboard.
 default_task_assigment_type = "human"
+
+# Default task view when opening the Tasks tab in the dashboard.
+# "list" = table/list layout.
+# "kanban" = status-column board layout.
+default_task_view = "list"
+
+# Weekly cycle planning settings used by dashboard cycle APIs.
+[dashboard.cycles]
+
+# Cycle duration in days.
+cycle_length_days = 7
+
+# Day of week that anchors cycle windows.
+cycle_start_day = "monday"
+
+# Non-done statuses carried into the next cycle when a cycle is completed.
+carry_statuses = ["planning", "active", "blocked", "review", "needs_review"]
 
 # ─── Pins ───────────────────────────────────────────────────────────
 # Context pins — persistent named content blocks that are injected
@@ -450,7 +766,7 @@ block_agent_done_when_task_id_present = true
 # ─── Guard ─────────────────────────────────────────────────────────
 # Task creation guards — lightweight limits checked at \`tx add\` time.
 # Prevents unbounded task proliferation in agent loops.
-# Commands: tx guard set, tx guard show, tx guard clear
+# Commands: tx auto guard set, tx auto guard show, tx auto guard clear
 [guard]
 
 # Guard mode: "advisory" (default) or "enforce"
@@ -458,16 +774,16 @@ block_agent_done_when_task_id_present = true
 # Enforce: tx add fails with GuardExceededError when limits are hit
 mode = "advisory"
 
-# Default limits (can be overridden per-scope via tx guard set)
+# Default limits (can be overridden per-scope via tx auto guard set)
 # max_pending = 50
 # max_children = 10
 # max_depth = 4
 
 # ─── Verify ────────────────────────────────────────────────────────
 # Machine-checkable done criteria attached to tasks.
-# Attach a shell command to a task; \`tx verify run <id>\` executes it.
+# Attach a shell command to a task; \`tx auto verify run <id>\` executes it.
 # Exit 0 = pass, non-zero = fail.
-# Commands: tx verify set, tx verify show, tx verify run, tx verify clear
+# Commands: tx auto verify set, tx auto verify show, tx auto verify run, tx auto verify clear
 [verify]
 
 # Default timeout in seconds for verification commands.
@@ -480,10 +796,10 @@ timeout = 300
 # ─── Reflect ───────────────────────────────────────────────────────
 # Macro-level session retrospective — look at recent sessions,
 # assess what is working, and surface machine-readable signals.
-# Commands: tx reflect
+# Commands: tx auto reflect
 [reflect]
 
-# LLM provider for \`tx reflect --analyze\`
+# LLM provider for \`tx auto reflect --analyze\`
 # "auto" = auto-detect from available env vars (default)
 # "claude" = uses ANTHROPIC_API_KEY
 # "codex" = uses OPENAI_API_KEY
@@ -497,6 +813,35 @@ default_sessions = 10
 
 # Whether to include transcript parsing by default
 include_transcripts = false
+
+# ─── Reviews ──────────────────────────────────────────────────────
+# Config-gated design-doc review triggers.
+# When all linked tasks for a design doc are completed, Ralph can
+# trigger an automated review via a configured runtime (e.g. Pi).
+# See DD-039 for specification.
+[reviews.design_docs]
+
+# Whether design-doc reviews are enabled.
+enabled = false
+
+# Review runtime: "pi" or "custom".
+runtime = "pi"
+
+# Transport for review execution: "rpc" (preferred) or "sdk".
+transport = "rpc"
+
+# Prompt template name for the review (e.g. "double-check").
+template = "double-check"
+
+# Whether a failing review blocks the design doc from being verified.
+blocking = false
+
+# Whether to create follow-up tasks when a review fails.
+create_followup_tasks = true
+
+# Whether to re-trigger a review when linked tasks are reopened
+# after a previous review passed.
+retrigger_on_task_reopen = true
 `
 
 /**

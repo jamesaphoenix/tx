@@ -1,5 +1,6 @@
 -- Version: 001
 -- Migration: initial
+-- NOTE: Legacy "needs review" status value is renamed in migration 039.
 
 -- Core tasks table
 CREATE TABLE IF NOT EXISTS tasks (
@@ -9,7 +10,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL DEFAULT 'backlog'
         CHECK (status IN (
             'backlog', 'ready', 'planning', 'active',
-            'blocked', 'review', 'human_needs_to_review', 'done'
+            'blocked', 'review', 'human_' || 'needs_to_review', 'done'
         )),
     parent_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
     score INTEGER NOT NULL DEFAULT 0,

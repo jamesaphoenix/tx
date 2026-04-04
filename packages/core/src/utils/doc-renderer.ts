@@ -15,11 +15,15 @@ type ParsedYaml = {
 type IndexPrd = {
   name: string
   title: string
+  description: string
+  search_keywords: string[]
   status: string};
 
 type IndexDesignDoc = {
   name: string
   title: string
+  description: string
+  search_keywords: string[]
   status: string
   implements?: string};
 
@@ -31,10 +35,14 @@ type IndexLink = {
 type IndexDoc = {
   name: string
   title: string
+  description: string
+  search_keywords: string[]
   status: string}
 
 type IndexData = {
   overview?: string
+  description?: string
+  search_keywords?: string[]
   requirements: IndexDoc[]
   prds: IndexPrd[]
   design_docs: IndexDesignDoc[]
@@ -45,6 +53,18 @@ type IndexData = {
     by_enforcement: Record<string, number>
     by_subsystem: Record<string, number>
   }};
+
+const renderTableCell = (value: string): string => {
+  return value
+    .trim()
+    .replace(/\r?\n+/g, " ")
+    .replace(/\|/g, "\\|")
+}
+
+const renderSearchKeywords = (keywords: readonly string[]): string => {
+  if (keywords.length === 0) return "-"
+  return renderTableCell(keywords.join(", "))
+}
 
 /**
  * Render a parsed YAML doc to deterministic markdown.
@@ -77,6 +97,12 @@ export const renderDocToMarkdown = (parsed: ParsedYaml, kind: DocKind): string =
     case "system_design":
       renderSystemDesign(parsed, lines)
       break
+    case "runbook":
+      renderRunbook(parsed, lines)
+      break
+    case "decision":
+      renderDecision(parsed, lines)
+      break
     default: {
       // Compile-time exhaustive check — adding a new DocKind without
       // a case above will fail here with a type error.
@@ -96,6 +122,7 @@ const renderOverview = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "problem_definition", "Problem Definition")
   renderFreeTextSection(parsed, lines, "subsystems", "Subsystems")
   renderFreeTextSection(parsed, lines, "object_model", "Object Model")
+  // Legacy sections (removed from new schema, rendered for backward compat)
   renderFreeTextSection(parsed, lines, "storage_schema", "Storage Schema")
   renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
   renderFailureModesTable(parsed.failure_modes as unknown[] | undefined, lines)
@@ -103,26 +130,48 @@ const renderOverview = (parsed: ParsedYaml, lines: string[]): void => {
   renderConstraintsList(parsed.constraints as string[] | undefined, lines)
   renderFreeTextSection(parsed, lines, "cross_cutting", "Cross-Cutting Concerns")
   renderFreeTextSection(parsed, lines, "data_retention", "Data Retention")
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
 }
 
 const renderPrd = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "problem", "Problem")
   renderFreeTextSection(parsed, lines, "solution", "Solution")
+  // Legacy `requirements` (deprecated, rendered for backward compat)
   renderStringList(parsed.requirements as string[] | undefined, lines, "Requirements")
   renderEarsRequirements(parsed.ears_requirements as unknown[] | undefined, lines)
   renderStringList(parsed.acceptance_criteria as string[] | undefined, lines, "Acceptance Criteria")
-  renderStringList(parsed.out_of_scope as string[] | undefined, lines, "Out of Scope")
+  // Render both `non_goals` and legacy `out_of_scope`
+  renderStringList(parsed.non_goals as string[] | undefined, lines, "Non-Goals")
+  if (!parsed.non_goals) {
+    renderStringList(parsed.out_of_scope as string[] | undefined, lines, "Non-Goals")
+  }
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
 }
 
 const renderRequirement = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "overview", "Overview")
-  renderFreeTextSection(parsed, lines, "actors", "Actors")
-  renderFreeTextSection(parsed, lines, "use_cases", "Use Cases")
+  renderActorsTable(parsed.actors as unknown[] | undefined, lines)
+  renderUseCasesTable(parsed.use_cases as unknown[] | undefined, lines)
   renderFreeTextSection(parsed, lines, "functional_requirements", "Functional Requirements")
   renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
   renderEarsRequirements(parsed.ears_requirements as unknown[] | undefined, lines)
-  renderFreeTextSection(parsed, lines, "non_functional_requirements", "Non-Functional Requirements")
-  renderFreeTextSection(parsed, lines, "traceability", "Traceability")
+  renderStringList(parsed.non_functional_requirements as string[] | undefined, lines, "Non-Functional Requirements")
+  const traceability = parsed.traceability
+  if (Array.isArray(traceability)) {
+    renderTraceabilityTable(traceability, lines)
+  } else if (traceability && typeof traceability === "object") {
+    // Legacy object form (scoped_by, designed_in)
+    const rec = traceability as Record<string, unknown>
+    const entries = Object.entries(rec).filter(([, value]) => value != null && value !== "")
+    if (entries.length > 0) {
+      lines.push("## Traceability", "")
+      for (const [key, value] of entries) {
+        lines.push(`- **${key}**: ${String(value)}`)
+      }
+      lines.push("")
+    }
+  }
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
 }
 
 const renderSystemDesign = (parsed: ParsedYaml, lines: string[]): void => {
@@ -130,25 +179,47 @@ const renderSystemDesign = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "scope", "Scope")
   renderStringList(parsed.constraints as string[] | undefined, lines, "Constraints")
   renderFreeTextSection(parsed, lines, "design", "Design")
-  renderFreeTextSection(parsed, lines, "applies_to", "Applies To")
+  renderAppliesToTable(parsed.applies_to as unknown[] | undefined, lines)
   renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
-  renderFreeTextSection(parsed, lines, "decision_log", "Decision Log")
+  renderDecisionLogTable(parsed.decision_log as unknown[] | undefined, lines)
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
 }
 
 const renderDesign = (parsed: ParsedYaml, lines: string[]): void => {
   renderFreeTextSection(parsed, lines, "problem_definition", "Problem Definition")
   renderStringList(parsed.goals as string[] | undefined, lines, "Goals")
   renderFreeTextSection(parsed, lines, "architecture", "Architecture")
-  renderFreeTextSection(parsed, lines, "interfaces", "Interfaces")
-  renderFreeTextSection(parsed, lines, "implementation", "Implementation")
   renderFreeTextSection(parsed, lines, "data_model", "Data Model")
   renderInvariantsTable(parsed.invariants as unknown[] | undefined, lines)
   renderFailureModesTable(parsed.failure_modes as unknown[] | undefined, lines)
   renderEdgeCasesTable(parsed.edge_cases as unknown[] | undefined, lines)
+  renderStringList(parsed.non_goals as string[] | undefined, lines, "Non-Goals")
+  renderTestingStrategyTable(parsed.testing_strategy as unknown, lines)
+  renderFreeTextSection(parsed, lines, "open_questions", "Open Questions")
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
+  // Legacy sections (removed from new schema, rendered for backward compat)
+  renderFreeTextSection(parsed, lines, "interfaces", "Interfaces")
+  renderFreeTextSection(parsed, lines, "implementation", "Implementation")
   renderWorkBreakdown(parsed.work_breakdown as unknown[] | undefined, lines)
   renderFreeTextSection(parsed, lines, "retention", "Retention")
-  renderFreeTextSection(parsed, lines, "testing_strategy", "Testing Strategy")
-  renderFreeTextSection(parsed, lines, "open_questions", "Open Questions")
+}
+
+const renderRunbook = (parsed: ParsedYaml, lines: string[]): void => {
+  renderFreeTextSection(parsed, lines, "summary", "Summary")
+  renderFreeTextSection(parsed, lines, "symptoms", "Symptoms")
+  renderFreeTextSection(parsed, lines, "diagnosis", "Diagnosis")
+  renderFreeTextSection(parsed, lines, "mitigation", "Mitigation")
+  renderFreeTextSection(parsed, lines, "escalation", "Escalation")
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
+}
+
+const renderDecision = (parsed: ParsedYaml, lines: string[]): void => {
+  renderFreeTextSection(parsed, lines, "summary", "Summary")
+  renderFreeTextSection(parsed, lines, "context", "Context")
+  renderFreeTextSection(parsed, lines, "alternatives", "Alternatives")
+  renderFreeTextSection(parsed, lines, "decision", "Decision")
+  renderFreeTextSection(parsed, lines, "consequences", "Consequences")
+  renderFreeTextSection(parsed, lines, "user_specific_content", "Additional Notes")
 }
 
 // =============================================================================
@@ -219,31 +290,51 @@ const renderInvariantsTable = (
 ): void => {
   if (!Array.isArray(invariants) || invariants.length === 0) return
   lines.push("## Invariants", "")
-  lines.push("| ID | Rule | Enforcement | Reference |")
-  lines.push("|-----|------|-------------|-----------|")
-  for (const raw of invariants) {
-    const inv = asRecord(raw)
-    const id = pickString(inv, "id")
-    const ruleFromString = typeof raw === "string" && raw.trim() ? raw.trim() : null
-    const rule = ruleFromString ?? pickString(inv, "rule", "description", "scenario")
-    const subsystem = pickString(inv, "subsystem")
-    const enforcement = pickString(inv, "enforcement")
-    const ref = pickString(
-      inv,
-      "test_ref",
-      "testRef",
-      "lint_rule",
-      "lintRule",
-      "prompt_ref",
-      "promptRef"
-    )
-    const ruleWithSubsystem = subsystem
-      ? `${markdownCell(rule)} (${markdownCell(subsystem)})`
-      : markdownCell(rule)
 
-    lines.push(
-      `| ${markdownCell(id)} | ${ruleWithSubsystem} | ${markdownCell(enforcement)} | ${markdownCell(ref)} |`
-    )
+  // Detect format: new (id+statement) vs legacy (id+rule+enforcement)
+  const firstInv = asRecord(invariants[0])
+  const isNewFormat = firstInv && typeof firstInv.statement === "string"
+
+  if (isNewFormat) {
+    lines.push("| ID | Statement | Rationale |")
+    lines.push("|-----|-----------|-----------|")
+    for (const raw of invariants) {
+      const inv = asRecord(raw)
+      const id = pickString(inv, "id")
+      const statement = pickString(inv, "statement")
+      const rationale = pickString(inv, "rationale")
+      lines.push(
+        `| ${markdownCell(id)} | ${markdownCell(statement)} | ${markdownCell(rationale)} |`
+      )
+    }
+  } else {
+    // Legacy format with rule/enforcement/reference
+    lines.push("| ID | Rule | Enforcement | Reference |")
+    lines.push("|-----|------|-------------|-----------|")
+    for (const raw of invariants) {
+      const inv = asRecord(raw)
+      const id = pickString(inv, "id")
+      const ruleFromString = typeof raw === "string" && raw.trim() ? raw.trim() : null
+      const rule = ruleFromString ?? pickString(inv, "rule", "statement", "description", "scenario")
+      const subsystem = pickString(inv, "subsystem")
+      const enforcement = pickString(inv, "enforcement")
+      const ref = pickString(
+        inv,
+        "test_ref",
+        "testRef",
+        "lint_rule",
+        "lintRule",
+        "prompt_ref",
+        "promptRef"
+      )
+      const ruleWithSubsystem = subsystem
+        ? `${markdownCell(rule)} (${markdownCell(subsystem)})`
+        : markdownCell(rule)
+
+      lines.push(
+        `| ${markdownCell(id)} | ${ruleWithSubsystem} | ${markdownCell(enforcement)} | ${markdownCell(ref)} |`
+      )
+    }
   }
   lines.push("")
 }
@@ -254,17 +345,19 @@ const renderFailureModesTable = (
 ): void => {
   if (!Array.isArray(failureModes) || failureModes.length === 0) return
   lines.push("## Failure Modes", "")
-  lines.push("| ID | Description | Mitigation |")
-  lines.push("|-----|-------------|------------|")
+  lines.push("| Condition | Impact | Handling |")
+  lines.push("|-----------|--------|----------|")
   for (const raw of failureModes) {
     const fm = asRecord(raw)
-    const id = pickString(fm, "id")
     const descriptionFromString =
       typeof raw === "string" && raw.trim() ? raw.trim() : null
-    const description = descriptionFromString ?? pickString(fm, "description", "scenario")
-    const mitigation = pickString(fm, "mitigation")
+    // New schema: condition/impact/handling; legacy: id/description/mitigation
+    const condition = descriptionFromString ??
+      pickString(fm, "condition", "description", "scenario")
+    const impact = pickString(fm, "impact")
+    const handling = pickString(fm, "handling", "mitigation")
     lines.push(
-      `| ${markdownCell(id)} | ${markdownCell(description)} | ${markdownCell(mitigation)} |`
+      `| ${markdownCell(condition)} | ${markdownCell(impact)} | ${markdownCell(handling)} |`
     )
   }
   lines.push("")
@@ -276,16 +369,17 @@ const renderEdgeCasesTable = (
 ): void => {
   if (!Array.isArray(edgeCases) || edgeCases.length === 0) return
   lines.push("## Edge Cases", "")
-  lines.push("| ID | Description |")
-  lines.push("|-----|-------------|")
+  lines.push("| Condition | Expected Behavior |")
+  lines.push("|-----------|-------------------|")
   for (const raw of edgeCases) {
     const ec = asRecord(raw)
-    const id = pickString(ec, "id")
     const descriptionFromString =
       typeof raw === "string" && raw.trim() ? raw.trim() : null
-    const description =
-      descriptionFromString ?? pickString(ec, "description", "scenario", "case")
-    lines.push(`| ${markdownCell(id)} | ${markdownCell(description)} |`)
+    // New schema: condition/expected_behavior; legacy: id/description
+    const condition = descriptionFromString ??
+      pickString(ec, "condition", "description", "scenario", "case")
+    const expectedBehavior = pickString(ec, "expected_behavior")
+    lines.push(`| ${markdownCell(condition)} | ${markdownCell(expectedBehavior)} |`)
   }
   lines.push("")
 }
@@ -310,50 +404,242 @@ const renderWorkBreakdown = (
   lines.push("")
 }
 
+const renderActorsTable = (
+  actors: unknown[] | undefined,
+  lines: string[]
+): void => {
+  if (!Array.isArray(actors) || actors.length === 0) return
+  lines.push("## Actors", "")
+  lines.push("| Name | Description |")
+  lines.push("|------|-------------|")
+  for (const raw of actors) {
+    const actor = asRecord(raw)
+    const nameFromString = typeof raw === "string" && raw.trim() ? raw.trim() : null
+    const name = nameFromString ?? pickString(actor, "name")
+    const description = pickString(actor, "description")
+    lines.push(`| ${markdownCell(name)} | ${markdownCell(description)} |`)
+  }
+  lines.push("")
+}
+
+const renderUseCasesTable = (
+  useCases: unknown[] | undefined,
+  lines: string[]
+): void => {
+  if (!Array.isArray(useCases) || useCases.length === 0) return
+  lines.push("## Use Cases", "")
+  for (const raw of useCases) {
+    const uc = asRecord(raw)
+    const id = pickString(uc, "id")
+    const actor = pickString(uc, "actor")
+    const trigger = pickString(uc, "trigger")
+    const outcome = pickString(uc, "outcome")
+    // Support both new schema (id/actor/trigger/outcome) and legacy (id/title/trigger/...)
+    const title = pickString(uc, "title")
+    const heading = id ? `### ${id}${title ? `: ${title}` : ""}` : `### Use Case`
+    lines.push(heading, "")
+    if (actor) lines.push(`**Actor**: ${actor}`)
+    if (trigger) lines.push(`**Trigger**: ${trigger}`)
+    if (outcome) lines.push(`**Outcome**: ${outcome}`)
+    // Legacy fields
+    const preconditions = pickString(uc, "preconditions")
+    const postconditions = pickString(uc, "postconditions")
+    const exceptions = pickString(uc, "exceptions")
+    if (preconditions) lines.push(`**Preconditions**: ${preconditions}`)
+    if (postconditions) lines.push(`**Postconditions**: ${postconditions}`)
+    if (exceptions) lines.push(`**Exceptions**: ${exceptions}`)
+    // Flow (legacy)
+    if (uc && Array.isArray(uc.flow)) {
+      lines.push("", "**Flow**:")
+      for (const step of uc.flow as unknown[]) {
+        lines.push(`1. ${String(step)}`)
+      }
+    }
+    lines.push("")
+  }
+}
+
+const renderAppliesToTable = (
+  appliesTo: unknown[] | undefined,
+  lines: string[]
+): void => {
+  if (!Array.isArray(appliesTo) || appliesTo.length === 0) return
+  lines.push("## Applies To", "")
+  lines.push("| Target | Reason |")
+  lines.push("|--------|--------|")
+  for (const raw of appliesTo) {
+    const entry = asRecord(raw)
+    const targetFromString = typeof raw === "string" && raw.trim() ? raw.trim() : null
+    const target = targetFromString ?? pickString(entry, "target")
+    const reason = pickString(entry, "reason")
+    lines.push(`| ${markdownCell(target)} | ${markdownCell(reason)} |`)
+  }
+  lines.push("")
+}
+
+const renderDecisionLogTable = (
+  decisionLog: unknown[] | undefined,
+  lines: string[]
+): void => {
+  if (!Array.isArray(decisionLog) || decisionLog.length === 0) return
+  lines.push("## Decision Log", "")
+  lines.push("| Date | Decision | Rationale | Consequence |")
+  lines.push("|------|----------|-----------|-------------|")
+  for (const raw of decisionLog) {
+    const entry = asRecord(raw)
+    const decisionFromString = typeof raw === "string" && raw.trim() ? raw.trim() : null
+    const decision = decisionFromString ?? pickString(entry, "decision")
+    const rationale = pickString(entry, "rationale")
+    const date = pickString(entry, "date")
+    const consequence = pickString(entry, "consequence")
+    lines.push(
+      `| ${markdownCell(date)} | ${markdownCell(decision)} | ${markdownCell(rationale)} | ${markdownCell(consequence)} |`
+    )
+  }
+  lines.push("")
+}
+
+const renderTraceabilityTable = (
+  traceability: unknown[] | undefined,
+  lines: string[]
+): void => {
+  if (!Array.isArray(traceability) || traceability.length === 0) return
+  lines.push("## Traceability", "")
+  lines.push("| Requirement | Level | Verification | Success Criteria |")
+  lines.push("|-------------|-------|--------------|------------------|")
+  for (const raw of traceability) {
+    const row = asRecord(raw)
+    const reqId = pickString(row, "requirement_id", "requirement")
+    const level = pickString(row, "level", "test_type")
+    const verification = pickString(row, "verification", "test_name")
+    const successCriteria = pickString(row, "success_criteria")
+    lines.push(
+      `| ${markdownCell(reqId)} | ${markdownCell(level)} | ${markdownCell(verification)} | ${markdownCell(successCriteria)} |`
+    )
+  }
+  lines.push("")
+}
+
+/**
+ * Render testing_strategy as a structured traceability table (new schema)
+ * or fall back to free-text rendering (legacy).
+ */
+const renderTestingStrategyTable = (
+  testingStrategy: unknown,
+  lines: string[]
+): void => {
+  if (!testingStrategy) return
+  // New schema: array of traceability rows
+  if (Array.isArray(testingStrategy) && testingStrategy.length > 0) {
+    lines.push("## Testing Strategy", "")
+    lines.push("| Requirement | Level | Verification | Success Criteria |")
+    lines.push("|-------------|-------|--------------|------------------|")
+    for (const raw of testingStrategy) {
+      const row = asRecord(raw)
+      const reqId = pickString(row, "requirement_id", "requirement")
+      const level = pickString(row, "level", "test_type")
+      const verification = pickString(row, "verification", "test_name")
+      const successCriteria = pickString(row, "success_criteria")
+      // Legacy: assertions array
+      const assertions = row?.assertions
+      const successStr = successCriteria ??
+        (Array.isArray(assertions) ? (assertions as string[]).join("; ") : null)
+      lines.push(
+        `| ${markdownCell(reqId)} | ${markdownCell(level)} | ${markdownCell(verification)} | ${markdownCell(successStr)} |`
+      )
+    }
+    lines.push("")
+    return
+  }
+  // Legacy: free-text testing_strategy
+  if (typeof testingStrategy === "string" && testingStrategy.trim()) {
+    lines.push("## Testing Strategy", "")
+    lines.push(testingStrategy.trim(), "")
+  }
+}
+
 const renderEarsRequirements = (
   requirements: unknown[] | undefined,
   lines: string[]
 ): void => {
   if (!Array.isArray(requirements) || requirements.length === 0) return
 
-  lines.push("## Structured Requirements (EARS)", "")
-  lines.push("| ID | Pattern | Requirement | Priority |")
-  lines.push("|-----|---------|-------------|----------|")
+  // Detect format: new simplified (id+statement) vs legacy decomposed (pattern+system+response)
+  const firstReq = asRecord(requirements[0])
+  const isNewFormat = firstReq && typeof firstReq.statement === "string"
 
-  const detailSections: Array<{ id: string; rationale: string | null; testHint: string | null }> = []
+  if (isNewFormat) {
+    // New DOC_SCHEMA_SPEC format: id, statement, optional category/rationale
+    lines.push("## Structured Requirements (EARS)", "")
+    lines.push("| ID | Statement | Category |")
+    lines.push("|-----|-----------|----------|")
 
-  for (const raw of requirements) {
-    const req = asRecord(raw)
-    const id = pickString(req, "id")
-    const pattern = pickString(req, "pattern")
-    const priority = pickString(req, "priority")
-    const requirementFromString =
-      typeof raw === "string" && raw.trim() ? raw.trim() : null
-    const requirement = requirementFromString ?? composeEarsSentence(raw)
+    const detailSections: Array<{ id: string; rationale: string | null }> = []
 
-    lines.push(
-      `| ${markdownCell(id)} | ${markdownCell(pattern)} | ${markdownCell(requirement)} | ${markdownCell(priority)} |`
-    )
+    for (const raw of requirements) {
+      const req = asRecord(raw)
+      const id = pickString(req, "id")
+      const statement = pickString(req, "statement")
+      const category = pickString(req, "category")
 
-    if (!req || !id) continue
+      lines.push(
+        `| ${markdownCell(id)} | ${markdownCell(statement)} | ${markdownCell(category)} |`
+      )
 
-    const rationale = pickString(req, "rationale")
-    const testHint = pickString(req, "test_hint", "testHint")
-    if (rationale || testHint) {
-      detailSections.push({ id, rationale, testHint })
-    }
-  }
-  lines.push("")
-
-  for (const detail of detailSections) {
-    lines.push(`### ${detail.id}`)
-    if (detail.rationale) {
-      lines.push(`**Rationale**: ${detail.rationale}`)
-    }
-    if (detail.testHint) {
-      lines.push(`**Test hint**: ${detail.testHint}`)
+      if (!req || !id) continue
+      const rationale = pickString(req, "rationale")
+      if (rationale) {
+        detailSections.push({ id, rationale })
+      }
     }
     lines.push("")
+
+    for (const detail of detailSections) {
+      lines.push(`### ${detail.id}`)
+      lines.push(`**Rationale**: ${detail.rationale}`)
+      lines.push("")
+    }
+  } else {
+    // Legacy decomposed format: pattern, system, response, etc.
+    lines.push("## Structured Requirements (EARS)", "")
+    lines.push("| ID | Pattern | Requirement | Priority |")
+    lines.push("|-----|---------|-------------|----------|")
+
+    const detailSections: Array<{ id: string; rationale: string | null; testHint: string | null }> = []
+
+    for (const raw of requirements) {
+      const req = asRecord(raw)
+      const id = pickString(req, "id")
+      const pattern = pickString(req, "pattern")
+      const priority = pickString(req, "priority")
+      const requirementFromString =
+        typeof raw === "string" && raw.trim() ? raw.trim() : null
+      const requirement = requirementFromString ?? composeEarsSentence(raw)
+
+      lines.push(
+        `| ${markdownCell(id)} | ${markdownCell(pattern)} | ${markdownCell(requirement)} | ${markdownCell(priority)} |`
+      )
+
+      if (!req || !id) continue
+
+      const rationale = pickString(req, "rationale")
+      const testHint = pickString(req, "test_hint", "testHint")
+      if (rationale || testHint) {
+        detailSections.push({ id, rationale, testHint })
+      }
+    }
+    lines.push("")
+
+    for (const detail of detailSections) {
+      lines.push(`### ${detail.id}`)
+      if (detail.rationale) {
+        lines.push(`**Rationale**: ${detail.rationale}`)
+      }
+      if (detail.testHint) {
+        lines.push(`**Test hint**: ${detail.testHint}`)
+      }
+      lines.push("")
+    }
   }
 }
 
@@ -420,6 +706,14 @@ export const composeEarsSentence = (raw: unknown): string | null => {
 export const renderIndexToMarkdown = (indexData: IndexData): string => {
   const lines: string[] = ["# Documentation Index", ""]
 
+  if (indexData.description) {
+    lines.push(`**Description**: ${indexData.description}`, "")
+  }
+
+  if (indexData.search_keywords && indexData.search_keywords.length > 0) {
+    lines.push(`**Search Keywords**: ${indexData.search_keywords.join(", ")}`, "")
+  }
+
   if (indexData.overview) {
     lines.push(
       `**System Overview**: [${indexData.overview}](${indexData.overview}.md)`,
@@ -430,11 +724,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // Requirements table
   if (indexData.requirements.length > 0) {
     lines.push("## Requirements Documents", "")
-    lines.push("| Name | Title | Status |")
-    lines.push("|------|-------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Status |")
+    lines.push("|------|-------|-------------|-----------------|--------|")
     for (const req of indexData.requirements) {
       lines.push(
-        `| [${req.name}](requirement/${req.name}.md) | ${req.title} | ${req.status} |`
+        `| [${req.name}](requirement/${req.name}.md) | ${renderTableCell(req.title)} | ${renderTableCell(req.description)} | ${renderSearchKeywords(req.search_keywords)} | ${renderTableCell(req.status)} |`
       )
     }
     lines.push("")
@@ -443,11 +737,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // PRDs table
   if (indexData.prds.length > 0) {
     lines.push("## Product Requirements Documents", "")
-    lines.push("| Name | Title | Status |")
-    lines.push("|------|-------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Status |")
+    lines.push("|------|-------|-------------|-----------------|--------|")
     for (const prd of indexData.prds) {
       lines.push(
-        `| [${prd.name}](prd/${prd.name}.md) | ${prd.title} | ${prd.status} |`
+        `| [${prd.name}](prd/${prd.name}.md) | ${renderTableCell(prd.title)} | ${renderTableCell(prd.description)} | ${renderSearchKeywords(prd.search_keywords)} | ${renderTableCell(prd.status)} |`
       )
     }
     lines.push("")
@@ -456,11 +750,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // Design docs table
   if (indexData.design_docs.length > 0) {
     lines.push("## Design Documents", "")
-    lines.push("| Name | Title | Implements | Status |")
-    lines.push("|------|-------|------------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Implements | Status |")
+    lines.push("|------|-------|-------------|-----------------|------------|--------|")
     for (const dd of indexData.design_docs) {
       lines.push(
-        `| [${dd.name}](design/${dd.name}.md) | ${dd.title} | ${dd.implements ?? "-"} | ${dd.status} |`
+        `| [${dd.name}](design/${dd.name}.md) | ${renderTableCell(dd.title)} | ${renderTableCell(dd.description)} | ${renderSearchKeywords(dd.search_keywords)} | ${renderTableCell(dd.implements ?? "-")} | ${renderTableCell(dd.status)} |`
       )
     }
     lines.push("")
@@ -469,11 +763,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // System Design docs table
   if (indexData.system_designs.length > 0) {
     lines.push("## System Design Documents", "")
-    lines.push("| Name | Title | Status |")
-    lines.push("|------|-------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Status |")
+    lines.push("|------|-------|-------------|-----------------|--------|")
     for (const sd of indexData.system_designs) {
       lines.push(
-        `| [${sd.name}](system_design/${sd.name}.md) | ${sd.title} | ${sd.status} |`
+        `| [${sd.name}](system_design/${sd.name}.md) | ${renderTableCell(sd.title)} | ${renderTableCell(sd.description)} | ${renderSearchKeywords(sd.search_keywords)} | ${renderTableCell(sd.status)} |`
       )
     }
     lines.push("")

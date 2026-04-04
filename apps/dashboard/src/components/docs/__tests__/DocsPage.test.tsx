@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
@@ -9,23 +9,23 @@ import { DocsPage } from "../DocsPage"
 vi.mock("../DocSidebar", () => ({
   DocSidebar: ({ onToggleMap, onSelectDoc }: {
     onToggleMap: () => void
-    onSelectDoc: (name: string) => void
+    onSelectDoc: (ref: string) => void
   }) => (
     <div>
       <button onClick={onToggleMap}>Open Graph</button>
-      <button onClick={() => onSelectDoc("PRD-001-dashboard")}>Select Doc</button>
+      <button onClick={() => onSelectDoc("doc-111111111111:1")}>Select Doc</button>
     </div>
   ),
 }))
 
 vi.mock("../DocGraph", () => ({
-  DocGraph: ({ onSelectDoc }: { onSelectDoc?: (name: string) => void }) => (
-    <button onClick={() => onSelectDoc?.("PRD-001-dashboard")}>Graph Select Doc</button>
+  DocGraph: ({ onSelectDoc }: { onSelectDoc?: (docDbId: number) => void }) => (
+    <button onClick={() => onSelectDoc?.(1)}>Graph Select Doc</button>
   ),
 }))
 
 vi.mock("../DocDetail", () => ({
-  DocDetail: ({ docName }: { docName: string }) => <div>Detail:{docName}</div>,
+  DocDetail: ({ docId, version }: { docId: string; version: number }) => <div>Detail:{docId}:{version}</div>,
 }))
 
 function createTestQueryClient() {
@@ -57,6 +57,7 @@ describe("DocsPage", () => {
           docs: [
             {
               id: 1,
+              docId: "doc-111111111111",
               hash: "h1",
               kind: "prd",
               name: "PRD-001-dashboard",
@@ -78,18 +79,22 @@ describe("DocsPage", () => {
     server.resetHandlers()
   })
 
-  it("switches between list and map flows while preserving selected doc", () => {
+  it("switches between list and map flows while preserving selected doc", async () => {
     renderWithProviders(<DocsPage />)
 
     expect(screen.getByText("Select a doc to view details")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Select Doc" }))
-    expect(screen.getByText("Detail:PRD-001-dashboard")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText("Detail:doc-111111111111:1")).toBeInTheDocument()
+    })
 
     fireEvent.click(screen.getByRole("button", { name: "Open Graph" }))
     expect(screen.getByRole("button", { name: "Graph Select Doc" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Graph Select Doc" }))
-    expect(screen.getByText("Detail:PRD-001-dashboard")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText("Detail:doc-111111111111:1")).toBeInTheDocument()
+    })
   })
 })

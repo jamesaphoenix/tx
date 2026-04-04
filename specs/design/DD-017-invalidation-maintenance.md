@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-017-invalidation-maintenance"
+title: "DD-017: Anchor Invalidation and Maintenance - Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-017: Anchor Invalidation and Maintenance - Implementation
 
 ## Overview

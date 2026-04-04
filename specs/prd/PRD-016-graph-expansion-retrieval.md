@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-016-graph-expansion-retrieval"
+title: "PRD-016: Graph RAG - Graph-Expanded Retrieval"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-016: Graph RAG - Graph-Expanded Retrieval
 
 ## Overview

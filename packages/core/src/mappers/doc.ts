@@ -10,6 +10,7 @@ import {
   INVARIANT_STATUSES,
   INVARIANT_SOURCES,
   EARS_PATTERNS,
+  DOC_STABLE_ID_PATTERN,
   type DocKind,
   type DocStatus,
   type DocLinkType,
@@ -34,6 +35,7 @@ import {
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"
+import { deriveDocStableId } from "../id.js"
 
 export {
   DOC_KINDS,
@@ -76,6 +78,8 @@ export const isValidInvariantSource = (s: string): s is InvariantSource =>
   invariantSourceStrings.includes(s)
 export const isValidEarsPattern = (s: string): s is EarsPattern =>
   earsPatternStrings.includes(s)
+export const isValidDocStableId = (s: string): s is Doc["docId"] =>
+  DOC_STABLE_ID_PATTERN.test(s)
 
 // =============================================================================
 // METADATA PARSING
@@ -130,8 +134,18 @@ export const rowToDoc = (row: DocRow): Doc => {
       rowId: row.id,
     })
   }
+  const docStableId = row.doc_id ?? deriveDocStableId(`${row.name}:${row.version}`)
+  if (!isValidDocStableId(docStableId)) {
+    throw new InvalidStatusError({
+      entity: "doc.doc_id",
+      status: docStableId,
+      validStatuses: ["doc-[a-f0-9]{12}"],
+      rowId: row.id,
+    })
+  }
   return {
     id: coerceDbResult<DocId>(row.id),
+    docId: docStableId,
     hash: row.hash,
     kind: row.kind,
     name: row.name,

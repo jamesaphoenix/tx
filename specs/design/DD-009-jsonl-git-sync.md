@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-009-jsonl-git-sync"
+title: "DD-009: JSONL Git Sync Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-009: JSONL Git Sync Implementation
 
 ## Overview
@@ -579,8 +589,8 @@ Resolution:
 ### Scenario 3: Circular Dependency Created
 
 ```
-Machine A: tx block tx-123 tx-456  # A blocks B
-Machine B: tx block tx-456 tx-123  # B blocks A (creates cycle!)
+Machine A: tx dep block tx-123 tx-456  # A blocks B
+Machine B: tx dep block tx-456 tx-123  # B blocks A (creates cycle!)
 
 Resolution:
 - Import detects cycle during dep_add

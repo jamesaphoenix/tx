@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-026-watchdog-onboarding-contract"
+title: "PRD-026: Watchdog Onboarding Contract and Safe Defaults"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-026: Watchdog Onboarding Contract and Safe Defaults
 
 ## Problem

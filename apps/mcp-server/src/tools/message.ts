@@ -66,7 +66,7 @@ const handleSend = async (args: {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_send", args, error)
+    return handleToolError("tx_msg_send", args, error)
   }
 }
 
@@ -102,7 +102,7 @@ const handleInbox = async (args: {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_inbox", args, error)
+    return handleToolError("tx_msg_inbox", args, error)
   }
 }
 
@@ -123,7 +123,7 @@ const handleAck = async (args: { id: number }): Promise<McpToolResult> => {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_ack", args, error)
+    return handleToolError("tx_msg_ack", args, error)
   }
 }
 
@@ -143,7 +143,7 @@ const handleAckAll = async (args: { channel: string }): Promise<McpToolResult> =
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_ack_all", args, error)
+    return handleToolError("tx_msg_ack_all", args, error)
   }
 }
 
@@ -162,7 +162,29 @@ const handlePending = async (args: { channel: string }): Promise<McpToolResult> 
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_outbox_pending", args, error)
+    return handleToolError("tx_msg_pending", args, error)
+  }
+}
+
+const handleGc = async (args: {
+  ackedOlderThanHours?: number
+}): Promise<McpToolResult> => {
+  try {
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const svc = yield* MessageService
+        return yield* svc.gc({ ackedOlderThanHours: args.ackedOlderThanHours })
+      })
+    )
+    return {
+      content: [
+        { type: "text", text: `GC complete: ${result.expired} expired, ${result.acked} old acked messages removed` },
+        { type: "text", text: JSON.stringify(result) }
+      ],
+      isError: false
+    }
+  } catch (error) {
+    return handleToolError("tx_msg_gc", args, error)
   }
 }
 
@@ -172,7 +194,7 @@ const handlePending = async (args: { channel: string }): Promise<McpToolResult> 
 
 export const registerMessageTools = (server: McpServer) => {
   registerEffectTool(server,
-    "tx_send",
+    "tx_msg_send",
     "Send a message to a channel for agent-to-agent communication",
     {
       channel: z.string().min(1).describe("Channel name (e.g., agent ID, topic, or 'task:tx-abc123')"),
@@ -187,7 +209,7 @@ export const registerMessageTools = (server: McpServer) => {
   )
 
   registerEffectTool(server,
-    "tx_inbox",
+    "tx_msg_inbox",
     "Read messages from a channel (read-only, no side effects). Use afterId for cursor-based fan-out.",
     {
       channel: z.string().min(1).describe("Channel to read from"),
@@ -201,7 +223,7 @@ export const registerMessageTools = (server: McpServer) => {
   )
 
   registerEffectTool(server,
-    "tx_ack",
+    "tx_msg_ack",
     "Acknowledge a message (transition from pending to acked)",
     {
       id: z.number().int().describe("Message ID to acknowledge")
@@ -210,7 +232,7 @@ export const registerMessageTools = (server: McpServer) => {
   )
 
   registerEffectTool(server,
-    "tx_ack_all",
+    "tx_msg_ack_all",
     "Acknowledge all pending messages on a channel",
     {
       channel: z.string().min(1).describe("Channel to acknowledge all messages for")
@@ -219,11 +241,20 @@ export const registerMessageTools = (server: McpServer) => {
   )
 
   registerEffectTool(server,
-    "tx_outbox_pending",
+    "tx_msg_pending",
     "Count pending (unacknowledged) messages on a channel",
     {
       channel: z.string().min(1).describe("Channel to count pending messages for")
     },
     async (args) => handlePending(args)
+  )
+
+  registerEffectTool(server,
+    "tx_msg_gc",
+    "Garbage collect old messages. Removes expired messages and optionally acked messages older than a threshold.",
+    {
+      ackedOlderThanHours: z.number().int().positive().optional().describe("Delete acked messages older than this many hours. If omitted, only expired messages are removed.")
+    },
+    async (args) => handleGc(args)
   )
 }

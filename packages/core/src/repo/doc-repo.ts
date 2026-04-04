@@ -11,6 +11,7 @@ import {
   rowToDoc,
   rowToDocLink,
   rowToTaskDocLink,
+  isValidTaskDocLinkType,
   rowToInvariant,
   rowToInvariantCheck,
 } from "../mappers/doc.js"
@@ -24,8 +25,11 @@ import type {
 } from "./doc-repo.types.js"
 import type {
   DocId,
+  DocKind,
   DocLinkType,
+  DocStableId,
   TaskDocLinkType,
+  TaskLinkedDocRef,
   DocRow,
   DocLinkRow,
   TaskDocLinkRow,
@@ -42,6 +46,72 @@ export const DocRepositoryLive = Layer.effect(
   DocRepository,
   Effect.gen(function* () {
     const db = yield* SqliteClient
+    const getDocsForManyTasksImpl = (taskIds: readonly string[]) =>
+      Effect.try({
+        try: () => {
+          const byTask = new Map<string, TaskLinkedDocRef[]>()
+          const seenByTask = new Map<string, Set<string>>()
+
+          for (const taskId of taskIds) {
+            byTask.set(taskId, [])
+            seenByTask.set(taskId, new Set())
+          }
+
+          if (taskIds.length === 0) {
+            return byTask
+          }
+
+          const placeholders = taskIds.map(() => "?").join(", ")
+          const rows = db.prepare<DocRow & {
+            task_id: string
+            link_type: string
+          }>(
+            `SELECT
+               tdl.task_id,
+               tdl.link_type,
+               d.*
+             FROM task_doc_links tdl
+             JOIN docs d ON d.id = tdl.doc_id
+             WHERE tdl.task_id IN (${placeholders})
+             ORDER BY tdl.task_id, tdl.link_type, d.kind, d.name, d.version DESC`
+          ).all(...taskIds)
+
+          for (const row of rows) {
+            if (!isValidTaskDocLinkType(row.link_type)) {
+              throw new EntityFetchError({
+                entity: "task_doc_link",
+                id: row.task_id,
+                operation: "join-read",
+              })
+            }
+
+            const doc = rowToDoc(row)
+            const refs = byTask.get(row.task_id) ?? []
+            const seen = seenByTask.get(row.task_id) ?? new Set<string>()
+            const dedupeKey = `${doc.docId}:${doc.version}:${row.link_type}`
+            if (seen.has(dedupeKey)) {
+              continue
+            }
+
+            refs.push({
+              docId: doc.docId,
+              name: doc.name,
+              title: doc.title,
+              kind: doc.kind,
+              version: doc.version,
+              status: doc.status,
+              filePath: doc.filePath,
+              linkType: row.link_type,
+            })
+            seen.add(dedupeKey)
+            byTask.set(row.task_id, refs)
+            seenByTask.set(row.task_id, seen)
+          }
+
+          return byTask
+        },
+        catch: (cause) => new DatabaseError({ cause }),
+      })
 
     return {
       insert: (input: DocInsertInput) =>
@@ -50,10 +120,11 @@ export const DocRepositoryLive = Layer.effect(
             const now = new Date().toISOString()
             const result = db
               .prepare(
-                `INSERT INTO docs (hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, metadata)
-               VALUES (?, ?, ?, ?, ?, 'changing', ?, ?, ?, ?)`
+                `INSERT INTO docs (doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, 'changing', ?, ?, ?, ?)`
               )
               .run(
+                input.docId,
                 input.hash,
                 input.kind,
                 input.name,
@@ -90,6 +161,26 @@ export const DocRepositoryLive = Layer.effect(
           catch: (cause) => new DatabaseError({ cause }),
         }),
 
+      findByDocId: (docId: DocStableId, version?: number) =>
+        Effect.try({
+          try: () => {
+            const row =
+              version !== undefined
+                ? db
+                    .prepare<DocRow>(
+                      "SELECT * FROM docs WHERE doc_id = ? AND version = ?"
+                    )
+                    .get(docId, version)
+                : db
+                    .prepare<DocRow>(
+                      "SELECT * FROM docs WHERE doc_id = ? ORDER BY version DESC LIMIT 1"
+                    )
+                    .get(docId)
+            return row ? rowToDoc(row) : null
+          },
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
       findByName: (name: string, version?: number) =>
         Effect.try({
           try: () => {
@@ -105,6 +196,39 @@ export const DocRepositoryLive = Layer.effect(
                       "SELECT * FROM docs WHERE name = ? ORDER BY version DESC LIMIT 1"
                     )
                     .get(name)
+            return row ? rowToDoc(row) : null
+          },
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      findAllByName: (name: string, version?: number) =>
+        Effect.try({
+          try: () => {
+            const rows =
+              version !== undefined
+                ? db
+                    .prepare<DocRow>(
+                      "SELECT * FROM docs WHERE name = ? AND version = ? ORDER BY kind ASC, version DESC"
+                    )
+                    .all(name, version)
+                : db
+                    .prepare<DocRow>(
+                      "SELECT * FROM docs WHERE name = ? ORDER BY kind ASC, version DESC"
+                    )
+                    .all(name)
+            return rows.map(rowToDoc)
+          },
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      findLatestByKindAndName: (kind: DocKind, name: string) =>
+        Effect.try({
+          try: () => {
+            const row = db
+              .prepare<DocRow>(
+                "SELECT * FROM docs WHERE kind = ? AND name = ? ORDER BY version DESC LIMIT 1"
+              )
+              .get(kind, name)
             return row ? rowToDoc(row) : null
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -139,6 +263,10 @@ export const DocRepositoryLive = Layer.effect(
           try: () => {
             const sets: string[] = []
             const params: unknown[] = []
+            if (input.docId !== undefined) {
+              sets.push("doc_id = ?")
+              params.push(input.docId)
+            }
             if (input.hash !== undefined) {
               sets.push("hash = ?")
               params.push(input.hash)
@@ -287,6 +415,25 @@ export const DocRepositoryLive = Layer.effect(
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
+
+      getTaskLinksForTask: (taskId: string) =>
+        Effect.try({
+          try: () => {
+            const rows = db
+              .prepare<TaskDocLinkRow>("SELECT * FROM task_doc_links WHERE task_id = ? ORDER BY created_at")
+              .all(taskId)
+            return rows.map(rowToTaskDocLink)
+          },
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      getDocsForTask: (taskId: string) =>
+        Effect.gen(function* () {
+          const byTask = yield* getDocsForManyTasksImpl([taskId])
+          return [...(byTask.get(taskId) ?? [])]
+        }),
+
+      getDocsForManyTasks: getDocsForManyTasksImpl,
 
       getDocForTask: (taskId: string) =>
         Effect.try({

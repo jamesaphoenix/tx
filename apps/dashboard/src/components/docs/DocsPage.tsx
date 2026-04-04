@@ -1,24 +1,25 @@
 import { useState, useMemo, useEffect } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
-import { fetchers } from "../../api/client"
+import { docSelectionKey, fetchers } from "../../api/client"
 import { useCommands, type Command } from "../command-palette/CommandContext"
 import { selectionStore, selectionActions } from "../../stores/selection-store"
+import { Button } from "../ui"
 import { DocSidebar } from "./DocSidebar"
 import { DocDetail } from "./DocDetail"
 import { DocGraph } from "./DocGraph"
 
 export function DocsPage() {
-  const [selectedDocName, setSelectedDocName] = useState<string | null>(null)
+  const [selectedDocRef, setSelectedDocRef] = useState<string | null>(null)
   const [showMap, setShowMap] = useState(false)
   const [kindFilter, setKindFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
 
-  const selectedDocNames = useStore(selectionStore, (s) => s.docNames)
+  const selectedDocRefs = useStore(selectionStore, (s) => s.docRefs)
   const queryClient = useQueryClient()
 
-  const handleToggleDoc = (name: string) => {
-    selectionActions.toggleDoc(name)
+  const handleToggleDoc = (ref: string) => {
+    selectionActions.toggleDoc(ref)
   }
 
   // Fetch docs for command palette navigation
@@ -28,6 +29,9 @@ export function DocsPage() {
     refetchInterval: 10000,
   })
   const docs = docsData?.docs ?? []
+  const selectedDoc = selectedDocRef
+    ? docs.find((doc) => docSelectionKey(doc) === selectedDocRef) ?? null
+    : null
 
   // Register doc-specific commands
   const commands = useMemo((): Command[] => {
@@ -52,20 +56,20 @@ export function DocsPage() {
         icon: "select",
         shortcut: "⌘A",
         allowInInput: true,
-        action: () => selectionActions.selectAllDocs(docs.map(d => d.name)),
+        action: () => selectionActions.selectAllDocs(docs.map((doc) => docSelectionKey(doc))),
       })
     }
-    if (selectedDocNames.size > 0) {
+    if (selectedDocRefs.size > 0) {
       cmds.push({
         id: "action:copy-selected-docs",
         label: "Copy selected doc names",
-        sublabel: `${selectedDocNames.size} selected`,
+        sublabel: `${selectedDocRefs.size} selected`,
         group: "Actions",
         icon: "copy",
         shortcut: "⌘C",
         action: async () => {
           const text = docs
-            .filter(d => selectedDocNames.has(d.name))
+            .filter((doc) => selectedDocRefs.has(docSelectionKey(doc)))
             .map(d => `${d.name} (${d.kind}) - ${d.title}`)
             .join("\n")
           await navigator.clipboard.writeText(text)
@@ -74,17 +78,18 @@ export function DocsPage() {
       cmds.push({
         id: "action:delete-selected-docs",
         label: "Delete selected docs",
-        sublabel: `${selectedDocNames.size} selected`,
+        sublabel: `${selectedDocRefs.size} selected`,
         group: "Actions",
         icon: "delete",
         action: async () => {
-          if (confirm(`Delete ${selectedDocNames.size} selected doc(s)? This cannot be undone.`)) {
-            for (const name of selectedDocNames) {
-              await fetchers.deleteDoc(name)
+          if (confirm(`Delete ${selectedDocRefs.size} selected doc(s)? This cannot be undone.`)) {
+            for (const doc of docs) {
+              if (!selectedDocRefs.has(docSelectionKey(doc))) continue
+              await fetchers.deleteDoc(doc.docId, doc.version)
             }
             selectionActions.clearDocs()
-            if (selectedDocName && selectedDocNames.has(selectedDocName)) {
-              setSelectedDocName(null)
+            if (selectedDocRef && selectedDocRefs.has(selectedDocRef)) {
+              setSelectedDocRef(null)
             }
             queryClient.invalidateQueries({ queryKey: ["docs"] })
           }
@@ -93,7 +98,7 @@ export function DocsPage() {
       cmds.push({
         id: "action:clear-doc-selection",
         label: "Clear doc selection",
-        sublabel: `${selectedDocNames.size} selected`,
+        sublabel: `${selectedDocRefs.size} selected`,
         group: "Actions",
         icon: "action",
         action: () => selectionActions.clearDocs(),
@@ -120,34 +125,33 @@ export function DocsPage() {
     // Navigate to each doc
     for (const doc of docs) {
       cmds.push({
-        id: `nav:doc-${doc.name}`,
+        id: `nav:doc-${doc.id}`,
         label: doc.title || doc.name,
-        sublabel: `${doc.kind} - ${doc.name}`,
+        sublabel: `${doc.kind} - ${doc.name} (v${doc.version})`,
         group: "Items",
         icon: "nav",
-        action: () => { setSelectedDocName(doc.name); setShowMap(false) },
+        action: () => { setSelectedDocRef(docSelectionKey(doc)); setShowMap(false) },
       })
     }
 
     // Copy doc name if one is selected (with title)
-    if (selectedDocName) {
-      const doc = docs.find(d => d.name === selectedDocName)
+    if (selectedDoc) {
       cmds.push({
         id: "action:copy-doc-name",
         label: "Copy doc name",
-        sublabel: selectedDocName,
+        sublabel: `${selectedDoc.name} (v${selectedDoc.version})`,
         group: "Actions",
         icon: "copy",
-        shortcut: selectedDocNames.size === 0 ? "⌘C" : undefined,
+        shortcut: selectedDocRefs.size === 0 ? "⌘C" : undefined,
         action: async () => {
-          const text = doc ? `${doc.name} - ${doc.title}` : selectedDocName
+          const text = `${selectedDoc.name} - ${selectedDoc.title}`
           await navigator.clipboard.writeText(text)
         },
       })
     }
 
     return cmds
-  }, [docs, showMap, selectedDocName, selectedDocNames, queryClient])
+  }, [docs, selectedDoc, selectedDocRef, selectedDocRefs, showMap, queryClient])
 
   useCommands(commands)
 
@@ -169,21 +173,20 @@ export function DocsPage() {
     return (
       <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-700/50 flex-shrink-0">
-          <button
-            onClick={() => setShowMap(false)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-gray-600 transition"
-          >
+          <Button size="sm" variant="secondary" onClick={() => setShowMap(false)}>
             &larr; Back to Docs
-          </button>
+          </Button>
           <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
             Document Graph
           </span>
         </div>
-      <div className="min-h-0 flex-1 bg-gray-900 p-6 overflow-hidden relative">
+        <div className="min-h-0 flex-1 overflow-hidden relative">
           <DocGraph
-            selectedDocName={selectedDocName}
-            onSelectDoc={(name) => {
-              setSelectedDocName(name)
+            selectedNodeId={selectedDoc ? `doc:${selectedDoc.id}` : null}
+            onSelectDoc={(docDbId) => {
+              const doc = docs.find((candidate) => candidate.id === docDbId)
+              if (!doc) return
+              setSelectedDocRef(docSelectionKey(doc))
               setShowMap(false)
             }}
             fullPage
@@ -197,19 +200,19 @@ export function DocsPage() {
     <div className="flex h-full min-h-0 w-full overflow-hidden">
       <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
         <DocSidebar
-          selectedDocName={selectedDocName}
-          onSelectDoc={setSelectedDocName}
+          selectedDocRef={selectedDocRef}
+          onSelectDoc={setSelectedDocRef}
           showMap={showMap}
           onToggleMap={() => setShowMap(true)}
           kindFilter={kindFilter}
           onKindFilterChange={setKindFilter}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
-          selectedDocNames={selectedDocNames}
+          selectedDocRefs={selectedDocRefs}
           onToggleSelectDoc={handleToggleDoc}
         />
       </div>
-      {!selectedDocName ? (
+      {!selectedDoc ? (
         <div className="min-h-0 flex-1 flex items-center justify-center text-gray-500">
           <div className="text-center">
             <div className="text-4xl mb-4 opacity-30">&#x1F4C4;</div>
@@ -222,8 +225,14 @@ export function DocsPage() {
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <DocDetail
-            docName={selectedDocName}
-            onNavigateToDoc={setSelectedDocName}
+            docId={selectedDoc.docId}
+            version={selectedDoc.version}
+            onNavigateToDoc={(nextDocId, nextVersion) => {
+              const next = docs.find((doc) => doc.docId === nextDocId && doc.version === nextVersion)
+              if (next) {
+                setSelectedDocRef(docSelectionKey(next))
+              }
+            }}
           />
         </div>
       )}

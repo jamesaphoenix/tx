@@ -53,15 +53,15 @@ TanStack won by saying: "Here's headless table logic. Style it yourself."
 tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Your Orchestration (your code, your rules)             │
-├─────────────────────────────────────────────────────────┤
-│  tx primitives                                          │
-│                                                         │
-│   tx ready     tx done      tx memory     tx pin        │
-│   tx send      tx block     tx inbox      tx sync       │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Your Orchestration (your code, your rules)                      │
+├──────────────────────────────────────────────────────────────────┤
+│  tx primitives                                                   │
+│                                                                  │
+│   tx ready       tx done        tx memory       tx pin           │
+│   tx msg send    tx dep block   tx msg inbox    tx sync          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Design Principles
@@ -78,12 +78,12 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 |-----------|---------|
 | `tx ready` | Get next workable task (unblocked, highest priority) |
 | `tx done <id>` | Complete task, potentially unblocking others |
-| `tx block <id> <blocker>` | Declare dependencies |
+| `tx dep block <id> <blocker>` | Declare dependencies |
 | `tx memory context <id>` | Get relevant memory + learnings for prompt injection |
 | `tx memory add` | Record knowledge for future agents |
-| `tx send <channel> <content>` | Send a message to an agent channel |
-| `tx inbox <channel>` | Read messages (read-only, cursor-based) |
-| `tx ack <id>` | Acknowledge a message |
+| `tx msg send <channel> <content>` | Send a message to an agent channel |
+| `tx msg inbox <channel>` | Read messages (read-only, cursor-based) |
+| `tx msg ack <id>` | Acknowledge a message |
 | `tx claim <id> <worker>` | Claim a task with a lease for worker coordination |
 | `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
 | `tx memory recall [path]` | Query file-specific learnings by path |
@@ -113,10 +113,11 @@ wait
 
 ```bash
 # Human-in-loop: agent proposes, human approves
-task=$(tx ready --limit 1)
-codex "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " && codex "Execute plan.md"
-tx done $task
+task=$(tx ready --limit 1 --json | jq -r '.[0].id')
+codex "Read AGENTS.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+codex "Read AGENTS.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
 ```
 
 **You own your orchestration. tx owns the primitives.**
@@ -177,7 +178,7 @@ interface TaskWithDeps extends Task {
 
 ### RULE 2: Compaction MUST export learnings to a file agents can read
 
-`tx compact` MUST append learnings to a markdown file (default: `AGENTS.md`). Storing only in `compaction_log` table is insufficient.
+`tx sync compact` MUST append learnings to a markdown file (default: `AGENTS.md`). Storing only in `compaction_log` table is insufficient.
 
 ```markdown
 ## Agent Learnings (YYYY-MM-DD)
@@ -225,7 +226,7 @@ All business logic MUST use Effect-TS:
 
 ### RULE 7: ANTHROPIC_API_KEY is optional for core commands
 
-LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Core commands do not.
+LLM features (`tx dedupe`, `tx sync compact`, `tx reprioritize`) require the key. Core commands do not.
 
 | Layer | LLM | Used By |
 |-------|-----|---------|
@@ -287,7 +288,7 @@ All git commits MUST follow the [Conventional Commits](https://www.conventionalc
 
 **Examples:**
 ```bash
-feat(cli): add tx send command for agent messaging
+feat(cli): add tx msg send command for agent messaging
 fix(api): prevent path traversal in sync routes
 refactor(core): extract shared validation utilities
 test(mcp): add integration tests for sync tools
@@ -438,7 +439,7 @@ pipe(
 ### Status Lifecycle
 
 ```
-backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+backlog → ready → planning → active → blocked → review → needs_review → done
 ```
 
 A task is **ready** when: status is workable AND all blockers have status `done`.
@@ -474,10 +475,10 @@ tx reset <id>              # Reset to ready
 tx delete <id>             # Delete task
 
 # Dependencies & Hierarchy
-tx block <id> <blocker>    # Add blocking dependency
-tx unblock <id> <blocker>  # Remove dependency
-tx children <id>           # List child tasks
-tx tree <id>               # Show task subtree
+tx dep block <id> <blocker>    # Add blocking dependency
+tx dep unblock <id> <blocker>  # Remove dependency
+tx dep children <id>           # List child tasks
+tx dep tree <id>               # Show task subtree
 
 # Memory (filesystem-backed .md search)
 tx memory source add <dir> # Register directory for indexing
@@ -492,12 +493,12 @@ tx memory learn <p> <note> # Attach learning to file path/glob
 tx memory recall [path]    # Query file-specific learnings
 
 # Messages (Agent Outbox)
-tx send <channel> <msg>    # Send to channel
-tx inbox <channel>         # Read messages
-tx ack <id>                # Acknowledge message
-tx ack all <channel>       # Acknowledge all on channel
-tx outbox pending <ch>     # Count pending messages
-tx outbox gc               # Garbage collect old messages
+tx msg send <channel> <msg>    # Send to channel
+tx msg inbox <channel>         # Read messages
+tx msg ack <id>                # Acknowledge message
+tx msg ack all <channel>       # Acknowledge all on channel
+tx msg pending <ch>     # Count pending messages
+tx msg gc               # Garbage collect old messages
 
 # Docs & Invariants
 tx doc <sub>               # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
@@ -520,9 +521,9 @@ tx sync export             # SQLite → JSONL (git-friendly)
 tx sync import             # JSONL → SQLite
 tx sync status             # Show sync status
 tx sync codex             # Push to Codex team dir
-tx compact                 # Compact done tasks + export learnings
-tx history                 # View compaction history
-tx migrate status          # Database migration status
+tx sync compact                 # Compact done tasks + export learnings
+tx sync history                 # View compaction history
+tx sync migrate status          # Database migration status
 
 # Bulk Operations
 tx bulk done <id...>       # Complete multiple tasks
@@ -534,10 +535,10 @@ tx bulk delete <id...>     # Delete multiple tasks
 tx cycle                   # Issue discovery with sub-agent swarms
 
 # Tools
-tx stats                   # Queue metrics and health
-tx validate                # Database health checks (--fix)
-tx doctor                  # System diagnostics
-tx dashboard               # Start API server + dashboard UI
+tx diag stats                   # Queue metrics and health
+tx diag doctor                # Database health checks (--fix)
+tx diag doctor                  # System diagnostics
+tx diag dashboard               # Start API server + dashboard UI
 ```
 
 ### Cycle vs Teams vs Sub-agents — Disambiguation
@@ -643,7 +644,7 @@ Task-layer source of truth policy:
 - If pulling work from a queue, use `tx ready` as the primary place to get work.
 - Every create/update/complete/block action in native task tools **must be mirrored back to `tx`**.
 - Mirror creates with `tx add` (and `--parent` for subtasks).
-- Mirror updates with `tx update`, `tx block`, `tx unblock`, `tx done`, and `tx reset`.
+- Mirror updates with `tx update`, `tx dep block`, `tx dep unblock`, `tx done`, and `tx reset`.
 - If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
 - Before handoff, commit, or session end, run `tx sync export`.
 
@@ -700,19 +701,33 @@ Do not bypass hooks in this workflow. Commits and pushes must run with verificat
 ### Plans MUST Become PRD + Design Doc
 
 When a plan is requested (via `/plan`, plan mode, or explicit request), the output
-MUST be split into a PRD and a Design Doc — not a single monolithic plan file.
+MUST be formalized as markdown specs with `spec_type: prd` and `spec_type: design` — not a single monolithic plan file.
 
 - The PRD captures **what** and **why** (requirements, acceptance criteria)
 - The DD captures **how** (architecture, file changes, testing strategy, open questions)
+- Both docs are markdown-first `.md` files with frontmatter + embedded YAML blocks where structure is required
 - Optionally reference the source plan file: `plan.md`, `codex-plan.md`, or `.codex/plan.md`
 - Optionally reference relevant AGENTS.md DOCTRINE rules in the DD's References section
 
-**Do NOT** leave plans as standalone `plan.md` files. They must be formalized into PRD + DD.
+**Do NOT** leave plans as standalone `plan.md` files. They must be formalized into `spec_type` docs.
 
 ### PRD Structure (specs/prd/PRD-NNN-*.md)
 
-```markdown
-# PRD-NNN: Feature Name
+````markdown
+---
+kind: spec
+spec_type: prd
+name: feature-name
+title: Feature Name
+status: draft
+version: 1
+owners:
+  - team
+summary: One-line summary
+---
+
+# Summary
+...
 
 ## Problem
 What's broken or missing?
@@ -721,103 +736,105 @@ What's broken or missing?
 High-level approach (not implementation details)
 
 ## Requirements
-- [ ] Requirement 1
-- [ ] Requirement 2
+
+```yaml
+ears_requirements:
+  - id: REQ-FEAT-001
+    kind: ubiquitous
+    statement: the system shall do X
+    priority: must
+```
 
 ## Acceptance Criteria
-How do we know it's done?
 
-## Out of Scope
-What this PRD explicitly does NOT cover
+```yaml
+acceptance_criteria:
+  - id: AC-001
+    statement: how we know it's done
 ```
+
+# Non-goals
+What this explicitly does NOT cover
+````
 
 ### DD Structure (specs/design/DD-NNN-*.md)
 
-```markdown
-# DD-NNN: Feature Name
+````markdown
+---
+kind: spec
+spec_type: design
+name: feature-name
+title: Feature Name Design
+status: draft
+version: 1
+implements: feature-name
+summary: Technical approach summary
+---
 
-## Overview
-Technical approach summary
+# Summary
+...
 
-## Design
+# Architecture
+...
 
-### Data Model
-Schema changes, new tables, migrations
+# Interfaces
 
-### Service Layer
-New services, interface changes
-
-### API/CLI Changes
-New commands, endpoints, MCP tools
-
-## Implementation Plan
-
-| Phase | Files | Changes |
-|-------|-------|---------|
-| 1 | file.ts | Add X |
-| 2 | other.ts | Modify Y |
-
-## Testing Strategy (REQUIRED — must be detailed and comprehensive)
-
-This section is mandatory and must be thorough. Testing strategy is a first-class concern, not an afterthought.
-
-### Unit Tests
-- List specific functions/methods to unit test
-- Mock boundaries: what gets mocked vs real
-- Expected coverage targets
-
-### Integration Tests
-- Must use real in-memory SQLite with `getSharedTestLayer()`
-- Must use SHA256-based deterministic IDs via `fixtureId(name)`
-- List specific integration test scenarios (CRUD, edge cases, error paths)
-- Cover cross-service interactions
-
-### Edge Cases
-- Boundary conditions to test
-- Error recovery scenarios
-- Concurrent access / race conditions (if applicable)
-
-### Performance (if applicable)
-- Benchmarks to establish
-- Acceptable latency/throughput thresholds
-
-### Minimum Quality Bar (MUST)
-- A DD testing strategy is incomplete unless it includes:
-- Requirement-to-test traceability (each requirement maps to one or more tests)
-- At least 8 numbered integration scenarios with concrete setup, action, and assertions
-- Failure-path and recovery coverage (timeouts, malformed input, partial failure, retries/idempotency when relevant)
-- File-level test plan (exact test files to create or modify)
-- Observable assertions (DB rows, API responses, emitted events/metrics, status transitions)
-- Avoid vague bullets like "add tests" or "cover edge cases" without concrete inputs and expected outputs.
-
-### Prompting Template for DD Testing Strategy
-When generating or revising a DD, use this prompt shape:
-
-```text
-Write ONLY the "Testing Strategy" section for <DD-NNN>.
-
-Requirements:
-1. Provide a traceability matrix with columns:
-   Requirement | Test Type | Test Name | Assertions | File Path
-2. Include sections for Unit Tests, Integration Tests, Edge Cases, Failure Injection, and Performance.
-3. Integration tests must use getSharedTestLayer() and fixtureId(name).
-4. Provide at least 8 numbered integration scenarios, each with Setup / Action / Assert.
-5. Include non-functional thresholds where applicable (latency, throughput, memory).
-6. Do not use vague bullets; every test must name concrete files, inputs, and expected outcomes.
+```yaml
+interfaces:
+  - name: endpoint_name
+    type: http
+    method: POST
+    path: /path
+    semantics: description of guarantees
 ```
 
-## Open Questions (REQUIRED)
+# Data Model
+...
+
+# Invariants
+
+```yaml
+invariants:
+  - id: INV-001
+    statement: what must always be true
+    severity: high
+    verified_by:
+      - test/path.test.ts
+```
+
+# Failure Modes
+
+```yaml
+failure_modes:
+  - condition: when X happens
+    impact: Y is affected
+    handling: do Z to recover
+```
+
+# Verification
+
+```yaml
+verification:
+  - requirement_id: REQ-001
+    test_type: integration
+    target: test/path.test.ts
+```
+
+# Testing Strategy
+(Keep the quality bar from this AGENTS.md section.)
+
+# Open Questions
 - [ ] Unresolved design decisions
 - [ ] Alternatives considered but not yet decided
 - [ ] Dependencies on external teams/systems
 
-## Migration
+# Migration
 How existing data/users transition
 
-## References (optional)
+# References (optional)
 - Plan file: `plan.md` or `codex-plan.md` (if originated from a planning session)
 - AGENTS.md section: Link to relevant DOCTRINE rules
-```
+````
 
 ### Linking Convention
 
@@ -857,3 +874,248 @@ The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
 - **Source PRDs/DDs**: `specs/` directory — internal design artifacts, linked from AGENTS.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
+
+
+# tx — Headless, Local Infra for AI Agents
+
+## IMPORTANT: tx Is Canonical, Native Task List Is Allowed
+
+Codex native task tools (TaskCreate, TaskUpdate, TaskList, etc.) may be used as a local working list.
+
+Task-layer source of truth policy:
+- `tx` is the **primary canonical source of truth** for task state.
+- Native task lists are convenience views only.
+- If pulling work from a queue, use `tx ready` as the primary place to get work.
+- Every create/update/complete/block action in native tasks **must be mirrored back to `tx`**.
+
+Required sync behavior:
+- Mirror native creates to `tx add` (use `--parent` for subtasks).
+- Mirror native state updates to `tx update`, `tx dep block`, `tx dep unblock`, `tx done`, or `tx reset`.
+- Before handoff, commit, or session end, run `tx sync export`.
+- If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
+
+The tx database is at `.tx/tasks.db`. Tasks persist across sessions and sync to git via `tx sync export`.
+
+## Start Here
+
+Use this loop before reaching for the rest of the surface area:
+
+```bash
+tx add "First task"
+tx ready
+tx show <id>
+tx done <id>
+tx sync export
+```
+
+When you are ready to add docs-first specs:
+
+```bash
+tx doc add prd auth-flow-prd --title "Auth Flow PRD"
+tx doc add design auth-flow-design --title "Auth Flow Design"
+tx doc link auth-flow-prd auth-flow-design
+tx spec discover
+tx spec status --doc auth-flow-design
+tx spec complete --doc auth-flow-design --by <human>
+```
+
+These commands create a paired markdown-first spec set at `specs/prd/auth-flow-prd.md` and `specs/design/auth-flow-design.md`, then link the pair before verification.
+
+### Core Commands
+
+| Command | Purpose |
+|---------|---------|
+| `tx ready` | Get next workable task (unblocked, highest priority) |
+| `tx done <id>` | Complete task, potentially unblocking others |
+| `tx add <title>` | Create a new task (`--parent`, `--score`, `--description`) |
+| `tx show <id>` | Show task details with dependencies |
+| `tx dep block <id> <blocker>` | Declare task dependencies |
+| `tx group-context set <id> <context>` | Attach shared task-group context for related tasks |
+| `tx group-context clear <id>` | Clear task-group context from a task |
+| `tx memory context <id>` | Get relevant memory + history |
+| `tx doc lint-ears <target>` | Validate PRD EARS requirements (doc name or markdown path) |
+
+### Bounded Autonomy
+
+| Command | Purpose |
+|---------|---------|
+| `tx auto gate create <name>` | Create a human approval gate for phase transitions |
+| `tx auto guard set` | Set task creation limits (`--max-pending`, `--max-children`, `--max-depth`, `--enforce`) |
+| `tx auto guard show` | Show current guard configuration |
+| `tx auto verify set <id> <cmd>` | Attach a shell verification command to a task |
+| `tx auto verify run <id>` | Run verification (exit 0 = pass) |
+| `tx auto label add <name>` | Create a label for scoping the ready queue |
+| `tx auto label assign <id> <name>` | Assign a label to a task |
+| `tx ready --label <name>` | Filter ready queue by label |
+| `tx auto reflect` | Session retrospective (throughput, signals, stuck tasks) |
+
+### Memory & Learnings
+
+| Command | Purpose |
+|---------|---------|
+| `tx memory search --query <text>` | Search filesystem memory docs |
+| `tx memory add <content>` | Record knowledge for future agents |
+| `tx memory search <q>` | Search memory (BM25 + semantic + graph) |
+| `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
+| `tx memory recall [path]` | Query file-specific learnings by path |
+| `tx pin set <id> <content>` | Persist a context pin (shared with agents) |
+
+### Messaging
+
+| Command | Purpose |
+|---------|---------|
+| `tx msg send <channel> <msg>` | Send a message to an agent channel |
+| `tx msg inbox <channel>` | Read messages |
+| `tx msg ack <id>` | Acknowledge a message |
+
+### Worker Coordination
+
+| Command | Purpose |
+|---------|---------|
+| `tx claim <id> <worker>` | Claim a task with a lease |
+| `tx claim release <id> <w>` | Release a claim |
+| `tx claim renew <id> <w>` | Renew a lease |
+
+### Sync
+
+| Command | Purpose |
+|---------|---------|
+| `tx sync export` | SQLite to git-friendly JSONL |
+| `tx sync import` | JSONL to SQLite |
+| `tx sync compact` | Compact done tasks + export learnings |
+
+### Docs-First Specs
+
+| Command | Purpose |
+|---------|---------|
+| `tx spec discover` | Refresh doc-derived invariants and test mappings |
+| `tx spec status` | Inspect docs-first closure state with blocker reasons |
+| `tx spec fci` | Get compact machine-readable completion state |
+| `tx spec complete` | Record human COMPLETE sign-off |
+| `tx spec health` | Repo rollup for docs, tests, decisions, and drift |
+
+### Advanced Inspection
+
+| Command | Purpose |
+|---------|---------|
+| `tx trace list` | Inspect recent run traces |
+| `tx decision list` | List captured decisions and their review status |
+| `tx decision pending` | Show decisions awaiting review |
+| `tx invariant list` | Advanced derived-invariant inspection and repair |
+
+## Example Orchestration
+
+### Simple: one task at a time
+
+```bash
+while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
+  [ "$task" = "null" ] && break
+  codex "Work on task $task. Run tx show $task first, implement it, then tx done $task"
+done
+```
+
+### Parallel: N agents pulling from a shared queue
+
+```bash
+for i in {1..5}; do
+  (while task=$(tx ready --limit 1 --json | jq -r '.[0].id'); do
+    [ "$task" = "null" ] && break
+    codex "Complete $task" && tx done $task
+  done) &
+done
+wait
+```
+
+### Human-in-the-loop
+
+```bash
+task=$(tx ready --limit 1 --json | jq -r '.[0].id')
+codex "Read AGENTS.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+codex "Read AGENTS.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
+```
+
+Do not bypass hooks in this workflow. Keep git verification enabled for commits and pushes.
+
+If related tasks share rollout/migration notes, set them once via `tx group-context set <id> "<context>"` so descendants/ancestors inherit the same context.
+
+## EARS-First Requirements
+
+- For new PRDs, define EARS in an embedded YAML block under `# Requirements`:
+  ```yaml
+  ears_requirements:
+    - id: REQ-API-001
+      kind: event-driven
+      when: a user submits valid credentials
+      statement: the authentication service shall issue access and refresh tokens
+      priority: must
+  ```
+- Use deterministic IDs in the form `REQ-<AREA>-NNN` (example: `REQ-API-001`).
+- Use markdown-native `kind` values only for new PRDs: `ubiquitous`, `event-driven`, `state-driven`, `optional`, `unwanted`, `complex`.
+- Required clause fields are `when` for `event-driven`, `while` for `state-driven`, `if` for `unwanted`, and `where` for `optional`. `complex` requires at least one of those clause fields.
+- Keep `statement` to the action clause only, such as `the system shall persist the draft`. Do not repeat trigger/state text inside `statement`.
+- The legacy decomposed EARS format with `pattern:` and underscored values such as `event_driven` is backward compatibility only.
+- Run `tx doc lint-ears <doc-name-or-markdown-path>` before implementation and before review.
+- Example: `tx doc lint-ears specs/prd/auth-flow.md`
+- Keep legacy `requirements` only for backward compatibility or migration.
+
+## Documentation Structure (Markdown Spec Types)
+
+| `spec_type` | Directory | File Pattern | Focus |
+|-------------|-----------|--------------|-------|
+| `prd` | `specs/prd/` | `<name>.md` | Product intent (what and why) |
+| `design` | `specs/design/` | `<name>.md` | System behavior (how) |
+| `overview` | `specs/` | `<name>.md` | Architecture map (non-normative) |
+| `runbook` | `specs/` | `<name>.md` | Operational procedures |
+| `decision` | `specs/` | `<name>.md` | Architectural decisions (ADRs) |
+
+- `tx doc` markdown-first docs are canonical `.md` files with frontmatter and embedded YAML blocks.
+- Doc names are globally unique across spec types. Use distinct slugs such as `<feature>-prd` and `<feature>-design` rather than reusing the same name for multiple docs.
+- Create docs for non-trivial features and plans; formalize product intent, design, and operational/decision context when needed.
+- Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
+- Link docs with frontmatter references (`depends_on`, `supersedes`, `implements`) to preserve graph structure.
+- When migrating existing markdown into tx-managed docs, preserve the source wording first, then normalize structure. Use fence-aware extraction; headings inside fenced code blocks are content, not section boundaries.
+
+## Design Doc Interface Semantics
+
+- In design docs, `interfaces:` captures runtime contracts and boundaries, not entities.
+- Use `http` for routes, `queue` for async workflow or worker boundaries, `event` for event contracts, `rpc` for Effect services/ports/adapters and internal request-response boundaries, and `cron` for scheduled jobs.
+- Entities, value objects, and aggregate state belong in data-model or domain sections, not the `interfaces:` block.
+
+## Testing + OTEL Quality Bar
+
+- Treat integration tests as the default for behavior changes; unit tests alone are not enough.
+- Cover critical flows with happy path plus failure path assertions (timeouts, malformed input, partial failure, retries/idempotency where relevant).
+- Integration tests must use `getSharedTestLayer()` and `fixtureId(name)`. Never create a DB per test.
+- If telemetry-related code changes, test all three modes: no OTEL config (noop), OTEL configured, and exporter failure.
+- Telemetry failures must be caught/logged and never block core operations.
+
+## Design Doc Testing Strategy Quality Bar
+
+For design specs (`spec_type: design`, usually under `specs/design/*.md`), the `## Testing Strategy` section must be concrete and testable.
+
+- Include requirement-to-test traceability (every requirement maps to one or more tests).
+- When PRDs use EARS blocks, map each `REQ-*` ID to one or more tests in the traceability matrix.
+- Include at least 8 numbered integration scenarios with setup, action, and assertions.
+- Include failure-path testing (timeouts, malformed input, partial failures, retries/idempotency where relevant).
+- Cover auth/permission, validation, dependency failure, and data-integrity cases wherever they are in scope.
+- Cover concurrency, duplicate delivery, or retry behavior whenever the design includes queues, workflows, or idempotent APIs.
+- Include OTEL/non-OTEL behavior assertions when observability paths are touched.
+- Name exact test files to add or update.
+- Use concrete expected outcomes (DB rows, API responses, emitted events/metrics, task state transitions).
+- Do not write vague bullets like "add tests" or "cover edge cases".
+
+Use this prompt pattern when drafting:
+
+```text
+Write ONLY the "Testing Strategy" section for <DD-NNN>.
+1) Add a traceability matrix:
+   Requirement | Test Type | Test Name | Assertions | File Path
+2) Include Unit, Integration, Edge Cases, Failure Injection, Performance.
+3) Integration tests must use getSharedTestLayer() and fixtureId(name).
+4) Provide at least 8 numbered integration scenarios with Setup / Action / Assert.
+5) If the PRD uses EARS, include `REQ-*` requirement IDs in traceability rows.
+6) If telemetry is in scope, include noop/configured/exporter-failure assertions.
+7) Use specific files, inputs, and expected outcomes; no vague statements.
+```

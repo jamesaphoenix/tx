@@ -1,7 +1,23 @@
+---
+kind: spec
+spec_type: prd
+name: PRD-031-ears-requirements
+title: EARS Structured Requirements
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # EARS Structured Requirements
 
-**Kind**: prd
-**Status**: changing
 
 ## Problem
 

@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-001-core-task-management"
+title: "PRD-001: Core Task Management System"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-001: Core Task Management System
 
 **Status**: Draft
@@ -98,11 +108,11 @@ So that I can adjust scores and ensure agents work on the right things.
 ### US-004: Pause for Human Review
 ```
 As a human engineer,
-I want to mark tasks as "human_needs_to_review",
+I want to mark tasks as "needs_review",
 So that agents pause and wait for my input on sensitive changes.
 ```
 **Acceptance Criteria**:
-- `tx update <id> --status=human_needs_to_review` pauses task
+- `tx update <id> --status=needs_review` pauses task
 - Task does not appear in `tx ready` output
 - Agent can query for tasks needing review
 
@@ -116,7 +126,7 @@ So that agents pause and wait for my input on sensitive changes.
 |----|-------------|------------|
 | R-001 | Create, read, update, delete tasks | Integration tests |
 | R-002 | Flexible parent-child hierarchy (N-level nesting) | Unit tests |
-| R-003 | Status lifecycle: backlog → ready → planning → active → blocked → review → human_needs_to_review → done | Schema validation |
+| R-003 | Status lifecycle: backlog → ready → planning → active → blocked → review → needs_review → done | Schema validation |
 | R-004 | Blocking/blocked-by relationships between tasks | Integration tests |
 | R-005 | Ready detection: find tasks with no open blockers | Integration tests |
 | R-006 | CLI interface with JSON output | E2E tests |

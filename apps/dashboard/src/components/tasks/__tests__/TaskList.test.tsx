@@ -93,7 +93,7 @@ describe('TaskList', () => {
   })
 
   describe('loading state', () => {
-    it('shows structured loading UI and transitions cleanly after load', async () => {
+    it('renders nothing while loading and transitions cleanly after load', async () => {
       const gate = createDeferred<void>()
 
       // Keep request pending until assertions are made.
@@ -113,14 +113,12 @@ describe('TaskList', () => {
       const onSelectTask = vi.fn()
       const { container } = renderWithProviders(<TaskList onSelectTask={onSelectTask} />)
 
-      expect(screen.getByRole('heading', { level: 2, name: 'Tasks' })).toBeInTheDocument()
-      expect(screen.getByText('Loading...')).toBeInTheDocument()
-      expect(container.querySelectorAll('.animate-shimmer')).toHaveLength(5)
+      expect(container).toBeEmptyDOMElement()
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
 
       gate.resolve()
 
       await waitFor(() => {
-        expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
         expect(screen.getByText('No tasks found')).toBeInTheDocument()
       })
     })
@@ -546,7 +544,6 @@ describe('TaskList', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Ready Tasks')).toBeInTheDocument()
         expect(screen.getByText('Ready task 1')).toBeInTheDocument()
         expect(screen.getByText('Ready task 2')).toBeInTheDocument()
       })
@@ -878,7 +875,7 @@ describe('TaskList', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText('No tasks in the loaded results match the current assignment/label filters.')
+          screen.getByText('No tasks in the loaded results match the current filters.')
         ).toBeInTheDocument()
       })
       expect(screen.getByText('0 matching of 2 loaded')).toBeInTheDocument()

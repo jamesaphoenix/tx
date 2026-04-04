@@ -18,6 +18,26 @@ export const generateTaskId = (): Effect.Effect<string> =>
   })
 
 /**
+ * Generate a stable external doc ID with 12 hex chars (48 bits of entropy).
+ */
+export const generateDocStableId = (): Effect.Effect<string> =>
+  Effect.sync(() => {
+    const random = randomBytes(16).toString("hex")
+    const timestamp = Date.now().toString(36)
+    const hash = createHash("sha256")
+      .update(`doc:${timestamp}:${random}`)
+      .digest("hex")
+      .substring(0, 12)
+    return `doc-${hash}`
+  })
+
+/**
+ * Deterministically derive a doc ID from legacy stable identity for migrations.
+ */
+export const deriveDocStableId = (seed: string): string =>
+  `doc-${createHash("sha256").update(`doc:${seed}`).digest("hex").substring(0, 12)}`
+
+/**
  * Check if a database error is a UNIQUE constraint violation.
  * Used for collision retry logic in task creation.
  */

@@ -119,7 +119,9 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
     window.history.replaceState({}, '', '/')
     // Set up default handlers for all endpoints
     server.use(
-      http.get('/api/settings', () => HttpResponse.json({ dashboard: { defaultTaskAssigmentType: 'human' } })),
+      http.get('/api/settings', () => HttpResponse.json({
+        dashboard: { defaultTaskAssigmentType: 'human', defaultTaskView: 'list' },
+      })),
       http.get('/api/stats', () => HttpResponse.json(defaultStats)),
       http.get('/api/ralph', () => HttpResponse.json(defaultRalph)),
       http.get('/api/runs', () => HttpResponse.json(defaultRuns)),

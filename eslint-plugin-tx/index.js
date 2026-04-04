@@ -27,6 +27,57 @@ import requirePrimitiveTemplateCoverage from './rules/require-primitive-template
 import requireLlmsPrimitiveCoverage from './rules/require-llms-primitive-coverage.js';
 import maxServiceLines from './rules/max-service-lines.js';
 import preferServiceFolderModules from './rules/prefer-service-folder-modules.js';
+import requireCliUserErrors from './rules/require-cli-user-errors.js';
+import requireCliHelpCoverage from './rules/require-cli-help-coverage.js';
+import noSupervisionSqlOutsideCore from './rules/no-supervision-sql-outside-core.js';
+import noDomainEventsSqlOutsideCore from './rules/no-domain-events-sql-outside-core.js';
+
+const CLI_USER_ERROR_IGNORE_PATHS = [
+  'apps/cli/src/commands/bulk.ts',
+  'apps/cli/src/commands/claim.ts',
+  'apps/cli/src/commands/compact.ts',
+  'apps/cli/src/commands/coordinator.ts',
+  'apps/cli/src/commands/cycle.ts',
+  'apps/cli/src/commands/daemon.ts',
+  'apps/cli/src/commands/dashboard.ts',
+  'apps/cli/src/commands/decision.ts',
+  'apps/cli/src/commands/decompose.ts',
+  'apps/cli/src/commands/dep.ts',
+  'apps/cli/src/commands/doc.ts',
+  'apps/cli/src/commands/doctor.ts',
+  'apps/cli/src/commands/gate.ts',
+  'apps/cli/src/commands/graph.ts',
+  'apps/cli/src/commands/group-context.ts',
+  'apps/cli/src/commands/guard.ts',
+  'apps/cli/src/commands/hierarchy.ts',
+  'apps/cli/src/commands/hooks.ts',
+  'apps/cli/src/commands/invariant.ts',
+  'apps/cli/src/commands/label.ts',
+  'apps/cli/src/commands/md-export.ts',
+  'apps/cli/src/commands/memory.ts',
+  'apps/cli/src/commands/outbox.ts',
+  'apps/cli/src/commands/pin.ts',
+  'apps/cli/src/commands/spec.ts',
+  'apps/cli/src/commands/task.ts',
+  'apps/cli/src/commands/test.ts',
+  'apps/cli/src/commands/trace.ts',
+  'apps/cli/src/commands/utils.ts',
+  'apps/cli/src/commands/validate.ts',
+  'apps/cli/src/commands/verify.ts',
+  'apps/cli/src/commands/worker.ts'
+];
+
+const CLI_USER_ERROR_RULE = ['error', {
+  enforceRoots: ['apps/cli/src/commands/'],
+  extraPaths: ['apps/cli/src/utils/parse.ts'],
+  ignorePaths: CLI_USER_ERROR_IGNORE_PATHS
+}];
+
+const CLI_HELP_COVERAGE_RULE = ['error', {
+  enforcePaths: ['apps/cli/src/cli.ts'],
+  helpFile: 'apps/cli/src/help.ts',
+  ignoreCommands: ['help']
+}];
 
 const plugin = {
   meta: {
@@ -58,7 +109,11 @@ const plugin = {
     'require-primitive-template-coverage': requirePrimitiveTemplateCoverage,
     'require-llms-primitive-coverage': requireLlmsPrimitiveCoverage,
     'max-service-lines': maxServiceLines,
-    'prefer-service-folder-modules': preferServiceFolderModules
+    'prefer-service-folder-modules': preferServiceFolderModules,
+    'require-cli-user-errors': requireCliUserErrors,
+    'require-cli-help-coverage': requireCliHelpCoverage,
+    'no-supervision-sql-outside-core': noSupervisionSqlOutsideCore,
+    'no-domain-events-sql-outside-core': noDomainEventsSqlOutsideCore
   },
   // Flat config recommended configuration
   configs: {
@@ -142,6 +197,8 @@ const plugin = {
           enforcePaths: ['repo/', 'mappers/'],
           allowedTypes: ['unknown']
         }],
+        'tx/require-cli-user-errors': CLI_USER_ERROR_RULE,
+        'tx/require-cli-help-coverage': CLI_HELP_COVERAGE_RULE,
         'tx/require-llms-primitive-coverage': ['error', {
           metaPath: 'apps/docs/content/docs/primitives/meta.json',
           llmsPath: 'apps/docs/public/llms.txt',
@@ -150,6 +207,14 @@ const plugin = {
         'tx/max-service-lines': ['warn', {
           warnAt: 500,
           errorAt: 1000
+        }],
+        'tx/no-supervision-sql-outside-core': ['error', {
+          allowedPaths: ['packages/core/src/repo/', 'migrations/', 'test/', 'tests/', '__tests__/'],
+          tablePatterns: ['worker_sessions']
+        }],
+        'tx/no-domain-events-sql-outside-core': ['error', {
+          allowedPaths: ['packages/core/src/repo/', 'migrations/', 'test/', 'tests/', '__tests__/'],
+          tablePatterns: ['domain_events', 'doc_review_runs']
         }]
       }
     }

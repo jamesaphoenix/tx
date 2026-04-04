@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
 import { DocDetail } from "../DocDetail"
-import type { DocSerialized, DocsListResponse, DocRenderResponse, DocSourceResponse } from "../../../api/client"
+import type { DocSerialized, DocsListResponse, DocSourceResponse } from "../../../api/client"
 
 const docFixture: DocSerialized = {
   id: 1,
+  docId: "doc-111111111111",
   hash: "abcdef1234567890",
   kind: "prd",
   name: "PRD-001-dashboard",
@@ -24,15 +25,13 @@ const docsFixture: DocsListResponse = {
   docs: [docFixture],
 }
 
-const renderFixture: DocRenderResponse = {
-  rendered: ["# Dashboard PRD\n\n**Kind**: prd\n\nRendered body text"],
-}
-
 const sourceFixture: DocSourceResponse = {
+  docId: docFixture.docId,
   name: docFixture.name,
+  version: docFixture.version,
   filePath: docFixture.filePath,
   yamlContent: "name: PRD-001-dashboard\nkind: prd",
-  renderedContent: null,
+  renderedContent: "# Dashboard PRD\n\n**Kind**: prd\n\nRendered body text",
 }
 
 function createTestQueryClient() {
@@ -58,11 +57,11 @@ describe("DocDetail", () => {
       http.get("*", ({ request }) => {
         const pathname = new URL(request.url).pathname
 
-        if (pathname === `/api/docs/${encodeURIComponent(docFixture.name)}`) {
+        if (pathname === `/api/docs/by-id/${encodeURIComponent(docFixture.docId)}`) {
           return HttpResponse.json(docFixture)
         }
 
-        if (pathname === `/api/docs/${encodeURIComponent(docFixture.name)}/source`) {
+        if (pathname === `/api/docs/by-id/${encodeURIComponent(docFixture.docId)}/source`) {
           return HttpResponse.json(sourceFixture)
         }
 
@@ -72,7 +71,6 @@ describe("DocDetail", () => {
 
         return HttpResponse.json({ error: "not found" }, { status: 404 })
       }),
-      http.post("/api/docs/render", () => HttpResponse.json(renderFixture)),
     )
   })
 
@@ -80,12 +78,13 @@ describe("DocDetail", () => {
     server.resetHandlers()
   })
 
-  it("renders document details and toggles to YAML source", async () => {
+  it("renders document details with rendered content", async () => {
     const onNavigateToDoc = vi.fn()
 
     renderWithProviders(
       <DocDetail
-        docName={docFixture.name}
+        docId={docFixture.docId}
+        version={docFixture.version}
         onNavigateToDoc={onNavigateToDoc}
       />,
     )
@@ -95,9 +94,7 @@ describe("DocDetail", () => {
       expect(screen.getByText("Rendered body text")).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "YAML Source" }))
-
-    expect(screen.getByText(/name: PRD-001-dashboard/)).toBeInTheDocument()
-    expect(screen.getByText(/kind: prd/)).toBeInTheDocument()
+    // YAML Source toggle was removed; verify metadata is visible instead
+    expect(screen.getByText(docFixture.name)).toBeInTheDocument()
   })
 })

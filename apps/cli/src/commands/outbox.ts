@@ -15,7 +15,7 @@ import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 /**
  * Send a message to a channel.
  *
- * Usage: tx send <channel> <content> [--sender <s>] [--task <id>] [--ttl <sec>] [--correlation <id>] [--metadata '{}'] [--json]
+ * Usage: tx msg send <channel> <content> [--sender <s>] [--task <id>] [--ttl <sec>] [--correlation <id>] [--metadata '{}'] [--json]
  */
 export const send = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -23,7 +23,7 @@ export const send = (pos: string[], flags: Flags) =>
     const content = pos[1]
 
     if (!channel || !content) {
-      console.error("Usage: tx send <channel> <content> [--sender <s>] [--task <id>] [--ttl <sec>] [--correlation <id>] [--metadata '{}'] [--json]")
+      console.error("Usage: tx msg send <channel> <content> [--sender <s>] [--task <id>] [--ttl <sec>] [--correlation <id>] [--metadata '{}'] [--json]")
       process.exit(1)
     }
 
@@ -68,14 +68,14 @@ export const send = (pos: string[], flags: Flags) =>
  * Read messages from a channel's inbox.
  * This is a pure read — no side effects, no status changes.
  *
- * Usage: tx inbox <channel> [--after <id>] [--limit <n>] [--sender <s>] [--correlation <id>] [--include-acked] [--json]
+ * Usage: tx msg inbox <channel> [--after <id>] [--limit <n>] [--sender <s>] [--correlation <id>] [--include-acked] [--json]
  */
 export const inbox = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const channel = pos[0]
 
     if (!channel) {
-      console.error("Usage: tx inbox <channel> [--after <id>] [--limit <n>] [--sender <s>] [--correlation <id>] [--include-acked] [--json]")
+      console.error("Usage: tx msg inbox <channel> [--after <id>] [--limit <n>] [--sender <s>] [--correlation <id>] [--include-acked] [--json]")
       process.exit(1)
     }
 
@@ -113,8 +113,8 @@ export const inbox = (pos: string[], flags: Flags) =>
 /**
  * Ack dispatcher: routes `tx ack all <channel>` or acts as direct ack.
  *
- * - `tx ack all <channel>` → ackAll
- * - `tx ack <message-id>` → direct ack
+ * - `tx msg ack all <channel>` → ackAll
+ * - `tx msg ack <message-id>` → direct ack
  */
 export const ack = (pos: string[], flags: Flags) => {
   if (pos[0] === "all") return ackAll(pos.slice(1), flags)
@@ -124,14 +124,14 @@ export const ack = (pos: string[], flags: Flags) => {
 /**
  * Acknowledge a single message by ID.
  *
- * Usage: tx ack <message-id> [--json]
+ * Usage: tx msg ack <message-id> [--json]
  */
 const ackDirect = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const rawId = pos[0]
 
     if (!rawId) {
-      console.error("Usage: tx ack <message-id> [--json]")
+      console.error("Usage: tx msg ack <message-id> [--json]")
       process.exit(1)
     }
 
@@ -154,14 +154,14 @@ const ackDirect = (pos: string[], flags: Flags) =>
 /**
  * Acknowledge all pending messages on a channel.
  *
- * Usage: tx ack all <channel> [--json]
+ * Usage: tx msg ack all <channel> [--json]
  */
 export const ackAll = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const channel = pos[0]
 
     if (!channel) {
-      console.error("Usage: tx ack all <channel> [--json]")
+      console.error("Usage: tx msg ack all <channel> [--json]")
       process.exit(1)
     }
 
@@ -178,14 +178,14 @@ export const ackAll = (pos: string[], flags: Flags) =>
 /**
  * Count pending messages on a channel.
  *
- * Usage: tx outbox pending <channel> [--json]
+ * Usage: tx msg pending <channel> [--json]
  */
 export const outboxPending = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const channel = pos[0]
 
     if (!channel) {
-      console.error("Usage: tx outbox pending <channel> [--json]")
+      console.error("Usage: tx msg pending <channel> [--json]")
       process.exit(1)
     }
 
@@ -202,7 +202,7 @@ export const outboxPending = (pos: string[], flags: Flags) =>
 /**
  * Garbage collect old messages.
  *
- * Usage: tx outbox gc [--acked-older-than <hours>] [--json]
+ * Usage: tx msg gc [--acked-older-than <hours>] [--json]
  */
 export const outboxGc = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -227,11 +227,11 @@ export const outbox = (pos: string[], flags: Flags) => {
     case "pending": return outboxPending(pos.slice(1), flags)
     case "gc": return outboxGc(pos.slice(1), flags)
     default: return Effect.sync(() => {
-      console.log("Outbox commands:")
-      console.log("  tx outbox pending <channel>   Count pending messages")
-      console.log("  tx outbox gc                  Garbage collect old messages")
+      console.log("Msg commands:")
+      console.log("  tx msg pending <channel>   Count pending messages")
+      console.log("  tx msg gc                  Garbage collect old messages")
       console.log("")
-      console.log("Run 'tx outbox <command> --help' for command-specific help.")
+      console.log("Run 'tx msg <command> --help' for command-specific help.")
     })
   }
 }

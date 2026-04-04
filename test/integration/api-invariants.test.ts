@@ -124,31 +124,72 @@ describe("API Invariant Endpoints Integration", () => {
       Effect.gen(function* () {
         const docService = yield* DocService
 
-        // Create a doc with invariants in its YAML content
-        const yamlContent = [
-          "kind: prd",
+        // Create a doc with invariants in its content (markdown-first format)
+        const content = [
+          "---",
+          "kind: spec",
+          "spec_type: prd",
           "name: inv-test-doc",
           "title: Invariant Test Doc",
-          "status: changing",
+          "status: draft",
+          "version: 1",
+          "owners: [test]",
+          'summary: ""',
+          'domain: ""',
+          "tags: []",
+          "depends_on: []",
+          "supersedes: []",
+          "implements: null",
+          "last_reviewed_at: 2026-03-15",
+          "---",
           "",
+          "# Invariant Test Doc",
+          "",
+          "## Summary",
+          "",
+          "Test doc for API invariant endpoints.",
+          "",
+          "## Problem",
+          "",
+          "Need to verify invariant endpoint behavior.",
+          "",
+          "## Scope",
+          "",
+          "Integration test scope.",
+          "",
+          "## Requirements",
+          "",
+          "Test requirements.",
+          "",
+          "## Acceptance Criteria",
+          "",
+          "Tests pass.",
+          "",
+          "## Invariants",
+          "",
+          "```yaml",
           "invariants:",
           "  - id: INV-TEST-001",
-          "    rule: All tests must pass before merge",
-          "    enforcement: integration_test",
+          "    statement: All tests must pass before merge",
+          "    severity: high",
+          "    verified_by:",
+          "      - test/integration/api-invariants.test.ts",
           "  - id: INV-TEST-002",
-          "    rule: No console.log in production code",
-          "    enforcement: linter",
-          "    subsystem: code-quality",
+          "    statement: No console.log in production code",
+          "    severity: medium",
+          "    verified_by:",
+          "      - test/integration/api-invariants.test.ts",
+          "```",
         ].join("\n")
 
         yield* docService.create({
           kind: "prd",
           name: "inv-test-doc",
           title: "Invariant Test Doc",
-          yamlContent,
+          content,
         })
 
-        // Sync invariants from the doc's YAML
+        // Sync invariants from the doc's embedded YAML block
         yield* docService.syncInvariants("inv-test-doc")
 
         // List them
@@ -173,8 +214,10 @@ describe("API Invariant Endpoints Integration", () => {
 
     const inv2 = result.invariants.find((inv) => inv.id === "INV-TEST-002")!
     expect(inv2.rule).toBe("No console.log in production code")
-    expect(inv2.enforcement).toBe("linter")
-    expect(inv2.subsystem).toBe("code-quality")
+    // In markdown-first, enforcement is always "integration_test" (derived from severity)
+    expect(inv2.enforcement).toBe("integration_test")
+    // subsystem is derived from doc.kind
+    expect(inv2.subsystem).toBe("prd")
   })
 
   // ---------------------------------------------------------------------------
@@ -186,24 +229,64 @@ describe("API Invariant Endpoints Integration", () => {
       Effect.gen(function* () {
         const docService = yield* DocService
 
-        // Create doc with an invariant
-        const yamlContent = [
-          "kind: prd",
+        // Create doc with an invariant (markdown-first format)
+        const content = [
+          "---",
+          "kind: spec",
+          "spec_type: prd",
           "name: inv-pass-doc",
           "title: Pass Check Doc",
-          "status: changing",
+          "status: draft",
+          "version: 1",
+          "owners: [test]",
+          'summary: ""',
+          'domain: ""',
+          "tags: []",
+          "depends_on: []",
+          "supersedes: []",
+          "implements: null",
+          "last_reviewed_at: 2026-03-15",
+          "---",
           "",
+          "# Pass Check Doc",
+          "",
+          "## Summary",
+          "",
+          "Test doc for passing check.",
+          "",
+          "## Problem",
+          "",
+          "Verify passing check behavior.",
+          "",
+          "## Scope",
+          "",
+          "Integration test scope.",
+          "",
+          "## Requirements",
+          "",
+          "Test requirements.",
+          "",
+          "## Acceptance Criteria",
+          "",
+          "Tests pass.",
+          "",
+          "## Invariants",
+          "",
+          "```yaml",
           "invariants:",
           "  - id: INV-PASS-001",
-          "    rule: Tests must pass",
-          "    enforcement: integration_test",
+          "    statement: Tests must pass",
+          "    severity: high",
+          "    verified_by:",
+          "      - test/integration/api-invariants.test.ts",
+          "```",
         ].join("\n")
 
         yield* docService.create({
           kind: "prd",
           name: "inv-pass-doc",
           title: "Pass Check Doc",
-          yamlContent,
+          content,
         })
 
         yield* docService.syncInvariants("inv-pass-doc")
@@ -238,24 +321,64 @@ describe("API Invariant Endpoints Integration", () => {
       Effect.gen(function* () {
         const docService = yield* DocService
 
-        // Create doc with an invariant
-        const yamlContent = [
-          "kind: prd",
+        // Create doc with an invariant (markdown-first format)
+        const content = [
+          "---",
+          "kind: spec",
+          "spec_type: prd",
           "name: inv-fail-doc",
           "title: Fail Check Doc",
-          "status: changing",
+          "status: draft",
+          "version: 1",
+          "owners: [test]",
+          'summary: ""',
+          'domain: ""',
+          "tags: []",
+          "depends_on: []",
+          "supersedes: []",
+          "implements: null",
+          "last_reviewed_at: 2026-03-15",
+          "---",
           "",
+          "# Fail Check Doc",
+          "",
+          "## Summary",
+          "",
+          "Test doc for failing check.",
+          "",
+          "## Problem",
+          "",
+          "Verify failing check behavior.",
+          "",
+          "## Scope",
+          "",
+          "Integration test scope.",
+          "",
+          "## Requirements",
+          "",
+          "Test requirements.",
+          "",
+          "## Acceptance Criteria",
+          "",
+          "Tests pass.",
+          "",
+          "## Invariants",
+          "",
+          "```yaml",
           "invariants:",
           "  - id: INV-FAIL-001",
-          "    rule: No lint errors allowed",
-          "    enforcement: linter",
+          "    statement: No lint errors allowed",
+          "    severity: high",
+          "    verified_by:",
+          "      - test/integration/api-invariants.test.ts",
+          "```",
         ].join("\n")
 
         yield* docService.create({
           kind: "prd",
           name: "inv-fail-doc",
           title: "Fail Check Doc",
-          yamlContent,
+          content,
         })
 
         yield* docService.syncInvariants("inv-fail-doc")

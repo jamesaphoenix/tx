@@ -3,7 +3,7 @@ import Select, { type MultiValue, type SingleValue, type StylesConfig } from "re
 import CreatableSelect from "react-select/creatable"
 import type { TaskLabel } from "../../api/client"
 
-export type TaskStatusValue = "backlog" | "ready" | "planning" | "active" | "blocked" | "review" | "human_needs_to_review" | "done"
+export type TaskStatusValue = "backlog" | "ready" | "planning" | "active" | "blocked" | "review" | "needs_review" | "done"
 
 /** @deprecated Use TaskStatusValue instead */
 export type HumanTaskStage = TaskStatusValue
@@ -33,7 +33,7 @@ const TASK_STATUS_OPTIONS_INTERNAL: readonly StageOption[] = [
   { value: "active", label: "Active" },
   { value: "blocked", label: "Blocked" },
   { value: "review", label: "Review" },
-  { value: "human_needs_to_review", label: "Needs Review" },
+  { value: "needs_review", label: "Needs Review" },
   { value: "done", label: "Done" },
 ]
 
@@ -101,13 +101,13 @@ export const HUMAN_STAGE_TO_STATUS: Record<TaskStatusValue, string> = {
   active: "active",
   blocked: "blocked",
   review: "review",
-  human_needs_to_review: "human_needs_to_review",
+  needs_review: "needs_review",
   done: "done",
 }
 
 /** @deprecated Use status directly — this is now an identity function */
 export function toHumanTaskStage(status: string): TaskStatusValue {
-  const valid: TaskStatusValue[] = ["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]
+  const valid: TaskStatusValue[] = ["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]
   if (valid.includes(status as TaskStatusValue)) return status as TaskStatusValue
   return "backlog"
 }

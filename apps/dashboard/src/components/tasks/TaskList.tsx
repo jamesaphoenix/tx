@@ -4,7 +4,6 @@ import { useReadyTasks } from "../../hooks/useReadyTasks"
 import { useIntersectionObserver } from "../../hooks/useIntersectionObserver"
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation"
 import type { TaskWithDeps } from "../../api/client"
-import { LoadingSkeleton } from "../ui/LoadingSkeleton"
 import { EmptyState } from "../ui/EmptyState"
 import { TaskCard } from "./TaskCard"
 import {
@@ -13,6 +12,55 @@ import {
   normalizeTaskClientFilters,
   type TaskClientFilters,
 } from "./taskClientFilters"
+
+type TaskStatus =
+  | "backlog"
+  | "ready"
+  | "planning"
+  | "active"
+  | "blocked"
+  | "review"
+  | "needs_review"
+  | "done"
+
+const TASK_STATUS_ORDER: TaskStatus[] = [
+  "active",
+  "ready",
+  "planning",
+  "blocked",
+  "review",
+  "needs_review",
+  "backlog",
+  "done",
+]
+
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  backlog: "Backlog",
+  ready: "Ready",
+  planning: "Planning",
+  active: "Active",
+  blocked: "Blocked",
+  review: "Review",
+  needs_review: "Needs Review",
+  done: "Done",
+}
+
+const STATUS_SECTION_COLORS: Record<TaskStatus, { text: string; line: string }> = {
+  active: { text: "text-yellow-300", line: "bg-yellow-500/15" },
+  ready: { text: "text-blue-300", line: "bg-blue-500/15" },
+  planning: { text: "text-purple-300", line: "bg-purple-500/15" },
+  blocked: { text: "text-red-300", line: "bg-red-500/15" },
+  review: { text: "text-orange-300", line: "bg-orange-500/15" },
+  needs_review: { text: "text-pink-300", line: "bg-pink-500/15" },
+  backlog: { text: "text-gray-400", line: "bg-gray-500/15" },
+  done: { text: "text-green-300", line: "bg-green-500/15" },
+}
+
+const STATUS_SET = new Set<string>(TASK_STATUS_ORDER)
+
+function isTaskStatus(value: string): value is TaskStatus {
+  return STATUS_SET.has(value)
+}
 
 export interface TaskListProps {
   filters?: TaskFilters
@@ -162,22 +210,46 @@ export function TaskList({
 
   const nestedTaskEntries = useMemo(() => buildNestedTaskEntries(filteredTasks), [filteredTasks])
 
+  // Group tasks by status for section display
+  const tasksByStatus = useMemo(() => {
+    const groups: Record<TaskStatus, NestedTaskEntry[]> = {
+      active: [], ready: [], planning: [], blocked: [],
+      review: [], needs_review: [], backlog: [], done: [],
+    }
+    for (const entry of nestedTaskEntries) {
+      const status = entry.task.status
+      if (isTaskStatus(status)) {
+        groups[status].push(entry)
+      }
+    }
+    return groups
+  }, [nestedTaskEntries])
+
+  // Build flat list for keyboard navigation (ordered by section)
+  const flatOrderedEntries = useMemo(() => {
+    const entries: NestedTaskEntry[] = []
+    for (const status of TASK_STATUS_ORDER) {
+      entries.push(...tasksByStatus[status])
+    }
+    return entries
+  }, [tasksByStatus])
+
   // Keyboard navigation
   const handleSelect = useCallback(
     (index: number) => {
-      const task = nestedTaskEntries[index]?.task
+      const task = flatOrderedEntries[index]?.task
       if (task) {
         onSelectTask(task.id)
       }
     },
-    [nestedTaskEntries, onSelectTask]
+    [flatOrderedEntries, onSelectTask]
   )
 
   const { focusedIndex, isKeyboardNavigating } = useKeyboardNavigation({
-    itemCount: nestedTaskEntries.length,
+    itemCount: flatOrderedEntries.length,
     onSelect: handleSelect,
     onEscape,
-    enabled: nestedTaskEntries.length > 0,
+    enabled: flatOrderedEntries.length > 0,
   })
 
   // Infinite scroll via intersection observer (only for paginated mode)
@@ -194,15 +266,7 @@ export function TaskList({
 
   // Initial loading state
   if (isLoading) {
-    return (
-      <div className={`space-y-2 ${isBucketAnimating ? "animate-bucket-swap" : ""}`}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-300">Tasks</h2>
-          <span className="text-sm text-gray-500">Loading...</span>
-        </div>
-        <LoadingSkeleton count={5} />
-      </div>
-    )
+    return null
   }
 
   // Error state
@@ -233,14 +297,14 @@ export function TaskList({
 
   const hasFilteredResults = nestedTaskEntries.length > 0
 
+  // Compute global index for each task in the flat ordered list
+  let globalIndex = 0
+
   return (
-    <div className={`space-y-2 ${isBucketAnimating ? "animate-bucket-swap" : ""}`}>
+    <div className={`space-y-1 ${isBucketAnimating ? "animate-bucket-swap" : ""}`}>
       {/* Header with total count */}
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-300">
-          {useReadyEndpoint ? "Ready Tasks" : "Tasks"}
-        </h2>
-        <span className="text-sm text-gray-500">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[11px] font-medium text-gray-500">
           {hasClientFilters
             ? `${filteredTasks.length} matching of ${tasks.length} loaded`
             : `${total} task${total !== 1 ? "s" : ""}`}
@@ -248,38 +312,60 @@ export function TaskList({
         </span>
       </div>
 
-      {/* Task cards */}
+      {/* Task sections grouped by status */}
       {hasFilteredResults ? (
-        <div className="space-y-2">
-          {nestedTaskEntries.map(({ task, depth }, index) => (
-            <TaskCard
-              key={`${statusMotionKey}-${task.id}`}
-              task={task}
-              nestingLevel={depth}
-              isFocused={index === focusedIndex}
-              showFocusRing={isKeyboardNavigating && index === focusedIndex}
-              isSelected={selectedIds?.has(task.id)}
-              onToggleSelect={onToggleSelect}
-              onClick={() => onSelectTask(task.id)}
-              entryIndex={index}
-            />
-          ))}
+        <div className="space-y-4">
+          {TASK_STATUS_ORDER.map((status) => {
+            const statusEntries = tasksByStatus[status]
+            if (statusEntries.length === 0) return null
+
+            const colors = STATUS_SECTION_COLORS[status]
+            const startIndex = globalIndex
+            globalIndex += statusEntries.length
+
+            return (
+              <section key={status}>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <h2 className={`text-[11px] font-semibold uppercase tracking-wider ${colors.text}`}>
+                    {STATUS_LABELS[status]}
+                  </h2>
+                  <span className="text-[11px] text-gray-600">{statusEntries.length}</span>
+                  <span className={`h-px flex-1 ${colors.line}`} />
+                </div>
+                <div className="space-y-1.5">
+                  {statusEntries.map((entry, localIndex) => {
+                    const flatIndex = startIndex + localIndex
+                    return (
+                      <TaskCard
+                        key={`${statusMotionKey}-${entry.task.id}`}
+                        task={entry.task}
+                        nestingLevel={entry.depth}
+                        isFocused={flatIndex === focusedIndex}
+                        showFocusRing={isKeyboardNavigating && flatIndex === focusedIndex}
+                        isSelected={selectedIds?.has(entry.task.id)}
+                        onToggleSelect={onToggleSelect}
+                        onClick={() => onSelectTask(entry.task.id)}
+                        entryIndex={localIndex}
+                      />
+                    )
+                  })}
+                </div>
+              </section>
+            )
+          })}
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-700 bg-gray-900/60 px-3 py-4 text-sm text-gray-400">
-          No tasks in the loaded results match the current assignment/label filters.
+        <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-sm text-gray-500">
+          No tasks in the loaded results match the current filters.
         </div>
       )}
 
       {/* Sentinel element for infinite scroll (only in paginated mode) */}
       {!useReadyEndpoint && <div ref={sentinelRef} className="h-4" />}
 
-      {/* Loading more indicator (only in paginated mode) */}
-      {!useReadyEndpoint && isFetchingNextPage && <LoadingSkeleton count={3} />}
-
       {/* End of list indicator */}
       {(useReadyEndpoint || !hasNextPage) && hasFilteredResults && (
-        <div className="text-center text-sm text-gray-500 py-4">
+        <div className="pt-2 text-center text-[11px] text-gray-600">
           {useReadyEndpoint ? "All ready tasks shown" : "End of tasks"}
         </div>
       )}

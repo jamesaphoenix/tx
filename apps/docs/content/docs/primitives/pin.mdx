@@ -632,13 +632,13 @@ Agents can programmatically maintain sections of `CLAUDE.md` that persist across
 tx pin set db-conventions "## Database Conventions
 - Use WAL mode for SQLite
 - All migrations in migrations/ directory
-- Run tx migrate status to verify"
+- Run tx sync migrate status to verify"
 
 # Later, agent updates the pin with new knowledge
 tx pin set db-conventions "## Database Conventions
 - Use WAL mode for SQLite
 - All migrations in migrations/ directory
-- Run tx migrate status to verify
+- Run tx sync migrate status to verify
 - Always use parameterized queries"
 
 # Pin auto-syncs to CLAUDE.md as:

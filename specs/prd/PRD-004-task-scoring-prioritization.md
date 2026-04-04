@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-004-task-scoring-prioritization"
+title: "PRD-004: Task Scoring & Prioritization"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-004: Task Scoring & Prioritization
 
 **Status**: Draft

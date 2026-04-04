@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-002-effect-ts-service-layer"
+title: "DD-002: Effect-TS Service Layer Design"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-002: Effect-TS Service Layer Design
 
 **Status**: Draft
@@ -307,7 +317,7 @@ export const AppLive = Layer.mergeAll(
 | Layer | When | Example |
 |-------|------|---------|
 | `AppMinimalLive` | All core CLI commands, MCP server startup | `tx add`, `tx ready`, `tx show`, `tx done`, all MCP tools |
-| `AppLive` | Only when LLM features are explicitly invoked | `tx dedupe`, `tx compact`, `tx reprioritize` |
+| `AppLive` | Only when LLM features are explicitly invoked | `tx dedupe`, `tx sync compact`, `tx reprioritize` |
 
 The MCP server MUST use `AppMinimalLive` at startup. It should lazy-load LLM services only when dedupe/compact tools are called.
 

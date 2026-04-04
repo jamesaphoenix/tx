@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: runbook
+name: "FAILURE-MODES"
+title: "tx Failure Mode Documentation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # tx Failure Mode Documentation
 
 This document catalogs known failure modes in tx, their detection methods, and recovery procedures. These failure modes were discovered through chaos engineering testing.
@@ -176,7 +186,7 @@ WHERE id IN (
 ```sql
 -- Find invalid statuses
 SELECT id, status FROM tasks
-WHERE status NOT IN ('backlog', 'ready', 'planning', 'active', 'blocked', 'review', 'human_needs_to_review', 'done');
+WHERE status NOT IN ('backlog', 'ready', 'planning', 'active', 'blocked', 'review', 'needs_review', 'done');
 
 -- Find invalid JSON
 -- (Requires application-level parsing)

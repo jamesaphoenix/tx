@@ -1,309 +1,294 @@
-import { useState, useCallback, useMemo } from "react"
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
-import { useStore } from "@tanstack/react-store"
+import { useEffect, useMemo, useState, useCallback } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { fetchers } from "../../api/client"
+import { useCycles } from "../../hooks/useCycles"
 import { useCommands, type Command } from "../command-palette/CommandContext"
-import { selectionStore, selectionActions } from "../../stores/selection-store"
-import { CycleSidebar } from "./CycleSidebar"
-import { CycleSummary } from "./CycleSummary"
-import { LossChart } from "./LossChart"
-import { IssuesList, formatIssueForClipboard } from "./IssuesList"
+import { Button } from "../ui"
+import { CycleCard } from "./CycleCard"
+import { CycleDetail } from "./CycleDetail"
 
-export function CyclePage() {
-  const [selectedCycleId, setSelectedCycleId] = useState<string | null>(null)
-  const selectedIssueIds = useStore(selectionStore, (s) => s.issueIds)
-  const setSelectedIssueIds = useCallback((ids: Set<string>) => {
-    selectionActions.selectAllIssues([...ids])
-  }, [])
-  const [issueFilter, setIssueFilter] = useState("all")
+type ThemeMode = "light" | "dark"
 
+interface CyclePageProps {
+  themeMode?: ThemeMode
+  autoAddStatuses?: string[]
+}
+
+function sortCyclesByStartDesc<T extends { startDate: string }>(cycles: T[]): T[] {
+  return [...cycles].sort((left, right) => Date.parse(right.startDate) - Date.parse(left.startDate))
+}
+
+function readCycleIdFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get("cycleId")
+}
+
+function writeCycleUrl(cycleId: string | null) {
+  const params = new URLSearchParams(window.location.search)
+  if (cycleId) {
+    params.set("cycleId", cycleId)
+  } else {
+    params.delete("cycleId")
+  }
+  const search = params.toString()
+  const url = search ? `${window.location.pathname}?${search}` : window.location.pathname
+  window.history.pushState(null, "", url)
+}
+
+const DEFAULT_AUTO_ADD_STATUSES = ["backlog", "ready"]
+
+export function CyclePage({ themeMode = "dark", autoAddStatuses = DEFAULT_AUTO_ADD_STATUSES }: CyclePageProps) {
+  const isDarkTheme = themeMode === "dark"
   const queryClient = useQueryClient()
+  const [selectedCycleId, setSelectedCycleId] = useState<string | null>(readCycleIdFromUrl)
 
-  const { data: detail, isLoading } = useQuery({
-    queryKey: ["cycle", selectedCycleId],
-    queryFn: () => fetchers.cycleDetail(selectedCycleId!),
-    enabled: !!selectedCycleId,
-  })
+  const { data: cycles = [], isLoading, isError, error } = useCycles()
 
-  const { data: cyclesData } = useQuery({
-    queryKey: ["cycles"],
-    queryFn: fetchers.cycles,
-    refetchInterval: 10000,
-  })
-  const cycles = cyclesData?.cycles ?? []
+  // Sync with browser back/forward
+  useEffect(() => {
+    const onPopState = () => setSelectedCycleId(readCycleIdFromUrl())
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [])
 
-  const deleteMutation = useMutation({
-    mutationFn: fetchers.deleteCycle,
-    onSuccess: (_data, deletedId) => {
-      queryClient.invalidateQueries({ queryKey: ["cycles"] })
-      if (selectedCycleId === deletedId) {
-        setSelectedCycleId(null)
+  const selectCycle = useCallback((cycleId: string | null) => {
+    setSelectedCycleId(cycleId)
+    writeCycleUrl(cycleId)
+  }, [])
+
+  const { mutate: createCycle, isPending: isCreateCyclePending } = useMutation({
+    mutationFn: async () => {
+      const createdCycle = await fetchers.createCycle()
+      // Auto-add tasks with matching statuses to the new cycle
+      if (autoAddStatuses.length > 0) {
+        try {
+          const { tasks } = await fetchers.tasks()
+          const matchingTaskIds = tasks
+            .filter((task) => autoAddStatuses.includes(task.status))
+            .map((task) => task.id)
+          if (matchingTaskIds.length > 0) {
+            await fetchers.addTasksToCycle(createdCycle.id, matchingTaskIds)
+          }
+        } catch {
+          // Non-critical: cycle was created, auto-add failed silently
+        }
       }
+      return createdCycle
+    },
+    onSuccess: async (createdCycle) => {
+      await queryClient.invalidateQueries({ queryKey: ["cycles"] })
+      selectCycle(createdCycle.id)
     },
   })
 
-  const deleteIssuesMutation = useMutation({
-    mutationFn: fetchers.deleteIssues,
-    onSuccess: () => {
-      selectionActions.clearIssues()
-      queryClient.invalidateQueries({ queryKey: ["cycle", selectedCycleId] })
-      queryClient.invalidateQueries({ queryKey: ["cycles"] })
-    },
-  })
+  const cycleGroups = useMemo(() => {
+    const sorted = sortCyclesByStartDesc(cycles)
+    return {
+      current: sorted.find((cycle) => cycle.status === "current") ?? null,
+      upcoming: sorted
+        .filter((cycle) => cycle.status === "upcoming")
+        .sort((a, b) => Date.parse(a.startDate) - Date.parse(b.startDate)),
+      completed: sorted.filter((cycle) => cycle.status === "completed"),
+    }
+  }, [cycles])
 
-  const handleCopyIssues = useCallback(async (ids: string[]) => {
-    if (!detail) return
-    const selected = detail.issues.filter((i) => ids.includes(i.id))
-    if (selected.length === 0) return
-    const text = selected.map(formatIssueForClipboard).join("\n\n")
-    await navigator.clipboard.writeText(text)
-  }, [detail])
+  // Nonces to trigger modals in CycleDetail
+  const [composerNonce, setComposerNonce] = useState(0)
+  const [addTaskNonce, setAddTaskNonce] = useState(0)
 
-  // Register cycle-specific commands
+  const requestNewTask = useCallback(() => {
+    setComposerNonce((n) => n + 1)
+  }, [])
+
+  const requestAddExistingTasks = useCallback(() => {
+    setAddTaskNonce((n) => n + 1)
+  }, [])
+
+  // Register page-level commands for the cycles tab
   const commands = useMemo((): Command[] => {
     const cmds: Command[] = []
 
-    // Navigate to cycles
-    for (const cycle of cycles) {
-      if (cycle.id !== selectedCycleId) {
-        cmds.push({
-          id: `nav:cycle-${cycle.id}`,
-          label: cycle.name || `Cycle ${cycle.cycle}`,
-          sublabel: `${cycle.rounds} rounds, ${cycle.totalNewIssues} issues, loss ${cycle.finalLoss}`,
-          group: "Navigation",
-          icon: "nav",
-          action: () => setSelectedCycleId(cycle.id),
-        })
-      }
-    }
-
-    // Delete cycles
-    for (const cycle of cycles) {
-      cmds.push({
-        id: `delete:cycle-${cycle.id}`,
-        label: `Delete Cycle ${cycle.cycle}`,
-        sublabel: `${cycle.totalNewIssues} issues will be removed`,
-        group: "Actions",
-        icon: "delete",
-        action: () => {
-          if (confirm(`Delete Cycle ${cycle.cycle} and all its ${cycle.totalNewIssues} issues?`)) {
-            deleteMutation.mutate(cycle.id)
-          }
-        },
-      })
-    }
-
-    // Issue-specific commands (only when a cycle with issues is selected)
-    if (detail?.issues?.length) {
-      const issues = detail.issues
-
-      cmds.push({
-        id: "select-all",
-        label: "Select all issues",
-        sublabel: `${issues.length} issues`,
-        group: "Actions",
-        icon: "select",
-        shortcut: "⌘A",
-        action: () => setSelectedIssueIds(new Set(issues.map((i) => i.id))),
-      })
-
-      cmds.push({
-        id: "action:copy-all-issues",
-        label: "Copy all issues",
-        sublabel: `${issues.length} issues`,
-        group: "Actions",
-        icon: "copy",
-        action: () => handleCopyIssues(issues.map((i) => i.id)),
-      })
-
-      if (selectedIssueIds.size > 0) {
-        const allSelected = selectedIssueIds.size === issues.length
-        cmds.push({
-          id: "action:delete-selected-issues",
-          label: allSelected ? "Delete all issues (delete cycle)" : "Delete selected issues",
-          sublabel: allSelected
-            ? `All ${issues.length} issues — removes entire cycle`
-            : `${selectedIssueIds.size} of ${issues.length} issues`,
-          group: "Actions",
-          icon: "delete",
-          action: () => {
-            if (allSelected) {
-              if (confirm(`Delete this cycle and all ${issues.length} issues? This cannot be undone.`)) {
-                deleteMutation.mutate(selectedCycleId!)
-              }
-            } else {
-              if (confirm(`Delete ${selectedIssueIds.size} selected issue(s)? This cannot be undone.`)) {
-                deleteIssuesMutation.mutate([...selectedIssueIds])
-              }
-            }
-          },
-        })
-      }
-
-      if (selectedIssueIds.size > 0) {
-        cmds.push({
-          id: "action:copy-selected",
-          label: "Copy selected issues",
-          sublabel: `${selectedIssueIds.size} selected`,
-          group: "Actions",
-          icon: "copy",
-          shortcut: "⌘C",
-          action: () => handleCopyIssues([...selectedIssueIds]),
-        })
-        cmds.push({
-          id: "action:clear-selection",
-          label: "Clear issue selection",
-          group: "Actions",
-          icon: "action",
-          action: () => setSelectedIssueIds(new Set()),
-        })
-      }
-
-      // Select by severity
-      const highCount = issues.filter((i) => i.severity === "high").length
-      const mediumCount = issues.filter((i) => i.severity === "medium").length
-      const lowCount = issues.filter((i) => i.severity === "low").length
-
-      if (highCount > 0) {
-        cmds.push({
-          id: "action:select-high",
-          label: "Select high severity",
-          sublabel: `${highCount} issues`,
-          group: "Actions",
-          icon: "select",
-          action: () => setSelectedIssueIds(new Set(issues.filter((i) => i.severity === "high").map((i) => i.id))),
-        })
-        cmds.push({
-          id: "action:copy-high",
-          label: "Copy high severity issues",
-          sublabel: `${highCount} issues`,
-          group: "Actions",
-          icon: "copy",
-          action: () => handleCopyIssues(issues.filter((i) => i.severity === "high").map((i) => i.id)),
-        })
-      }
-      if (mediumCount > 0) {
-        cmds.push({
-          id: "action:select-medium",
-          label: "Select medium severity",
-          sublabel: `${mediumCount} issues`,
-          group: "Actions",
-          icon: "select",
-          action: () => setSelectedIssueIds(new Set(issues.filter((i) => i.severity === "medium").map((i) => i.id))),
-        })
-      }
-      if (lowCount > 0) {
-        cmds.push({
-          id: "action:select-low",
-          label: "Select low severity",
-          sublabel: `${lowCount} issues`,
-          group: "Actions",
-          icon: "select",
-          action: () => setSelectedIssueIds(new Set(issues.filter((i) => i.severity === "low").map((i) => i.id))),
-        })
-      }
-
-      // Issue filter commands
-      cmds.push(
-        { id: "filter:issue-all", label: "Filter: All issues", group: "Filters", icon: "filter", action: () => setIssueFilter("all") },
-        { id: "filter:issue-high", label: "Filter: High severity", group: "Filters", icon: "filter", action: () => setIssueFilter("high") },
-        { id: "filter:issue-medium", label: "Filter: Medium severity", group: "Filters", icon: "filter", action: () => setIssueFilter("medium") },
-        { id: "filter:issue-low", label: "Filter: Low severity", group: "Filters", icon: "filter", action: () => setIssueFilter("low") },
-      )
-    }
-
     if (selectedCycleId) {
-      const cycle = cycles.find(c => c.id === selectedCycleId)
+      // CMD+N creates a new task in the cycle
       cmds.push({
-        id: "action:show-all-cycles",
-        label: "Show all cycles",
+        id: "cycles:new-task",
+        label: "Create new task in cycle",
         group: "Actions",
         icon: "action",
-        action: () => setSelectedCycleId(null),
+        shortcut: "⌘N",
+        allowInInput: true,
+        action: requestNewTask,
       })
-      // Copy cycle name when no issues are selected
-      if (selectedIssueIds.size === 0 && cycle) {
+      // Add existing tasks available without shortcut
+      cmds.push({
+        id: "cycles:add-existing",
+        label: "Add existing tasks to cycle",
+        group: "Actions",
+        icon: "action",
+        action: requestAddExistingTasks,
+      })
+      cmds.push({
+        id: "cycles:back",
+        label: "Back to all cycles",
+        group: "Navigation",
+        icon: "nav",
+        action: () => selectCycle(null),
+      })
+    } else {
+      // In cycle list view: CMD+N creates a new cycle
+      cmds.push({
+        id: "cycles:new",
+        label: "Create new cycle",
+        group: "Actions",
+        icon: "action",
+        shortcut: "⌘N",
+        allowInInput: true,
+        action: () => createCycle(),
+      })
+
+      // Quick-navigate to cycles
+      for (const cycle of cycles) {
         cmds.push({
-          id: "action:copy-cycle",
-          label: "Copy cycle name",
-          sublabel: cycle.name || `Cycle ${cycle.cycle}`,
-          group: "Actions",
-          icon: "copy",
-          shortcut: "⌘C",
-          action: async () => {
-            await navigator.clipboard.writeText(cycle.name || `Cycle ${cycle.cycle}`)
-          },
+          id: `cycles:open:${cycle.id}`,
+          label: cycle.name,
+          sublabel: `${cycle.status} · ${cycle.taskCount} tasks`,
+          group: "Items",
+          icon: "nav",
+          action: () => selectCycle(cycle.id),
         })
       }
     }
 
     return cmds
-  }, [cycles, selectedCycleId, detail, selectedIssueIds, handleCopyIssues, deleteMutation])
+  }, [selectedCycleId, cycles, requestNewTask, requestAddExistingTasks, selectCycle, createCycle])
 
   useCommands(commands)
 
+  if (selectedCycleId) {
+    return (
+      <CycleDetail
+        cycleId={selectedCycleId}
+        onBack={() => selectCycle(null)}
+        themeMode={themeMode}
+        composerNonce={composerNonce}
+        addTaskNonce={addTaskNonce}
+      />
+    )
+  }
+
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden">
-      {!selectedCycleId ? (
-        <div className="flex h-full w-full">
-          <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto scrollbar-thin flex-shrink-0">
-            <CycleSidebar
-              selectedCycleId={selectedCycleId}
-              onSelectCycle={setSelectedCycleId}
-              onDeleteCycle={() => setSelectedCycleId(null)}
-            />
+    <div className="flex h-full min-h-0 flex-col px-6 py-4">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className={`text-lg font-semibold ${isDarkTheme ? "text-gray-100" : "text-zinc-900"}`}>Cycles</h1>
+          <p className={`mt-0.5 text-xs ${isDarkTheme ? "text-gray-500" : "text-zinc-500"}`}>
+            Plan weekly scope, track progress, and carry work forward.
+          </p>
+        </div>
+
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={isCreateCyclePending}
+          onClick={() => createCycle()}
+        >
+          {isCreateCyclePending ? "Creating…" : "+ New Cycle"}
+        </Button>
+      </header>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          <div className="h-28 animate-pulse rounded-xl bg-gray-800" />
+          <div className="h-28 animate-pulse rounded-xl bg-gray-800" />
+          <div className="h-28 animate-pulse rounded-xl bg-gray-800" />
+        </div>
+      ) : null}
+
+      {isError ? (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+          Failed to load cycles: {error instanceof Error ? error.message : "Unknown error"}
+        </div>
+      ) : null}
+
+      {!isLoading && !isError ? (
+        cycles.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <div className="max-w-md rounded-xl border border-dashed border-gray-700/60 bg-gray-900/30 p-6 text-center">
+              <h2 className="text-base font-semibold text-gray-100">No cycles yet</h2>
+              <p className="mt-2 text-sm text-gray-400">
+                Create your first cycle to start managing weekly work.
+              </p>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => createCycle()}
+                disabled={isCreateCyclePending}
+                className="mt-4"
+              >
+                {isCreateCyclePending ? "Creating…" : "+ New Cycle"}
+              </Button>
+            </div>
           </div>
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            <div className="text-center">
-              <div className="text-4xl mb-4 opacity-30">&#x1F50D;</div>
-              <div className="text-lg mb-2">Select a cycle to view details</div>
-              <div className="text-sm">
-                Cycles show issue discovery convergence across scan rounds
+        ) : (
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-2">
+            {cycleGroups.current ? (
+              <section>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <h2 className={`text-[11px] font-semibold uppercase tracking-wider ${isDarkTheme ? "text-blue-300" : "text-blue-600"}`}>Current</h2>
+                  <span className={`h-px flex-1 ${isDarkTheme ? "bg-blue-500/15" : "bg-blue-300/30"}`} />
+                </div>
+                <CycleCard
+                  cycle={cycleGroups.current}
+                  onSelect={() => selectCycle(cycleGroups.current!.id)}
+                  emphasize
+                  themeMode={themeMode}
+                />
+              </section>
+            ) : null}
+
+            {cycleGroups.upcoming.length > 0 ? (
+              <section>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <h2 className={`text-[11px] font-semibold uppercase tracking-wider ${isDarkTheme ? "text-violet-300" : "text-violet-600"}`}>Upcoming</h2>
+                  <span className={`h-px flex-1 ${isDarkTheme ? "bg-violet-500/15" : "bg-violet-300/30"}`} />
+                </div>
+                <div className="space-y-2">
+                  {cycleGroups.upcoming.map((cycle) => (
+                    <CycleCard
+                      key={cycle.id}
+                      cycle={cycle}
+                      onSelect={() => selectCycle(cycle.id)}
+                      themeMode={themeMode}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="min-h-[200px]">
+              <div className="mb-1.5 flex items-center gap-2">
+                <h2 className={`text-[11px] font-semibold uppercase tracking-wider ${isDarkTheme ? "text-emerald-300" : "text-emerald-600"}`}>Completed</h2>
+                <span className={`h-px flex-1 ${isDarkTheme ? "bg-emerald-500/15" : "bg-emerald-300/30"}`} />
               </div>
-            </div>
+
+              {cycleGroups.completed.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-700 px-3 py-4 text-sm text-gray-500">
+                  No completed cycles yet.
+                </div>
+              ) : (
+                <div className="max-h-[380px] space-y-2 overflow-y-auto pr-1">
+                  {cycleGroups.completed.map((cycle) => (
+                    <CycleCard
+                      key={cycle.id}
+                      cycle={cycle}
+                      onSelect={() => selectCycle(cycle.id)}
+                      themeMode={themeMode}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
-        </div>
-      ) : isLoading ? (
-        <div className="p-6 space-y-4 w-full">
-          <div className="grid grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="animate-pulse bg-gray-800 h-20 rounded-lg" />
-            ))}
-          </div>
-          <div className="animate-pulse bg-gray-800 h-72 rounded-lg" />
-          <div className="animate-pulse bg-gray-800 h-48 rounded-lg" />
-        </div>
-      ) : detail ? (
-        <div className="flex flex-col h-full w-full overflow-y-auto">
-          <div className="px-6 pt-6 pb-3 flex-shrink-0">
-            <CycleSummary cycle={detail.cycle} />
-          </div>
-          <div className="px-6 pb-3 flex-shrink-0">
-            <LossChart
-              roundMetrics={detail.roundMetrics}
-              cycleName={detail.cycle.name || `Cycle ${detail.cycle.cycle}`}
-              onShowAllCycles={() => setSelectedCycleId(null)}
-            />
-          </div>
-          <div className="flex flex-shrink-0 px-6 pb-6 gap-4" style={{ minHeight: 400 }}>
-            <div className="w-72 flex-shrink-0 max-h-[500px] overflow-y-auto scrollbar-thin">
-              <CycleSidebar
-                selectedCycleId={selectedCycleId}
-                onSelectCycle={setSelectedCycleId}
-                onDeleteCycle={() => setSelectedCycleId(null)}
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <IssuesList
-                issues={detail.issues}
-                selectedIds={selectedIssueIds}
-                onSelectionChange={setSelectedIssueIds}
-                filter={issueFilter}
-                onFilterChange={setIssueFilter}
-              />
-            </div>
-          </div>
-        </div>
+        )
       ) : null}
     </div>
   )

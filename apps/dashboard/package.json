@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-dashboard",
-  "version": "0.11.1",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -25,10 +25,14 @@
     "hono": "^4.7.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "react-select": "^5.10.2",
-    "recharts": "^3.7.0"
+    "recharts": "^3.7.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/typography": "0.5.16",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
@@ -39,7 +43,7 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.1.2",
-    "jsdom": "^28.0.0",
+    "jsdom": "^29.0.1",
     "msw": "^2.7.0",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",

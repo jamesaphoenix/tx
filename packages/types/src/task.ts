@@ -6,6 +6,7 @@
  */
 
 import { Schema } from "effect"
+import { DocKindSchema, DocStatusSchema, DocStableIdSchema, TaskDocLinkTypeSchema } from "./doc.js"
 
 // =============================================================================
 // CONSTANTS
@@ -13,7 +14,7 @@ import { Schema } from "effect"
 
 /**
  * All valid task statuses in lifecycle order.
- * backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+ * backlog → ready → planning → active → blocked → review → needs_review → done
  */
 export const TASK_STATUSES = [
   "backlog",
@@ -22,7 +23,7 @@ export const TASK_STATUSES = [
   "active",
   "blocked",
   "review",
-  "human_needs_to_review",
+  "needs_review",
   "done",
 ] as const;
 
@@ -60,8 +61,8 @@ export const VALID_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   planning: ["ready", "active", "blocked", "done"],
   active: ["blocked", "review", "done"],
   blocked: ["backlog", "ready", "planning", "active"],
-  review: ["active", "human_needs_to_review", "done"],
-  human_needs_to_review: ["active", "review", "done"],
+  review: ["active", "needs_review", "done"],
+  needs_review: ["active", "review", "done"],
   done: ["backlog"],
 } as const;
 
@@ -111,6 +112,19 @@ export const TaskSchema = Schema.Struct({
 })
 export type Task = typeof TaskSchema.Type
 
+/** Compact linked-doc reference attached to a task payload. */
+export const TaskLinkedDocRefSchema = Schema.Struct({
+  docId: DocStableIdSchema,
+  name: Schema.String,
+  title: Schema.String,
+  kind: DocKindSchema,
+  version: Schema.Number.pipe(Schema.int()),
+  status: DocStatusSchema,
+  filePath: Schema.String,
+  linkType: TaskDocLinkTypeSchema,
+})
+export type TaskLinkedDocRef = typeof TaskLinkedDocRefSchema.Type
+
 /**
  * Task with full dependency information.
  * This is the REQUIRED return type for all external APIs (Rule 1).
@@ -139,6 +153,8 @@ export const TaskWithDepsSchema = Schema.Struct({
   claimExpiresAt: Schema.NullOr(Schema.DateFromSelf),
   /** Number of failed attempts for this task */
   failedAttempts: Schema.Number.pipe(Schema.int()),
+  /** Docs linked to this task via task_doc_links */
+  linkedDocs: Schema.Array(TaskLinkedDocRefSchema),
 })
 export type TaskWithDeps = typeof TaskWithDepsSchema.Type
 

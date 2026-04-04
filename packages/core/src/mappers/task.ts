@@ -117,7 +117,7 @@ export const rowToDependency = (row: DependencyRow): TaskDependency => ({
 export const isValidStatus = (s: string): s is TaskStatus => {
   const statuses: readonly string[] = [
     "backlog", "ready", "planning", "active",
-    "blocked", "review", "human_needs_to_review", "done"
+    "blocked", "review", "needs_review", "done"
   ]
   return statuses.includes(s)
 }
@@ -130,10 +130,10 @@ export const isValidTransition = (from: TaskStatus, to: TaskStatus): boolean => 
     backlog: ["ready", "planning", "active", "blocked", "done"],
     ready: ["planning", "active", "blocked", "done"],
     planning: ["ready", "active", "blocked", "done"],
-    active: ["blocked", "review", "done"],
+    active: ["blocked", "review", "needs_review", "done"],
     blocked: ["backlog", "ready", "planning", "active"],
-    review: ["active", "human_needs_to_review", "done"],
-    human_needs_to_review: ["active", "review", "done"],
+    review: ["active", "needs_review", "done"],
+    needs_review: ["active", "review", "done"],
     done: ["backlog"]
   }
   return transitions[from]?.includes(to) ?? false

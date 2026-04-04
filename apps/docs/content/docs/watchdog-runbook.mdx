@@ -9,11 +9,13 @@ This page is the final, advanced stage of the tx docs journey. Use it after you 
 
 Use watchdog when you need detached, long-running RALPH loops with automatic health checks and stale-run recovery.
 
+For the manual non-detached workflow itself, see [Ralph Loop](/docs/ralph-loop).
+
 ## When to Enable Watchdog
 
 Enable watchdog only when all of the following are true:
 
-- Your normal loop (`tx ready`, `tx done`, `tx block`) is stable.
+- Your normal loop (`tx ready`, `tx done`, `tx dep block`) is stable.
 - You need detached execution that survives terminal closes/logout.
 - You need automatic stalled-run and orphan-task recovery.
 - You are comfortable rolling back to manual operation if needed.

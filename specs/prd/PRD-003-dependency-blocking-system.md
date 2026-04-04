@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-003-dependency-blocking-system"
+title: "PRD-003: Dependency & Blocking System"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-003: Dependency & Blocking System
 
 **Status**: Draft
@@ -71,8 +81,8 @@ Completing tx-020 unblocks three tasks at once - it should have high priority.
 
 | ID | Requirement | CLI Command |
 |----|-------------|-------------|
-| D-001 | Add blocker | `tx block <task> <blocker>` |
-| D-002 | Remove blocker | `tx unblock <task> <blocker>` |
+| D-001 | Add blocker | `tx dep block <task> <blocker>` |
+| D-002 | Remove blocker | `tx dep unblock <task> <blocker>` |
 | D-003 | List blockers | `tx blockers <task>` |
 | D-004 | List tasks this blocks | `tx blocking <task>` |
 
@@ -111,14 +121,14 @@ This ensures agents prioritize unblocking work.
 ### Add Dependencies
 ```bash
 # Task tx-002 is blocked by tx-001
-tx block tx-002 tx-001
+tx dep block tx-002 tx-001
 
 # Task tx-003 is blocked by tx-002
-tx block tx-003 tx-002
+tx dep block tx-003 tx-002
 
 # Multiple blockers
-tx block tx-012 tx-010
-tx block tx-012 tx-011
+tx dep block tx-012 tx-010
+tx dep block tx-012 tx-011
 ```
 
 ### Query Dependencies

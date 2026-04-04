@@ -47,7 +47,7 @@ function mapStatus(txStatus: string): "pending" | "in_progress" {
   switch (txStatus) {
     case "active":
     case "review":
-    case "human_needs_to_review":
+    case "needs_review":
       return "in_progress"
     default:
       return "pending"

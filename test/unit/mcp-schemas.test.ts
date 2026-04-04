@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { Schema, Either } from "effect"
-import { TASK_STATUSES, type TaskWithDeps, type TaskId } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES, type TaskWithDeps, type TaskId, TaskLinkedDocRefSchema } from "@jamesaphoenix/tx-types"
 import { fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------
@@ -42,7 +42,7 @@ const toolSchemas = {
     parentId: Schema.optional(Schema.String),
     limit: Schema.optional(PositiveInt)
   }),
-  tx_children: Schema.Struct({
+  tx_dep_children: Schema.Struct({
     id: Schema.String
   }),
   tx_add: Schema.Struct({
@@ -65,11 +65,11 @@ const toolSchemas = {
   tx_delete: Schema.Struct({
     id: Schema.String
   }),
-  tx_block: Schema.Struct({
+  tx_dep_block: Schema.Struct({
     taskId: Schema.String,
     blockerId: Schema.String
   }),
-  tx_unblock: Schema.Struct({
+  tx_dep_unblock: Schema.Struct({
     taskId: Schema.String,
     blockerId: Schema.String
   }),
@@ -87,13 +87,13 @@ const REGISTERED_TOOLS = [
   "tx_ready",
   "tx_show",
   "tx_list",
-  "tx_children",
+  "tx_dep_children",
   "tx_add",
   "tx_update",
   "tx_done",
   "tx_delete",
-  "tx_block",
-  "tx_unblock",
+  "tx_dep_block",
+  "tx_dep_unblock",
   "tx_group_context_set",
   "tx_group_context_clear"
 ] as const
@@ -128,6 +128,7 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   claimedBy: task.claimedBy,
   claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
   failedAttempts: task.failedAttempts,
+  linkedDocs: task.linkedDocs,
 })
 
 // TaskWithDeps validation schema for serialized output
@@ -159,6 +160,7 @@ const TaskWithDepsOutputSchema = Schema.Struct({
   claimedBy: Schema.NullOr(Schema.String),
   claimExpiresAt: Schema.NullOr(Schema.String),
   failedAttempts: Schema.Number.pipe(Schema.int()),
+  linkedDocs: Schema.Array(TaskLinkedDocRefSchema),
 })
 
 // -----------------------------------------------------------------------------
@@ -192,6 +194,7 @@ function makeTestTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     claimedBy: null,
     claimExpiresAt: null,
     failedAttempts: 0,
+    linkedDocs: [],
     ...overrides
   }
 }
@@ -428,14 +431,14 @@ describe("Tool Input Schema Validation", () => {
     })
   })
 
-  describe("tx_children", () => {
+  describe("tx_dep_children", () => {
     it("requires id field", () => {
-      const result = safeParse(toolSchemas.tx_children, {})
+      const result = safeParse(toolSchemas.tx_dep_children, {})
       expect(result.success).toBe(false)
     })
 
     it("accepts valid id", () => {
-      const result = safeParse(toolSchemas.tx_children, { id: "tx-12345678" })
+      const result = safeParse(toolSchemas.tx_dep_children, { id: "tx-12345678" })
       expect(result.success).toBe(true)
     })
   })
@@ -556,15 +559,15 @@ describe("Tool Input Schema Validation", () => {
     })
   })
 
-  describe("tx_block", () => {
+  describe("tx_dep_block", () => {
     it("requires both taskId and blockerId", () => {
-      expect(safeParse(toolSchemas.tx_block, {}).success).toBe(false)
-      expect(safeParse(toolSchemas.tx_block, { taskId: "tx-1" }).success).toBe(false)
-      expect(safeParse(toolSchemas.tx_block, { blockerId: "tx-2" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_dep_block, {}).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_dep_block, { taskId: "tx-1" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_dep_block, { blockerId: "tx-2" }).success).toBe(false)
     })
 
     it("accepts valid taskId and blockerId", () => {
-      const result = safeParse(toolSchemas.tx_block, {
+      const result = safeParse(toolSchemas.tx_dep_block, {
         taskId: "tx-12345678",
         blockerId: "tx-87654321"
       })
@@ -572,15 +575,15 @@ describe("Tool Input Schema Validation", () => {
     })
   })
 
-  describe("tx_unblock", () => {
+  describe("tx_dep_unblock", () => {
     it("requires both taskId and blockerId", () => {
-      expect(safeParse(toolSchemas.tx_unblock, {}).success).toBe(false)
-      expect(safeParse(toolSchemas.tx_unblock, { taskId: "tx-1" }).success).toBe(false)
-      expect(safeParse(toolSchemas.tx_unblock, { blockerId: "tx-2" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_dep_unblock, {}).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_dep_unblock, { taskId: "tx-1" }).success).toBe(false)
+      expect(safeParse(toolSchemas.tx_dep_unblock, { blockerId: "tx-2" }).success).toBe(false)
     })
 
     it("accepts valid taskId and blockerId", () => {
-      const result = safeParse(toolSchemas.tx_unblock, {
+      const result = safeParse(toolSchemas.tx_dep_unblock, {
         taskId: "tx-12345678",
         blockerId: "tx-87654321"
       })
@@ -639,7 +642,7 @@ describe("Tool Registration Verification", () => {
   })
 
   it("has read-only tools", () => {
-    const readOnlyTools = ["tx_ready", "tx_show", "tx_list", "tx_children"]
+    const readOnlyTools = ["tx_ready", "tx_show", "tx_list", "tx_dep_children"]
     for (const tool of readOnlyTools) {
       expect(REGISTERED_TOOLS).toContain(tool)
     }
@@ -653,7 +656,7 @@ describe("Tool Registration Verification", () => {
   })
 
   it("has dependency management tools", () => {
-    const depTools = ["tx_block", "tx_unblock"]
+    const depTools = ["tx_dep_block", "tx_dep_unblock"]
     for (const tool of depTools) {
       expect(REGISTERED_TOOLS).toContain(tool)
     }

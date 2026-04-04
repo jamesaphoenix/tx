@@ -67,7 +67,7 @@ const handleGuardSet = async (args: {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_guard_set", args, error)
+    return handleToolError("tx_auto_guard_set", args, error)
   }
 }
 
@@ -87,7 +87,7 @@ const handleGuardShow = async (_args: Record<string, unknown>): Promise<McpToolR
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_guard_show", {}, error)
+    return handleToolError("tx_auto_guard_show", {}, error)
   }
 }
 
@@ -112,7 +112,7 @@ const handleGuardClear = async (args: {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_guard_clear", args, error)
+    return handleToolError("tx_auto_guard_clear", args, error)
   }
 }
 
@@ -136,7 +136,7 @@ const handleGuardCheck = async (args: {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_guard_check", args, error)
+    return handleToolError("tx_auto_guard_check", args, error)
   }
 }
 
@@ -146,7 +146,7 @@ const handleGuardCheck = async (args: {
 
 export const registerGuardTools = (server: McpServer): void => {
   registerEffectTool(server,
-    "tx_guard_set",
+    "tx_auto_guard_set",
     "Set task creation limits (bounded autonomy). Limits can be global or scoped to a parent task. Advisory mode (default) emits warnings; enforce mode blocks task creation.",
     {
       scope: z.string().optional().describe("Guard scope: 'global' (default) or 'parent:<task-id>'"),
@@ -159,14 +159,14 @@ export const registerGuardTools = (server: McpServer): void => {
   )
 
   registerEffectTool(server,
-    "tx_guard_show",
+    "tx_auto_guard_show",
     "Show all configured task creation guards. Returns guard limits for all scopes.",
     {},
     async (args) => handleGuardShow(args as Record<string, unknown>)
   )
 
   registerEffectTool(server,
-    "tx_guard_clear",
+    "tx_auto_guard_clear",
     "Clear task creation guards. Clears all guards by default, or a specific scope.",
     {
       scope: z.string().optional().describe("Scope to clear (e.g., 'global' or 'parent:<task-id>'). Omit to clear all.")
@@ -175,7 +175,7 @@ export const registerGuardTools = (server: McpServer): void => {
   )
 
   registerEffectTool(server,
-    "tx_guard_check",
+    "tx_auto_guard_check",
     "Check if task creation would pass guard limits. Returns pass/fail status and any warnings without actually creating a task.",
     {
       parentId: z.string().optional().describe("Parent task ID (for checking child/depth limits)")

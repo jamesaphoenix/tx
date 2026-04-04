@@ -14,7 +14,7 @@
  */
 
 import { Schema } from "effect"
-import { TaskIdSchema, TaskStatusSchema, OrchestrationStatusSchema } from "./task.js"
+import { TaskIdSchema, TaskStatusSchema, OrchestrationStatusSchema, TaskLinkedDocRefSchema } from "./task.js"
 import type { TaskWithDeps } from "./task.js"
 import { LearningSourceTypeSchema } from "./learning.js"
 import type { Learning, LearningWithScore } from "./learning.js"
@@ -27,6 +27,13 @@ import type { Attempt } from "./attempt.js"
 import { MessageIdSchema, MessageStatusSchema } from "./message.js"
 import type { Message } from "./message.js"
 import { EdgeTypeSchema } from "./edge.js"
+import {
+  DecomposeDocSummarySchema,
+  DecomposeRootPreviewSchema,
+  DecompositionPlanSchema,
+  MaterializedDecomposeTaskSchema,
+} from "./decompose.js"
+import type { DecomposeResult } from "./decompose.js"
 
 // =============================================================================
 // SERIALIZED ENTITY SCHEMAS
@@ -76,6 +83,8 @@ export const TaskWithDepsSerializedSchema = Schema.Struct({
   claimExpiresAt: Schema.NullOr(Schema.String),
   /** Number of failed attempts for this task */
   failedAttempts: Schema.Number.pipe(Schema.int()),
+  /** Docs linked to this task */
+  linkedDocs: Schema.Array(TaskLinkedDocRefSchema),
 })
 export type TaskWithDepsSerialized = typeof TaskWithDepsSerializedSchema.Type
 
@@ -180,6 +189,24 @@ export const AttemptSerializedSchema = Schema.Struct({
 })
 export type AttemptSerialized = typeof AttemptSerializedSchema.Type
 
+/**
+ * DecomposeResult serialized for JSON output.
+ * Serializes the optional root task using the shared Task serializer.
+ */
+export const DecomposeResultSerializedSchema = Schema.Struct({
+  dryRun: Schema.Boolean,
+  runtime: Schema.Literal("claude", "codex", "auto"),
+  model: Schema.NullOr(Schema.String),
+  doc: DecomposeDocSummarySchema,
+  parentTaskId: Schema.NullOr(TaskIdSchema),
+  rootTaskPreview: DecomposeRootPreviewSchema,
+  rootTask: Schema.NullOr(TaskWithDepsSerializedSchema),
+  plan: DecompositionPlanSchema,
+  createdTasks: Schema.Array(MaterializedDecomposeTaskSchema),
+  rationale: Schema.NullOr(Schema.String),
+})
+export type DecomposeResultSerialized = typeof DecomposeResultSerializedSchema.Type
+
 // =============================================================================
 // SERIALIZATION FUNCTIONS
 // =============================================================================
@@ -216,6 +243,7 @@ export const serializeTask = (task: TaskWithDeps): TaskWithDepsSerialized => ({
   claimedBy: task.claimedBy,
   claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
   failedAttempts: task.failedAttempts,
+  linkedDocs: task.linkedDocs,
 })
 
 /**
@@ -301,6 +329,22 @@ export const serializeAttempt = (attempt: Attempt): AttemptSerialized => ({
   outcome: attempt.outcome,
   reason: attempt.reason,
   createdAt: attempt.createdAt.toISOString(),
+})
+
+/**
+ * Serialize a DecomposeResult for JSON output.
+ */
+export const serializeDecomposeResult = (result: DecomposeResult): DecomposeResultSerialized => ({
+  dryRun: result.dryRun,
+  runtime: result.runtime,
+  model: result.model,
+  doc: result.doc,
+  parentTaskId: result.parentTaskId,
+  rootTaskPreview: result.rootTaskPreview,
+  rootTask: result.rootTask ? serializeTask(result.rootTask) : null,
+  plan: result.plan,
+  createdTasks: result.createdTasks,
+  rationale: result.rationale,
 })
 
 // =============================================================================

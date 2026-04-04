@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-024-dashboard-keyboard-shortcuts"
+title: "PRD-024: Dashboard Keyboard Shortcuts & UX Polish"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-024: Dashboard Keyboard Shortcuts & UX Polish
 
 ## Problem

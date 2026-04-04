@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-032-task-group-context-inheritance"
+title: "PRD-032: Task Group Context Inheritance"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-032: Task Group Context Inheritance
 
 ## Problem

@@ -87,16 +87,27 @@ function mockRunsEndpoint(runs: Run[]) {
 }
 
 describe('App', () => {
-  const settingsPatchPayloads: Array<{ dashboard?: { defaultTaskAssigmentType?: string } }> = []
+  const settingsPatchPayloads: Array<{
+    dashboard?: { defaultTaskAssigmentType?: string; defaultTaskView?: string }
+  }> = []
 
   beforeEach(() => {
     settingsPatchPayloads.length = 0
     server.use(
-      http.get('/api/settings', () => HttpResponse.json({ dashboard: { defaultTaskAssigmentType: 'human' } })),
+      http.get('/api/settings', () => HttpResponse.json({
+        dashboard: { defaultTaskAssigmentType: 'human', defaultTaskView: 'list' },
+      })),
       http.patch('/api/settings', async ({ request }) => {
-        const payload = await request.json() as { dashboard?: { defaultTaskAssigmentType?: string } }
+        const payload = await request.json() as {
+          dashboard?: { defaultTaskAssigmentType?: string; defaultTaskView?: string }
+        }
         settingsPatchPayloads.push(payload)
-        return HttpResponse.json({ dashboard: { defaultTaskAssigmentType: payload.dashboard?.defaultTaskAssigmentType ?? 'human' } })
+        return HttpResponse.json({
+          dashboard: {
+            defaultTaskAssigmentType: payload.dashboard?.defaultTaskAssigmentType ?? 'human',
+            defaultTaskView: payload.dashboard?.defaultTaskView ?? 'list',
+          },
+        })
       }),
       http.get('/api/stats', () => HttpResponse.json({ tasks: 0, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })),
       http.get('/api/ralph', () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
@@ -126,6 +137,68 @@ describe('App', () => {
     renderWithProviders(<App />)
     // Basic smoke test - verify dashboard header renders
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('tx')
+  })
+
+  it('resets the tasks view to its base state when clicking Tasks in the header', async () => {
+    window.history.replaceState({}, '', '/?status=ready&taskSearch=ship&view=kanban')
+
+    renderWithProviders(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search tasks...')).toHaveValue('ship')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }))
+
+    await waitFor(() => {
+      expect(window.location.search).toBe('')
+      expect(screen.getByPlaceholderText('Search tasks...')).toHaveValue('')
+    })
+  })
+
+  it('clears URL params when navigating to Specs, Cycles, and Runs from the header', async () => {
+    renderWithProviders(<App />)
+
+    for (const tab of ['Specs', 'Cycles', 'Runs'] as const) {
+      window.history.replaceState({}, '', '/?cycleId=cycle-1&runStatus=failed&taskSearch=carry-me')
+
+      fireEvent.click(screen.getByRole('button', { name: tab }))
+
+      await waitFor(() => {
+        expect(window.location.search).toBe('')
+      })
+    }
+  })
+
+  it('returns the runs view to the list state when clicking Runs in the header', async () => {
+    const runningRun = createRun({
+      id: 'run-reset',
+      taskId: 'tx-reset',
+      taskTitle: 'Resettable run',
+    })
+
+    mockRunsEndpoint([runningRun])
+    server.use(
+      http.get('/api/runs/:id', ({ params }) => {
+        if (params.id !== runningRun.id) {
+          return HttpResponse.json({ error: 'not found' }, { status: 404 })
+        }
+        return HttpResponse.json(createRunDetailResponse(runningRun))
+      }),
+    )
+
+    renderWithProviders(<App />)
+    await openRunsTabAndSelectRun('Resettable run')
+
+    await waitFor(() => {
+      expect(screen.queryByText('Select a run')).not.toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Select a run')).toBeInTheDocument()
+    })
   })
 
   it('opens settings from header cog and saves default assignment type', async () => {
@@ -190,6 +263,13 @@ describe('App', () => {
       expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     })
 
+    // Navigate to the Labels settings tab
+    fireEvent.click(screen.getByRole('button', { name: 'Labels' }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('New label name')).toBeInTheDocument()
+    })
+
     fireEvent.change(screen.getByLabelText('New label name'), {
       target: { value: 'priority-high' },
     })
@@ -231,6 +311,13 @@ describe('App', () => {
     renderWithProviders(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    })
+
+    // Navigate to the Labels settings tab
+    fireEvent.click(screen.getByRole('button', { name: 'Labels' }))
 
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()

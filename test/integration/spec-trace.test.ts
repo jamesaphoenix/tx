@@ -60,30 +60,68 @@ const createDocWithInvariants = (docName: string, invariants: readonly Invariant
       .map((inv) =>
         [
           `  - id: ${inv.id}`,
-          `    rule: ${inv.rule}`,
-          "    enforcement: integration_test",
-          inv.subsystem ? `    subsystem: ${inv.subsystem}` : null,
+          `    statement: ${inv.rule}`,
+          "    severity: high",
+          "    verified_by:",
+          "      - test/integration/spec-trace.test.ts",
         ]
-          .filter((line): line is string => line !== null)
           .join("\n")
       )
       .join("\n")
 
-    const yamlContent = [
-      "kind: prd",
+    const content = [
+      "---",
+      "kind: spec",
+      "spec_type: prd",
       `name: ${docName}`,
       `title: ${docName}`,
-      "status: changing",
+      "status: draft",
+      "version: 1",
+      "owners: [test]",
+      'summary: ""',
+      'domain: ""',
+      "tags: []",
+      "depends_on: []",
+      "supersedes: []",
+      "implements: null",
+      "last_reviewed_at: 2026-03-15",
+      "---",
       "",
+      `# ${docName}`,
+      "",
+      "## Summary",
+      "",
+      "Test document for spec trace integration.",
+      "",
+      "## Problem",
+      "",
+      "Need to verify spec trace integration behavior.",
+      "",
+      "## Scope",
+      "",
+      "Integration test scope.",
+      "",
+      "## Requirements",
+      "",
+      "Test requirements.",
+      "",
+      "## Acceptance Criteria",
+      "",
+      "Tests pass.",
+      "",
+      "## Invariants",
+      "",
+      "```yaml",
       "invariants:",
       invariantBlock,
+      "```",
     ].join("\n")
 
     yield* docService.create({
       kind: "prd",
       name: docName,
       title: docName,
-      yamlContent,
+      content,
     })
 
     return yield* docService.syncInvariants(docName)

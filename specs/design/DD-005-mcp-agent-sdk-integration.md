@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-005-mcp-agent-sdk-integration"
+title: "DD-005: MCP Server & Agent SDK Integration"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-005: MCP Server & Agent SDK Integration
 
 **Status**: Draft
@@ -168,11 +178,11 @@ Returns blockedBy (what blocks this task), blocks (what this task blocks), child
 }
 ```
 
-### tx_block
+### tx_dep_block
 
 ```typescript
 {
-  name: "tx_block",
+  name: "tx_dep_block",
   description: `Add a blocking dependency. Returns the blocked task with updated dependency info.`,
   inputSchema: z.object({
     taskId: z.string().describe("Task that will be blocked"),
@@ -185,11 +195,11 @@ Returns blockedBy (what blocks this task), blocks (what this task blocks), child
 }
 ```
 
-### tx_children
+### tx_dep_children
 
 ```typescript
 {
-  name: "tx_children",
+  name: "tx_dep_children",
   description: `List child tasks with dependency info.`,
   inputSchema: z.object({
     id: z.string()
@@ -364,7 +374,7 @@ export const createMcpServer = () => {
   // tx_update — returns TaskWithDeps
   server.tool("tx_update", "Update task status, score, or details", {
     id: z.string(),
-    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]).optional(),
+    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]).optional(),
     score: z.number().optional(),
     title: z.string().optional(),
     description: z.string().optional()
@@ -387,7 +397,7 @@ export const createMcpServer = () => {
 
   // tx_list — returns TaskWithDeps[]
   server.tool("tx_list", "List tasks with optional filtering", {
-    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]).optional(),
+    status: z.enum(["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]).optional(),
     parentId: z.string().optional(),
     limit: z.number().min(1).max(100).default(20)
   }, async (args) => {
@@ -415,8 +425,8 @@ export const createMcpServer = () => {
     }
   })
 
-  // tx_block — add dependency, returns TaskWithDeps
-  server.tool("tx_block", "Add blocking dependency", {
+  // tx_dep_block — add dependency, returns TaskWithDeps
+  server.tool("tx_dep_block", "Add blocking dependency", {
     taskId: z.string(),
     blockerId: z.string()
   }, async (args) => {
@@ -440,8 +450,8 @@ export const createMcpServer = () => {
     }
   })
 
-  // tx_unblock — remove dependency
-  server.tool("tx_unblock", "Remove blocking dependency", {
+  // tx_dep_unblock — remove dependency
+  server.tool("tx_dep_unblock", "Remove blocking dependency", {
     taskId: z.string(),
     blockerId: z.string()
   }, async (args) => {
@@ -459,8 +469,8 @@ export const createMcpServer = () => {
     }
   })
 
-  // tx_children — list child tasks
-  server.tool("tx_children", "List child tasks with dependency info", {
+  // tx_dep_children — list child tasks
+  server.tool("tx_dep_children", "List child tasks with dependency info", {
     id: z.string()
   }, async (args) => {
     try {
@@ -692,7 +702,7 @@ execute: async (args) => {
 **Workaround** (until fixed):
 ```typescript
 // Explicit validation
-const validStatuses = ["backlog", "ready", "planning", "active", "blocked", "review", "human_needs_to_review", "done"]
+const validStatuses = ["backlog", "ready", "planning", "active", "blocked", "review", "needs_review", "done"]
 if (args.status && !validStatuses.includes(args.status)) {
   throw new Error(`Invalid status: ${args.status}`)
 }
@@ -793,8 +803,8 @@ describe("MCP Tool Definitions (Unit)", () => {
     expect(toolNames).toContain("tx_add")
     expect(toolNames).toContain("tx_done")
     expect(toolNames).toContain("tx_update")
-    expect(toolNames).toContain("tx_block")
-    expect(toolNames).toContain("tx_children")
+    expect(toolNames).toContain("tx_dep_block")
+    expect(toolNames).toContain("tx_dep_children")
   })
 
   it("all tools have descriptions for LLM understanding", () => {
@@ -920,8 +930,8 @@ describe("MCP Server Integration", () => {
     expect(task.isReady).toBe(false)
   })
 
-  it("tx_block returns task with updated blockedBy", async () => {
-    const result = await callMcpTool(db, "tx_block", {
+  it("tx_dep_block returns task with updated blockedBy", async () => {
+    const result = await callMcpTool(db, "tx_dep_block", {
       taskId: FIXTURES.TASK_LOGIN,
       blockerId: FIXTURES.TASK_AUTH
     })
@@ -966,9 +976,9 @@ describe("MCP Server Integration", () => {
       .rejects.toThrow()
   })
 
-  it("tx_block returns error for circular dependency", async () => {
+  it("tx_dep_block returns error for circular dependency", async () => {
     await expect(
-      callMcpTool(db, "tx_block", {
+      callMcpTool(db, "tx_dep_block", {
         taskId: FIXTURES.TASK_JWT,
         blockerId: FIXTURES.TASK_BLOCKED
       })

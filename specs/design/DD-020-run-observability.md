@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-020-run-observability"
+title: "DD-020: Run Observability & Logging"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-020: Run Observability & Logging
 
 ## Overview

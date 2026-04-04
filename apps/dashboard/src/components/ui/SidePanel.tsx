@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react"
+import { Button } from "./Button"
 
 interface SidePanelProps {
   isOpen: boolean
@@ -38,15 +39,11 @@ export function SidePanel({ isOpen, onClose, title, children }: SidePanelProps) 
       >
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-700"
-            aria-label="Close panel"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label="Close panel">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
-          </button>
+          </Button>
         </div>
         <div className="p-4 overflow-y-auto h-[calc(100%-60px)]">
           {children}

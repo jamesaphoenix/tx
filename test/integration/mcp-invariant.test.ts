@@ -80,6 +80,11 @@ const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
  * Create a PRD doc with explicit invariants via DocService.
  * Yields DocService from context, so callers don't need to pass it.
  * Returns the synced invariants.
+ *
+ * Note: The markdown-first invariant schema uses { id, statement, severity, verified_by }.
+ * The derive function maps: rule = statement, enforcement = "integration_test" (always),
+ * subsystem = doc.kind ("prd"), testRef = verified_by[0].
+ * Legacy fields like lintRule, promptRef are not part of the embedded block schema.
  */
 const createDocWithInvariants = (
   name: string,
@@ -99,30 +104,67 @@ const createDocWithInvariants = (
 
     const invariantYaml = invariants
       .map((inv) => {
+        const verifiedBy = inv.testRef ?? "test/integration/mcp-invariant.test.ts"
         const lines = [
           `  - id: ${inv.id}`,
-          `    rule: ${inv.rule}`,
-          `    enforcement: ${inv.enforcement}`,
+          `    statement: ${inv.rule}`,
+          "    severity: high",
+          "    verified_by:",
+          `      - ${verifiedBy}`,
         ]
-        if (inv.subsystem) lines.push(`    subsystem: ${inv.subsystem}`)
-        if (inv.testRef) lines.push(`    test_ref: ${inv.testRef}`)
-        if (inv.lintRule) lines.push(`    lint_rule: ${inv.lintRule}`)
-        if (inv.promptRef) lines.push(`    prompt_ref: ${inv.promptRef}`)
         return lines.join("\n")
       })
       .join("\n")
 
-    const yamlContent = [
-      "kind: prd",
+    const content = [
+      "---",
+      "kind: spec",
+      "spec_type: prd",
       `name: ${name}`,
       `title: ${title}`,
-      "status: changing",
+      "status: draft",
+      "version: 1",
+      "owners: [test]",
+      'summary: ""',
+      'domain: ""',
+      "tags: []",
+      "depends_on: []",
+      "supersedes: []",
+      "implements: null",
+      "last_reviewed_at: 2026-03-15",
+      "---",
       "",
+      `# ${title}`,
+      "",
+      "## Summary",
+      "",
+      "Test document for MCP invariant integration.",
+      "",
+      "## Problem",
+      "",
+      "Need to verify MCP invariant tool behavior.",
+      "",
+      "## Scope",
+      "",
+      "Integration test scope.",
+      "",
+      "## Requirements",
+      "",
+      "Test requirements.",
+      "",
+      "## Acceptance Criteria",
+      "",
+      "Tests pass.",
+      "",
+      "## Invariants",
+      "",
+      "```yaml",
       "invariants:",
       invariantYaml,
+      "```",
     ].join("\n")
 
-    yield* docService.create({ kind: "prd", name, title, yamlContent })
+    yield* docService.create({ kind: "prd", name, title, content })
     const synced = yield* docService.syncInvariants(name)
     return synced
   })
@@ -209,12 +251,14 @@ describe("MCP Invariant Tools Integration", () => {
     expect(inv1.rule).toBe("Tasks must have titles")
     expect(inv1.enforcement).toBe("integration_test")
     expect(inv1.status).toBe("active")
-    expect(inv1.subsystem).toBeNull()
+    // In markdown-first, subsystem is derived from doc.kind
+    expect(inv1.subsystem).toBe("prd")
 
     const inv2 = result.find((inv) => inv.id === "INV-MCP-LIST-002")!
     expect(inv2.rule).toBe("No raw SQL in service layer")
-    expect(inv2.enforcement).toBe("linter")
-    expect(inv2.subsystem).toBe("database")
+    // In markdown-first, enforcement is always "integration_test" (derived from severity)
+    expect(inv2.enforcement).toBe("integration_test")
+    expect(inv2.subsystem).toBe("prd")
   })
 
   // ---------------------------------------------------------------------------
@@ -229,38 +273,34 @@ describe("MCP Invariant Tools Integration", () => {
             id: "INV-MCP-SUB-001",
             rule: "API responses must include CORS headers",
             enforcement: "integration_test",
-            subsystem: "api",
           },
           {
             id: "INV-MCP-SUB-002",
             rule: "Database migrations must be reversible",
             enforcement: "integration_test",
-            subsystem: "database",
           },
           {
             id: "INV-MCP-SUB-003",
             rule: "API routes must validate input",
-            enforcement: "linter",
-            subsystem: "api",
+            enforcement: "integration_test",
           },
         ])
 
         const docService = yield* DocService
-        const apiInvariants = yield* docService.listInvariants({ subsystem: "api" })
-        const dbInvariants = yield* docService.listInvariants({ subsystem: "database" })
+        // In markdown-first, subsystem is derived from doc.kind ("prd")
+        const prdInvariants = yield* docService.listInvariants({ subsystem: "prd" })
+        const noMatchInvariants = yield* docService.listInvariants({ subsystem: "nonexistent" })
         return {
-          api: apiInvariants.map(serializeInvariant),
-          db: dbInvariants.map(serializeInvariant),
+          prd: prdInvariants.map(serializeInvariant),
+          noMatch: noMatchInvariants.map(serializeInvariant),
         }
       }).pipe(Effect.provide(shared.layer))
     )
 
-    expect(result.api).toHaveLength(2)
-    expect(result.api.every((inv) => inv.subsystem === "api")).toBe(true)
+    expect(result.prd).toHaveLength(3)
+    expect(result.prd.every((inv) => inv.subsystem === "prd")).toBe(true)
 
-    expect(result.db).toHaveLength(1)
-    expect(result.db[0].id).toBe("INV-MCP-SUB-002")
-    expect(result.db[0].subsystem).toBe("database")
+    expect(result.noMatch).toHaveLength(0)
   })
 
   // ---------------------------------------------------------------------------
@@ -279,35 +319,33 @@ describe("MCP Invariant Tools Integration", () => {
           {
             id: "INV-MCP-ENF-002",
             rule: "No unused imports",
-            enforcement: "linter",
+            enforcement: "integration_test",
           },
           {
             id: "INV-MCP-ENF-003",
             rule: "Code must follow naming conventions",
-            enforcement: "llm_as_judge",
+            enforcement: "integration_test",
           },
         ])
 
         const docService = yield* DocService
+        // In markdown-first, all enforcement is "integration_test" (derived from severity)
         const testInvariants = yield* docService.listInvariants({ enforcement: "integration_test" })
         const linterInvariants = yield* docService.listInvariants({ enforcement: "linter" })
-        const llmInvariants = yield* docService.listInvariants({ enforcement: "llm_as_judge" })
         return {
           test: testInvariants.map(serializeInvariant),
           linter: linterInvariants.map(serializeInvariant),
-          llm: llmInvariants.map(serializeInvariant),
         }
       }).pipe(Effect.provide(shared.layer))
     )
 
-    expect(result.test).toHaveLength(1)
-    expect(result.test[0].id).toBe("INV-MCP-ENF-001")
+    expect(result.test).toHaveLength(3)
+    expect(result.test.map((inv) => inv.id)).toEqual(
+      expect.arrayContaining(["INV-MCP-ENF-001", "INV-MCP-ENF-002", "INV-MCP-ENF-003"])
+    )
 
-    expect(result.linter).toHaveLength(1)
-    expect(result.linter[0].id).toBe("INV-MCP-ENF-002")
-
-    expect(result.llm).toHaveLength(1)
-    expect(result.llm[0].id).toBe("INV-MCP-ENF-003")
+    // No invariants match "linter" since markdown-first always derives "integration_test"
+    expect(result.linter).toHaveLength(0)
   })
 
   // ---------------------------------------------------------------------------
@@ -322,34 +360,31 @@ describe("MCP Invariant Tools Integration", () => {
             id: "INV-MCP-BOTH-001",
             rule: "API integration tests required",
             enforcement: "integration_test",
-            subsystem: "api",
           },
           {
             id: "INV-MCP-BOTH-002",
             rule: "API lint rules required",
-            enforcement: "linter",
-            subsystem: "api",
+            enforcement: "integration_test",
           },
           {
             id: "INV-MCP-BOTH-003",
             rule: "DB integration tests required",
             enforcement: "integration_test",
-            subsystem: "database",
           },
         ])
 
         const docService = yield* DocService
-        const apiTests = yield* docService.listInvariants({
-          subsystem: "api",
+        // In markdown-first, subsystem = doc.kind ("prd") and enforcement = "integration_test"
+        const prdTests = yield* docService.listInvariants({
+          subsystem: "prd",
           enforcement: "integration_test",
         })
-        return apiTests.map(serializeInvariant)
+        return prdTests.map(serializeInvariant)
       }).pipe(Effect.provide(shared.layer))
     )
 
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe("INV-MCP-BOTH-001")
-    expect(result[0].subsystem).toBe("api")
+    expect(result).toHaveLength(3)
+    expect(result[0].subsystem).toBe("prd")
     expect(result[0].enforcement).toBe("integration_test")
   })
 
@@ -364,14 +399,12 @@ describe("MCP Invariant Tools Integration", () => {
           {
             id: "INV-MCP-GET-001",
             rule: "Effect-TS patterns are mandatory",
-            enforcement: "llm_as_judge",
-            subsystem: "core",
+            enforcement: "integration_test",
           },
           {
             id: "INV-MCP-GET-002",
             rule: "No circular dependencies",
             enforcement: "integration_test",
-            subsystem: "deps",
           },
         ])
 
@@ -386,8 +419,8 @@ describe("MCP Invariant Tools Integration", () => {
     expect(result).not.toBeNull()
     expect(result!.id).toBe("INV-MCP-GET-001")
     expect(result!.rule).toBe("Effect-TS patterns are mandatory")
-    expect(result!.enforcement).toBe("llm_as_judge")
-    expect(result!.subsystem).toBe("core")
+    expect(result!.enforcement).toBe("integration_test")
+    expect(result!.subsystem).toBe("prd")
     expect(result!.status).toBe("active")
     expect(result!.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
     expect(new Date(result!.createdAt).getTime()).not.toBeNaN()
@@ -547,10 +580,7 @@ describe("MCP Invariant Tools Integration", () => {
             id: "INV-MCP-ALL-001",
             rule: "Comprehensive invariant with all metadata",
             enforcement: "integration_test",
-            subsystem: "core",
             testRef: "test/integration/core.test.ts",
-            lintRule: "no-raw-sql",
-            promptRef: "prompts/code-review.md",
           },
         ])
 
@@ -579,10 +609,13 @@ describe("MCP Invariant Tools Integration", () => {
     expect(result.invariant.id).toBe("INV-MCP-ALL-001")
     expect(result.invariant.rule).toBe("Comprehensive invariant with all metadata")
     expect(result.invariant.enforcement).toBe("integration_test")
-    expect(result.invariant.subsystem).toBe("core")
+    // In markdown-first, subsystem is derived from doc.kind
+    expect(result.invariant.subsystem).toBe("prd")
+    // testRef comes from verified_by[0] in the embedded block
     expect(result.invariant.testRef).toBe("test/integration/core.test.ts")
-    expect(result.invariant.lintRule).toBe("no-raw-sql")
-    expect(result.invariant.promptRef).toBe("prompts/code-review.md")
+    // lintRule and promptRef are not part of the embedded block schema
+    expect(result.invariant.lintRule).toBeNull()
+    expect(result.invariant.promptRef).toBeNull()
     expect(result.invariant.status).toBe("active")
 
     // Verify check fields
@@ -607,19 +640,16 @@ describe("MCP Invariant Tools Integration", () => {
               id: "INV-MCP-MULTI-001",
               rule: "Rule one",
               enforcement: "integration_test",
-              subsystem: "alpha",
             },
             {
               id: "INV-MCP-MULTI-002",
               rule: "Rule two",
-              enforcement: "linter",
-              subsystem: "beta",
+              enforcement: "integration_test",
             },
             {
               id: "INV-MCP-MULTI-003",
               rule: "Rule three",
-              enforcement: "llm_as_judge",
-              subsystem: "gamma",
+              enforcement: "integration_test",
             },
           ]
         )
@@ -634,11 +664,11 @@ describe("MCP Invariant Tools Integration", () => {
     expect(ids).toContain("INV-MCP-MULTI-002")
     expect(ids).toContain("INV-MCP-MULTI-003")
 
-    // Verify each has the correct enforcement type
+    // In markdown-first, all enforcement is "integration_test" (derived from severity)
     const byId = Object.fromEntries(result.map((inv) => [inv.id, inv]))
     expect(byId["INV-MCP-MULTI-001"].enforcement).toBe("integration_test")
-    expect(byId["INV-MCP-MULTI-002"].enforcement).toBe("linter")
-    expect(byId["INV-MCP-MULTI-003"].enforcement).toBe("llm_as_judge")
+    expect(byId["INV-MCP-MULTI-002"].enforcement).toBe("integration_test")
+    expect(byId["INV-MCP-MULTI-003"].enforcement).toBe("integration_test")
   })
 
   // ---------------------------------------------------------------------------
@@ -652,8 +682,7 @@ describe("MCP Invariant Tools Integration", () => {
           {
             id: "INV-MCP-NOMATCH-001",
             rule: "Some rule",
-            enforcement: "linter",
-            subsystem: "api",
+            enforcement: "integration_test",
           },
         ])
 

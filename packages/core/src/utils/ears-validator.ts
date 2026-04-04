@@ -1,12 +1,20 @@
-import { EARS_PATTERNS } from "@jamesaphoenix/tx-types"
+import {
+  EARS_PATTERNS,
+  MD_EARS_PRIORITIES,
+  MD_EARS_REQUIREMENT_KINDS,
+} from "@jamesaphoenix/tx-types"
 
-const EARS_ID_PATTERN = /^EARS-[A-Z0-9]+-\d{3}$/
-const EARS_PRIORITIES = ["must", "should", "could", "wont"] as const
+const LEGACY_EARS_ID_PATTERN = /^EARS-[A-Z0-9]+-\d{3}$/
+const MARKDOWN_EARS_ID_PATTERN = /^REQ-[A-Z0-9-]+$/
+const LEGACY_EARS_PRIORITIES = ["must", "should", "could", "wont"] as const
 
-const validPatternSet = new Set<string>(EARS_PATTERNS)
-const validPrioritySet = new Set<string>(EARS_PRIORITIES)
+const validLegacyPatternSet = new Set<string>(EARS_PATTERNS)
+const validLegacyPrioritySet = new Set<string>(LEGACY_EARS_PRIORITIES)
+const validMarkdownKindSet = new Set<string>(MD_EARS_REQUIREMENT_KINDS)
+const validMarkdownPrioritySet = new Set<string>(MD_EARS_PRIORITIES)
 
-type EarsPattern = (typeof EARS_PATTERNS)[number]
+type LegacyEarsPattern = (typeof EARS_PATTERNS)[number]
+type MarkdownEarsKind = (typeof MD_EARS_REQUIREMENT_KINDS)[number]
 
 export type EarsValidationError = {
   readonly index: number
@@ -18,7 +26,8 @@ export type EarsValidationError = {
     | "invalid_format"
     | "duplicate_id"
     | "invalid_value"
-  readonly message: string};
+  readonly message: string
+}
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -32,7 +41,7 @@ const pickString = (obj: Record<string, unknown>, key: string): string | null =>
   return typeof value === "string" ? value.trim() : null
 }
 
-const requiredPatternField = (pattern: EarsPattern): string | null => {
+const requiredPatternField = (pattern: LegacyEarsPattern): string | null => {
   switch (pattern) {
     case "event_driven":
       return "trigger"
@@ -42,6 +51,21 @@ const requiredPatternField = (pattern: EarsPattern): string | null => {
       return "condition"
     case "optional":
       return "feature"
+    default:
+      return null
+  }
+}
+
+const requiredMarkdownClause = (kind: MarkdownEarsKind): string | null => {
+  switch (kind) {
+    case "event-driven":
+      return "when"
+    case "state-driven":
+      return "while"
+    case "unwanted":
+      return "if"
+    case "optional":
+      return "where"
     default:
       return null
   }
@@ -67,10 +91,14 @@ export const validateEarsRequirements = (
     }
 
     const id = pickString(req, "id")
+    const statementRaw = req.statement
+    const statement = typeof statementRaw === "string" ? statementRaw.trim() : null
+    const kind = pickString(req, "kind")
     const pattern = pickString(req, "pattern")
     const system = pickString(req, "system")
     const response = pickString(req, "response")
     const priority = pickString(req, "priority")
+    const isMarkdownFormat = kind !== null || (id !== null && id.startsWith("REQ-"))
 
     if (!id) {
       errors.push({
@@ -81,15 +109,21 @@ export const validateEarsRequirements = (
         message: "Field 'id' is required.",
       })
     } else {
-      if (!EARS_ID_PATTERN.test(id)) {
+      const idPattern = isMarkdownFormat ? MARKDOWN_EARS_ID_PATTERN : LEGACY_EARS_ID_PATTERN
+      const idFormatMessage = isMarkdownFormat
+        ? "Field 'id' must match REQ-<SCOPE>-<NNN> (e.g. REQ-DOCS-001)."
+        : "Field 'id' must match EARS-<SYSTEM>-NNN (e.g. EARS-FL-001)."
+
+      if (!idPattern.test(id)) {
         errors.push({
           index,
           id,
           field: "id",
           code: "invalid_format",
-          message: "Field 'id' must match EARS-<SYSTEM>-NNN (e.g. EARS-FL-001).",
+          message: idFormatMessage,
         })
       }
+
       if (seenIds.has(id)) {
         errors.push({
           index,
@@ -103,6 +137,106 @@ export const validateEarsRequirements = (
       }
     }
 
+    if (isMarkdownFormat) {
+      if (!kind) {
+        errors.push({
+          index,
+          id,
+          field: "kind",
+          code: "missing_required",
+          message: "Field 'kind' is required.",
+        })
+      } else if (!validMarkdownKindSet.has(kind)) {
+        errors.push({
+          index,
+          id,
+          field: "kind",
+          code: "invalid_value",
+          message: `Invalid EARS kind '${kind}'. Valid kinds: ${MD_EARS_REQUIREMENT_KINDS.join(", ")}.`,
+        })
+      }
+
+      if (!statement) {
+        errors.push({
+          index,
+          id,
+          field: "statement",
+          code: "missing_required",
+          message: "Field 'statement' is required.",
+        })
+      }
+
+      if (!priority) {
+        errors.push({
+          index,
+          id,
+          field: "priority",
+          code: "missing_required",
+          message: "Field 'priority' is required.",
+        })
+      } else if (!validMarkdownPrioritySet.has(priority)) {
+        errors.push({
+          index,
+          id,
+          field: "priority",
+          code: "invalid_value",
+          message: `Invalid priority '${priority}'. Valid priorities: ${MD_EARS_PRIORITIES.join(", ")}.`,
+        })
+      }
+
+      if (kind && validMarkdownKindSet.has(kind)) {
+        const clauseField = requiredMarkdownClause(kind as MarkdownEarsKind)
+        if (clauseField) {
+          const clauseValue = pickString(req, clauseField)
+          if (!clauseValue) {
+            errors.push({
+              index,
+              id,
+              field: clauseField,
+              code: "missing_required",
+              message: `Kind '${kind}' requires field '${clauseField}'.`,
+            })
+          }
+        }
+
+        if (kind === "complex") {
+          const hasClause =
+            Boolean(pickString(req, "when")) ||
+            Boolean(pickString(req, "while")) ||
+            Boolean(pickString(req, "if")) ||
+            Boolean(pickString(req, "where"))
+
+          if (!hasClause) {
+            errors.push({
+              index,
+              id,
+              field: "kind",
+              code: "missing_required",
+              message:
+                "Kind 'complex' requires at least one clause: when, while, if, or where.",
+            })
+          }
+        }
+      }
+
+      return
+    }
+
+    const isLegacyStatementFormat = typeof statementRaw === "string"
+
+    if (isLegacyStatementFormat) {
+      if (!statement) {
+        errors.push({
+          index,
+          id,
+          field: "statement",
+          code: "missing_required",
+          message: "Field 'statement' is required.",
+        })
+      }
+      return
+    }
+
     if (!pattern) {
       errors.push({
         index,
@@ -111,7 +245,7 @@ export const validateEarsRequirements = (
         code: "missing_required",
         message: "Field 'pattern' is required.",
       })
-    } else if (!validPatternSet.has(pattern)) {
+    } else if (!validLegacyPatternSet.has(pattern)) {
       errors.push({
         index,
         id,
@@ -141,18 +275,18 @@ export const validateEarsRequirements = (
       })
     }
 
-    if (priority && !validPrioritySet.has(priority)) {
+    if (priority && !validLegacyPrioritySet.has(priority)) {
       errors.push({
         index,
         id,
         field: "priority",
         code: "invalid_value",
-        message: `Invalid priority '${priority}'. Valid priorities: ${EARS_PRIORITIES.join(", ")}.`,
+        message: `Invalid priority '${priority}'. Valid priorities: ${LEGACY_EARS_PRIORITIES.join(", ")}.`,
       })
     }
 
-    if (pattern && validPatternSet.has(pattern)) {
-      const requiredField = requiredPatternField(pattern as EarsPattern)
+    if (pattern && validLegacyPatternSet.has(pattern)) {
+      const requiredField = requiredPatternField(pattern as LegacyEarsPattern)
       if (requiredField) {
         const requiredValue = pickString(req, requiredField)
         if (!requiredValue) {
@@ -194,9 +328,7 @@ export const formatEarsValidationErrors = (
 ): string => {
   return errors
     .map((error) => {
-      const location = error.id
-        ? `${error.id}`
-        : `entry #${error.index + 1}`
+      const location = error.id ? `${error.id}` : `entry #${error.index + 1}`
       return `${location} (${error.field}): ${error.message}`
     })
     .join("; ")

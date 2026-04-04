@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-007-multi-interface-integration"
+title: "PRD-007: Multi-Interface Integration"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-007: Multi-Interface Integration
 
 **Status**: Draft
@@ -85,10 +95,10 @@ $ tx ready --json | jq '.[0].id' | xargs tx show
 | `tx_update` | Update task | Changing status/score |
 | `tx_list` | List tasks | Understanding scope |
 | `tx_show` | Get task details | Reading requirements |
-| `tx_block` | Add dependency | Structuring work order |
-| `tx_unblock` | Remove dependency | Adjusting work order |
-| `tx_children` | List child tasks | Understanding subtask structure |
-| `tx_tree` | Show task subtree | Seeing full decomposition |
+| `tx_dep_block` | Add dependency | Structuring work order |
+| `tx_dep_unblock` | Remove dependency | Adjusting work order |
+| `tx_dep_children` | List child tasks | Understanding subtask structure |
+| `tx_dep_tree` | Show task subtree | Seeing full decomposition |
 | `tx_delete` | Delete a task | Cleanup |
 
 ### Extended Tools (Phase 3+)

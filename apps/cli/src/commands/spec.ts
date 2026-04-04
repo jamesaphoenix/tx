@@ -2,11 +2,16 @@
  * Spec traceability commands: discover, link, unlink, tests, gaps, fci, matrix, run, batch, complete, status
  */
 
-import { Effect } from "effect"
-import { readFileSync } from "node:fs"
+import { Effect, Either } from "effect"
+import { existsSync, readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import {
+  DocService,
   SpecTraceService,
   parseBatchRunInput,
+  parseMdDocSync,
+  readTxConfig,
+  validateEarsRequirements,
   type BatchSource,
 } from "@jamesaphoenix/tx-core"
 import { triangle as specHealthImpl } from "./triangle.js"
@@ -64,6 +69,7 @@ export const spec = (pos: string[], flags: Flags) => {
     case "complete": return specComplete(rest, flags)
     case "status": return specStatus(rest, flags)
     case "health": return specHealthImpl(rest, flags)
+    case "lint": return specLint(rest, flags)
     default:
       return Effect.sync(() => {
         console.error(`Unknown spec subcommand: ${sub ?? "(none)"}`)
@@ -353,5 +359,174 @@ const specStatus = (_pos: string[], flags: Flags) =>
       }
     } else {
       console.log("Blockers: none")
+    }
+  })
+
+const earsFixHint = (e: { field: string; code: string }): string | undefined => {
+  if (e.code === "missing_required") {
+    switch (e.field) {
+      case "when": return 'Add `when: "<trigger condition>"` to this requirement'
+      case "while": return 'Add `while: "<state condition>"` to this requirement'
+      case "if": return 'Add `if: "<unwanted condition>"` to this requirement'
+      case "where": return 'Add `where: "<feature flag>"` to this requirement'
+      case "kind": return "Add `kind:` — one of: ubiquitous, event-driven, state-driven, unwanted, optional, complex"
+      case "statement": return 'Add `statement: "the system shall …"`'
+      case "priority": return "Add `priority:` — one of: must, should, could, wont"
+      case "id": return "Add `id: REQ-<SCOPE>-<NNN>` (e.g. REQ-DOCS-001)"
+      case "pattern": return "Add `pattern:` — one of: ubiquitous, event_driven, state_driven, unwanted, optional, complex"
+      case "system": return 'Add `system: "<system name>"`'
+      case "response": return 'Add `response: "<what the system does>"`'
+      default: return `Add the missing '${e.field}' field`
+    }
+  }
+  if (e.code === "duplicate_id") return "Change the id to be unique across all requirements"
+  if (e.code === "invalid_type") return "Each requirement must be a YAML object with id, kind, statement, and priority fields"
+  return undefined
+}
+
+/**
+ * spec lint — all-in-one check: drift, EARS validation, task-doc coverage, spec status, health rollup.
+ */
+const specLint = (_pos: string[], flags: Flags) =>
+  Effect.gen(function* () {
+    const jsonMode = flag(flags, "json")
+    const docSvc = yield* DocService
+    const specTraceSvc = yield* SpecTraceService
+    const config = readTxConfig()
+
+    let hasErrors = false
+    type LintIssue = { section: string; severity: "error" | "warn"; message: string; hint?: string }
+    const issues: LintIssue[] = []
+
+    const addIssue = (section: string, severity: "error" | "warn", message: string, hint?: string) => {
+      issues.push({ section, severity, message, hint })
+      if (severity === "error") hasErrors = true
+    }
+
+    // --- 1. Doc drift (hash mismatch between disk and DB) ---
+    const docs = yield* docSvc.list()
+    let driftCount = 0
+    for (const doc of docs) {
+      const driftWarnings = yield* docSvc.detectDrift(doc.name).pipe(
+        Effect.catchAll(() => Effect.succeed([] as string[]))
+      )
+      if (driftWarnings.length > 0) {
+        driftCount++
+        for (const w of driftWarnings) {
+          addIssue("drift", "warn", `${doc.name}: ${w}`)
+        }
+      }
+    }
+
+    // --- 2. Task-doc coverage (unlinked tasks) ---
+    const taskWarnings = yield* docSvc.validate()
+    for (const w of taskWarnings) {
+      addIssue("coverage", "warn", w)
+    }
+
+    // --- 3. Searchable index metadata (summary/domain/tags -> specs/index.md) ---
+    const indexWarnings = yield* docSvc.validateIndexSearchability()
+    for (const w of indexWarnings) {
+      addIssue("index", "warn", w)
+    }
+
+    // --- 4. EARS lint (validate PRD requirements) ---
+    const prdDocs = docs.filter(d => d.kind === "prd")
+    for (const doc of prdDocs) {
+      const absPath = resolve(config.docs.path, doc.filePath)
+      if (!existsSync(absPath)) {
+        addIssue("ears", "error", `${doc.name}: file not found at ${doc.filePath}`)
+        continue
+      }
+      let content: string
+      try {
+        content = readFileSync(absPath, "utf8")
+      } catch {
+        addIssue("ears", "error", `${doc.name}: unreadable file`)
+        continue
+      }
+      const parsed = parseMdDocSync(content)
+      if (Either.isLeft(parsed)) {
+        addIssue("ears", "error", `${doc.name}: parse error — ${parsed.left.reason}`)
+        continue
+      }
+      if (parsed.right.kind !== "spec" || parsed.right.frontmatter.spec_type !== "prd") continue
+      const earsReqs = parsed.right.blocks.ears_requirements ?? []
+      if (earsReqs.length === 0) continue
+      const earsErrors = validateEarsRequirements(earsReqs)
+      for (const e of earsErrors) {
+        const loc = e.id ? e.id : `entry #${e.index + 1}`
+        addIssue("ears", "error", `${doc.filePath}: ${loc} (${e.field}) ${e.message}`, earsFixHint(e))
+      }
+    }
+
+    // --- 5. Spec-test status ---
+    const fci = yield* specTraceSvc.fci().pipe(
+      Effect.catchAll(() => Effect.succeed({ total: 0, covered: 0, uncovered: 0, passing: 0, failing: 0, untested: 0, fci: 100, phase: "BUILD" as const }))
+    )
+    if (fci.failing > 0) {
+      addIssue("spec", "error", `${fci.failing} invariant(s) with failing tests`)
+    }
+    if (fci.uncovered > 0) {
+      addIssue("spec", "warn", `${fci.uncovered} invariant(s) with no linked tests`)
+    }
+
+    // --- Output ---
+    if (jsonMode) {
+      console.log(toJson({
+        ok: !hasErrors,
+        total_docs: docs.length,
+        drift_count: driftCount,
+        coverage_warnings: taskWarnings.length,
+        index_warnings: indexWarnings.length,
+        fci: fci.fci,
+        phase: fci.phase,
+        issues,
+      }))
+    } else {
+      const ok = issues.length === 0
+      console.log(`Spec Lint: ${ok ? "CLEAN" : hasErrors ? "FAIL" : "WARN"}`)
+      console.log("")
+      console.log(`  Docs:      ${docs.length} total, ${driftCount} drifted`)
+      console.log(`  Coverage:  ${taskWarnings.length} unlinked task(s)`)
+      console.log(`  Index:     ${indexWarnings.length} searchable metadata warning(s)`)
+      console.log(`  EARS:      ${prdDocs.length} PRD(s) checked`)
+      if (fci.total > 0) {
+        console.log(`  Spec-Test: ${fci.covered}/${fci.total} covered (${fci.fci}%, ${fci.phase})`)
+      } else {
+        console.log("  Spec-Test: no invariants")
+      }
+
+      if (issues.length > 0) {
+        const sectionOrder = ["drift", "coverage", "index", "ears", "spec"] as const
+        const sectionLabels: Record<string, string> = {
+          drift: "Drift",
+          coverage: "Coverage",
+          index: "Index Searchability",
+          ears: "EARS Requirements",
+          spec: "Spec Tests",
+        }
+        for (const section of sectionOrder) {
+          const sectionIssues = issues.filter(i => i.section === section)
+          if (sectionIssues.length === 0) continue
+          console.log("")
+          console.log(`  ${sectionLabels[section]}:`)
+          for (const issue of sectionIssues) {
+            const icon = issue.severity === "error" ? "\u2717" : "\u26a0"
+            console.log(`    ${icon} ${issue.message}`)
+            if (issue.hint) {
+              console.log(`      \u2192 ${issue.hint}`)
+            }
+          }
+          if (section === "ears" && sectionIssues.length > 0) {
+            console.log("")
+            console.log("    Fix: edit the spec file directly, then run `tx doc sync`. Do NOT use `tx doc rm` + `tx doc add` (this overwrites content).")
+          }
+        }
+      }
+    }
+
+    if (hasErrors) {
+      throw new CliExitError(1)
     }
   })

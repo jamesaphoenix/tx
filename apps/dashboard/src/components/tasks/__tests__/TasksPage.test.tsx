@@ -7,8 +7,22 @@ import { CommandProvider } from "../../command-palette/CommandContext"
 import { TasksPage } from "../TasksPage"
 
 vi.mock("../TaskList", () => ({
-  TaskList: ({ onSelectTask }: { onSelectTask: (taskId: string) => void }) => (
-    <button onClick={() => onSelectTask("tx-open-1")}>Open Mock Task</button>
+  TaskList: ({ onSelectTask, filters }: { onSelectTask: (taskId: string) => void; filters?: { status?: string[] } }) => (
+    <div>
+      <button onClick={() => onSelectTask("tx-open-1")}>Open Mock Task</button>
+      <div data-testid="status-filter-value">
+        {filters?.status?.length ? filters.status.join(",") : "all"}
+      </div>
+    </div>
+  ),
+}))
+
+vi.mock("../KanbanBoard", () => ({
+  KanbanBoard: ({ search }: { search?: string }) => (
+    <div>
+      <div>KanbanBoard</div>
+      <div data-testid="kanban-search">{search ?? ""}</div>
+    </div>
   ),
 }))
 
@@ -49,6 +63,27 @@ describe("TasksPage", () => {
 
     server.use(
       http.get("/api/labels", () => HttpResponse.json({ labels: [] })),
+      http.get("/api/tasks", () =>
+        HttpResponse.json({
+          tasks: [],
+          nextCursor: null,
+          hasMore: false,
+          total: 14,
+          summary: {
+            total: 14,
+            byStatus: {
+              backlog: 0,
+              ready: 1,
+              planning: 0,
+              active: 0,
+              blocked: 0,
+              review: 0,
+              needs_review: 0,
+              done: 13,
+            },
+          },
+        })
+      ),
       http.get("/api/tasks/:id", ({ params }) => {
         const id = String(params.id)
         return HttpResponse.json({
@@ -113,6 +148,88 @@ describe("TasksPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Open Mock Task" })).toBeInTheDocument()
+    })
+  })
+
+  it("keeps task status filters single-select", async () => {
+    window.history.replaceState({}, "", "/?status=ready")
+
+    renderWithProviders(<TasksPage />)
+
+    expect(screen.getByTestId("status-filter-value")).toHaveTextContent("ready")
+
+    fireEvent.click(screen.getByRole("button", { name: /Blocked/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("blocked")
+      expect(window.location.search).toContain("status=blocked")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /Blocked/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("all")
+      expect(window.location.search).not.toContain("status=")
+    })
+  })
+
+  it("normalizes multi-status URL params to the last selected status", async () => {
+    window.history.replaceState({}, "", "/?status=planning,active,blocked")
+
+    renderWithProviders(<TasksPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("blocked")
+    })
+  })
+
+  it("clears the active status filter when clicking All", async () => {
+    window.history.replaceState({}, "", "/?status=ready")
+
+    renderWithProviders(<TasksPage />)
+
+    fireEvent.click(screen.getByRole("button", { name: /^All/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("status-filter-value")).toHaveTextContent("all")
+      expect(window.location.search).not.toContain("status=")
+    })
+  })
+
+  it("renders status counts from summary data", async () => {
+    renderWithProviders(<TasksPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /All/i })).toHaveTextContent("14")
+      expect(screen.getByRole("button", { name: /Ready/i })).toHaveTextContent("1")
+      expect(screen.getByRole("button", { name: /Done/i })).toHaveTextContent("13")
+    })
+  })
+
+  it("toggles between list and kanban views and syncs view URL", async () => {
+    renderWithProviders(<TasksPage />)
+
+    expect(screen.getByRole("button", { name: "Open Mock Task" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Kanban view" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("KanbanBoard")).toBeInTheDocument()
+      expect(screen.getByTestId("kanban-search")).toHaveTextContent("")
+      expect(window.location.search).toContain("view=kanban")
+    })
+    expect(screen.queryByRole("button", { name: /^All/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "List view" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open Mock Task" })).toBeInTheDocument()
+      expect(window.location.search).toContain("view=list")
+    })
+  })
+
+  it("uses defaultTaskView when view URL param is missing", async () => {
+    renderWithProviders(<TasksPage defaultTaskView="kanban" />)
+
+    await waitFor(() => {
+      expect(screen.getByText("KanbanBoard")).toBeInTheDocument()
     })
   })
 })

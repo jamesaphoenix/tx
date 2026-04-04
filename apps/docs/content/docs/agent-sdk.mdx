@@ -746,6 +746,71 @@ await tx.spec.complete({
 })
 ```
 
+### Decompose
+
+#### `tx.decompose.run(data)`
+
+Preview or materialize an explicit task graph from a design doc.
+
+Use `dryRun: true` to validate the graph before creating tasks. The response
+includes the root preview, the validated plan, any materialized tasks, and the
+linked root task when writes occur.
+
+<Tabs groupId="interface" persist items={["TypeScript SDK", "CLI", "MCP", "REST API"]}>
+<Tab value="TypeScript SDK">
+
+```typescript
+const preview = await tx.decompose.run({
+  docRef: "auth-flow-design",
+  runtime: "codex",
+  dryRun: true,
+})
+
+const graph = await tx.decompose.run({
+  docRef: "auth-flow-design",
+  parentTaskId: "tx-abc123",
+  maxTasks: 8,
+})
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+tx decompose auth-flow-design --dry-run --json
+tx decompose auth-flow-design --runtime codex
+```
+
+</Tab>
+<Tab value="MCP">
+
+```json
+{
+  "name": "tx_decompose",
+  "arguments": {
+    "docRef": "auth-flow-design",
+    "runtime": "codex",
+    "dryRun": true
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST http://localhost:3456/api/decompose \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docRef": "auth-flow-design",
+    "runtime": "codex",
+    "dryRun": true
+  }'
+```
+
+</Tab>
+</Tabs>
+
 ### File Learnings
 
 #### `tx.fileLearnings.list(path?)`
@@ -1187,6 +1252,6 @@ agentLoop()
 - [tx reflect](/docs/primitives/reflect) - Session retrospective and signals
 - [tx gate](/docs/primitives/gate) - Human-in-the-loop phase approvals
 - [tx claim](/docs/primitives/claim) - Lease-based task claiming for parallel agents
-- [tx send / tx inbox](/docs/primitives/inbox) - Agent-to-agent messaging
+- [tx msg send / tx msg inbox](/docs/primitives/inbox) - Agent-to-agent messaging
 - [tx sync](/docs/primitives/sync) - Stream-based event sync
 - [tx trace](/docs/primitives/traces) - Run and failure observability

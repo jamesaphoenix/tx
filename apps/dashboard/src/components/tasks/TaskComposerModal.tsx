@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { TaskAssigneeType, TaskLabel } from "../../api/client"
+import { Button } from "../ui"
 import { useOverlayCommands, useShortcutScope, type Command } from "../command-palette/CommandContext"
 import {
   HUMAN_STAGE_OPTIONS,
@@ -393,15 +394,20 @@ export function TaskComposerModal({
       },
     ]
 
-    for (const stage of HUMAN_STAGE_OPTIONS) {
-      commands.push({
+    commands.push({
+      id: "composer:status",
+      label: "Set status",
+      group: "Composer",
+      icon: "action",
+      action: () => {},
+      children: HUMAN_STAGE_OPTIONS.map((stage) => ({
         id: `composer:status:${stage.value}`,
-        label: `Set status: ${stage.label}`,
-        group: "Composer",
-        icon: "action",
+        label: stage.label,
+        group: "Statuses",
+        icon: "action" as const,
         action: () => handleStageChange(stage.value),
-      })
-    }
+      })),
+    })
 
     for (const label of mergedAvailableLabels) {
       const selected = selectedLabelIds.has(label.id)
@@ -472,18 +478,14 @@ export function TaskComposerModal({
               {heading}
             </span>
           </div>
-          <button
-            type="button"
+          <Button
+            size="xs"
+            variant="secondary"
             onClick={onClose}
-            className={`rounded-md border px-2 py-0.5 text-xs transition ${
-              isDarkTheme
-                ? "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
-            }`}
             aria-label="Close"
           >
             Esc
-          </button>
+          </Button>
         </div>
 
         <form
@@ -611,15 +613,14 @@ export function TaskComposerModal({
               />
               Create more
             </label>
-            <button
+            <Button
+              size="sm"
+              variant="primary"
               type="submit"
               disabled={!title.trim() || isSubmitting || isCreatingCommandLabel}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 ${
-                isDarkTheme ? "bg-indigo-500 hover:bg-indigo-400" : "bg-indigo-600 hover:bg-indigo-500"
-              }`}
             >
               {isSubmitting ? "Creating..." : submitLabel}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

@@ -53,6 +53,65 @@ const writeDocsConfig = (cwd: string, requireEars: boolean): void => {
   )
 }
 
+const prdFrontmatter = (name: string, title: string): string => `---
+kind: spec
+spec_type: prd
+name: ${name}
+title: "${title}"
+status: draft
+version: 1
+owners:
+  - docs-team
+summary: Integration test fixture for ${title}
+domain: test
+tags:
+  - integration
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: "2026-03-15"
+---`
+
+const prdDoc = (input: {
+  name: string
+  title: string
+  summary?: string
+  problem?: string
+  scope?: string
+  requirements: string
+  acceptanceCriteria?: string
+  nonGoals?: string
+  extraSections?: string
+}): string => {
+  const summary = input.summary ?? "PRD integration fixture."
+  const problem = input.problem ?? "Validate PRD markdown behavior."
+  const scope = input.scope ?? "Included: integration tests.\nExcluded: production behavior."
+  const acceptanceCriteria = input.acceptanceCriteria ?? "- Fixture validates."
+  const nonGoals = input.nonGoals ?? "- None."
+  const extraSections = input.extraSections ? `\n\n${input.extraSections.trim()}` : ""
+
+  return `${prdFrontmatter(input.name, input.title)}
+
+# Summary
+${summary}
+
+# Problem
+${problem}
+
+# Scope
+${scope}
+
+# Requirements
+${input.requirements.trim()}
+
+# Acceptance Criteria
+${acceptanceCriteria}
+
+# Non-goals
+${nonGoals}${extraSections}
+`
+}
+
 describe("EARS requirements integration", () => {
   let shared: SharedTestLayerResult
   let originalCwd: string
@@ -80,32 +139,30 @@ describe("EARS requirements integration", () => {
 
   it("creates and renders a PRD with EARS requirements", async () => {
     const name = `prd-${fixtureId("ears-create").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "EARS PRD"',
-      "status: changing",
-      "",
-      "problem: |",
-      "  EARS integration",
-      "",
-      "solution: |",
-      "  Add structured requirements",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-FL-001",
-      "    pattern: ubiquitous",
-      "    system: tx memory learn command",
-      "    response: persist a learning entry",
-      "    priority: must",
-      "    rationale: Core primitive",
-      "    test_hint: integration test",
-      "  - id: EARS-FL-002",
-      "    pattern: event_driven",
-      "    trigger: a user runs tx memory recall <path>",
-      "    system: recall service",
-      "    response: return relevant learnings",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "EARS PRD",
+      problem: "EARS integration",
+      requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-EARS-001
+    kind: ubiquitous
+    statement: the tx memory learn command shall persist a learning entry.
+    priority: must
+    rationale: Core primitive
+  - id: REQ-EARS-002
+    kind: event-driven
+    when: a user runs tx memory recall <path>
+    statement: the recall service shall return relevant learnings.
+    priority: should
+\`\`\``,
+      acceptanceCriteria: "- PRD stores valid EARS requirements.",
+      extraSections: `## Structured Requirements (EARS)
+| ID | Kind |
+| --- | --- |
+| REQ-EARS-001 | ubiquitous |
+| REQ-EARS-002 | event-driven |`,
+    })
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -114,7 +171,7 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "EARS PRD",
-          yamlContent,
+          content,
         })
         yield* svc.render(name)
       }).pipe(Effect.provide(shared.layer))
@@ -124,24 +181,24 @@ describe("EARS requirements integration", () => {
     expect(existsSync(renderedPath)).toBe(true)
     const markdown = readFileSync(renderedPath, "utf8")
     expect(markdown).toContain("## Structured Requirements (EARS)")
-    expect(markdown).toContain("| EARS-FL-001 | ubiquitous |")
-    expect(markdown).toContain("| EARS-FL-002 | event_driven |")
+    expect(markdown).toContain("| REQ-EARS-001 | ubiquitous |")
+    expect(markdown).toContain("| REQ-EARS-002 | event-driven |")
   })
 
   it("rejects PRD YAML with missing required EARS trigger for event_driven", async () => {
     const name = `prd-${fixtureId("ears-missing-trigger").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Invalid EARS PRD"',
-      "status: changing",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-FL-001",
-      "    pattern: event_driven",
-      "    system: recall service",
-      "    response: return learnings",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "Invalid EARS PRD",
+      requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-EARS-003
+    kind: event-driven
+    statement: the recall service shall return learnings.
+    priority: must
+\`\`\``,
+      acceptanceCriteria: "- Invalid docs are rejected.",
+    })
 
     await expect(
       Effect.runPromise(
@@ -151,31 +208,31 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Invalid EARS PRD",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
-    ).rejects.toThrow("Pattern 'event_driven' requires field 'trigger'")
+    ).rejects.toThrow("Kind 'event-driven' requires field 'when'")
   })
 
   it("rejects duplicate EARS IDs", async () => {
     const name = `prd-${fixtureId("ears-duplicate-id").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Duplicate EARS IDs"',
-      "status: changing",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-FL-001",
-      "    pattern: ubiquitous",
-      "    system: tx",
-      "    response: do one thing",
-      "  - id: EARS-FL-001",
-      "    pattern: ubiquitous",
-      "    system: tx",
-      "    response: do another thing",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "Duplicate EARS IDs",
+      requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-EARS-004
+    kind: ubiquitous
+    statement: the system shall do one thing.
+    priority: must
+  - id: REQ-EARS-004
+    kind: ubiquitous
+    statement: the system shall do another thing.
+    priority: should
+\`\`\``,
+      acceptanceCriteria: "- Duplicate IDs are rejected.",
+    })
 
     await expect(
       Effect.runPromise(
@@ -185,27 +242,27 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Duplicate EARS IDs",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
-    ).rejects.toThrow("Duplicate EARS requirement id 'EARS-FL-001'")
+    ).rejects.toThrow("Duplicate EARS requirement id 'REQ-EARS-004'")
   })
 
   it("rejects non-array ears_requirements in DocService validation", async () => {
     const name = `prd-${fixtureId("ears-non-array").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Invalid non-array EARS"',
-      "status: changing",
-      "",
-      "ears_requirements:",
-      "  id: EARS-FL-001",
-      "  pattern: ubiquitous",
-      "  system: tx",
-      "  response: do work",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "Invalid non-array EARS",
+      requirements: `\`\`\`yaml
+ears_requirements:
+  id: REQ-EARS-005
+  kind: ubiquitous
+  statement: the system shall do work.
+  priority: must
+\`\`\``,
+      acceptanceCriteria: "- Non-array EARS blocks are rejected.",
+    })
 
     await expect(
       Effect.runPromise(
@@ -215,94 +272,80 @@ describe("EARS requirements integration", () => {
             kind: "prd",
             name,
             title: "Invalid non-array EARS",
-            yamlContent,
+            content,
           })
         }).pipe(Effect.provide(shared.layer))
       )
-    ).rejects.toThrow("'ears_requirements' must be an array")
+    ).rejects.toThrow(/ears_requirements/i)
   })
 
-  it("requires EARS when legacy requirements are present by default", async () => {
+  it("allows PRDs with plain requirements and no ears_requirements by default", async () => {
     const name = `prd-${fixtureId("ears-required-default").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Legacy PRD"',
-      "status: changing",
-      "",
-      "requirements:",
-      "  - legacy requirement",
-      "",
-      "acceptance_criteria:",
-      "  - legacy criterion",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "Legacy PRD",
+      requirements: "- legacy requirement",
+      acceptanceCriteria: "- legacy criterion",
+    })
 
-    await expect(
-      Effect.runPromise(
-        Effect.gen(function* () {
-          const svc = yield* DocService
-          yield* svc.create({
-            kind: "prd",
-            name,
-            title: "Legacy PRD",
-            yamlContent,
-          })
-        }).pipe(Effect.provide(shared.layer))
-      )
-    ).rejects.toThrow("must also define a non-empty 'ears_requirements' array")
+    const created = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DocService
+        return yield* svc.create({
+          kind: "prd",
+          name,
+          title: "Legacy PRD",
+          content,
+        })
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(created.kind).toBe("prd")
   })
 
-  it("rejects PRDs with legacy requirements but no ears_requirements regardless of config", async () => {
-    // EARS is now a hard requirement — config.require_ears has no effect
+  it("allows PRDs with plain requirements regardless of require_ears config", async () => {
     writeDocsConfig(tempDir, false)
 
     const name = `prd-${fixtureId("ears-backward-compatible").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Legacy PRD"',
-      "status: changing",
-      "",
-      "requirements:",
-      "  - legacy requirement",
-      "",
-      "acceptance_criteria:",
-      "  - legacy criterion",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "Legacy PRD",
+      requirements: "- legacy requirement",
+      acceptanceCriteria: "- legacy criterion",
+    })
 
-    await expect(
-      Effect.runPromise(
-        Effect.gen(function* () {
-          const svc = yield* DocService
-          yield* svc.create({
-            kind: "prd",
-            name,
-            title: "Legacy PRD",
-            yamlContent,
-          })
-        }).pipe(Effect.provide(shared.layer))
-      )
-    ).rejects.toThrow("must also define a non-empty 'ears_requirements' array")
+    const created = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* DocService
+        return yield* svc.create({
+          kind: "prd",
+          name,
+          title: "Legacy PRD",
+          content,
+        })
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    expect(created.kind).toBe("prd")
   })
 
   it("supports mixed requirements and ears_requirements in the same PRD", async () => {
     const name = `prd-${fixtureId("ears-mixed").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Mixed PRD"',
-      "status: changing",
-      "",
-      "requirements:",
-      "  - legacy requirement",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-FL-001",
-      "    pattern: optional",
-      "    feature: dashboard mode",
-      "    system: dashboard api",
-      "    response: show assignment controls",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "Mixed PRD",
+      requirements: `- legacy requirement
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-EARS-006
+    kind: optional
+    where: dashboard mode
+    statement: the dashboard API shall show assignment controls.
+    priority: should
+\`\`\``,
+      acceptanceCriteria: "- Mixed legacy and EARS content validates.",
+      extraSections: "## Structured Requirements (EARS)\n- REQ-EARS-006",
+    })
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -311,48 +354,42 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Mixed PRD",
-          yamlContent,
+          content,
         })
         yield* svc.render(name)
       }).pipe(Effect.provide(shared.layer))
     )
 
     const markdown = readFileSync(join(tempDir, "specs", "prd", `${name}.md`), "utf8")
-    expect(markdown).toContain("## Requirements")
+    expect(markdown).toContain("# Requirements")
     expect(markdown).toContain("## Structured Requirements (EARS)")
   })
 
   it("validates EARS on update and re-renders structured section", async () => {
     const name = `prd-${fixtureId("ears-update-valid").slice(3, 10)}`
-    const initialYaml = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Update PRD"',
-      "status: changing",
-      "",
-      "problem: |",
-      "  Start without structured requirements.",
-      "",
-      "solution: |",
-      "  Add them during update.",
-    ].join("\n")
+    const initialContent = prdDoc({
+      name,
+      title: "Update PRD",
+      problem: "Start without structured requirements.",
+      requirements: "- legacy requirement",
+      acceptanceCriteria: "- Initial version persists.",
+    })
 
-    const updatedYaml = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Update PRD"',
-      "status: changing",
-      "",
-      "requirements:",
-      "  - legacy requirement",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-UPD-001",
-      "    pattern: event_driven",
-      "    trigger: a user runs tx doc render",
-      "    system: doc renderer",
-      "    response: include EARS table",
-    ].join("\n")
+    const updatedContent = prdDoc({
+      name,
+      title: "Update PRD",
+      requirements: `- legacy requirement
+\`\`\`yaml
+ears_requirements:
+  - id: REQ-EARS-UPD-001
+    kind: event-driven
+    when: a user runs tx doc render
+    statement: the doc renderer shall include structured requirements.
+    priority: must
+\`\`\``,
+      acceptanceCriteria: "- Updated version includes structured requirements.",
+      extraSections: "## Structured Requirements (EARS)\n- REQ-EARS-UPD-001",
+    })
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -361,45 +398,40 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Update PRD",
-          yamlContent: initialYaml,
+          content: initialContent,
         })
-        yield* svc.update(name, updatedYaml)
+        yield* svc.update(name, updatedContent)
         yield* svc.render(name)
       }).pipe(Effect.provide(shared.layer))
     )
 
     const markdown = readFileSync(join(tempDir, "specs", "prd", `${name}.md`), "utf8")
     expect(markdown).toContain("## Structured Requirements (EARS)")
-    expect(markdown).toContain("| EARS-UPD-001 | event_driven |")
+    expect(markdown).toContain("REQ-EARS-UPD-001")
   })
 
   it("rejects invalid EARS during update", async () => {
     const name = `prd-${fixtureId("ears-update-invalid").slice(3, 10)}`
-    const initialYaml = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Update Invalid PRD"',
-      "status: changing",
-      "",
-      "problem: |",
-      "  Start without structured requirements.",
-      "",
-      "solution: |",
-      "  Add an invalid EARS block during update.",
-    ].join("\n")
+    const initialContent = prdDoc({
+      name,
+      title: "Update Invalid PRD",
+      problem: "Start without structured requirements.",
+      requirements: "- baseline requirement",
+      acceptanceCriteria: "- Initial version persists.",
+    })
 
-    const invalidUpdateYaml = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Update Invalid PRD"',
-      "status: changing",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-UPD-001",
-      "    pattern: event_driven",
-      "    system: doc service",
-      "    response: reject invalid updates",
-    ].join("\n")
+    const invalidUpdateContent = prdDoc({
+      name,
+      title: "Update Invalid PRD",
+      requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-EARS-UPD-002
+    kind: event-driven
+    statement: the doc service shall reject invalid updates.
+    priority: must
+\`\`\``,
+      acceptanceCriteria: "- Invalid update is rejected.",
+    })
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -408,7 +440,7 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Update Invalid PRD",
-          yamlContent: initialYaml,
+          content: initialContent,
         })
       }).pipe(Effect.provide(shared.layer))
     )
@@ -417,26 +449,26 @@ describe("EARS requirements integration", () => {
       Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* DocService
-          yield* svc.update(name, invalidUpdateYaml)
+          yield* svc.update(name, invalidUpdateContent)
         }).pipe(Effect.provide(shared.layer))
       )
-    ).rejects.toThrow("Pattern 'event_driven' requires field 'trigger'")
+    ).rejects.toThrow("Kind 'event-driven' requires field 'when'")
   })
 
-  it("escapes pipe characters in rendered EARS integration output", async () => {
+  it("preserves pipe characters in markdown EARS statements", async () => {
     const name = `prd-${fixtureId("ears-pipe-escape").slice(3, 10)}`
-    const yamlContent = [
-      "kind: prd",
-      `name: ${name}`,
-      'title: "Pipe Escape PRD"',
-      "status: changing",
-      "",
-      "ears_requirements:",
-      "  - id: EARS-PIPE-001",
-      "    pattern: ubiquitous",
-      "    system: tx | learn",
-      "    response: persist A | B values",
-    ].join("\n")
+    const content = prdDoc({
+      name,
+      title: "Pipe Escape PRD",
+      requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-EARS-PIPE-001
+    kind: ubiquitous
+    statement: the tx | learn command shall persist A | B values.
+    priority: must
+\`\`\``,
+      acceptanceCriteria: "- Pipe characters are retained in markdown.",
+    })
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -445,16 +477,14 @@ describe("EARS requirements integration", () => {
           kind: "prd",
           name,
           title: "Pipe Escape PRD",
-          yamlContent,
+          content,
         })
         yield* svc.render(name)
       }).pipe(Effect.provide(shared.layer))
     )
 
     const markdown = readFileSync(join(tempDir, "specs", "prd", `${name}.md`), "utf8")
-    expect(markdown).toContain(
-      "| EARS-PIPE-001 | ubiquitous | The tx \\| learn shall persist A \\| B values. | - |"
-    )
+    expect(markdown).toContain("tx | learn command shall persist A | B values")
   })
 })
 
@@ -478,29 +508,23 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Valid EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     writeFileSync(
-      yamlPath,
-      [
-        "kind: prd",
-        `name: ${name}`,
-        'title: "Valid EARS"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Validate structured requirements.",
-        "",
-        "solution: |",
-        "  Use EARS syntax.",
-        "",
-      "ears_requirements:",
-      "  - id: EARS-FL-001",
-      "    pattern: event_driven",
-      "    trigger: a user runs tx memory recall <path>",
-      "    system: recall service",
-      "    response: return relevant learnings",
-      "",
-      ].join("\n"),
+      markdownPath,
+      prdDoc({
+        name,
+        title: "Valid EARS",
+        problem: "Validate structured requirements.",
+        requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-CLI-EARS-001
+    kind: event-driven
+    when: a user runs tx memory recall <path>
+    statement: the recall service shall return relevant learnings.
+    priority: must
+\`\`\``,
+        acceptanceCriteria: "- lint-ears passes for valid markdown.",
+      }),
       "utf8"
     )
 
@@ -509,37 +533,31 @@ describe("CLI doc lint-ears", () => {
     expect(lint.stdout).toContain("EARS validation passed")
   })
 
-  it("supports linting by direct YAML file path", () => {
+  it("supports linting by direct markdown file path", () => {
     const name = `prd-${fixtureId("cli-ears-path").slice(3, 10)}`
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Path EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     writeFileSync(
-      yamlPath,
-      [
-        "kind: prd",
-        `name: ${name}`,
-        'title: "Path EARS"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Validate by path.",
-        "",
-        "solution: |",
-        "  Read YAML directly.",
-        "",
-      "ears_requirements:",
-      "  - id: EARS-PATH-001",
-      "    pattern: ubiquitous",
-      "    system: tx",
-      "    response: lint via path",
-      "",
-      ].join("\n"),
+      markdownPath,
+      prdDoc({
+        name,
+        title: "Path EARS",
+        problem: "Validate by path.",
+        requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-CLI-EARS-002
+    kind: ubiquitous
+    statement: the system shall lint a markdown file path directly.
+    priority: must
+\`\`\``,
+        acceptanceCriteria: "- lint by path succeeds.",
+      }),
       "utf8"
     )
 
-    const lint = runTx(["doc", "lint-ears", yamlPath], tempProjectDir)
+    const lint = runTx(["doc", "lint-ears", markdownPath], tempProjectDir)
     expect(lint.status).toBe(0)
     expect(lint.stdout).toContain("EARS validation passed")
   })
@@ -549,35 +567,29 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Invalid EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     writeFileSync(
-      yamlPath,
-      [
-        "kind: prd",
-        `name: ${name}`,
-        'title: "Invalid EARS"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Missing trigger.",
-        "",
-        "solution: |",
-        "  Should fail lint.",
-        "",
-      "ears_requirements:",
-      "  - id: EARS-FL-001",
-      "    pattern: event_driven",
-      "    system: recall service",
-      "    response: return relevant learnings",
-      "",
-      ].join("\n"),
+      markdownPath,
+      prdDoc({
+        name,
+        title: "Invalid EARS",
+        problem: "Missing event-driven clause.",
+        requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-CLI-EARS-003
+    kind: event-driven
+    statement: the recall service shall return relevant learnings.
+    priority: must
+\`\`\``,
+        acceptanceCriteria: "- lint fails for invalid markdown EARS.",
+      }),
       "utf8"
     )
 
     const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
     expect(lint.status).not.toBe(0)
-    expect(lint.stderr).toContain("EARS validation failed")
-    expect(lint.stderr).toContain("(trigger)")
+    expect(lint.stderr).toContain("Markdown parse error")
+    expect(lint.stderr).toContain("requires field 'when'")
   })
 
   it("returns JSON output for valid lint", () => {
@@ -585,32 +597,26 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Valid JSON EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     writeFileSync(
-      yamlPath,
-      [
-        "kind: prd",
-        `name: ${name}`,
-        'title: "Valid JSON EARS"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Produce JSON output.",
-        "",
-        "solution: |",
-        "  Lint a valid EARS block.",
-        "",
-      "ears_requirements:",
-      "  - id: EARS-JSON-001",
-      "    pattern: ubiquitous",
-      "    system: tx",
-      "    response: return json payload",
-      "",
-      ].join("\n"),
+      markdownPath,
+      prdDoc({
+        name,
+        title: "Valid JSON EARS",
+        problem: "Produce JSON output.",
+        requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-CLI-EARS-004
+    kind: ubiquitous
+    statement: the system shall return json payload.
+    priority: must
+\`\`\``,
+        acceptanceCriteria: "- JSON output is valid for passing lint.",
+      }),
       "utf8"
     )
     // Force fsync to ensure data is on disk before subprocess reads it
-    const fd = openSync(yamlPath, "r")
+    const fd = openSync(markdownPath, "r")
     fsyncSync(fd)
     closeSync(fd)
 
@@ -625,7 +631,7 @@ describe("CLI doc lint-ears", () => {
     expect(parsed.valid).toBe(true)
     expect(parsed.count).toBe(1)
     expect(parsed.errors).toHaveLength(0)
-    expect(parsed.path).toContain(`${name}.yml`)
+    expect(parsed.path).toContain(`${name}.md`)
   })
 
   it("returns JSON output for invalid lint", () => {
@@ -633,28 +639,22 @@ describe("CLI doc lint-ears", () => {
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Invalid JSON EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     writeFileSync(
-      yamlPath,
-      [
-        "kind: prd",
-        `name: ${name}`,
-        'title: "Invalid JSON EARS"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Produce JSON error output.",
-        "",
-        "solution: |",
-        "  Lint an invalid EARS block.",
-        "",
-      "ears_requirements:",
-      "  - id: EARS-JSON-001",
-      "    pattern: event_driven",
-      "    system: tx",
-      "    response: fail json payload",
-      "",
-      ].join("\n"),
+      markdownPath,
+      prdDoc({
+        name,
+        title: "Invalid JSON EARS",
+        problem: "Produce JSON error output.",
+        requirements: `\`\`\`yaml
+ears_requirements:
+  - id: REQ-CLI-EARS-005
+    kind: event-driven
+    statement: the system shall fail json payload.
+    priority: must
+\`\`\``,
+        acceptanceCriteria: "- Invalid markdown EARS emits JSON errors.",
+      }),
       "utf8"
     )
 
@@ -662,93 +662,75 @@ describe("CLI doc lint-ears", () => {
     expect(lint.status).not.toBe(0)
     const parsed = JSON.parse(lint.stdout) as {
       valid: boolean
-      count: number
-      errors: Array<{ field: string }>
+      count?: number
+      errors: Array<{ field: string; message: string }>
       path: string
     }
     expect(parsed.valid).toBe(false)
-    expect(parsed.count).toBe(1)
-    expect(parsed.path).toContain(`${name}.yml`)
-    expect(parsed.errors.some((error) => error.field === "trigger")).toBe(true)
+    expect(parsed.path).toContain(`${name}.md`)
+    expect(parsed.errors.some((error) => error.field === "markdown")).toBe(true)
+    expect(parsed.errors.some((error) => error.message.includes("requires field 'when'"))).toBe(true)
   })
 
-  it("fails lint when legacy requirements omit EARS under the default config", () => {
+  it("returns success when PRD has no ears_requirements under the default config", () => {
     const name = `prd-${fixtureId("cli-ears-required").slice(3, 10)}`
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Legacy PRD"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     writeFileSync(
-      yamlPath,
-      [
-        "kind: prd",
-        `name: ${name}`,
-        'title: "Legacy PRD"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Missing EARS section.",
-        "",
-        "solution: |",
-        "  Still using legacy requirements only.",
-        "",
-        "requirements:",
-        "  - Legacy requirement one",
-        "",
-      ].join("\n"),
+      markdownPath,
+      prdDoc({
+        name,
+        title: "Legacy PRD",
+        problem: "Missing EARS section.",
+        requirements: "- Legacy requirement one",
+        acceptanceCriteria: "- Legacy requirement remains documented.",
+      }),
       "utf8"
     )
 
     const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
-    expect(lint.status).not.toBe(0)
-    expect(lint.stderr).toContain("must also define a non-empty 'ears_requirements' array")
+    expect(lint.status).toBe(0)
+    expect(lint.stdout).toContain("No ears_requirements section found")
   })
 
-  it("rejects legacy requirements without EARS regardless of config", () => {
-    // EARS is now a hard requirement — config toggle has no effect
+  it("returns success without EARS regardless of require_ears config", () => {
     writeDocsConfig(tempProjectDir, false)
 
     const name = `prd-${fixtureId("cli-ears-optional").slice(3, 10)}`
     const addDoc = runTx(["doc", "add", "prd", name, "--title", "Optional EARS"], tempProjectDir)
     expect(addDoc.status).toBe(0)
 
-    const yamlPath = join(tempProjectDir, "specs", "prd", `${name}.yml`)
+    const markdownPath = join(tempProjectDir, "specs", "prd", `${name}.md`)
     writeFileSync(
-      yamlPath,
-      [
-        "kind: prd",
-        `name: ${name}`,
-        'title: "Optional EARS"',
-        "status: changing",
-        "",
-        "problem: |",
-        "  Legacy-only authoring.",
-        "",
-        "solution: |",
-        "  Config opt-out.",
-        "",
-        "requirements:",
-        "  - Legacy requirement one",
-        "",
-      ].join("\n"),
+      markdownPath,
+      prdDoc({
+        name,
+        title: "Optional EARS",
+        problem: "Legacy-only authoring.",
+        requirements: "- Legacy requirement one",
+        acceptanceCriteria: "- Legacy requirement remains documented.",
+      }),
       "utf8"
     )
 
     const lint = runTx(["doc", "lint-ears", name], tempProjectDir)
-    expect(lint.status).not.toBe(0)
-    expect(lint.stderr).toContain("must also define a non-empty 'ears_requirements' array")
+    expect(lint.status).toBe(0)
+    expect(lint.stdout).toContain("No ears_requirements section found")
   })
 
-  it("shows lint-ears in doc help output", () => {
-    const help = runTx(["doc", "--help"], tempProjectDir)
-    expect(help.status).toBe(0)
-    expect(help.stdout).toContain("lint-ears")
-  })
-
-  it("shows lint-ears in top-level help output", () => {
+  it("shows spec lint in top-level help output", () => {
     const help = runTx(["--help"], tempProjectDir)
     expect(help.status).toBe(0)
-    expect(help.stdout).toContain("lint-ears")
+    expect(help.stdout).toContain("spec")
+    expect(help.stdout).toContain("lint")
+  })
+
+  it("shows spec lint in spec help output", () => {
+    const help = runTx(["spec", "--help"], tempProjectDir)
+    expect(help.status).toBe(0)
+    expect(help.stdout).toContain("lint")
   })
 
   it("fails lint-ears for non-PRD docs", () => {

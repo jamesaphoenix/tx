@@ -1,8 +1,23 @@
+---
+kind: spec
+spec_type: design
+name: DD-025-task-assignment-settings
+title: Task Assignment Defaults, Settings Page, and Cmd+K Toggle
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # Task Assignment Defaults, Settings Page, and Cmd+K Toggle
 
-**Kind**: design
-**Status**: changing
-**Version**: 1
 
 ## Problem Definition
 

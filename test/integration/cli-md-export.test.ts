@@ -437,6 +437,37 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
       expect(hasTaskTwo).toBe(true)
     })
 
+    it("filters by open shows all non-done tasks in the main section", () => {
+      const blocker = runTxArgs(["add", "Open Blocker", "--json"], dbPath)
+      walCheckpoint(dbPath)
+      const blockerId = JSON.parse(blocker.stdout).id
+
+      const blocked = runTxArgs(["add", "Still Open", "--json"], dbPath)
+      walCheckpoint(dbPath)
+      const blockedId = JSON.parse(blocked.stdout).id
+
+      const doneTask = runTxArgs(["add", "Already Done", "--json"], dbPath)
+      walCheckpoint(dbPath)
+      const doneTaskId = JSON.parse(doneTask.stdout).id
+
+      runTxArgs(["block", blockedId, blockerId], dbPath)
+      walCheckpoint(dbPath)
+      runTxArgs(["done", doneTaskId], dbPath)
+      walCheckpoint(dbPath)
+
+      const mdPath = join(tmpDir, "tasks.md")
+      const result = runTxArgs(["md-export", "--path", mdPath, "--filter", "open"], dbPath)
+      expect(result.status).toBe(0)
+
+      const content = readFileSync(mdPath, "utf-8")
+      expect(content).toContain("## Open Tasks (by score, highest first)")
+
+      const headings = content.split("\n").filter(l => l.startsWith("### "))
+      expect(headings.some(h => h.includes("Open Blocker"))).toBe(true)
+      expect(headings.some(h => h.includes("Still Open"))).toBe(true)
+      expect(headings.some(h => h.includes("Already Done"))).toBe(false)
+    })
+
     it("filters by specific status name (backlog)", () => {
       runTxArgs(["add", "Backlog Task", "--json"], dbPath)
       walCheckpoint(dbPath)
@@ -545,6 +576,36 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
       const content = readFileSync(mdPath, "utf-8")
       // Blocker task should show it blocks the other task
       expect(content).toContain(`**Blocks**: ${otherId}`)
+    })
+
+    it("includes linked docs when a task is attached to a spec", () => {
+      const task = runTxArgs(["add", "Implement Auth Flow", "--json"], dbPath)
+      walCheckpoint(dbPath)
+      const taskId = JSON.parse(task.stdout).id
+
+      const { Database } = require("bun:sqlite")
+      const db = new Database(dbPath)
+      const now = new Date().toISOString()
+      const docName = "auth-flow"
+      const inserted = db.prepare(
+        `INSERT INTO docs (hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, metadata)
+         VALUES (?, 'prd', ?, 'Auth Flow', 1, 'changing', ?, NULL, ?, '{}')`
+      ).run("hash-auth-flow-test", docName, "specs/prd/auth-flow.md", now)
+      db.prepare(
+        `INSERT INTO task_doc_links (task_id, doc_id, link_type, created_at)
+         VALUES (?, ?, 'implements', ?)`
+      ).run(taskId, Number(inserted.lastInsertRowid), now)
+      db.close()
+      walCheckpoint(dbPath)
+
+      const mdPath = join(tmpDir, "tasks.md")
+      const result = runTxArgs(["md-export", "--path", mdPath], dbPath)
+      expect(result.status).toBe(0)
+
+      const content = readFileSync(mdPath, "utf-8")
+      expect(content).toContain("**Linked docs**:")
+      expect(content).toContain("implements:")
+      expect(content).toContain(`(prd/${docName} v1)`)
     })
   })
 

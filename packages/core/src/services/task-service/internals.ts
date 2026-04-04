@@ -5,10 +5,11 @@ import { GuardRepository } from "../../repo/guard-repo.js"
 import { PinRepository } from "../../repo/pin-repo.js"
 import { ClaimRepository } from "../../repo/claim-repo.js"
 import { AttemptRepository } from "../../repo/attempt-repo.js"
+import { DocRepository } from "../../repo/doc-repo.js"
 import { GuardExceededError, DatabaseError, StaleDataError, TaskNotFoundError } from "../../errors.js"
 import { readTxConfig } from "../../utils/toml-config.js"
 import { isValidTaskId } from "@jamesaphoenix/tx-types"
-import type { Task, TaskId, TaskWithDeps, OrchestrationStatus } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId, TaskWithDeps, OrchestrationStatus, TaskLinkedDocRef } from "@jamesaphoenix/tx-types"
 
 type EffectiveGuardLimits = {
   readonly maxPending: number | null
@@ -22,6 +23,7 @@ type InternalDeps = {
   readonly depRepo: Context.Tag.Service<typeof DependencyRepository>
   readonly claimRepo?: Context.Tag.Service<typeof ClaimRepository>
   readonly attemptRepo?: Context.Tag.Service<typeof AttemptRepository>
+  readonly docRepo?: Context.Tag.Service<typeof DocRepository>
 }
 
 /**
@@ -226,6 +228,9 @@ export const enrichWithDeps = (
       const counts = yield* deps.attemptRepo.getFailedCountsForTasks([task.id])
       failedAttempts = counts.get(task.id) ?? 0
     }
+    const linkedDocs = deps.docRepo
+      ? yield* deps.docRepo.getDocsForTask(task.id)
+      : []
 
     return {
       ...task,
@@ -240,6 +245,7 @@ export const enrichWithDeps = (
       claimedBy: orch.claimedBy,
       claimExpiresAt: orch.claimExpiresAt,
       failedAttempts,
+      linkedDocs,
     }
   })
 
@@ -284,6 +290,9 @@ export const enrichWithDepsBatch = (
     const failedCountsMap = deps.attemptRepo
       ? yield* deps.attemptRepo.getFailedCountsForTasks(taskIds)
       : new Map<string, number>()
+    const linkedDocsMap = deps.docRepo
+      ? yield* deps.docRepo.getDocsForManyTasks(taskIds)
+      : new Map<string, readonly TaskLinkedDocRef[]>()
 
     // Build TaskWithDeps for each task
     const results: TaskWithDeps[] = []
@@ -318,6 +327,7 @@ export const enrichWithDepsBatch = (
         claimedBy: orch.claimedBy,
         claimExpiresAt: orch.claimExpiresAt,
         failedAttempts: failedCountsMap.get(task.id) ?? 0,
+        linkedDocs: [...(linkedDocsMap.get(task.id) ?? [])],
       })
     }
 

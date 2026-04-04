@@ -40,7 +40,8 @@ export default defineConfig({
   test: {
     include: [
       "test/**/*.test.ts",
-      "eslint-plugin-tx/tests/**/*.test.js"
+      "eslint-plugin-tx/tests/**/*.test.js",
+      "packages/core/src/utils/md-doc-parser.test.ts",
     ],
     exclude: [
       // Commands not yet registered in CLI — tests exist ahead of implementation
@@ -53,6 +54,9 @@ export default defineConfig({
       "test/integration/install-script.test.ts",
       // utils usage tests: require real CLIs + network (run explicitly)
       "test/integration/utils-usage.test.ts",
+      // docs build/server tests: require full Next.js build (slow, stdout corrupts JSON reporter)
+      "test/integration/docs-build.test.ts",
+      "test/integration/docs-search-route.test.ts",
     ],
     setupFiles: ["./vitest.setup.ts"],
     environment: "node",

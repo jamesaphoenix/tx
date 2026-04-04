@@ -8,27 +8,23 @@
 import { Effect, Cause, Option, Layer } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient } from "@jamesaphoenix/tx-core"
+import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient, findTxRoot, resolveTxDbPath } from "@jamesaphoenix/tx-core"
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
+import { CliUserError, emitCliError, movedCommandError, unknownCommandError, usageError } from "./cli-errors.js"
+import { buildCommandCatalog, buildHelpPayload, buildSchemaPayload, deprecatedCommandMap, resolveCommandKey } from "./help-registry.js"
+import { toJson } from "./output.js"
 import { CLI_VERSION } from "./version.js"
 
 // Command imports
 import { add, list, ready, show, update, done, deleteTask, reset } from "./commands/task.js"
-import { block, unblock } from "./commands/dep.js"
-import { children, tree } from "./commands/hierarchy.js"
+import { dep } from "./commands/dep-compound.js"
 import { sync } from "./commands/sync.js"
-import { migrate } from "./commands/migrate.js"
 import { cycle } from "./commands/cycle.js"
 import { trace } from "./commands/trace.js"
 import { claim } from "./commands/claim.js"
-import { compact, history } from "./commands/compact.js"
-import { validate } from "./commands/validate.js"
-import { doctor } from "./commands/doctor.js"
-import { stats } from "./commands/stats.js"
 import { bulk } from "./commands/bulk.js"
-import { dashboard } from "./commands/dashboard.js"
-import { send, inbox, ack, outbox } from "./commands/outbox.js"
+import { msg } from "./commands/msg.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
 import { spec } from "./commands/spec.js"
@@ -41,11 +37,11 @@ import { memory } from "./commands/memory.js"
 import { pin } from "./commands/pin.js"
 import { mdExport } from "./commands/md-export.js"
 import { utils } from "./commands/utils.js"
-import { guard } from "./commands/guard.js"
-import { verify } from "./commands/verify.js"
-import { label } from "./commands/label.js"
-import { reflect } from "./commands/reflect.js"
-import { gate } from "./commands/gate.js"
+import { diag } from "./commands/diag.js"
+import { auto } from "./commands/auto.js"
+import { skills } from "./commands/skills.js"
+import { decompose } from "./commands/decompose.js"
+import { schema } from "./commands/schema.js"
 import * as p from "@clack/prompts"
 
 // --- Argv parsing helpers ---
@@ -111,7 +107,7 @@ type CommandFn = (positional: string[], flags: Record<string, string | boolean>)
 function deprecatedAlias(newCmd: string, handler: CommandFn): CommandFn {
   return (pos, flags) =>
     Effect.gen(function* () {
-      console.error(`[deprecated] Use "tx ${newCmd}" instead.`)
+      console.warn(`[deprecated] Use "tx ${newCmd}" instead.`)
       yield* handler(pos, flags)
     })
 }
@@ -137,8 +133,17 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       const forceWatchdog = flag(initFlags, "watchdog")
 
       if (initFlags["watchdog-runtime"] !== undefined && !forceWatchdog) {
-        console.error("--watchdog-runtime requires --watchdog.")
-        return yield* Effect.fail(new CliExitError(1))
+        return yield* Effect.fail(usageError({
+          code: "cli/missing-flag",
+          command: "init",
+          message: "--watchdog-runtime requires --watchdog.",
+          hint: "Pass --watchdog or remove --watchdog-runtime.",
+          usage: "tx init [--watchdog] [--watchdog-runtime <auto|codex|claude|both>]",
+          examples: [
+            "tx init --watchdog",
+            "tx init --watchdog --watchdog-runtime both",
+          ],
+        }))
       }
       const watchdogRuntimeMode = parseWatchdogRuntimeMode(initFlags["watchdog-runtime"])
 
@@ -177,12 +182,43 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   done,
   reset,
   delete: deleteTask,
-  block,
-  unblock,
-  children,
-  tree,
+  // New compound commands
+  dep,
+  msg,
+  diag,
+  auto,
+  skills,
+
+  // Legacy top-level commands (deprecated aliases → compound commands)
+  block: deprecatedAlias("dep block", (pos, flags) => dep(["block", ...pos], flags)),
+  unblock: deprecatedAlias("dep unblock", (pos, flags) => dep(["unblock", ...pos], flags)),
+  children: deprecatedAlias("dep children", (pos, flags) => dep(["children", ...pos], flags)),
+  tree: deprecatedAlias("dep tree", (pos, flags) => dep(["tree", ...pos], flags)),
+  send: deprecatedAlias("msg send", (pos, flags) => msg(["send", ...pos], flags)),
+  inbox: deprecatedAlias("msg inbox", (pos, flags) => msg(["inbox", ...pos], flags)),
+  ack: deprecatedAlias("msg ack", (pos, flags) => msg(["ack", ...pos], flags)),
+  outbox: deprecatedAlias("msg pending|gc", (pos, flags) => {
+    // Route outbox subcommands through msg
+    const sub = pos[0]
+    if (sub === "pending") return msg(["pending", ...pos.slice(1)], flags)
+    if (sub === "gc") return msg(["gc", ...pos.slice(1)], flags)
+    // No subcommand or unknown → show msg help
+    return msg([], flags)
+  }),
+  stats: deprecatedAlias("diag stats", (pos, flags) => diag(["stats", ...pos], flags)),
+  doctor: deprecatedAlias("diag doctor", (pos, flags) => diag(["doctor", ...pos], flags)),
+  validate: deprecatedAlias("diag doctor", (pos, flags) => diag(["doctor", ...pos], flags)),
+  dashboard: deprecatedAlias("diag dashboard", (pos, flags) => diag(["dashboard", ...pos], flags)),
+  compact: deprecatedAlias("sync compact", (pos, flags) => sync(["compact", ...pos], flags)),
+  history: deprecatedAlias("sync history", (pos, flags) => sync(["history", ...pos], flags)),
+  guard: deprecatedAlias("auto guard", (pos, flags) => auto(["guard", ...pos], flags)),
+  gate: deprecatedAlias("auto gate", (pos, flags) => auto(["gate", ...pos], flags)),
+  verify: deprecatedAlias("auto verify", (pos, flags) => auto(["verify", ...pos], flags)),
+  label: deprecatedAlias("auto label", (pos, flags) => auto(["label", ...pos], flags)),
+  reflect: deprecatedAlias("auto reflect", (pos, flags) => auto(["reflect", ...pos], flags)),
+
   sync,
-  migrate,
+  migrate: deprecatedAlias("sync migrate", (pos, flags) => sync(["migrate", ...pos], flags)),
   "group-context": groupContext,
 
   // Cycle scan (PRD-023)
@@ -194,35 +230,12 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Trace command (with subcommands)
   trace,
 
-  // Compaction commands (PRD-006)
-  compact,
-  history,
-
-  // Validation command
-  validate,
-
-  // Diagnostics command
-  doctor,
-
-  // Stats command
-  stats,
-
   // Bulk operations
   bulk,
 
-  // Dashboard command
-  dashboard,
-
-  // Outbox commands (PRD-024 agent messaging)
-  // ack dispatches "all" subcommand; outbox dispatches "pending"/"gc"
-  send,
-  inbox,
-  ack,
-  outbox,
-
   // Doc commands (DD-023 docs-as-primitives)
   doc,
-  invariant,
+  invariant: deprecatedAlias("spec", invariant),
   spec,
 
   // Decision commands
@@ -238,52 +251,120 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
   // Markdown export (file-based agent loops)
   "md-export": mdExport,
 
+  // Spec-driven task graph creation
+  decompose,
+
   // Utility commands (no DB required)
   utils,
-
-  // Bounded autonomy primitives
-  guard,
-  gate,
-  verify,
-  label,
-  reflect,
+  schema,
 
   // --- Deprecated colon-style aliases (emit warning, delegate to new syntax) ---
   "claim:release": deprecatedAlias("claim release", (pos, flags) => claim(["release", ...pos], flags)),
   "claim:renew": deprecatedAlias("claim renew", (pos, flags) => claim(["renew", ...pos], flags)),
   "group-context:set": deprecatedAlias("group-context set", (pos, flags) => groupContext(["set", ...pos], flags)),
   "group-context:clear": deprecatedAlias("group-context clear", (pos, flags) => groupContext(["clear", ...pos], flags)),
-  "ack:all": deprecatedAlias("ack all", (pos, flags) => ack(["all", ...pos], flags)),
-  "outbox:pending": deprecatedAlias("outbox pending", (pos, flags) => outbox(["pending", ...pos], flags)),
-  "outbox:gc": deprecatedAlias("outbox gc", (pos, flags) => outbox(["gc", ...pos], flags)),
+  "ack:all": deprecatedAlias("msg ack all", (pos, flags) => msg(["ack", "all", ...pos], flags)),
+  "outbox:pending": deprecatedAlias("msg pending", (pos, flags) => msg(["pending", ...pos], flags)),
+  "outbox:gc": deprecatedAlias("msg gc", (pos, flags) => msg(["gc", ...pos], flags)),
 
   // Help command
   help: (pos) =>
     Effect.sync(() => {
-      const subcommand = pos[0]
-      if (subcommand && commandHelp[subcommand]) {
-        console.log(commandHelp[subcommand])
-        return
-      }
-      // Check for compound command help (e.g., tx help sync export)
-      const compoundParents = [
-        "sync", "utils", "pin", "guard", "gate", "verify", "label", "spec",
-        "memory", "claim", "outbox", "group-context", "ack"
-      ]
-      if (pos[1] && compoundParents.includes(subcommand ?? "")) {
-        const subcommandKey = `${subcommand} ${pos[1]}`
-        if (commandHelp[subcommandKey]) {
-          console.log(commandHelp[subcommandKey])
-          return
-        }
-      }
-      console.log(HELP_TEXT)
+      printHelpOutput(pos, false)
     }),
+}
+
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1
+  const cols = b.length + 1
+  const dp = Array.from({ length: rows }, (_, row) =>
+    Array.from({ length: cols }, (_, col) => (row === 0 ? col : col === 0 ? row : 0))
+  )
+
+  for (let row = 1; row < rows; row++) {
+    for (let col = 1; col < cols; col++) {
+      const cost = a[row - 1] === b[col - 1] ? 0 : 1
+      dp[row][col] = Math.min(
+        dp[row - 1][col] + 1,
+        dp[row][col - 1] + 1,
+        dp[row - 1][col - 1] + cost
+      )
+    }
+  }
+
+  return dp[a.length][b.length]
+}
+
+function suggestCommands(input: string, candidates: string[], limit = 3): string[] {
+  const normalized = input.toLowerCase()
+  return candidates
+    .filter(candidate => candidate !== "help")
+    .map(candidate => {
+      const candidateNormalized = candidate.toLowerCase()
+      const prefixBoost = candidateNormalized.startsWith(normalized) ? -2 : 0
+      const includeBoost = candidateNormalized.includes(normalized) ? -1 : 0
+      return {
+        candidate,
+        score: editDistance(normalized, candidateNormalized) + prefixBoost + includeBoost,
+      }
+    })
+    .sort((left, right) => left.score - right.score || left.candidate.localeCompare(right.candidate))
+    .slice(0, limit)
+    .map(entry => entry.candidate)
+}
+
+function printHelpOutput(parts: string[], jsonMode: boolean): void {
+  if (jsonMode) {
+    console.log(toJson(buildHelpPayload(parts)))
+    return
+  }
+
+  if (parts.length === 0) {
+    console.log(HELP_TEXT)
+    return
+  }
+
+  const key = resolveCommandKey(parts)
+  if (!key) {
+    const suggestions = suggestCommands(parts.join(" "), buildCommandCatalog().map((entry) => entry.key))
+    throw new CliUserError({
+      code: "cli/unknown-command",
+      command: parts.join(" "),
+      message: `Unknown command: ${parts.join(" ")}`,
+      hint: suggestions.length > 0
+        ? `Closest matches: ${suggestions.join(", ")}.`
+        : "Run `tx help --json` to inspect the available command catalog.",
+      usage: "tx help [command] [subcommand]",
+      details: {
+        suggestions,
+      },
+    })
+  }
+
+  console.log(commandHelp[key])
+}
+
+function printSchemaOutput(parts: string[]): void {
+  console.log(toJson(buildSchemaPayload(parts)))
 }
 
 // --- Main ---
 
 const { command, positional, flags: parsedFlags } = parseArgs(process.argv)
+const jsonMode = flag(parsedFlags, "json")
+
+function exitCliUserError(error: unknown): never {
+  if (error instanceof CliUserError) {
+    emitCliError(error, jsonMode)
+    process.exit(error.exitCode)
+  }
+
+  const message = error instanceof Error
+    ? error.stack ?? error.message
+    : String(error)
+  console.error(message)
+  process.exit(1)
+}
 
 // Handle --version early, before any command processing
 if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
@@ -291,72 +372,65 @@ if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
   process.exit(0)
 }
 
-// Commands that support compound help (e.g., tx sync export --help, tx help learning add)
-const compoundHelpParents = [
-  "sync", "trace", "bulk", "doc", "invariant", "spec", "memory", "utils", "pin",
-  "guard", "gate", "verify", "label", "claim", "outbox", "group-context", "ack"
-]
-
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
 if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
-  // Check for subcommand help (e.g., tx sync export --help)
-  if (positional[0] && compoundHelpParents.includes(command)) {
-    const subcommandKey = `${command} ${positional[0]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
+  if (command in deprecatedCommandMap) {
+    console.warn(`[deprecated] Use "tx ${deprecatedCommandMap[command]}" instead.`)
   }
-  // Check if we have a command with specific help
-  if (command !== "help" && commandHelp[command]) {
-    console.log(commandHelp[command])
+  try {
+    const helpParts = command === "help" ? positional : [command, ...positional]
+    printHelpOutput(helpParts, jsonMode)
     process.exit(0)
+  } catch (error) {
+    exitCliUserError(error)
   }
-  // Fall through to general help
-  console.log(HELP_TEXT)
-  process.exit(0)
 }
 
 // Handle 'tx help' and 'tx help <command>'
 if (command === "help") {
-  const subcommand = positional[0]
-  // Check for compound command help (e.g., tx help sync export)
-  if (subcommand && positional[1] && compoundHelpParents.includes(subcommand)) {
-    const subcommandKey = `${subcommand} ${positional[1]}`
-    if (commandHelp[subcommandKey]) {
-      console.log(commandHelp[subcommandKey])
-      process.exit(0)
-    }
+  try {
+    printHelpOutput(positional, jsonMode)
+    process.exit(0)
+  } catch (error) {
+    exitCliUserError(error)
   }
-  if (subcommand && commandHelp[subcommand]) {
-    console.log(commandHelp[subcommand])
-  } else {
-    console.log(HELP_TEXT)
+}
+
+if (command === "schema") {
+  try {
+    printSchemaOutput(positional)
+    process.exit(0)
+  } catch (error) {
+    exitCliUserError(error)
   }
-  process.exit(0)
 }
 
 // Handle mcp-server separately (will be moved to apps/mcp)
 if (command === "mcp-server") {
-  console.error("MCP server has been moved to a separate package.")
-  console.error("Please use the @tx/mcp package or run from the monorepo root.")
+  emitCliError(movedCommandError({
+    command,
+    message: "MCP server has been moved to a separate package.",
+    hint: "Use the @tx/mcp package or run the MCP server from the monorepo root.",
+  }), jsonMode)
   process.exit(1)
 }
 
 const handler = commands[command]
 if (!handler) {
-  console.error(`Unknown command: ${command}`)
-  console.error(`Run 'tx help' for usage information`)
+  emitCliError(unknownCommandError({
+    command,
+    suggestions: suggestCommands(command, Object.keys(commands)),
+  }), jsonMode)
   process.exit(1)
 }
 
 const dbPath = typeof parsedFlags.db === "string"
   ? resolve(parsedFlags.db)
-  : resolve(process.cwd(), ".tx", "tasks.db")
+  : resolveTxDbPath()
 
 // For init, ensure directory exists
 if (command === "init") {
-  const dir = resolve(process.cwd(), ".tx")
+  const dir = resolve(findTxRoot(), ".tx")
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
@@ -366,13 +440,13 @@ if (command === "init") {
     writeFileSync(gitignorePath, "tasks.db\ntasks.db-wal\ntasks.db-shm\n")
   }
   // Scaffold default config.toml with annotated defaults (no-op if exists)
-  scaffoldConfigToml(process.cwd())
+  scaffoldConfigToml(findTxRoot())
 }
 
 const layer = makeAppLayer(dbPath)
 const program = handler(positional, parsedFlags)
 
-// Cycle command needs AgentService + CycleScanService overlay
+// Runtime-backed commands that are not part of the default app layer need overlays.
 const fullLayer = command === "cycle"
   ? Layer.merge(layer, CycleScanServiceLive.pipe(Layer.provide(Layer.merge(layer, AgentServiceLive))))
   : layer
@@ -416,6 +490,12 @@ const errorExitCodes: Record<string, number> = {
 const handled = runnable.pipe(
   // Handle expected Effect errors (from Effect.fail in services)
   Effect.catchAll((error: unknown) => {
+    if (error instanceof CliUserError) {
+      emitCliError(error, jsonMode)
+      _exitCode = error.exitCode
+      return Effect.void
+    }
+
     if (error instanceof CliExitError) {
       _exitCode = error.code
       return Effect.void
@@ -425,27 +505,46 @@ const handled = runnable.pipe(
     const tag = err._tag ?? ""
 
     if (tag in errorExitCodes) {
-      console.error(err.message ?? tag.replace(/Error$/, " error"))
-      if (tag === "HasChildrenError") {
-        console.error("Hint: use --cascade to delete with all children, or delete/move children first.")
-      }
+      emitCliError(new CliUserError({
+        code: `service/${tag.replace(/Error$/, "").replace(/[A-Z]/g, (char, index) => index === 0 ? char.toLowerCase() : `-${char.toLowerCase()}`)}`,
+        message: err.message ?? tag.replace(/Error$/, " error"),
+        hint: tag === "HasChildrenError"
+          ? "Use --cascade to delete with all children, or delete/move children first."
+          : undefined,
+        exitCode: errorExitCodes[tag] ?? 1,
+      }), jsonMode)
       _exitCode = errorExitCodes[tag] ?? 1
       return Effect.void
     }
 
-    console.error(`Error: ${err.message ?? String(error)}`)
+    emitCliError(new CliUserError({
+      code: "cli/unexpected-error",
+      message: err.message ?? String(error),
+      exitCode: 1,
+    }), jsonMode)
     _exitCode = 1
     return Effect.void
   }),
   // Handle defects (from throw CliExitError in commands/parse utils)
   Effect.catchAllCause((cause) => {
     const dieOption = Cause.dieOption(cause)
-    if (Option.isSome(dieOption) && dieOption.value instanceof CliExitError) {
-      _exitCode = dieOption.value.code
-      return Effect.void
+    if (Option.isSome(dieOption)) {
+      if (dieOption.value instanceof CliUserError) {
+        emitCliError(dieOption.value, jsonMode)
+        _exitCode = dieOption.value.exitCode
+        return Effect.void
+      }
+      if (dieOption.value instanceof CliExitError) {
+        _exitCode = dieOption.value.code
+        return Effect.void
+      }
     }
     // Unexpected defect — print and exit
-    console.error(`Fatal: ${Cause.pretty(cause)}`)
+    emitCliError(new CliUserError({
+      code: "cli/fatal",
+      message: Cause.pretty(cause),
+      exitCode: 1,
+    }), jsonMode)
     _exitCode = 1
     return Effect.void
   })
@@ -456,6 +555,10 @@ Effect.runPromise(handled).then(() => {
   if (_exitCode !== 0) process.exit(_exitCode)
 }).catch((err: unknown) => {
   // Should not reach here — catchAllCause handles everything
-  console.error(`Fatal: ${err}`)
+  emitCliError(new CliUserError({
+    code: "cli/fatal",
+    message: String(err),
+    exitCode: 1,
+  }), jsonMode)
   process.exit(1)
 })

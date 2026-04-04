@@ -71,23 +71,55 @@ describe("TxClient direct mode integration", () => {
     )
 
     const tx = new TxClient({ dbPath })
-    const docName = `PRD-${fixtureId("agent-sdk-direct:spec-doc").slice(3)}`
+    const docName = `prd-${fixtureId("agent-sdk-direct:spec-doc").slice(3)}`
     const invariantId = `INV-${fixtureId("agent-sdk-direct:spec-invariant").slice(3).toUpperCase()}`
 
     await tx.docs.create({
       kind: "prd",
       name: docName,
       title: "Direct SDK Spec",
-      yamlContent: [
-        "kind: prd",
+      content: [
+        "---",
+        "kind: spec",
+        "spec_type: prd",
         `name: ${docName}`,
-        "title: Direct SDK Spec",
-        "status: changing",
+        "title: \"Direct SDK Spec\"",
+        "status: draft",
+        "version: 1",
+        "owners: [test]",
+        "summary: Test",
+        "domain: test",
+        "tags: [test]",
+        "depends_on: []",
+        "supersedes: []",
+        "implements: null",
+        "last_reviewed_at: 2026-03-16",
+        "---",
         "",
+        "# Summary",
+        "Test.",
+        "",
+        "# Problem",
+        "Test.",
+        "",
+        "# Scope",
+        "Test.",
+        "",
+        "# Requirements",
+        "No additional requirements.",
+        "",
+        "# Acceptance Criteria",
+        "- Tests pass.",
+        "",
+        "# Invariants",
+        "```yaml",
         "invariants:",
         `  - id: ${invariantId}`,
-        "    rule: direct sdk invariant",
-        "    enforcement: integration_test",
+        "    statement: \"direct sdk invariant\"",
+        "    severity: high",
+        "    verified_by:",
+        "      - test/placeholder.test.ts",
+        "```",
       ].join("\n"),
     })
 

@@ -1,9 +1,23 @@
+---
+kind: spec
+spec_type: design
+name: DD-023-docs-as-primitives
+title: Docs as Primitives Design
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: PRD-023-docs-as-primitives
+last_reviewed_at: 2026-03-15
+---
+
+
 # Docs as Primitives Design
 
-**Kind**: design
-**Status**: changing
-**Version**: 1
-**Implements**: PRD-023-docs-as-primitives
 
 ## Problem Definition
 
@@ -51,7 +65,7 @@ Every mutation (create/update/lock/version/patch) triggers:
 1. Write YAML to disk
 2. Insert/update DB metadata
 3. Render YAML to `.md` (non-fatal on error)
-4. Regenerate `index.yml` + `index.md`
+4. Regenerate `index.md` and remove any legacy `index.yml`
 
 ## Doc Graph
 
@@ -314,7 +328,7 @@ calls `tryAutoRender(doc)` which:
 1. Reads the YAML file from disk
 2. Parses YAML to object
 3. Calls `renderDocToMarkdown(parsed, kind)` for the `.md` file
-4. Calls `generateIndex()` for `index.yml` + `index.md`
+4. Calls `generateIndex()` for `index.md` and legacy `index.yml` cleanup
 5. Wraps in try/catch — render failures are logged but never block the mutation
 
 ### Dashboard Rendering
@@ -489,7 +503,7 @@ Service-level business logic with file I/O:
 - **Invariants**: syncInvariants parses from YAML, deprecates removed, recordCheck pass/fail
 - **Graph**: getDocGraph returns correct nodes and edges
 - **Auto-render**: .md produced on create, update, lock, createVersion, createPatch
-- **Index**: auto-generates index.yml + index.md on create
+- **Index**: auto-generates index.md on create and removes any legacy index.yml
 - **Remove**: deletes DB + .yml + .md, rejects locked, fails for nonexistent, regenerates index
 - **Config**: reads docs path from .tx/config.toml
 

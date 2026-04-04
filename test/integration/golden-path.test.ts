@@ -57,7 +57,9 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
 
   it("supports the recommended first task loop and docs-first spec loop", () => {
     expectOk(runTx(cwd, ["init", "--codex"]), "tx init --codex")
-    expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "skills", "manifest.json"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "rules", "default.rules"))).toBe(true)
 
     writeRelative(cwd, ".tx/config.toml", [
       "[docs]",
@@ -97,22 +99,54 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
     expect(readyAfter.map((task) => task.id)).toContain(implementTask.id)
 
     expectOk(runTx(cwd, ["doc", "add", "prd", "auth-flow", "--title", "Auth Flow"]), "tx doc add prd auth-flow")
-    writeRelative(cwd, "specs/prd/auth-flow.yml", [
-      "kind: prd",
+    const authFlowDoc = parseJson<{ docId: string }>(
+      expectOk(runTx(cwd, ["doc", "show", "auth-flow", "--json"]), "tx doc show auth-flow"),
+    )
+    writeRelative(cwd, "specs/prd/auth-flow.md", [
+      "---",
+      "kind: spec",
+      "spec_type: prd",
+      `doc_id: ${authFlowDoc.docId}`,
       "name: auth-flow",
       'title: "Auth Flow"',
-      "status: changing",
+      "status: draft",
+      "version: 1",
+      "owners:",
+      "  - team",
+      "summary: Auth flow PRD",
+      "domain: auth",
+      "tags: []",
+      "depends_on: []",
+      "supersedes: []",
+      "implements: null",
+      "last_reviewed_at: 2026-01-01",
+      "---",
       "",
-      "problem: |",
-      "  Password validation must reject short passwords.",
+      "# Summary",
+      "Auth flow PRD for password validation.",
       "",
-      "solution: |",
-      "  Track the auth invariant and map it to an executable test.",
+      "# Problem",
+      "Password validation must reject short passwords.",
       "",
+      "# Scope",
+      "Included: password length validation.",
+      "Excluded: password complexity rules.",
+      "",
+      "# Requirements",
+      "Track the auth invariant and map it to an executable test.",
+      "",
+      "# Acceptance Criteria",
+      "Short passwords are rejected.",
+      "",
+      "# Invariants",
+      "```yaml",
       "invariants:",
       "  - id: INV-AUTH-FLOW-001",
-      "    rule: reject short passwords",
-      "    enforcement: integration_test",
+      "    statement: reject short passwords",
+      "    severity: high",
+      "    verified_by:",
+      "      - test/auth-flow.test.ts",
+      "```",
       "",
     ].join("\n"))
     writeRelative(cwd, "test/auth-flow.test.ts", [
@@ -167,8 +201,8 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
     expect(existsSync(join(cwd, ".tx", "stream.json"))).toBe(true)
     expect(existsSync(join(cwd, ".tx", "streams"))).toBe(true)
 
-    const agentsContent = readFileSync(join(cwd, "AGENTS.md"), "utf-8")
-    expect(agentsContent).toContain("Start Here")
-    expect(agentsContent).toContain("tx spec discover")
+    const codexSkillContent = readFileSync(join(cwd, ".codex", "skills", "tx-core-loop", "SKILL.md"), "utf-8")
+    expect(codexSkillContent).toContain("Quick Start")
+    expect(codexSkillContent).toContain("tx ready --limit 1 --json")
   })
 })

@@ -65,7 +65,9 @@ const makeBaseSyncServiceStub = (): SyncServiceStub => ({
   import: () => Effect.succeed(EMPTY_SYNC_IMPORT_RESULT),
   hydrate: () => Effect.succeed({ importedEvents: 0, appliedEvents: 0, streamCount: 0, rebuilt: true }),
   compact: () => Effect.succeed({ before: 0, after: 0, path: ".tx/tasks.jsonl" }),
-  stream: () => Effect.succeed({ streamId: MOCK_STREAM_ID, nextSeq: 1, lastSeq: 0, eventsDir: ".tx/streams/mock", configPath: ".tx/stream.json", knownStreams: [] })
+  stream: () => Effect.succeed({ streamId: MOCK_STREAM_ID, nextSeq: 1, lastSeq: 0, eventsDir: ".tx/streams/mock", configPath: ".tx/stream.json", knownStreams: [] }),
+  importDecisions: () => Effect.succeed({ imported: 0, skipped: 0 }),
+  exportDecisions: () => Effect.succeed({ opCount: 0, path: ".tx/decisions.jsonl" }),
 })
 
 const makeSyncServiceStub = (overrides: Partial<SyncServiceStub> = {}): SyncServiceStub => ({

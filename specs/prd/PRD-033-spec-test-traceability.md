@@ -1,7 +1,23 @@
+---
+kind: spec
+spec_type: prd
+name: PRD-033-spec-test-traceability
+title: "PRD-033: Spec-to-Test Traceability"
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # PRD-033: Spec-to-Test Traceability
 
-**Kind**: prd
-**Status**: changing
 
 ## Problem
 

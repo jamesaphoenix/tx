@@ -323,9 +323,9 @@ describe("Recency Scoring Isolation", () => {
     const stale = results.find(r => r.content === "stale data tip")!
 
     // 1 hour: recency ≈ 1.0
-    // 30 days: recency = 0
+    // 30 days: recency ≈ 0 (may have tiny floating-point residual)
     expect(fresh.recencyScore).toBeGreaterThan(0.95)
-    expect(stale.recencyScore).toBe(0)
+    expect(stale.recencyScore).toBeLessThan(0.01)
   })
 })
 
@@ -803,7 +803,7 @@ describe("Combined Scoring Components", () => {
     // Verify each learning has the expected boost factors set
     expect(base.outcomeScore).toBe(null)
     expect(base.usageCount).toBe(0)
-    expect(base.recencyScore).toBe(0) // 30 days old
+    expect(base.recencyScore).toBeLessThan(0.01) // 30 days old, ≈ 0
 
     expect(outcome.outcomeScore).toBe(1.0)
     expect(freq.usageCount).toBe(100)

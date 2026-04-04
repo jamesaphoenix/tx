@@ -66,7 +66,7 @@ export const VerifyServiceLive = Layer.effect(
           if (!verify.cmd) {
             return yield* Effect.fail(new VerifyError({
               taskId: id,
-              reason: "No verify command set. Use `tx verify set <id> <cmd>` first.",
+              reason: "No verify command set. Use `tx auto verify set <id> <cmd>` first.",
             }))
           }
 

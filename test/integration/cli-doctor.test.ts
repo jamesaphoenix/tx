@@ -1,12 +1,15 @@
 /**
- * CLI integration tests for tx doctor command
+ * CLI integration tests for tx doctor command (consolidated validate + doctor)
  *
  * Tests the following:
- * - All 7 diagnostic checks (database, WAL, schema, services, claims, tasks, API key)
+ * - Database validation checks (integrity, schema, FK, orphaned deps, statuses, parent refs)
+ * - System diagnostic checks (database, WAL, schema, services, claims, tasks, API key)
  * - Verbose output mode
- * - JSON output mode
+ * - JSON output mode (includes both validation and diagnostic results)
+ * - --fix flag for auto-fixing DB issues
  * - Help text
  * - Exit codes (0 for healthy, 1 for failures)
+ * - Deprecated 'tx validate' alias
  *
  * Per DD-007: Uses real SQLite database and deterministic SHA256 fixtures.
  */
@@ -113,7 +116,7 @@ function runTx(args: string, dbPath: string, env?: Record<string, string>): Exec
 // tx doctor Command Tests
 // =============================================================================
 
-describe("CLI doctor command", () => {
+describe("CLI doctor command (consolidated validate + diagnostics)", () => {
   let tmpDir: string
   let dbPath: string
 
@@ -274,7 +277,7 @@ describe("CLI doctor command", () => {
       expect(json.healthy).toBe(true)
     })
 
-    it("JSON checks array contains all 7 checks", () => {
+    it("JSON checks array contains validation and diagnostic checks", () => {
       const result = runTx("doctor --json", dbPath)
       expect(result.status).toBe(0)
 
@@ -282,6 +285,7 @@ describe("CLI doctor command", () => {
       expect(Array.isArray(json.checks)).toBe(true)
 
       const checkNames = json.checks.map((c: { name: string }) => c.name)
+      // Diagnostic checks
       expect(checkNames).toContain("database")
       expect(checkNames).toContain("wal_mode")
       expect(checkNames).toContain("schema")
@@ -289,6 +293,20 @@ describe("CLI doctor command", () => {
       expect(checkNames).toContain("stale_claims")
       expect(checkNames).toContain("tasks")
       expect(checkNames).toContain("learnings")
+      // Validation checks (prefixed with validate_)
+      const validateChecks = checkNames.filter((n: string) => n.startsWith("validate_"))
+      expect(validateChecks.length).toBeGreaterThan(0)
+    })
+
+    it("JSON includes validation result object", () => {
+      const result = runTx("doctor --json", dbPath)
+      expect(result.status).toBe(0)
+
+      const json = JSON.parse(result.stdout)
+      expect(json).toHaveProperty("validation")
+      expect(json.validation).toHaveProperty("valid")
+      expect(json.validation).toHaveProperty("checks")
+      expect(json.validation.valid).toBe(true)
     })
 
     it("JSON checks have correct structure", () => {
@@ -357,20 +375,83 @@ describe("CLI doctor command", () => {
     })
   })
 
+  describe("validation integration", () => {
+    it("runs database validation checks alongside diagnostics", () => {
+      const result = runTx("doctor", dbPath)
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("Validate:")
+    })
+
+    it("human output shows header banner", () => {
+      const result = runTx("doctor", dbPath)
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("tx diag doctor - System Health")
+      expect(result.stdout).toContain("========")
+    })
+
+    it("--fix flag is accepted without error", () => {
+      const result = runTx("doctor --fix", dbPath)
+      expect(result.status).toBe(0)
+    })
+
+    it("--fix flag is reflected in JSON validation output", () => {
+      const result = runTx("doctor --fix --json", dbPath)
+      expect(result.status).toBe(0)
+      const json = JSON.parse(result.stdout)
+      expect(json.validation).toBeDefined()
+      // fixedCount should be 0 on a healthy DB
+      expect(json.validation.fixedCount).toBe(0)
+    })
+  })
+
+  describe("deprecated validate alias", () => {
+    it("tx validate shows deprecation warning and runs doctor", () => {
+      const result = runTx("validate", dbPath)
+      expect(result.status).toBe(0)
+      expect(result.stderr).toContain("[deprecated]")
+      expect(result.stderr).toContain("tx diag doctor")
+      // Still runs the full doctor output
+      expect(result.stdout).toContain("tx diag doctor - System Health")
+    })
+
+    it("tx validate --json still works through the alias", () => {
+      const result = runTx("validate --json", dbPath)
+      expect(result.status).toBe(0)
+      const json = JSON.parse(result.stdout)
+      expect(json).toHaveProperty("healthy")
+      expect(json).toHaveProperty("validation")
+    })
+
+    it("tx validate --fix still works through the alias", () => {
+      const result = runTx("validate --fix", dbPath)
+      expect(result.status).toBe(0)
+      expect(result.stderr).toContain("[deprecated]")
+    })
+  })
+
+  describe("verbose message accuracy", () => {
+    it("does not suggest --verbose when already verbose", () => {
+      // With --verbose, should never say "Run with --verbose for details"
+      const result = runTxArgs(["doctor", "--verbose"], dbPath, { ANTHROPIC_API_KEY: "" })
+      expect(result.status).toBe(0)
+      expect(result.stdout).not.toContain("Run with --verbose for details")
+    })
+  })
+
   describe("help", () => {
-    it("doctor --help shows help", () => {
+    it("doctor --help shows consolidated help with --fix", () => {
       const result = runTx("doctor --help", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("tx doctor")
       expect(result.stdout).toContain("--verbose")
       expect(result.stdout).toContain("--json")
+      expect(result.stdout).toContain("--fix")
     })
 
     it("help doctor shows help", () => {
       const result = runTxArgs(["help", "doctor"], dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("tx doctor")
-      expect(result.stdout).toContain("diagnostics")
     })
   })
 })

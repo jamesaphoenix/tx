@@ -89,7 +89,7 @@ export {
 // =============================================================================
 // ID Generation
 // =============================================================================
-export { generateTaskId, fixtureId } from "./id.js"
+export { generateTaskId, generateDocStableId, deriveDocStableId, fixtureId } from "./id.js"
 export { generateUlid, isUlid } from "./utils/ulid.js"
 
 // =============================================================================
@@ -166,6 +166,22 @@ export {
   GuardRepositoryLive,
   LabelRepository,
   LabelRepositoryLive,
+  DomainEventRepository,
+  DomainEventRepositoryLive,
+  SupervisionRepository,
+  SupervisionRepositoryLive,
+  DocReviewRepository,
+  DocReviewRepositoryLive,
+  DomainEventService,
+  DomainEventServiceLive,
+  type PublishDomainEventInput,
+  SupervisionService,
+  SupervisionServiceLive,
+  DocReviewService,
+  DocReviewServiceLive,
+  type DocReviewConfig,
+  DEFAULT_REVIEW_CONFIG,
+  type CompletionStateResult,
 } from "./layer.js"
 
 // =============================================================================
@@ -318,6 +334,9 @@ export {
   AgentService,
   AgentServiceLive,
   AgentServiceNoop,
+  DecomposeService,
+  DecomposeServiceLive,
+  type DecomposeError,
   type AgentRunConfig,
   type AgentRunResult,
   type AgentMessageCallback,
@@ -333,6 +352,11 @@ export {
   type SpecTraceStatus,
   DecisionService,
   DecisionServiceLive,
+  ReviewRuntime,
+  ReviewRuntimeNoop,
+  ReviewExecutionParamsSchema,
+  type ReviewExecutionParams,
+  PiReviewRuntimeLive,
   // Runtime interface validators for optional peer dependencies
   isValidLlama,
   isValidLlamaModel,
@@ -511,6 +535,8 @@ export {
   resolvePathForComparison,
   isPathWithin,
   resolvePathWithin,
+  findTxRoot,
+  resolveTxDbPath,
   type PathWithinOptions,
 } from "./utils/file-path.js"
 export { escapeLikePattern, DEFAULT_QUERY_LIMIT } from "./utils/sql.js"
@@ -526,11 +552,31 @@ export {
   type EarsValidationError,
 } from "./utils/ears-validator.js"
 export {
+  parseMdDoc,
+  parseMdDocSync,
+  MdDocParseError,
+} from "./utils/md-doc-parser.js"
+export {
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
+  writeDashboardDefaultTaskView,
+  readDashboardCyclesConfig,
+  writeDashboardCycleLengthDays,
+  writeDashboardCycleStartDay,
+  writeDashboardCarryStatuses,
   scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
-  type DashboardDefaultTaskAssigmentType
+  DASHBOARD_DEFAULT_TASK_VIEW_KEY,
+  DASHBOARD_CYCLE_LENGTH_DAYS_KEY,
+  DASHBOARD_CYCLE_START_DAY_KEY,
+  DASHBOARD_CARRY_STATUSES_KEY,
+  type DashboardDefaultTaskAssigmentType,
+  type DashboardDefaultTaskView,
+  type DashboardCycleStartDay,
+  type DashboardCyclesConfig,
+  type ReviewDesignDocsConfig,
+  type ReviewRuntimeType,
+  type ReviewTransportType,
 } from "./utils/toml-config.js"
 export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
 export {

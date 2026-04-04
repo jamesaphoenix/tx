@@ -8,6 +8,7 @@ import {
   type TaskWithDeps,
   type OrchestrationStatus,
 } from "../../api/client"
+import { Button } from "../ui"
 import { useDebounce } from "../../hooks/useDebounce"
 import {
   canonicalTaskLabelName,
@@ -73,7 +74,7 @@ function StatusBadge({ status }: { status: string }) {
     active: "bg-yellow-500",
     blocked: "bg-red-500",
     review: "bg-orange-500",
-    human_needs_to_review: "bg-pink-500",
+    needs_review: "bg-pink-500",
     done: "bg-green-500",
   }
   return (
@@ -139,7 +140,7 @@ function RelatedTaskCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <code className="text-xs text-gray-400">{task.id}</code>
-              <span className="text-xs font-medium text-amber-400">[{task.score}]</span>
+              {task.score ? <span className="text-xs font-medium text-amber-400">[{task.score}]</span> : null}
             </div>
             <h4 className="truncate text-sm text-white">{task.title}</h4>
           </div>
@@ -408,14 +409,7 @@ export function TaskDetail({
   }, [onUpdateAssignment])
 
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="animate-pulse rounded bg-gray-700 h-8 w-3/4" />
-        <div className="animate-pulse rounded bg-gray-700 h-4 w-1/2" />
-        <div className="animate-pulse rounded bg-gray-700 h-24" />
-        <div className="animate-pulse rounded bg-gray-700 h-32" />
-      </div>
-    )
+    return null
   }
 
   if (error) {
@@ -560,7 +554,7 @@ export function TaskDetail({
             )}
           </div>
           <h2 className="text-2xl font-semibold text-white">{task.title}</h2>
-          <div className="mt-2 rounded-md border border-white/10 bg-gray-900/20 px-2.5 py-2">
+          <div className="mt-2 rounded-md border border-white/10 bg-gray-900/20">
             <div className="mb-1 flex items-center justify-end gap-2">
               <span className={`text-[11px] ${
                 descriptionError
@@ -601,11 +595,8 @@ export function TaskDetail({
               {task.labels.map((label) => (
                 <span
                   key={label.id}
-                  className="inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium"
-                  style={{
-                    color: label.color,
-                    backgroundColor: `${label.color}1a`,
-                  }}
+                  className="task-label-badge inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
+                  style={{ '--label-color': label.color } as React.CSSProperties}
                 >
                   {canonicalTaskLabelName(label.name)}
                 </span>
@@ -637,20 +628,14 @@ export function TaskDetail({
             </h3>
             <div className="flex items-center gap-1.5">
               {onSelectAllChildren && childTasks.length > 0 && (
-                <button
-                  onClick={onSelectAllChildren}
-                  className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-[11px] text-gray-300 hover:bg-gray-700"
-                >
+                <Button size="xs" variant="secondary" onClick={onSelectAllChildren}>
                   Select all
-                </button>
+                </Button>
               )}
               {onClearChildSelection && selectedChildrenCount > 0 && (
-                <button
-                  onClick={onClearChildSelection}
-                  className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-[11px] text-gray-300 hover:bg-gray-700"
-                >
+                <Button size="xs" variant="secondary" onClick={onClearChildSelection}>
                   Clear
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -673,20 +658,14 @@ export function TaskDetail({
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {onCreateChild && (
-              <button
-                onClick={onCreateChild}
-                className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-200 hover:bg-gray-700"
-              >
+              <Button size="sm" variant="secondary" onClick={onCreateChild}>
                 + Create new task
-              </button>
+              </Button>
             )}
             {onDeleteSelectedChildren && selectedChildrenCount > 0 && (
-              <button
-                onClick={() => { void onDeleteSelectedChildren() }}
-                className="rounded-md border border-red-500/60 bg-red-500/10 px-2.5 py-1 text-xs text-red-300 hover:bg-red-500/20"
-              >
+              <Button size="sm" variant="danger" onClick={() => { void onDeleteSelectedChildren() }}>
                 Delete selected ({selectedChildrenCount})
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -844,20 +823,14 @@ export function TaskDetail({
               <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Actions</p>
               <div className="space-y-1.5">
                 {onCopyTaskReference && (
-                  <button
-                    onClick={onCopyTaskReference}
-                    className="w-full rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-700"
-                  >
+                  <Button size="sm" variant="secondary" onClick={onCopyTaskReference} className="w-full justify-start">
                     Copy task reference
-                  </button>
+                  </Button>
                 )}
                 {onCreateChild && (
-                  <button
-                    onClick={onCreateChild}
-                    className="w-full rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-700"
-                  >
+                  <Button size="sm" variant="secondary" onClick={onCreateChild} className="w-full justify-start">
                     Create new sub-task
-                  </button>
+                  </Button>
                 )}
               </div>
             </section>

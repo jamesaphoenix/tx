@@ -512,7 +512,7 @@ describe("handleToolError", () => {
     }
 
     const error = new CircularDependencyError({ taskId: "tx-aaa", blockerId: "tx-bbb" })
-    const result = handleToolError("tx_block", { taskId: "tx-aaa", blockerId: "tx-bbb" }, error)
+    const result = handleToolError("tx_dep_block", { taskId: "tx-aaa", blockerId: "tx-bbb" }, error)
 
     // Summary block
     expect(result.content[0].text).toBe("Error [CircularDependencyError]: Circular dependency: tx-aaa and tx-bbb")

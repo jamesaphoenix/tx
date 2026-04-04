@@ -17,6 +17,14 @@ export interface TaskLabel {
 }
 
 export type TaskAssigneeType = "human" | "agent"
+export type DashboardDefaultTaskView = "list" | "kanban"
+
+export interface CycleSettings {
+  cycleLengthDays: number
+  cycleStartDay: string
+  carryStatuses: string[]
+  autoAddStatuses: string[]
+}
 
 export interface TaskRow {
   id: string
@@ -39,6 +47,16 @@ export interface TaskRow {
 export interface DashboardSettings {
   dashboard: {
     defaultTaskAssigmentType: TaskAssigneeType
+    defaultTaskView: DashboardDefaultTaskView
+    cycles?: CycleSettings
+  }
+}
+
+export interface DashboardSettingsPatch {
+  dashboard?: {
+    defaultTaskAssigmentType?: TaskAssigneeType
+    defaultTaskView?: DashboardDefaultTaskView
+    cycles?: CycleSettings
   }
 }
 
@@ -277,7 +295,7 @@ export const api = {
       catch: (e) => new ApiError({ message: String(e) }),
     }),
   getSettings: () => fetchJson<DashboardSettings>("/api/settings"),
-  updateSettings: (payload: DashboardSettings) =>
+  updateSettings: (payload: DashboardSettingsPatch) =>
     Effect.tryPromise({
       try: async () => {
         const res = await fetch("/api/settings", {
@@ -374,6 +392,23 @@ export const api = {
 }
 
 // Cycle types
+export interface Cycle {
+  id: string
+  name: string
+  startDate: string
+  endDate: string
+  status: "current" | "upcoming" | "completed"
+  createdAt: string
+  updatedAt: string
+  taskCount: number
+  completedCount: number
+  inProgressCount: number
+}
+
+export interface CycleDetail extends Cycle {
+  tasks: TaskWithDeps[]
+}
+
 export interface CycleRun {
   id: string
   cycle: number
@@ -426,8 +461,9 @@ export interface CycleDetailResponse {
 // Doc types
 export interface DocSerialized {
   id: number
+  docId: string
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
   name: string
   title: string
   version: number
@@ -441,7 +477,7 @@ export interface DocSerialized {
 export interface DocGraphNode {
   id: string
   label: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "task"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "task"
   status?: string
 }
 
@@ -465,10 +501,34 @@ export interface DocRenderResponse {
 }
 
 export interface DocSourceResponse {
+  docId: string | null
   name: string
+  version: number | null
   filePath: string
   yamlContent: string | null
   renderedContent: string | null
+}
+
+const appendDocVersion = (url: string, version?: number): string => {
+  if (!version) return url
+  const qs = new URLSearchParams({ version: String(version) })
+  return `${url}?${qs.toString()}`
+}
+
+export const docSelectionKey = (doc: Pick<DocSerialized, "docId" | "version">): string =>
+  `${doc.docId}:${doc.version}`
+
+export interface DocHealthIssue {
+  docId: string
+  docName: string
+  kind: string
+  problems: string[]
+}
+
+export interface DocHealthResponse {
+  total: number
+  healthy: number
+  issues: DocHealthIssue[]
 }
 
 // Promise-based wrappers for TanStack Query
@@ -481,7 +541,7 @@ export const fetchers = {
   updateTask: (id: string, payload: TaskMutationPayload) =>
     Effect.runPromise(api.updateTask(id, payload)),
   settings: () => Effect.runPromise(api.getSettings()),
-  updateSettings: (payload: DashboardSettings) => Effect.runPromise(api.updateSettings(payload)),
+  updateSettings: (payload: DashboardSettingsPatch) => Effect.runPromise(api.updateSettings(payload)),
   labels: () => Effect.runPromise(api.getLabels()),
   createLabel: (payload: { name: string; color?: string }) => Effect.runPromise(api.createLabel(payload)),
   updateLabel: (labelId: number, payload: { name?: string; color?: string }) =>
@@ -506,6 +566,55 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
+  listCycles: async (): Promise<Cycle[]> => {
+    const res = await fetch("/api/cycles")
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    return data.cycles
+  },
+  createCycle: async (): Promise<Cycle> => {
+    const res = await fetch("/api/cycles", { method: "POST" })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  getCycle: async (id: string): Promise<CycleDetail> => {
+    const res = await fetch(`/api/cycles/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  updateCycle: async (
+    id: string,
+    data: { name?: string; startDate?: string; endDate?: string }
+  ): Promise<Cycle> => {
+    const res = await fetch(`/api/cycles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  addTasksToCycle: async (cycleId: string, taskIds: string[]): Promise<void> => {
+    const res = await fetch(`/api/cycles/${cycleId}/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskIds }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  },
+  removeTaskFromCycle: async (cycleId: string, taskId: string): Promise<void> => {
+    const res = await fetch(`/api/cycles/${cycleId}/tasks/${taskId}`, {
+      method: "DELETE",
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  },
+  completeCycle: async (id: string): Promise<{ completedCycle: Cycle; newCycle: Cycle; carriedTaskIds: string[] }> => {
+    const res = await fetch(`/api/cycles/${id}/complete`, {
+      method: "POST",
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
   docs: async (params?: { kind?: string; status?: string }): Promise<DocsListResponse> => {
     const qs = new URLSearchParams()
     if (params?.kind) qs.set("kind", params.kind)
@@ -515,8 +624,8 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
-  docDetail: async (name: string): Promise<DocSerialized> => {
-    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`)
+  docDetail: async (docId: string, version?: number): Promise<DocSerialized> => {
+    const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}`, version))
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
@@ -529,8 +638,8 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
-  docSource: async (name: string): Promise<DocSourceResponse> => {
-    const res = await fetch(`/api/docs/${encodeURIComponent(name)}/source`)
+  docSource: async (docId: string, version?: number): Promise<DocSourceResponse> => {
+    const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}/source`, version))
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
@@ -539,8 +648,13 @@ export const fetchers = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
-  deleteDoc: async (name: string): Promise<{ success: boolean; name: string }> => {
-    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`, { method: "DELETE" })
+  docHealth: async (): Promise<DocHealthResponse> => {
+    const res = await fetch("/api/docs/health")
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  deleteDoc: async (docId: string, version?: number): Promise<{ success: boolean; docId: string | null; name: string; version: number | null }> => {
+    const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}`, version), { method: "DELETE" })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },

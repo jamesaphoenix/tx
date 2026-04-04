@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { Button } from "./components/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
 import {
@@ -7,10 +8,12 @@ import {
   type Run,
   type PaginatedRunsResponse,
   type TaskAssigneeType,
-  type TaskLabel
+  type DashboardDefaultTaskView,
+  type TaskLabel,
+  type CycleSettings,
 } from "./api/client"
 import { TasksPage } from "./components/tasks"
-import { RunsList, RunFilters, useRunFiltersWithUrl } from "./components/runs"
+import { RunsList, RunFilters, useRunFiltersWithUrl, type RunFiltersValues } from "./components/runs"
 import { CyclePage } from "./components/cycles"
 import { DocsPage } from "./components/docs"
 import { CommandProvider, useCommandContext, type Command } from "./components/command-palette/CommandContext"
@@ -29,7 +32,7 @@ function StatusBadge({ status }: { status: string }) {
     active: "bg-yellow-500",
     blocked: "bg-red-500",
     review: "bg-orange-500",
-    human_needs_to_review: "bg-pink-500",
+    needs_review: "bg-pink-500",
     done: "bg-green-500",
     running: "bg-yellow-500",
     completed: "bg-green-500",
@@ -252,8 +255,9 @@ function ChatMessageComponent({ message }: { message: ChatMessage }) {
 
 function SourcePathRow({ label, path }: { label: string; path: string }) {
   return (
-    <div className="text-xs text-gray-500 truncate" title={path}>
-      <span className="text-gray-400">{label}:</span> <code className="text-[11px]">{path}</code>
+    <div className="text-xs text-gray-500 flex min-w-0" title={path}>
+      <span className="text-gray-400 shrink-0">{label}:</span>{" "}
+      <code className="text-[11px] truncate ml-1">{path}</code>
     </div>
   )
 }
@@ -330,16 +334,16 @@ function ChatView({ runId }: { runId: string }) {
   }
 
   if (error) {
-    return <div className="text-red-400 p-4">Error loading run: {String(error)}</div>
+    return <div className="text-red-400 p-4 break-words overflow-hidden">Error loading run: {String(error)}</div>
   }
 
   return (
     <div className="flex flex-col h-full">
       {/* Run Header */}
       {run && (
-        <div className="p-4 border-b border-gray-700 bg-gray-800/50">
+        <div className="p-4 border-b border-gray-700 bg-gray-800/50 overflow-hidden">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <code className="text-sm text-gray-400">{run.id}</code>
               <span className="text-purple-400">{run.agent}</span>
               {isRunning && (
@@ -378,26 +382,22 @@ function ChatView({ runId }: { runId: string }) {
       {/* Transcript / Logs tabs */}
       <div className="px-4 pt-3 border-b border-gray-800 bg-gray-900/40">
         <div className="inline-flex rounded-lg border border-gray-700 overflow-hidden">
-          <button
+          <Button
+            size="sm"
+            variant={activeTab === "transcript" ? "primary" : "ghost"}
             onClick={() => setActiveTab("transcript")}
-            className={`px-3 py-1.5 text-xs font-medium transition ${
-              activeTab === "transcript"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-900 text-gray-300 hover:bg-gray-800"
-            }`}
+            className="rounded-none border-0"
           >
             Transcript
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTab === "logs" ? "primary" : "ghost"}
             onClick={() => setActiveTab("logs")}
-            className={`px-3 py-1.5 text-xs font-medium transition ${
-              activeTab === "logs"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-900 text-gray-300 hover:bg-gray-800"
-            }`}
+            className="rounded-none border-0"
           >
             Execution Logs
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -510,15 +510,17 @@ function ChatView({ runId }: { runId: string }) {
 
       {/* Auto-scroll indicator */}
       {!autoScroll && ((activeTab === "transcript" && messages.length > 0) || (activeTab === "logs" && hasLogs)) && (
-        <button
+        <Button
+          size="sm"
+          variant="primary"
           onClick={() => {
             setAutoScroll(true)
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
           }}
-          className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-full shadow-lg transition"
+          className="absolute bottom-4 right-4 rounded-full shadow-lg"
         >
           Scroll to bottom
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -537,7 +539,7 @@ function Stats() {
   if (!data) return null
 
   return (
-    <div className="grid grid-cols-6 gap-3">
+    <div className="grid grid-cols-5 gap-3">
       <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-white">{data.tasks}</div>
         <div className="text-xs text-gray-400">Tasks</div>
@@ -549,10 +551,6 @@ function Stats() {
       <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-green-400">{data.done}</div>
         <div className="text-xs text-gray-400">Done</div>
-      </div>
-      <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
-        <div className="text-xl font-bold text-purple-400">{data.learnings}</div>
-        <div className="text-xs text-gray-400">Learnings</div>
       </div>
       <div className="rounded-xl bg-gray-800/85 px-4 py-3 shadow-sm">
         <div className="text-xl font-bold text-yellow-400">{data.runsRunning ?? 0}</div>
@@ -572,6 +570,7 @@ function Stats() {
 
 type Tab = "tasks" | "docs" | "runs" | "cycles" | "settings"
 type ThemeMode = "light" | "dark"
+const DEFAULT_RUN_FILTERS: RunFiltersValues = { status: [], agent: "" }
 
 const THEME_STORAGE_KEY = "tx-dashboard-theme"
 
@@ -658,26 +657,131 @@ function SettingsIcon() {
   )
 }
 
+type SettingsTab = "general" | "labels" | "cycles"
+
+const SETTINGS_TAB_LABELS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
+  { id: "general", label: "General" },
+  { id: "labels", label: "Labels" },
+  { id: "cycles", label: "Cycles" },
+]
+
+const CYCLE_START_DAY_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "monday", label: "Monday" },
+  { value: "tuesday", label: "Tuesday" },
+  { value: "wednesday", label: "Wednesday" },
+  { value: "thursday", label: "Thursday" },
+  { value: "friday", label: "Friday" },
+  { value: "saturday", label: "Saturday" },
+  { value: "sunday", label: "Sunday" },
+]
+
+const CYCLE_CARRY_STATUS_OPTIONS = [
+  "backlog",
+  "ready",
+  "planning",
+  "active",
+  "blocked",
+  "review",
+  "needs_review",
+  "done",
+] as const
+
+type CycleCarryStatus = (typeof CYCLE_CARRY_STATUS_OPTIONS)[number]
+
+const CYCLE_CARRY_STATUS_LABELS: Record<CycleCarryStatus, string> = {
+  backlog: "Backlog",
+  ready: "Ready",
+  planning: "Planning",
+  active: "Active",
+  blocked: "Blocked",
+  review: "Review",
+  needs_review: "Needs Review",
+  done: "Done",
+}
+
+const DEFAULT_CYCLE_SETTINGS: CycleSettings = {
+  cycleLengthDays: 7,
+  cycleStartDay: "monday",
+  carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+  autoAddStatuses: ["backlog", "ready"],
+}
+
+function normalizeCarryStatuses(statuses: readonly string[]): CycleCarryStatus[] {
+  return CYCLE_CARRY_STATUS_OPTIONS.filter((status) => statuses.includes(status))
+}
+
 function SettingsPage({
   defaultTaskAssigmentType,
+  defaultTaskView,
+  cycleSettings,
   isSaving,
   errorMessage,
   onBack,
-  onSave,
+  onSaveDefaultTaskAssigmentType,
+  onSaveDefaultTaskView,
+  onSaveCycleSettings,
 }: {
   defaultTaskAssigmentType: TaskAssigneeType
+  defaultTaskView: DashboardDefaultTaskView
+  cycleSettings: CycleSettings
   isSaving: boolean
   errorMessage: string | null
   onBack: () => void
-  onSave: (nextType: TaskAssigneeType) => void
+  onSaveDefaultTaskAssigmentType: (nextType: TaskAssigneeType) => void
+  onSaveDefaultTaskView: (nextView: DashboardDefaultTaskView) => void
+  onSaveCycleSettings: (nextSettings: CycleSettings) => void
 }) {
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("general")
   const [draftType, setDraftType] = useState<TaskAssigneeType>(defaultTaskAssigmentType)
+  const [draftTaskView, setDraftTaskView] = useState<DashboardDefaultTaskView>(defaultTaskView)
+  const normalizedCycleStartDay = CYCLE_START_DAY_OPTIONS.some((option) => option.value === cycleSettings.cycleStartDay)
+    ? cycleSettings.cycleStartDay
+    : DEFAULT_CYCLE_SETTINGS.cycleStartDay
+  const normalizedCurrentCarryStatuses = useMemo(
+    () => normalizeCarryStatuses(cycleSettings.carryStatuses),
+    [cycleSettings.carryStatuses]
+  )
+  const normalizedCurrentAutoAddStatuses = useMemo(
+    () => normalizeCarryStatuses(cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses),
+    [cycleSettings.autoAddStatuses]
+  )
+  const currentCarryStatusesKey = normalizedCurrentCarryStatuses.join(",")
+  const currentAutoAddStatusesKey = normalizedCurrentAutoAddStatuses.join(",")
+  const [draftCycleLengthDays, setDraftCycleLengthDays] = useState(String(cycleSettings.cycleLengthDays))
+  const [draftCycleStartDay, setDraftCycleStartDay] = useState(normalizedCycleStartDay)
+  const [draftCarryStatuses, setDraftCarryStatuses] = useState<CycleCarryStatus[]>(normalizedCurrentCarryStatuses)
+  const [draftAutoAddStatuses, setDraftAutoAddStatuses] = useState<CycleCarryStatus[]>(normalizedCurrentAutoAddStatuses)
 
   useEffect(() => {
     setDraftType(defaultTaskAssigmentType)
   }, [defaultTaskAssigmentType])
 
-  const hasChanges = draftType !== defaultTaskAssigmentType
+  useEffect(() => {
+    setDraftTaskView(defaultTaskView)
+  }, [defaultTaskView])
+
+  useEffect(() => {
+    setDraftCycleLengthDays(String(cycleSettings.cycleLengthDays))
+    setDraftCycleStartDay(normalizedCycleStartDay)
+    setDraftCarryStatuses(normalizedCurrentCarryStatuses)
+    setDraftAutoAddStatuses(normalizedCurrentAutoAddStatuses)
+  }, [cycleSettings.cycleLengthDays, normalizedCycleStartDay, currentCarryStatusesKey, normalizedCurrentCarryStatuses, currentAutoAddStatusesKey, normalizedCurrentAutoAddStatuses])
+
+  const hasAssigmentTypeChanges = draftType !== defaultTaskAssigmentType
+  const hasDefaultTaskViewChanges = draftTaskView !== defaultTaskView
+  const parsedCycleLengthDays = Number.parseInt(draftCycleLengthDays, 10)
+  const hasValidCycleLengthDays = Number.isInteger(parsedCycleLengthDays) && parsedCycleLengthDays > 0
+  const normalizedDraftCarryStatuses = normalizeCarryStatuses(draftCarryStatuses)
+  const normalizedDraftAutoAddStatuses = normalizeCarryStatuses(draftAutoAddStatuses)
+  const hasCycleSettingChanges =
+    hasValidCycleLengthDays &&
+    (
+      parsedCycleLengthDays !== cycleSettings.cycleLengthDays ||
+      draftCycleStartDay !== normalizedCycleStartDay ||
+      normalizedDraftCarryStatuses.join(",") !== currentCarryStatusesKey ||
+      normalizedDraftAutoAddStatuses.join(",") !== currentAutoAddStatusesKey
+    )
+
   const queryClient = useQueryClient()
   const { data: labelsData, isLoading: isLoadingLabels } = useQuery({
     queryKey: ["labels"],
@@ -786,7 +890,7 @@ function SettingsPage({
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : String(error)
       if (rawMessage.includes("HTTP 404")) {
-        setLabelError("Delete labels endpoint not found. Restart `tx dashboard` and try again.")
+        setLabelError("Delete labels endpoint not found. Restart `tx diag dashboard` and try again.")
       } else {
         setLabelError(error instanceof Error ? error.message : "Failed to delete label")
       }
@@ -795,241 +899,451 @@ function SettingsPage({
     }
   }, [editingLabelId, invalidateLabelCaches])
 
+  const toggleCarryStatus = useCallback((status: CycleCarryStatus) => {
+    setDraftCarryStatuses((current) =>
+      current.includes(status)
+        ? current.filter((existingStatus) => existingStatus !== status)
+        : [...current, status]
+    )
+  }, [])
+
+  const toggleAutoAddStatus = useCallback((status: CycleCarryStatus) => {
+    setDraftAutoAddStatuses((current) =>
+      current.includes(status)
+        ? current.filter((existingStatus) => existingStatus !== status)
+        : [...current, status]
+    )
+  }, [])
+
+  const saveCycleSettings = useCallback(() => {
+    if (!hasValidCycleLengthDays) return
+    onSaveCycleSettings({
+      cycleLengthDays: parsedCycleLengthDays,
+      cycleStartDay: draftCycleStartDay,
+      carryStatuses: normalizedDraftCarryStatuses,
+      autoAddStatuses: normalizedDraftAutoAddStatuses,
+    })
+  }, [
+    draftCycleStartDay,
+    hasValidCycleLengthDays,
+    normalizedDraftCarryStatuses,
+    normalizedDraftAutoAddStatuses,
+    onSaveCycleSettings,
+    parsedCycleLengthDays,
+  ])
+
+  const cycleLengthError = draftCycleLengthDays.trim().length > 0 && !hasValidCycleLengthDays
+    ? "Cycle length must be a positive whole number."
+    : null
+
   return (
-    <div className="mx-auto w-full max-w-2xl p-6 pb-8">
-      <button
-        type="button"
+    <div className="mx-auto w-full max-w-4xl p-6 pb-8">
+      <Button
+        size="sm"
+        variant="secondary"
         onClick={onBack}
-        className="inline-flex items-center rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-300 transition hover:bg-gray-700"
         aria-label="Back to Tasks"
       >
         ← Back to Tasks
-      </button>
+      </Button>
       <h2 className="mt-3 text-xl font-semibold text-white">Settings</h2>
       <p className="mt-1 text-sm text-gray-400">
-        Configure dashboard defaults for new task creation.
+        Configure dashboard defaults, labels, and cycles.
       </p>
 
-      <section className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-4">
-        <h3 className="text-sm font-semibold text-gray-200">Default Task Assignment Type</h3>
-        <p className="mt-1 text-xs text-gray-400">
-          Applied when creating tasks from the dashboard composer.
-        </p>
+      <div className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-1">
+        <nav className="flex flex-wrap gap-1" aria-label="Settings sections">
+          {SETTINGS_TAB_LABELS.map((tab) => (
+            <Button
+              key={tab.id}
+              size="md"
+              variant={activeSettingsTab === tab.id ? "primary" : "ghost"}
+              onClick={() => setActiveSettingsTab(tab.id)}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </nav>
+      </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setDraftType("human")}
-            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
-              draftType === "human"
-                ? "border-blue-500 bg-blue-500/20 text-blue-200"
-                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
-            }`}
-          >
-            Human
-          </button>
-          <button
-            type="button"
-            onClick={() => setDraftType("agent")}
-            className={`rounded-md border px-3 py-2 text-left text-sm transition ${
-              draftType === "agent"
-                ? "border-blue-500 bg-blue-500/20 text-blue-200"
-                : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
-            }`}
-          >
-            Agent
-          </button>
-        </div>
+      <div className="mt-4 space-y-4">
+        {activeSettingsTab === "general" ? (
+          <>
+            <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+              <h3 className="text-sm font-semibold text-gray-200">Default Task Assignment Type</h3>
+              <p className="mt-1 text-xs text-gray-400">
+                Applied when creating tasks from the dashboard composer.
+              </p>
 
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            disabled={isSaving || !hasChanges}
-            onClick={() => onSave(draftType)}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "Saving..." : "Save settings"}
-          </button>
-          <span className="text-xs text-gray-500">
-            Current default: {defaultTaskAssigmentType}
-          </span>
-        </div>
-
-        {errorMessage && (
-          <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
-            {errorMessage}
-          </p>
-        )}
-      </section>
-
-      <section className="mt-6 rounded-xl border border-gray-700 bg-gray-800/70 p-4">
-        <h3 className="text-sm font-semibold text-gray-200">Task Labels</h3>
-        <p className="mt-1 text-xs text-gray-400">
-          Create, edit, and delete reusable task labels.
-        </p>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto]">
-          <input
-            aria-label="New label name"
-            type="text"
-            value={newLabelName}
-            onChange={(event) => setNewLabelName(event.target.value)}
-            placeholder="Label name"
-            className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
-          />
-          <label className="flex h-10 items-center justify-between rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-xs text-gray-300">
-            Color
-            <input
-              aria-label="New label color"
-              type="color"
-              value={newLabelColor}
-              onChange={(event) => setNewLabelColor(event.target.value)}
-              className="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
-            />
-          </label>
-          <button
-            type="button"
-            aria-label="Create label"
-            disabled={isCreatingLabel}
-            onClick={() => { void handleCreateLabel() }}
-            className="inline-flex h-10 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isCreatingLabel ? "Creating..." : "Create"}
-          </button>
-        </div>
-
-        <div className="mt-4 rounded-lg border border-gray-700/80 bg-gray-900/20 p-2">
-          {!isLoadingLabels && labels.length > 0 && (
-            <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-gray-500">
-              <span>{labels.length} label{labels.length === 1 ? "" : "s"}</span>
-              <span>Scroll to manage all labels</span>
-            </div>
-          )}
-          <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-          {isLoadingLabels ? (
-            <p className="text-xs text-gray-400">Loading labels...</p>
-          ) : labels.length === 0 ? (
-            <p className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2 text-xs text-gray-500">
-              No labels yet.
-            </p>
-          ) : (
-            labels.map((label) => {
-              const isEditing = editingLabelId === label.id
-              const isBusy = labelBusyId === label.id
-              return (
-                <div
-                  key={label.id}
-                  className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2"
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setDraftType("human")}
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
+                    draftType === "human"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
                 >
-                  {isEditing ? (
-                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto_auto]">
-                      <input
-                        aria-label={`Edit label name ${label.name}`}
-                        type="text"
-                        value={editingLabelName}
-                        onChange={(event) => setEditingLabelName(event.target.value)}
-                        className="rounded-md border border-gray-700 bg-gray-900/50 px-2.5 py-1.5 text-xs text-gray-100 outline-none transition focus:border-blue-500"
-                      />
-                      <label className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-900/50 px-2 py-1.5 text-[11px] text-gray-300">
-                        Color
-                        <input
-                          aria-label={`Edit label color ${label.name}`}
-                          type="color"
-                          value={editingLabelColor}
-                          onChange={(event) => setEditingLabelColor(event.target.value)}
-                          className="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        aria-label={`Save label ${label.name}`}
-                        disabled={isBusy}
-                        onClick={() => { void handleSaveLabel(label.id) }}
-                        className="rounded-md bg-blue-600 px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  Human
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftType("agent")}
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
+                    draftType === "agent"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
+                >
+                  Agent
+                </button>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={isSaving || !hasAssigmentTypeChanges}
+                  onClick={() => onSaveDefaultTaskAssigmentType(draftType)}
+                >
+                  {isSaving ? "Saving..." : "Save settings"}
+                </Button>
+                <span className="text-xs text-gray-500">
+                  Current default: {defaultTaskAssigmentType}
+                </span>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+              <h3 className="text-sm font-semibold text-gray-200">Default Tasks View</h3>
+              <p className="mt-1 text-xs text-gray-400">
+                Applied when opening the Tasks tab unless overridden by URL query params.
+              </p>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setDraftTaskView("list")}
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
+                    draftTaskView === "list"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftTaskView("kanban")}
+                  className={`h-8 rounded-md border px-3 text-left text-[13px] transition ${
+                    draftTaskView === "kanban"
+                      ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                      : "border-gray-700 bg-gray-900/40 text-gray-300 hover:border-gray-600"
+                  }`}
+                >
+                  Kanban
+                </button>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={isSaving || !hasDefaultTaskViewChanges}
+                  onClick={() => onSaveDefaultTaskView(draftTaskView)}
+                >
+                  {isSaving ? "Saving..." : "Save view setting"}
+                </Button>
+                <span className="text-xs text-gray-500">
+                  Current default: {defaultTaskView}
+                </span>
+              </div>
+            </section>
+          </>
+        ) : activeSettingsTab === "labels" ? (
+          <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+            <h3 className="text-sm font-semibold text-gray-200">Task Labels</h3>
+            <p className="mt-1 text-xs text-gray-400">
+              Create, edit, and delete reusable task labels.
+            </p>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto]">
+              <input
+                aria-label="New label name"
+                type="text"
+                value={newLabelName}
+                onChange={(event) => setNewLabelName(event.target.value)}
+                placeholder="Label name"
+                className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
+              />
+              <label className="flex h-10 items-center justify-between rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-xs text-gray-300">
+                Color
+                <input
+                  aria-label="New label color"
+                  type="color"
+                  value={newLabelColor}
+                  onChange={(event) => setNewLabelColor(event.target.value)}
+                  className="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
+                />
+              </label>
+              <Button
+                size="lg"
+                variant="primary"
+                aria-label="Create label"
+                disabled={isCreatingLabel}
+                onClick={() => { void handleCreateLabel() }}
+                className="h-10"
+              >
+                {isCreatingLabel ? "Creating..." : "Create"}
+              </Button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-gray-700/80 bg-gray-900/20 p-2">
+              {!isLoadingLabels && labels.length > 0 && (
+                <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-gray-500">
+                  <span>{labels.length} label{labels.length === 1 ? "" : "s"}</span>
+                  <span>Scroll to manage all labels</span>
+                </div>
+              )}
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {isLoadingLabels ? (
+                  <p className="text-xs text-gray-400">Loading labels...</p>
+                ) : labels.length === 0 ? (
+                  <p className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2 text-xs text-gray-500">
+                    No labels yet.
+                  </p>
+                ) : (
+                  labels.map((label) => {
+                    const isEditing = editingLabelId === label.id
+                    const isBusy = labelBusyId === label.id
+                    return (
+                      <div
+                        key={label.id}
+                        className="rounded-md border border-gray-700/80 bg-gray-900/30 px-3 py-2"
                       >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Cancel label edit ${label.name}`}
-                        onClick={cancelEditLabel}
-                        className="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-[11px] text-gray-300 transition hover:bg-gray-800"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="inline-flex min-w-0 items-center gap-2">
-                        <span
-                          className="h-3 w-3 flex-shrink-0 rounded-full border border-white/10"
-                          style={{ backgroundColor: label.color }}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate text-sm text-gray-100">{label.name}</span>
-                        <span className="text-[10px] text-gray-500">#{label.id}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {pendingDeleteLabelId === label.id ? (
-                          <>
-                            <span className="text-[11px] text-red-300">Confirm delete?</span>
-                            <button
-                              type="button"
-                              aria-label={`Confirm delete label ${label.name}`}
+                        {isEditing ? (
+                          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto_auto]">
+                            <input
+                              aria-label={`Edit label name ${label.name}`}
+                              type="text"
+                              value={editingLabelName}
+                              onChange={(event) => setEditingLabelName(event.target.value)}
+                              className="rounded-md border border-gray-700 bg-gray-900/50 px-2.5 py-1.5 text-xs text-gray-100 outline-none transition focus:border-blue-500"
+                            />
+                            <label className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-900/50 px-2 py-1.5 text-[11px] text-gray-300">
+                              Color
+                              <input
+                                aria-label={`Edit label color ${label.name}`}
+                                type="color"
+                                value={editingLabelColor}
+                                onChange={(event) => setEditingLabelColor(event.target.value)}
+                                className="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent p-0"
+                              />
+                            </label>
+                            <Button
+                              size="xs"
+                              variant="primary"
+                              aria-label={`Save label ${label.name}`}
                               disabled={isBusy}
-                              onClick={() => { void handleDeleteLabel(label.id) }}
-                              className="rounded-md border border-red-500/70 bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-200 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => { void handleSaveLabel(label.id) }}
                             >
-                              {isBusy ? "Deleting..." : "Confirm"}
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`Cancel delete label ${label.name}`}
-                              disabled={isBusy}
-                              onClick={() => cancelDeleteLabel(label.id)}
-                              className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                              Save
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="secondary"
+                              aria-label={`Cancel label edit ${label.name}`}
+                              onClick={cancelEditLabel}
                             >
                               Cancel
-                            </button>
-                          </>
+                            </Button>
+                          </div>
                         ) : (
-                          <>
-                            <button
-                              type="button"
-                              aria-label={`Edit label ${label.name}`}
-                              disabled={isBusy}
-                              onClick={() => beginEditLabel(label)}
-                              className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-gray-300 transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`Delete label ${label.name}`}
-                              disabled={isBusy}
-                              onClick={() => requestDeleteLabel(label.id)}
-                              className="rounded-md border border-red-500/50 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              Delete
-                            </button>
-                          </>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="inline-flex min-w-0 items-center gap-2">
+                              <span
+                                className="h-3 w-3 flex-shrink-0 rounded-full border border-white/10"
+                                style={{ backgroundColor: label.color }}
+                                aria-hidden="true"
+                              />
+                              <span className="truncate text-sm text-gray-100">{label.name}</span>
+                              <span className="text-[10px] text-gray-500">#{label.id}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {pendingDeleteLabelId === label.id ? (
+                                <>
+                                  <span className="text-[11px] text-red-300">Confirm delete?</span>
+                                  <Button
+                                    size="xs"
+                                    variant="danger"
+                                    aria-label={`Confirm delete label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => { void handleDeleteLabel(label.id) }}
+                                  >
+                                    {isBusy ? "Deleting..." : "Confirm"}
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    aria-label={`Cancel delete label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => cancelDeleteLabel(label.id)}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    aria-label={`Edit label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => beginEditLabel(label)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="danger"
+                                    aria-label={`Delete label ${label.name}`}
+                                    disabled={isBusy}
+                                    onClick={() => requestDeleteLabel(label.id)}
+                                  >
+                                    Delete
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          )}
-          </div>
-        </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
 
-        {labelError && (
-          <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
-            {labelError}
-          </p>
+            {labelError && (
+              <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+                {labelError}
+              </p>
+            )}
+          </section>
+        ) : (
+          <section className="rounded-xl border border-gray-700 bg-gray-800/70 p-4">
+            <h3 className="text-sm font-semibold text-gray-200">Cycle Defaults</h3>
+            <p className="mt-1 text-xs text-gray-400">
+              Configure cycle cadence and which task statuses carry forward to the next cycle.
+            </p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-gray-300">
+                Cycle length (days)
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={draftCycleLengthDays}
+                  onChange={(event) => setDraftCycleLengthDays(event.target.value)}
+                  className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-gray-300">
+                Cycle start day
+                <select
+                  value={draftCycleStartDay}
+                  onChange={(event) => setDraftCycleStartDay(event.target.value)}
+                  className="h-10 rounded-md border border-gray-700 bg-gray-900/40 px-2.5 py-2 text-sm text-gray-100 outline-none transition focus:border-blue-500"
+                >
+                  {CYCLE_START_DAY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <fieldset className="mt-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Carry-over statuses
+              </legend>
+              <p className="mt-1 text-xs text-gray-400">
+                Tasks in selected statuses are copied into the next cycle when the current cycle completes.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {CYCLE_CARRY_STATUS_OPTIONS.map((status) => (
+                  <label
+                    key={status}
+                    className="flex items-center gap-2 rounded-md border border-gray-700 bg-gray-900/30 px-2.5 py-2 text-sm text-gray-200"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={draftCarryStatuses.includes(status)}
+                      onChange={() => toggleCarryStatus(status)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+                    />
+                    {CYCLE_CARRY_STATUS_LABELS[status]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="mt-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Auto-add to cycle
+              </legend>
+              <p className="mt-1 text-xs text-gray-400">
+                Tasks in selected statuses are automatically added to the current cycle when a new cycle is created or when new tasks are created.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {CYCLE_CARRY_STATUS_OPTIONS.map((status) => (
+                  <label
+                    key={status}
+                    className="flex items-center gap-2 rounded-md border border-gray-700 bg-gray-900/30 px-2.5 py-2 text-sm text-gray-200"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={draftAutoAddStatuses.includes(status)}
+                      onChange={() => toggleAutoAddStatus(status)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+                    />
+                    {CYCLE_CARRY_STATUS_LABELS[status]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={isSaving || !hasCycleSettingChanges || !hasValidCycleLengthDays}
+                onClick={saveCycleSettings}
+              >
+                {isSaving ? "Saving..." : "Save cycle settings"}
+              </Button>
+              <span className="text-xs text-gray-500">
+                {normalizedDraftCarryStatuses.length} carry-over, {normalizedDraftAutoAddStatuses.length} auto-add
+              </span>
+            </div>
+
+            {cycleLengthError && (
+              <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+                {cycleLengthError}
+              </p>
+            )}
+          </section>
         )}
-      </section>
+      </div>
+
+      {errorMessage && (
+        <p className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">
+          {errorMessage}
+        </p>
+      )}
     </div>
   )
 }
@@ -1048,10 +1362,25 @@ function AppContent() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme())
   const [newTaskRequestNonce, setNewTaskRequestNonce] = useState(0)
+  const [tabResetKey, setTabResetKey] = useState(0)
 
   const selectedRunIds = useStore(selectionStore, (s) => s.runIds)
 
   const queryClient = useQueryClient()
+
+  // URL state management for filters
+  const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
+
+  /** Switch tabs via the top-level shell and reset to each section's base view. */
+  const navigateToTab = useCallback((tab: Tab) => {
+    window.history.replaceState({}, "", window.location.pathname)
+    setTabResetKey((current) => current + 1)
+    setActiveTab(tab)
+    setSelectedRunId(null)
+    if (tab === "runs") {
+      setRunFilters(DEFAULT_RUN_FILTERS)
+    }
+  }, [setRunFilters])
 
   const handleToggleRun = useCallback((id: string) => {
     selectionActions.toggleRun(id)
@@ -1071,8 +1400,6 @@ function AppContent() {
     }
   }, [themeMode])
 
-  // URL state management for filters
-  const { filters: runFilters, setFilters: setRunFilters } = useRunFiltersWithUrl()
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null)
 
@@ -1085,6 +1412,10 @@ function AppContent() {
 
   const defaultTaskAssigmentType: TaskAssigneeType =
     settingsData?.dashboard.defaultTaskAssigmentType ?? "human"
+  const defaultTaskView: DashboardDefaultTaskView =
+    settingsData?.dashboard.defaultTaskView ?? "list"
+  const cycleSettings: CycleSettings =
+    settingsData?.dashboard.cycles ?? DEFAULT_CYCLE_SETTINGS
 
   const saveDashboardDefaultAssigmentType = useCallback(async (nextType: TaskAssigneeType) => {
     setIsSavingSettings(true)
@@ -1103,11 +1434,45 @@ function AppContent() {
     }
   }, [queryClient])
 
+  const saveDashboardDefaultTaskView = useCallback(async (nextView: DashboardDefaultTaskView) => {
+    setIsSavingSettings(true)
+    setSettingsSaveError(null)
+    try {
+      const updated = await fetchers.updateSettings({
+        dashboard: {
+          defaultTaskView: nextView,
+        },
+      })
+      queryClient.setQueryData(["settings"], updated)
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }, [queryClient])
+
+  const saveDashboardCycleSettings = useCallback(async (nextSettings: CycleSettings) => {
+    setIsSavingSettings(true)
+    setSettingsSaveError(null)
+    try {
+      const updated = await fetchers.updateSettings({
+        dashboard: {
+          cycles: nextSettings,
+        },
+      })
+      queryClient.setQueryData(["settings"], updated)
+    } catch (error) {
+      setSettingsSaveError(error instanceof Error ? error.message : "Failed to save settings")
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }, [queryClient])
+
   const { setAppCommands, setPageCommands, setOverlayCommands } = useCommandContext()
 
   const getLoadedRuns = useCallback((): Run[] => {
     const queries = queryClient.getQueriesData<{ pages: PaginatedRunsResponse[] }>({ queryKey: ["runs", "infinite"] })
-    return queries.flatMap(([, data]) => data?.pages?.flatMap(p => p.runs) ?? [])
+    return queries.flatMap(([, data]) => data?.pages?.flatMap((p) => p.runs) ?? [])
   }, [queryClient])
 
   // Fetch runs to get available agents and status counts
@@ -1138,23 +1503,23 @@ function AppContent() {
         action: () => {
           setNewTaskRequestNonce((current) => current + 1)
           if (activeTab !== "tasks") {
-            setActiveTab("tasks")
+            navigateToTab("tasks")
           }
         },
       },
     ]
 
-    // Tab switching — always available
+    // Tab switching - always available
     const tabs: { tab: Tab; label: string }[] = [
       { tab: "tasks", label: "Go to Tasks" },
-      { tab: "docs", label: "Go to Docs" },
-      { tab: "runs", label: "Go to Runs" },
+      { tab: "docs", label: "Go to Specs" },
       { tab: "cycles", label: "Go to Cycles" },
+      { tab: "runs", label: "Go to Runs" },
       { tab: "settings", label: "Go to Settings" },
     ]
     for (const { tab, label } of tabs) {
       if (tab !== activeTab) {
-        cmds.push({ id: `nav:${tab}`, label, group: "Navigation", icon: "nav", action: () => setActiveTab(tab) })
+        cmds.push({ id: `nav:${tab}`, label, group: "Navigation", icon: "nav", action: () => navigateToTab(tab) })
       }
     }
 
@@ -1168,7 +1533,7 @@ function AppContent() {
         shortcut: "⌘A",
         action: () => {
           const loaded = getLoadedRuns()
-          selectionActions.selectAllRuns(loaded.map(r => r.id))
+          selectionActions.selectAllRuns(loaded.map((run) => run.id))
         },
       })
       if (selectedRunIds.size > 0) {
@@ -1182,8 +1547,8 @@ function AppContent() {
           action: async () => {
             const loaded = getLoadedRuns()
             const text = loaded
-              .filter(r => selectedRunIds.has(r.id))
-              .map(r => `${r.id} ${r.agent} ${r.status}`)
+              .filter((run) => selectedRunIds.has(run.id))
+              .map((run) => `${run.id} ${run.agent} ${run.status}`)
               .join("\n")
             await navigator.clipboard.writeText(text)
           },
@@ -1198,10 +1563,34 @@ function AppContent() {
         })
       }
       cmds.push(
-        { id: "filter:run-running", label: "Filter: Running", group: "Filters", icon: "filter", action: () => setRunFilters({ ...runFilters, status: ["running"] }) },
-        { id: "filter:run-completed", label: "Filter: Completed", group: "Filters", icon: "filter", action: () => setRunFilters({ ...runFilters, status: ["completed"] }) },
-        { id: "filter:run-failed", label: "Filter: Failed", group: "Filters", icon: "filter", action: () => setRunFilters({ ...runFilters, status: ["failed"] }) },
-        { id: "filter:run-all", label: "Filter: Show all runs", group: "Filters", icon: "filter", action: () => setRunFilters({ status: [], agent: "" }) },
+        {
+          id: "filter:run-running",
+          label: "Filter: Running",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, status: ["running"] }),
+        },
+        {
+          id: "filter:run-completed",
+          label: "Filter: Completed",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, status: ["completed"] }),
+        },
+        {
+          id: "filter:run-failed",
+          label: "Filter: Failed",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ ...runFilters, status: ["failed"] }),
+        },
+        {
+          id: "filter:run-all",
+          label: "Filter: Show all runs",
+          group: "Filters",
+          icon: "filter",
+          action: () => setRunFilters({ status: [], agent: "" }),
+        },
       )
       // Agent-specific filters
       for (const agent of runsMetadata?.agents ?? []) {
@@ -1233,7 +1622,7 @@ function AppContent() {
           shortcut: selectedRunIds.size === 0 ? "⌘C" : undefined,
           action: async () => {
             const loaded = getLoadedRuns()
-            const run = loaded.find(r => r.id === selectedRunId)
+            const run = loaded.find((candidate) => candidate.id === selectedRunId)
             const text = run ? `${run.id} ${run.agent} ${run.status}` : selectedRunId
             await navigator.clipboard.writeText(text)
           },
@@ -1265,7 +1654,6 @@ function AppContent() {
       setOverlayCommands([])
     }
   }, [activeTab, setPageCommands, setOverlayCommands])
-
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-900 text-white">
       {/* Header */}
@@ -1274,73 +1662,54 @@ function AppContent() {
           <div className="flex items-center gap-6">
             <h1 className="text-xl font-bold">tx</h1>
             <nav className="flex gap-1">
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "tasks" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("tasks")}
-              >
-                Tasks
-              </button>
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "docs" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("docs")}
-              >
-                Docs
-              </button>
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "runs" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("runs")}
-              >
-                Runs
-              </button>
-              <button
-                className={`px-4 py-1.5 rounded text-sm font-medium transition ${
-                  activeTab === "cycles" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"
-                }`}
-                onClick={() => setActiveTab("cycles")}
-              >
-                Cycles
-              </button>
+              {([
+                { id: "tasks", label: "Tasks" },
+                { id: "docs", label: "Specs" },
+                { id: "cycles", label: "Cycles" },
+                { id: "runs", label: "Runs" },
+              ] as const).map(({ id, label }) => (
+                <Button
+                  key={id}
+                  size="md"
+                  variant={activeTab === id ? "primary" : "ghost"}
+                  onClick={() => navigateToTab(id)}
+                >
+                  {label}
+                </Button>
+              ))}
             </nav>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab("settings")}
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-gray-300 transition ${
-                activeTab === "settings"
-                  ? "border-blue-500 bg-blue-500/20"
-                  : "border-gray-700 bg-gray-800 hover:bg-gray-700"
-              }`}
+            <Button
+              size="icon-lg"
+              variant={activeTab === "settings" ? "primary" : "secondary"}
+              onClick={() => navigateToTab("settings")}
               aria-label="Open settings"
               title="Open settings"
+              className="rounded-full"
             >
               <SettingsIcon />
               <span className="sr-only">Open settings</span>
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              size="icon-lg"
+              variant="secondary"
               onClick={toggleThemeMode}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-gray-300 transition hover:bg-gray-700"
               aria-label={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
               title={`Switch to ${themeMode === "light" ? "dark" : "light"} mode`}
+              className="rounded-full"
             >
               <ThemeToggleIcon themeMode={themeMode} />
               <span className="sr-only">
                 Switch to {themeMode === "light" ? "dark" : "light"} mode
               </span>
-            </button>
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Stats — hidden on cycles tab */}
-      {activeTab !== "cycles" && activeTab !== "settings" && (
+      {/* Stats — only shown on tasks tab */}
+      {activeTab === "tasks" && (
         <div className="flex-shrink-0 px-4 pb-2">
           <Stats />
         </div>
@@ -1350,18 +1719,20 @@ function AppContent() {
       <main className={`flex min-h-0 flex-1 flex-col ${activeTab === "settings" ? "overflow-y-auto" : "overflow-hidden"}`}>
         {activeTab === "tasks" ? (
           <TasksPage
+            key={`tasks:${tabResetKey}`}
             themeMode={themeMode}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
+            defaultTaskView={defaultTaskView}
+            autoAddStatuses={cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses}
             newTaskRequestNonce={newTaskRequestNonce}
           />
         ) : activeTab === "docs" ? (
-          <DocsPage />
+          <DocsPage key={`docs:${tabResetKey}`} />
         ) : activeTab === "runs" ? (
-          <div className="flex h-full w-full overflow-hidden">
-            {/* Runs List */}
-            <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
-              {/* Run Filters - synced with URL */}
-              <div className="mb-4">
+          <div key={`runs:${tabResetKey}`} className="flex h-full w-full overflow-hidden">
+            {/* Runs sidebar */}
+            <div className="w-80 min-h-0 border-r border-gray-800/80 flex-shrink-0 flex flex-col">
+              <div className="px-4 pt-4 pb-3">
                 <RunFilters
                   value={runFilters}
                   onChange={setRunFilters}
@@ -1369,13 +1740,15 @@ function AppContent() {
                   availableAgents={runsMetadata?.agents}
                 />
               </div>
-              <RunsList
-                filters={runFilters}
-                onSelectRun={setSelectedRunId}
-                onEscape={() => setSelectedRunId(null)}
-                selectedIds={selectedRunIds}
-                onToggleSelect={handleToggleRun}
-              />
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+                <RunsList
+                  filters={runFilters}
+                  onSelectRun={setSelectedRunId}
+                  onEscape={() => setSelectedRunId(null)}
+                  selectedIds={selectedRunIds}
+                  onToggleSelect={handleToggleRun}
+                />
+              </div>
             </div>
 
             {/* Chat View */}
@@ -1383,12 +1756,18 @@ function AppContent() {
               {selectedRunId ? (
                 <ChatView runId={selectedRunId} />
               ) : (
-                <div className="flex-1 flex items-center justify-center text-gray-500">
-                  <div className="text-center">
-                    <div className="text-lg mb-2">Select a run to view details</div>
-                    <div className="text-sm">Runs show agent execution transcripts and outcomes</div>
-                    <div className="mt-2 text-xs text-gray-500">
-                      Use <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">j</kbd>/<kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">k</kbd> or arrow keys to navigate, <kbd className="px-2 py-1 bg-gray-800 rounded text-gray-300">Enter</kbd> to select
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="max-w-md rounded-xl border border-dashed border-gray-700/60 bg-gray-900/30 p-6 text-center">
+                    <h2 className="text-base font-semibold text-gray-100">Select a run</h2>
+                    <p className="mt-2 text-sm text-gray-400">
+                      View agent execution transcripts and outcomes.
+                    </p>
+                    <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-gray-500">
+                      <kbd className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-gray-300">j</kbd>
+                      <kbd className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-gray-300">k</kbd>
+                      <span>to navigate</span>
+                      <kbd className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-gray-300">Enter</kbd>
+                      <span>to select</span>
                     </div>
                   </div>
                 </div>
@@ -1397,16 +1776,25 @@ function AppContent() {
           </div>
         ) : activeTab === "settings" ? (
           <SettingsPage
+            key={`settings:${tabResetKey}`}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
+            defaultTaskView={defaultTaskView}
+            cycleSettings={cycleSettings}
             isSaving={isSavingSettings}
             errorMessage={settingsSaveError}
-            onBack={() => setActiveTab("tasks")}
-            onSave={(nextType) => {
+            onBack={() => navigateToTab("tasks")}
+            onSaveDefaultTaskAssigmentType={(nextType) => {
               void saveDashboardDefaultAssigmentType(nextType)
+            }}
+            onSaveDefaultTaskView={(nextView) => {
+              void saveDashboardDefaultTaskView(nextView)
+            }}
+            onSaveCycleSettings={(nextSettings) => {
+              void saveDashboardCycleSettings(nextSettings)
             }}
           />
         ) : (
-          <CyclePage />
+          <CyclePage key={`cycles:${tabResetKey}`} themeMode={themeMode} autoAddStatuses={cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses} />
         )}
       </main>
     </div>

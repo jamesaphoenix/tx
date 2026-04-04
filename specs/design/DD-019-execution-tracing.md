@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-019-execution-tracing"
+title: "DD-019: Execution Tracing System"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-019: Execution Tracing System
 
 ## Overview

@@ -26,6 +26,7 @@ import type { EntityImportResult, ImportResult, LegacySyncExportResult, SyncComp
 import { applyEntityImportContract } from "../../services/sync/entity-import.js";
 import { applyEntityExportContract } from "../../services/sync/entity-export.js";
 import { importEntityJsonl } from "../../services/sync/file-utils.js";
+import { deriveDocStableId } from "../../id.js";
 /**
  * SyncService provides stream-event export/import for git-tracked task syncing.
  * See DD-009 for full specification.
@@ -67,11 +68,17 @@ const DEFAULT_SYNC_WATERMARK_KEY = "last_import_at";
 const FULL_EXPORT_LIMIT = 1_000_000_000;
 const MAX_SYNC_JSONL_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_STREAM_IMPORT_EVENTS = 250_000;
+const LEGACY_NEEDS_REVIEW_STATUS = "human_needs_to_review";
+const CURRENT_NEEDS_REVIEW_STATUS = "needs_review";
+const DOC_STABLE_ID_PATTERN = /^doc-[a-f0-9]{12}$/;
 /**
  * Compute a content hash for cross-machine dedup.
  * Entities with auto-increment IDs use this to identify duplicates.
  */
 const contentHash = (...parts) => createHash("sha256").update(parts.join("|")).digest("hex");
+const makeDocVersionKey = (docId, version) => `${docId}:${version}`;
+const deriveLegacyDocVersionKey = (name, version) => `${name}:${version}`;
+const resolveDocStableIdForSync = (docData) => docData.docId ?? deriveDocStableId(`${docData.name}:${docData.version}`);
 /**
  * Convert SQLite datetime string ("YYYY-MM-DD HH:MM:SS") to ISO 8601 ("YYYY-MM-DDTHH:MM:SS").
  * Labels use raw SQL so timestamps come in SQLite format rather than Date objects.
@@ -159,6 +166,22 @@ const compareSyncOrder = (a, b) => {
     if (t !== 0)
         return t;
     return (a.eventId ?? "").localeCompare(b.eventId ?? "");
+};
+const normalizeLegacyTaskStatusInSyncOp = (value) => {
+    if (!value || typeof value !== "object")
+        return value;
+    const maybeOp = value;
+    if (maybeOp.op !== "upsert" || !maybeOp.data || typeof maybeOp.data !== "object")
+        return value;
+    if (maybeOp.data.status !== LEGACY_NEEDS_REVIEW_STATUS)
+        return value;
+    return {
+        ...maybeOp,
+        data: {
+            ...maybeOp.data,
+            status: CURRENT_NEEDS_REVIEW_STATUS
+        }
+    };
 };
 const toSyncEvent = (op, streamId, seq) => {
     const type = opToSyncEventType(op);
@@ -546,8 +569,9 @@ const docToUpsertOp = (doc, parentDocKeyMap) => ({
     op: "doc_upsert",
     ts: doc.createdAt.toISOString(),
     id: doc.id,
-    contentHash: contentHash(doc.kind, doc.name, String(doc.version)),
+    contentHash: contentHash(doc.docId, String(doc.version), doc.hash),
     data: {
+        docId: doc.docId,
         kind: doc.kind,
         name: doc.name,
         title: doc.title,
@@ -562,7 +586,7 @@ const docToUpsertOp = (doc, parentDocKeyMap) => ({
 });
 /**
  * Convert a DocLink to a DocLinkUpsertOp for JSONL export.
- * Uses docKeyMap to resolve integer IDs to stable name:version keys.
+ * Uses docKeyMap to resolve integer IDs to stable doc_id:version keys.
  */
 const docLinkToUpsertOp = (link, docKeyMap) => {
     const fromDocKey = docKeyMap.get(link.fromDocId);
@@ -584,7 +608,7 @@ const docLinkToUpsertOp = (link, docKeyMap) => {
 };
 /**
  * Convert a TaskDocLink to a TaskDocLinkUpsertOp for JSONL export.
- * Uses docKeyMap to resolve integer doc IDs to stable name:version keys.
+ * Uses docKeyMap to resolve integer doc IDs to stable doc_id:version keys.
  */
 const taskDocLinkToUpsertOp = (link, docKeyMap) => {
     const docKey = docKeyMap.get(link.docId);
@@ -605,7 +629,7 @@ const taskDocLinkToUpsertOp = (link, docKeyMap) => {
 };
 /**
  * Convert an Invariant to an InvariantUpsertOp for JSONL export.
- * Uses docKeyMap to resolve integer doc IDs to stable name:version keys.
+ * Uses docKeyMap to resolve integer doc IDs to stable doc_id:version keys.
  */
 const invariantToUpsertOp = (inv, docKeyMap) => {
     const docKey = docKeyMap.get(inv.docId);
@@ -983,7 +1007,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         const docs = yield* docRepo.findAll();
         const docKeyMap = new Map();
         for (const d of docs) {
-            docKeyMap.set(d.id, `${d.name}:${d.version}`);
+            docKeyMap.set(d.id, makeDocVersionKey(d.docId, d.version));
         }
         const docOps = docs.map(d => docToUpsertOp(d, docKeyMap));
         const docLinks = yield* docRepo.getAllLinks();
@@ -1136,8 +1160,9 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     try: () => JSON.parse(line),
                     catch: (cause) => new ValidationError({ reason: `Invalid JSON: ${cause}` })
                 });
+                const normalized = normalizeLegacyTaskStatusInSyncOp(parsed);
                 const op = yield* Effect.try({
-                    try: () => Schema.decodeUnknownSync(TaskSyncOperationSchema)(parsed),
+                    try: () => Schema.decodeUnknownSync(TaskSyncOperationSchema)(normalized),
                     catch: (cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` })
                 });
                 ops.push(op);
@@ -1611,10 +1636,10 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         exportDocs: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_DOCS_JSONL_PATH);
             const docs = yield* docRepo.findAll();
-            // Build doc ID → "name:version" key map for stable cross-machine references
+            // Build doc ID → "doc_id:version" key map for stable cross-machine references.
             const docKeyMap = new Map();
             for (const d of docs) {
-                docKeyMap.set(d.id, `${d.name}:${d.version}`);
+                docKeyMap.set(d.id, makeDocVersionKey(d.docId, d.version));
             }
             const docOps = docs.map(d => docToUpsertOp(d, docKeyMap));
             // Get doc links
@@ -1700,13 +1725,15 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             const dedupedDocLinkOps = dedupByHash(docLinkOps);
             const dedupedTaskDocLinkOps = dedupByHash(taskDocLinkOps);
             const dedupedInvariantOps = dedupByHash(invariantOps);
-            // Build existing doc hashes for dedup
-            const existingDocs = yield* docRepo.findAll();
-            const existingDocHashes = new Set(existingDocs.map(d => contentHash(d.kind, d.name, String(d.version))));
             // Prepare statements
-            const insertDocStmt = db.prepare(`INSERT OR IGNORE INTO docs (hash, kind, name, title, version, status, file_path, parent_doc_id, locked_at, created_at, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-            const findDocByNameVersionStmt = db.prepare("SELECT id FROM docs WHERE name = ? AND version = ?");
+            const insertDocStmt = db.prepare(`INSERT OR IGNORE INTO docs (doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, locked_at, created_at, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const updateDocStmt = db.prepare(`UPDATE docs
+             SET doc_id = ?, hash = ?, kind = ?, name = ?, title = ?, status = ?, file_path = ?, locked_at = ?, metadata = ?
+             WHERE id = ?`);
+            const findDocByDocIdVersionStmt = db.prepare("SELECT id, doc_id, hash FROM docs WHERE doc_id = ? AND version = ?");
+            const findDocByKindNameVersionStmt = db.prepare("SELECT id, doc_id, hash FROM docs WHERE kind = ? AND name = ? AND version = ?");
+            const findDocByLegacyNameVersionStmt = db.prepare("SELECT id FROM docs WHERE name = ? AND version = ?");
             const checkDocLinkStmt = db.prepare("SELECT 1 FROM doc_links WHERE from_doc_id = ? AND to_doc_id = ? AND link_type = ?");
             const insertDocLinkStmt = db.prepare("INSERT INTO doc_links (from_doc_id, to_doc_id, link_type, created_at) VALUES (?, ?, ?, ?)");
             const checkTaskDocLinkStmt = db.prepare("SELECT 1 FROM task_doc_links WHERE task_id = ? AND doc_id = ? AND link_type = ?");
@@ -1721,44 +1748,8 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     return withWriteTransaction(() => {
                         let imported = 0;
                         let skipped = 0;
-                        // 1. Import docs (dedup by content hash = kind:name:version)
-                        // Track newly inserted doc keys for parent resolution
+                        // 1. Import docs and reconcile to stable doc_id + version identity.
                         const newDocKeyToId = new Map();
-                        const insertedDocKeys = new Set();
-                        for (const op of docOps) {
-                            if (existingDocHashes.has(op.contentHash)) {
-                                // Still populate the key map for link resolution
-                                const existing = findDocByNameVersionStmt.get(op.data.name, op.data.version);
-                                if (existing)
-                                    newDocKeyToId.set(`${op.data.name}:${op.data.version}`, existing.id);
-                                skipped++;
-                                continue;
-                            }
-                            // Check if doc already exists by name+version (handles kind mismatch with UNIQUE index)
-                            const existing = findDocByNameVersionStmt.get(op.data.name, op.data.version);
-                            if (existing) {
-                                newDocKeyToId.set(`${op.data.name}:${op.data.version}`, existing.id);
-                                skipped++;
-                                continue;
-                            }
-                            // INSERT OR IGNORE handles race with UNIQUE(name, version)
-                            const result = insertDocStmt.run(op.data.hash, op.data.kind, op.data.name, op.data.title, op.data.version, op.data.status, op.data.filePath, null, // parent_doc_id resolved after all docs inserted
-                            op.data.lockedAt ?? null, op.ts, JSON.stringify(op.data.metadata));
-                            if (result.changes > 0) {
-                                const docKey = `${op.data.name}:${op.data.version}`;
-                                newDocKeyToId.set(docKey, result.lastInsertRowid);
-                                insertedDocKeys.add(docKey);
-                                imported++;
-                            }
-                            else {
-                                // INSERT OR IGNORE did nothing — row already exists
-                                const row = findDocByNameVersionStmt.get(op.data.name, op.data.version);
-                                if (row)
-                                    newDocKeyToId.set(`${op.data.name}:${op.data.version}`, row.id);
-                                skipped++;
-                            }
-                        }
-                        // Helper: resolve docKey (name:version) to doc ID
                         const resolveDocKey = (docKey) => {
                             const newId = newDocKeyToId.get(docKey);
                             if (newId !== undefined)
@@ -1766,25 +1757,60 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                             const parts = docKey.split(":");
                             if (parts.length < 2)
                                 return undefined;
-                            const name = parts.slice(0, -1).join(":");
+                            const identifier = parts.slice(0, -1).join(":");
                             const version = parseInt(parts[parts.length - 1], 10);
                             if (isNaN(version))
                                 return undefined;
-                            const row = findDocByNameVersionStmt.get(name, version);
-                            return row?.id;
-                        };
-                        // Resolve parent doc references — only for newly inserted docs
-                        for (const op of docOps) {
-                            if (!op.data.parentDocKey)
-                                continue;
-                            const docKey = `${op.data.name}:${op.data.version}`;
-                            if (!insertedDocKeys.has(docKey))
-                                continue;
-                            const docId = resolveDocKey(docKey);
-                            const parentId = resolveDocKey(op.data.parentDocKey);
-                            if (docId && parentId) {
-                                updateParentDocStmt.run(parentId, docId);
+                            if (DOC_STABLE_ID_PATTERN.test(identifier)) {
+                                const row = findDocByDocIdVersionStmt.get(identifier, version);
+                                if (row?.id != null)
+                                    return row.id;
                             }
+                            const legacyRow = findDocByLegacyNameVersionStmt.get(identifier, version);
+                            return legacyRow?.id;
+                        };
+                        for (const op of docOps) {
+                            const stableDocId = resolveDocStableIdForSync(op.data);
+                            const docKey = makeDocVersionKey(stableDocId, op.data.version);
+                            const legacyDocKey = deriveLegacyDocVersionKey(op.data.name, op.data.version);
+                            const existing = findDocByDocIdVersionStmt.get(stableDocId, op.data.version)
+                                ?? findDocByKindNameVersionStmt.get(op.data.kind, op.data.name, op.data.version);
+                            if (existing) {
+                                newDocKeyToId.set(docKey, existing.id);
+                                newDocKeyToId.set(legacyDocKey, existing.id);
+                                if (existing.hash === op.data.hash && existing.doc_id === stableDocId) {
+                                    skipped++;
+                                    continue;
+                                }
+                                updateDocStmt.run(stableDocId, op.data.hash, op.data.kind, op.data.name, op.data.title, op.data.status, op.data.filePath, op.data.lockedAt ?? null, JSON.stringify(op.data.metadata), existing.id);
+                                imported++;
+                                continue;
+                            }
+                            const result = insertDocStmt.run(stableDocId, op.data.hash, op.data.kind, op.data.name, op.data.title, op.data.version, op.data.status, op.data.filePath, null, op.data.lockedAt ?? null, op.ts, JSON.stringify(op.data.metadata));
+                            if (result.changes > 0) {
+                                newDocKeyToId.set(docKey, result.lastInsertRowid);
+                                newDocKeyToId.set(legacyDocKey, result.lastInsertRowid);
+                                imported++;
+                            }
+                            else {
+                                const row = findDocByDocIdVersionStmt.get(stableDocId, op.data.version)
+                                    ?? findDocByKindNameVersionStmt.get(op.data.kind, op.data.name, op.data.version);
+                                if (row) {
+                                    newDocKeyToId.set(docKey, row.id);
+                                    newDocKeyToId.set(legacyDocKey, row.id);
+                                }
+                                skipped++;
+                            }
+                        }
+                        // Resolve parent doc references after all doc IDs have been materialized.
+                        for (const op of docOps) {
+                            const stableDocId = resolveDocStableIdForSync(op.data);
+                            const docKey = makeDocVersionKey(stableDocId, op.data.version);
+                            const docId = resolveDocKey(docKey);
+                            if (!docId)
+                                continue;
+                            const parentId = op.data.parentDocKey ? (resolveDocKey(op.data.parentDocKey) ?? null) : null;
+                            updateParentDocStmt.run(parentId, docId);
                         }
                         // 2. Import doc links
                         for (const op of dedupedDocLinkOps) {
@@ -1877,7 +1903,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             const docs = yield* docRepo.findAll();
             const docKeyMap = new Map();
             for (const d of docs) {
-                docKeyMap.set(d.id, `${d.name}:${d.version}`);
+                docKeyMap.set(d.id, makeDocVersionKey(d.docId, d.version));
             }
             const ops = decisionRows.map(row => decisionToUpsertOp({
                 id: row.id,
@@ -2037,13 +2063,16 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                 },
                 catch: (cause) => new DatabaseError({ cause })
             });
-            // Resolve doc keys to doc IDs
+            // Resolve doc keys to doc IDs. Support both new doc_id:version keys and legacy name:version keys.
             const docKeyToId = yield* Effect.try({
                 try: () => {
-                    const rows = db.prepare("SELECT id, name, version FROM docs").all();
+                    const rows = db.prepare("SELECT id, doc_id, name, version FROM docs").all();
                     const map = new Map();
                     for (const r of rows) {
-                        map.set(`${r.name}:${r.version}`, r.id);
+                        if (r.doc_id) {
+                            map.set(makeDocVersionKey(r.doc_id, r.version), r.id);
+                        }
+                        map.set(deriveLegacyDocVersionKey(r.name, r.version), r.id);
                     }
                     return map;
                 },

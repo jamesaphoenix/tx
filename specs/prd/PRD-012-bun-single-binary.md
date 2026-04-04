@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-012-bun-single-binary"
+title: "PRD-012: Bun Single Binary Distribution"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-012: Bun Single Binary Distribution
 
 **Status**: Draft

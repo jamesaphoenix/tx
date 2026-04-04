@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-017-invalidation-maintenance"
+title: "PRD-017: Graph RAG - Anchor Invalidation and Graph Maintenance"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-017: Graph RAG - Anchor Invalidation and Graph Maintenance
 
 ## Overview

@@ -17,6 +17,8 @@
 #   ./scripts/ralph.sh --workers 4          # Run 4 parallel workers
 #   ./scripts/ralph.sh --runtime codex     # Force Codex runtime
 #   ./scripts/ralph.sh --runtime claude    # Force Claude runtime
+#   ./scripts/ralph.sh --all-tasks         # Run against the full repo queue (default)
+#   ./scripts/ralph.sh --design-doc core-auth-design  # Scope to tasks linked to one design doc
 #   ./scripts/ralph.sh --task-timeout 2700 # 45 minutes max per task
 #   ./scripts/ralph.sh --verify-timeout 180 --learnings-timeout 180
 #   ./scripts/ralph.sh --no-commit         # Never auto-commit changes
@@ -37,7 +39,7 @@ REVIEW_TIMEOUT=${REVIEW_TIMEOUT:-300}  # 5 minutes max per review agent
 SLEEP_BETWEEN=${SLEEP_BETWEEN:-2}
 TASK_TIMEOUT=${TASK_TIMEOUT:-1800}  # 30 minutes max per task
 VERIFY_TIMEOUT=${VERIFY_TIMEOUT:-180}
-LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-180}
+LEARNINGS_TIMEOUT=${LEARNINGS_TIMEOUT:-300}
 WORKERS=${WORKERS:-1}
 CLAIM_LEASE_MINUTES=${CLAIM_LEASE_MINUTES:-30}
 CLAIM_RENEW_INTERVAL=${CLAIM_RENEW_INTERVAL:-300}
@@ -86,6 +88,12 @@ LAST_RUN_STATUS=""
 LAST_RUN_ERROR=""
 LAST_RUN_INFRA_ABORT=false
 IGNORE_HUP=false
+TASK_SCOPE_MODE=${TASK_SCOPE_MODE:-all}
+DESIGN_DOC_SCOPE="${DESIGN_DOC_SCOPE:-}"
+SUPERVISION_SESSION_ID=""
+TMUX_SESSION_NAME=""
+SUPERVISION_AVAILABLE=false
+SUPERVISION_BRIDGE="$PROJECT_DIR/scripts/ralph-supervision-bridge.ts"
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -105,6 +113,9 @@ while [[ $# -gt 0 ]]; do
     --worker-prefix) WORKER_PREFIX="$2"; shift 2 ;;
     --worker-id) WORKER_ID="$2"; shift 2 ;;
     --runtime) RUNTIME_MODE="$2"; shift 2 ;;
+    --scope) TASK_SCOPE_MODE="$2"; shift 2 ;;
+    --design-doc) TASK_SCOPE_MODE="design-doc"; DESIGN_DOC_SCOPE="$2"; shift 2 ;;
+    --all-tasks) TASK_SCOPE_MODE="all"; DESIGN_DOC_SCOPE=""; shift ;;
     --lock-scope) LOCK_SCOPE="$2"; shift 2 ;;
     --lock-key) LOCK_KEY_OVERRIDE="$2"; shift 2 ;;
     --task-timeout) TASK_TIMEOUT="$2"; shift 2 ;;
@@ -189,6 +200,19 @@ case "$LOCK_SCOPE" in
     ;;
 esac
 
+case "$TASK_SCOPE_MODE" in
+  all|design-doc) ;;
+  *)
+    echo "Invalid --scope value: $TASK_SCOPE_MODE (expected: all|design-doc)" >&2
+    exit 1
+    ;;
+esac
+
+if [ "$TASK_SCOPE_MODE" = "design-doc" ] && [ -z "$DESIGN_DOC_SCOPE" ]; then
+  echo "Missing design doc name: use --design-doc <name> or set DESIGN_DOC_SCOPE with --scope design-doc" >&2
+  exit 1
+fi
+
 if [ -z "$WORKER_ID" ]; then
   if [ "$CHILD_MODE" = true ]; then
     WORKER_ID="${WORKER_PREFIX}-child"
@@ -208,6 +232,14 @@ mkdir -p "$PROJECT_DIR/.tx"
 # This ensures changes are immediately reflected without rebuilding
 tx() {
   bun "$PROJECT_DIR/apps/cli/src/cli.ts" "$@"
+}
+
+scope_label() {
+  if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+    printf 'design-doc:%s' "$DESIGN_DOC_SCOPE"
+  else
+    printf 'all-tasks'
+  fi
 }
 
 # ==============================================================================
@@ -568,6 +600,9 @@ fi
 cleanup() {
   stop_claim_renewer
   stop_worker_heartbeat
+
+  # End supervision session if still active
+  end_supervision_session "$WORKER_ID"
 
   # Deregister this process and all child processes from the registry
   deregister_process $$
@@ -975,6 +1010,211 @@ mark_worker_dead() {
   sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
     "UPDATE workers SET status='dead', current_task_id=NULL, last_heartbeat_at=datetime('now') WHERE id='$escaped_worker_id';" \
     >/dev/null 2>&1 || true
+}
+
+# ==============================================================================
+# Supervision Session Management (DD-039)
+# ==============================================================================
+
+detect_supervision_table() {
+  SUPERVISION_AVAILABLE=false
+
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    return
+  fi
+
+  if [ ! -f "$PROJECT_DIR/.tx/tasks.db" ]; then
+    return
+  fi
+
+  local table_exists
+  table_exists=$(sqlite3 "$PROJECT_DIR/.tx/tasks.db" \
+    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='worker_sessions';" \
+    2>/dev/null || true)
+  if [ "$table_exists" = "1" ] && [ -f "$SUPERVISION_BRIDGE" ]; then
+    SUPERVISION_AVAILABLE=true
+  fi
+}
+
+# Create a dedicated tmux session for a worker. If tmux is unavailable, log a
+# warning and continue without terminal backend. (INV-SUP failure mode)
+create_tmux_session_for_worker() {
+  local worker_id="$1"
+  TMUX_SESSION_NAME=""
+
+  if ! command -v tmux >/dev/null 2>&1; then
+    log "[$worker_id] tmux not available — skipping terminal backend"
+    return 0
+  fi
+
+  local session_name="ralph-worker-${worker_id}"
+
+  # Kill any stale session with the same name
+  tmux kill-session -t "$session_name" 2>/dev/null || true
+
+  if tmux new-session -d -s "$session_name" 2>/dev/null; then
+    TMUX_SESSION_NAME="$session_name"
+    log "[$worker_id] Created tmux session: $session_name"
+  else
+    log "[$worker_id] Failed to create tmux session — continuing without terminal backend"
+  fi
+}
+
+# Create a supervision session snapshot via the core bridge.
+# Emits worker.session_created domain event.
+create_supervision_session() {
+  local worker_id="$1"
+  SUPERVISION_SESSION_ID=""
+
+  if [ "$SUPERVISION_AVAILABLE" != true ]; then
+    return 0
+  fi
+
+  local args_json
+  args_json=$(printf '{"workerId":"%s","scopeMode":"%s","scopeRef":%s,"runtime":"%s","tmuxSessionName":%s,"metadata":{"pid":%d,"source":"ralph.sh"}}' \
+    "$worker_id" \
+    "$TASK_SCOPE_MODE" \
+    "$(if [ -n "$DESIGN_DOC_SCOPE" ]; then printf '"%s"' "$DESIGN_DOC_SCOPE"; else printf 'null'; fi)" \
+    "$ACTIVE_RUNTIME" \
+    "$(if [ -n "$TMUX_SESSION_NAME" ]; then printf '"%s"' "$TMUX_SESSION_NAME"; else printf 'null'; fi)" \
+    $$ \
+  )
+
+  local session_id
+  if session_id=$(bun "$SUPERVISION_BRIDGE" session-create "$args_json" 2>>"$LOG_FILE"); then
+    if [ -n "$session_id" ]; then
+      SUPERVISION_SESSION_ID="$session_id"
+      log "[$worker_id] Created supervision session: $session_id"
+    fi
+  else
+    log "[$worker_id] Failed to create supervision session (non-fatal)"
+  fi
+}
+
+# Update the supervision session with current task and run IDs.
+update_supervision_session() {
+  local task_id="${1:-}"
+  local run_id="${2:-}"
+
+  if [ "$SUPERVISION_AVAILABLE" != true ] || [ -z "$SUPERVISION_SESSION_ID" ]; then
+    return 0
+  fi
+
+  local fields_json
+  fields_json=$(printf '{"currentTaskId":%s,"currentRunId":%s}' \
+    "$(if [ -n "$task_id" ]; then printf '"%s"' "$task_id"; else printf 'null'; fi)" \
+    "$(if [ -n "$run_id" ]; then printf '"%s"' "$run_id"; else printf 'null'; fi)" \
+  )
+
+  bun "$SUPERVISION_BRIDGE" session-update "$SUPERVISION_SESSION_ID" "$fields_json" 2>>"$LOG_FILE" || true
+}
+
+# Send a heartbeat for the supervision session.
+update_supervision_heartbeat() {
+  if [ "$SUPERVISION_AVAILABLE" != true ] || [ -z "$SUPERVISION_SESSION_ID" ]; then
+    return 0
+  fi
+
+  bun "$SUPERVISION_BRIDGE" session-heartbeat "$SUPERVISION_SESSION_ID" 2>>"$LOG_FILE" || true
+}
+
+# End the supervision session and emit worker.session_ended event.
+end_supervision_session() {
+  local worker_id="${1:-$WORKER_ID}"
+
+  if [ "$SUPERVISION_AVAILABLE" != true ] || [ -z "$SUPERVISION_SESSION_ID" ]; then
+    return 0
+  fi
+
+  if bun "$SUPERVISION_BRIDGE" session-end "$SUPERVISION_SESSION_ID" 2>>"$LOG_FILE"; then
+    log "[$worker_id] Ended supervision session: $SUPERVISION_SESSION_ID"
+  else
+    log "[$worker_id] Failed to end supervision session (non-fatal)"
+  fi
+  SUPERVISION_SESSION_ID=""
+
+  # Clean up tmux session if we created one
+  if [ -n "$TMUX_SESSION_NAME" ]; then
+    tmux kill-session -t "$TMUX_SESSION_NAME" 2>/dev/null || true
+    TMUX_SESSION_NAME=""
+  fi
+}
+
+# Emit a domain event via the supervision bridge.
+emit_supervision_event() {
+  local event_type="$1"
+  local stream_type="$2"
+  local stream_id="$3"
+  local aggregate_type="$4"
+  local aggregate_id="$5"
+  local payload_json="${6:-{}}"
+
+  if [ "$SUPERVISION_AVAILABLE" != true ]; then
+    return 0
+  fi
+
+  local event_json
+  event_json=$(printf '{"eventType":"%s","streamType":"%s","streamId":"%s","aggregateType":"%s","aggregateId":"%s","actorType":"system","actorId":"ralph","schemaVersion":1,"payload":%s,"metadata":{}}' \
+    "$event_type" "$stream_type" "$stream_id" "$aggregate_type" "$aggregate_id" "$payload_json")
+
+  bun "$SUPERVISION_BRIDGE" publish-event "$event_json" 2>>"$LOG_FILE" || true
+}
+
+# Handle scope drain: emit shutdown events, and if in design-doc mode,
+# trigger a review via DocReviewService.maybeTrigger.
+# Enforces INV-SUP-001 (clean shutdown when no eligible tasks remain).
+handle_scope_drain() {
+  local worker_id="$1"
+
+  if [ "$SUPERVISION_AVAILABLE" != true ]; then
+    return 0
+  fi
+
+  local session_id="${SUPERVISION_SESSION_ID:-unknown}"
+  local drain_payload
+  drain_payload=$(printf '{"sessionId":"%s","workerId":"%s","scopeMode":"%s","scopeRef":%s}' \
+    "$session_id" "$worker_id" "$TASK_SCOPE_MODE" \
+    "$(if [ -n "$DESIGN_DOC_SCOPE" ]; then printf '"%s"' "$DESIGN_DOC_SCOPE"; else printf 'null'; fi)")
+
+  # Emit scope drained event
+  emit_supervision_event \
+    "worker.scope_drained" \
+    "worker_session" \
+    "$session_id" \
+    "worker" \
+    "$worker_id" \
+    "$drain_payload"
+
+  # Emit shutdown requested event
+  emit_supervision_event \
+    "worker.shutdown_requested" \
+    "worker_session" \
+    "$session_id" \
+    "worker" \
+    "$worker_id" \
+    "$drain_payload"
+
+  # If scoped to a design doc, trigger a review check
+  if [ "$TASK_SCOPE_MODE" = "design-doc" ] && [ -n "$DESIGN_DOC_SCOPE" ]; then
+    log "[$worker_id] Design-doc scope drained — triggering review check for $DESIGN_DOC_SCOPE"
+    local trigger_result
+    if trigger_result=$(bun "$SUPERVISION_BRIDGE" maybe-trigger "$DESIGN_DOC_SCOPE" 2>>"$LOG_FILE"); then
+      log "[$worker_id] Review trigger result: $trigger_result"
+    else
+      log "[$worker_id] Review trigger failed (non-fatal)"
+    fi
+  fi
+
+  # Emit shutdown completed event
+  emit_supervision_event \
+    "worker.shutdown_completed" \
+    "worker_session" \
+    "$session_id" \
+    "worker" \
+    "$worker_id" \
+    "$drain_payload"
+
+  log "[$worker_id] Scope drain shutdown complete"
 }
 
 # ==============================================================================
@@ -1533,6 +1773,136 @@ update_run_heartbeat() {
     --delta-bytes "$delta_bytes" >/dev/null 2>&1 || true
 }
 
+capture_current_task_payload() {
+  local task_id="$1"
+  local output_path="$2"
+
+  if ! tx show "$task_id" --json > "$output_path" 2>/dev/null; then
+    printf '{}\n' > "$output_path"
+  fi
+}
+
+filter_tasks_for_scope() {
+  local input_path="$1"
+  local output_path="$2"
+
+  if [ "$TASK_SCOPE_MODE" = "all" ]; then
+    cp "$input_path" "$output_path"
+    return 0
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '[]\n' > "$output_path"
+    return 1
+  fi
+
+  if ! jq --arg doc "$DESIGN_DOC_SCOPE" '
+    map(select(any(.linkedDocs[]?; .kind == "design" and .name == $doc)))
+  ' "$input_path" > "$output_path" 2>/dev/null; then
+    printf '[]\n' > "$output_path"
+    return 1
+  fi
+
+  return 0
+}
+
+capture_all_tasks_payload() {
+  local output_path="$1"
+  local raw_output_path="${output_path}.raw"
+
+  if ! tx list --json > "$raw_output_path" 2>/dev/null; then
+    printf '[]\n' > "$output_path"
+    rm -f "$raw_output_path"
+    return 0
+  fi
+
+  filter_tasks_for_scope "$raw_output_path" "$output_path" || true
+  rm -f "$raw_output_path"
+}
+
+capture_ready_queue_payload() {
+  if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+    tx ready --json 2>/dev/null || echo "[]"
+  else
+    tx ready --json --limit 1 2>/dev/null || echo "[]"
+  fi
+}
+
+select_task_from_ready_queue() {
+  local ready_json="$1"
+
+  if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+    echo "$ready_json" | jq --arg doc "$DESIGN_DOC_SCOPE" '
+      [ .[] | select(any(.linkedDocs[]?; .kind == "design" and .name == $doc)) ][0] // empty
+    ' 2>/dev/null
+  else
+    echo "$ready_json" | jq '.[0] // empty' 2>/dev/null
+  fi
+}
+
+capture_linked_design_docs() {
+  local task_payload_path="$1"
+  local output_path="$2"
+  local doc_names=""
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '_jq is unavailable; cannot resolve linked design docs._\n' > "$output_path"
+    return 0
+  fi
+
+  doc_names=$(jq -r '.linkedDocs[]? | select(.kind == "design") | .name' "$task_payload_path" 2>/dev/null || true)
+
+  if [ -z "$doc_names" ]; then
+    printf '_No linked design docs found for this task._\n' > "$output_path"
+    return 0
+  fi
+
+  : > "$output_path"
+
+  while IFS= read -r doc_name; do
+    [ -z "$doc_name" ] && continue
+    {
+      printf '## %s\n\n' "$doc_name"
+      if ! tx doc show "$doc_name" --md 2>/dev/null; then
+        printf '_Failed to load linked design doc: %s._\n' "$doc_name"
+      fi
+      printf '\n'
+    } >> "$output_path"
+  done <<EOF
+$doc_names
+EOF
+
+  if [ ! -s "$output_path" ]; then
+    printf '_No linked design docs found for this task._\n' > "$output_path"
+  fi
+}
+
+build_prompt_context_bundle() {
+  local current_task_path="$1"
+  local design_docs_path="$2"
+  local all_tasks_path="$3"
+  local output_path="$4"
+  local scope_path="$5"
+
+  {
+    printf '===== BEGIN RALPH TASK SCOPE =====\n'
+    cat "$scope_path"
+    printf '\n===== END RALPH TASK SCOPE =====\n\n'
+
+    printf '===== BEGIN CURRENT TASK PAYLOAD (JSON) =====\n'
+    cat "$current_task_path"
+    printf '\n===== END CURRENT TASK PAYLOAD (JSON) =====\n\n'
+
+    printf '===== BEGIN LINKED DESIGN DOCS (MARKDOWN) =====\n'
+    cat "$design_docs_path"
+    printf '\n===== END LINKED DESIGN DOCS (MARKDOWN) =====\n\n'
+
+    printf '===== BEGIN ALL TASKS (JSON) =====\n'
+    cat "$all_tasks_path"
+    printf '\n===== END ALL TASKS (JSON) =====\n'
+  } > "$output_path"
+}
+
 # ==============================================================================
 # Run Task Agent
 # ==============================================================================
@@ -1556,21 +1926,6 @@ run_agent() {
     profile_display="${profile_path#"$PROJECT_DIR"/}"
   fi
 
-  local prompt="Read $profile_display for your instructions.
-
-Your assigned task: $task_id
-Task title: $task_title
-
-Follow the profile instructions first.
-Helpful commands if needed:
-- \`tx show $task_id\` for full task details
-- \`tx memory context $task_id\` for related learnings
-
-When complete, run \`tx done $task_id\`.
-If you discover new work, create subtasks with \`tx add\`.
-If blocked, run \`tx update $task_id --status blocked\`.
-Optionally record useful insights with \`tx memory add \"<what you learned>\" --source-ref $task_id\`."
-
   log "Dispatching to $ACTIVE_RUNTIME_LABEL..."
 
   # Create run record
@@ -1581,10 +1936,81 @@ Optionally record useful insights with \`tx memory add \"<what you learned>\" --
     return 1
   fi
   log "Run: $CURRENT_RUN_ID"
+  update_supervision_session "$task_id" "$CURRENT_RUN_ID"
 
   # Create per-run log directory
   local run_dir="$PROJECT_DIR/.tx/runs/$CURRENT_RUN_ID"
   mkdir -p "$run_dir"
+
+  local current_task_path="$run_dir/current-task.json"
+  local all_tasks_path="$run_dir/all-tasks.json"
+  local design_docs_path="$run_dir/linked-design-docs.md"
+  local prompt_context_path="$run_dir/prompt-context.txt"
+  local scope_path="$run_dir/task-scope.txt"
+  local prompt_context=""
+  local task_scope=""
+
+  task_scope=$(scope_label)
+  printf '%s\n' "$task_scope" > "$scope_path"
+  capture_current_task_payload "$task_id" "$current_task_path"
+  capture_all_tasks_payload "$all_tasks_path"
+  capture_linked_design_docs "$current_task_path" "$design_docs_path"
+  build_prompt_context_bundle "$current_task_path" "$design_docs_path" "$all_tasks_path" "$prompt_context_path" "$scope_path"
+  prompt_context=$(cat "$prompt_context_path" 2>/dev/null || echo "")
+
+  # Auto-inject memory index (titles + paths only — progressive disclosure)
+  local memory_index=""
+  memory_index=$(bun apps/cli/src/cli.ts memory context "$task_id" --limit 15 --json 2>/dev/null | \
+    node -e "
+      let buf=''; process.stdin.on('data',c=>buf+=c); process.stdin.on('end',()=>{
+        try {
+          const d = JSON.parse(buf);
+          if (!d.results || !d.results.length) { process.exit(0); }
+          const lines = d.results.map((r,i) =>
+            '  ' + (i+1) + '. [' + Math.round(r.relevanceScore*100) + '%] ' +
+            r.tags.join(',') + ' — ' + r.title +
+            ' (docs/' + r.filePath + ')'
+          );
+          console.log(lines.join('\n'));
+        } catch(e) { process.exit(0); }
+      });
+    " 2>/dev/null || echo "")
+  if [ -n "$memory_index" ]; then
+    prompt_context="$prompt_context
+
+===== BEGIN RELEVANT MEMORY (titles only — read any with Read tool if useful) =====
+$memory_index
+
+To search for more: bun apps/cli/src/cli.ts memory search \"<query>\" --limit 10
+To read a specific doc: read the file path shown above (e.g. docs/episodes/episode-*.md)
+===== END RELEVANT MEMORY ====="
+  fi
+
+  local prompt="Read $profile_display for your instructions.
+
+Your assigned task: $task_id
+Task title: $task_title
+Task scope: $task_scope
+
+You are given direct working context below. Read it before changing code:
+
+$prompt_context
+
+Follow the profile instructions first.
+Helpful commands if needed:
+- \`tx show $task_id\` for full task details, including any linked docs/specs
+- \`tx memory context $task_id\` for related learnings
+
+When complete, run \`tx done $task_id\`.
+If you discover new work, create follow-up tasks with \`tx add\` and subtasks with \`tx add ... --parent $task_id\`.
+If dependencies need to change, use \`tx dep block\` and \`tx dep unblock\`.
+If the queue needs reordering, update scores with \`tx update <id> --score <n>\` or \`tx bulk score <n> <id...>\`.
+If a non-trivial task needs specs, prefer a paired PRD/design doc: attach the PRD with \`tx doc attach $task_id <prd-doc> --type implements\` and the design doc with \`tx doc attach $task_id <design-doc> --type references\`.
+If one half of the PRD/design pair is missing, create follow-up docs work or block the task before large implementation proceeds.
+If blocked, run \`tx update $task_id --status blocked\`.
+Optionally record useful insights:
+- File-specific: \`tx memory learn \"<file-path>\" \"<gotcha or convention>\"\`
+- Broader: \`tx memory add \"<title>\" -c \"<detail>\" -t learnings -d docs/learnings\`"
 
   # Save injected context
   echo "$prompt" > "$run_dir/context.md"
@@ -1900,7 +2326,7 @@ This is iteration $iteration of the RALPH loop."
   [[ "$test_runner_profile" == "$PROJECT_DIR/"* ]] && test_runner_display="${test_runner_profile#"$PROJECT_DIR"/}"
   run_review_agent "test-runner" "Read $test_runner_display for your instructions.
 
-Run ONLY targeted tests for recently changed files. Do NOT run the full test suite.
+Run the full test suite to catch regressions. Do NOT limit to targeted tests only.
 This is iteration $iteration of the RALPH loop."
 
   # 3. Quality Checker
@@ -2039,6 +2465,10 @@ run_worker_loop() {
   fi
   set_worker_status "$worker_id" "idle"
 
+  # Create tmux session and supervision session for this worker (DD-039)
+  create_tmux_session_for_worker "$worker_id"
+  create_supervision_session "$worker_id"
+
   while [ "$iteration" -lt "$MAX_ITERATIONS" ]; do
     iteration=$((iteration + 1))
     echo "$iteration" > "$worker_state_file"
@@ -2051,16 +2481,18 @@ run_worker_loop() {
     log "[$worker_id] --- Iteration $iteration ---"
 
     # Get highest-priority ready task
-    READY_JSON=$(tx ready --json --limit 1 2>/dev/null || echo "[]")
-    TASK=$(echo "$READY_JSON" | jq '.[0] // empty' 2>/dev/null)
+    READY_JSON=$(capture_ready_queue_payload)
+    TASK=$(select_task_from_ready_queue "$READY_JSON")
 
     if [ -z "$TASK" ] || [ "$TASK" = "null" ]; then
       idle_rounds=$((idle_rounds + 1))
       if [ "$idle_rounds" -ge "$MAX_IDLE_ROUNDS" ]; then
-        log "[$worker_id] No ready tasks after $MAX_IDLE_ROUNDS checks. Worker exiting."
+        log "[$worker_id] No ready tasks in scope $(scope_label) after $MAX_IDLE_ROUNDS checks. Worker exiting."
+        # Scope drain: emit shutdown events and maybe-trigger review (INV-SUP-001)
+        handle_scope_drain "$worker_id"
         break
       fi
-      log "[$worker_id] No ready tasks. Sleeping (${idle_rounds}/${MAX_IDLE_ROUNDS})..."
+      log "[$worker_id] No ready tasks in scope $(scope_label). Sleeping (${idle_rounds}/${MAX_IDLE_ROUNDS})..."
       sleep "$SLEEP_BETWEEN"
       continue
     fi
@@ -2089,6 +2521,7 @@ run_worker_loop() {
     CURRENT_TASK_ID="$TASK_ID"
     tx update "$TASK_ID" --status active 2>/dev/null || true
     set_worker_status "$worker_id" "busy" "$TASK_ID"
+    update_supervision_session "$TASK_ID" ""
     start_claim_renewer "$TASK_ID" "$worker_id"
 
     # Run the agent
@@ -2179,24 +2612,34 @@ Be honest - only mark done if the acceptance criteria are met."
     # Clear current task tracking
     CURRENT_TASK_ID=""
     set_worker_status "$worker_id" "idle"
+    update_supervision_session "" ""
 
     # Extract learnings only after a successful task outcome.
     if [ "$TASK_SUCCEEDED" = true ] && [ -n "$LAST_TRANSCRIPT_PATH" ] && [ -f "$LAST_TRANSCRIPT_PATH" ]; then
       log "[$worker_id] Extracting learnings from session transcript..."
       local learnings_exit=0
       if run_runtime_sync_with_timeout \
-        "You are a learnings extractor. Read the transcript at $LAST_TRANSCRIPT_PATH.
+        "You are a learnings extractor for task $TASK_ID ($TASK_TITLE).
+Read the transcript at $LAST_TRANSCRIPT_PATH. Be fast — skim for surprises, skip boilerplate.
 
-Extract all key learnings — things that would help a future agent working on this codebase. Focus on:
-- Bugs discovered and their root causes
-- Patterns that worked or failed
-- Codebase-specific knowledge (file locations, gotchas, conventions)
-- Tool/API quirks encountered
+Record ONLY non-obvious, project-specific insights using THREE methods:
 
-For each learning, record it with:
-  tx memory add \"<learning>\" --source-ref $TASK_ID
+1. File-specific learnings (preferred — attach knowledge to the file that needs it):
+   bun apps/cli/src/cli.ts memory learn \"<file-path-or-glob>\" \"<what future agents need to know>\"
 
-Skip obvious or generic observations. Only record insights specific to this project." \
+2. Cross-cutting codebase learnings (for patterns, conventions, gotchas):
+   bun apps/cli/src/cli.ts memory add \"<concise title>\" -c \"<1-2 sentence explanation>\" -t learnings -d docs/learnings
+
+3. Episodic task log (one per task — what was tried, what worked, key decisions):
+   bun apps/cli/src/cli.ts memory add \"Episode: $TASK_TITLE\" -c \"## Task $TASK_ID
+Approach: <what the agent did>
+Outcome: <success/failure and why>
+Decisions: <key choices made>
+Surprises: <anything unexpected>\" -t episode -d docs/episodes
+
+Focus on: bugs and root causes, patterns that worked or failed, gotchas, conventions discovered.
+Skip: obvious observations, generic best practices, things already in CLAUDE.md.
+Aim for 1 episode + 2-5 learnings max. Speed matters more than completeness." \
         "$LEARNINGS_TIMEOUT" \
         "Learnings extractor"
       then
@@ -2237,6 +2680,7 @@ $COAUTHOR_LINE" 2>>"$LOG_FILE" || true
   done
 
   set_worker_status "$worker_id" "idle"
+  end_supervision_session "$worker_id"
   log "[$worker_id] Worker finished after $iteration iteration(s)"
 }
 
@@ -2267,6 +2711,10 @@ spawn_parallel_workers() {
 
     if [ "$RUNTIME_MODE" != "auto" ]; then
       child_args+=(--runtime "$RUNTIME_MODE")
+    fi
+
+    if [ "$TASK_SCOPE_MODE" = "design-doc" ]; then
+      child_args+=(--design-doc "$DESIGN_DOC_SCOPE")
     fi
 
     if [ -n "$AGENT_COMMAND_OVERRIDE" ]; then
@@ -2312,6 +2760,7 @@ spawn_parallel_workers() {
 
 detect_worker_table
 detect_process_registry
+detect_supervision_table
 
 # Auto-scale heartbeat interval for high worker counts to reduce SQLite contention
 if [ "$WORKERS" -gt 4 ] && [ "$RUN_HEARTBEAT_INTERVAL" -lt 60 ]; then
@@ -2323,6 +2772,7 @@ log "RALPH Loop Started"
 log "========================================"
 log "Project: $PROJECT_DIR"
 log "Runtime: $ACTIVE_RUNTIME ($ACTIVE_RUNTIME_LABEL)"
+log "Task scope: $(scope_label)"
 if [ "$ACTIVE_RUNTIME" = "claude" ]; then
   log "Claude stream-json output: $CLAUDE_STREAM_JSON_ENABLED (mode=$CLAUDE_STREAM_JSON_MODE)"
 fi
@@ -2338,6 +2788,7 @@ if [ "$ACTIVE_RUNTIME" = "claude" ]; then
 fi
 log "Review every: $REVIEW_EVERY iterations"
 log "Auto-commit: $AUTO_COMMIT"
+log "Supervision: $SUPERVISION_AVAILABLE"
 log ""
 
 if [ "$CHILD_MODE" = false ]; then

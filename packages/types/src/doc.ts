@@ -14,7 +14,15 @@ import { Schema } from "effect"
 // CONSTANTS
 // =============================================================================
 
-export const DOC_KINDS = ["overview", "prd", "design", "requirement", "system_design"] as const
+export const DOC_KINDS = [
+  "overview",
+  "prd",
+  "design",
+  "requirement",
+  "system_design",
+  "runbook",
+  "decision",
+] as const
 export const DOC_STATUSES = ["changing", "locked"] as const
 export const DOC_LINK_TYPES = [
   "overview_to_prd",
@@ -34,6 +42,42 @@ export const INVARIANT_ENFORCEMENT_TYPES = [
 ] as const
 export const INVARIANT_STATUSES = ["active", "deprecated"] as const
 export const INVARIANT_SOURCES = ["explicit", "goals", "decision", "constraint"] as const
+export const MD_DOC_KINDS = ["spec", "task"] as const
+export const MD_SPEC_TYPES = ["prd", "design", "overview", "runbook", "decision"] as const
+export const MD_SPEC_STATUSES = ["active", "draft", "deprecated", "archived"] as const
+export const MD_EARS_REQUIREMENT_KINDS = [
+  "ubiquitous",
+  "event-driven",
+  "state-driven",
+  "unwanted",
+  "optional",
+  "complex",
+] as const
+export const MD_EARS_PRIORITIES = ["must", "should", "may"] as const
+export const MD_VERIFICATION_TEST_TYPES = [
+  "unit",
+  "integration",
+  "e2e",
+  "property",
+  "manual",
+] as const
+export const MD_INTERFACE_TYPES = ["http", "queue", "event", "rpc", "cron"] as const
+export const MD_INVARIANT_SEVERITIES = ["low", "medium", "high", "critical"] as const
+export const MD_REQUIRED_SECTIONS_BY_SPEC_TYPE = {
+  prd: ["Summary", "Problem", "Scope", "Requirements", "Acceptance Criteria"],
+  design: [
+    "Summary",
+    "Architecture",
+    "Interfaces",
+    "Data Model",
+    "Invariants",
+    "Failure Modes",
+    "Verification",
+  ],
+  overview: ["Summary", "Architecture", "Components", "Data Flows"],
+  runbook: ["Summary", "Symptoms", "Diagnosis", "Mitigation", "Escalation"],
+  decision: ["Summary", "Context", "Alternatives", "Decision", "Consequences"],
+} as const
 
 // =============================================================================
 // SCHEMAS & TYPES — Docs
@@ -42,6 +86,18 @@ export const INVARIANT_SOURCES = ["explicit", "goals", "decision", "constraint"]
 /** Doc kind — overview, requirement, prd, design, or system_design. */
 export const DocKindSchema = Schema.Literal(...DOC_KINDS)
 export type DocKind = typeof DocKindSchema.Type
+
+/** Markdown-first doc kind — `spec` or `task`. */
+export const MdDocKindSchema = Schema.Literal(...MD_DOC_KINDS)
+export type MdDocKind = typeof MdDocKindSchema.Type
+
+/** Markdown-first spec subtype. */
+export const MdSpecTypeSchema = Schema.Literal(...MD_SPEC_TYPES)
+export type MdSpecType = typeof MdSpecTypeSchema.Type
+
+/** Markdown-first spec status. */
+export const MdSpecStatusSchema = Schema.Literal(...MD_SPEC_STATUSES)
+export type MdSpecStatus = typeof MdSpecStatusSchema.Type
 
 /** Doc status — changing (editable) or locked (immutable). */
 export const DocStatusSchema = Schema.Literal(...DOC_STATUSES)
@@ -62,9 +118,18 @@ export const DocIdSchema = Schema.Number.pipe(
 )
 export type DocId = typeof DocIdSchema.Type
 
+/** Stable external doc ID — immutable identifier stored in frontmatter + DB. */
+export const DOC_STABLE_ID_PATTERN = /^doc-[a-f0-9]{12}$/
+export const DocStableIdSchema = Schema.String.pipe(
+  Schema.pattern(DOC_STABLE_ID_PATTERN),
+  Schema.brand("DocStableId")
+)
+export type DocStableId = typeof DocStableIdSchema.Type
+
 /** Core doc entity (DB metadata — YAML content lives on disk only). */
 export const DocSchema = Schema.Struct({
   id: DocIdSchema,
+  docId: DocStableIdSchema,
   hash: Schema.String,
   kind: DocKindSchema,
   name: Schema.String,
@@ -126,7 +191,7 @@ export const CreateDocInputSchema = Schema.Struct({
   kind: DocKindSchema,
   name: Schema.String,
   title: Schema.String,
-  yamlContent: Schema.String,
+  content: Schema.String,
   metadata: Schema.optional(
     Schema.Record({ key: Schema.String, value: Schema.Unknown })
   ),
@@ -137,7 +202,7 @@ export type CreateDocInput = typeof CreateDocInputSchema.Type
 // SCHEMAS & TYPES — EARS Requirements (PRD layer)
 // =============================================================================
 
-/** EARS requirement patterns. */
+/** EARS requirement patterns (kept for backward compat with legacy decomposed EARS). */
 export const EARS_PATTERNS = [
   "ubiquitous",
   "event_driven",
@@ -160,6 +225,24 @@ export const EarsRequirementIdSchema = Schema.String.pipe(
 )
 export type EarsRequirementId = typeof EarsRequirementIdSchema.Type
 
+/**
+ * Simplified EARS requirement: id + statement (single string).
+ * This is the canonical schema per DOC_SCHEMA_SPEC.
+ * Legacy decomposed fields (pattern/trigger/state/condition/system/response)
+ * are accepted at runtime for backward compat but not part of the new schema.
+ */
+export const YamlEarsRequirementSchema = Schema.Struct({
+  id: Schema.String,
+  statement: Schema.String,
+  category: Schema.optional(Schema.String),
+  rationale: Schema.optional(Schema.String),
+})
+export type YamlEarsRequirement = typeof YamlEarsRequirementSchema.Type
+
+/**
+ * Legacy decomposed EARS requirement schema (backward compat).
+ * New specs should use YamlEarsRequirementSchema instead.
+ */
 export const EarsRequirementSchema = Schema.Struct({
   id: EarsRequirementIdSchema,
   pattern: EarsPatternSchema,
@@ -204,6 +287,361 @@ export const renderEarsRule = (opts: {
     }
   }
 }
+
+// =============================================================================
+// SCHEMAS & TYPES — YAML Content Schemas (DOC_SCHEMA_SPEC)
+// =============================================================================
+
+/** Traceability row — links a requirement to a verification method. */
+export const TRACEABILITY_LEVELS = ["unit", "integration", "e2e"] as const
+export const TraceabilityLevelSchema = Schema.Literal(...TRACEABILITY_LEVELS)
+export type TraceabilityLevel = typeof TraceabilityLevelSchema.Type
+
+export const TraceabilityRowSchema = Schema.Struct({
+  requirement_id: Schema.String,
+  level: TraceabilityLevelSchema,
+  verification: Schema.String,
+  success_criteria: Schema.String,
+})
+export type TraceabilityRow = typeof TraceabilityRowSchema.Type
+
+/** Invariant (YAML content shape — lighter than DB InvariantSchema). */
+export const YamlInvariantSchema = Schema.Struct({
+  id: Schema.String,
+  statement: Schema.String,
+  rationale: Schema.optional(Schema.String),
+})
+export type YamlInvariant = typeof YamlInvariantSchema.Type
+
+/** Failure mode. */
+export const FailureModeSchema = Schema.Struct({
+  condition: Schema.String,
+  impact: Schema.String,
+  handling: Schema.String,
+})
+export type FailureMode = typeof FailureModeSchema.Type
+
+/** Edge case. */
+export const EdgeCaseSchema = Schema.Struct({
+  condition: Schema.String,
+  expected_behavior: Schema.String,
+})
+export type EdgeCase = typeof EdgeCaseSchema.Type
+
+/** Actor (requirement kind). */
+export const ActorSchema = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+})
+export type Actor = typeof ActorSchema.Type
+
+/** Use case (requirement kind). */
+export const UseCaseSchema = Schema.Struct({
+  id: Schema.String,
+  actor: Schema.String,
+  trigger: Schema.String,
+  outcome: Schema.String,
+})
+export type UseCase = typeof UseCaseSchema.Type
+
+/** Applies-to entry (system_design kind). */
+export const AppliesToSchema = Schema.Struct({
+  target: Schema.String,
+  reason: Schema.String,
+})
+export type AppliesTo = typeof AppliesToSchema.Type
+
+/** Decision log entry (system_design kind). */
+export const DecisionLogEntrySchema = Schema.Struct({
+  decision: Schema.String,
+  rationale: Schema.String,
+  date: Schema.optional(Schema.String),
+  consequence: Schema.optional(Schema.String),
+})
+export type DecisionLogEntry = typeof DecisionLogEntrySchema.Type
+
+// =============================================================================
+// SCHEMAS & TYPES — Markdown-First Doc Schemas
+// =============================================================================
+
+/** Markdown-first spec/task name — kebab-case identifier. */
+export const MdNameSchema = Schema.String.pipe(
+  Schema.pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  Schema.brand("MdName")
+)
+export type MdName = typeof MdNameSchema.Type
+
+/** ISO date (YYYY-MM-DD) used by markdown-first frontmatter. */
+export const MdDateSchema = Schema.String.pipe(
+  Schema.pattern(/^\d{4}-\d{2}-\d{2}$/),
+  Schema.brand("MdDate")
+)
+export type MdDate = typeof MdDateSchema.Type
+
+/** Markdown-first common spec frontmatter. */
+export const MdFrontmatterSchema = Schema.Struct({
+  kind: Schema.Literal("spec"),
+  spec_type: MdSpecTypeSchema,
+  doc_id: Schema.optional(DocStableIdSchema),
+  name: MdNameSchema,
+  title: Schema.String,
+  status: MdSpecStatusSchema,
+  version: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
+  owners: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+  summary: Schema.String,
+  domain: Schema.String,
+  tags: Schema.Array(Schema.String),
+  depends_on: Schema.Array(MdNameSchema),
+  supersedes: Schema.Array(MdNameSchema),
+  implements: Schema.NullOr(MdNameSchema),
+  last_reviewed_at: MdDateSchema,
+})
+export type MdFrontmatter = typeof MdFrontmatterSchema.Type
+
+/** EARS requirement kind in embedded yaml blocks. */
+export const MdEarsRequirementKindSchema = Schema.Literal(...MD_EARS_REQUIREMENT_KINDS)
+export type MdEarsRequirementKind = typeof MdEarsRequirementKindSchema.Type
+
+/** EARS priority in markdown-first requirements. */
+export const MdEarsPrioritySchema = Schema.Literal(...MD_EARS_PRIORITIES)
+export type MdEarsPriority = typeof MdEarsPrioritySchema.Type
+
+/** EARS requirement ID in embedded requirements block. */
+export const MdEarsRequirementIdSchema = Schema.String.pipe(
+  Schema.pattern(/^REQ-[A-Z0-9-]+$/),
+  Schema.brand("MdEarsRequirementId")
+)
+export type MdEarsRequirementId = typeof MdEarsRequirementIdSchema.Type
+
+/** EARS requirement entry from fenced yaml blocks. */
+export const MdEarsRequirementSchema = Schema.Struct({
+  id: MdEarsRequirementIdSchema,
+  kind: MdEarsRequirementKindSchema,
+  statement: Schema.String,
+  when: Schema.optional(Schema.String),
+  while: Schema.optional(Schema.String),
+  if: Schema.optional(Schema.String),
+  where: Schema.optional(Schema.String),
+  priority: MdEarsPrioritySchema,
+  rationale: Schema.optional(Schema.String),
+})
+export type MdEarsRequirement = typeof MdEarsRequirementSchema.Type
+
+/** Invariant severity used by markdown-first docs. */
+export const MdInvariantSeveritySchema = Schema.Literal(...MD_INVARIANT_SEVERITIES)
+export type MdInvariantSeverity = typeof MdInvariantSeveritySchema.Type
+
+/** Markdown-first invariant ID in embedded invariants block. */
+export const MdInvariantIdSchema = Schema.String.pipe(
+  Schema.pattern(/^INV-[A-Z0-9-]+$/),
+  Schema.brand("MdInvariantId")
+)
+export type MdInvariantId = typeof MdInvariantIdSchema.Type
+
+/** Invariant entry from fenced yaml blocks. */
+export const MdInvariantSchema = Schema.Struct({
+  id: MdInvariantIdSchema,
+  statement: Schema.String,
+  severity: MdInvariantSeveritySchema,
+  verified_by: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+})
+export type MdInvariant = typeof MdInvariantSchema.Type
+
+/** Verification test type in markdown-first verification mappings. */
+export const MdVerificationTestTypeSchema = Schema.Literal(...MD_VERIFICATION_TEST_TYPES)
+export type MdVerificationTestType = typeof MdVerificationTestTypeSchema.Type
+
+/** Verification mapping entry from fenced yaml blocks. */
+export const MdVerificationSchema = Schema.Struct({
+  requirement_id: MdEarsRequirementIdSchema,
+  test_type: MdVerificationTestTypeSchema,
+  target: Schema.String,
+})
+export type MdVerification = typeof MdVerificationSchema.Type
+
+/** Interface type in markdown-first interface definitions. */
+export const MdInterfaceTypeSchema = Schema.Literal(...MD_INTERFACE_TYPES)
+export type MdInterfaceType = typeof MdInterfaceTypeSchema.Type
+
+/** Interface entry from fenced yaml blocks. */
+export const MdInterfaceSchema = Schema.Struct({
+  name: Schema.String,
+  type: MdInterfaceTypeSchema,
+  method: Schema.optional(Schema.String),
+  path: Schema.optional(Schema.String),
+  semantics: Schema.String,
+  contract: Schema.optional(Schema.String),
+})
+export type MdInterface = typeof MdInterfaceSchema.Type
+
+/** Failure mode entry from fenced yaml blocks. */
+export const MdFailureModeSchema = Schema.Struct({
+  condition: Schema.String,
+  impact: Schema.String,
+  handling: Schema.String,
+})
+export type MdFailureMode = typeof MdFailureModeSchema.Type
+
+/** Acceptance criterion ID in embedded acceptance_criteria blocks. */
+export const MdAcceptanceCriterionIdSchema = Schema.String.pipe(
+  Schema.pattern(/^AC-[A-Z0-9-]+$/),
+  Schema.brand("MdAcceptanceCriterionId")
+)
+export type MdAcceptanceCriterionId = typeof MdAcceptanceCriterionIdSchema.Type
+
+/** Acceptance criterion entry from fenced yaml blocks. */
+export const MdAcceptanceCriterionSchema = Schema.Struct({
+  id: MdAcceptanceCriterionIdSchema,
+  statement: Schema.String,
+})
+export type MdAcceptanceCriterion = typeof MdAcceptanceCriterionSchema.Type
+
+/** Markdown section extracted from parsed markdown body. */
+export const MdSectionSchema = Schema.Struct({
+  heading: Schema.String,
+  body: Schema.String,
+})
+export type MdSection = typeof MdSectionSchema.Type
+
+/** Parsed embedded yaml blocks extracted from markdown body. */
+export const MdEmbeddedBlocksSchema = Schema.Struct({
+  ears_requirements: Schema.optional(Schema.Array(MdEarsRequirementSchema)),
+  invariants: Schema.optional(Schema.Array(MdInvariantSchema)),
+  verification: Schema.optional(Schema.Array(MdVerificationSchema)),
+  interfaces: Schema.optional(Schema.Array(MdInterfaceSchema)),
+  failure_modes: Schema.optional(Schema.Array(MdFailureModeSchema)),
+  acceptance_criteria: Schema.optional(Schema.Array(MdAcceptanceCriterionSchema)),
+})
+export type MdEmbeddedBlocks = typeof MdEmbeddedBlocksSchema.Type
+
+/** Parsed markdown-first `spec` document. */
+export const MdParsedSpecDocSchema = Schema.Struct({
+  kind: Schema.Literal("spec"),
+  frontmatter: MdFrontmatterSchema,
+  sections: Schema.Array(MdSectionSchema),
+  blocks: MdEmbeddedBlocksSchema,
+})
+export type MdParsedSpecDoc = typeof MdParsedSpecDocSchema.Type
+
+/** Parsed markdown-first `task` document (frontmatter is intentionally open-ended). */
+export const MdParsedTaskDocSchema = Schema.Struct({
+  kind: Schema.Literal("task"),
+  frontmatter: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  sections: Schema.Array(MdSectionSchema),
+  blocks: MdEmbeddedBlocksSchema,
+})
+export type MdParsedTaskDoc = typeof MdParsedTaskDocSchema.Type
+
+/** Full parsed representation of a markdown-first doc (`spec` or `task`). */
+export const MdParsedDocSchema = Schema.Union(MdParsedSpecDocSchema, MdParsedTaskDocSchema)
+export type MdParsedDoc = typeof MdParsedDocSchema.Type
+
+// --- Per-kind YAML content schemas ---
+
+/** Common header fields shared by all doc kinds. */
+const YamlHeaderFields = {
+  kind: DocKindSchema,
+  doc_id: Schema.optional(DocStableIdSchema),
+  name: Schema.String,
+  title: Schema.String,
+}
+
+/** Overview doc YAML content. */
+export const OverviewContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("overview"),
+  problem_definition: Schema.String,
+  subsystems: Schema.String,
+  object_model: Schema.optional(Schema.String),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  failure_modes: Schema.optional(Schema.Array(FailureModeSchema)),
+  edge_cases: Schema.optional(Schema.Array(EdgeCaseSchema)),
+  constraints: Schema.optional(Schema.Array(Schema.String)),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type OverviewContent = typeof OverviewContentSchema.Type
+
+/** PRD doc YAML content. */
+export const PrdContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("prd"),
+  status: DocStatusSchema,
+  problem: Schema.String,
+  solution: Schema.String,
+  ears_requirements: Schema.Array(YamlEarsRequirementSchema).pipe(Schema.minItems(1)),
+  acceptance_criteria: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+  non_goals: Schema.optional(Schema.Array(Schema.String)),
+  user_specific_content: Schema.optional(Schema.String),
+  // Deprecated fields (accepted, not required)
+  requirements: Schema.optional(Schema.Array(Schema.String)),
+  out_of_scope: Schema.optional(Schema.Array(Schema.String)),
+})
+export type PrdContent = typeof PrdContentSchema.Type
+
+/** Design doc YAML content. */
+export const DesignContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("design"),
+  status: DocStatusSchema,
+  version: Schema.Number.pipe(Schema.int()),
+  problem_definition: Schema.String,
+  architecture: Schema.String,
+  testing_strategy: Schema.Array(TraceabilityRowSchema).pipe(Schema.minItems(1)),
+  goals: Schema.optional(Schema.Array(Schema.String)),
+  data_model: Schema.optional(Schema.String),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  failure_modes: Schema.optional(Schema.Array(FailureModeSchema)),
+  edge_cases: Schema.optional(Schema.Array(EdgeCaseSchema)),
+  non_goals: Schema.optional(Schema.Array(Schema.String)),
+  open_questions: Schema.optional(Schema.String),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type DesignContent = typeof DesignContentSchema.Type
+
+/**
+ * Requirement doc YAML content (DEPRECATED — use prd + design).
+ * At least one of functional_requirements or ears_requirements must be present.
+ */
+export const RequirementContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("requirement"),
+  status: DocStatusSchema,
+  overview: Schema.String,
+  actors: Schema.optional(Schema.Array(ActorSchema)),
+  use_cases: Schema.optional(Schema.Array(UseCaseSchema)),
+  functional_requirements: Schema.optional(Schema.String),
+  ears_requirements: Schema.optional(Schema.Array(YamlEarsRequirementSchema)),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  non_functional_requirements: Schema.optional(Schema.Array(Schema.String)),
+  traceability: Schema.optional(Schema.Array(TraceabilityRowSchema)),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type RequirementContent = typeof RequirementContentSchema.Type
+
+/** System design doc YAML content. */
+export const SystemDesignContentSchema = Schema.Struct({
+  ...YamlHeaderFields,
+  kind: Schema.Literal("system_design"),
+  status: DocStatusSchema,
+  overview: Schema.String,
+  scope: Schema.String,
+  design: Schema.String,
+  constraints: Schema.optional(Schema.Array(Schema.String)),
+  invariants: Schema.optional(Schema.Array(YamlInvariantSchema)),
+  applies_to: Schema.optional(Schema.Array(AppliesToSchema)),
+  decision_log: Schema.optional(Schema.Array(DecisionLogEntrySchema)),
+  user_specific_content: Schema.optional(Schema.String),
+})
+export type SystemDesignContent = typeof SystemDesignContentSchema.Type
+
+/** Map from doc kind to its content schema. */
+export const DOC_CONTENT_SCHEMAS = {
+  overview: OverviewContentSchema,
+  prd: PrdContentSchema,
+  design: DesignContentSchema,
+  requirement: RequirementContentSchema,
+  system_design: SystemDesignContentSchema,
+} as const
 
 // =============================================================================
 // SCHEMAS & TYPES — Invariants
@@ -393,7 +831,16 @@ export const assertDocLinkType = (linkType: string): DocLinkType => {
 export const DocGraphNodeSchema = Schema.Struct({
   id: Schema.String,
   label: Schema.String,
-  kind: Schema.Literal("overview", "prd", "design", "requirement", "system_design", "task"),
+  kind: Schema.Literal(
+    "overview",
+    "prd",
+    "design",
+    "requirement",
+    "system_design",
+    "runbook",
+    "decision",
+    "task"
+  ),
   status: Schema.optional(Schema.String),
 })
 export type DocGraphNode = typeof DocGraphNodeSchema.Type
@@ -420,6 +867,7 @@ export type DocGraph = typeof DocGraphSchema.Type
 /** Database row type for docs (snake_case from SQLite). */
 export interface DocRow {
   id: number
+  doc_id: string | null
   hash: string
   kind: string
   name: string

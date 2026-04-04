@@ -4,18 +4,9 @@
     "composite": false,
     "incremental": false,
     "noEmit": true,
-    "types": ["bun", "node", "vitest/globals"]
+    "types": ["bun", "node", "vitest/globals"],
+    "customConditions": ["bun"]
   },
-  "references": [
-    { "path": "packages/types" },
-    { "path": "packages/core" },
-    { "path": "packages/tx" },
-    { "path": "packages/test-utils" },
-    { "path": "apps/cli" },
-    { "path": "apps/mcp-server" },
-    { "path": "apps/api-server" },
-    { "path": "apps/agent-sdk" }
-  ],
   "include": [
     "test/**/*.ts",
     "test/**/*.tsx",

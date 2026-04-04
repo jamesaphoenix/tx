@@ -25,11 +25,12 @@ describe("Doc renderer structured section normalization", () => {
 
     const markdown = renderDocToMarkdown(parsed, "design")
 
+    // Renderer uses Condition | Impact | Handling columns (no ID column)
     expect(markdown).toContain(
-      "| - | LLM returns unparseable JSON | Skip finding, log warning, continue |"
+      "| LLM returns unparseable JSON | - | Skip finding, log warning, continue |"
     )
     expect(markdown).toContain(
-      "| - | First round in first cycle has no existing issues to dedup against |"
+      "| First round in first cycle has no existing issues to dedup against | - |"
     )
     expect(markdown).toContain("- Phase 1: Create PRD-023 and DD-023 via tx doc CLI")
     expect(markdown).toContain("- `tx-abc123` — Phase 2: Build cycle scan script")
@@ -41,12 +42,13 @@ describe("Doc renderer structured section normalization", () => {
       kind: "design",
       title: "Failure Modes Shape",
       failure_modes: [
-        { id: "FM-001", description: "Service timeout", mitigation: "Retry once" },
+        { condition: "Service timeout", impact: "Request fails", handling: "Retry once" },
       ],
     }
 
     const markdown = renderDocToMarkdown(parsed, "design")
-    expect(markdown).toContain("| FM-001 | Service timeout | Retry once |")
+    // Renderer uses Condition | Impact | Handling columns
+    expect(markdown).toContain("| Service timeout | Request fails | Retry once |")
   })
 
   it("renders requirement doc with expected sections", () => {
@@ -54,10 +56,18 @@ describe("Doc renderer structured section normalization", () => {
       kind: "requirement",
       title: "Auth Flows",
       status: "changing",
-      actors: "End users, Admin users",
-      use_cases: "Login, logout, password reset",
+      actors: [
+        { name: "End users", role: "Primary" },
+        { name: "Admin users", role: "Admin" },
+      ],
+      use_cases: [
+        { id: "UC-001", title: "Login" },
+        { id: "UC-002", title: "Logout" },
+      ],
       functional_requirements: "All auth endpoints must return 401 on invalid token",
-      traceability: "PRD-001, DD-002",
+      traceability: [
+        { requirement_id: "REQ-001", level: "integration", verification: "test/auth.test.ts", success_criteria: "All pass" },
+      ],
       invariants: [
         { id: "INV-REQ-001", rule: "Auth tokens expire after 24h", enforcement: "integration_test" },
       ],
@@ -84,8 +94,12 @@ describe("Doc renderer structured section normalization", () => {
       scope: "All services",
       constraints: ["Must be Bash 3.2 compatible", "No raw try/catch"],
       design: "Use Effect-TS tagged errors throughout",
-      applies_to: "DD-002, DD-005",
-      decision_log: "2024-01-01: Adopted Effect-TS",
+      applies_to: [
+        { doc_name: "DD-002", relationship: "implements" },
+      ],
+      decision_log: [
+        { date: "2024-01-01", description: "Adopted Effect-TS" },
+      ],
       invariants: [
         { id: "INV-SD-001", rule: "All errors use Data.TaggedError", enforcement: "linter" },
       ],

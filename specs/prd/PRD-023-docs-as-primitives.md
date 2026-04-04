@@ -1,7 +1,23 @@
+---
+kind: spec
+spec_type: prd
+name: PRD-023-docs-as-primitives
+title: Docs as Primitives
+status: changing
+version: 1
+owners: []
+summary: ""
+domain: ""
+tags: []
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
+
+
 # Docs as Primitives
 
-**Kind**: prd
-**Status**: changing
 
 ## Problem
 
@@ -42,7 +58,7 @@ Key capabilities:
 - Invariants as first-class entities with enforcement type tracking
 - Deterministic YAML-to-markdown rendering per doc kind
 - Auto-render on create, update, lock, version, and patch operations
-- Index generation (index.yml + index.md) on every mutation
+- Index generation (`index.md`) on every mutation
 - Drift detection (hash mismatch between DB and disk)
 - Dashboard visualization via doc graph (nodes + edges)
 

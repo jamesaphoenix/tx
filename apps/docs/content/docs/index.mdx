@@ -43,6 +43,10 @@ Follow the docs in this order:
 
 Only add the **[Watchdog Runbook](/docs/watchdog-runbook)** later if you need detached, long-running supervision.
 
+If you need generated agent bundles or manual long-running task loops, add
+[`tx skills`](/docs/primitives/skills) and [Ralph Loop](/docs/ralph-loop) after
+Getting Started.
+
 ## Recommended Start
 
 If you are evaluating tx, keep the first pass small:
@@ -65,11 +69,11 @@ After that, follow the same maturity ladder:
 
 ## The Layers
 
-- **Task Management**: [`tx ready`](/docs/primitives/ready), [`tx done`](/docs/primitives/done), [`tx block`](/docs/primitives/block), [`tx sync`](/docs/primitives/sync)
+- **Task Management**: [`tx ready`](/docs/primitives/ready), [`tx done`](/docs/primitives/done), [`tx dep block`](/docs/primitives/block), [`tx sync`](/docs/primitives/sync)
 - **Spec-Driven Development**: [`tx doc`](/docs/primitives/docs), [`tx spec`](/docs/primitives/spec-trace), [`tx decision`](/docs/primitives/decision)
 - **Memory & Context**: [`tx memory`](/docs/primitives/memory), [`tx pin`](/docs/primitives/pin)
-- **Bounded Autonomy**: [`tx label`](/docs/primitives/label), [`tx guard`](/docs/primitives/guard), [`tx verify`](/docs/primitives/verify), [`tx reflect`](/docs/primitives/reflect), [`tx gate`](/docs/primitives/gate)
-- **Coordination**: [`tx claim`](/docs/primitives/claim), [`tx inbox`](/docs/primitives/inbox), task-group context
+- **Bounded Autonomy**: [`tx auto label`](/docs/primitives/label), [`tx auto guard`](/docs/primitives/guard), [`tx auto verify`](/docs/primitives/verify), [`tx auto reflect`](/docs/primitives/reflect), [`tx auto gate`](/docs/primitives/gate)
+- **Coordination**: [`tx claim`](/docs/primitives/claim), [`tx msg inbox`](/docs/primitives/inbox), task-group context
 - **Observability**: [`tx trace`](/docs/primitives/traces), [`tx spec health`](/docs/primitives/decision), dashboard
 
 ### Quick CLI Examples
@@ -79,8 +83,8 @@ tx pin set coding-standards --file ./standards.md
 tx memory search "auth flow" --semantic
 tx memory add "Retry 429s with backoff" -t learning
 tx memory context tx-abc123
-tx verify set tx-abc123 "bun test"
-tx verify run tx-abc123
+tx auto verify set tx-abc123 "bun test"
+tx auto verify run tx-abc123
 ```
 
 ## Structured Requirements (EARS)
@@ -90,7 +94,7 @@ tx enforces **EARS** (**Easy Approach to Requirements Syntax**) as the standard 
 EARS requirements are:
 
 - clearer and less ambiguous than plain bullets,
-- machine-validated before implementation (`tx doc lint-ears`),
+- machine-validated before implementation (`tx spec lint`),
 - easier to map to tests in DD traceability matrices.
 
 Start in [`tx doc`](/docs/primitives/docs) for syntax and examples.

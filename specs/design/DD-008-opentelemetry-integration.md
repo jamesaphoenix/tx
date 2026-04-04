@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-008-opentelemetry-integration"
+title: "DD-008: OpenTelemetry Integration"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-008: OpenTelemetry Integration
 
 **Status**: Draft

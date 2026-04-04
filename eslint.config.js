@@ -77,6 +77,12 @@
  * - Excludes scripts directory
  * - Can optionally allow HTTPException (Hono pattern) and typed errors
  *
+ * Rule: tx/require-cli-user-errors
+ * Enforces structured, agent-friendly CLI failure handling in selected CLI entrypoints:
+ * - No direct process.exit() inside the enforced command routers
+ * - No ad hoc console.error() output in those files
+ * - No bare CliExitError failures where a shared CliUserError should be used
+ *
  * Reference: Agent swarm audit findings - services 93-98% covered, CLI 71% covered, dashboard API 0% covered
  * Reference: DD-002 Effect-TS patterns, CLAUDE.md RULE 5
  */
@@ -118,6 +124,53 @@ const SERVICE_FOLDER_MODULE_RULE = ['warn', {
     'read',
     'write'
   ]
+}]
+
+const CLI_USER_ERROR_IGNORE_PATHS = [
+  'apps/cli/src/commands/bulk.ts',
+  'apps/cli/src/commands/claim.ts',
+  'apps/cli/src/commands/compact.ts',
+  'apps/cli/src/commands/coordinator.ts',
+  'apps/cli/src/commands/cycle.ts',
+  'apps/cli/src/commands/daemon.ts',
+  'apps/cli/src/commands/dashboard.ts',
+  'apps/cli/src/commands/decision.ts',
+  'apps/cli/src/commands/decompose.ts',
+  'apps/cli/src/commands/dep.ts',
+  'apps/cli/src/commands/doc.ts',
+  'apps/cli/src/commands/doctor.ts',
+  'apps/cli/src/commands/gate.ts',
+  'apps/cli/src/commands/graph.ts',
+  'apps/cli/src/commands/group-context.ts',
+  'apps/cli/src/commands/guard.ts',
+  'apps/cli/src/commands/hierarchy.ts',
+  'apps/cli/src/commands/hooks.ts',
+  'apps/cli/src/commands/invariant.ts',
+  'apps/cli/src/commands/label.ts',
+  'apps/cli/src/commands/md-export.ts',
+  'apps/cli/src/commands/memory.ts',
+  'apps/cli/src/commands/outbox.ts',
+  'apps/cli/src/commands/pin.ts',
+  'apps/cli/src/commands/spec.ts',
+  'apps/cli/src/commands/task.ts',
+  'apps/cli/src/commands/test.ts',
+  'apps/cli/src/commands/trace.ts',
+  'apps/cli/src/commands/utils.ts',
+  'apps/cli/src/commands/validate.ts',
+  'apps/cli/src/commands/verify.ts',
+  'apps/cli/src/commands/worker.ts'
+]
+
+const CLI_USER_ERROR_RULE = ['error', {
+  enforceRoots: ['apps/cli/src/commands/'],
+  extraPaths: ['apps/cli/src/utils/parse.ts'],
+  ignorePaths: CLI_USER_ERROR_IGNORE_PATHS
+}]
+
+const CLI_HELP_COVERAGE_RULE = ['error', {
+  enforcePaths: ['apps/cli/src/cli.ts'],
+  helpFile: 'apps/cli/src/help.ts',
+  ignoreCommands: ['help']
 }]
 
 const DEEP_CORE_RESTRICTED_PATTERNS = [
@@ -531,6 +584,12 @@ export default [
 
       // tx plugin rules - disallow generic utility filenames (prefer domain-specific modules)
       'tx/no-generic-utility-file-names': GENERIC_UTILITY_FILE_NAME_RULE,
+
+      // tx plugin rules - enforce structured, agent-friendly CLI error handling
+      'tx/require-cli-user-errors': CLI_USER_ERROR_RULE,
+
+      // tx plugin rules - require discoverable help for registered CLI commands
+      'tx/require-cli-help-coverage': CLI_HELP_COVERAGE_RULE,
 
       // tx plugin rules - enforce primitive implementation coverage (reads primitives-registry.json)
       'tx/require-primitive-implementations': ['error', {

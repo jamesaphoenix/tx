@@ -59,7 +59,7 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 │  tx primitives                                          │
 │                                                         │
 │   tx ready     tx done      tx memory     tx pin        │
-│   tx send      tx block     tx inbox      tx sync       │
+│   tx msg send  tx dep block tx msg inbox  tx sync       │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -78,12 +78,12 @@ tx says: "Here's headless agent infrastructure. Orchestrate it yourself."
 |-----------|---------|
 | `tx ready` | Get next workable task (unblocked, highest priority) |
 | `tx done <id>` | Complete task, potentially unblocking others |
-| `tx block <id> <blocker>` | Declare dependencies |
+| `tx dep block <id> <blocker>` | Declare dependencies |
 | `tx memory context <id>` | Get relevant memory + learnings for prompt injection |
 | `tx memory add` | Record knowledge for future agents |
-| `tx send <channel> <content>` | Send a message to an agent channel |
-| `tx inbox <channel>` | Read messages (read-only, cursor-based) |
-| `tx ack <id>` | Acknowledge a message |
+| `tx msg send <channel> <content>` | Send a message to an agent channel |
+| `tx msg inbox <channel>` | Read messages (read-only, cursor-based) |
+| `tx msg ack <id>` | Acknowledge a message |
 | `tx claim <id> <worker>` | Claim a task with a lease for worker coordination |
 | `tx memory learn <path> <note>` | Attach a learning to a file path or glob |
 | `tx memory recall [path]` | Query file-specific learnings by path |
@@ -113,10 +113,11 @@ wait
 
 ```bash
 # Human-in-loop: agent proposes, human approves
-task=$(tx ready --limit 1)
-claude "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " && claude "Execute plan.md"
-tx done $task
+task=$(tx ready --limit 1 --json | jq -r '.[0].id')
+claude "Read CLAUDE.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+claude "Read CLAUDE.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
 ```
 
 ```bash
@@ -185,7 +186,7 @@ interface TaskWithDeps extends Task {
 
 ### RULE 2: Compaction MUST export learnings to a file agents can read
 
-`tx compact` MUST append learnings to a markdown file (default: `CLAUDE.md`). Storing only in `compaction_log` table is insufficient.
+`tx sync compact` MUST append learnings to a markdown file (default: `CLAUDE.md`). Storing only in `compaction_log` table is insufficient.
 
 ```markdown
 ## Agent Learnings (YYYY-MM-DD)
@@ -233,7 +234,7 @@ All business logic MUST use Effect-TS:
 
 ### RULE 7: ANTHROPIC_API_KEY is optional for core commands
 
-LLM features (`tx dedupe`, `tx compact`, `tx reprioritize`) require the key. Core commands do not.
+LLM features (`tx dedupe`, `tx sync compact`, `tx reprioritize`) require the key. Core commands do not.
 
 | Layer | LLM | Used By |
 |-------|-----|---------|
@@ -446,7 +447,7 @@ pipe(
 ### Status Lifecycle
 
 ```
-backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+backlog → ready → planning → active → blocked → review → needs_review → done
 ```
 
 A task is **ready** when: status is workable AND all blockers have status `done`.
@@ -486,92 +487,147 @@ Run `tx help` for the full list or `tx help <command>` for details.
 
 ```bash
 # Tasks
-tx init                    # Initialize database
-tx add <title>             # Create task (--parent, --score, --description)
-tx list                    # List tasks (--status, --limit)
-tx ready                   # List unblocked tasks
-tx show <id>               # Show task details
-tx update <id>             # Update task fields
-tx done <id>               # Mark complete
-tx reset <id>              # Reset to ready
-tx delete <id>             # Delete task
-tx md-export               # Export tasks to markdown file (--watch, --include-context)
+tx init                        # Initialize database
+tx add <title>                 # Create task (--parent, --score, --description)
+tx list                        # List tasks (--status, --limit)
+tx ready                       # List unblocked tasks
+tx show <id>                   # Show task details
+tx update <id>                 # Update task fields
+tx done <id>                   # Mark complete
+tx reset <id>                  # Reset to ready
+tx delete <id>                 # Delete task
+tx md-export                   # Export tasks to markdown file (--watch, --include-context)
 
-# Dependencies & Hierarchy
-tx block <id> <blocker>    # Add blocking dependency
-tx unblock <id> <blocker>  # Remove dependency
-tx children <id>           # List child tasks
-tx tree <id>               # Show task subtree
+# Dependencies & Hierarchy (tx dep)
+tx dep block <id> <blocker>    # Add blocking dependency
+tx dep unblock <id> <blocker>  # Remove dependency
+tx dep children <id>           # List child tasks
+tx dep tree <id>               # Show task subtree
 
 # Memory (filesystem-backed .md search)
-tx memory source add <dir> # Register directory for indexing
-tx memory source rm <dir>  # Unregister directory
-tx memory source list      # Show registered directories
-tx memory add <title>      # Create .md file (--content, --tags, --dir)
-tx memory index            # Index all sources (--incremental, --status)
-tx memory search <query>   # BM25 search (--semantic, --expand, --tags, --prop)
-tx memory show <id>        # Display document
-tx memory tag <id> <tags>  # Add tags to frontmatter
-tx memory untag <id> <t>   # Remove tags
-tx memory relate <id> <t>  # Add to frontmatter.related
-tx memory set <id> <k> <v> # Set property (writes frontmatter + DB)
-tx memory unset <id> <k>   # Remove property
-tx memory props <id>       # Show properties
-tx memory links <id>       # Outgoing wikilinks + edges
-tx memory backlinks <id>   # Incoming links
-tx memory list             # List documents (--source, --tags)
-tx memory link <src> <tgt> # Create explicit edge
-tx memory context <id>     # Task-relevant memory for prompt injection
-tx memory learn <p> <note> # Attach learning to file path/glob
-tx memory recall [path]    # Query file-specific learnings
+tx memory source add <dir>     # Register directory for indexing
+tx memory source rm <dir>      # Unregister directory
+tx memory source list          # Show registered directories
+tx memory add <title>          # Create .md file (--content, --tags, --dir)
+tx memory index                # Index all sources (--incremental, --status)
+tx memory search <query>       # BM25 search (--semantic, --expand, --tags, --prop)
+tx memory show <id>            # Display document
+tx memory tag <id> <tags>      # Add tags to frontmatter
+tx memory untag <id> <t>       # Remove tags
+tx memory relate <id> <t>      # Add to frontmatter.related
+tx memory set <id> <k> <v>     # Set property (writes frontmatter + DB)
+tx memory unset <id> <k>       # Remove property
+tx memory props <id>           # Show properties
+tx memory links <id>           # Outgoing wikilinks + edges
+tx memory backlinks <id>       # Incoming links
+tx memory list                 # List documents (--source, --tags)
+tx memory link <src> <tgt>     # Create explicit edge
+tx memory context <id>         # Task-relevant memory for prompt injection
+tx memory learn <p> <note>     # Attach learning to file path/glob
+tx memory recall [path]        # Query file-specific learnings
 
-# Messages (Agent Outbox)
-tx send <channel> <msg>    # Send to channel
-tx inbox <channel>         # Read messages
-tx ack <id>                # Acknowledge message
-tx ack all <channel>       # Acknowledge all on channel
-tx outbox pending <ch>     # Count pending messages
-tx outbox gc               # Garbage collect old messages
+# Messages (tx msg)
+tx msg send <channel> <msg>    # Send to channel
+tx msg inbox <channel>         # Read messages
+tx msg ack <id>                # Acknowledge message
+tx msg ack all <channel>       # Acknowledge all on channel
+tx msg pending <ch>            # Count pending messages
+tx msg gc                      # Garbage collect old messages
 
-# Docs & Invariants
-tx doc <sub>               # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
-tx invariant <sub>         # list, show, record, sync
+# Docs & Specs
+tx doc <sub>                   # add, edit, show, list, render, lock, version, link, attach, patch, validate, drift
+tx spec lint                   # All-in-one check (drift, EARS, coverage, spec-test status)
+tx spec discover               # Refresh doc-derived invariants and discover test mappings
+tx spec health                 # Repo rollup for closure, decisions, and drift
+tx spec fci                    # Compute Feature Completion Index
+tx spec status                 # Quick phase + blocker summary
+tx spec complete               # Record human sign-off
+tx spec run <test-id>          # Record pass/fail for a mapped test
+tx spec batch                  # Import batch run results from stdin JSON
+tx spec link <inv> <file>      # Manually link invariant to test
+tx spec unlink <inv> <test>    # Remove invariant/test link
+tx spec tests <inv-id>         # List tests linked to an invariant
+tx spec gaps                   # List uncovered invariants
+tx spec matrix                 # Show full traceability matrix
 
 # Claims (Worker Leasing)
-tx claim <task> <worker>   # Claim with lease (--lease minutes)
-tx claim release <t> <w>   # Release claim
-tx claim renew <t> <w>     # Renew lease
+tx claim <task> <worker>       # Claim with lease (--lease minutes)
+tx claim release <t> <w>       # Release claim
+tx claim renew <t> <w>         # Renew lease
 
 # Traces (Run Debugging)
-tx trace list              # Recent runs
-tx trace show <run-id>     # Metrics events for a run
-tx trace transcript <id>   # Raw JSONL transcript
-tx trace stderr <id>       # Stderr output
-tx trace errors            # Recent errors across runs
+tx trace list                  # Recent runs
+tx trace show <run-id>         # Metrics events for a run
+tx trace transcript <id>       # Raw JSONL transcript
+tx trace stderr <id>           # Stderr output
+tx trace errors                # Recent errors across runs
 
-# Sync & Data
-tx sync export             # SQLite → JSONL (git-friendly)
-tx sync import             # JSONL → SQLite
-tx sync status             # Show sync status
-tx sync claude             # Push to Claude Code team dir
-tx compact                 # Compact done tasks + export learnings
-tx history                 # View compaction history
-tx migrate status          # Database migration status
+# Sync & Data (tx sync)
+tx sync export                 # SQLite → JSONL (git-friendly)
+tx sync import                 # JSONL → SQLite
+tx sync status                 # Show sync status
+tx sync claude                 # Push to Claude Code team dir
+tx sync compact                # Compact done tasks + export learnings
+tx sync history                # View compaction history
+tx sync migrate status         # Database migration status
 
 # Bulk Operations
-tx bulk done <id...>       # Complete multiple tasks
-tx bulk score <n> <id...>  # Set score for multiple tasks
-tx bulk reset <id...>      # Reset multiple tasks
-tx bulk delete <id...>     # Delete multiple tasks
+tx bulk done <id...>           # Complete multiple tasks
+tx bulk score <n> <id...>      # Set score for multiple tasks
+tx bulk reset <id...>          # Reset multiple tasks
+tx bulk delete <id...>         # Delete multiple tasks
 
 # Cycle (Sub-Agent Swarm)
-tx cycle                   # Issue discovery with sub-agent swarms
+tx cycle                       # Issue discovery with sub-agent swarms
 
-# Tools
-tx stats                   # Queue metrics and health
-tx validate                # Database health checks (--fix)
-tx doctor                  # System diagnostics
-tx dashboard               # Start API server + dashboard UI
+# Automation (tx auto)
+tx auto guard                  # Run guard checks
+tx auto gate                   # Manage phase gates
+tx auto verify                 # Verify task completion
+tx auto label                  # Auto-label tasks
+tx auto reflect                # Agent reflection on completed work
+
+# Context Pins (tx pin)
+tx pin set <id> [content]      # Create or update a pin
+tx pin get <id>                # Show pin content
+tx pin rm <id>                 # Remove a pin from DB and target files
+tx pin list                    # List all pins
+tx pin sync                    # Re-sync all pins to target files
+tx pin targets [files...]      # Show or set target files
+
+# Decisions (tx decision)
+tx decision add <content>      # Add a decision manually
+tx decision list               # List decisions
+tx decision show <id>          # Show decision details
+tx decision approve <id>       # Approve a pending decision
+tx decision reject <id>        # Reject a pending decision (--reason required)
+tx decision edit <id> <content># Edit a pending decision
+tx decision pending            # List pending decisions
+
+# Group Context
+tx group-context set <id> <ctx># Set task-group context
+tx group-context clear <id>    # Clear task-group context
+
+# Diagnostics (tx diag)
+tx diag stats                  # Queue metrics and health
+tx diag doctor                 # System diagnostics
+tx diag dashboard              # Start API server + dashboard UI
+tx validate                    # Database health checks (--fix)
+
+# Utilities (tx utils)
+tx utils claude-usage          # Show Claude Code rate limit usage
+tx utils codex-usage           # Show Codex rate limit usage
+
+# Deprecated aliases (still work)
+# tx block → tx dep block, tx unblock → tx dep unblock
+# tx children → tx dep children, tx tree → tx dep tree
+# tx send → tx msg send, tx inbox → tx msg inbox
+# tx ack → tx msg ack, tx outbox → tx msg
+# tx stats → tx diag stats, tx doctor → tx diag doctor
+# tx dashboard → tx diag dashboard
+# tx compact → tx sync compact, tx history → tx sync history
+# tx migrate status → tx sync migrate status
+# tx invariant → tx spec
 ```
 
 ### Cycle vs Teams vs Sub-agents — Disambiguation
@@ -677,7 +733,7 @@ Task-layer source of truth policy:
 - If pulling work from a queue, use `tx ready` as the primary place to get work.
 - Every create/update/complete/block action in native task tools **must be mirrored back to `tx`**.
 - Mirror creates with `tx add` (and `--parent` for subtasks).
-- Mirror updates with `tx update`, `tx block`, `tx unblock`, `tx done`, and `tx reset`.
+- Mirror updates with `tx update`, `tx dep block`, `tx dep unblock`, `tx done`, and `tx reset`.
 - If native tasks and `tx` diverge, reconcile to `tx` and refresh from `tx` (`tx list`, `tx ready`, `tx show`).
 - Before handoff, commit, or session end, run `tx sync export`.
 
@@ -711,269 +767,268 @@ Do not bypass hooks in this workflow. Commits and pushes must run with verificat
 
 ---
 
-## Development Process: Documentation First (4-Tier)
+## Development Process: Documentation First (Markdown-First)
 
-**All non-trivial features MUST have documentation before implementation.**
+**All non-trivial features MUST have markdown spec documentation before implementation.**
 
-### 4-Tier Documentation Model
+### Spec-Type Documentation Model
 
-| Tier | Directory | Prefix | Focus |
-|------|-----------|--------|-------|
-| Requirements / Use Cases | `specs/requirements/` | `REQ-NNN` | Behavioral requirements and use-case flows |
-| Product Requirements Document | `specs/prd/` | `PRD-NNN` | Scope, success criteria, and rollout boundaries |
-| Design Document | `specs/design/` | `DD-NNN` | Technical implementation approach |
-| System Design | `specs/system-design/` | `SD-NNN` | Cross-cutting architecture constraints and patterns |
+| spec_type | Focus |
+|-----------|-------|
+| `prd` | Product intent (what and why) |
+| `design` | System behaviour (how) |
+| `overview` | Architectural map (non-normative) |
+| `runbook` | Operational procedures |
+| `decision` | Architectural decisions (ADRs) |
 
-`tx doc` currently scaffolds `overview`, `prd`, and `design` docs. REQ/SD are documentation conventions managed as markdown files.
+Markdown is canonical: docs are authored as `.md` with YAML frontmatter and embedded YAML blocks. There is no YAML-source render pipeline.
 
 ### Why Documentation First?
 
-- **Prevents wasted effort** — catch design issues before writing code
-- **Creates reviewable artifacts** — behavior, scope, implementation, and architecture are reviewed separately
+- **Prevents wasted effort** — catch scope and design issues before writing code
+- **Creates reviewable artifacts** — intent, behaviour, architecture, and operations are reviewed explicitly
 - **Enables parallelism** — multiple agents can implement from the same specification set
 - **Builds institutional knowledge** — docs persist beyond conversation context
 
 ### The Process
 
 ```
-1. Problem identified → Create REQ (use-cases and behavioral requirements)
-2. REQ approved → Create PRD (scope, acceptance criteria, out-of-scope)
-3. PRD approved → Create DD (technical implementation plan)
-4. If cross-cutting architecture applies → Create or update SD
-5. DD (+ SD when needed) approved → Implementation (code follows the docs)
-6. Implementation complete → Update REQ/PRD/DD/SD if design changed
+1. Problem identified → Create `prd` spec (intent, problem, scope, requirements, acceptance criteria)
+2. PRD approved → Create `design` spec (architecture, interfaces, invariants, failure modes, verification)
+3. Add supporting specs as needed: `overview`, `runbook`, `decision`
+4. Specs approved → Implementation (code follows the specs)
+5. Implementation complete → Update affected specs when design or behaviour changes
 ```
 
-### Plans MUST Become Docs (All 4 Tiers)
+### Plans MUST Become Docs (Spec Types)
 
 When a plan is requested (via `/plan`, plan mode, or explicit request), the output
-MUST be formalized into the appropriate documentation layers, not left as a standalone plan file.
+MUST be formalized into markdown specs, not left as a standalone plan file.
 
-- REQ captures **behavior and use cases**
-- PRD captures **scope and acceptance criteria**
-- DD captures **implementation design**
-- SD captures **shared architecture constraints** (when cross-cutting)
+- `prd` captures **product intent** (what and why)
+- `design` captures **system behaviour** (how)
+- `overview` captures **cross-system architectural context** (non-normative map)
+- `runbook` captures **operational procedures** (symptoms, diagnosis, mitigation, escalation)
+- `decision` captures **architecture decisions** and trade-offs (ADRs)
 - Optionally reference source plan files: `plan.md`, `codex-plan.md`, or `.claude/plan.md`
-- Optionally reference relevant CLAUDE.md DOCTRINE rules in DD/SD References
+- Optionally reference relevant CLAUDE.md DOCTRINE rules in design/decision references
 
 **Do NOT** leave plans as standalone `plan.md` files.
 
-### REQ Structure (specs/requirements/REQ-NNN-*.md)
+### PRD Structure (`spec_type: prd`)
 
-```markdown
-# REQ-NNN: Feature Name
+````markdown
+---
+kind: spec
+spec_type: prd
+name: feature-name
+title: Feature Name
+status: draft
+version: 1
+owners:
+  - team
+summary: One-line summary
+domain: product-area
+tags:
+  - feature
+depends_on: []
+supersedes: []
+implements: null
+last_reviewed_at: 2026-03-15
+---
 
-## Overview
-One-sentence behavioral description.
+# Summary
+...
 
-## Actors
-| Actor | Description |
-|-------|-------------|
+# Problem
+...
 
-## Use Cases
+# Scope
+Included: ...
+Excluded: ...
 
-### UC-001: Title
-**Trigger**: ...
-**Preconditions**: ...
-**Flow**: 1. ... 2. ...
-**Postconditions**: ...
-**Exceptions**: ...
+# Requirements
 
-## Functional Requirements
-| ID | Pattern | Requirement |
-|----|---------|-------------|
-| EARS-AREA-001 | ubiquitous | The system shall ... |
-
-## Non-Functional Requirements
-
-## Traceability
-- Scoped by: PRD-NNN
-- Designed in: DD-NNN
+```yaml
+ears_requirements:
+  - id: REQ-FEAT-001
+    kind: ubiquitous
+    statement: the system shall do X
+    priority: must
+    rationale: why this matters
 ```
 
-### PRD Structure (specs/prd/PRD-NNN-*.md)
+# Acceptance Criteria
 
-```markdown
-# PRD-NNN: Feature Name
-
-## Problem
-What is broken or missing?
-
-## Solution
-High-level approach (not implementation details).
-
-## Requirements
--> REQ-NNN (detailed behavior)
-
-Summary checklist:
-- [ ] Capability 1
-- [ ] Capability 2
-
-## Acceptance Criteria
-How do we know it is done?
-
-## Out of Scope
+```yaml
+acceptance_criteria:
+  - id: AC-001
+    statement: criterion description
 ```
 
-### DD Structure (specs/design/DD-NNN-*.md)
+# Non-goals
+...
+````
 
-```markdown
-# DD-NNN: Feature Name
+### DD Structure (`spec_type: design`)
 
-## Overview
-Technical approach summary
+````markdown
+---
+kind: spec
+spec_type: design
+name: feature-name-design
+title: Feature Name Design
+status: draft
+version: 1
+owners:
+  - team
+summary: Technical approach summary
+domain: product-area
+tags:
+  - design
+depends_on:
+  - feature-name
+supersedes: []
+implements: feature-name
+last_reviewed_at: 2026-03-15
+---
 
-## Design
+# Summary
+...
 
-### Data Model
-Schema changes, new tables, migrations
+# Architecture
+...
 
-### Service Layer
-New services, interface changes
+# Interfaces
 
-### API/CLI Changes
-New commands, endpoints, MCP tools
+```yaml
+interfaces:
+  - name: endpoint_name
+    type: http
+    method: POST
+    path: /path
+    semantics: description of guarantees
+    contract: packages/types/src/doc.ts#SomeContractSchema
+```
 
-## Implementation Plan
+# Data Model
+...
 
-| Phase | Files | Changes |
-|-------|-------|---------|
-| 1 | file.ts | Add X |
-| 2 | other.ts | Modify Y |
+# Invariants
 
-## Testing Strategy (REQUIRED — must be detailed and comprehensive)
+```yaml
+invariants:
+  - id: INV-001
+    statement: what must always be true
+    severity: high
+    verified_by:
+      - test/path.test.ts
+```
 
-This section is mandatory and must be thorough. Testing strategy is a first-class concern, not an afterthought.
+# Failure Modes
 
-### Unit Tests
+```yaml
+failure_modes:
+  - condition: when X happens
+    impact: Y is affected
+    handling: do Z to recover
+```
+
+# Verification
+
+```yaml
+verification:
+  - requirement_id: REQ-FEAT-001
+    test_type: integration
+    target: test/path.test.ts
+```
+
+# Testing Strategy
+(detailed and comprehensive; see quality bar below)
+
+## Unit Tests
 - List specific functions/methods to unit test
 - Mock boundaries: what gets mocked vs real
 - Expected coverage targets
 
-### Integration Tests
+## Integration Tests
 - Must use real in-memory SQLite with `getSharedTestLayer()`
 - Must use SHA256-based deterministic IDs via `fixtureId(name)`
 - List specific integration test scenarios (CRUD, edge cases, error paths)
 - Cover cross-service interactions
 
-### Edge Cases
+## Edge Cases
 - Boundary conditions to test
 - Error recovery scenarios
 - Concurrent access / race conditions (if applicable)
 
-### Performance (if applicable)
+## Performance (if applicable)
 - Benchmarks to establish
 - Acceptable latency/throughput thresholds
 
-### Minimum Quality Bar (MUST)
-- A DD testing strategy is incomplete unless it includes:
+## Minimum Quality Bar (MUST)
 - Requirement-to-test traceability (each requirement maps to one or more tests)
 - At least 8 numbered integration scenarios with concrete setup, action, and assertions
 - Failure-path and recovery coverage (timeouts, malformed input, partial failure, retries/idempotency when relevant)
 - File-level test plan (exact test files to create or modify)
 - Observable assertions (DB rows, API responses, emitted events/metrics, status transitions)
-- Avoid vague bullets like "add tests" or "cover edge cases" without concrete inputs and expected outputs.
+- Avoid vague bullets like "add tests" or "cover edge cases" without concrete inputs and expected outputs
 
-### Prompting Template for DD Testing Strategy
-When generating or revising a DD, use this prompt shape:
-
-```text
-Write ONLY the "Testing Strategy" section for <DD-NNN>.
-
-Requirements:
-1. Provide a traceability matrix with columns:
-   Requirement | Test Type | Test Name | Assertions | File Path
-2. Include sections for Unit Tests, Integration Tests, Edge Cases, Failure Injection, and Performance.
-3. Integration tests must use getSharedTestLayer() and fixtureId(name).
-4. Provide at least 8 numbered integration scenarios, each with Setup / Action / Assert.
-5. Include non-functional thresholds where applicable (latency, throughput, memory).
-6. Do not use vague bullets; every test must name concrete files, inputs, and expected outcomes.
-```
-
-## Open Questions (REQUIRED)
+# Open Questions
 - [ ] Unresolved design decisions
 - [ ] Alternatives considered but not yet decided
 - [ ] Dependencies on external teams/systems
 
-## Migration
-How existing data/users transition
+# Migration
+How existing data/users transition.
 
-## References (optional)
+# References
 - Plan file: `plan.md` or `codex-plan.md` (if originated from a planning session)
-- REQ: `specs/requirements/REQ-NNN-*.md` (when available)
-- SD: `specs/system-design/SD-NNN-*.md` (when relevant)
+- Related PRD: `specs/prd/*.md`
+- Related decisions: `specs/**/*.md` with `spec_type: decision`
 - CLAUDE.md section: Link to relevant DOCTRINE rules
-```
-
-### SD Structure (specs/system-design/SD-NNN-*.md)
-
-```markdown
-# SD-NNN: Pattern Name
-
-## Overview
-What cross-cutting concern this describes.
-
-## Scope
-Which features/subsystems this applies to.
-
-## Constraints
-
-## Design
-Architecture, patterns, data flow, service boundaries.
-
-## Applies To
-| Document | Relationship |
-|----------|-------------|
-
-## Decision Log
-| Date | Decision | Rationale |
-|------|----------|-----------|
-```
+````
 
 ### Linking Convention
 
-- REQs reference scoped PRDs: `→ [PRD-NNN](specs/prd/PRD-NNN-*.md)`
-- PRDs reference REQ + DD: `→ [REQ-NNN](specs/requirements/REQ-NNN-*.md)`, `→ [DD-NNN](specs/design/DD-NNN-*.md)`
-- DDs reference PRD and relevant REQ/SD documents
-- SDs reference all applicable REQ/PRD/DD documents in `## Applies To`
-- CLAUDE.md DOCTRINE rules should link to relevant PRD/DD (and REQ/SD when applicable)
-- Implementation PRs should reference the full doc chain used for delivery
+- PRDs reference their implementing design docs and related decisions
+- Design docs set `implements` to the PRD `name` and map requirements to verification targets
+- Overview specs reference connected PRD/design docs for system context
+- Runbooks reference the design docs and interfaces they operationalize
+- Decision docs reference affected PRD/design/runbook specs
+- Implementation PRs should reference the relevant spec chain used for delivery
 
 ### When to Skip
 
-Skip all docs for:
+Skip spec docs for:
 - Bug fixes with obvious solutions
 - Typo corrections
 - Single-line changes
 - Test additions for existing features
 
-Create docs per tier as needed:
-- Create **REQ** for new behavior, user-visible flows, or new requirement sets
-- Create **PRD** when scope/acceptance needs explicit review
-- Create **DD** for any non-trivial technical implementation
-- Create or update **SD** when decisions are cross-cutting, reusable, or constrain multiple features
+Create docs per `spec_type` as needed:
+- Create **`prd`** for new product capabilities and acceptance scope
+- Create **`design`** for non-trivial implementation and verification mapping
+- Create **`overview`** for cross-system maps that aid orientation
+- Create **`runbook`** for operational response procedures
+- Create **`decision`** for durable architecture decisions and trade-offs
 
-Existing PRDs are not retroactively migrated; apply the 4-tier model to new work and major revisions.
+Existing YAML-first docs are not retroactively rewritten unless explicitly scoped; all new documentation should follow markdown-first spec types.
 
 ---
 
 ## For Detailed Information
 
-### Internal Documentation (4 Tiers)
+### Internal Documentation (Markdown Spec Types)
 
-- **Requirements / Use Cases (REQs)**: [specs/requirements/](specs/requirements/)
-- **Product Requirements Docs (PRDs)**: [specs/prd/](specs/prd/)
-- **Design Docs (DDs)**: [specs/design/](specs/design/)
-- **System Design (SDs)**: [specs/system-design/](specs/system-design/)
+- **PRD specs (`spec_type: prd`)**: [specs/prd/](specs/prd/)
+- **Design specs (`spec_type: design`)**: [specs/design/](specs/design/)
+- **Overview/Runbook/Decision specs**: [specs/](specs/)
 - **Full index**: [specs/index.md](specs/index.md)
 
 ### Published User Docs
 
 The published documentation site lives at `apps/docs/` (Next.js + Fumadocs):
 
-- **Source REQ/PRD/DD/SD docs**: `specs/` directory — internal artifacts linked from CLAUDE.md
+- **Source markdown-first specs**: `specs/` directory — internal artifacts linked from CLAUDE.md
 - **Published docs**: `apps/docs/content/docs/` — user-facing guides covering primitives, getting started, agent SDK
-
-<tx-pin id="gate.docs-to-build">
-{"approved":false,"phaseFrom":null,"phaseTo":null,"required":true,"approvedBy":null,"approvedAt":null,"revokedBy":null,"revokedAt":null,"revokeReason":null,"note":null,"taskId":null,"createdAt":"2026-03-05T20:16:32.675Z"}
-</tx-pin>

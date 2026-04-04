@@ -159,7 +159,7 @@ const toolSchemas = {
     parentId: z.string().optional(),
     limit: z.number().int().positive().optional()
   }),
-  tx_children: z.object({
+  tx_dep_children: z.object({
     id: z.string()
   }),
   tx_add: z.object({
@@ -182,11 +182,11 @@ const toolSchemas = {
   tx_delete: z.object({
     id: z.string()
   }),
-  tx_block: z.object({
+  tx_dep_block: z.object({
     taskId: z.string(),
     blockerId: z.string()
   }),
-  tx_unblock: z.object({
+  tx_dep_unblock: z.object({
     taskId: z.string(),
     blockerId: z.string()
   }),
@@ -277,7 +277,8 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   isReady: task.isReady,
   groupContext: task.groupContext,
   effectiveGroupContext: task.effectiveGroupContext,
-  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId
+  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId,
+  linkedDocs: task.linkedDocs,
 })
 
 /**
@@ -441,9 +442,9 @@ function createToolEffect(
         )
       )
 
-    case "tx_children":
+    case "tx_dep_children":
       return Effect.gen(function* () {
-        const { id } = args as z.infer<typeof toolSchemas.tx_children>
+        const { id } = args as z.infer<typeof toolSchemas.tx_dep_children>
         const taskService = yield* TaskService
         const tasks = yield* taskService.listWithDeps({ parentId: id })
         const serialized = tasks.map(serializeTask)
@@ -580,9 +581,9 @@ function createToolEffect(
         )
       )
 
-    case "tx_block":
+    case "tx_dep_block":
       return Effect.gen(function* () {
-        const { taskId, blockerId } = args as z.infer<typeof toolSchemas.tx_block>
+        const { taskId, blockerId } = args as z.infer<typeof toolSchemas.tx_dep_block>
         const depService = yield* DependencyService
         const taskService = yield* TaskService
 
@@ -605,9 +606,9 @@ function createToolEffect(
         )
       )
 
-    case "tx_unblock":
+    case "tx_dep_unblock":
       return Effect.gen(function* () {
-        const { taskId, blockerId } = args as z.infer<typeof toolSchemas.tx_unblock>
+        const { taskId, blockerId } = args as z.infer<typeof toolSchemas.tx_dep_unblock>
         const depService = yield* DependencyService
         const taskService = yield* TaskService
 
@@ -1526,10 +1527,10 @@ describe("MCP tx_list Tool", () => {
 })
 
 // -----------------------------------------------------------------------------
-// tx_children Tool Tests
+// tx_dep_children Tool Tests
 // -----------------------------------------------------------------------------
 
-describe("MCP tx_children Tool", () => {
+describe("MCP tx_dep_children Tool", () => {
   let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
@@ -1552,9 +1553,9 @@ describe("MCP tx_children Tool", () => {
   })
 
   it("returns TaskWithDeps[] for children (Rule 1)", async () => {
-    const response = await callMcpToolParsed<"tx_children", Record<string, unknown>[]>(
+    const response = await callMcpToolParsed<"tx_dep_children", Record<string, unknown>[]>(
       runtime,
-      "tx_children",
+      "tx_dep_children",
       { id: FIXTURES.TASK_AUTH }
     )
 
@@ -1573,9 +1574,9 @@ describe("MCP tx_children Tool", () => {
   })
 
   it("returns correct children with dependency info", async () => {
-    const response = await callMcpToolParsed<"tx_children", Record<string, unknown>[]>(
+    const response = await callMcpToolParsed<"tx_dep_children", Record<string, unknown>[]>(
       runtime,
-      "tx_children",
+      "tx_dep_children",
       { id: FIXTURES.TASK_AUTH }
     )
 
@@ -1593,9 +1594,9 @@ describe("MCP tx_children Tool", () => {
   })
 
   it("returns empty array for leaf nodes", async () => {
-    const response = await callMcpToolParsed<"tx_children", Record<string, unknown>[]>(
+    const response = await callMcpToolParsed<"tx_dep_children", Record<string, unknown>[]>(
       runtime,
-      "tx_children",
+      "tx_dep_children",
       { id: FIXTURES.TASK_JWT }
     )
 
@@ -1604,7 +1605,7 @@ describe("MCP tx_children Tool", () => {
   })
 
   it("includes correct text content format", async () => {
-    const response = await callMcpTool(runtime, "tx_children", { id: FIXTURES.TASK_AUTH })
+    const response = await callMcpTool(runtime, "tx_dep_children", { id: FIXTURES.TASK_AUTH })
 
     expect(response.content).toHaveLength(2)
     expect(response.content[0].type).toBe("text")
@@ -2084,10 +2085,10 @@ describe("MCP tx_delete Tool", () => {
 })
 
 // -----------------------------------------------------------------------------
-// tx_block Tool Tests
+// tx_dep_block Tool Tests
 // -----------------------------------------------------------------------------
 
-describe("MCP tx_block Tool", () => {
+describe("MCP tx_dep_block Tool", () => {
   let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
@@ -2110,9 +2111,9 @@ describe("MCP tx_block Tool", () => {
   })
 
   it("adds blocker and returns TaskWithDeps with updated blockedBy (Rule 1)", async () => {
-    const response = await callMcpToolParsed<"tx_block", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_block", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_block",
+      "tx_dep_block",
       { taskId: FIXTURES.TASK_LOGIN, blockerId: FIXTURES.TASK_ROOT }
     )
 
@@ -2142,9 +2143,9 @@ describe("MCP tx_block Tool", () => {
     expect(before.data.isReady).toBe(true)
 
     // Add ROOT as blocker (ROOT is not done)
-    const response = await callMcpToolParsed<"tx_block", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_block", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_block",
+      "tx_dep_block",
       { taskId: FIXTURES.TASK_LOGIN, blockerId: FIXTURES.TASK_ROOT }
     )
 
@@ -2154,9 +2155,9 @@ describe("MCP tx_block Tool", () => {
   })
 
   it("returns error for self-blocking", async () => {
-    const response = await callMcpToolParsed<"tx_block", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_block", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_block",
+      "tx_dep_block",
       { taskId: FIXTURES.TASK_JWT, blockerId: FIXTURES.TASK_JWT }
     )
 
@@ -2166,9 +2167,9 @@ describe("MCP tx_block Tool", () => {
 
   it("returns error for circular dependency", async () => {
     // JWT already blocks BLOCKED. Trying to make BLOCKED block JWT creates a cycle.
-    const response = await callMcpToolParsed<"tx_block", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_block", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_block",
+      "tx_dep_block",
       { taskId: FIXTURES.TASK_JWT, blockerId: FIXTURES.TASK_BLOCKED }
     )
 
@@ -2177,9 +2178,9 @@ describe("MCP tx_block Tool", () => {
   })
 
   it("returns error for nonexistent task", async () => {
-    const response = await callMcpToolParsed<"tx_block", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_block", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_block",
+      "tx_dep_block",
       { taskId: "tx-nonexistent", blockerId: FIXTURES.TASK_JWT }
     )
 
@@ -2188,9 +2189,9 @@ describe("MCP tx_block Tool", () => {
   })
 
   it("returns error for nonexistent blocker", async () => {
-    const response = await callMcpToolParsed<"tx_block", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_block", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_block",
+      "tx_dep_block",
       { taskId: FIXTURES.TASK_JWT, blockerId: "tx-nonexistent" }
     )
 
@@ -2199,7 +2200,7 @@ describe("MCP tx_block Tool", () => {
   })
 
   it("includes correct text content format", async () => {
-    const response = await callMcpTool(runtime, "tx_block", {
+    const response = await callMcpTool(runtime, "tx_dep_block", {
       taskId: FIXTURES.TASK_LOGIN,
       blockerId: FIXTURES.TASK_ROOT
     })
@@ -2218,10 +2219,10 @@ describe("MCP tx_block Tool", () => {
 })
 
 // -----------------------------------------------------------------------------
-// tx_unblock Tool Tests
+// tx_dep_unblock Tool Tests
 // -----------------------------------------------------------------------------
 
-describe("MCP tx_unblock Tool", () => {
+describe("MCP tx_dep_unblock Tool", () => {
   let shared: SharedTestLayerResult
   let runtime: ManagedRuntime.ManagedRuntime<McpTestServices, any>
 
@@ -2245,9 +2246,9 @@ describe("MCP tx_unblock Tool", () => {
 
   it("removes blocker and returns TaskWithDeps with updated blockedBy (Rule 1)", async () => {
     // BLOCKED is currently blocked by JWT and LOGIN
-    const response = await callMcpToolParsed<"tx_unblock", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_unblock", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_unblock",
+      "tx_dep_unblock",
       { taskId: FIXTURES.TASK_BLOCKED, blockerId: FIXTURES.TASK_JWT }
     )
 
@@ -2271,15 +2272,15 @@ describe("MCP tx_unblock Tool", () => {
 
   it("updates isReady status when last blocker removed", async () => {
     // Remove JWT as blocker
-    await callMcpTool(runtime, "tx_unblock", {
+    await callMcpTool(runtime, "tx_dep_unblock", {
       taskId: FIXTURES.TASK_BLOCKED,
       blockerId: FIXTURES.TASK_JWT
     })
 
     // Remove LOGIN as blocker (last one)
-    const response = await callMcpToolParsed<"tx_unblock", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_unblock", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_unblock",
+      "tx_dep_unblock",
       { taskId: FIXTURES.TASK_BLOCKED, blockerId: FIXTURES.TASK_LOGIN }
     )
 
@@ -2290,9 +2291,9 @@ describe("MCP tx_unblock Tool", () => {
   })
 
   it("returns error for nonexistent task", async () => {
-    const response = await callMcpToolParsed<"tx_unblock", { success: boolean; task: Record<string, unknown> }>(
+    const response = await callMcpToolParsed<"tx_dep_unblock", { success: boolean; task: Record<string, unknown> }>(
       runtime,
-      "tx_unblock",
+      "tx_dep_unblock",
       { taskId: "tx-nonexistent", blockerId: FIXTURES.TASK_JWT }
     )
 
@@ -2301,7 +2302,7 @@ describe("MCP tx_unblock Tool", () => {
   })
 
   it("includes correct text content format", async () => {
-    const response = await callMcpTool(runtime, "tx_unblock", {
+    const response = await callMcpTool(runtime, "tx_dep_unblock", {
       taskId: FIXTURES.TASK_BLOCKED,
       blockerId: FIXTURES.TASK_JWT
     })

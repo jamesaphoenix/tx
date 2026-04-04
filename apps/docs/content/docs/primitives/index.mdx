@@ -74,7 +74,7 @@ Use tx as an MCP server for Claude, Cursor, or any MCP-compatible client:
 }
 ```
 
-Tools: `tx_ready`, `tx_done`, `tx_block`, `tx_add`, `tx_memory_search`, `tx_memory_context`, etc.
+Tools: `tx_ready`, `tx_done`, `tx_dep_block`, `tx_add`, `tx_memory_search`, `tx_memory_context`, etc.
 
 Best for: AI assistants, Claude Code, Cursor, IDE integrations.
 
@@ -111,6 +111,15 @@ See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) fo
 
 ## Recommended Learning Order
 
+### 0. Agent Setup And Workflow Surfaces
+
+| Surface | Purpose | Interfaces | Status |
+|---------|---------|------------|--------|
+| [Getting Started](/docs/getting-started) | Initialize `.tx/`, install generated agent bundles, and verify the first local loop | CLI | Available |
+| [`tx skills`](/docs/primitives/skills) | Generate and sync target-specific Claude Code and Codex skill bundles | CLI | Available |
+| [Ralph Loop](/docs/ralph-loop) | Run manual tx-based Ralph loops against the global queue or one design-doc slice | Shell + CLI | Available |
+| [Watchdog Runbook](/docs/watchdog-runbook) | Add detached supervision on top of the manual Ralph loop when needed later | Shell + service templates | Available |
+
 ### 1. Task Management
 
 | Primitive | Purpose | Interfaces | Status |
@@ -120,7 +129,7 @@ See [`tx done`](/docs/primitives/done) and [`tx gate`](/docs/primitives/gate) fo
 | [`tx ready`](/docs/primitives/ready) | Get next workable task (unblocked, highest priority) | CLI, SDK, MCP, API | Available |
 | [`tx show`](/docs/getting-started) | Inspect one task before an agent or human works it | CLI, SDK, MCP, API | Available |
 | [`tx done`](/docs/primitives/done) | Complete task, potentially unblocking others | CLI, SDK, MCP, API | Available |
-| [`tx block`](/docs/primitives/block) | Declare dependencies between tasks | CLI, SDK, MCP, API | Available |
+| [`tx dep block`](/docs/primitives/block) | Declare dependencies between tasks | CLI, SDK, MCP, API | Available |
 | [`tx sync`](/docs/primitives/sync) | Persist to git-friendly stream event logs | CLI, SDK, MCP, API | Available |
 
 Start here if you are evaluating tx. This is the smallest loop that proves queueing, dependencies, and persistence.
@@ -129,11 +138,12 @@ Start here if you are evaluating tx. This is the smallest loop that proves queue
 
 | Primitive | Purpose | Interfaces | Status |
 |-----------|---------|------------|--------|
-| [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with YAML structured documentation and EARS linting (`tx doc lint-ears`) | CLI, SDK, MCP, API | Available |
+| [`tx doc *`](/docs/primitives/docs) | Docs-as-primitives with structured documentation and EARS linting (`tx spec lint`) | CLI, SDK, MCP, API | Available |
+| [`tx decompose`](/docs/primitives/decompose) | Turn a design doc into an explicit first-pass task graph | CLI, SDK, MCP, API | Available |
 | [`tx spec *`](/docs/primitives/spec-trace) | Spec-to-test traceability, multi-language discovery, and FCI phase scoring | CLI, Core, MCP, API | Available |
 | [`tx decision`](/docs/primitives/decision) | Capture implementation decisions and review state as first-class artifacts | CLI, SDK, MCP, API | Available |
 
-Add this once the task loop feels natural and you want intent, tests, and closure to stay aligned.
+Add this once the task loop feels natural and you want intent, decomposition, tests, and closure to stay aligned.
 
 ### 3. Memory & Context
 
@@ -148,11 +158,11 @@ Bring this in once you want durable context, reusable learnings, and automatic p
 
 | Primitive | Purpose | Interfaces | Status |
 |-----------|---------|------------|--------|
-| [`tx label`](/docs/primitives/label) | Organize tasks with labels for ready queue scoping | CLI, SDK, MCP, API | Available |
-| [`tx guard`](/docs/primitives/guard) | Set task creation limits to prevent unbounded proliferation | CLI, SDK, MCP, API | Available |
-| [`tx verify`](/docs/primitives/verify) | Attach machine-checkable done criteria to tasks | CLI, SDK, MCP, API | Available |
-| [`tx reflect`](/docs/primitives/reflect) | Session retrospective with structured signals | CLI, SDK, MCP, API | Available |
-| [`tx gate`](/docs/primitives/gate) | Human approval checkpoints for phase transitions | CLI, SDK (via `tx.pins`), API (via `/api/pins`) | Available |
+| [`tx auto label`](/docs/primitives/label) | Organize tasks with labels for ready queue scoping | CLI, SDK, MCP, API | Available |
+| [`tx auto guard`](/docs/primitives/guard) | Set task creation limits to prevent unbounded proliferation | CLI, SDK, MCP, API | Available |
+| [`tx auto verify`](/docs/primitives/verify) | Attach machine-checkable done criteria to tasks | CLI, SDK, MCP, API | Available |
+| [`tx auto reflect`](/docs/primitives/reflect) | Session retrospective with structured signals | CLI, SDK, MCP, API | Available |
+| [`tx auto gate`](/docs/primitives/gate) | Human approval checkpoints for phase transitions | CLI, SDK (via `tx.pins`), API (via `/api/pins`) | Available |
 
 Use these when agents start doing enough work that you need boundaries, checks, and human checkpoints.
 
@@ -162,7 +172,7 @@ Use these when agents start doing enough work that you need boundaries, checks, 
 |-----------|---------|------------|--------|
 | [`tx group-context:*`](/docs/primitives/ready#task-group-context-inheritance) | Attach shared task-group context inherited by related tasks | CLI, SDK, MCP, API | Available |
 | [`tx claim`](/docs/primitives/claim) | Claim task with lease to prevent parallel collisions | CLI, SDK, MCP, API | Available |
-| [`tx inbox`](/docs/primitives/inbox) | Send, read, and acknowledge agent messages on channels | CLI, SDK, MCP, API | Available |
+| [`tx msg inbox`](/docs/primitives/inbox) | Send, read, and acknowledge agent messages on channels | CLI, SDK, MCP, API | Available |
 
 Reach for coordination once more than one worker, operator, or long-lived channel is involved.
 
@@ -182,8 +192,8 @@ tx pin set coding-standards --file ./standards.md
 tx memory search "database schema" --semantic
 tx memory add "Use WAL mode for SQLite" -t learning
 tx memory context tx-abc123
-tx verify set tx-abc123 "bun test"
-tx verify run tx-abc123
+tx auto verify set tx-abc123 "bun test"
+tx auto verify run tx-abc123
 ```
 
 ## Example Orchestration Patterns
@@ -213,9 +223,10 @@ wait
 
 ```bash
 task=$(tx ready --limit 1 --json | jq -r '.[0].id')
-claude "Plan implementation for $task" > plan.md
-read -p "Approve? [y/n] " && claude "Execute plan.md"
-tx done $task
+claude "Read the project instructions (for example AGENTS.md if present). For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
+echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
+read
+claude "Read the project instructions (for example AGENTS.md if present). For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
 ```
 
 ## Global Options
@@ -231,7 +242,7 @@ All primitives support these global options:
 ## Task Lifecycle
 
 ```
-backlog → ready → planning → active → blocked → review → human_needs_to_review → done
+backlog → ready → planning → active → blocked → review → needs_review → done
 ```
 
 A task is **ready** when:

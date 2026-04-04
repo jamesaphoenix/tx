@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "REQ-033-spec-test-traceability"
+title: "REQ-033: Spec-to-Test Traceability"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # REQ-033: Spec-to-Test Traceability
 
 ## Purpose

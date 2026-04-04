@@ -34,7 +34,7 @@ function runTx(args: string[], cwd: string): ExecResult {
   }
 }
 
-describe("4-tier doc system (Phase 1)", () => {
+describe("doc system with markdown-first spec types", () => {
   let tmpDir: string
 
   beforeEach(() => {
@@ -49,7 +49,7 @@ describe("4-tier doc system (Phase 1)", () => {
     }
   })
 
-  it("creates a requirement doc with YAML template", () => {
+  it("creates a requirement doc as prd (deprecated kind normalized)", () => {
     const add = runTx(
       ["doc", "add", "requirement", "auth-flows", "--title", "Auth Flows"],
       tmpDir,
@@ -57,18 +57,17 @@ describe("4-tier doc system (Phase 1)", () => {
     expect(add.status).toBe(0)
     expect(add.stdout).toContain("auth-flows")
 
-    // Verify YAML file exists and contains expected sections
-    const filePath = join(tmpDir, "specs", "requirements", "auth-flows.yml")
+    // requirement kind is normalized to prd — file is .md in specs/prd/
+    const filePath = join(tmpDir, "specs", "prd", "auth-flows.md")
     expect(existsSync(filePath)).toBe(true)
     const content = readFileSync(filePath, "utf-8")
-    expect(content).toContain("kind: requirement")
+    expect(content).toContain("kind: spec")
+    expect(content).toContain("spec_type: prd")
     expect(content).toContain('title: "Auth Flows"')
-    expect(content).toContain("actors:")
-    expect(content).toContain("use_cases:")
-    expect(content).toContain("traceability:")
+    expect(content).toContain("ears_requirements:")
   })
 
-  it("creates a system_design doc with YAML template", () => {
+  it("creates a system_design doc as design (deprecated kind normalized)", () => {
     const add = runTx(
       ["doc", "add", "system_design", "error-handling", "--title", "Error Handling"],
       tmpDir,
@@ -76,18 +75,18 @@ describe("4-tier doc system (Phase 1)", () => {
     expect(add.status).toBe(0)
     expect(add.stdout).toContain("error-handling")
 
-    const filePath = join(tmpDir, "specs", "system-design", "error-handling.yml")
+    // system_design kind is normalized to design — file is .md in specs/design/
+    const filePath = join(tmpDir, "specs", "design", "error-handling.md")
     expect(existsSync(filePath)).toBe(true)
     const content = readFileSync(filePath, "utf-8")
-    expect(content).toContain("kind: system_design")
+    expect(content).toContain("kind: spec")
+    expect(content).toContain("spec_type: design")
     expect(content).toContain('title: "Error Handling"')
-    expect(content).toContain("scope:")
-    expect(content).toContain("constraints:")
-    expect(content).toContain("applies_to:")
-    expect(content).toContain("decision_log:")
+    expect(content).toContain("# Architecture")
+    expect(content).toContain("# Invariants")
   })
 
-  it("lists requirement and system_design docs", () => {
+  it("lists deprecated kinds as their normalized equivalents", () => {
     runTx(
       ["doc", "add", "requirement", "req-one", "--title", "Req One"],
       tmpDir,
@@ -106,74 +105,78 @@ describe("4-tier doc system (Phase 1)", () => {
     const docs = JSON.parse(list.stdout)
     expect(docs).toHaveLength(3)
 
+    // requirement -> prd, system_design -> design
     const kinds = docs.map((d: { kind: string }) => d.kind).sort()
-    expect(kinds).toEqual(["design", "requirement", "system_design"])
+    expect(kinds).toEqual(["design", "design", "prd"])
   })
 
-  it("links requirement to prd (infers requirement_to_prd)", () => {
+  it("links prd to design (infers prd_to_design)", () => {
+    // requirement is normalized to prd
     runTx(
-      ["doc", "add", "requirement", "auth-req", "--title", "Auth Req"],
+      ["doc", "add", "prd", "auth-req", "--title", "Auth Req"],
       tmpDir,
     )
     runTx(
-      ["doc", "add", "prd", "auth-prd", "--title", "Auth PRD"],
+      ["doc", "add", "design", "auth-dd", "--title", "Auth DD"],
       tmpDir,
     )
 
     const link = runTx(
-      ["doc", "link", "auth-req", "auth-prd"],
+      ["doc", "link", "auth-req", "auth-dd"],
       tmpDir,
     )
     expect(link.status).toBe(0)
-    expect(link.stdout).toContain("requirement_to_prd")
+    expect(link.stdout).toContain("prd_to_design")
   })
 
-  it("links requirement to design (infers requirement_to_design)", () => {
+  it("links overview to prd (infers overview_to_prd)", () => {
     runTx(
-      ["doc", "add", "requirement", "req-x", "--title", "Req X"],
+      ["doc", "add", "overview", "overview-x", "--title", "Overview X"],
       tmpDir,
     )
     runTx(
-      ["doc", "add", "design", "dd-x", "--title", "DD X"],
+      ["doc", "add", "prd", "prd-x", "--title", "PRD X"],
       tmpDir,
     )
 
-    const link = runTx(["doc", "link", "req-x", "dd-x"], tmpDir)
+    const link = runTx(["doc", "link", "overview-x", "prd-x"], tmpDir)
     expect(link.status).toBe(0)
-    expect(link.stdout).toContain("requirement_to_design")
+    expect(link.stdout).toContain("overview_to_prd")
   })
 
-  it("links system_design to design (infers system_design_to_design)", () => {
+  it("links overview to design (infers overview_to_design)", () => {
+    runTx(
+      ["doc", "add", "overview", "overview-y", "--title", "Overview Y"],
+      tmpDir,
+    )
+    runTx(
+      ["doc", "add", "design", "dd-y", "--title", "DD Y"],
+      tmpDir,
+    )
+
+    const link = runTx(["doc", "link", "overview-y", "dd-y"], tmpDir)
+    expect(link.status).toBe(0)
+    expect(link.stdout).toContain("overview_to_design")
+  })
+
+  it("links prd to design (infers prd_to_design) for system_design normalized kind", () => {
+    // system_design is normalized to design
     runTx(
       ["doc", "add", "system_design", "sd-err", "--title", "SD Err"],
       tmpDir,
     )
     runTx(
-      ["doc", "add", "design", "dd-err", "--title", "DD Err"],
+      ["doc", "add", "prd", "prd-err", "--title", "PRD Err"],
       tmpDir,
     )
 
-    const link = runTx(["doc", "link", "sd-err", "dd-err"], tmpDir)
+    // sd-err is actually a design doc; linking prd -> design
+    const link = runTx(["doc", "link", "prd-err", "sd-err"], tmpDir)
     expect(link.status).toBe(0)
-    expect(link.stdout).toContain("system_design_to_design")
+    expect(link.stdout).toContain("prd_to_design")
   })
 
-  it("links system_design to prd (infers system_design_to_prd)", () => {
-    runTx(
-      ["doc", "add", "system_design", "sd-y", "--title", "SD Y"],
-      tmpDir,
-    )
-    runTx(
-      ["doc", "add", "prd", "prd-y", "--title", "PRD Y"],
-      tmpDir,
-    )
-
-    const link = runTx(["doc", "link", "sd-y", "prd-y"], tmpDir)
-    expect(link.status).toBe(0)
-    expect(link.stdout).toContain("system_design_to_prd")
-  })
-
-  it("doc show works for requirement kind", () => {
+  it("doc show works for deprecated requirement kind (stored as prd)", () => {
     runTx(
       ["doc", "add", "requirement", "show-req", "--title", "Show Req"],
       tmpDir,
@@ -182,13 +185,14 @@ describe("4-tier doc system (Phase 1)", () => {
     const show = runTx(["doc", "show", "show-req", "--json"], tmpDir)
     expect(show.status).toBe(0)
     const doc = JSON.parse(show.stdout)
-    expect(doc.kind).toBe("requirement")
+    // Stored as prd since requirement is normalized
+    expect(doc.kind).toBe("prd")
     expect(doc.name).toBe("show-req")
     expect(doc.title).toBe("Show Req")
     expect(doc.status).toBe("changing")
   })
 
-  it("doc show works for system_design kind", () => {
+  it("doc show works for deprecated system_design kind (stored as design)", () => {
     runTx(
       ["doc", "add", "system_design", "show-sd", "--title", "Show SD"],
       tmpDir,
@@ -197,37 +201,34 @@ describe("4-tier doc system (Phase 1)", () => {
     const show = runTx(["doc", "show", "show-sd", "--json"], tmpDir)
     expect(show.status).toBe(0)
     const doc = JSON.parse(show.stdout)
-    expect(doc.kind).toBe("system_design")
+    // Stored as design since system_design is normalized
+    expect(doc.kind).toBe("design")
     expect(doc.name).toBe("show-sd")
   })
 
-  it("full doc chain: requirement -> prd -> design with system_design cross-cut", { timeout: 30000 }, () => {
-    // Create all 4 doc types
-    runTx(["doc", "add", "requirement", "full-req", "--title", "Full Req"], tmpDir)
+  it("full doc chain: overview -> prd -> design", { timeout: 30000 }, () => {
+    // Create all core doc types (overview, prd, design)
+    runTx(["doc", "add", "overview", "full-overview", "--title", "Full Overview"], tmpDir)
     runTx(["doc", "add", "prd", "full-prd", "--title", "Full PRD"], tmpDir)
     runTx(["doc", "add", "design", "full-dd", "--title", "Full DD"], tmpDir)
-    runTx(["doc", "add", "system_design", "full-sd", "--title", "Full SD"], tmpDir)
 
     // Link the chain
-    const link1 = runTx(["doc", "link", "full-req", "full-prd"], tmpDir)
+    const link1 = runTx(["doc", "link", "full-overview", "full-prd"], tmpDir)
     expect(link1.status).toBe(0)
 
     const link2 = runTx(["doc", "link", "full-prd", "full-dd"], tmpDir)
     expect(link2.status).toBe(0)
 
-    // Cross-cutting SD links
-    const link3 = runTx(["doc", "link", "full-sd", "full-dd"], tmpDir)
+    // Also link overview directly to design
+    const link3 = runTx(["doc", "link", "full-overview", "full-dd"], tmpDir)
     expect(link3.status).toBe(0)
 
-    const link4 = runTx(["doc", "link", "full-sd", "full-prd"], tmpDir)
-    expect(link4.status).toBe(0)
-
-    // Verify all 4 docs exist
+    // Verify all 3 docs exist
     const list = runTx(["doc", "list", "--json"], tmpDir)
-    expect(JSON.parse(list.stdout)).toHaveLength(4)
+    expect(JSON.parse(list.stdout)).toHaveLength(3)
   })
 
-  it("validates requirement and system_design docs", () => {
+  it("validates prd and design docs (including deprecated kind aliases)", () => {
     runTx(
       ["doc", "add", "requirement", "val-req", "--title", "Val Req"],
       tmpDir,
@@ -244,86 +245,90 @@ describe("4-tier doc system (Phase 1)", () => {
     expect(valSd.status).toBe(0)
   })
 
-  it("renders requirement doc to markdown", () => {
-    runTx(
+  it("deprecated requirement doc creates markdown file as prd", () => {
+    const add = runTx(
       ["doc", "add", "requirement", "render-req", "--title", "Render Req"],
       tmpDir,
     )
+    expect(add.status).toBe(0)
 
-    const render = runTx(["doc", "render", "render-req"], tmpDir)
-    expect(render.status).toBe(0)
-    expect(render.stdout).toContain("Rendered 1 doc(s)")
-    expect(render.stdout).toContain("render-req.md")
+    // requirement is normalized to prd, so file is in specs/prd/
+    const mdPath = join(tmpDir, "specs", "prd", "render-req.md")
+    expect(existsSync(mdPath)).toBe(true)
+    const md = readFileSync(mdPath, "utf-8")
+    expect(md).toContain("Render Req")
+    expect(md).toContain("spec_type: prd")
   })
 
-  it("renders system_design doc to markdown", () => {
-    runTx(
+  it("deprecated system_design doc creates markdown file as design", () => {
+    const add = runTx(
       ["doc", "add", "system_design", "render-sd", "--title", "Render SD"],
       tmpDir,
     )
+    expect(add.status).toBe(0)
 
-    const render = runTx(["doc", "render", "render-sd"], tmpDir)
-    expect(render.status).toBe(0)
-    expect(render.stdout).toContain("Rendered 1 doc(s)")
-    expect(render.stdout).toContain("render-sd.md")
+    // system_design is normalized to design, so file is in specs/design/
+    const mdPath = join(tmpDir, "specs", "design", "render-sd.md")
+    expect(existsSync(mdPath)).toBe(true)
+    const md = readFileSync(mdPath, "utf-8")
+    expect(md).toContain("Render SD")
+    expect(md).toContain("spec_type: design")
   })
 
-  it("rendered requirement markdown contains expected sections", () => {
+  it("deprecated requirement doc (as prd) contains expected markdown content", () => {
     runTx(
       ["doc", "add", "requirement", "md-req", "--title", "MD Req"],
       tmpDir,
     )
-    runTx(["doc", "render", "md-req"], tmpDir)
 
-    const mdPath = join(tmpDir, "specs", "requirements", "md-req.md")
+    // requirement is normalized to prd, so file is in specs/prd/
+    const mdPath = join(tmpDir, "specs", "prd", "md-req.md")
     expect(existsSync(mdPath)).toBe(true)
     const md = readFileSync(mdPath, "utf-8")
-    expect(md).toContain("# MD Req")
-    expect(md).toContain("**Kind**: requirement")
+    expect(md).toContain("MD Req")
+    // Markdown-first: contains spec frontmatter
+    expect(md).toContain("spec_type: prd")
   })
 
-  it("rendered system_design markdown contains expected sections", () => {
+  it("deprecated system_design doc (as design) contains expected markdown content", () => {
     runTx(
       ["doc", "add", "system_design", "md-sd", "--title", "MD SD"],
       tmpDir,
     )
-    runTx(["doc", "render", "md-sd"], tmpDir)
 
-    const mdPath = join(tmpDir, "specs", "system-design", "md-sd.md")
+    // system_design is normalized to design, so file is in specs/design/
+    const mdPath = join(tmpDir, "specs", "design", "md-sd.md")
     expect(existsSync(mdPath)).toBe(true)
     const md = readFileSync(mdPath, "utf-8")
-    expect(md).toContain("# MD SD")
-    expect(md).toContain("**Kind**: system_design")
+    expect(md).toContain("MD SD")
+    expect(md).toContain("spec_type: design")
   })
 
-  it("index.yml includes requirement and system_design docs", () => {
-    runTx(["doc", "add", "requirement", "idx-req", "--title", "Idx Req"], tmpDir)
+  it("does not generate index.yml when docs are created", () => {
     runTx(["doc", "add", "prd", "idx-prd", "--title", "Idx PRD"], tmpDir)
     runTx(["doc", "add", "design", "idx-dd", "--title", "Idx DD"], tmpDir)
-    runTx(["doc", "add", "system_design", "idx-sd", "--title", "Idx SD"], tmpDir)
+    runTx(["doc", "add", "overview", "idx-overview", "--title", "Idx Overview"], tmpDir)
 
-    // Index gets regenerated on each doc add
     const indexPath = join(tmpDir, "specs", "index.yml")
-    expect(existsSync(indexPath)).toBe(true)
-    const indexContent = readFileSync(indexPath, "utf-8")
-    expect(indexContent).toContain("idx-req")
-    expect(indexContent).toContain("idx-prd")
-    expect(indexContent).toContain("idx-dd")
-    expect(indexContent).toContain("idx-sd")
-    expect(indexContent).toContain("requirements:")
-    expect(indexContent).toContain("system_designs:")
+    expect(existsSync(indexPath)).toBe(false)
   })
 
-  it("index.md includes requirement and system_design tables", () => {
-    runTx(["doc", "add", "requirement", "md-idx-req", "--title", "MD Idx Req"], tmpDir)
-    runTx(["doc", "add", "system_design", "md-idx-sd", "--title", "MD Idx SD"], tmpDir)
+  it("index.md includes PRD and Design tables", () => {
+    runTx(["doc", "add", "prd", "md-idx-prd", "--title", "MD Idx PRD"], tmpDir)
+    runTx(["doc", "add", "design", "md-idx-design", "--title", "MD Idx Design"], tmpDir)
 
     const indexMdPath = join(tmpDir, "specs", "index.md")
     expect(existsSync(indexMdPath)).toBe(true)
     const indexMd = readFileSync(indexMdPath, "utf-8")
-    expect(indexMd).toContain("Requirements Documents")
-    expect(indexMd).toContain("System Design Documents")
-    expect(indexMd).toContain("md-idx-req")
-    expect(indexMd).toContain("md-idx-sd")
+    expect(indexMd).toContain("**Description**:")
+    expect(indexMd).toContain("**Search Keywords**:")
+    expect(indexMd).toContain("Product Requirements Documents")
+    expect(indexMd).toContain("Design Documents")
+    expect(indexMd).toContain("| Name | Title | Description | Search Keywords | Status |")
+    expect(indexMd).toContain("| Name | Title | Description | Search Keywords | Implements | Status |")
+    expect(indexMd).toContain("md-idx-prd")
+    expect(indexMd).toContain("md-idx-design")
+    expect(indexMd).toContain("Product requirements for MD Idx PRD.")
+    expect(indexMd).toContain("Technical design for MD Idx Design.")
   })
 })

@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: overview
+name: "task-lifecycle"
+title: "Task Lifecycle Example"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # Task Lifecycle Example
 
 This example demonstrates the complete task lifecycle from creation to completion.
@@ -65,7 +75,7 @@ tx add "Implement login endpoint" --parent tx-parent01 --score 800
 tx add "Add session management" --parent tx-parent01 --score 600
 
 # View the hierarchy
-tx tree tx-parent01
+tx dep tree tx-parent01
 
 # Complete subtasks one by one
 tx done tx-subtask1

@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-004-ready-detection-algorithm"
+title: "DD-004: Ready Detection Algorithm"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-004: Ready Detection Algorithm
 
 **Status**: Draft
@@ -18,7 +28,7 @@ A task is **ready** when ALL of these conditions are true:
 
 1. **Status is workable**: `backlog`, `ready`, or `planning`
 2. **No open blockers**: All tasks in its `blocked_by` list have status `done`
-3. **Not explicitly blocked**: Status is not `blocked` or `human_needs_to_review`
+3. **Not explicitly blocked**: Status is not `blocked` or `needs_review`
 
 ---
 
@@ -272,8 +282,8 @@ describe("Ready Detection", () => {
     expect(result.find(t => t.id === FIXTURES.TASK_LOGIN)).toBeUndefined()
   })
 
-  it("excludes tasks with status: human_needs_to_review", async () => {
-    db.prepare("UPDATE tasks SET status = 'human_needs_to_review' WHERE id = ?").run(FIXTURES.TASK_LOGIN)
+  it("excludes tasks with status: needs_review", async () => {
+    db.prepare("UPDATE tasks SET status = 'needs_review' WHERE id = ?").run(FIXTURES.TASK_LOGIN)
     const result = await runReady(db)
     expect(result.find(t => t.id === FIXTURES.TASK_LOGIN)).toBeUndefined()
   })
@@ -447,7 +457,7 @@ function hoursAgo(hours: number): Date {
 
 ## Status Transition Validation in Ready Detection
 
-Ready detection respects the status transition state machine defined in DD-001. A task is only considered "workable" if its status is one of: `backlog`, `ready`, `planning`. Tasks in `active`, `blocked`, `review`, `human_needs_to_review`, and `done` are never returned by the ready query.
+Ready detection respects the status transition state machine defined in DD-001. A task is only considered "workable" if its status is one of: `backlog`, `ready`, `planning`. Tasks in `active`, `blocked`, `review`, `needs_review`, and `done` are never returned by the ready query.
 
 ---
 

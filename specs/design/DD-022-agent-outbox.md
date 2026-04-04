@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-022-agent-outbox"
+title: "DD-022: Agent Outbox Messaging"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-022: Agent Outbox Messaging
 
 **Status**: Implemented
@@ -6,7 +16,7 @@
 
 ## Overview
 
-Channel-based agent-to-agent messaging using the outbox pattern from distributed systems. Messages are stored in SQLite, recipients poll via `tx inbox`. Read-only inbox with cursor-based fan-out supports both queue and broadcast semantics without per-reader state.
+Channel-based agent-to-agent messaging using the outbox pattern from distributed systems. Messages are stored in SQLite, recipients poll via `tx msg inbox`. Read-only inbox with cursor-based fan-out supports both queue and broadcast semantics without per-reader state.
 
 ## Design
 
@@ -66,21 +76,21 @@ Migration: `migrations/021_agent_outbox.sql`
 
 | Command | Description |
 |---------|-------------|
-| `tx send <channel> <content>` | Send a message |
-| `tx inbox <channel>` | Read pending messages |
-| `tx ack <id>` | Acknowledge a message |
-| `tx ack all <channel>` | Ack all pending on channel |
-| `tx outbox pending <channel>` | Count pending messages |
-| `tx outbox gc` | Garbage collect old messages |
+| `tx msg send <channel> <content>` | Send a message |
+| `tx msg inbox <channel>` | Read pending messages |
+| `tx msg ack <id>` | Acknowledge a message |
+| `tx msg ack all <channel>` | Ack all pending on channel |
+| `tx msg pending <channel>` | Count pending messages |
+| `tx msg gc` | Garbage collect old messages |
 
 ### MCP Tools
 
 | Tool | Description |
 |------|-------------|
-| `tx_send` | Send message to channel |
-| `tx_inbox` | Read inbox (cursor support) |
-| `tx_ack` | Acknowledge message |
-| `tx_outbox_pending` | Count pending |
+| `tx_msg_send` | Send message to channel |
+| `tx_msg_inbox` | Read inbox (cursor support) |
+| `tx_msg_ack` | Acknowledge message |
+| `tx_msg_pending` | Count pending |
 
 ### REST API
 
@@ -99,23 +109,23 @@ These patterns demonstrate primitive flexibility — tx ships none as built-in b
 
 ```bash
 # 1:1 queue: send + ack for consume-once
-tx send worker-1 "Review PR #42" --sender orchestrator
-MSG_ID=$(tx inbox worker-1 --json | jq -r '.[0].id')
-tx ack $MSG_ID
+tx msg send worker-1 "Review PR #42" --sender orchestrator
+MSG_ID=$(tx msg inbox worker-1 --json | jq -r '.[0].id')
+tx msg ack $MSG_ID
 
 # Request/reply: correlation IDs
 CORR=$(uuidgen)
-tx send worker-3 "Review PR #42" --sender orch --correlation $CORR
-tx send orch "Approved" --sender worker-3 --correlation $CORR
-tx inbox orch --correlation $CORR --json
+tx msg send worker-3 "Review PR #42" --sender orch --correlation $CORR
+tx msg send orch "Approved" --sender worker-3 --correlation $CORR
+tx msg inbox orch --correlation $CORR --json
 
 # Broadcast: cursor-based, no ack
-tx send broadcast "v2.3.0 deployed" --sender ci --ttl 3600
-tx inbox broadcast --after $LAST_SEEN --json
+tx msg send broadcast "v2.3.0 deployed" --sender ci --ttl 3600
+tx msg inbox broadcast --after $LAST_SEEN --json
 
 # Task handoff notes
-tx send "task:tx-abc123" "Root cause in auth.ts:42" --sender worker-1
-tx inbox "task:tx-abc123" --json
+tx msg send "task:tx-abc123" "Root cause in auth.ts:42" --sender worker-1
+tx msg inbox "task:tx-abc123" --json
 ```
 
 ## Testing Strategy

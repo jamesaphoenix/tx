@@ -70,7 +70,7 @@ export function HeadlessLayersFigure() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <LayerCard
           title="Task management"
-          items={["tx ready", "tx done", "tx block", "tx sync"]}
+          items={["tx ready", "tx done", "tx dep block", "tx sync"]}
           tone="blue"
         />
         <LayerCard
@@ -85,17 +85,17 @@ export function HeadlessLayersFigure() {
         />
         <LayerCard
           title="Bounded autonomy"
-          items={["tx label", "tx guard", "tx verify", "tx reflect", "tx gate"]}
+          items={["tx auto label", "tx auto guard", "tx auto verify", "tx auto reflect", "tx auto gate"]}
           tone="amber"
         />
         <LayerCard
           title="Coordination"
-          items={["tx claim", "tx inbox", "tx group-context"]}
+          items={["tx claim", "tx msg inbox", "tx group-context"]}
           tone="blue"
         />
         <LayerCard
           title="Observability"
-          items={["tx trace", "tx spec health", "tx stats"]}
+          items={["tx trace", "tx spec health", "tx diag stats"]}
           tone="slate"
         />
       </div>

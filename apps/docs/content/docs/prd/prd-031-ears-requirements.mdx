@@ -30,7 +30,7 @@ The system now supports:
 
 - schema + rule validation for EARS entries,
 - deterministic markdown rendering for structured requirements,
-- CLI linting via `tx doc lint-ears`,
+- CLI linting via `tx spec lint`,
 - typed errors when EARS data is invalid.
 
 ---
@@ -53,7 +53,7 @@ The system now supports:
 | EARS-PRD-002 | event_driven | Invalid EARS entries are rejected with typed validation errors |
 | EARS-PRD-003 | state_driven | Structured EARS entries render deterministically in markdown |
 | EARS-PRD-004 | optional | Legacy `requirements` continue to render unchanged |
-| EARS-PRD-005 | event_driven | `tx doc lint-ears` returns non-zero on invalid EARS input |
+| EARS-PRD-005 | event_driven | `tx spec lint` returns non-zero on invalid EARS input |
 | EARS-PRD-006 | ubiquitous | PRDs with no legacy `requirements` section are accepted (EARS enforcement triggers only when legacy requirements are present) |
 
 ---
@@ -86,13 +86,13 @@ ears_requirements:
 
 ```bash
 # Validate by PRD doc name
-tx doc lint-ears auth-system
+tx spec lint auth-system
 
 # Validate by YAML file path
-tx doc lint-ears specs/prd/auth-system.yml
+tx spec lint specs/prd/auth-system.yml
 
 # Machine-friendly output
-tx doc lint-ears auth-system --json
+tx spec lint auth-system --json
 ```
 
 ---

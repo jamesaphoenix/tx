@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-020-run-observability"
+title: "PRD-020: Run Observability & Logging"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-020: Run Observability & Logging
 
 ## Problem

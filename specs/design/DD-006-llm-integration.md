@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-006-llm-integration"
+title: "DD-006: LLM Integration (Deduplication + Compaction)"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-006: LLM Integration (Deduplication + Compaction)
 
 **Status**: Draft
@@ -18,7 +28,7 @@ This document describes **how** `tx` integrates with Claude for LLM-powered feat
 
 The API key is **optional**. If set as an environment variable, it's used automatically. If not set:
 - Core commands (`tx add`, `tx ready`, etc.) work normally
-- LLM commands (`tx dedupe`, `tx compact`, `tx reprioritize`) fail with a clear error message
+- LLM commands (`tx dedupe`, `tx sync compact`, `tx reprioritize`) fail with a clear error message
 - The MCP server starts and serves core tools; LLM tools return error text
 
 ```typescript

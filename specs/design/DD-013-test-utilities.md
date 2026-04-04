@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: design
+name: "DD-013-test-utilities"
+title: "DD-013: Test Utilities Package - Implementation"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # DD-013: Test Utilities Package - Implementation
 
 ## Overview

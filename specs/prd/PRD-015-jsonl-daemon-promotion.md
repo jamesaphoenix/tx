@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: prd
+name: "PRD-015-jsonl-daemon-promotion"
+title: "PRD-015: Graph RAG - JSONL Telemetry Daemon and Knowledge Promotion Pipeline"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # PRD-015: Graph RAG - JSONL Telemetry Daemon and Knowledge Promotion Pipeline
 
 ## Overview

@@ -35,7 +35,7 @@ describe('TaskFilters', () => {
       expect(onChange).toHaveBeenCalledWith({ status: ['ready'], search: '' })
     })
 
-    it('allows multiple statuses to be selected', () => {
+    it('replaces the selected status when another status is clicked', () => {
       const onChange = vi.fn()
       const { rerender } = render(
         <TaskFilters value={{ status: ['ready'], search: '' }} onChange={onChange} />
@@ -50,25 +50,25 @@ describe('TaskFilters', () => {
       // Click another status
       fireEvent.click(screen.getByText('Active'))
       expect(onChange).toHaveBeenCalledWith({
-        status: ['ready', 'active'],
+        status: ['active'],
         search: '',
       })
 
-      // Rerender with both selected
+      // Rerender with the replacement selection
       rerender(
         <TaskFilters
-          value={{ status: ['ready', 'active'], search: '' }}
+          value={{ status: ['active'], search: '' }}
           onChange={onChange}
         />
       )
 
-      expect(screen.getByRole('button', { name: /Ready/ })).toHaveAttribute(
-        'aria-pressed',
-        'true'
-      )
       expect(screen.getByRole('button', { name: /Active/ })).toHaveAttribute(
         'aria-pressed',
         'true'
+      )
+      expect(screen.getByRole('button', { name: /Ready/ })).toHaveAttribute(
+        'aria-pressed',
+        'false'
       )
     })
 
@@ -76,20 +76,20 @@ describe('TaskFilters', () => {
       const onChange = vi.fn()
       render(
         <TaskFilters
-          value={{ status: ['ready', 'active'], search: '' }}
+          value={{ status: ['ready'], search: '' }}
           onChange={onChange}
         />
       )
 
       fireEvent.click(screen.getByText('Ready'))
-      expect(onChange).toHaveBeenCalledWith({ status: ['active'], search: '' })
+      expect(onChange).toHaveBeenCalledWith({ status: [], search: '' })
     })
 
     it('clears all statuses when clicking All', () => {
       const onChange = vi.fn()
       render(
         <TaskFilters
-          value={{ status: ['ready', 'active'], search: '' }}
+          value={{ status: ['active'], search: '' }}
           onChange={onChange}
         />
       )
@@ -208,7 +208,7 @@ describe('TaskFilters', () => {
       const onChange = vi.fn()
       render(
         <TaskFilters
-          value={{ status: ['ready', 'active'], search: '' }}
+          value={{ status: ['active'], search: '' }}
           onChange={onChange}
         />
       )
@@ -221,7 +221,7 @@ describe('TaskFilters', () => {
       })
 
       expect(onChange).toHaveBeenCalledWith({
-        status: ['ready', 'active'],
+        status: ['active'],
         search: 'test',
       })
     })
@@ -309,7 +309,7 @@ describe('useTaskFiltersWithUrl', () => {
 
     const { result } = renderHook(() => useTaskFiltersWithUrl())
 
-    expect(result.current.filters.status).toEqual(['ready', 'active'])
+    expect(result.current.filters.status).toEqual(['active'])
   })
 
   it('initializes with search from URL params', () => {
@@ -324,13 +324,13 @@ describe('useTaskFiltersWithUrl', () => {
     const { result } = renderHook(() => useTaskFiltersWithUrl())
 
     act(() => {
-      result.current.setFilters({ status: ['ready'], search: 'test' })
+      result.current.setFilters({ status: ['ready', 'blocked'], search: 'test' })
     })
 
     expect(window.history.replaceState).toHaveBeenCalledWith(
       {},
       '',
-      '/tasks?taskStatus=ready&taskSearch=test'
+      '/tasks?taskStatus=blocked&taskSearch=test'
     )
   })
 

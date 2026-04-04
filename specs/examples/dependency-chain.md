@@ -1,3 +1,13 @@
+---
+kind: spec
+spec_type: overview
+name: "dependency-chain"
+title: "Dependency Chain Example"
+status: draft
+version: 1
+last_reviewed_at: "2026-03-15"
+---
+
 # Dependency Chain Example
 
 This example demonstrates how to create and manage task dependencies.
@@ -26,8 +36,8 @@ tx add "Write integration tests" --score 600
 # Output: Created task: tx-test001
 
 # Create dependency chain: design → api → tests
-tx block tx-api0001 tx-design01   # design blocks api
-tx block tx-test001 tx-api0001    # api blocks tests
+tx dep block tx-api0001 tx-design01   # design blocks api
+tx dep block tx-test001 tx-api0001    # api blocks tests
 
 # Check ready tasks - only design should be ready
 tx ready
@@ -74,10 +84,10 @@ tx add "Module C" --score 800          # tx-c
 tx add "Integration" --score 600       # tx-d
 
 # Set up dependencies
-tx block tx-b tx-a    # A blocks B
-tx block tx-c tx-a    # A blocks C
-tx block tx-d tx-b    # B blocks D
-tx block tx-d tx-c    # C blocks D
+tx dep block tx-b tx-a    # A blocks B
+tx dep block tx-c tx-a    # A blocks C
+tx dep block tx-d tx-b    # B blocks D
+tx dep block tx-d tx-c    # C blocks D
 
 # D is blocked by BOTH B and C
 tx show tx-d
@@ -110,7 +120,7 @@ tx show tx-d
 
 ```bash
 # If you need to remove a blocker
-tx unblock tx-d tx-b
+tx dep unblock tx-d tx-b
 # Output: tx-b no longer blocks tx-d
 ```
 
@@ -162,7 +172,7 @@ await Effect.runPromise(Effect.provide(program, layer))
 ### No Self-Blocking
 
 ```bash
-tx block tx-a tx-a
+tx dep block tx-a tx-a
 # Error: A task cannot block itself
 ```
 
@@ -170,7 +180,7 @@ tx block tx-a tx-a
 
 ```bash
 # If A → B already exists
-tx block tx-a tx-b
+tx dep block tx-a tx-b
 # Error: Circular dependency detected
 ```
 

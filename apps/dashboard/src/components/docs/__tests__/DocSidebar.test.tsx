@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { render, screen, waitFor, fireEvent } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
@@ -9,6 +9,7 @@ import type { DocSerialized, DocGraphResponse } from "../../../api/client"
 const docsFixture: DocSerialized[] = [
   {
     id: 1,
+    docId: "doc-111111111111",
     hash: "h1",
     kind: "overview",
     name: "overview-dashboard",
@@ -22,6 +23,7 @@ const docsFixture: DocSerialized[] = [
   },
   {
     id: 2,
+    docId: "doc-222222222222",
     hash: "h2",
     kind: "prd",
     name: "PRD-001-dashboard",
@@ -35,6 +37,7 @@ const docsFixture: DocSerialized[] = [
   },
   {
     id: 3,
+    docId: "doc-333333333333",
     hash: "h3",
     kind: "design",
     name: "DD-001-dashboard",
@@ -78,7 +81,7 @@ function renderWithProviders() {
   return render(
     <QueryClientProvider client={queryClient}>
       <DocSidebar
-        selectedDocName={null}
+        selectedDocRef={null}
         onSelectDoc={vi.fn()}
         showMap={false}
         onToggleMap={vi.fn()}
@@ -86,7 +89,7 @@ function renderWithProviders() {
         onKindFilterChange={vi.fn()}
         statusFilter=""
         onStatusFilterChange={vi.fn()}
-        selectedDocNames={new Set<string>()}
+        selectedDocRefs={new Set<string>()}
         onToggleSelectDoc={vi.fn()}
       />
     </QueryClientProvider>,
@@ -122,39 +125,21 @@ describe("DocSidebar", () => {
       expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
     })
 
-    expect(screen.getByRole("button", { name: "Grouped" })).toHaveClass("bg-blue-600")
+    // Docs are grouped by their numeric prefix (e.g., "001 - ...")
     expect(screen.getByText(/001 -/i)).toBeInTheDocument()
   })
 
-  it("toggles to hierarchy view and uses doc graph relationships", async () => {
-    let graphCalls = 0
-    server.use(
-      http.get("*", ({ request }) => {
-        const pathname = new URL(request.url).pathname
-        if (pathname === "/api/docs") {
-          return HttpResponse.json({ docs: docsFixture })
-        }
-        if (pathname === "/api/docs/graph") {
-          graphCalls += 1
-          return HttpResponse.json(graphFixture)
-        }
-        return HttpResponse.json({ error: "not found" }, { status: 404 })
-      }),
-    )
-
+  it("renders all docs with their kind badges", async () => {
     renderWithProviders()
 
     await waitFor(() => {
       expect(screen.getByText("overview-dashboard")).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Hierarchy" }))
-
-    await waitFor(() => {
-      expect(graphCalls).toBeGreaterThan(0)
-      expect(screen.getByRole("button", { name: "Hierarchy" })).toHaveClass("bg-blue-600")
-      expect(screen.queryByText(/001 -/i)).not.toBeInTheDocument()
-      expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
-    })
+    // Verify kind badges are rendered
+    expect(screen.getByText("OV")).toBeInTheDocument()
+    expect(screen.getByText("PRD")).toBeInTheDocument()
+    expect(screen.getByText("DD")).toBeInTheDocument()
+    expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
   })
 })

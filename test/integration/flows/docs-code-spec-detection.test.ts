@@ -57,33 +57,72 @@ const writeDocsConfig = (cwd: string): void => {
   ].join("\n"))
 }
 
-const overwritePrdYaml = (
+const overwritePrdMarkdown = (
   cwd: string,
   name: string,
   title: string,
   invariants: readonly InvariantInput[],
 ): void => {
+  const today = new Date().toISOString().slice(0, 10)
+  const invariantsBlock = invariants.length > 0
+    ? [
+        "```yaml",
+        "invariants:",
+        ...invariants.flatMap((inv) => [
+          `  - id: ${inv.id}`,
+          `    statement: ${inv.rule}`,
+          "    severity: high",
+          "    verified_by:",
+          "      - test/placeholder.test.ts",
+        ]),
+        "```",
+      ]
+    : []
+
   writeRelative(
     cwd,
-    `specs/prd/${name}.yml`,
+    `specs/prd/${name}.md`,
     [
-      "kind: prd",
+      "---",
+      "kind: spec",
+      "spec_type: prd",
       `name: ${name}`,
       `title: "${title}"`,
-      "status: changing",
+      "status: draft",
+      "version: 1",
+      "owners:",
+      "  - docs-team",
+      `summary: ${title} should remain aligned with code and tests`,
+      "domain: product-area",
+      "tags:",
+      "  - prd",
+      "depends_on: []",
+      "supersedes: []",
+      "implements: null",
+      `last_reviewed_at: ${today}`,
+      "---",
       "",
-      "problem: |",
-      `  ${title} should remain aligned with the code and tests.`,
+      "# Summary",
+      `${title} should remain aligned with the code and tests.`,
       "",
-      "solution: |",
-      `  Track ${title.toLowerCase()} behavior through invariants and detected tests.`,
+      "# Problem",
+      `${title} should remain aligned with the code and tests.`,
       "",
-      "invariants:",
-      ...invariants.flatMap((invariant) => [
-        `  - id: ${invariant.id}`,
-        `    rule: ${invariant.rule}`,
-        "    enforcement: integration_test",
-      ]),
+      "# Scope",
+      `Included: Track ${title.toLowerCase()} behavior through invariants and detected tests.`,
+      "Excluded: N/A",
+      "",
+      "# Requirements",
+      "No EARS requirements.",
+      "",
+      "# Acceptance Criteria",
+      "```yaml",
+      "acceptance_criteria:",
+      "  - id: AC-001",
+      "    statement: All invariants are covered by tests",
+      "```",
+      "",
+      ...invariantsBlock,
       "",
     ].join("\n"),
   )
@@ -121,11 +160,11 @@ describe("Docs -> code -> spec detection flow", { timeout: FLOW_TEST_TIMEOUT }, 
     addPrd(cwd, dbPath, "auth-flow", "Auth Flow")
     addPrd(cwd, dbPath, "billing-flow", "Billing Flow")
 
-    overwritePrdYaml(cwd, "auth-flow", "Auth Flow", [
+    overwritePrdMarkdown(cwd, "auth-flow", "Auth Flow", [
       { id: "INV-FLOW-AUTH-001", rule: "reject short passwords" },
       { id: "INV-FLOW-AUTH-002", rule: "issue a session token after login" },
     ])
-    overwritePrdYaml(cwd, "billing-flow", "Billing Flow", [
+    overwritePrdMarkdown(cwd, "billing-flow", "Billing Flow", [
       { id: "INV-FLOW-BILLING-001", rule: "apply annual discount" },
       { id: "INV-FLOW-BILLING-002", rule: "prevent negative invoice totals" },
     ])
@@ -273,7 +312,7 @@ describe("Docs -> code -> spec detection flow", { timeout: FLOW_TEST_TIMEOUT }, 
   it("surfaces doc changes immediately and clears gaps when the code catches up", () => {
     addPrd(cwd, dbPath, "orders-flow", "Orders Flow")
 
-    overwritePrdYaml(cwd, "orders-flow", "Orders Flow", [
+    overwritePrdMarkdown(cwd, "orders-flow", "Orders Flow", [
       { id: "INV-FLOW-ORDERS-001", rule: "calculate the order subtotal" },
     ])
 
@@ -305,7 +344,7 @@ describe("Docs -> code -> spec detection flow", { timeout: FLOW_TEST_TIMEOUT }, 
     )
     expect(firstGaps).toEqual([])
 
-    overwritePrdYaml(cwd, "orders-flow", "Orders Flow", [
+    overwritePrdMarkdown(cwd, "orders-flow", "Orders Flow", [
       { id: "INV-FLOW-ORDERS-001", rule: "calculate the order subtotal" },
       { id: "INV-FLOW-ORDERS-002", rule: "round totals to cents" },
     ])
@@ -366,10 +405,10 @@ describe("Docs -> code -> spec detection flow", { timeout: FLOW_TEST_TIMEOUT }, 
     addPrd(cwd, dbPath, "catalog-flow", "Catalog Flow")
     addPrd(cwd, dbPath, "checkout-flow", "Checkout Flow")
 
-    overwritePrdYaml(cwd, "catalog-flow", "Catalog Flow", [
+    overwritePrdMarkdown(cwd, "catalog-flow", "Catalog Flow", [
       { id: "INV-FLOW-CATALOG-001", rule: "normalize product slugs" },
     ])
-    overwritePrdYaml(cwd, "checkout-flow", "Checkout Flow", [
+    overwritePrdMarkdown(cwd, "checkout-flow", "Checkout Flow", [
       { id: "INV-FLOW-CHECKOUT-001", rule: "prevent zero-quantity purchases" },
     ])
 
@@ -409,11 +448,11 @@ describe("Docs -> code -> spec detection flow", { timeout: FLOW_TEST_TIMEOUT }, 
     expect(initialDiscover.discoveredLinks).toBe(2)
     expect(initialDiscover.upserted).toBe(2)
 
-    overwritePrdYaml(cwd, "catalog-flow", "Catalog Flow", [
+    overwritePrdMarkdown(cwd, "catalog-flow", "Catalog Flow", [
       { id: "INV-FLOW-CATALOG-001", rule: "normalize product slugs" },
       { id: "INV-FLOW-CATALOG-002", rule: "strip duplicate separators" },
     ])
-    overwritePrdYaml(cwd, "checkout-flow", "Checkout Flow", [
+    overwritePrdMarkdown(cwd, "checkout-flow", "Checkout Flow", [
       { id: "INV-FLOW-CHECKOUT-001", rule: "prevent zero-quantity purchases" },
       { id: "INV-FLOW-CHECKOUT-002", rule: "round totals to cents before charge" },
     ])

@@ -59,26 +59,27 @@ describe('TaskCard', () => {
       const task = createTask({ score: 750 })
       render(<TaskCard task={task} />)
 
-      expect(screen.getByText('[750]')).toBeInTheDocument()
+      // Score is no longer displayed in the card
+      expect(screen.getByText('Test task title')).toBeInTheDocument()
     })
 
     it('renders task status badge', () => {
       const task = createTask({ status: 'active' })
       render(<TaskCard task={task} />)
 
-      expect(screen.getByText('active')).toBeInTheDocument()
+      expect(screen.getByText('Active')).toBeInTheDocument()
     })
 
     it('renders all 8 status types correctly', () => {
       const cases: Array<[string, string]> = [
-        ['backlog', 'backlog'],
-        ['ready', 'ready'],
-        ['planning', 'planning'],
-        ['active', 'active'],
-        ['blocked', 'blocked'],
-        ['review', 'review'],
-        ['human_needs_to_review', 'human needs to review'],
-        ['done', 'done'],
+        ['backlog', 'Backlog'],
+        ['ready', 'Ready'],
+        ['planning', 'Planning'],
+        ['active', 'Active'],
+        ['blocked', 'Blocked'],
+        ['review', 'Review'],
+        ['needs_review', 'Needs Review'],
+        ['done', 'Done'],
       ]
 
       cases.forEach(([status, displayText]) => {
@@ -94,7 +95,7 @@ describe('TaskCard', () => {
       const task = createTask({ blockedBy: ['tx-blocker1', 'tx-blocker2'] })
       render(<TaskCard task={task} />)
 
-      expect(screen.getByText(/Blocked by:/)).toBeInTheDocument()
+      expect(screen.getByText(/Blocked by/)).toBeInTheDocument()
       expect(screen.getByText(/tx-blocker1/)).toBeInTheDocument()
       expect(screen.getByText(/tx-blocker2/)).toBeInTheDocument()
     })
@@ -112,7 +113,7 @@ describe('TaskCard', () => {
       const task = createTask({ blocks: ['tx-blocked1', 'tx-blocked2', 'tx-blocked3'] })
       render(<TaskCard task={task} />)
 
-      expect(screen.getByText(/Unblocks 3 task\(s\)/)).toBeInTheDocument()
+      expect(screen.getByText(/Unblocks 3/)).toBeInTheDocument()
     })
 
     it('hides blocks when empty', () => {
@@ -331,8 +332,8 @@ describe('TaskCard', () => {
       const { container } = render(<TaskCard task={task} />)
 
       const card = container.firstChild as HTMLElement
-      expect(card).toHaveClass('border-zinc-700/40')
-      expect(card).toHaveClass('bg-gray-800/80')
+      expect(card).toHaveClass('border-gray-700')
+      expect(card).toHaveClass('bg-gray-900/60')
     })
 
     it('uses selected styling when task is selected', () => {
@@ -340,8 +341,8 @@ describe('TaskCard', () => {
       const { container } = render(<TaskCard task={task} isSelected={true} />)
 
       const card = container.firstChild as HTMLElement
-      expect(card).toHaveClass('border-blue-400/70')
-      expect(card).toHaveClass('bg-blue-600/20')
+      expect(card).toHaveClass('border-blue-500/60')
+      expect(card).toHaveClass('bg-blue-500/5')
     })
 
     it('uses neutral styling when task is not ready', () => {
@@ -349,7 +350,7 @@ describe('TaskCard', () => {
       const { container } = render(<TaskCard task={task} />)
 
       const card = container.firstChild as HTMLElement
-      expect(card).toHaveClass('border-zinc-700/40')
+      expect(card).toHaveClass('border-gray-700')
     })
   })
 
