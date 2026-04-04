@@ -37,3 +37,6 @@ export {
   type SpecTraceFilter,
 } from "./spec-trace-repo.js"
 export { DecisionRepository, DecisionRepositoryLive } from "./decision-repo.js"
+export { DomainEventRepository, DomainEventRepositoryLive } from "./domain-event-repo.js"
+export { SupervisionRepository, SupervisionRepositoryLive } from "./supervision-repo.js"
+export { DocReviewRepository, DocReviewRepositoryLive } from "./doc-review-repo.js"

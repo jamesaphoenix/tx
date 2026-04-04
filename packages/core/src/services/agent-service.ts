@@ -312,66 +312,87 @@ export const AgentServiceLive = Layer.effect(
               return await runWithCodexCli(config, onMessage)
             }
 
+            const agentTimeoutMs = Number(process.env.TX_AGENT_TIMEOUT_MS) || 600_000
             let text = ""
             let structuredOutput: Record<string, unknown> | null = null
             let errorMessage: string | null = null
+            let timeoutTimer: ReturnType<typeof setTimeout> | null = null
 
             try {
-              for await (const message of queryFn({
-                prompt: config.prompt,
-                options: config.options,
-              })) {
-                if (onMessage) {
-                  onMessage(message)
-                }
-
-                const msg = message as {
-                  type?: string
-                  subtype?: string
-                  result?: string
-                  structured_output?: Record<string, unknown>
-                  errors?: string[]
-                  is_error?: boolean
-                  error?: string
-                  message?: {
-                    content?: Array<{ type?: string; text?: string }>
+              const iterateStream = async (): Promise<void> => {
+                for await (const message of queryFn({
+                  prompt: config.prompt,
+                  options: config.options,
+                })) {
+                  if (onMessage) {
+                    onMessage(message)
                   }
-                }
 
-                if (asNonEmptyString(msg.error)) {
-                  const inlineText = asNonEmptyString(msg.result)
-                  const nestedText = extractMessageText(message as Record<string, unknown>)
-                  errorMessage = nestedText ?? inlineText ?? `Agent SDK error: ${String(msg.error)}`
-                  break
-                }
+                  const msg = message as {
+                    type?: string
+                    subtype?: string
+                    result?: string
+                    structured_output?: Record<string, unknown>
+                    errors?: string[]
+                    is_error?: boolean
+                    error?: string
+                    message?: {
+                      content?: Array<{ type?: string; text?: string }>
+                    }
+                  }
 
-                if (msg.type === "result") {
-                  const errorText =
-                    (Array.isArray(msg.errors) ? msg.errors.find((entry) => asNonEmptyString(entry)) : null)
-                    ?? asNonEmptyString(msg.result)
-                    ?? (msg.subtype ? `Agent SDK ${msg.subtype}` : "Agent SDK unknown error")
-
-                  if (msg.is_error === true || msg.subtype !== "success") {
-                    errorMessage = errorText
+                  if (asNonEmptyString(msg.error)) {
+                    const inlineText = asNonEmptyString(msg.result)
+                    const nestedText = extractMessageText(message as Record<string, unknown>)
+                    errorMessage = nestedText ?? inlineText ?? `Agent SDK error: ${String(msg.error)}`
                     break
                   }
 
-                  text = msg.result ?? ""
-                  structuredOutput = msg.structured_output ?? null
+                  if (msg.type === "result") {
+                    const errorText =
+                      (Array.isArray(msg.errors) ? msg.errors.find((entry) => asNonEmptyString(entry)) : null)
+                      ?? asNonEmptyString(msg.result)
+                      ?? (msg.subtype ? `Agent SDK ${msg.subtype}` : "Agent SDK unknown error")
+
+                    if (msg.is_error === true || msg.subtype !== "success") {
+                      errorMessage = errorText
+                      break
+                    }
+
+                    text = msg.result ?? ""
+                    structuredOutput = msg.structured_output ?? null
+                  }
                 }
               }
+
+              await Promise.race([
+                iterateStream(),
+                new Promise<never>((_, reject) => {
+                  timeoutTimer = setTimeout(() => {
+                    reject(new Error(`Agent SDK timed out after ${agentTimeoutMs}ms`))
+                  }, agentTimeoutMs)
+                  if (timeoutTimer.unref) timeoutTimer.unref()
+                }),
+              ])
             } catch (e) {
-              errorMessage = `Agent SDK stream failed: ${e instanceof Error ? e.message : String(e)}`
+              const msg = e instanceof Error ? e.message : String(e)
+              if (msg.includes("Agent SDK timed out")) {
+                await terminateClaudeSdkChildren()
+              }
+              errorMessage = errorMessage ?? `Agent SDK stream failed: ${msg}`
+            } finally {
+              if (timeoutTimer) clearTimeout(timeoutTimer)
             }
 
             if (errorMessage) {
-              if (isAuthenticationFailure(errorMessage)) {
+              const shouldFallback = isAuthenticationFailure(errorMessage) ||
+                errorMessage.includes("Agent SDK timed out")
+              if (shouldFallback) {
                 await terminateClaudeSdkChildren()
-                // Only fall back to Codex if runtime is "auto"
                 if (runtime === "auto") {
                   return await runWithCodexCli(config, onMessage)
                 }
-                return Promise.reject(new Error(`Agent SDK authentication failed: ${errorMessage}`))
+                return Promise.reject(new Error(`Agent SDK failed: ${errorMessage}`))
               }
               return Promise.reject(new Error(`Agent SDK error: ${errorMessage}`))
             }

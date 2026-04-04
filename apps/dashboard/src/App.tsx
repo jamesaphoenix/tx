@@ -255,8 +255,9 @@ function ChatMessageComponent({ message }: { message: ChatMessage }) {
 
 function SourcePathRow({ label, path }: { label: string; path: string }) {
   return (
-    <div className="text-xs text-gray-500 truncate" title={path}>
-      <span className="text-gray-400">{label}:</span> <code className="text-[11px]">{path}</code>
+    <div className="text-xs text-gray-500 flex min-w-0" title={path}>
+      <span className="text-gray-400 shrink-0">{label}:</span>{" "}
+      <code className="text-[11px] truncate ml-1">{path}</code>
     </div>
   )
 }
@@ -333,16 +334,16 @@ function ChatView({ runId }: { runId: string }) {
   }
 
   if (error) {
-    return <div className="text-red-400 p-4">Error loading run: {String(error)}</div>
+    return <div className="text-red-400 p-4 break-words overflow-hidden">Error loading run: {String(error)}</div>
   }
 
   return (
     <div className="flex flex-col h-full">
       {/* Run Header */}
       {run && (
-        <div className="p-4 border-b border-gray-700 bg-gray-800/50">
+        <div className="p-4 border-b border-gray-700 bg-gray-800/50 overflow-hidden">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <code className="text-sm text-gray-400">{run.id}</code>
               <span className="text-purple-400">{run.agent}</span>
               {isRunning && (
@@ -702,6 +703,7 @@ const DEFAULT_CYCLE_SETTINGS: CycleSettings = {
   cycleLengthDays: 7,
   cycleStartDay: "monday",
   carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+  autoAddStatuses: ["backlog", "ready"],
 }
 
 function normalizeCarryStatuses(statuses: readonly string[]): CycleCarryStatus[] {
@@ -739,10 +741,16 @@ function SettingsPage({
     () => normalizeCarryStatuses(cycleSettings.carryStatuses),
     [cycleSettings.carryStatuses]
   )
+  const normalizedCurrentAutoAddStatuses = useMemo(
+    () => normalizeCarryStatuses(cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses),
+    [cycleSettings.autoAddStatuses]
+  )
   const currentCarryStatusesKey = normalizedCurrentCarryStatuses.join(",")
+  const currentAutoAddStatusesKey = normalizedCurrentAutoAddStatuses.join(",")
   const [draftCycleLengthDays, setDraftCycleLengthDays] = useState(String(cycleSettings.cycleLengthDays))
   const [draftCycleStartDay, setDraftCycleStartDay] = useState(normalizedCycleStartDay)
   const [draftCarryStatuses, setDraftCarryStatuses] = useState<CycleCarryStatus[]>(normalizedCurrentCarryStatuses)
+  const [draftAutoAddStatuses, setDraftAutoAddStatuses] = useState<CycleCarryStatus[]>(normalizedCurrentAutoAddStatuses)
 
   useEffect(() => {
     setDraftType(defaultTaskAssigmentType)
@@ -756,19 +764,22 @@ function SettingsPage({
     setDraftCycleLengthDays(String(cycleSettings.cycleLengthDays))
     setDraftCycleStartDay(normalizedCycleStartDay)
     setDraftCarryStatuses(normalizedCurrentCarryStatuses)
-  }, [cycleSettings.cycleLengthDays, normalizedCycleStartDay, currentCarryStatusesKey, normalizedCurrentCarryStatuses])
+    setDraftAutoAddStatuses(normalizedCurrentAutoAddStatuses)
+  }, [cycleSettings.cycleLengthDays, normalizedCycleStartDay, currentCarryStatusesKey, normalizedCurrentCarryStatuses, currentAutoAddStatusesKey, normalizedCurrentAutoAddStatuses])
 
   const hasAssigmentTypeChanges = draftType !== defaultTaskAssigmentType
   const hasDefaultTaskViewChanges = draftTaskView !== defaultTaskView
   const parsedCycleLengthDays = Number.parseInt(draftCycleLengthDays, 10)
   const hasValidCycleLengthDays = Number.isInteger(parsedCycleLengthDays) && parsedCycleLengthDays > 0
   const normalizedDraftCarryStatuses = normalizeCarryStatuses(draftCarryStatuses)
+  const normalizedDraftAutoAddStatuses = normalizeCarryStatuses(draftAutoAddStatuses)
   const hasCycleSettingChanges =
     hasValidCycleLengthDays &&
     (
       parsedCycleLengthDays !== cycleSettings.cycleLengthDays ||
       draftCycleStartDay !== normalizedCycleStartDay ||
-      normalizedDraftCarryStatuses.join(",") !== currentCarryStatusesKey
+      normalizedDraftCarryStatuses.join(",") !== currentCarryStatusesKey ||
+      normalizedDraftAutoAddStatuses.join(",") !== currentAutoAddStatusesKey
     )
 
   const queryClient = useQueryClient()
@@ -896,17 +907,27 @@ function SettingsPage({
     )
   }, [])
 
+  const toggleAutoAddStatus = useCallback((status: CycleCarryStatus) => {
+    setDraftAutoAddStatuses((current) =>
+      current.includes(status)
+        ? current.filter((existingStatus) => existingStatus !== status)
+        : [...current, status]
+    )
+  }, [])
+
   const saveCycleSettings = useCallback(() => {
     if (!hasValidCycleLengthDays) return
     onSaveCycleSettings({
       cycleLengthDays: parsedCycleLengthDays,
       cycleStartDay: draftCycleStartDay,
       carryStatuses: normalizedDraftCarryStatuses,
+      autoAddStatuses: normalizedDraftAutoAddStatuses,
     })
   }, [
     draftCycleStartDay,
     hasValidCycleLengthDays,
     normalizedDraftCarryStatuses,
+    normalizedDraftAutoAddStatuses,
     onSaveCycleSettings,
     parsedCycleLengthDays,
   ])
@@ -1270,6 +1291,31 @@ function SettingsPage({
               </div>
             </fieldset>
 
+            <fieldset className="mt-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Auto-add to cycle
+              </legend>
+              <p className="mt-1 text-xs text-gray-400">
+                Tasks in selected statuses are automatically added to the current cycle when a new cycle is created or when new tasks are created.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {CYCLE_CARRY_STATUS_OPTIONS.map((status) => (
+                  <label
+                    key={status}
+                    className="flex items-center gap-2 rounded-md border border-gray-700 bg-gray-900/30 px-2.5 py-2 text-sm text-gray-200"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={draftAutoAddStatuses.includes(status)}
+                      onChange={() => toggleAutoAddStatus(status)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+                    />
+                    {CYCLE_CARRY_STATUS_LABELS[status]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <Button
                 size="sm"
@@ -1280,7 +1326,7 @@ function SettingsPage({
                 {isSaving ? "Saving..." : "Save cycle settings"}
               </Button>
               <span className="text-xs text-gray-500">
-                {normalizedDraftCarryStatuses.length} status{normalizedDraftCarryStatuses.length === 1 ? "" : "es"} selected
+                {normalizedDraftCarryStatuses.length} carry-over, {normalizedDraftAutoAddStatuses.length} auto-add
               </span>
             </div>
 
@@ -1677,6 +1723,7 @@ function AppContent() {
             themeMode={themeMode}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
             defaultTaskView={defaultTaskView}
+            autoAddStatuses={cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses}
             newTaskRequestNonce={newTaskRequestNonce}
           />
         ) : activeTab === "docs" ? (
@@ -1747,7 +1794,7 @@ function AppContent() {
             }}
           />
         ) : (
-          <CyclePage key={`cycles:${tabResetKey}`} themeMode={themeMode} />
+          <CyclePage key={`cycles:${tabResetKey}`} themeMode={themeMode} autoAddStatuses={cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses} />
         )}
       </main>
     </div>

@@ -95,3 +95,39 @@ export const resolvePathWithin = (
   const resolvedTarget = resolve(baseDir, targetPath)
   return isPathWithin(baseDir, resolvedTarget, options) ? resolvedTarget : null
 }
+
+/**
+ * Walk up from startDir looking for the project root.
+ * Strategy: find the nearest `.git` directory (project root anchor),
+ * then use that as the tx root. This prevents stale `.tx` directories
+ * in monorepo sub-packages from being used instead of the real root.
+ *
+ * Fallback order:
+ * 1. Nearest directory containing `.git` (project root)
+ * 2. startDir (CWD) if no `.git` found
+ */
+export const findTxRoot = (startDir: string = process.cwd()): string => {
+  let current = resolve(startDir)
+
+  // Walk up looking for .git (the true project root)
+  while (true) {
+    if (existsSync(resolve(current, ".git"))) {
+      return current
+    }
+
+    const parent = dirname(current)
+    if (parent === current) {
+      // Reached filesystem root without finding .git
+      return resolve(startDir)
+    }
+    current = parent
+  }
+}
+
+/**
+ * Resolve the default tx database path by walking up to find the project root.
+ * Falls back to `<cwd>/.tx/tasks.db` when no project root is found.
+ */
+export const resolveTxDbPath = (startDir: string = process.cwd()): string => {
+  return resolve(findTxRoot(startDir), ".tx", "tasks.db")
+}

@@ -41,6 +41,7 @@ export interface TasksPageProps {
   themeMode?: ThemeMode
   defaultTaskAssigmentType?: TaskAssigneeType
   defaultTaskView?: "list" | "kanban"
+  autoAddStatuses?: string[]
   /**
    * Incrementing signal from the app shell to request opening the
    * task composer even before page-level shortcut registration settles.
@@ -327,6 +328,7 @@ export function TasksPage({
   themeMode = "light",
   defaultTaskAssigmentType = "human",
   defaultTaskView = "list",
+  autoAddStatuses = [],
   newTaskRequestNonce = 0
 }: TasksPageProps) {
   const isDarkTheme = themeMode === "dark"
@@ -632,6 +634,18 @@ export function TasksPage({
       ])
     }
 
+    // Auto-add to current cycle if task status matches autoAddStatuses
+    if (autoAddStatuses.length > 0 && autoAddStatuses.includes(payload.stage)) {
+      const currentCycle = cycles.find((c) => c.status === "current")
+      if (currentCycle) {
+        try {
+          await fetchers.addTasksToCycle(currentCycle.id, [created.id])
+        } catch {
+          // Non-critical: task was created, auto-add to cycle failed silently
+        }
+      }
+    }
+
     setComposerFallbackLabels({})
     await invalidateTaskQueries()
 
@@ -647,7 +661,7 @@ export function TasksPage({
     }
 
     closeComposer()
-  }, [closeComposer, composerFallbackLabels, invalidateTaskQueries, queryClient])
+  }, [closeComposer, composerFallbackLabels, invalidateTaskQueries, queryClient, autoAddStatuses, cycles])
 
   const createLabel = useCallback(async (payload: { name: string; color?: string }): Promise<TaskLabel | null> => {
     const normalizedName = payload.name.trim()

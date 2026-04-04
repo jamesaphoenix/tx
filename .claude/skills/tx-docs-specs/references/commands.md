@@ -55,7 +55,7 @@ Options:
   --parent, -p <task-id>   Reuse an existing task as the graph root
   --runtime <runtime>      Agent runtime: auto, claude, codex (default: auto)
   --model <name>           Optional model hint for the runtime
-  --max-tasks <n>          Maximum generated tasks (default: 12)
+  --max-tasks <n>          Maximum generated tasks (omit for best results)
   --root-title <text>      Override the generated root task title
   --score <n>              Override root task score when creating a root
   --dry-run                Validate and print the graph without writing tasks

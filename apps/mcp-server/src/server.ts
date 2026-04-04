@@ -12,6 +12,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { resolveTxDbPath } from "@jamesaphoenix/tx-core"
 import { initRuntime, disposeRuntime } from "./runtime.js"
 import { registerTaskTools } from "./tools/task.js"
 import { registerDecomposeTools } from "./tools/decompose.js"
@@ -125,7 +126,7 @@ export const createMcpServer = (): McpServer => {
  * Initializes runtime and begins accepting tool calls.
  * Registers graceful shutdown handlers for SIGINT/SIGTERM.
  */
-export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => {
+export const startMcpServer = async (dbPath = resolveTxDbPath()): Promise<void> => {
   // Initialize runtime (runs migrations, builds service layer ONCE)
   await initRuntime(dbPath)
 
@@ -179,7 +180,7 @@ export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => 
  */
 const main = async (): Promise<void> => {
   const args = process.argv.slice(2)
-  let dbPath = ".tx/tasks.db"
+  let dbPath = resolveTxDbPath()
 
   // Simple argument parsing
   for (let i = 0; i < args.length; i++) {

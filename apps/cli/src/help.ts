@@ -145,7 +145,7 @@ Options:
   --parent, -p <task-id>   Reuse an existing task as the graph root
   --runtime <runtime>      Agent runtime: auto, claude, codex (default: auto)
   --model <name>           Optional model hint for the runtime
-  --max-tasks <n>          Maximum generated tasks (default: 12)
+  --max-tasks <n>          Maximum generated tasks (omit for best results)
   --root-title <text>      Override the generated root task title
   --score <n>              Override root task score when creating a root
   --dry-run                Validate and print the graph without writing tasks
@@ -154,7 +154,7 @@ Options:
 
 Examples:
   tx decompose auth-flow-design
-  tx decompose auth-flow-design --runtime claude --max-tasks 10
+  tx decompose auth-flow-design --runtime claude
   tx decompose auth-flow-design --parent tx-abc123 --runtime codex
   tx decompose auth-flow-design --dry-run --json`,
 

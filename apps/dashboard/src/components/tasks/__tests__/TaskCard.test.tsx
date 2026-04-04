@@ -332,8 +332,8 @@ describe('TaskCard', () => {
       const { container } = render(<TaskCard task={task} />)
 
       const card = container.firstChild as HTMLElement
-      expect(card).toHaveClass('border-gray-800/80')
-      expect(card).toHaveClass('bg-gray-900/40')
+      expect(card).toHaveClass('border-gray-700')
+      expect(card).toHaveClass('bg-gray-900/60')
     })
 
     it('uses selected styling when task is selected', () => {
@@ -350,7 +350,7 @@ describe('TaskCard', () => {
       const { container } = render(<TaskCard task={task} />)
 
       const card = container.firstChild as HTMLElement
-      expect(card).toHaveClass('border-gray-800/80')
+      expect(card).toHaveClass('border-gray-700')
     })
   })
 

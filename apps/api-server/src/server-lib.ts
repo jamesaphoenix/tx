@@ -11,7 +11,7 @@ import { HttpApiBuilder } from "@effect/platform"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { createServer } from "node:http"
-import { makeAppLayer, LlmServiceNoop } from "@jamesaphoenix/tx-core"
+import { makeAppLayer, LlmServiceNoop, resolveTxDbPath } from "@jamesaphoenix/tx-core"
 import { TasksLive } from "./routes/tasks.js"
 import { HealthLive } from "./routes/health.js"
 import { LearningsLive } from "./routes/learnings.js"
@@ -78,7 +78,7 @@ export const makeServerLive = (options: {
 }) => {
   const port = options.port ?? parseInt(process.env.TX_API_PORT ?? "3001", 10)
   const host = options.hostname ?? process.env.TX_API_HOST ?? "127.0.0.1"
-  const dbPath = options.dbPath ?? process.env.TX_DB_PATH ?? ".tx/tasks.db"
+  const dbPath = options.dbPath ?? process.env.TX_DB_PATH ?? resolveTxDbPath()
 
   const appLayer = makeAppLayer(dbPath)
 

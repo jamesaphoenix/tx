@@ -29,6 +29,8 @@ import maxServiceLines from './rules/max-service-lines.js';
 import preferServiceFolderModules from './rules/prefer-service-folder-modules.js';
 import requireCliUserErrors from './rules/require-cli-user-errors.js';
 import requireCliHelpCoverage from './rules/require-cli-help-coverage.js';
+import noSupervisionSqlOutsideCore from './rules/no-supervision-sql-outside-core.js';
+import noDomainEventsSqlOutsideCore from './rules/no-domain-events-sql-outside-core.js';
 
 const CLI_USER_ERROR_IGNORE_PATHS = [
   'apps/cli/src/commands/bulk.ts',
@@ -109,7 +111,9 @@ const plugin = {
     'max-service-lines': maxServiceLines,
     'prefer-service-folder-modules': preferServiceFolderModules,
     'require-cli-user-errors': requireCliUserErrors,
-    'require-cli-help-coverage': requireCliHelpCoverage
+    'require-cli-help-coverage': requireCliHelpCoverage,
+    'no-supervision-sql-outside-core': noSupervisionSqlOutsideCore,
+    'no-domain-events-sql-outside-core': noDomainEventsSqlOutsideCore
   },
   // Flat config recommended configuration
   configs: {
@@ -203,6 +207,14 @@ const plugin = {
         'tx/max-service-lines': ['warn', {
           warnAt: 500,
           errorAt: 1000
+        }],
+        'tx/no-supervision-sql-outside-core': ['error', {
+          allowedPaths: ['packages/core/src/repo/', 'migrations/', 'test/', 'tests/', '__tests__/'],
+          tablePatterns: ['worker_sessions']
+        }],
+        'tx/no-domain-events-sql-outside-core': ['error', {
+          allowedPaths: ['packages/core/src/repo/', 'migrations/', 'test/', 'tests/', '__tests__/'],
+          tablePatterns: ['domain_events', 'doc_review_runs']
         }]
       }
     }

@@ -11,6 +11,7 @@ type ThemeMode = "light" | "dark"
 
 interface CyclePageProps {
   themeMode?: ThemeMode
+  autoAddStatuses?: string[]
 }
 
 function sortCyclesByStartDesc<T extends { startDate: string }>(cycles: T[]): T[] {
@@ -33,7 +34,9 @@ function writeCycleUrl(cycleId: string | null) {
   window.history.pushState(null, "", url)
 }
 
-export function CyclePage({ themeMode = "dark" }: CyclePageProps) {
+const DEFAULT_AUTO_ADD_STATUSES = ["backlog", "ready"]
+
+export function CyclePage({ themeMode = "dark", autoAddStatuses = DEFAULT_AUTO_ADD_STATUSES }: CyclePageProps) {
   const isDarkTheme = themeMode === "dark"
   const queryClient = useQueryClient()
   const [selectedCycleId, setSelectedCycleId] = useState<string | null>(readCycleIdFromUrl)
@@ -53,7 +56,24 @@ export function CyclePage({ themeMode = "dark" }: CyclePageProps) {
   }, [])
 
   const { mutate: createCycle, isPending: isCreateCyclePending } = useMutation({
-    mutationFn: () => fetchers.createCycle(),
+    mutationFn: async () => {
+      const createdCycle = await fetchers.createCycle()
+      // Auto-add tasks with matching statuses to the new cycle
+      if (autoAddStatuses.length > 0) {
+        try {
+          const { tasks } = await fetchers.tasks()
+          const matchingTaskIds = tasks
+            .filter((task) => autoAddStatuses.includes(task.status))
+            .map((task) => task.id)
+          if (matchingTaskIds.length > 0) {
+            await fetchers.addTasksToCycle(createdCycle.id, matchingTaskIds)
+          }
+        } catch {
+          // Non-critical: cycle was created, auto-add failed silently
+        }
+      }
+      return createdCycle
+    },
     onSuccess: async (createdCycle) => {
       await queryClient.invalidateQueries({ queryKey: ["cycles"] })
       selectCycle(createdCycle.id)
