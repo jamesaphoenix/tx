@@ -485,8 +485,10 @@ describe("Memory Audit P0 Tests", () => {
 
           // Verify data exists before removal
           const docsBefore = yield* svc.listDocuments()
-          const linksBefore = yield* svc.getLinks(docsBefore[0]!.id)
-          const propsBefore = yield* svc.getProperties(docsBefore[0]!.id)
+          // Doc A has the [[b]] wikilink — find it by title so order doesn't matter
+          const docA = docsBefore.find(d => d.title === "Doc A") ?? docsBefore[0]!
+          const linksBefore = yield* svc.getLinks(docA.id)
+          const propsBefore = yield* svc.getProperties(docA.id)
 
           // Remove the source
           yield* svc.removeSource(tempDir)

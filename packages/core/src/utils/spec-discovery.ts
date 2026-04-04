@@ -313,10 +313,16 @@ const dedupeDiscovered = (rows: readonly DiscoveredTest[]): DiscoveredTest[] => 
 
 /**
  * Discover spec-test mappings from source annotations + manifest.
+ *
+ * Two-pass scan:
+ * 1. Test files (matched by `patterns`) — scanned for both [INV-*] tags and @spec comments
+ * 2. Source files (matched by `sourcePatterns`) — scanned ONLY for @spec comments (structural annotations)
+ *    Source files that already matched test patterns are skipped to avoid duplicates.
  */
 export const discoverSpecTests = async (
   rootDir: string,
-  patterns: readonly string[]
+  patterns: readonly string[],
+  sourcePatterns?: readonly string[]
 ): Promise<DiscoveryScanResult> => {
   const absoluteRoot = resolve(rootDir)
   const expandedPatterns = patterns
@@ -334,8 +340,11 @@ export const discoverSpecTests = async (
   let tagLinks = 0
   let commentLinks = 0
 
+  const scannedPaths = new Set<string>()
+
   for (const absPath of matchingFiles) {
     const relPath = toNormalizedRelativePath(absoluteRoot, absPath)
+    scannedPaths.add(absPath)
     let content: string
     try {
       content = await readFile(absPath, "utf8")
@@ -349,6 +358,39 @@ export const discoverSpecTests = async (
     discovered.push(...commentMatches)
   }
 
+  // Pass 2: scan source files for @spec comments (structural annotations)
+  const resolvedSourcePatterns = sourcePatterns ?? defaultSourcePatterns()
+  const expandedSourcePatterns = resolvedSourcePatterns
+    .flatMap((pattern) => expandBracePatterns(pattern))
+    .map((pattern) => normalizePathSeparators(pattern))
+  const compiledSourcePatterns = expandedSourcePatterns.map((pattern) => globToRegExp(pattern))
+
+  const sourceFiles = files.filter((absPath) => {
+    if (scannedPaths.has(absPath)) return false
+    const rel = toNormalizedRelativePath(absoluteRoot, absPath)
+    return compiledSourcePatterns.some((regex) => regex.test(rel))
+  })
+
+  let sourceFilesScanned = 0
+  for (const absPath of sourceFiles) {
+    const relPath = toNormalizedRelativePath(absoluteRoot, absPath)
+    let content: string
+    try {
+      content = await readFile(absPath, "utf8")
+    } catch {
+      continue
+    }
+    // Only scan for @spec comments in source files (not [INV-*] tags)
+    COMMENT_SPEC_PATTERN.lastIndex = 0
+    const hasSpecComment = COMMENT_SPEC_PATTERN.test(content)
+    if (!hasSpecComment) continue
+
+    sourceFilesScanned += 1
+    const { commentMatches } = parseFileAnnotations(relPath, content)
+    commentLinks += commentMatches.length
+    discovered.push(...commentMatches)
+  }
+
   const manifestDiscovered = await parseManifest(absoluteRoot)
   const manifestLinks = manifestDiscovered.length
   discovered.push(...manifestDiscovered)
@@ -356,7 +398,7 @@ export const discoverSpecTests = async (
   const deduped = dedupeDiscovered(discovered)
 
   return {
-    scannedFiles: matchingFiles.length,
+    scannedFiles: matchingFiles.length + sourceFilesScanned,
     discovered: deduped,
     tagLinks,
     commentLinks,
@@ -375,17 +417,50 @@ export const readSpecManifest = async (rootDir: string): Promise<readonly Discov
  * Convenience helper used by CLI and services for defaults.
  */
 export const defaultSpecTestPatterns = (): readonly string[] => [
+  "**/*.test.{ts,js,tsx,jsx}",
+  "**/*.integration.test.{ts,js,tsx,jsx}",
+  "**/*.spec.{ts,js,tsx,jsx}",
   "test/**/*.test.{ts,js,tsx,jsx}",
   "tests/**/*.py",
+  "**/test_*.py",
   "**/*_test.go",
   "**/*_test.rs",
-  "**/test_*.py",
-  "**/*.spec.{ts,js,tsx,jsx}",
   "**/Test*.java",
   "**/*Test.java",
   "**/*_spec.rb",
   "**/*.test.{c,cpp,cc}",
   "**/*_test.{c,cpp,cc}",
+  "**/*.pgtap.sql",
+]
+
+/**
+ * Source file patterns scanned for @spec comments (structural annotations).
+ * These are scanned separately from test patterns to find invariant
+ * enforcement in source code (schema files, domain code, etc.).
+ */
+export const defaultSourcePatterns = (): readonly string[] => [
+  "**/*.{ts,js,tsx,jsx,mts,mjs,cts,cjs}",
+  "**/*.py",
+  "**/*.go",
+  "**/*.rs",
+  "**/*.java",
+  "**/*.{kt,kts}",
+  "**/*.scala",
+  "**/*.rb",
+  "**/*.sql",
+  "**/*.{c,cpp,cc,h,hpp}",
+  "**/*.cs",
+  "**/*.swift",
+  "**/*.{ex,exs}",
+  "**/*.{clj,cljs,cljc}",
+  "**/*.{hs,lhs}",
+  "**/*.lua",
+  "**/*.php",
+  "**/*.{r,R}",
+  "**/*.zig",
+  "**/*.nim",
+  "**/*.ml",
+  "**/*.dart",
 ]
 
 /**

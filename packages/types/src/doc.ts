@@ -118,9 +118,18 @@ export const DocIdSchema = Schema.Number.pipe(
 )
 export type DocId = typeof DocIdSchema.Type
 
+/** Stable external doc ID — immutable identifier stored in frontmatter + DB. */
+export const DOC_STABLE_ID_PATTERN = /^doc-[a-f0-9]{12}$/
+export const DocStableIdSchema = Schema.String.pipe(
+  Schema.pattern(DOC_STABLE_ID_PATTERN),
+  Schema.brand("DocStableId")
+)
+export type DocStableId = typeof DocStableIdSchema.Type
+
 /** Core doc entity (DB metadata — YAML content lives on disk only). */
 export const DocSchema = Schema.Struct({
   id: DocIdSchema,
+  docId: DocStableIdSchema,
   hash: Schema.String,
   kind: DocKindSchema,
   name: Schema.String,
@@ -373,6 +382,7 @@ export type MdDate = typeof MdDateSchema.Type
 export const MdFrontmatterSchema = Schema.Struct({
   kind: Schema.Literal("spec"),
   spec_type: MdSpecTypeSchema,
+  doc_id: Schema.optional(DocStableIdSchema),
   name: MdNameSchema,
   title: Schema.String,
   status: MdSpecStatusSchema,
@@ -531,6 +541,7 @@ export type MdParsedDoc = typeof MdParsedDocSchema.Type
 /** Common header fields shared by all doc kinds. */
 const YamlHeaderFields = {
   kind: DocKindSchema,
+  doc_id: Schema.optional(DocStableIdSchema),
   name: Schema.String,
   title: Schema.String,
 }
@@ -856,6 +867,7 @@ export type DocGraph = typeof DocGraphSchema.Type
 /** Database row type for docs (snake_case from SQLite). */
 export interface DocRow {
   id: number
+  doc_id: string | null
   hash: string
   kind: string
   name: string

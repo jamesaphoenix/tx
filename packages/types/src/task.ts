@@ -6,6 +6,7 @@
  */
 
 import { Schema } from "effect"
+import { DocKindSchema, DocStatusSchema, DocStableIdSchema, TaskDocLinkTypeSchema } from "./doc.js"
 
 // =============================================================================
 // CONSTANTS
@@ -111,6 +112,19 @@ export const TaskSchema = Schema.Struct({
 })
 export type Task = typeof TaskSchema.Type
 
+/** Compact linked-doc reference attached to a task payload. */
+export const TaskLinkedDocRefSchema = Schema.Struct({
+  docId: DocStableIdSchema,
+  name: Schema.String,
+  title: Schema.String,
+  kind: DocKindSchema,
+  version: Schema.Number.pipe(Schema.int()),
+  status: DocStatusSchema,
+  filePath: Schema.String,
+  linkType: TaskDocLinkTypeSchema,
+})
+export type TaskLinkedDocRef = typeof TaskLinkedDocRefSchema.Type
+
 /**
  * Task with full dependency information.
  * This is the REQUIRED return type for all external APIs (Rule 1).
@@ -139,6 +153,8 @@ export const TaskWithDepsSchema = Schema.Struct({
   claimExpiresAt: Schema.NullOr(Schema.DateFromSelf),
   /** Number of failed attempts for this task */
   failedAttempts: Schema.Number.pipe(Schema.int()),
+  /** Docs linked to this task via task_doc_links */
+  linkedDocs: Schema.Array(TaskLinkedDocRefSchema),
 })
 export type TaskWithDeps = typeof TaskWithDepsSchema.Type
 

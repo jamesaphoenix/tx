@@ -1,26 +1,11 @@
 # Documentation Index
 
-## Requirements Documents
+**Description**: Search map for subsystem PRDs and design docs. Use this file to find the authoritative spec by feature area, domain term, or implementation concern.
 
-| Name | Title | Status |
-|------|-------|--------|
-| [test-auth-flows](requirement/test-auth-flows.md) | Auth Flows | changing |
+**Search Keywords**: sample-prd, Sample PRD, sample, prd
 
 ## Product Requirements Documents
 
-| Name | Title | Status |
-|------|-------|--------|
-| [auth-prd](prd/auth-prd.md) | Auth PRD | changing |
-| [req-test](prd/req-test.md) | Req Test | changing |
-
-## System Design Documents
-
-| Name | Title | Status |
-|------|-------|--------|
-| [error-handling](system_design/error-handling.md) | Error Handling | changing |
-
-## Document Links
-
-| From | To | Type |
-|------|-----|------|
-| test-auth-flows | auth-prd | requirement_to_prd |
+| Name | Title | Description | Search Keywords | Status |
+|------|-------|-------------|-----------------|--------|
+| [sample-prd](prd/sample-prd.md) | Sample PRD | Product requirements for Sample PRD. | sample, prd | changing |

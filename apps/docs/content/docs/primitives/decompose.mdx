@@ -1,0 +1,150 @@
+---
+title: tx decompose
+description: Turn a design doc into an explicit tx task graph
+---
+
+import { Callout } from "fumadocs-ui/components/callout"
+import { Tab, Tabs } from "fumadocs-ui/components/tabs"
+
+## Purpose
+
+`tx decompose` takes a design doc and turns it into a first-pass task graph.
+Use it after the PRD and design doc exist, and before agents start
+implementing ad hoc work from a large undifferentiated spec.
+
+It validates the design doc, asks the selected runtime for a structured
+decomposition plan, and then either previews or materializes the graph.
+
+<Callout type="info" title="Dry Run First">
+Use `dryRun: true` or `--dry-run` when the graph shape is still under review.
+The response includes the validated root preview, generated tasks, and
+rationale without writing any tasks or dependencies.
+</Callout>
+
+## What Gets Created
+
+- If `parentTaskId` is omitted, tx creates a new root implementation task from the plan.
+- If `parentTaskId` is provided, tx uses that task as the root and creates the generated tasks beneath it.
+- The root task gets an `implements` link to the design doc.
+- Generated tasks get `references` links to the design doc.
+- Top-level generated tasks block the root task so the umbrella item only becomes ready when the graph is complete.
+
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# Preview the validated graph without writing tasks
+tx decompose auth-flow-design --dry-run --json
+
+# Materialize a graph with the default runtime selection
+tx decompose auth-flow-design
+
+# Force a specific runtime
+tx decompose auth-flow-design --runtime codex
+tx decompose auth-flow-design --runtime claude
+
+# Decompose under an existing root task
+tx decompose auth-flow-design --parent tx-abc123
+```
+
+Useful flags:
+
+- `--runtime <auto|claude|codex>`
+- `--model <name>`
+- `--max-tasks <n>`
+- `--root-title <text>`
+- `--score <n>`
+- `--dry-run`
+- `--json`
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```ts
+import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
+
+const tx = new TxClient({ apiUrl: "http://localhost:3456" })
+
+const preview = await tx.decompose.run({
+  docRef: "auth-flow-design",
+  runtime: "codex",
+  dryRun: true,
+})
+
+const materialized = await tx.decompose.run({
+  docRef: "auth-flow-design",
+  parentTaskId: "tx-abc123",
+  maxTasks: 8,
+})
+```
+
+The SDK returns the same serialized result shape used by the REST API:
+`doc`, `rootTaskPreview`, `plan`, `createdTasks`, optional `rootTask`, and
+optional `rationale`.
+
+</Tab>
+<Tab value="MCP">
+
+**Tool name:** `tx_decompose`
+
+**Arguments:**
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `docRef` | `string` | Yes | Design doc reference (`name`, `kind/name`, or stable `doc_id`) |
+| `parentTaskId` | `string` | No | Existing root task to decompose under |
+| `runtime` | `"auto" \| "claude" \| "codex"` | No | Runtime used for plan generation |
+| `model` | `string` | No | Optional model override |
+| `maxTasks` | `number` | No | Maximum generated task count |
+| `rootTitle` | `string` | No | Override the root task title |
+| `rootScore` | `number` | No | Override the root task score |
+| `dryRun` | `boolean` | No | Preview only; do not write tasks |
+
+**Example request:**
+
+```json
+{
+  "name": "tx_decompose",
+  "arguments": {
+    "docRef": "auth-flow-design",
+    "runtime": "codex",
+    "dryRun": true
+  }
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST http://localhost:3456/api/decompose \
+  -H "Content-Type: application/json" \
+  -d '{
+    "docRef": "auth-flow-design",
+    "runtime": "codex",
+    "dryRun": true
+  }'
+```
+
+Request body fields match the SDK and MCP arguments.
+
+</Tab>
+</Tabs>
+
+## Recommended Flow
+
+1. Create and link the PRD and design doc with `tx doc`.
+2. Run `tx spec status --doc <design-doc-ref>` to confirm the spec is in a usable state.
+3. Run `tx decompose <design-doc-ref> --dry-run` and review the plan.
+4. Materialize the graph with `tx decompose <design-doc-ref>`.
+5. Refine the graph with normal task primitives such as `tx add`, `tx dep block`, `tx update`, and `tx doc attach`.
+
+## Agent Skills
+
+`tx init --claude` and `tx init --codex` scaffold a `decompose-spec` skill.
+Use it when an agent already has a design doc and needs an explicit instruction
+path for creating or revising the first task graph. If the project already has
+tx-managed bundles installed, use [`tx skills sync`](/docs/primitives/skills) to
+refresh that skill in place.

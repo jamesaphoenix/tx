@@ -5,7 +5,7 @@ import { Schema } from "effect"
 import {
   TASK_STATUSES, TaskAssigneeTypeSchema,
   ANCHOR_TYPES, EDGE_TYPES, NODE_TYPES,
-  DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, TASK_DOC_LINK_TYPES,
+  DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, DOC_STABLE_ID_PATTERN, TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES,
   DECISION_STATUSES, DECISION_SOURCES,
 } from "@jamesaphoenix/tx-types"
@@ -378,6 +378,9 @@ export const SyncDocStatusSchema = Schema.Literal(...DOC_STATUSES)
 const SyncDocNameSchema = Schema.String.pipe(
   Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
 )
+const SyncDocStableIdSchema = Schema.String.pipe(
+  Schema.pattern(DOC_STABLE_ID_PATTERN)
+)
 // Doc file paths must be relative and must not include traversal segments.
 const SyncDocFilePathSchema = Schema.String.pipe(
   Schema.pattern(/^(?![\\/])(?![A-Za-z]:[\\/])(?!.*(?:^|[\\/])\.\.(?:[\\/]|$))(?!.*(?:^|[\\/])\.(?:[\\/]|$)).+$/)
@@ -385,6 +388,7 @@ const SyncDocFilePathSchema = Schema.String.pipe(
 
 // Doc data embedded in upsert operations
 export const DocDataSchema = Schema.Struct({
+  docId: Schema.optional(SyncDocStableIdSchema),
   kind: SyncDocKindSchema,
   name: SyncDocNameSchema,
   title: Schema.String,
@@ -398,7 +402,7 @@ export const DocDataSchema = Schema.Struct({
 })
 
 // Doc upsert operation
-// contentHash: SHA256(kind + name + version) for cross-machine dedup
+// contentHash: SHA256(docId + version + hash) for cross-machine dedup
 const DocUpsertOpSchema = Schema.Struct({
   v: SyncVersion,
   op: Schema.Literal("doc_upsert"),
@@ -469,6 +473,7 @@ export const SyncTaskDocLinkTypeSchema = Schema.Literal(...TASK_DOC_LINK_TYPES)
 // Task doc link data
 export const TaskDocLinkDataSchema = Schema.Struct({
   taskId: Schema.String,
+  // New format is doc_id:version; legacy name:version remains import-compatible.
   docKey: Schema.String,
   linkType: SyncTaskDocLinkTypeSchema
 })
@@ -505,6 +510,7 @@ export const InvariantDataSchema = Schema.Struct({
   id: Schema.String,
   rule: Schema.String,
   enforcement: SyncInvariantEnforcementSchema,
+  // New format is doc_id:version; legacy name:version remains import-compatible.
   docKey: Schema.String,
   subsystem: Schema.NullOr(Schema.String),
   testRef: Schema.NullOr(Schema.String),
@@ -597,6 +603,7 @@ export const DecisionDataSchema = Schema.Struct({
   commitSha: Schema.NullOr(Schema.String),
   runId: Schema.NullOr(Schema.String),
   taskId: Schema.NullOr(Schema.String),
+  // New format is doc_id:version; legacy name:version remains import-compatible.
   docKey: Schema.NullOr(Schema.String),
   invariantId: Schema.NullOr(Schema.String),
   reviewedBy: Schema.NullOr(Schema.String),

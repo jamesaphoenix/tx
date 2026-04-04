@@ -56,7 +56,7 @@ const primitives = [
   { name: 'tx ready', desc: 'Get next workable task' },
   { name: 'tx claim', desc: 'Prevent collisions' },
   { name: 'tx done', desc: 'Complete task' },
-  { name: 'tx block', desc: 'Declare dependencies' },
+  { name: 'tx dep block', desc: 'Declare dependencies' },
   { name: 'tx memory', desc: 'Persist knowledge across sessions' },
   { name: 'tx spec', desc: 'Spec-driven development' },
 ];

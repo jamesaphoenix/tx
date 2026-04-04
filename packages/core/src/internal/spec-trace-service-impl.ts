@@ -549,6 +549,33 @@ const parseGenericBatch = (value: unknown): BatchRunInput[] => {
   return out
 }
 
+/**
+ * Strip common absolute path prefixes to produce a relative path.
+ * Handles both Unix and Windows paths. Tries to detect the repo root
+ * by looking for common project markers in the path.
+ */
+const normalizeVitestFilePath = (filePath: string): string => {
+  const normalized = filePath.replace(/\\/g, "/")
+
+  // If already relative, return as-is
+  if (!normalized.startsWith("/") && !/^[A-Za-z]:\//.test(normalized)) {
+    return normalized
+  }
+
+  // Try to find the repo-relative path by detecting common monorepo markers
+  const markers = ["/apps/", "/packages/", "/src/", "/test/", "/tests/", "/lib/"]
+  for (const marker of markers) {
+    const idx = normalized.indexOf(marker)
+    if (idx >= 0) {
+      return normalized.slice(idx + 1)
+    }
+  }
+
+  // Fallback: use just the filename
+  const lastSlash = normalized.lastIndexOf("/")
+  return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized
+}
+
 const parseVitestBatch = (value: unknown): BatchRunInput[] => {
   const out: BatchRunInput[] = []
 
@@ -568,7 +595,8 @@ const parseVitestBatch = (value: unknown): BatchRunInput[] => {
         name?: unknown
         assertionResults?: unknown
       }
-      const fileName = typeof fileObj.name === "string" ? fileObj.name.replace(/\\/g, "/") : "vitest"
+      const rawFileName = typeof fileObj.name === "string" ? fileObj.name.replace(/\\/g, "/") : "vitest"
+      const relFileName = normalizeVitestFilePath(rawFileName)
       if (!Array.isArray(fileObj.assertionResults)) continue
 
       for (const assertion of fileObj.assertionResults) {
@@ -580,11 +608,6 @@ const parseVitestBatch = (value: unknown): BatchRunInput[] => {
           duration?: unknown
           failureMessages?: unknown
         }
-        const testName = typeof a.fullName === "string" && a.fullName.length > 0
-          ? a.fullName
-          : typeof a.title === "string"
-            ? a.title
-            : "vitest"
         const status = typeof a.status === "string" ? a.status : "failed"
         if (status !== "passed" && status !== "pass" && status !== "failed" && status !== "fail") {
           continue
@@ -592,13 +615,40 @@ const parseVitestBatch = (value: unknown): BatchRunInput[] => {
         const details = Array.isArray(a.failureMessages)
           ? a.failureMessages.filter((x): x is string => typeof x === "string").join("\n")
           : undefined
+        const passed = status === "passed" || status === "pass"
+        const durationMs = typeof a.duration === "number" ? Math.max(0, Math.trunc(a.duration)) : undefined
 
-        out.push({
-          testId: `${fileName}::${testName}`,
-          passed: status === "passed" || status === "pass",
-          durationMs: typeof a.duration === "number" ? Math.max(0, Math.trunc(a.duration)) : undefined,
-          details,
-        })
+        // Emit with title (it-level name, matches discover's tag extraction)
+        const title = typeof a.title === "string" && a.title.length > 0 ? a.title : null
+        if (title) {
+          out.push({
+            testId: `${relFileName}::${title}`,
+            passed,
+            durationMs,
+            details,
+          })
+        }
+
+        // Also emit with fullName (describe chain + title) for broader matching
+        const fullName = typeof a.fullName === "string" && a.fullName.length > 0 ? a.fullName : null
+        if (fullName && fullName !== title) {
+          out.push({
+            testId: `${relFileName}::${fullName}`,
+            passed,
+            durationMs,
+            details,
+          })
+        }
+
+        // Fallback if neither
+        if (!title && !fullName) {
+          out.push({
+            testId: `${relFileName}::vitest`,
+            passed,
+            durationMs,
+            details,
+          })
+        }
       }
     }
   }

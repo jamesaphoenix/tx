@@ -36,17 +36,17 @@ Commands:
   update <id>             Update task
   done <id>               Mark task complete
   delete <id>             Delete task
-  block <id> <blocker>    Add blocking dependency
-  unblock <id> <blocker>  Remove blocking dependency
+  dep block <id> <blocker>    Add blocking dependency
+  dep unblock <id> <blocker>  Remove blocking dependency
   children <id>           List child tasks
-  tree <id>               Show task subtree
+  dep tree <id>               Show task subtree
   path <id>               Show ancestors to root
   score <id> [value]      Get or set task score
   blockers <id>           Show what blocks this task
   blocking <id>           Show what this task blocks
   dedupe                  Find duplicate tasks
-  compact                 Compact completed tasks
-  history                 Show compaction history
+  sync compact             Compact completed tasks
+  sync history             Show compaction history
   export                  Export to JSON
   import <file>           Import from JSON
 
@@ -252,7 +252,7 @@ const doneCmd = Command.make(
     })
 )
 
-// tx block <id> <blocker>
+// tx dep block <id> <blocker>
 const blockCmd = Command.make(
   "block",
   {
@@ -277,7 +277,7 @@ const blockCmd = Command.make(
     })
 )
 
-// tx compact
+// tx sync compact
 const compactCmd = Command.make(
   "compact",
   {
@@ -541,8 +541,8 @@ Commands are split by layer requirement:
 
 | Commands | Layer | API Key Needed |
 |----------|-------|----------------|
-| `init`, `add`, `list`, `ready`, `show`, `update`, `done`, `delete`, `block`, `unblock`, `children`, `tree`, `path`, `score`, `blockers`, `blocking`, `export`, `import` | `AppMinimalLive` | No |
-| `dedupe`, `compact`, `reprioritize`, `history` (read-only, no key) | `AppLive` or `AppMinimalLive` | Only dedupe/compact/reprioritize |
+| `init`, `add`, `list`, `ready`, `show`, `update`, `done`, `delete`, `dep block`, `dep unblock`, `children`, `dep tree`, `path`, `score`, `blockers`, `blocking`, `export`, `import` | `AppMinimalLive` | No |
+| `dedupe`, `sync compact`, `reprioritize`, `sync history` (read-only, no key) | `AppLive` or `AppMinimalLive` | Only dedupe/sync compact/reprioritize |
 
 When a command requiring `ANTHROPIC_API_KEY` is invoked without it:
 

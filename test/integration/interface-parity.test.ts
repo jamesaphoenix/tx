@@ -44,10 +44,12 @@ import {
   RetrieverServiceLive,
   GuardRepositoryLive,
   PinRepositoryLive,
+  DocRepositoryLive,
   ClaimRepositoryLive,
   ClaimServiceLive,
   ClaimService,
-  OrchestratorStateRepositoryLive
+  OrchestratorStateRepositoryLive,
+  deriveDocStableId
 } from "@jamesaphoenix/tx-core"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
@@ -102,12 +104,63 @@ interface NormalizedTask {
   claimedBy: string | null
   claimExpiresAt: string | null
   failedAttempts: number
+  linkedDocs: Array<{
+    docId: string
+    name: string
+    title: string
+    kind: string
+    version: number
+    status: string
+    filePath: string
+    linkType: string
+  }>
 }
 
 interface CliExecResult {
   stdout: string
   stderr: string
   status: number
+}
+
+type LinkedDocFixture = NormalizedTask["linkedDocs"][number]
+
+function insertLinkedDoc(
+  db: Database,
+  taskId: string,
+  overrides: Partial<LinkedDocFixture> = {}
+): LinkedDocFixture {
+  const now = "2026-03-27T12:00:00.000Z"
+  const fixture: LinkedDocFixture = {
+    docId: overrides.docId ?? "doc-333333333333",
+    name: overrides.name ?? "linked-parity-spec",
+    title: overrides.title ?? "Linked Parity Spec",
+    kind: overrides.kind ?? "prd",
+    version: overrides.version ?? 1,
+    status: overrides.status ?? "changing",
+    filePath: overrides.filePath ?? "specs/prd/linked-parity-spec.md",
+    linkType: overrides.linkType ?? "implements",
+  }
+
+  const docResult = db.prepare(
+    `INSERT INTO docs (doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, '{}')`
+  ).run(
+    fixture.docId,
+    `hash-${fixture.docId}-${fixture.version}`,
+    fixture.kind,
+    fixture.name,
+    fixture.title,
+    fixture.version,
+    fixture.status,
+    fixture.filePath,
+    now
+  )
+
+  db.prepare(
+    "INSERT INTO task_doc_links (task_id, doc_id, link_type, created_at) VALUES (?, ?, ?, ?)"
+  ).run(taskId, docResult.lastInsertRowid, fixture.linkType, now)
+
+  return fixture
 }
 
 // =============================================================================
@@ -150,6 +203,7 @@ function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTes
     DependencyRepositoryLive,
     GuardRepositoryLive,
     PinRepositoryLive,
+    DocRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     ClaimRepositoryLive,
@@ -206,6 +260,7 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   claimedBy: task.claimedBy,
   claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
   failedAttempts: task.failedAttempts,
+  linkedDocs: task.linkedDocs,
 })
 
 interface McpToolResponse {
@@ -334,6 +389,16 @@ interface ApiTaskWithDeps {
   claimedBy: string | null
   claimExpiresAt: string | null
   failedAttempts: number
+  linkedDocs: Array<{
+    docId: string
+    name: string
+    title: string
+    kind: string
+    version: number
+    status: string
+    filePath: string
+    linkType: string
+  }>
 }
 
 function createTestApiApp(db: TestDatabase) {
@@ -451,6 +516,52 @@ function createTestApiApp(db: TestDatabase) {
       }
     }
 
+    const linkedDocsMap = new Map<string, ApiTaskWithDeps["linkedDocs"]>()
+    if (taskIds.length > 0) {
+      const placeholders = taskIds.map(() => "?").join(",")
+      const linkedRows = db.db.prepare(
+        `SELECT
+           tdl.task_id,
+           tdl.link_type,
+           d.doc_id AS stable_doc_id,
+           d.name,
+           d.title,
+           d.kind,
+           d.version,
+           d.status,
+           d.file_path
+         FROM task_doc_links tdl
+         JOIN docs d ON d.id = tdl.doc_id
+         WHERE tdl.task_id IN (${placeholders})
+         ORDER BY tdl.task_id, tdl.link_type, d.kind, d.name, d.version DESC`
+      ).all(...taskIds) as Array<{
+        task_id: string
+        link_type: string
+        stable_doc_id: string | null
+        name: string
+        title: string
+        kind: string
+        version: number
+        status: string
+        file_path: string
+      }>
+
+      for (const row of linkedRows) {
+        const refs = linkedDocsMap.get(row.task_id) ?? []
+        refs.push({
+          docId: row.stable_doc_id ?? deriveDocStableId(`${row.name}:${row.version}`),
+          name: row.name,
+          title: row.title,
+          kind: row.kind,
+          version: row.version,
+          status: row.status,
+          filePath: row.file_path,
+          linkType: row.link_type,
+        })
+        linkedDocsMap.set(row.task_id, refs)
+      }
+    }
+
     // Derive orchestration status from claims (mirrors deriveOrchestrationStatus in internals.ts)
     const claimsMap = new Map<string, { status: string; worker_id: string; lease_expires_at: string }>()
     if (taskIds.length > 0) {
@@ -527,6 +638,7 @@ function createTestApiApp(db: TestDatabase) {
         claimedBy,
         claimExpiresAt,
         failedAttempts: 0,
+        linkedDocs: linkedDocsMap.get(task.id) ?? [],
       }
     })
   }
@@ -678,6 +790,18 @@ function normalizeTask(task: any): NormalizedTask {
     claimedBy: task.claimedBy ?? null,
     claimExpiresAt: task.claimExpiresAt ?? null,
     failedAttempts: task.failedAttempts ?? 0,
+    linkedDocs: [...(task.linkedDocs ?? [])]
+      .map((doc: any) => ({
+        docId: String(doc.docId),
+        name: String(doc.name),
+        title: String(doc.title),
+        kind: String(doc.kind),
+        version: Number(doc.version),
+        status: String(doc.status),
+        filePath: String(doc.filePath),
+        linkType: String(doc.linkType),
+      }))
+      .sort((a, b) => a.docId.localeCompare(b.docId) || a.linkType.localeCompare(b.linkType)),
   }
 }
 
@@ -709,6 +833,7 @@ function assertTasksEqual(label: string, t1: NormalizedTask, t2: NormalizedTask)
   expect(t1.claimedBy, `${label}: claimedBy`).toBe(t2.claimedBy)
   expect(t1.claimExpiresAt, `${label}: claimExpiresAt`).toBe(t2.claimExpiresAt)
   expect(t1.failedAttempts, `${label}: failedAttempts`).toBe(t2.failedAttempts)
+  expect(t1.linkedDocs, `${label}: linkedDocs`).toEqual(t2.linkedDocs)
 }
 
 function assertTaskListsEqual(label: string, list1: NormalizedTask[], list2: NormalizedTask[]): void {
@@ -898,6 +1023,45 @@ describe("Interface Parity", () => {
       expect(cliNorm.blocks.length).toBeGreaterThan(0)
       expect(mcpNorm.blocks.length).toBeGreaterThan(0)
       expect(apiNorm.blocks.length).toBeGreaterThan(0)
+
+      assertTasksEqual("CLI vs MCP", cliNorm, mcpNorm)
+      assertTasksEqual("MCP vs API", mcpNorm, apiNorm)
+      assertTasksEqual("CLI vs API", cliNorm, apiNorm)
+    })
+
+    it("returns equivalent linkedDocs for a task with an attached spec", async () => {
+      const taskId = FIXTURES.TASK_JWT
+      const expected = insertLinkedDoc(db.db, taskId, {
+        docId: "doc-444444444444",
+        name: "jwt-parity-prd",
+        title: "JWT Parity PRD",
+        filePath: "specs/prd/jwt-parity-prd.md",
+      })
+
+      const cliDb = new Database(dbPath)
+      insertLinkedDoc(cliDb, taskId, expected)
+      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+      cliDb.close()
+
+      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      expect(cliResult.status).toBe(0)
+      const cliTask = JSON.parse(cliResult.stdout)
+
+      const mcpResult = await callMcpShow(runtime, taskId)
+      expect(mcpResult.isError).toBeFalsy()
+      const mcpTask = JSON.parse(mcpResult.content[1].text)
+
+      const apiResponse = await apiApp.request(`/api/tasks/${taskId}`)
+      expect(apiResponse.status).toBe(200)
+      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
+
+      const cliNorm = normalizeTask(cliTask)
+      const mcpNorm = normalizeTask(mcpTask)
+      const apiNorm = normalizeTask(apiData.task)
+
+      expect(cliNorm.linkedDocs).toEqual([expected])
+      expect(mcpNorm.linkedDocs).toEqual([expected])
+      expect(apiNorm.linkedDocs).toEqual([expected])
 
       assertTasksEqual("CLI vs MCP", cliNorm, mcpNorm)
       assertTasksEqual("MCP vs API", mcpNorm, apiNorm)
@@ -1382,6 +1546,47 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("CLI vs MCP", cliNorm, mcpNorm)
       assertTaskListsEqual("MCP vs API", mcpNorm, apiNorm)
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
+    })
+
+    it("returns equivalent linkedDocs in ready task lists", async () => {
+      const expected = insertLinkedDoc(db.db, FIXTURES.TASK_JWT, {
+        docId: "doc-555555555555",
+        name: "ready-linked-design",
+        title: "Ready Linked Design",
+        kind: "design",
+        filePath: "specs/design/ready-linked-design.md",
+        linkType: "references",
+      })
+
+      const cliDb = new Database(dbPath)
+      insertLinkedDoc(cliDb, FIXTURES.TASK_JWT, expected)
+      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+      cliDb.close()
+
+      const cliResult = runTxArgs(["ready", "--json", "--limit", "100"], dbPath)
+      expect(cliResult.status).toBe(0)
+      const cliTasks = (JSON.parse(cliResult.stdout) as unknown[]).map(normalizeTask)
+
+      const mcpResult = await callMcpReady(runtime, 100)
+      expect(mcpResult.isError).toBeFalsy()
+      const mcpTasks = (JSON.parse(mcpResult.content[1].text) as unknown[]).map(normalizeTask)
+
+      const apiResponse = await apiApp.request("/api/tasks/ready?limit=100")
+      expect(apiResponse.status).toBe(200)
+      const apiData = await apiResponse.json() as { tasks: ApiTaskWithDeps[] }
+      const apiTasks = apiData.tasks.map(normalizeTask)
+
+      const cliJwt = cliTasks.find((task) => task.id === FIXTURES.TASK_JWT)
+      const mcpJwt = mcpTasks.find((task) => task.id === FIXTURES.TASK_JWT)
+      const apiJwt = apiTasks.find((task) => task.id === FIXTURES.TASK_JWT)
+
+      expect(cliJwt?.linkedDocs).toEqual([expected])
+      expect(mcpJwt?.linkedDocs).toEqual([expected])
+      expect(apiJwt?.linkedDocs).toEqual([expected])
+
+      assertTaskListsEqual("CLI vs MCP", cliTasks, mcpTasks)
+      assertTaskListsEqual("MCP vs API", mcpTasks, apiTasks)
+      assertTaskListsEqual("CLI vs API", cliTasks, apiTasks)
     })
 
     it("returns equivalent results with limit parameter", async () => {

@@ -5,6 +5,7 @@ import { GuardRepository } from "../repo/guard-repo.js"
 import { PinRepository } from "../repo/pin-repo.js"
 import { ClaimRepository } from "../repo/claim-repo.js"
 import { AttemptRepository } from "../repo/attempt-repo.js"
+import { DocRepository } from "../repo/doc-repo.js"
 import { TaskNotFoundError, ValidationError, DatabaseError, GuardExceededError, StaleDataError, HasChildrenError } from "../errors.js"
 import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
@@ -71,10 +72,12 @@ export const TaskServiceLive = Layer.effect(
     const pinRepo = yield* PinRepository
     const claimRepoOption = yield* Effect.serviceOption(ClaimRepository)
     const attemptRepoOption = yield* Effect.serviceOption(AttemptRepository)
+    const docRepoOption = yield* Effect.serviceOption(DocRepository)
     const claimRepo = claimRepoOption._tag === "Some" ? claimRepoOption.value : undefined
     const attemptRepo = attemptRepoOption._tag === "Some" ? attemptRepoOption.value : undefined
+    const docRepo = docRepoOption._tag === "Some" ? docRepoOption.value : undefined
     const config = readTxConfig()
-    const enrichDeps = { taskRepo, depRepo, claimRepo, attemptRepo }
+    const enrichDeps = { taskRepo, depRepo, claimRepo, attemptRepo, docRepo }
     const reconcileDependentStatuses = (blockerId: TaskId) =>
       Effect.gen(function* () {
         const blockedTaskIds = yield* depRepo.getBlockingIds(blockerId)

@@ -21,6 +21,7 @@
 
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
+import { serializeDecomposeResult } from "@jamesaphoenix/tx-types"
 import type {
   TxClientConfig,
   ListOptions,
@@ -95,6 +96,9 @@ import type {
   SerializedDecision,
   CreateDecisionData,
   DecisionListOptions,
+  DecomposeRequest,
+  DecomposeResult,
+  DecomposeResultSerialized,
 } from "./types.js"
 import { buildUrl, normalizeApiUrl, parseApiError, TxError } from "./utils.js"
 
@@ -243,6 +247,7 @@ interface Transport {
   docsLock(name: string): Promise<SerializedDoc>
   docsLink(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink>
   docsRender(name?: string): Promise<string[]>
+  decomposeRun(data: DecomposeRequest): Promise<DecomposeResultSerialized>
 
   // Invariants
   invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]>
@@ -925,6 +930,10 @@ class HttpTransport implements Transport {
     return r.rendered
   }
 
+  async decomposeRun(data: DecomposeRequest): Promise<DecomposeResultSerialized> {
+    return await this.request<DecomposeResultSerialized>("POST", "/api/decompose", { body: data })
+  }
+
   // Invariants
   async invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> {
     const r = await this.request<{ invariants: SerializedInvariant[] }>("GET", "/api/invariants", { params: options })
@@ -1279,6 +1288,16 @@ class DirectTransport implements Transport {
         ? task.claimExpiresAt.toISOString()
         : (task.claimExpiresAt ?? null),
       failedAttempts: task.failedAttempts ?? 0,
+      linkedDocs: Array.isArray(task.linkedDocs) ? task.linkedDocs.map((doc: any) => ({
+        docId: doc.docId,
+        name: doc.name,
+        title: doc.title,
+        kind: doc.kind,
+        version: doc.version,
+        status: doc.status,
+        filePath: doc.filePath,
+        linkType: doc.linkType,
+      })) : [],
     }
   }
 
@@ -2792,6 +2811,7 @@ class DirectTransport implements Transport {
   private serializeDoc(doc: any): SerializedDoc {
     return {
       id: doc.id,
+      docId: doc.docId,
       hash: doc.hash,
       kind: doc.kind,
       name: doc.name,
@@ -3225,7 +3245,7 @@ class DirectTransport implements Transport {
     return (docs as any[]).map((d: any) => self.serializeDoc(d))
   }
 
-  async docsGet(name: string): Promise<SerializedDoc> {
+  async docsGet(ref: string): Promise<SerializedDoc> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -3234,7 +3254,7 @@ class DirectTransport implements Transport {
     const doc = await this.run(
       Effect.gen(function* () {
         const docService = yield* core.DocService
-        return yield* docService.get(name)
+        return yield* docService.get(ref)
       })
     )
 
@@ -3257,7 +3277,7 @@ class DirectTransport implements Transport {
     return self.serializeDoc(doc)
   }
 
-  async docsUpdate(name: string, content: string): Promise<SerializedDoc> {
+  async docsUpdate(ref: string, content: string): Promise<SerializedDoc> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -3266,14 +3286,14 @@ class DirectTransport implements Transport {
     const doc = await this.run(
       Effect.gen(function* () {
         const docService = yield* core.DocService
-        return yield* docService.update(name, content)
+        return yield* docService.update(ref, content)
       })
     )
 
     return self.serializeDoc(doc)
   }
 
-  async docsDelete(name: string): Promise<void> {
+  async docsDelete(ref: string): Promise<void> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -3281,12 +3301,12 @@ class DirectTransport implements Transport {
     await this.run(
       Effect.gen(function* () {
         const docService = yield* core.DocService
-        yield* docService.remove(name)
+        yield* docService.remove(ref)
       })
     )
   }
 
-  async docsLock(name: string): Promise<SerializedDoc> {
+  async docsLock(ref: string): Promise<SerializedDoc> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -3295,14 +3315,14 @@ class DirectTransport implements Transport {
     const doc = await this.run(
       Effect.gen(function* () {
         const docService = yield* core.DocService
-        return yield* docService.lock(name)
+        return yield* docService.lock(ref)
       })
     )
 
     return self.serializeDoc(doc)
   }
 
-  async docsLink(fromName: string, toName: string, linkType?: string): Promise<SerializedDocLink> {
+  async docsLink(fromRef: string, toRef: string, linkType?: string): Promise<SerializedDocLink> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -3310,7 +3330,7 @@ class DirectTransport implements Transport {
     return await this.run<SerializedDocLink>(
       Effect.gen(function* () {
         const docService = yield* core.DocService
-        const link = yield* docService.linkDocs(fromName, toName, linkType as any)
+        const link = yield* docService.linkDocs(fromRef, toRef, linkType as any)
         return {
           id: link.id,
           fromDocId: link.fromDocId,
@@ -3333,6 +3353,21 @@ class DirectTransport implements Transport {
         return yield* docService.render(name)
       })
     )
+  }
+
+  async decomposeRun(data: DecomposeRequest): Promise<DecomposeResultSerialized> {
+    await this.ensureRuntime()
+    const Effect = (this as any).Effect
+    const core = (this as any).core
+
+    const result = await this.run<DecomposeResult>(
+      Effect.gen(function* () {
+        const svc = yield* core.DecomposeService
+        return yield* svc.run(data)
+      })
+    )
+
+    return serializeDecomposeResult(result)
   }
 
   // Invariants
@@ -5031,6 +5066,18 @@ class SyncNamespace {
 }
 
 // =============================================================================
+// Decompose Namespace
+// =============================================================================
+
+class DecomposeNamespace {
+  constructor(private readonly transport: Transport) {}
+
+  async run(data: DecomposeRequest): Promise<DecomposeResultSerialized> {
+    return this.transport.decomposeRun(data)
+  }
+}
+
+// =============================================================================
 // Docs Namespace
 // =============================================================================
 
@@ -5299,6 +5346,11 @@ export class TxClient {
   public readonly docs: DocsNamespace
 
   /**
+   * Spec-driven decomposition operations.
+   */
+  public readonly decompose: DecomposeNamespace
+
+  /**
    * Design-doc invariant tracking operations.
    */
   public readonly invariants: InvariantsNamespace
@@ -5367,6 +5419,7 @@ export class TxClient {
     this.pins = new PinsNamespace(this.transport)
     this.memory = new MemoryNamespace(this.transport)
     this.sync = new SyncNamespace(this.transport)
+    this.decompose = new DecomposeNamespace(this.transport)
     this.docs = new DocsNamespace(this.transport)
     this.invariants = new InvariantsNamespace(this.transport)
     this.spec = new SpecNamespace(this.transport)

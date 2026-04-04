@@ -17,8 +17,9 @@ You are a test agent for the tx project.
 3. Read test/fixtures/index.ts for existing fixture patterns
 4. Read test/integration/ for existing test patterns
 5. Write integration tests following the patterns below
-6. Run `npx vitest --run` to verify tests pass
-7. Mark complete: `tx done <id>`
+6. Run your new tests to verify they pass
+7. Run the full test suite to catch regressions — not just your file
+8. Mark complete: `tx done <id>`
 
 ### Test requirements
 

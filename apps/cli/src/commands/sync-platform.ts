@@ -12,6 +12,7 @@ import { homedir } from "node:os"
 import { TaskService, buildClaudeTaskFiles } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
+import { movedCommandError, usageError, validationError } from "../cli-errors.js"
 
 export const syncClaude = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -25,15 +26,36 @@ export const syncClaude = (_pos: string[], flags: Flags) =>
     if (teamName) {
       // Validate team name to prevent path traversal (e.g. --team ../../.ssh)
       if (!/^[a-zA-Z0-9_-]+$/.test(teamName)) {
-        console.error("Invalid team name: must contain only alphanumeric characters, hyphens, and underscores")
-        process.exit(1)
+        return yield* Effect.fail(validationError({
+          code: "cli/invalid-team-name",
+          command: "sync claude",
+          message: "Invalid team name.",
+          hint: "Team names may contain only letters, numbers, hyphens, and underscores.",
+          usage: "tx sync claude --team <name> [--json]",
+          examples: [
+            "tx sync claude --team backend",
+            "tx sync claude --dir ./.claude/tasks/backend",
+          ],
+          details: {
+            received: teamName,
+          },
+        }))
       }
       targetDir = join(homedir(), ".claude", "tasks", teamName)
     } else if (dirOverride) {
       targetDir = resolve(dirOverride)
     } else {
-      console.error("Either --team <name> or --dir <path> is required")
-      process.exit(1)
+      return yield* Effect.fail(usageError({
+        code: "cli/missing-flag",
+        command: "sync claude",
+        message: "Missing required target for Claude sync.",
+        hint: "Pass either --team <name> or --dir <path>.",
+        usage: "tx sync claude (--team <name> | --dir <path>) [--json]",
+        examples: [
+          "tx sync claude --team backend",
+          "tx sync claude --dir ./.claude/tasks/backend",
+        ],
+      }))
     }
 
     // Create directory if it doesn't exist
@@ -78,7 +100,8 @@ export const syncClaude = (_pos: string[], flags: Flags) =>
   })
 
 export const syncCodex = (_pos: string[], _flags: Flags) =>
-  Effect.sync(() => {
-    console.error("Codex sync is not yet implemented. Use 'tx sync claude' for Claude Code.")
-    process.exit(1)
-  })
+  Effect.fail(movedCommandError({
+    command: "sync codex",
+    message: "Codex sync is not yet implemented.",
+    hint: "Use `tx sync claude` for Claude Code until the Codex sync target exists.",
+  }))

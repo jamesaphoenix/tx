@@ -20,20 +20,22 @@ tx provides composable primitives for agent infrastructure — task management, 
 
 - [tx ready](https://tx-docs.vercel.app/docs/primitives/ready): Get next workable task (unblocked, highest priority)
 - [tx done](https://tx-docs.vercel.app/docs/primitives/done): Complete task, potentially unblocking others
-- [tx block](https://tx-docs.vercel.app/docs/primitives/block): Declare dependencies between tasks
+- [tx dep block](https://tx-docs.vercel.app/docs/primitives/block): Declare dependencies between tasks
 - [tx claim](https://tx-docs.vercel.app/docs/primitives/claim): Claim task with lease to prevent parallel collisions
 - [tx memory](https://tx-docs.vercel.app/docs/primitives/memory): Search, navigate, and manage your markdown knowledge graph
 - [tx pin](https://tx-docs.vercel.app/docs/primitives/pin): Persist named context blocks for reuse across agents
-- [tx gate](https://tx-docs.vercel.app/docs/primitives/gate): Add human approval checkpoints between phases
-- [tx guard](https://tx-docs.vercel.app/docs/primitives/guard): Set task creation limits to bound agent autonomy
-- [tx verify](https://tx-docs.vercel.app/docs/primitives/verify): Attach machine-checkable done criteria to tasks
-- [tx reflect](https://tx-docs.vercel.app/docs/primitives/reflect): Run session retrospectives and tune agent behavior
-- [tx label](https://tx-docs.vercel.app/docs/primitives/label): Organize tasks with labels for ready queue scoping
+- [tx auto gate](https://tx-docs.vercel.app/docs/primitives/gate): Add human approval checkpoints between phases
+- [tx auto guard](https://tx-docs.vercel.app/docs/primitives/guard): Set task creation limits to bound agent autonomy
+- [tx auto verify](https://tx-docs.vercel.app/docs/primitives/verify): Attach machine-checkable done criteria to tasks
+- [tx auto reflect](https://tx-docs.vercel.app/docs/primitives/reflect): Run session retrospectives and tune agent behavior
+- [tx auto label](https://tx-docs.vercel.app/docs/primitives/label): Organize tasks with labels for ready queue scoping
 - [tx sync](https://tx-docs.vercel.app/docs/primitives/sync): Persist to git-friendly JSONL
-- [tx send / tx inbox](https://tx-docs.vercel.app/docs/primitives/inbox): Send and read channel-based agent messages
+- [tx msg send / tx msg inbox](https://tx-docs.vercel.app/docs/primitives/inbox): Send and read channel-based agent messages
 - [tx trace](https://tx-docs.vercel.app/docs/primitives/traces): Inspect execution traces for agent runs
 - [tx doc](https://tx-docs.vercel.app/docs/primitives/docs): Docs-as-primitives with YAML structured documentation
 - [tx decision](https://tx-docs.vercel.app/docs/primitives/decision): Decisions as first-class artifacts with review lifecycle
+- [tx decompose](https://tx-docs.vercel.app/docs/primitives/decompose): Turn a design doc into a first-pass task graph
+- [tx skills](https://tx-docs.vercel.app/docs/primitives/skills): Generate and sync the canonical tx-managed Claude/Codex skill bundles
 - [tx spec](https://tx-docs.vercel.app/docs/primitives/spec-trace): Spec-to-test traceability and FCI phase scoring
 - [tx invariant](https://tx-docs.vercel.app/docs/primitives/invariants): Doc-derived invariants with enforcement and check recording
 

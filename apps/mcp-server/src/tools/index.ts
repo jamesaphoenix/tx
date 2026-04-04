@@ -34,6 +34,7 @@ export const normalizeLimit = (limit: number | undefined): number => {
 // -----------------------------------------------------------------------------
 
 export { registerTaskTools, serializeTask } from "./task.js"
+export { registerDecomposeTools } from "./decompose.js"
 export { registerLearningTools, serializeLearning, serializeLearningWithScore, serializeFileLearning } from "./learning.js"
 export { registerSyncTools, serializeSyncStatus } from "./sync.js"
 export { registerMessageTools, serializeMessage } from "./message.js"
@@ -45,6 +46,8 @@ export { registerClaimTools } from "./claim.js"
 export { registerMemoryTools } from "./memory.js"
 export { registerCycleTools } from "./cycle.js"
 export { registerGuardTools } from "./guard.js"
+export { registerGateTools } from "./gate.js"
 export { registerVerifyTools } from "./verify.js"
 export { registerReflectTools } from "./reflect.js"
 export { registerSpecTraceTools } from "./spec-trace.js"
+export { registerLabelTools } from "./label.js"

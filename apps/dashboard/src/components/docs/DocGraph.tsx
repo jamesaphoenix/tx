@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { fetchers, type DocGraphNode, type DocGraphEdge } from "../../api/client"
 
 interface DocGraphProps {
-  selectedDocName?: string | null
-  onSelectDoc?: (name: string) => void
+  selectedNodeId?: string | null
+  onSelectDoc?: (docDbId: number) => void
   fullPage?: boolean
 }
 
@@ -14,6 +14,8 @@ const KIND_COLORS: Record<string, string> = {
   design: "#A78BFA",
   requirement: "#F472B6",
   system_design: "#FB923C",
+  runbook: "#22C55E",
+  decision: "#EAB308",
   task: "#FBBF24",
 }
 
@@ -23,6 +25,8 @@ const KIND_LABELS: Record<string, string> = {
   design: "Design",
   requirement: "Requirement",
   system_design: "System Design",
+  runbook: "Runbook",
+  decision: "Decision",
   task: "Task",
 }
 
@@ -38,7 +42,7 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], w: number, h
   if (nodes.length === 0) return []
 
   const layers: Record<string, DocGraphNode[]> = {
-    overview: [], requirement: [], prd: [], system_design: [], design: [], task: [],
+    overview: [], requirement: [], prd: [], system_design: [], design: [], runbook: [], decision: [], task: [],
   }
   for (const node of nodes) {
     const kind = node.kind in layers ? node.kind : "task"
@@ -46,7 +50,7 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], w: number, h
   }
 
   const positioned: PositionedNode[] = []
-  const layerOrder = ["overview", "requirement", "prd", "system_design", "design", "task"]
+  const layerOrder = ["overview", "requirement", "prd", "system_design", "design", "runbook", "decision", "task"]
   const activeLayers = layerOrder.filter((k) => layers[k].length > 0)
 
   const padX = w * 0.1
@@ -131,7 +135,7 @@ function edgePath(x1: number, y1: number, x2: number, y2: number, nodeR: number)
   return `M ${sx} ${sy} Q ${cpx} ${midY}, ${ex} ${ey}`
 }
 
-export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphProps) {
+export function DocGraph({ selectedNodeId, onSelectDoc, fullPage }: DocGraphProps) {
   const canvasRef = useRef<SVGSVGElement>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
@@ -155,9 +159,9 @@ export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphPro
 
   // Track which nodes are connected to hovered/selected for highlighting
   const connectedToFocus = useMemo(() => {
-    const focusLabel = hoveredId ?? selectedDocName
-    if (!focusLabel) return null
-    const focusNode = positioned.find((n) => n.label === focusLabel || n.id === hoveredId)
+    const focusId = hoveredId ?? selectedNodeId
+    if (!focusId) return null
+    const focusNode = positioned.find((n) => n.id === focusId)
     if (!focusNode) return null
     const ids = new Set<string>([focusNode.id])
     for (const e of edges) {
@@ -165,7 +169,7 @@ export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphPro
       if (e.target === focusNode.id) ids.add(e.source)
     }
     return ids
-  }, [hoveredId, selectedDocName, positioned, edges])
+  }, [hoveredId, selectedNodeId, positioned, edges])
 
   if (isLoading) {
     return <div className="animate-pulse bg-gray-800 rounded-lg h-full" />
@@ -260,7 +264,7 @@ export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphPro
         {/* Nodes */}
         <g>
           {positioned.map((node) => {
-            const isSelected = selectedDocName === node.label
+            const isSelected = selectedNodeId === node.id
             const isHovered = hoveredId === node.id
             const color = KIND_COLORS[node.kind] ?? "#9CA3AF"
             const dimmed = connectedToFocus && !connectedToFocus.has(node.id)
@@ -272,7 +276,13 @@ export function DocGraph({ selectedDocName, onSelectDoc, fullPage }: DocGraphPro
             return (
               <g
                 key={node.id}
-                onClick={() => onSelectDoc?.(node.label)}
+                onClick={() => {
+                  if (!node.id.startsWith("doc:")) return
+                  const parsed = Number.parseInt(node.id.slice(4), 10)
+                  if (Number.isFinite(parsed)) {
+                    onSelectDoc?.(parsed)
+                  }
+                }}
                 onMouseEnter={() => setHoveredId(node.id)}
                 onMouseLeave={() => setHoveredId(null)}
                 className="cursor-pointer"

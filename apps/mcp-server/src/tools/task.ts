@@ -121,7 +121,7 @@ const handleChildren = async (args: { id: string; limit?: number }): Promise<Mcp
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_children", args, error)
+    return handleToolError("tx_dep_children", args, error)
   }
 }
 
@@ -281,7 +281,7 @@ const handleBlock = async (args: { taskId: string; blockerId: string }): Promise
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_block", args, error)
+    return handleToolError("tx_dep_block", args, error)
   }
 }
 
@@ -307,7 +307,7 @@ const handleUnblock = async (args: { taskId: string; blockerId: string }): Promi
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_unblock", args, error)
+    return handleToolError("tx_dep_unblock", args, error)
   }
 }
 
@@ -372,7 +372,7 @@ const handleTree = async (args: { id: string }): Promise<McpToolResult> => {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_tree", args, error)
+    return handleToolError("tx_dep_tree", args, error)
   }
 }
 
@@ -405,7 +405,7 @@ const handleStats = async (): Promise<McpToolResult> => {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_stats", {}, error)
+    return handleToolError("tx_diag_stats", {}, error)
   }
 }
 
@@ -451,9 +451,9 @@ export const registerTaskTools = (server: McpServer): void => {
     handleList
   )
 
-  // tx_children - List children of a task
+  // tx_dep_children - List children of a task
   registerEffectTool(server,
-    "tx_children",
+    "tx_dep_children",
     "List direct children of a task",
     {
       id: z.string().describe("Parent task ID"),
@@ -509,9 +509,9 @@ export const registerTaskTools = (server: McpServer): void => {
     handleDelete
   )
 
-  // tx_block - Add a dependency (blocker blocks taskId)
+  // tx_dep_block - Add a dependency (blocker blocks taskId)
   registerEffectTool(server,
-    "tx_block",
+    "tx_dep_block",
     "Add a dependency: blockerId blocks taskId (taskId cannot start until blockerId is done). Rejects circular dependencies.",
     {
       taskId: z.string().describe("Task ID that will be blocked"),
@@ -520,9 +520,9 @@ export const registerTaskTools = (server: McpServer): void => {
     handleBlock
   )
 
-  // tx_unblock - Remove a dependency
+  // tx_dep_unblock - Remove a dependency
   registerEffectTool(server,
-    "tx_unblock",
+    "tx_dep_unblock",
     "Remove a dependency: blockerId no longer blocks taskId",
     {
       taskId: z.string().describe("Task ID that is currently blocked"),
@@ -552,9 +552,9 @@ export const registerTaskTools = (server: McpServer): void => {
     handleGroupContextClear
   )
 
-  // tx_tree - Show task subtree
+  // tx_dep_tree - Show task subtree
   registerEffectTool(server,
-    "tx_tree",
+    "tx_dep_tree",
     "Show the full subtree of a task including all descendants. Returns a nested tree structure.",
     {
       id: z.string().describe("Root task ID to show tree for")
@@ -562,9 +562,9 @@ export const registerTaskTools = (server: McpServer): void => {
     handleTree
   )
 
-  // tx_stats - Aggregate queue statistics
+  // tx_diag_stats - Aggregate queue statistics
   registerEffectTool(server,
-    "tx_stats",
+    "tx_diag_stats",
     "Get aggregate queue statistics: total tasks, done, ready, and learnings count.",
     {},
     handleStats

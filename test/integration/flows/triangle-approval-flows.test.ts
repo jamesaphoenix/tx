@@ -4,7 +4,6 @@ import { spawnSync } from "node:child_process"
 import { dirname, join, resolve } from "node:path"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { computeDocHash } from "@jamesaphoenix/tx-core"
 
 const CLI_SRC = resolve(__dirname, "../../../apps/cli/src/cli.ts")
 const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 120000 : 60000))
@@ -90,10 +89,12 @@ const renderPrdMd = (
   name: string,
   title: string,
   invariants: readonly InvariantInput[],
+  docId: string,
 ): string => [
   "---",
   "kind: spec",
   "spec_type: prd",
+  `doc_id: ${docId}`,
   `name: ${name}`,
   `title: "${title}"`,
   "status: draft",
@@ -139,6 +140,23 @@ const renderPrdMd = (
   "",
 ].join("\n")
 
+const getPrdDocId = (dbPath: string, name: string): string => {
+  const db = new Database(dbPath)
+  try {
+    const row = db
+      .prepare<{ doc_id: string | null }, [string]>(
+        "SELECT doc_id FROM docs WHERE kind = 'prd' AND name = ? ORDER BY version DESC LIMIT 1"
+      )
+      .get(name)
+    if (!row?.doc_id) {
+      throw new Error(`Missing doc_id for PRD '${name}'`)
+    }
+    return row.doc_id
+  } finally {
+    db.close()
+  }
+}
+
 const syncPrdMd = (
   cwd: string,
   dbPath: string,
@@ -146,19 +164,13 @@ const syncPrdMd = (
   title: string,
   invariants: readonly InvariantInput[],
 ): void => {
-  const md = renderPrdMd(name, title, invariants)
+  const docId = getPrdDocId(dbPath, name)
+  const md = renderPrdMd(name, title, invariants, docId)
   writeRelative(cwd, `specs/prd/${name}.md`, md)
-
-  const db = new Database(dbPath)
-  try {
-    db.prepare("UPDATE docs SET hash = ?, title = ? WHERE name = ?").run(
-      computeDocHash(md),
-      title,
-      name,
-    )
-  } finally {
-    db.close()
-  }
+  expectOk(
+    runTx(cwd, dbPath, ["doc", "sync", name, "--json"]),
+    `tx doc sync ${name}`,
+  )
 }
 
 const addPrd = (cwd: string, dbPath: string, name: string, title: string): void => {
@@ -721,10 +733,10 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
 
     writeRelative(cwd, "specs/prd/drift-a.md", `${renderPrdMd("drift-a", "Drift A", [
       { id: "INV-TRI-DRIFT-A-001", rule: "doc a remains consistent" },
-    ])}\n# manual drift\n`)
+    ], getPrdDocId(dbPath, "drift-a"))}\n# manual drift\n`)
     writeRelative(cwd, "specs/prd/drift-b.md", `${renderPrdMd("drift-b", "Drift B", [
       { id: "INV-TRI-DRIFT-B-001", rule: "doc b remains consistent" },
-    ])}\n# manual drift\n`)
+    ], getPrdDocId(dbPath, "drift-b"))}\n# manual drift\n`)
 
     const health = specHealth(cwd, dbPath)
     expect(health.status).toBe("broken")

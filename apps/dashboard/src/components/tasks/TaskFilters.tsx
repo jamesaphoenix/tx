@@ -34,14 +34,22 @@ const STATUS_OPTIONS = [
   { value: "done", label: "Done", color: "bg-green-500" },
 ] as const
 
+function normalizeSingleStatusSelection(statuses: readonly string[]): string[] {
+  const selectedStatus = statuses.at(-1)
+  return selectedStatus ? [selectedStatus] : []
+}
+
 /**
  * TaskFilters component provides status toggles and search functionality.
  * - Status toggle buttons show count for each status
- * - Multiple statuses can be selected (except "All" which clears selection)
+ * - Status selection is single-select (except "All" which clears selection)
  * - Integrates SearchInput for debounced text search
  * - Parent is responsible for syncing with URL params
  */
 export function TaskFilters({ value, onChange, statusCounts = {} }: TaskFiltersProps) {
+  const selectedStatuses = normalizeSingleStatusSelection(value.status)
+  const selectedStatus = selectedStatuses[0] ?? null
+
   const handleStatusToggle = useCallback(
     (status: string) => {
       if (status === "all") {
@@ -50,31 +58,20 @@ export function TaskFilters({ value, onChange, statusCounts = {} }: TaskFiltersP
         return
       }
 
-      const currentStatuses = value.status
-      const isSelected = currentStatuses.includes(status)
-
-      if (isSelected) {
-        // Remove status from selection
-        onChange({
-          ...value,
-          status: currentStatuses.filter((s) => s !== status),
-        })
-      } else {
-        // Add status to selection
-        onChange({
-          ...value,
-          status: [...currentStatuses, status],
-        })
-      }
+      const nextStatuses = selectedStatus === status ? [] : [status]
+      onChange({
+        ...value,
+        status: nextStatuses,
+      })
     },
-    [value, onChange]
+    [value, onChange, selectedStatus]
   )
 
   const handleSearchChange = useCallback(
     (search: string) => {
-      onChange({ ...value, search })
+      onChange({ ...value, status: selectedStatuses, search })
     },
-    [value, onChange]
+    [value, onChange, selectedStatuses]
   )
 
   // Calculate total count (sum of all status counts)
@@ -84,7 +81,7 @@ export function TaskFilters({ value, onChange, statusCounts = {} }: TaskFiltersP
   )
 
   // Check if "All" is selected (no specific statuses selected)
-  const isAllSelected = value.status.length === 0
+  const isAllSelected = selectedStatuses.length === 0
 
   return (
     <div className="space-y-3">
@@ -92,7 +89,7 @@ export function TaskFilters({ value, onChange, statusCounts = {} }: TaskFiltersP
       <div className="flex flex-wrap gap-2">
         {STATUS_OPTIONS.map((option) => {
           const isAll = option.value === "all"
-          const isSelected = isAll ? isAllSelected : value.status.includes(option.value)
+          const isSelected = isAll ? isAllSelected : selectedStatus === option.value
           const count = isAll ? totalCount : statusCounts[option.value]
 
           return (
@@ -146,7 +143,9 @@ export function useTaskFiltersWithUrl(): {
   const [filters, setFiltersState] = useState<TaskFiltersValues>(() => {
     const searchParams = new URLSearchParams(window.location.search)
     return {
-      status: searchParams.get("taskStatus")?.split(",").filter(Boolean) ?? [],
+      status: normalizeSingleStatusSelection(
+        searchParams.get("taskStatus")?.split(",").filter(Boolean) ?? []
+      ),
       search: searchParams.get("taskSearch") ?? "",
     }
   })
@@ -154,13 +153,14 @@ export function useTaskFiltersWithUrl(): {
   // Update URL when filters change - preserve other params (like runStatus)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    const selectedStatuses = normalizeSingleStatusSelection(filters.status)
 
     // Clear our namespaced params first
     params.delete("taskStatus")
     params.delete("taskSearch")
 
-    if (filters.status.length > 0) {
-      params.set("taskStatus", filters.status.join(","))
+    if (selectedStatuses.length > 0) {
+      params.set("taskStatus", selectedStatuses[0]!)
     }
 
     if (filters.search) {
@@ -180,7 +180,9 @@ export function useTaskFiltersWithUrl(): {
     const handlePopState = () => {
       const searchParams = new URLSearchParams(window.location.search)
       setFiltersState({
-        status: searchParams.get("taskStatus")?.split(",").filter(Boolean) ?? [],
+        status: normalizeSingleStatusSelection(
+          searchParams.get("taskStatus")?.split(",").filter(Boolean) ?? []
+        ),
         search: searchParams.get("taskSearch") ?? "",
       })
     }

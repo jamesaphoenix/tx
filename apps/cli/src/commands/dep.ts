@@ -12,7 +12,7 @@ export const block = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const rawBlocker = pos[1]
     if (!rawId || !rawBlocker) {
-      console.error("Usage: tx block <task-id> <blocker-id> [--json]")
+      console.error("Usage: tx dep block <task-id> <blocker-id> [--json]")
       process.exit(1)
     }
     const id = parseTaskId(rawId)
@@ -37,7 +37,7 @@ export const unblock = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const rawBlocker = pos[1]
     if (!rawId || !rawBlocker) {
-      console.error("Usage: tx unblock <task-id> <blocker-id> [--json]")
+      console.error("Usage: tx dep unblock <task-id> <blocker-id> [--json]")
       process.exit(1)
     }
     const id = parseTaskId(rawId)

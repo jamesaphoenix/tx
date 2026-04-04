@@ -1,6 +1,6 @@
 {
   "name": "tx-monorepo",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "A lean task management system for AI agents and humans",
   "private": true,
   "type": "module",
@@ -29,6 +29,7 @@
   "license": "MIT",
   "scripts": {
     "sync-readme": "./scripts/sync-readme.sh",
+    "generate:skills": "bun apps/cli/src/cli.ts skills generate --output-dir apps/cli/generated-skills --clean",
     "build": "turbo build",
     "build:packages": "turbo build",
     "build:binary": "bun run --cwd apps/cli build:binary",

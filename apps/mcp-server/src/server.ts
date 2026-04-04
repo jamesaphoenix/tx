@@ -12,8 +12,10 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { resolveTxDbPath } from "@jamesaphoenix/tx-core"
 import { initRuntime, disposeRuntime } from "./runtime.js"
 import { registerTaskTools } from "./tools/task.js"
+import { registerDecomposeTools } from "./tools/decompose.js"
 import { registerLearningTools } from "./tools/learning.js"
 import { registerSyncTools } from "./tools/sync.js"
 import { registerMessageTools } from "./tools/message.js"
@@ -25,10 +27,12 @@ import { registerClaimTools } from "./tools/claim.js"
 import { registerMemoryTools } from "./tools/memory.js"
 import { registerCycleTools } from "./tools/cycle.js"
 import { registerGuardTools } from "./tools/guard.js"
+import { registerGateTools } from "./tools/gate.js"
 import { registerVerifyTools } from "./tools/verify.js"
 import { registerReflectTools } from "./tools/reflect.js"
 import { registerSpecTraceTools } from "./tools/spec-trace.js"
 import { registerDecisionTools } from "./tools/decision.js"
+import { registerLabelTools } from "./tools/label.js"
 import { formatErrorWithStack } from "./response.js"
 
 // Re-export for library consumers
@@ -37,6 +41,7 @@ export type { McpServices } from "./runtime.js"
 export { mcpResponse, mcpError, handleToolError, classifyError, buildStructuredError, logToolError, extractErrorMessage, formatErrorWithStack } from "./response.js"
 export type { McpContent, McpResponse, StructuredError } from "./response.js"
 export { registerTaskTools, serializeTask } from "./tools/task.js"
+export { registerDecomposeTools } from "./tools/decompose.js"
 export { registerLearningTools, serializeLearning, serializeLearningWithScore, serializeFileLearning } from "./tools/learning.js"
 export { registerSyncTools, serializeSyncStatus } from "./tools/sync.js"
 export { registerMessageTools, serializeMessage } from "./tools/message.js"
@@ -47,7 +52,8 @@ export { registerPinTools } from "./tools/pin.js"
 export { registerClaimTools } from "./tools/claim.js"
 export { registerMemoryTools } from "./tools/memory.js"
 export { registerCycleTools } from "./tools/cycle.js"
-export { registerGuardTools, registerVerifyTools, registerReflectTools }
+export { registerGuardTools, registerGateTools, registerVerifyTools, registerReflectTools }
+export { registerLabelTools } from "./tools/label.js"
 export { registerSpecTraceTools } from "./tools/spec-trace.js"
 export { registerDecisionTools, serializeDecision } from "./tools/decision.js"
 
@@ -89,6 +95,7 @@ export const createMcpServer = (): McpServer => {
 
   // Register all tools
   registerTaskTools(server)
+  registerDecomposeTools(server)
   registerLearningTools(server)
   registerSyncTools(server)
   registerMessageTools(server)
@@ -100,10 +107,12 @@ export const createMcpServer = (): McpServer => {
   registerMemoryTools(server)
   registerCycleTools(server)
   registerGuardTools(server)
+  registerGateTools(server)
   registerVerifyTools(server)
   registerReflectTools(server)
   registerSpecTraceTools(server)
   registerDecisionTools(server)
+  registerLabelTools(server)
 
   return server
 }
@@ -117,7 +126,7 @@ export const createMcpServer = (): McpServer => {
  * Initializes runtime and begins accepting tool calls.
  * Registers graceful shutdown handlers for SIGINT/SIGTERM.
  */
-export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => {
+export const startMcpServer = async (dbPath = resolveTxDbPath()): Promise<void> => {
   // Initialize runtime (runs migrations, builds service layer ONCE)
   await initRuntime(dbPath)
 
@@ -171,7 +180,7 @@ export const startMcpServer = async (dbPath = ".tx/tasks.db"): Promise<void> => 
  */
 const main = async (): Promise<void> => {
   const args = process.argv.slice(2)
-  let dbPath = ".tx/tasks.db"
+  let dbPath = resolveTxDbPath()
 
   // Simple argument parsing
   for (let i = 0; i < args.length; i++) {

@@ -3,11 +3,12 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { ClaimRepository } from "../repo/claim-repo.js"
 import { AttemptRepository } from "../repo/attempt-repo.js"
+import { DocRepository } from "../repo/doc-repo.js"
 import { AlreadyClaimedError, DatabaseError, TaskNotFoundError } from "../errors.js"
 import { ClaimService } from "./claim-service.js"
 import { deriveOrchestrationStatus } from "./task-service/internals.js"
 import type { TaskClaim } from "../schemas/worker.js"
-import type { Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId, TaskLinkedDocRef, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
 /**
  * Result of checking whether a task is ready to be worked on.
@@ -52,6 +53,8 @@ export const ReadyServiceLive = Layer.effect(
     const claimRepo = claimRepoOption._tag === "Some" ? claimRepoOption.value : undefined
     const attemptRepoOption = yield* Effect.serviceOption(AttemptRepository)
     const attemptRepo = attemptRepoOption._tag === "Some" ? attemptRepoOption.value : undefined
+    const docRepoOption = yield* Effect.serviceOption(DocRepository)
+    const docRepo = docRepoOption._tag === "Some" ? docRepoOption.value : undefined
 
     const getReadyImpl = (limit = 100, options?: { labels?: string[]; excludeLabels?: string[] }) =>
       Effect.gen(function* () {
@@ -127,6 +130,7 @@ export const ReadyServiceLive = Layer.effect(
                 claimedBy: null,
                 claimExpiresAt: null,
                 failedAttempts: 0,
+                linkedDocs: [],
               })
             }
           }
@@ -156,6 +160,9 @@ export const ReadyServiceLive = Layer.effect(
         const failedCountsMap = attemptRepo
           ? yield* attemptRepo.getFailedCountsForTasks(limitedIds)
           : new Map<string, number>()
+        const linkedDocsMap = docRepo
+          ? yield* docRepo.getDocsForManyTasks(limitedIds)
+          : new Map<string, readonly TaskLinkedDocRef[]>()
         // Fetch latest claims to derive real orchestration status.
         // excludeClaimed only filters active claims — tasks with released/expired
         // claims still appear in the ready queue and need correct status.
@@ -176,6 +183,7 @@ export const ReadyServiceLive = Layer.effect(
             orchestrationStatus: orch.orchestrationStatus,
             claimedBy: orch.claimedBy,
             claimExpiresAt: orch.claimExpiresAt,
+            linkedDocs: [...(linkedDocsMap.get(task.id) ?? task.linkedDocs)],
           }
         })
       })

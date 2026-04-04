@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "getting-started",
+    "ralph-loop",
     "primitives",
     "headful",
     "watchdog-runbook"

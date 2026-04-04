@@ -1,5 +1,5 @@
 ---
-title: tx reflect
+title: tx auto reflect
 description: Run session retrospective to analyze agent behavior and tune approach
 ---
 
@@ -7,7 +7,7 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
 
 ## Purpose
 
-`tx reflect` aggregates data across recent agent sessions to produce a structured retrospective. It surfaces metrics on throughput, proliferation, stuck tasks, and actionable signals.
+`tx auto reflect` aggregates data across recent agent sessions to produce a structured retrospective. It surfaces metrics on throughput, proliferation, stuck tasks, and actionable signals.
 
 Two tiers:
 - **Data tier (default)**: SQL queries produce structured metrics. No LLM required.
@@ -20,27 +20,27 @@ Two tiers:
 <Tab value="CLI">
 
 ```bash
-tx reflect [options]
+tx auto reflect [options]
 ```
 
 ```bash
 # Last 10 sessions (default)
-tx reflect
+tx auto reflect
 
 # Last 5 sessions
-tx reflect --sessions 5
+tx auto reflect --sessions 5
 
 # Last hour's activity
-tx reflect --hours 1
+tx auto reflect --hours 1
 
 # JSON output for scripting
-tx reflect --json
+tx auto reflect --json
 
 # With LLM analysis
-tx reflect --analyze
+tx auto reflect --analyze
 
 # Combine options
-tx reflect --sessions 5 --hours 2 --analyze --json
+tx auto reflect --sessions 5 --hours 2 --analyze --json
 ```
 
 </Tab>
@@ -74,11 +74,11 @@ const analyzed = await tx.reflect.run({
 
 <Tab value="MCP">
 
-**Tool name:** `tx_reflect`
+**Tool name:** `tx_auto_reflect`
 
 ```json
 {
-  "name": "tx_reflect",
+  "name": "tx_auto_reflect",
   "arguments": {
     "sessions": 5,
     "hours": 2,
@@ -129,15 +129,15 @@ Machine-readable flags for orchestrator integration:
 ```bash
 #!/bin/bash
 # Auto-tune based on reflect signals
-SIGNALS=$(tx reflect --hours 1 --json | jq -r '.signals[].type')
+SIGNALS=$(tx auto reflect --hours 1 --json | jq -r '.signals[].type')
 
 if echo "$SIGNALS" | grep -q "HIGH_PROLIFERATION"; then
-  tx guard set --max-pending 20 --enforce
-  tx compact
+  tx auto guard set --max-pending 20 --enforce
+  tx sync compact
 fi
 
 if echo "$SIGNALS" | grep -q "STUCK_TASKS"; then
-  STUCK=$(tx reflect --json | jq -r '.stuckTasks[].id')
+  STUCK=$(tx auto reflect --json | jq -r '.stuckTasks[].id')
   for id in $STUCK; do
     tx update "$id" --status blocked
   done
@@ -155,7 +155,7 @@ default_sessions = 10
 
 ## Related Commands
 
-- [`tx guard`](/docs/primitives/guard): Set task creation limits and tune them with reflect signals
-- [`tx verify`](/docs/primitives/verify): Attach machine-checkable done criteria
-- [`tx label`](/docs/primitives/label): Scope the ready queue by phase
-- [`tx compact`](/docs/primitives/compact): Archive completed tasks
+- [`tx auto guard`](/docs/primitives/guard): Set task creation limits and tune them with reflect signals
+- [`tx auto verify`](/docs/primitives/verify): Attach machine-checkable done criteria
+- [`tx auto label`](/docs/primitives/label): Scope the ready queue by phase
+- [`tx sync compact`](/docs/primitives/compact): Archive completed tasks

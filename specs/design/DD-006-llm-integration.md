@@ -28,7 +28,7 @@ This document describes **how** `tx` integrates with Claude for LLM-powered feat
 
 The API key is **optional**. If set as an environment variable, it's used automatically. If not set:
 - Core commands (`tx add`, `tx ready`, etc.) work normally
-- LLM commands (`tx dedupe`, `tx compact`, `tx reprioritize`) fail with a clear error message
+- LLM commands (`tx dedupe`, `tx sync compact`, `tx reprioritize`) fail with a clear error message
 - The MCP server starts and serves core tools; LLM tools return error text
 
 ```typescript

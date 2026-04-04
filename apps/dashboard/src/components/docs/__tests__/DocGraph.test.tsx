@@ -44,7 +44,7 @@ describe("DocGraph", () => {
 
     renderWithProviders(
       <DocGraph
-        selectedDocName={null}
+        selectedNodeId={null}
         onSelectDoc={onSelectDoc}
       />,
     )
@@ -55,7 +55,7 @@ describe("DocGraph", () => {
     })
 
     fireEvent.click(screen.getByText("PRD-001"))
-    expect(onSelectDoc).toHaveBeenCalledWith("PRD-001")
+    expect(onSelectDoc).toHaveBeenCalledWith(1)
   })
 
   it("shows empty-state text when graph has no nodes", async () => {

@@ -284,10 +284,10 @@ describe("CLI sync command strict mode", () => {
     expect(importTasksOnly.stderr).toContain("no longer supported")
   })
 
-  it("does not expose removed sync compact subcommand", () => {
-    const result = runInTmp(["sync", "compact"])
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain("Unknown sync subcommand: compact")
+  it("exposes sync compact subcommand (absorbed from top-level)", () => {
+    const result = runInTmp(["sync", "compact", "--dry-run"])
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("No tasks eligible for compaction")
   })
 
   it("sync subcommand help excludes legacy file options", () => {

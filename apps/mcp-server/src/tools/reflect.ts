@@ -60,7 +60,7 @@ const handleReflect = async (args: {
       isError: false
     }
   } catch (error) {
-    return handleToolError("tx_reflect", args, error)
+    return handleToolError("tx_auto_reflect", args, error)
   }
 }
 
@@ -70,7 +70,7 @@ const handleReflect = async (args: {
 
 export const registerReflectTools = (server: McpServer): void => {
   registerEffectTool(server,
-    "tx_reflect",
+    "tx_auto_reflect",
     "Run a session retrospective to analyze recent agent sessions. Returns structured metrics on throughput, proliferation, stuck tasks, and signals. Use to detect problems and tune approach.",
     {
       sessions: z.number().int().positive().optional().describe("Number of recent sessions to analyze (default: 10)"),

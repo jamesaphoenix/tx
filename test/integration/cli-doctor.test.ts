@@ -385,7 +385,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
     it("human output shows header banner", () => {
       const result = runTx("doctor", dbPath)
       expect(result.status).toBe(0)
-      expect(result.stdout).toContain("tx doctor - System Health")
+      expect(result.stdout).toContain("tx diag doctor - System Health")
       expect(result.stdout).toContain("========")
     })
 
@@ -409,9 +409,9 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
       const result = runTx("validate", dbPath)
       expect(result.status).toBe(0)
       expect(result.stderr).toContain("[deprecated]")
-      expect(result.stderr).toContain("tx doctor")
+      expect(result.stderr).toContain("tx diag doctor")
       // Still runs the full doctor output
-      expect(result.stdout).toContain("tx doctor - System Health")
+      expect(result.stdout).toContain("tx diag doctor - System Health")
     })
 
     it("tx validate --json still works through the alias", () => {

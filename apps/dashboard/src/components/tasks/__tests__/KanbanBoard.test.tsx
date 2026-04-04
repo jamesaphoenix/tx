@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { KanbanBoard } from "../KanbanBoard"
 import type { TaskWithDeps } from "../../../api/client"
 import type { TaskFilters, UseInfiniteTasksResult } from "../../../hooks/useInfiniteTasks"
@@ -98,6 +99,24 @@ function configureHookMocks(
   })
 }
 
+function createTestQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: 0,
+        refetchInterval: false,
+        refetchOnWindowFocus: false,
+      },
+    },
+  })
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = createTestQueryClient()
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
+
 function createDataTransfer(): DataTransfer {
   const store = new Map<string, string>()
   return {
@@ -137,7 +156,7 @@ describe("KanbanBoard", () => {
 
     configureHookMocks(createHookResult(nonDoneTasks), createHookResult(doneTasks, { total: 1 }))
 
-    render(<KanbanBoard onSelectTask={vi.fn()} />)
+    renderWithProviders(<KanbanBoard onSelectTask={vi.fn()} />)
 
     expect(screen.getByTestId("kanban-column-backlog")).toBeInTheDocument()
     expect(screen.getByTestId("kanban-column-ready")).toBeInTheDocument()
@@ -159,7 +178,7 @@ describe("KanbanBoard", () => {
       createHookResult([]),
     )
 
-    render(<KanbanBoard onSelectTask={onSelectTask} />)
+    renderWithProviders(<KanbanBoard onSelectTask={onSelectTask} />)
 
     fireEvent.click(screen.getByTestId("task-card-tx-click"))
 
@@ -170,7 +189,7 @@ describe("KanbanBoard", () => {
     const doneTask = createTask({ id: "tx-done-invalid", title: "Done Task", status: "done", completedAt: "2026-02-03T00:00:00.000Z" })
     configureHookMocks(createHookResult([]), createHookResult([doneTask], { total: 1 }))
 
-    render(<KanbanBoard onSelectTask={vi.fn()} />)
+    renderWithProviders(<KanbanBoard onSelectTask={vi.fn()} />)
 
     const dataTransfer = createDataTransfer()
     fireEvent.dragStart(screen.getByTestId("kanban-draggable-tx-done-invalid"), { dataTransfer })
@@ -205,7 +224,7 @@ describe("KanbanBoard", () => {
         }),
     )
 
-    render(<KanbanBoard onSelectTask={vi.fn()} />)
+    renderWithProviders(<KanbanBoard onSelectTask={vi.fn()} />)
 
     const dataTransfer = createDataTransfer()
     fireEvent.dragStart(screen.getByTestId("kanban-draggable-tx-move"), { dataTransfer })
@@ -241,7 +260,7 @@ describe("KanbanBoard", () => {
       }),
     )
 
-    render(<KanbanBoard onSelectTask={vi.fn()} />)
+    renderWithProviders(<KanbanBoard onSelectTask={vi.fn()} />)
 
     const doneColumn = screen.getByTestId("kanban-column-done")
 

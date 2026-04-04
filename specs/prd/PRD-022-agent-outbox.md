@@ -26,13 +26,13 @@ tx has no mechanism for direct agent-to-agent communication. Agents coordinate o
 
 ## Solution
 
-Channel-based outbox messaging primitive. Agents write messages to an outbox table, recipients poll with `tx inbox`. Fits tx's local-first, pull-based, primitives-not-frameworks philosophy.
+Channel-based outbox messaging primitive. Agents write messages to an outbox table, recipients poll with `tx msg inbox`. Fits tx's local-first, pull-based, primitives-not-frameworks philosophy.
 
 ### Key Design Decisions
 
 - **Channel-based addressing**: Free-form strings (agent IDs, topics, `task:tx-abc123`)
 - **Two-state lifecycle**: `pending` -> `acked` (no intermediate `delivered` state)
-- **Read-only inbox**: `tx inbox` is a pure query — no side effects on read
+- **Read-only inbox**: `tx msg inbox` is a pure query — no side effects on read
 - **Cursor-based fan-out**: `--after <id>` enables Kafka-style multi-reader consumption
 - **Pull-based only**: Consistent with `tx ready` / `tx claim` patterns
 
@@ -52,13 +52,13 @@ Channel-based outbox messaging primitive. Agents write messages to an outbox tab
 
 ## Acceptance Criteria
 
-1. `tx send <channel> <content>` creates a message and returns it
-2. `tx inbox <channel>` returns pending messages ordered by ID
-3. `tx inbox <channel> --after <id>` returns only messages after the cursor
+1. `tx msg send <channel> <content>` creates a message and returns it
+2. `tx msg inbox <channel>` returns pending messages ordered by ID
+3. `tx msg inbox <channel> --after <id>` returns only messages after the cursor
 4. Multiple readers on the same channel see the same messages independently
-5. `tx ack <id>` transitions a message from pending to acked
+5. `tx msg ack <id>` transitions a message from pending to acked
 6. Acked messages are excluded from default inbox reads
-7. `tx outbox gc` removes expired and old acked messages
+7. `tx msg gc` removes expired and old acked messages
 8. All interfaces work: CLI, MCP tools, REST API
 
 ## Out of Scope

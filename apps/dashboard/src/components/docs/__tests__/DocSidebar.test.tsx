@@ -9,6 +9,7 @@ import type { DocSerialized, DocGraphResponse } from "../../../api/client"
 const docsFixture: DocSerialized[] = [
   {
     id: 1,
+    docId: "doc-111111111111",
     hash: "h1",
     kind: "overview",
     name: "overview-dashboard",
@@ -22,6 +23,7 @@ const docsFixture: DocSerialized[] = [
   },
   {
     id: 2,
+    docId: "doc-222222222222",
     hash: "h2",
     kind: "prd",
     name: "PRD-001-dashboard",
@@ -35,6 +37,7 @@ const docsFixture: DocSerialized[] = [
   },
   {
     id: 3,
+    docId: "doc-333333333333",
     hash: "h3",
     kind: "design",
     name: "DD-001-dashboard",
@@ -78,7 +81,7 @@ function renderWithProviders() {
   return render(
     <QueryClientProvider client={queryClient}>
       <DocSidebar
-        selectedDocName={null}
+        selectedDocRef={null}
         onSelectDoc={vi.fn()}
         showMap={false}
         onToggleMap={vi.fn()}
@@ -86,7 +89,7 @@ function renderWithProviders() {
         onKindFilterChange={vi.fn()}
         statusFilter=""
         onStatusFilterChange={vi.fn()}
-        selectedDocNames={new Set<string>()}
+        selectedDocRefs={new Set<string>()}
         onToggleSelectDoc={vi.fn()}
       />
     </QueryClientProvider>,

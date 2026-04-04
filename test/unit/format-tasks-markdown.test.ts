@@ -61,6 +61,7 @@ function makeTask(overrides: TaskOverride): TaskWithDeps {
     claimedBy: null,
     claimExpiresAt: null,
     failedAttempts: 0,
+    linkedDocs: [],
     ...rest,
   }
 }
@@ -168,6 +169,30 @@ describe("formatTasksMarkdown", () => {
     ]
     const md = formatTasksMarkdown(tasks, [], { ready: 1, active: 0, blocked: 0, done: 0 })
     expect(md).toContain("- **Group context**: auth-epic")
+  })
+
+  it("includes linked docs when present", () => {
+    const tasks = [
+      makeTask({
+        id: "tx-doc001",
+        title: "Task With Spec",
+        linkedDocs: [
+          {
+            docId: 1 as any,
+            name: "auth-flow",
+            title: "Auth Flow",
+            kind: "prd",
+            version: 1,
+            status: "changing",
+            filePath: "specs/prd/auth-flow.md",
+            linkType: "implements",
+          },
+        ],
+      }),
+    ]
+
+    const md = formatTasksMarkdown(tasks, [], { ready: 1, active: 0, blocked: 0, done: 0 })
+    expect(md).toContain("- **Linked docs**: implements: Auth Flow (prd/auth-flow v1)")
   })
 
   it("renders recently completed section", () => {

@@ -90,10 +90,10 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
     return (
       <div
         ref={innerRef}
-        className={`rounded-lg border p-3 cursor-pointer transition-all duration-150 animate-task-card-enter ${
+        className={`rounded-lg border p-3 cursor-pointer transition-all duration-150 animate-task-card-enter shadow-sm ${
           isSelected
-            ? "border-blue-500/60 bg-blue-500/5"
-            : "border-gray-800/80 bg-gray-900/40 hover:border-gray-700 hover:bg-gray-900/70"
+            ? "border-blue-500/60 bg-blue-500/5 shadow-blue-500/10"
+            : "border-gray-700 bg-gray-900/60 hover:border-gray-600 hover:bg-gray-900/80 hover:shadow-md"
         } ${isFocused && showFocusRing ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900" : ""}`}
         data-depth={nestingLevel}
         role="button"

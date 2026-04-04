@@ -1,20 +1,20 @@
 import { useMemo, useState } from "react"
 import { Button } from "../ui"
 import { useQuery } from "@tanstack/react-query"
-import { fetchers, type DocSerialized } from "../../api/client"
+import { docSelectionKey, fetchers, type DocSerialized } from "../../api/client"
 import { SpecHealth } from "./SpecHealth"
 
 interface DocSidebarProps {
-  selectedDocName: string | null
-  onSelectDoc: (name: string) => void
+  selectedDocRef: string | null
+  onSelectDoc: (ref: string) => void
   showMap: boolean
   onToggleMap: () => void
   kindFilter: string
   onKindFilterChange: (kind: string) => void
   statusFilter: string
   onStatusFilterChange: (status: string) => void
-  selectedDocNames?: Set<string>
-  onToggleSelectDoc?: (name: string) => void
+  selectedDocRefs?: Set<string>
+  onToggleSelectDoc?: (ref: string) => void
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -28,6 +28,8 @@ const KIND_LABELS: Record<DocSerialized["kind"], string> = {
   design: "DD",
   requirement: "REQ",
   system_design: "SD",
+  runbook: "RB",
+  decision: "DEC",
 }
 
 interface DocGroup {
@@ -96,7 +98,7 @@ function DocItem({
   doc: DocSerialized
   isSelected: boolean
   isChecked?: boolean
-  onToggleCheck?: (name: string) => void
+  onToggleCheck?: (ref: string) => void
   onClick: () => void
 }) {
   return (
@@ -115,7 +117,7 @@ function DocItem({
           <span
             role="checkbox"
             aria-checked={isChecked}
-            onClick={(e) => { e.stopPropagation(); onToggleCheck(doc.name) }}
+            onClick={(e) => { e.stopPropagation(); onToggleCheck(docSelectionKey(doc)) }}
             className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition cursor-pointer ${
               isChecked
                 ? "bg-blue-500 border-blue-500 text-white"
@@ -151,7 +153,7 @@ function DocItem({
   )
 }
 
-export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap, kindFilter, onKindFilterChange, statusFilter, onStatusFilterChange, selectedDocNames, onToggleSelectDoc }: DocSidebarProps) {
+export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, kindFilter, onKindFilterChange, statusFilter, onStatusFilterChange, selectedDocRefs, onToggleSelectDoc }: DocSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
 
   const docsQuery = useQuery({
@@ -209,7 +211,12 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
         </Button>
       </div>
 
-      <SpecHealth onSelectDoc={onSelectDoc} />
+      <SpecHealth onSelectDoc={(docId) => {
+        const match = docs.find((doc) => doc.docId === docId)
+        if (match) {
+          onSelectDoc(docSelectionKey(match))
+        }
+      }} />
 
       {/* Filters */}
       <div className="flex gap-2 mb-2">
@@ -256,12 +263,12 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
             {/* Top-level docs (overviews) */}
             {topLevel.map((doc) => (
               <DocItem
-                key={doc.name}
+                key={docSelectionKey(doc)}
                 doc={doc}
-                isSelected={selectedDocName === doc.name}
-                isChecked={selectedDocNames?.has(doc.name)}
+                isSelected={selectedDocRef === docSelectionKey(doc)}
+                isChecked={selectedDocRefs?.has(docSelectionKey(doc))}
                 onToggleCheck={onToggleSelectDoc}
-                onClick={() => onSelectDoc(doc.name)}
+                onClick={() => onSelectDoc(docSelectionKey(doc))}
               />
             ))}
 
@@ -274,12 +281,12 @@ export function DocSidebar({ selectedDocName, onSelectDoc, showMap, onToggleMap,
                 <div className="space-y-0.5">
                   {group.docs.map((doc) => (
                     <DocItem
-                      key={doc.name}
+                      key={docSelectionKey(doc)}
                       doc={doc}
-                      isSelected={selectedDocName === doc.name}
-                      isChecked={selectedDocNames?.has(doc.name)}
+                      isSelected={selectedDocRef === docSelectionKey(doc)}
+                      isChecked={selectedDocRefs?.has(docSelectionKey(doc))}
                       onToggleCheck={onToggleSelectDoc}
-                      onClick={() => onSelectDoc(doc.name)}
+                      onClick={() => onSelectDoc(docSelectionKey(doc))}
                     />
                   ))}
                 </div>

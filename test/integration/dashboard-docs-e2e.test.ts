@@ -80,13 +80,13 @@ describe.sequential("dashboard docs e2e", () => {
     expect(addOverview.status).toBe(0)
 
     const addPrd = runTx(
-      ["doc", "add", "prd", "prd-001-dashboard-e2e", "--title", "PRD Dashboard E2E"],
+      ["doc", "add", "prd", "prd-dashboard-e2e", "--title", "PRD Dashboard E2E"],
       tmpProjectDir,
     )
     expect(addPrd.status).toBe(0)
 
     const link = runTx(
-      ["doc", "link", "overview-dashboard-e2e", "prd-001-dashboard-e2e", "--type", "overview_to_prd"],
+      ["doc", "link", "overview-dashboard-e2e", "prd-dashboard-e2e", "--type", "overview_to_prd"],
       tmpProjectDir,
     )
     expect(link.status).toBe(0)
@@ -110,7 +110,7 @@ describe.sequential("dashboard docs e2e", () => {
     expect(listRes.ok).toBe(true)
     const listData = await listRes.json() as { docs: Array<{ name: string; kind: string }> }
     expect(listData.docs.some((doc) => doc.name === "overview-dashboard-e2e")).toBe(true)
-    expect(listData.docs.some((doc) => doc.name === "prd-001-dashboard-e2e")).toBe(true)
+    expect(listData.docs.some((doc) => doc.name === "prd-dashboard-e2e")).toBe(true)
 
     const filteredRes = await fetch(`http://localhost:${apiPort}/api/docs?kind=prd`)
     expect(filteredRes.ok).toBe(true)
@@ -118,10 +118,10 @@ describe.sequential("dashboard docs e2e", () => {
     expect(filteredData.docs.length).toBeGreaterThan(0)
     expect(filteredData.docs.every((doc) => doc.kind === "prd")).toBe(true)
 
-    const detailRes = await fetch(`http://localhost:${apiPort}/api/docs/prd-001-dashboard-e2e`)
+    const detailRes = await fetch(`http://localhost:${apiPort}/api/docs/prd-dashboard-e2e`)
     expect(detailRes.ok).toBe(true)
     const detailData = await detailRes.json() as { name: string; kind: string }
-    expect(detailData.name).toBe("prd-001-dashboard-e2e")
+    expect(detailData.name).toBe("prd-dashboard-e2e")
     expect(detailData.kind).toBe("prd")
 
     const graphRes = await fetch(`http://localhost:${apiPort}/api/docs/graph`)
@@ -131,7 +131,7 @@ describe.sequential("dashboard docs e2e", () => {
       edges: Array<{ source: string; target: string; type: string }>
     }
     const overviewNode = graphData.nodes.find((node) => node.label === "overview-dashboard-e2e")
-    const prdNode = graphData.nodes.find((node) => node.label === "prd-001-dashboard-e2e")
+    const prdNode = graphData.nodes.find((node) => node.label === "prd-dashboard-e2e")
     expect(overviewNode).toBeDefined()
     expect(prdNode).toBeDefined()
     expect(
@@ -144,11 +144,104 @@ describe.sequential("dashboard docs e2e", () => {
     const renderRes = await fetch(`http://localhost:${apiPort}/api/docs/render`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "prd-001-dashboard-e2e" }),
+      body: JSON.stringify({ name: "prd-dashboard-e2e" }),
     })
     expect(renderRes.ok).toBe(true)
     const renderData = await renderRes.json() as { rendered: string[] }
     expect(renderData.rendered.length).toBeGreaterThan(0)
     expect(renderData.rendered[0]).toContain("# Summary")
+  }, 45000)
+
+  it("handles duplicate slugs via conflict responses, scoped refs, stable ids, and disambiguated graph labels", async () => {
+    tmpProjectDir = mkdtempSync(join(tmpdir(), "tx-dashboard-docs-ambiguous-"))
+    const apiPort = 3302
+
+    const init = runTx(["init", "--codex"], tmpProjectDir)
+    expect(init.status).toBe(0)
+
+    const addPrd = runTx(
+      ["doc", "add", "prd", "shared-dashboard-doc", "--title", "Shared Dashboard PRD"],
+      tmpProjectDir,
+    )
+    expect(addPrd.status).toBe(0)
+
+    const addDesign = runTx(
+      ["doc", "add", "design", "shared-dashboard-doc", "--title", "Shared Dashboard Design"],
+      tmpProjectDir,
+    )
+    expect(addDesign.status).toBe(0)
+
+    const prdShow = runTx(["doc", "show", "prd/shared-dashboard-doc", "--json"], tmpProjectDir)
+    const designShow = runTx(["doc", "show", "design/shared-dashboard-doc", "--json"], tmpProjectDir)
+    expect(prdShow.status).toBe(0)
+    expect(designShow.status).toBe(0)
+
+    const prdDoc = JSON.parse(prdShow.stdout) as { docId: string; kind: string; name: string }
+    const designDoc = JSON.parse(designShow.stdout) as { docId: string; kind: string; name: string }
+    expect(prdDoc.docId).not.toBe(designDoc.docId)
+
+    proc = spawn("bun", [CLI_SRC, "dashboard", "--no-open", "--port", String(apiPort)], {
+      cwd: tmpProjectDir,
+      stdio: "pipe",
+    })
+    const output = { value: "" }
+    proc.stdout?.on("data", (d: Buffer) => { output.value += d.toString() })
+    proc.stderr?.on("data", (d: Buffer) => { output.value += d.toString() })
+
+    await waitForServers(output, apiPort)
+
+    const listRes = await fetch(`http://localhost:${apiPort}/api/docs`)
+    expect(listRes.ok).toBe(true)
+    const listData = await listRes.json() as {
+      docs: Array<{ docId: string; name: string; kind: string }>
+    }
+    expect(
+      listData.docs.filter((doc) => doc.name === "shared-dashboard-doc").map((doc) => doc.kind).sort()
+    ).toEqual(["design", "prd"])
+
+    const ambiguousRes = await fetch(`http://localhost:${apiPort}/api/docs/shared-dashboard-doc`)
+    expect(ambiguousRes.status).toBe(409)
+    const ambiguousData = await ambiguousRes.json() as { error: string }
+    expect(ambiguousData.error).toContain("ambiguous across kinds")
+    expect(ambiguousData.error).toContain("Use docId instead")
+
+    const scopedRes = await fetch(
+      `http://localhost:${apiPort}/api/docs/${encodeURIComponent("prd/shared-dashboard-doc")}`
+    )
+    expect(scopedRes.status).toBe(200)
+    const scopedData = await scopedRes.json() as { docId: string; name: string; kind: string }
+    expect(scopedData).toMatchObject({
+      docId: prdDoc.docId,
+      name: "shared-dashboard-doc",
+      kind: "prd",
+    })
+
+    const byIdRes = await fetch(`http://localhost:${apiPort}/api/docs/by-id/${prdDoc.docId}`)
+    expect(byIdRes.status).toBe(200)
+    const byIdData = await byIdRes.json() as { docId: string; name: string; kind: string }
+    expect(byIdData).toMatchObject({
+      docId: prdDoc.docId,
+      name: "shared-dashboard-doc",
+      kind: "prd",
+    })
+
+    const sourceRes = await fetch(
+      `http://localhost:${apiPort}/api/docs/${encodeURIComponent("design/shared-dashboard-doc")}/source`
+    )
+    expect(sourceRes.status).toBe(200)
+    const sourceData = await sourceRes.json() as { docId: string; name: string; version: number }
+    expect(sourceData).toMatchObject({
+      docId: designDoc.docId,
+      name: "shared-dashboard-doc",
+      version: 1,
+    })
+
+    const graphRes = await fetch(`http://localhost:${apiPort}/api/docs/graph`)
+    expect(graphRes.ok).toBe(true)
+    const graphData = await graphRes.json() as {
+      nodes: Array<{ id: string; label: string }>
+    }
+    expect(graphData.nodes.some((node) => node.label === "prd/shared-dashboard-doc")).toBe(true)
+    expect(graphData.nodes.some((node) => node.label === "design/shared-dashboard-doc")).toBe(true)
   }, 45000)
 })

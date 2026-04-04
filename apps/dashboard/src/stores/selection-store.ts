@@ -11,8 +11,8 @@ export interface SelectionState {
   taskIds: Set<string>
   /** Selected run IDs on the Runs page */
   runIds: Set<string>
-  /** Selected doc names on the Docs page */
-  docNames: Set<string>
+  /** Selected doc refs on the Docs page (`docId:version`) */
+  docRefs: Set<string>
   /** Selected issue IDs on the Cycles page */
   issueIds: Set<string>
 }
@@ -20,7 +20,7 @@ export interface SelectionState {
 const createInitialSelectionState = (): SelectionState => ({
   taskIds: new Set(),
   runIds: new Set(),
-  docNames: new Set(),
+  docRefs: new Set(),
   issueIds: new Set(),
 })
 
@@ -55,12 +55,12 @@ export const selectionActions = {
     selectionStore.setState((s) => ({ ...s, runIds: new Set() })),
 
   // Docs
-  toggleDoc: (name: string) =>
-    selectionStore.setState((s) => ({ ...s, docNames: toggleInSet(s.docNames, name) })),
-  selectAllDocs: (names: string[]) =>
-    selectionStore.setState((s) => ({ ...s, docNames: new Set(names) })),
+  toggleDoc: (ref: string) =>
+    selectionStore.setState((s) => ({ ...s, docRefs: toggleInSet(s.docRefs, ref) })),
+  selectAllDocs: (refs: string[]) =>
+    selectionStore.setState((s) => ({ ...s, docRefs: new Set(refs) })),
   clearDocs: () =>
-    selectionStore.setState((s) => ({ ...s, docNames: new Set() })),
+    selectionStore.setState((s) => ({ ...s, docRefs: new Set() })),
 
   // Issues (Cycles page)
   toggleIssue: (id: string) =>

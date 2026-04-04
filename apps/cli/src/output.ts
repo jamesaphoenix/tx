@@ -2,7 +2,7 @@
  * Output formatters for JSON/text CLI output
  */
 
-import type { TaskWithDeps, LearningWithScore, ContextResult } from "@jamesaphoenix/tx-types"
+import type { TaskWithDeps, LearningWithScore, ContextResult, TaskLinkedDocRef } from "@jamesaphoenix/tx-types"
 
 // --- JSON serializer (handles Date objects) ---
 
@@ -33,6 +33,14 @@ export function formatTaskWithDeps(t: TaskWithDeps): string {
   lines.push(`  Blocked by: ${t.blockedBy.length > 0 ? t.blockedBy.join(", ") : "(none)"}`)
   lines.push(`  Blocks: ${t.blocks.length > 0 ? t.blocks.join(", ") : "(none)"}`)
   lines.push(`  Children: ${t.children.length > 0 ? t.children.join(", ") : "(none)"}`)
+  if (t.linkedDocs.length > 0) {
+    lines.push("  Linked docs:")
+    for (const doc of t.linkedDocs) {
+      lines.push(`    - ${formatLinkedDocText(doc)}`)
+    }
+  } else {
+    lines.push("  Linked docs: (none)")
+  }
   if (t.orchestrationStatus && t.orchestrationStatus !== "unclaimed") {
     lines.push(`  Orchestration: ${t.orchestrationStatus}${t.claimedBy ? ` (worker: ${t.claimedBy})` : ""}`)
     if (t.claimExpiresAt) {
@@ -104,12 +112,22 @@ function sanitizeInline(s: string): string {
   return s.replace(/[\r\n]+/g, " ")
 }
 
+function formatLinkedDocText(doc: TaskLinkedDocRef): string {
+  return `${doc.linkType}: ${doc.title} (${doc.kind}/${doc.name} v${doc.version})`
+}
+
+function formatLinkedDocMarkdown(doc: TaskLinkedDocRef): string {
+  return `${sanitizeInline(doc.linkType)}: ${sanitizeInline(doc.title)} (${sanitizeInline(doc.kind)}/${sanitizeInline(doc.name)} v${doc.version})`
+}
+
 // --- Markdown export formatter ---
 
 export interface TasksMarkdownOptions {
   includeContext?: Map<string, ContextResult>
   /** Override the section title for the tasks list (default: "Ready Tasks") */
   sectionTitle?: string
+  /** Override the empty state message for the tasks list. */
+  emptyStateMessage?: string
 }
 
 export interface TasksMarkdownCounts {
@@ -146,11 +164,12 @@ export function formatTasksMarkdown(
   ]
 
   const baseTitle = sanitizeHeading(options.sectionTitle ?? "Ready Tasks")
+  const emptyStateMessage = options.emptyStateMessage ?? "_No ready tasks._"
 
   if (readyTasks.length === 0) {
     lines.push(`## ${baseTitle}`)
     lines.push(``)
-    lines.push(`_No ready tasks._`)
+    lines.push(emptyStateMessage)
     lines.push(``)
   } else {
     lines.push(`## ${baseTitle} (by score, highest first)`)
@@ -165,6 +184,7 @@ export function formatTasksMarkdown(
       lines.push(`- **Blocked by**: ${t.blockedBy.length > 0 ? t.blockedBy.join(", ") : "(none)"}`)
       lines.push(`- **Blocks**: ${t.blocks.length > 0 ? t.blocks.join(", ") : "(none)"}`)
       if (t.children.length > 0) lines.push(`- **Children**: ${t.children.join(", ")}`)
+      if (t.linkedDocs.length > 0) lines.push(`- **Linked docs**: ${t.linkedDocs.map(formatLinkedDocMarkdown).join("; ")}`)
       if (t.effectiveGroupContext) lines.push(`- **Group context**: ${sanitizeInline(t.effectiveGroupContext)}`)
       lines.push(`- **Created**: ${t.createdAt.toISOString().split("T")[0]}`)
 

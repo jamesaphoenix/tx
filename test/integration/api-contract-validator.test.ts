@@ -45,6 +45,7 @@ import {
   RetrieverServiceLive,
   GuardRepositoryLive,
   PinRepositoryLive,
+  DocRepositoryLive,
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive
@@ -96,6 +97,16 @@ interface SerializedTask {
   readonly claimedBy: string | null
   readonly claimExpiresAt: string | null
   readonly failedAttempts: number
+  readonly linkedDocs: ReadonlyArray<{
+    readonly docId: string
+    readonly name: string
+    readonly title: string
+    readonly kind: string
+    readonly version: number
+    readonly status: string
+    readonly filePath: string
+    readonly linkType: string
+  }>
 }
 
 // =============================================================================
@@ -207,6 +218,25 @@ function validateTaskContract(task: unknown, label: string): string[] {
   if (typeof t.failedAttempts !== "number" || !Number.isInteger(t.failedAttempts)) {
     errors.push(`${label}: failedAttempts must be an integer (got ${typeof t.failedAttempts})`)
   }
+  if (!Array.isArray(t.linkedDocs)) {
+    errors.push(`${label}: linkedDocs must be an array (got ${typeof t.linkedDocs})`)
+  } else {
+    for (const [index, doc] of t.linkedDocs.entries()) {
+      if (!doc || typeof doc !== "object") {
+        errors.push(`${label}: linkedDocs[${index}] must be an object`)
+        continue
+      }
+      const linkedDoc = doc as Record<string, unknown>
+      for (const field of ["docId", "name", "title", "kind", "status", "filePath", "linkType"] as const) {
+        if (typeof linkedDoc[field] !== "string") {
+          errors.push(`${label}: linkedDocs[${index}].${field} must be a string`)
+        }
+      }
+      if (typeof linkedDoc.version !== "number" || !Number.isInteger(linkedDoc.version)) {
+        errors.push(`${label}: linkedDocs[${index}].version must be an integer`)
+      }
+    }
+  }
   // Ensure legacy redundant field is NOT present
   if ("failedAttemptCount" in t) {
     errors.push(`${label}: failedAttemptCount should not exist (use failedAttempts instead)`)
@@ -223,6 +253,47 @@ interface CliResult {
   stdout: string
   stderr: string
   status: number
+}
+
+type LinkedDocFixture = SerializedTask["linkedDocs"][number]
+
+function insertLinkedDoc(
+  db: Database,
+  taskId: string,
+  overrides: Partial<LinkedDocFixture> = {}
+): LinkedDocFixture {
+  const now = FIXTURE_TIMESTAMP
+  const fixture: LinkedDocFixture = {
+    docId: overrides.docId ?? "doc-666666666666",
+    name: overrides.name ?? "contract-linked-spec",
+    title: overrides.title ?? "Contract Linked Spec",
+    kind: overrides.kind ?? "prd",
+    version: overrides.version ?? 1,
+    status: overrides.status ?? "changing",
+    filePath: overrides.filePath ?? "specs/prd/contract-linked-spec.md",
+    linkType: overrides.linkType ?? "implements",
+  }
+
+  const docResult = db.prepare(
+    `INSERT INTO docs (doc_id, hash, kind, name, title, version, status, file_path, parent_doc_id, created_at, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, '{}')`
+  ).run(
+    fixture.docId,
+    `hash-${fixture.docId}-${fixture.version}`,
+    fixture.kind,
+    fixture.name,
+    fixture.title,
+    fixture.version,
+    fixture.status,
+    fixture.filePath,
+    now
+  )
+
+  db.prepare(
+    "INSERT INTO task_doc_links (task_id, doc_id, link_type, created_at) VALUES (?, ?, ?, ?)"
+  ).run(taskId, docResult.lastInsertRowid, fixture.linkType, now)
+
+  return fixture
 }
 
 function runCli(args: string[], dbPath: string): CliResult {
@@ -261,6 +332,7 @@ function createMcpRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpSe
     DependencyRepositoryLive,
     GuardRepositoryLive,
     PinRepositoryLive,
+    DocRepositoryLive,
     LearningRepositoryLive,
     FileLearningRepositoryLive,
     ClaimRepositoryLive,
@@ -376,11 +448,17 @@ function normalizeForComparison(task: SerializedTask): SerializedTask {
     blockedBy: [...task.blockedBy].sort(),
     blocks: [...task.blocks].sort(),
     children: [...task.children].sort(),
+    linkedDocs: [...task.linkedDocs].sort((a, b) =>
+      a.docId.localeCompare(b.docId) ||
+      a.linkType.localeCompare(b.linkType) ||
+      a.version - b.version
+    ),
     // Truncate dates to second precision to avoid millisecond differences
     createdAt: task.createdAt.slice(0, 19),
     updatedAt: task.updatedAt.slice(0, 19),
     completedAt: task.completedAt ? task.completedAt.slice(0, 19) : null,
-    assignedAt: task.assignedAt ? task.assignedAt.slice(0, 19) : null
+    assignedAt: task.assignedAt ? task.assignedAt.slice(0, 19) : null,
+    claimExpiresAt: task.claimExpiresAt ? task.claimExpiresAt.slice(0, 19) : null,
   }
 }
 
@@ -406,7 +484,12 @@ const CONTRACT_FIELDS: (keyof SerializedTask)[] = [
   "isReady",
   "groupContext",
   "effectiveGroupContext",
-  "effectiveGroupContextSourceTaskId"
+  "effectiveGroupContextSourceTaskId",
+  "orchestrationStatus",
+  "claimedBy",
+  "claimExpiresAt",
+  "failedAttempts",
+  "linkedDocs",
 ]
 
 /**
@@ -687,6 +770,36 @@ describe("API Contract Validator", () => {
       // Cross-validate
       assertTasksIdentical("CLI vs MCP", cliTask, mcpTask)
       assertTasksIdentical("MCP vs SDK", mcpTask, sdkTask)
+    })
+
+    it("all interfaces return identical linkedDocs for an attached spec", async () => {
+      const taskId = FIXTURES.TASK_JWT
+      const expected = insertLinkedDoc(db.db, taskId, {
+        docId: "doc-777777777777",
+        name: "contract-jwt-prd",
+        title: "Contract JWT PRD",
+        filePath: "specs/prd/contract-jwt-prd.md",
+      })
+
+      const cliDb = new Database(dbPath)
+      insertLinkedDoc(cliDb, taskId, expected)
+      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+      cliDb.close()
+
+      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      expect(cliResult.status, `CLI failed: ${cliResult.stderr}`).toBe(0)
+      const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
+
+      const mcpTask = await mcpGetTask(mcpRuntime, taskId)
+      const sdkTask = await sdkClient.tasks.get(taskId)
+
+      expect(cliTask.linkedDocs).toEqual([expected])
+      expect(mcpTask.linkedDocs).toEqual([expected])
+      expect(sdkTask.linkedDocs).toEqual([expected])
+
+      assertTasksIdentical("CLI vs MCP", cliTask, mcpTask)
+      assertTasksIdentical("MCP vs SDK", mcpTask, sdkTask)
+      assertTasksIdentical("CLI vs SDK", cliTask, sdkTask)
     })
 
     it("all interfaces resolve inherited group context identically", async () => {

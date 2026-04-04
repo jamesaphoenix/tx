@@ -7,151 +7,63 @@ export const HELP_TEXT = `tx v${CLI_VERSION} - Headless task infrastructure for 
 
 Usage: tx <command> [arguments] [options]
 
-Start Here (recommended first pass):
-  tx init [--codex|--claude]
-  tx add <title>
-  tx ready
-  tx show <id>
-  tx done <id>
-  tx sync export
-
-When you are ready to add docs-first specs:
-  tx doc add prd <name> --title <title>
-  tx spec discover
-  tx spec status
-  tx spec complete --doc <name> --by <human>
-
-Core Workflow:
+Start Here:
   init                    Initialize task database
   add <title>             Create a new task
   list                    List tasks
-  ready                   List ready tasks (no blockers)
+  ready                   List ready (unblocked) tasks
   show <id>               Show task details
   update <id>             Update task
-  done <id>               Mark task complete
-  reset <id>              Reset task to ready
+  done <id>               Complete task
+  reset <id>              Reset to ready
   delete <id>             Delete task
-  md-export               Export tasks to markdown file
-  group-context set       Set task-group context on a task
-  group-context clear     Clear task-group context on a task
 
-Dependencies & Hierarchy:
-  block <id> <blocker>    Add blocking dependency
-  unblock <id> <blocker>  Remove blocking dependency
-  children <id>           List child tasks
-  tree <id>               Show task subtree
+Dependencies:   tx dep <block|unblock|children|tree>
+Messages:       tx msg <send|inbox|ack|pending|gc>
+Memory:         tx memory <source|add|index|search|context|...>
+Docs & Specs:   tx doc | tx spec <lint|discover|health|...>
+Sync & Data:    tx sync <export|import|compact|history|migrate|...>
+Traces:         tx trace <list|show|errors|...>
+Bulk:           tx bulk <done|score|reset|delete>
+Claims:         tx claim [release|renew]
+Autonomy:       tx auto <guard|gate|verify|label|reflect>
+Context:        tx pin <set|get|rm|list|sync>
+Skills:         tx skills <generate|sync>
+Diagnostics:    tx diag <stats|doctor|dashboard>
+Other:          tx cycle, tx decompose, tx decision, tx utils, tx md-export, tx group-context
 
-Memory (filesystem-backed .md search):
-  memory source           Manage indexed directories (add, rm, list)
-  memory add              Create a new memory document (.md file)
-  memory index            Index all registered sources
-  memory search           Search memory documents (BM25/semantic/graph)
-  memory show             Display a memory document
-  memory tag/untag        Add or remove tags
-  memory set/unset/props  Manage key-value properties
-  memory links/backlinks  Show document connections
-  memory list             List indexed documents
-  memory link             Create explicit edge between documents
-  memory relate           Add to frontmatter.related
-  memory context          Get task-relevant memory for prompt injection
-  memory learn            Attach a learning to a file/glob pattern
-  memory recall           Query file-specific learnings by path
-
-Messages:
-  send                    Send a message to a channel
-  inbox                   Read messages from a channel
-  ack                     Acknowledge a message
-  ack all                 Acknowledge all messages on a channel
-  outbox pending          Count pending messages on a channel
-  outbox gc               Garbage collect old messages
-
-Context Pins:
-  pin set <id> [content]  Create/update a context pin
-  pin get <id>            Show pin content
-  pin rm <id>             Remove a pin
-  pin list                List all pins
-  pin sync                Sync pins to target files
-  pin targets [files...]  Show/set target files
-
-Docs & Specs:
-  doc <subcommand>        Manage docs (add, edit, show, list, lock, version, link, attach, patch)
-  spec <subcommand>       Spec traceability (lint, discover, health, fci, status, complete, run/batch)
-
-Cycle Scan:
-  cycle                   Run cycle-based issue discovery with sub-agent swarms
-
-Sync & Data:
-  sync export             Export stream events
-  sync import             Import stream events
-  sync stream             Show stream identity
-  sync hydrate            Rebuild state from stream events
-  sync status             Show sync status
-  sync claude             Sync tasks to Claude Code team directory
-  compact                 Compact completed tasks and export learnings
-  history                 View compaction history
-  migrate status          Show database migration status
-
-Bulk Operations:
-  bulk done <id...>       Complete multiple tasks
-  bulk score <n> <id...>  Set score for multiple tasks
-  bulk reset <id...>      Reset multiple tasks to ready
-  bulk delete <id...>     Delete multiple tasks
-
-Diagnostics:
-  stats                   Show queue metrics and health overview
-  doctor                  Run system health checks (DB validation + diagnostics)
-  dashboard               Start API server + dashboard
-
-Guards & Limits:
-  guard set               Set task creation guards (--max-pending, --max-children, --max-depth)
-  guard show              Show current guard configuration
-  guard clear             Clear guards
-  gate create <name>      Create a HITL phase gate (stored as gate.<name> pin)
-  gate check <name>       Exit 0 if approved, 1 if not approved
-  gate approve <name>     Approve a gate
-  gate revoke <name>      Revoke a gate
-
-Verification:
-  verify set <id> <cmd>   Attach a verify command to a task
-  verify show <id>        Show verify command for a task
-  verify run <id>         Run verification command
-  verify clear <id>       Clear verify command from a task
-
-Labels:
-  label add <name>        Create a label
-  label list              List all labels
-  label assign <id> <l>   Assign a label to a task
-  label unassign <id> <l> Remove a label from a task
-  label delete <name>     Delete a label
-
-Reflection:
-  reflect                 Session retrospective (throughput, signals, stuck tasks)
-
-Utils:
-  utils claude-usage      Show Claude Code rate limit usage
-  utils codex-usage       Show Codex rate limit usage
-
-Global Options:
-  --json                  Output as JSON
-  --db <path>             Database path (default: .tx/tasks.db)
-  --help                  Show help
-  --version               Show version
-
-Run 'tx help <command>' or 'tx <command> --help' for command-specific help.
+Options: --json, --db <path>, --help, --version
+Run 'tx help <command>' for details.
+Run 'tx help --json' or 'tx schema <command>' for machine-readable command discovery.
 
 Examples:
   tx init
   tx add "Implement auth" --score 800
-  tx add "Login page" --parent tx-a1b2c3d4 --score 600
-  tx list --status backlog,ready
   tx ready --json
-  tx block <task-id> <blocker-id>
+  tx help --json
+  tx schema dep block
+  tx dep block <task-id> <blocker-id>
   tx done <task-id>
   tx doc add prd auth-flow --title "Auth Flow"
   tx spec discover
-  tx spec status --doc auth-flow`
+  tx decompose auth-flow-design --runtime auto
+  tx skills generate --output-dir .tx/generated-skills --clean
+  tx skills sync --project-dir ../my-project --target codex`
 
 export const commandHelp: Record<string, string> = {
+  schema: `tx schema - Show machine-readable CLI command schemas
+
+Usage: tx schema [command] [subcommand]
+
+Returns structured JSON describing the tx command catalog or a specific
+command's usage, arguments, options, subcommands, examples, aliases, and
+deprecation mapping.
+
+Examples:
+  tx schema
+  tx schema dep
+  tx schema dep block`,
+
   init: `tx init - Initialize task database
 
 Usage: tx init [--db <path>] [--claude] [--codex] [--watchdog] [--watchdog-runtime <auto|codex|claude|both>]
@@ -159,24 +71,117 @@ Usage: tx init [--db <path>] [--claude] [--codex] [--watchdog] [--watchdog-runti
 Initializes the tx database and required tables. Creates .tx/tasks.db
 by default. Safe to run multiple times (idempotent).
 
+Interactive tx init lets the user choose the exact Claude/Codex tx skills
+to install during onboarding. Passing --claude or --codex installs the
+full default bundle non-interactively.
+
 Options:
   --db <path>   Database path (default: .tx/tasks.db)
-  --claude      Scaffold Claude Code integration (CLAUDE.md + .claude/skills/)
-  --codex       Scaffold Codex integration (AGENTS.md + .codex/agents + .codex/rules)
+  --claude      Scaffold Claude Code integration (.claude/skills; no CLAUDE.md by default)
+  --codex       Scaffold Codex integration (.codex/skills + .codex/rules; no AGENTS.md by default)
   --watchdog    Scaffold watchdog launcher/scripts/assets (optional later)
   --watchdog-runtime <mode>
                 Runtime mode for watchdog: auto|codex|claude|both (default: auto, requires --watchdog)
   --help        Show this help
 
 Examples:
-  tx init                     # Initialize database only
-  tx init --claude            # Database + Claude Code skills & CLAUDE.md
-  tx init --codex             # Database + Codex AGENTS.md + agent profiles + rules
+  tx init                     # Initialize database + choose skills interactively
+  tx init --claude            # Database + full generated Claude Code skills bundle
+  tx init --codex             # Database + full generated Codex skills bundle + rules
   tx init --claude --codex    # Database + both integrations
   tx init --watchdog          # Optional later: watchdog scaffolding (runtime auto-detect)
   tx init --watchdog --watchdog-runtime both
                               # Require both codex and claude runtimes for watchdog
   tx init --db ~/my-tasks.db  # Use custom path`,
+
+  skills: `tx skills - Generate or sync installable tx skill bundles
+
+Usage: tx skills <generate|sync> [options]
+
+Subcommands:
+  generate                 Generate Claude/Codex skill bundles from command help
+  sync                     Sync generated Claude/Codex skill bundles into a project
+
+Run 'tx skills <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx skills generate
+  tx skills generate --target codex
+  tx skills generate --output-dir apps/cli/generated-skills --clean
+  tx skills sync
+  tx skills sync --project-dir ../my-project --target codex`,
+
+  "skills generate": `tx skills generate - Generate tx skill bundles
+
+Usage: tx skills generate [options]
+
+Renders deterministic skill bundles for Claude Code and/or Codex from the
+existing tx CLI help text, plus bundled spec-writing skills. Output is install-ready:
+
+  <output-dir>/claude/.claude/skills/<skill-id>/
+  <output-dir>/codex/.codex/skills/<skill-id>/
+
+Options:
+  --target, -t <target>     Bundle target: all|claude|codex (default: all)
+  --output-dir, -o <dir>    Output directory (default: .tx/generated-skills)
+  --clean                   Remove existing target bundle dirs before writing
+  --json                    Output generation summary as JSON
+  --help                    Show this help
+
+Examples:
+  tx skills generate
+  tx skills generate --target claude
+  tx skills generate --output-dir apps/cli/generated-skills --clean
+  tx skills generate --target codex --json`,
+
+  decompose: `tx decompose - Create a task graph from a design spec
+
+Usage: tx decompose <design-doc-ref> [options]
+
+Resolves a design doc, runs the selected runtime against that spec, validates
+the structured result, and materializes the plan as tx tasks plus dependencies.
+
+Options:
+  --parent, -p <task-id>   Reuse an existing task as the graph root
+  --runtime <runtime>      Agent runtime: auto, claude, codex (default: auto)
+  --model <name>           Optional model hint for the runtime
+  --max-tasks <n>          Maximum generated tasks (omit for best results)
+  --root-title <text>      Override the generated root task title
+  --score <n>              Override root task score when creating a root
+  --dry-run                Validate and print the graph without writing tasks
+  --json                   Output as JSON
+  --help                   Show this help
+
+Examples:
+  tx decompose auth-flow-design
+  tx decompose auth-flow-design --runtime claude
+  tx decompose auth-flow-design --parent tx-abc123 --runtime codex
+  tx decompose auth-flow-design --dry-run --json`,
+
+  "skills sync": `tx skills sync - Sync generated tx skill bundles into a project
+
+Usage: tx skills sync [options]
+
+Generates the canonical tx skill bundles in a temp directory, then syncs them
+into the target project's install roots:
+
+  .claude/skills/<skill-id>/
+  .codex/skills/<skill-id>/
+
+Changed tx-managed skill files are updated in place. Unrelated custom skills are
+left untouched.
+
+Options:
+  --target, -t <target>      Sync target: all|claude|codex (default: all)
+  --project-dir, -p <dir>    Target project directory (default: current working directory)
+  --json                     Output sync summary as JSON
+  --help                     Show this help
+
+Examples:
+  tx skills sync
+  tx skills sync --target claude
+  tx skills sync --project-dir ../my-project --target codex
+  tx skills sync --project-dir ../my-project --json`,
 
   add: `tx add - Create a new task
 
@@ -201,6 +206,384 @@ Examples:
   tx add "Login page" --parent tx-a1b2c3d4 --score 600
   tx add "Fix bug" -s 800 -d "Urgent fix for login"
   tx add "Implement auth tests" --verify "bun run test:auth"`,
+
+  // --- New compound command help entries ---
+
+  dep: `tx dep - Dependencies & hierarchy
+
+Usage: tx dep <subcommand> [arguments] [options]
+
+Subcommands:
+  block <id> <blocker>    Add blocking dependency
+  unblock <id> <blocker>  Remove blocking dependency
+  children <id>           List child tasks
+  tree <id>               Show task subtree
+
+Run 'tx dep <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx dep block tx-abc123 tx-def456
+  tx dep unblock tx-abc123 tx-def456
+  tx dep children tx-abc123
+  tx dep tree tx-abc123`,
+
+  "dep block": `tx dep block - Add blocking dependency
+
+Usage: tx dep block <task-id> <blocker-id> [options]
+
+Makes one task block another. The blocked task cannot be ready until
+the blocker is marked done. Circular dependencies are not allowed.
+
+Arguments:
+  <task-id>     Required. The task that will be blocked
+  <blocker-id>  Required. The task that blocks it
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx dep block tx-abc123 tx-def456`,
+
+  "dep unblock": `tx dep unblock - Remove blocking dependency
+
+Usage: tx dep unblock <task-id> <blocker-id> [options]
+
+Removes a blocking dependency between two tasks.
+
+Arguments:
+  <task-id>     Required. The task that was blocked
+  <blocker-id>  Required. The task that was blocking it
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx dep unblock tx-abc123 tx-def456`,
+
+  "dep children": `tx dep children - List child tasks
+
+Usage: tx dep children <id> [options]
+
+Lists all direct children of a task (tasks with this task as parent).
+
+Arguments:
+  <id>    Required. Parent task ID
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx dep children tx-a1b2c3d4`,
+
+  "dep tree": `tx dep tree - Show task subtree
+
+Usage: tx dep tree <id> [options]
+
+Shows a task and all its descendants in a tree view.
+
+Arguments:
+  <id>    Required. Root task ID
+
+Options:
+  --json  Output as JSON (nested structure)
+  --help  Show this help
+
+Examples:
+  tx dep tree tx-a1b2c3d4`,
+
+  msg: `tx msg - Agent messaging
+
+Usage: tx msg <subcommand> [arguments] [options]
+
+Subcommands:
+  send <channel> <content>   Send a message to a channel
+  inbox <channel>            Read messages from a channel
+  ack <id>                   Acknowledge a message
+  ack all <channel>          Acknowledge all messages on a channel
+  pending <channel>          Count pending messages
+  gc                         Garbage collect old messages
+
+Run 'tx msg <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx msg send my-channel "Hello agents"
+  tx msg inbox my-channel
+  tx msg ack 42
+  tx msg pending my-channel`,
+
+  "msg send": `tx msg send - Send a message to a channel
+
+Usage: tx msg send <channel> <content> [options]
+
+Options:
+  --sender <s>        Sender name (default: cli)
+  --task <id>         Associated task ID
+  --ttl <sec>         Time-to-live in seconds
+  --correlation <id>  Correlation ID for request/reply
+  --metadata '{}'     JSON metadata
+  --json              Output as JSON
+
+Examples:
+  tx msg send my-channel "Hello"
+  tx msg send agent-1 "Status update" --sender orchestrator`,
+
+  "msg inbox": `tx msg inbox - Read messages from a channel
+
+Usage: tx msg inbox <channel> [options]
+
+Pure read — no side effects, no status changes.
+
+Options:
+  --after <id>        Cursor: only messages after this ID
+  --limit, -n <n>     Maximum messages to show
+  --sender <s>        Filter by sender
+  --correlation <id>  Filter by correlation ID
+  --include-acked     Include acknowledged messages
+  --json              Output as JSON
+
+Examples:
+  tx msg inbox my-channel
+  tx msg inbox my-channel --after 100 --limit 10`,
+
+  "msg ack": `tx msg ack - Acknowledge a message
+
+Usage: tx msg ack <message-id> [options]
+       tx msg ack all <channel> [options]
+
+Acknowledges a single message by ID, or all pending messages on a channel.
+
+Options:
+  --json  Output as JSON
+
+Examples:
+  tx msg ack 42
+  tx msg ack all my-channel`,
+
+  "msg pending": `tx msg pending - Count pending messages
+
+Usage: tx msg pending <channel> [options]
+
+Options:
+  --json  Output as JSON
+
+Examples:
+  tx msg pending my-channel`,
+
+  "msg gc": `tx msg gc - Garbage collect old messages
+
+Usage: tx msg gc [options]
+
+Options:
+  --acked-older-than <hours>  Remove acked messages older than N hours
+  --json                      Output as JSON
+
+Examples:
+  tx msg gc
+  tx msg gc --acked-older-than 24`,
+
+  diag: `tx diag - Diagnostics
+
+Usage: tx diag <subcommand> [options]
+
+Subcommands:
+  stats       Show queue metrics and health overview
+  doctor      Run system health checks (DB validation + diagnostics)
+  dashboard   Start API server + dashboard UI
+
+Run 'tx diag <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx diag stats
+  tx diag doctor --verbose
+  tx diag dashboard`,
+
+  "diag stats": `tx diag stats - Show queue metrics and health overview
+
+Usage: tx diag stats [options]
+
+Displays aggregate statistics about the task queue including:
+- Task counts by status with percentages
+- Ready tasks grouped by priority (score range)
+- Completion activity (last 24h, 7d, avg per day)
+- Active and expired claim counts
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx diag stats
+  tx diag stats --json`,
+
+  "diag doctor": `tx diag doctor - Run system health checks
+
+Usage: tx diag doctor [options]
+
+Runs database validation, schema version checks, WAL mode, service wiring,
+stale claims, task counts, and API key detection.
+
+Options:
+  --verbose, -v  Show details for each check
+  --fix          Attempt to auto-fix issues
+  --json         Output as JSON
+  --help         Show this help
+
+Examples:
+  tx diag doctor
+  tx diag doctor --verbose --fix`,
+
+  "diag dashboard": `tx diag dashboard - Start API server + dashboard UI
+
+Usage: tx diag dashboard [options]
+
+Starts the API server and Vite dev server, then opens the dashboard in a browser.
+
+Options:
+  --port <n>    Custom API port (default: 3001)
+  --no-open     Start without opening browser
+  --help        Show this help
+
+Examples:
+  tx diag dashboard
+  tx diag dashboard --port 3002 --no-open`,
+
+  auto: `tx auto - Bounded autonomy primitives
+
+Usage: tx auto <subcommand> [arguments] [options]
+
+Subcommands:
+  guard <set|show|clear>            Task creation limits
+  gate <create|approve|revoke|...>  Human-in-the-loop phase gates
+  verify <set|show|run|clear>       Machine-checkable done criteria
+  label <add|delete|assign|...>     Ready queue scoping labels
+  reflect                           Session retrospective
+
+Run 'tx auto <subcommand> --help' for subcommand-specific help.
+
+Examples:
+  tx auto guard set --max-pending 10
+  tx auto gate create deploy-gate
+  tx auto verify set tx-abc123 "bun run test"
+  tx auto label add phase:implement
+  tx auto reflect --sessions 5`,
+
+  "auto guard": `tx auto guard - Task creation limits
+
+Usage: tx auto guard [set|show|clear] [options]
+
+Set limits on task creation to prevent agent proliferation.
+
+Subcommands:
+  set     Set guard limits (--max-pending, --max-children, --max-depth)
+  show    Show current guard configuration
+  clear   Clear guards (optionally by --scope)
+
+Examples:
+  tx auto guard set --max-pending 10 --enforce
+  tx auto guard show
+  tx auto guard clear`,
+
+  "auto gate": `tx auto gate - Human-in-the-loop phase gates
+
+Usage: tx auto gate <create|approve|revoke|check|status|list|rm> [options]
+
+Gates stored as context pins with prefix "gate.".
+
+Examples:
+  tx auto gate create deploy-gate --phase-from implement --phase-to deploy
+  tx auto gate approve deploy-gate --by james
+  tx auto gate check deploy-gate
+  tx auto gate list`,
+
+  "auto verify": `tx auto verify - Machine-checkable done criteria
+
+Usage: tx auto verify <set|show|run|clear> <id> [options]
+
+Attach shell commands to tasks as done criteria.
+
+Examples:
+  tx auto verify set tx-abc123 bun run test:auth
+  tx auto verify run tx-abc123
+  tx auto verify show tx-abc123`,
+
+  "auto label": `tx auto label - Ready queue scoping labels
+
+Usage: tx auto label <add|delete|assign|unassign|list> [options]
+
+Create labels and assign them to tasks for queue filtering.
+
+Examples:
+  tx auto label add phase:implement
+  tx auto label assign tx-abc123 phase:implement
+  tx auto label list`,
+
+  "auto reflect": `tx auto reflect - Session retrospective
+
+Usage: tx auto reflect [options]
+
+Aggregates session data, throughput, proliferation, stuck tasks, and signals.
+
+Options:
+  --sessions <n>   Number of recent sessions (default: 10)
+  --hours <n>      Time window in hours
+  --analyze        Enable LLM-powered analysis
+  --json           Output as JSON
+
+Examples:
+  tx auto reflect
+  tx auto reflect --sessions 5 --analyze`,
+
+  "sync compact": `tx sync compact - Compact completed tasks and export learnings
+
+Usage: tx sync compact [options]
+
+Compacts completed tasks older than a specified date and exports learnings
+to a markdown file (default: CLAUDE.md). Uses LLM to generate summaries.
+
+Options:
+  --before <date>    Compact tasks before this date (default: 7 days ago)
+                     Formats: YYYY-MM-DD or Nd (e.g., 7d for 7 days ago)
+  --output, -o <file>  Output file for learnings (default: CLAUDE.md)
+  --dry-run, --preview Preview without compacting (no API key needed)
+  --json               Output as JSON
+  --help               Show this help
+
+Examples:
+  tx sync compact
+  tx sync compact --before 30d --dry-run
+  tx sync compact --output agents.md`,
+
+  "sync history": `tx sync history - View compaction history
+
+Usage: tx sync history [options]
+
+Shows the history of past compaction operations.
+
+Options:
+  --json   Output as JSON
+  --help   Show this help
+
+Examples:
+  tx sync history
+  tx sync history --json`,
+
+  "sync migrate": `tx sync migrate - Show database migration status
+
+Usage: tx sync migrate status [--json]
+
+Shows current schema version, latest available version, and pending migrations.
+
+Options:
+  --json  Output as JSON
+  --help  Show this help
+
+Examples:
+  tx sync migrate status`,
+
+  // --- Original command help entries (kept for deprecated alias help lookups) ---
 
   list: `tx list - List tasks
 
@@ -356,7 +739,7 @@ Agents read the file directly instead of calling tx ready.
 
 Options:
   --path, -p <path>      Output file path (default: .tx/tasks.md)
-  --filter, -f <filter>  Task filter: ready (default), all (every status), or a status name
+  --filter, -f <filter>  Task filter: ready (default), open (all non-done), all, or a status name
   --include-context      Include relevant learnings per task
   --include-done <n>     Include last N completed tasks (default: 5)
   --watch, -w            Re-export on changes (poll mode)
@@ -368,6 +751,7 @@ Examples:
   tx md-export                              # Export ready tasks to .tx/tasks.md
   tx md-export --path tasks.md              # Custom output path
   tx md-export --include-context            # Include learnings per task
+  tx md-export --filter open                # Export all non-done tasks
   tx md-export --filter all                 # Export all tasks
   tx md-export --include-done 10            # Include last 10 completed tasks
   tx md-export --watch                      # Watch and re-export on changes
@@ -465,7 +849,7 @@ Examples:
   tx mcp-server
   tx mcp-server --db ~/project/.tx/tasks.db`,
 
-  sync: `tx sync - Manage stream-based sync and platform integrations
+  sync: `tx sync - Sync, data management, and migrations
 
 Usage: tx sync <subcommand> [options]
 
@@ -478,16 +862,19 @@ Subcommands:
   auto      Enable or disable automatic sync on mutations
   claude    Write tasks to Claude Code team task directory
   codex     Write tasks to Codex (coming soon)
+  compact   Compact completed tasks and export learnings
+  history   View compaction history
+  migrate   Show database migration status
 
 Run 'tx sync <subcommand> --help' for subcommand-specific help.
 
 Examples:
-  tx sync export               # Export events to .tx/streams/<stream>/events-YYYY-MM-DD.jsonl
-  tx sync import               # Import events from .tx/streams
-  tx sync stream               # Show stream identity
-  tx sync hydrate              # Full rebuild from events
+  tx sync export               # Export events
+  tx sync import               # Import events
   tx sync status               # Show sync status
-  tx sync auto --enable        # Enable auto-sync
+  tx sync compact --dry-run    # Preview compaction
+  tx sync history              # View compaction history
+  tx sync migrate status       # Show migration status
   tx sync claude --team my-team  # Push tasks to Claude Code team`,
 
   "sync export": `tx sync export - Export stream events
@@ -1741,11 +2128,16 @@ Subcommands:
   edit <name>               Open doc in $EDITOR
   show <name>               Show doc details
   list                      List all docs
+  rm <name>                 Remove latest mutable doc version
   lock <name>               Lock a doc version (immutable)
   version <name>            Create new version from locked doc
   link <from> <to>          Link two docs
   attach <task-id> <name>   Attach a doc to a task
   patch <design> <patch>    Create a design patch doc
+  validate                  Check task-doc coverage + searchable index metadata
+  drift <name>              Detect file-vs-DB drift for a doc
+  lint-ears <name|path>     Validate PRD EARS requirements
+  sync [name]               Re-sync doc hashes from disk
 
 Run 'tx doc <subcommand> --help' for subcommand-specific help.
 Running 'tx doc' with no subcommand defaults to 'tx doc list'.
@@ -1756,6 +2148,7 @@ Examples:
   tx doc add prd auth-flow --title "Authentication Flow"
   tx doc show auth-flow --json
   tx doc list --kind design --status changing
+  tx doc rm auth-flow
   tx doc lock auth-flow
   tx doc version auth-flow
   tx doc attach tx-abc123 auth-flow`,
@@ -1765,6 +2158,13 @@ Examples:
 Usage: tx doc add <kind> <name> [--title <title>] [--json]
 
 Creates a new doc with generated YAML template on disk and metadata in DB.
+The generated frontmatter includes searchable index metadata:
+  - summary   -> Description in generated specs/index.md
+  - domain    -> included in Search Keywords in generated specs/index.md
+  - tags      -> included in Search Keywords in generated specs/index.md
+
+Replace generic placeholders with subsystem-specific language. 'tx spec lint'
+and 'tx doc validate' will explain exactly how to fix missing search metadata.
 
 Arguments:
   <kind>    Required. Doc kind: overview, prd, or design
@@ -1828,6 +2228,44 @@ Examples:
   tx doc list
   tx doc list --kind design
   tx doc list --status locked --json`,
+
+  "doc rm": `tx doc rm - Remove latest mutable doc version
+
+Usage: tx doc rm <name> [--json]
+
+Removes the latest mutable doc version from the database and deletes its
+markdown file from disk. Locked docs cannot be removed.
+
+Arguments:
+  <name>    Required. Doc name
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc rm auth-flow
+  tx doc rm auth-flow --json`,
+
+  "doc remove": `tx doc rm - Remove latest mutable doc version
+
+Usage: tx doc rm <name> [--json]
+
+Alias: 'tx doc remove <name>'
+
+Removes the latest mutable doc version from the database and deletes its
+markdown file from disk. Locked docs cannot be removed.
+
+Arguments:
+  <name>    Required. Doc name
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx doc rm auth-flow
+  tx doc remove auth-flow --json`,
 
   "doc lock": `tx doc lock - Lock a doc version
 
@@ -1919,6 +2357,45 @@ Options:
 
 Examples:
   tx doc patch auth-impl auth-impl-v2 --title "Auth v2 Migration"`,
+
+  "doc validate": `tx doc validate - Validate doc/task coverage and index search metadata
+
+Usage: tx doc validate [--json]
+
+Checks:
+  - Tasks linked to docs
+  - Searchable index metadata used by generated specs/index.md
+    - summary -> Description
+    - domain + tags -> Search Keywords
+
+Warnings explain the exact frontmatter field to edit and show an example fix.
+
+Options:
+  --json               Output result as JSON
+  --help               Show this help
+
+Examples:
+  tx doc validate
+  tx doc validate --json`,
+
+  "doc sync": `tx doc sync - Re-read docs from disk and update DB hashes
+
+Usage: tx doc sync [name] [--json]
+
+Re-syncs doc hashes in the database from the current file content on disk.
+Use this after editing spec files directly to clear drift warnings.
+
+Arguments:
+  [name]  Optional. Sync a single doc by name. Omit to sync all docs.
+
+Options:
+  --json               Output result as JSON
+  --help               Show this help
+
+Examples:
+  tx doc sync                  # sync all docs
+  tx doc sync auth-flow        # sync one doc
+  tx doc sync --json`,
 
 
   invariant: `tx invariant is deprecated. Use 'tx spec' instead.
@@ -2952,6 +3429,8 @@ Usage: tx spec lint [--json]
 Runs all doc and spec checks in a single pass:
   - Doc drift: hash mismatch between disk and DB
   - Task-doc coverage: tasks not linked to any doc
+  - Index searchability: validates frontmatter used to build Description and
+    Search Keywords in generated specs/index.md
   - EARS lint: validates PRD requirements syntax
   - Spec-test status: uncovered or failing invariants
 

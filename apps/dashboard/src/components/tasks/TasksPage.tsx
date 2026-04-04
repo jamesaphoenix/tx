@@ -41,6 +41,7 @@ export interface TasksPageProps {
   themeMode?: ThemeMode
   defaultTaskAssigmentType?: TaskAssigneeType
   defaultTaskView?: "list" | "kanban"
+  autoAddStatuses?: string[]
   /**
    * Incrementing signal from the app shell to request opening the
    * task composer even before page-level shortcut registration settles.
@@ -236,8 +237,8 @@ function parseTaskStatuses(value: string | null): TaskStatusValue[] {
     .map((part) => part.trim())
     .filter((status): status is TaskStatusValue => TASK_STATUS_SET.has(status as TaskStatusValue))
 
-  const deduped = new Set(statuses)
-  return TASK_STATUS_VALUES.filter((status) => deduped.has(status))
+  const selectedStatus = statuses.at(-1)
+  return selectedStatus ? [selectedStatus] : []
 }
 
 function parseLegacyBucketStatuses(value: string | null): TaskStatusValue[] {
@@ -327,6 +328,7 @@ export function TasksPage({
   themeMode = "light",
   defaultTaskAssigmentType = "human",
   defaultTaskView = "list",
+  autoAddStatuses = [],
   newTaskRequestNonce = 0
 }: TasksPageProps) {
   const isDarkTheme = themeMode === "dark"
@@ -557,14 +559,8 @@ export function TasksPage({
   }, [viewState.taskId, composer, closeTask, selectedChildIds])
 
   const toggleStatusFilter = useCallback((status: TaskStatusValue) => {
-    const selected = new Set(viewState.statuses)
-    if (selected.has(status)) {
-      selected.delete(status)
-    } else {
-      selected.add(status)
-    }
-
-    const statuses = TASK_STATUS_VALUES.filter((value) => selected.has(value))
+    const isSelected = viewState.statuses.length === 1 && viewState.statuses[0] === status
+    const statuses = isSelected ? [] : [status]
     writeViewState({ ...viewState, statuses, taskId: null }, "replace")
   }, [viewState, writeViewState])
 
@@ -607,6 +603,7 @@ export function TasksPage({
       queryClient.invalidateQueries({ queryKey: ["task"] }),
       queryClient.invalidateQueries({ queryKey: ["stats"] }),
       queryClient.invalidateQueries({ queryKey: ["labels"] }),
+      queryClient.invalidateQueries({ queryKey: ["cycles"] }),
     ])
   }, [queryClient])
 
@@ -637,6 +634,18 @@ export function TasksPage({
       ])
     }
 
+    // Auto-add to current cycle if task status matches autoAddStatuses
+    if (autoAddStatuses.length > 0 && autoAddStatuses.includes(payload.stage)) {
+      const currentCycle = cycles.find((c) => c.status === "current")
+      if (currentCycle) {
+        try {
+          await fetchers.addTasksToCycle(currentCycle.id, [created.id])
+        } catch {
+          // Non-critical: task was created, auto-add to cycle failed silently
+        }
+      }
+    }
+
     setComposerFallbackLabels({})
     await invalidateTaskQueries()
 
@@ -652,7 +661,7 @@ export function TasksPage({
     }
 
     closeComposer()
-  }, [closeComposer, composerFallbackLabels, invalidateTaskQueries, queryClient])
+  }, [closeComposer, composerFallbackLabels, invalidateTaskQueries, queryClient, autoAddStatuses, cycles])
 
   const createLabel = useCallback(async (payload: { name: string; color?: string }): Promise<TaskLabel | null> => {
     const normalizedName = payload.name.trim()

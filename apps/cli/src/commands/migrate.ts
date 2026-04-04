@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { MigrationService } from "@jamesaphoenix/tx-core"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
+import { unknownSubcommandError } from "../cli-errors.js"
 
 type Flags = Record<string, string | boolean>
 
@@ -57,8 +58,14 @@ export const migrate = (pos: string[], flags: Flags) =>
         }
       }
     } else {
-      console.error(`Unknown migrate subcommand: ${subcommand}`)
-      console.error(`Run 'tx migrate --help' for usage information`)
-      process.exit(1)
+      return yield* Effect.fail(unknownSubcommandError({
+        command: "migrate",
+        subcommand,
+        usage: "tx migrate <status>",
+        examples: [
+          "tx migrate status",
+          "tx migrate status --json",
+        ],
+      }))
     }
   })

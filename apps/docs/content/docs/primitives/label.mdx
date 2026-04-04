@@ -1,5 +1,5 @@
 ---
-title: tx label
+title: tx auto label
 description: Organize tasks with labels for ready queue scoping
 ---
 
@@ -14,21 +14,21 @@ Labels let you organize tasks into phases, sprints, or categories. Use them with
 <Tab value="CLI">
 
 ```bash
-tx label add <name> [--color <hex>]
-tx label assign <task-id> <label>
-tx label unassign <task-id> <label>
-tx label list
+tx auto label add <name> [--color <hex>]
+tx auto label assign <task-id> <label>
+tx auto label unassign <task-id> <label>
+tx auto label list
 ```
 
 ```bash
 # Create labels for phases
-tx label add "phase:discovery"
-tx label add "phase:implement"
-tx label add "sprint:w10"
+tx auto label add "phase:discovery"
+tx auto label add "phase:implement"
+tx auto label add "sprint:w10"
 
 # Assign labels to tasks
-tx label assign tx-abc123 "phase:discovery"
-tx label assign tx-def456 "phase:implement"
+tx auto label assign tx-abc123 "phase:discovery"
+tx auto label assign tx-def456 "phase:implement"
 
 # Scope the ready queue
 tx ready --label "phase:discovery"
@@ -37,7 +37,7 @@ tx ready --label "phase:discovery"
 tx ready --exclude-label "needs-review"
 
 # List all labels
-tx label list
+tx auto label list
 ```
 
 </Tab>
@@ -67,7 +67,94 @@ The SDK supports label-based filtering on `ready()` and `list()`. Label CRUD (ad
 
 <Tab value="MCP">
 
-**Label filtering** is supported on `tx_ready` and `tx_list`:
+### tx_auto_label_add
+
+Create a new label.
+
+```json
+{
+  "name": "tx_auto_label_add",
+  "arguments": {
+    "name": "phase:discovery",
+    "color": "#3b82f6"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Label name (e.g. `'phase:discovery'`) |
+| `color` | `string` | No | Hex color code (e.g. `'#3b82f6'`) |
+
+### tx_auto_label_delete
+
+Delete a label.
+
+```json
+{
+  "name": "tx_auto_label_delete",
+  "arguments": {
+    "name": "phase:discovery"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | Yes | Label name to delete |
+
+### tx_auto_label_assign
+
+Assign a label to a task.
+
+```json
+{
+  "name": "tx_auto_label_assign",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "labelName": "phase:discovery"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `taskId` | `string` | Yes | Task ID to assign the label to |
+| `labelName` | `string` | Yes | Label name to assign |
+
+### tx_auto_label_unassign
+
+Remove a label from a task.
+
+```json
+{
+  "name": "tx_auto_label_unassign",
+  "arguments": {
+    "taskId": "tx-abc123",
+    "labelName": "phase:discovery"
+  }
+}
+```
+
+| Arg | Type | Required | Description |
+|-----|------|----------|-------------|
+| `taskId` | `string` | Yes | Task ID to remove the label from |
+| `labelName` | `string` | Yes | Label name to remove |
+
+### tx_auto_label_list
+
+List all labels. No arguments required.
+
+```json
+{
+  "name": "tx_auto_label_list",
+  "arguments": {}
+}
+```
+
+### Label filtering on tx_ready and tx_list
+
+Label filtering is also supported on `tx_ready` and `tx_list`:
 
 ```json
 {
@@ -85,8 +172,6 @@ The SDK supports label-based filtering on `ready()` and `list()`. Label CRUD (ad
 | `limit` | `number` | No | Maximum tasks to return |
 | `labels` | `string` | No | Comma-separated label names to include (e.g. `'phase:implement,sprint:w10'`) |
 | `excludeLabels` | `string` | No | Comma-separated label names to exclude (e.g. `'needs-review'`) |
-
-Label CRUD (add, assign, unassign) is currently available via the CLI only.
 
 </Tab>
 
@@ -114,7 +199,7 @@ Label filtering is supported on the ready and list endpoints. Label CRUD (add, a
 ```bash
 #!/bin/bash
 # Phase 1: Discovery
-tx guard set --max-pending 20
+tx auto guard set --max-pending 20
 
 while task=$(tx ready --label "phase:discovery" --json --limit 1 | jq -r '.[0].id // empty'); do
   [ -z "$task" ] && break
@@ -124,13 +209,13 @@ done
 # Phase 2: Implementation
 while task=$(tx ready --label "phase:implement" --json --limit 1 | jq -r '.[0].id // empty'); do
   [ -z "$task" ] && break
-  claude "Implement $task. Verify with: tx verify run $task && tx done $task"
+  claude "Implement $task. Verify with: tx auto verify run $task && tx done $task"
 done
 ```
 
 ## Related Commands
 
 - [`tx ready`](/docs/primitives/ready): Get next workable task with label filtering
-- [`tx guard`](/docs/primitives/guard): Set task creation limits per phase
-- [`tx verify`](/docs/primitives/verify): Attach machine-checkable done criteria
-- [`tx reflect`](/docs/primitives/reflect): Analyze session metrics
+- [`tx auto guard`](/docs/primitives/guard): Set task creation limits per phase
+- [`tx auto verify`](/docs/primitives/verify): Attach machine-checkable done criteria
+- [`tx auto reflect`](/docs/primitives/reflect): Analyze session metrics

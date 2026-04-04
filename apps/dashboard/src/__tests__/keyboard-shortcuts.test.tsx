@@ -493,6 +493,7 @@ describe('Keyboard shortcuts', () => {
       const docs = [
         {
           id: 1,
+          docId: 'doc-111111111111',
           hash: 'hash-1',
           kind: 'overview',
           name: 'overview-root',
@@ -506,6 +507,7 @@ describe('Keyboard shortcuts', () => {
         },
         {
           id: 2,
+          docId: 'doc-222222222222',
           hash: 'hash-2',
           kind: 'prd',
           name: 'PRD-001-testing',
@@ -546,8 +548,8 @@ describe('Keyboard shortcuts', () => {
       })
 
       await waitFor(() => {
-        expect(selectionStore.state.docNames.has('overview-root')).toBe(true)
-        expect(selectionStore.state.docNames.has('PRD-001-testing')).toBe(true)
+        expect(selectionStore.state.docRefs.has('doc-111111111111:1')).toBe(true)
+        expect(selectionStore.state.docRefs.has('doc-222222222222:1')).toBe(true)
       })
     })
   })

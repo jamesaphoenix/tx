@@ -15,11 +15,15 @@ type ParsedYaml = {
 type IndexPrd = {
   name: string
   title: string
+  description: string
+  search_keywords: string[]
   status: string};
 
 type IndexDesignDoc = {
   name: string
   title: string
+  description: string
+  search_keywords: string[]
   status: string
   implements?: string};
 
@@ -31,10 +35,14 @@ type IndexLink = {
 type IndexDoc = {
   name: string
   title: string
+  description: string
+  search_keywords: string[]
   status: string}
 
 type IndexData = {
   overview?: string
+  description?: string
+  search_keywords?: string[]
   requirements: IndexDoc[]
   prds: IndexPrd[]
   design_docs: IndexDesignDoc[]
@@ -45,6 +53,18 @@ type IndexData = {
     by_enforcement: Record<string, number>
     by_subsystem: Record<string, number>
   }};
+
+const renderTableCell = (value: string): string => {
+  return value
+    .trim()
+    .replace(/\r?\n+/g, " ")
+    .replace(/\|/g, "\\|")
+}
+
+const renderSearchKeywords = (keywords: readonly string[]): string => {
+  if (keywords.length === 0) return "-"
+  return renderTableCell(keywords.join(", "))
+}
 
 /**
  * Render a parsed YAML doc to deterministic markdown.
@@ -686,6 +706,14 @@ export const composeEarsSentence = (raw: unknown): string | null => {
 export const renderIndexToMarkdown = (indexData: IndexData): string => {
   const lines: string[] = ["# Documentation Index", ""]
 
+  if (indexData.description) {
+    lines.push(`**Description**: ${indexData.description}`, "")
+  }
+
+  if (indexData.search_keywords && indexData.search_keywords.length > 0) {
+    lines.push(`**Search Keywords**: ${indexData.search_keywords.join(", ")}`, "")
+  }
+
   if (indexData.overview) {
     lines.push(
       `**System Overview**: [${indexData.overview}](${indexData.overview}.md)`,
@@ -696,11 +724,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // Requirements table
   if (indexData.requirements.length > 0) {
     lines.push("## Requirements Documents", "")
-    lines.push("| Name | Title | Status |")
-    lines.push("|------|-------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Status |")
+    lines.push("|------|-------|-------------|-----------------|--------|")
     for (const req of indexData.requirements) {
       lines.push(
-        `| [${req.name}](requirement/${req.name}.md) | ${req.title} | ${req.status} |`
+        `| [${req.name}](requirement/${req.name}.md) | ${renderTableCell(req.title)} | ${renderTableCell(req.description)} | ${renderSearchKeywords(req.search_keywords)} | ${renderTableCell(req.status)} |`
       )
     }
     lines.push("")
@@ -709,11 +737,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // PRDs table
   if (indexData.prds.length > 0) {
     lines.push("## Product Requirements Documents", "")
-    lines.push("| Name | Title | Status |")
-    lines.push("|------|-------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Status |")
+    lines.push("|------|-------|-------------|-----------------|--------|")
     for (const prd of indexData.prds) {
       lines.push(
-        `| [${prd.name}](prd/${prd.name}.md) | ${prd.title} | ${prd.status} |`
+        `| [${prd.name}](prd/${prd.name}.md) | ${renderTableCell(prd.title)} | ${renderTableCell(prd.description)} | ${renderSearchKeywords(prd.search_keywords)} | ${renderTableCell(prd.status)} |`
       )
     }
     lines.push("")
@@ -722,11 +750,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // Design docs table
   if (indexData.design_docs.length > 0) {
     lines.push("## Design Documents", "")
-    lines.push("| Name | Title | Implements | Status |")
-    lines.push("|------|-------|------------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Implements | Status |")
+    lines.push("|------|-------|-------------|-----------------|------------|--------|")
     for (const dd of indexData.design_docs) {
       lines.push(
-        `| [${dd.name}](design/${dd.name}.md) | ${dd.title} | ${dd.implements ?? "-"} | ${dd.status} |`
+        `| [${dd.name}](design/${dd.name}.md) | ${renderTableCell(dd.title)} | ${renderTableCell(dd.description)} | ${renderSearchKeywords(dd.search_keywords)} | ${renderTableCell(dd.implements ?? "-")} | ${renderTableCell(dd.status)} |`
       )
     }
     lines.push("")
@@ -735,11 +763,11 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
   // System Design docs table
   if (indexData.system_designs.length > 0) {
     lines.push("## System Design Documents", "")
-    lines.push("| Name | Title | Status |")
-    lines.push("|------|-------|--------|")
+    lines.push("| Name | Title | Description | Search Keywords | Status |")
+    lines.push("|------|-------|-------------|-----------------|--------|")
     for (const sd of indexData.system_designs) {
       lines.push(
-        `| [${sd.name}](system_design/${sd.name}.md) | ${sd.title} | ${sd.status} |`
+        `| [${sd.name}](system_design/${sd.name}.md) | ${renderTableCell(sd.title)} | ${renderTableCell(sd.description)} | ${renderSearchKeywords(sd.search_keywords)} | ${renderTableCell(sd.status)} |`
       )
     }
     lines.push("")

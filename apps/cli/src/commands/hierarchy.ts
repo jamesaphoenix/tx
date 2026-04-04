@@ -16,7 +16,7 @@ export const children = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx children <id> [--json]")
+      console.error("Usage: tx dep children <id> [--json]")
       process.exit(1)
     }
     const id = parseTaskId(raw)
@@ -43,7 +43,7 @@ export const tree = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx tree <id> [--json]")
+      console.error("Usage: tx dep tree <id> [--json]")
       process.exit(1)
     }
     const id = parseTaskId(raw)
