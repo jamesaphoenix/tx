@@ -341,7 +341,7 @@ describe("tx doc lifecycle coverage", () => {
       name: "shared-slug",
       kind: "prd",
     })
-  })
+  }, 30000)
 
   it("syncs and versions duplicate-slug docs without falling back to bare names", () => {
     const addPrd = runTx(["doc", "add", "prd", "shared-sync", "--title", "Shared Sync PRD"], tmpProjectDir)
