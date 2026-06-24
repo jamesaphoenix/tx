@@ -425,4 +425,65 @@ describe("Orchestration Status", () => {
     expect(byTitle("Batch2: released").orchestrationStatus).toBe("released")
     expect(byTitle("Batch2: expired").orchestrationStatus).toBe("lease_expired")
   })
+
+  // ---------------------------------------------------------------------------
+  // Expired-lease reclaim (regression: same-day lease expiry)
+  //
+  // lease_expires_at is stored as an ISO-8601 string. The ready filter must
+  // compare it against an ISO bound param, not datetime('now') — otherwise a
+  // lease that expired earlier the SAME UTC day compares as still-active
+  // (because SQLite compares text bytewise and 'T' > ' '), hiding the task and
+  // starving workers. A fresh worker must also be able to reclaim it.
+  // ---------------------------------------------------------------------------
+
+  it("surfaces a task whose lease expired earlier the same day and lets another worker reclaim it", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const taskService = yield* TaskService
+        const readyService = yield* ReadyService
+        const claimService = yield* ClaimService
+        const db = yield* SqliteClient
+
+        yield* registerWorker("stale-worker")
+        yield* registerWorker("fresh-worker")
+
+        const task = yield* taskService.create({ title: "Reclaim after same-day expiry" })
+
+        // Active claim whose lease expired one hour ago — same UTC day — stored
+        // as ISO-8601 exactly like ClaimRepository writes it.
+        const claimedAt = new Date(Date.now() - 90 * 60 * 1000).toISOString()
+        const expiredAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+        db.prepare(
+          `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
+           VALUES (?, 'stale-worker', ?, ?, 0, 'active')`
+        ).run(task.id, claimedAt, expiredAt)
+
+        const ready = yield* readyService.getReady(50)
+        const reclaim = yield* claimService.claim(task.id, "fresh-worker")
+        const staleStatus = db
+          .prepare("SELECT status FROM task_claims WHERE worker_id = 'stale-worker' AND task_id = ?")
+          .get(task.id) as { status: string }
+        const activeCount = db
+          .prepare("SELECT COUNT(*) AS n FROM task_claims WHERE task_id = ? AND status = 'active'")
+          .get(task.id) as { n: number }
+
+        return {
+          taskId: task.id,
+          readyIds: ready.map((t) => t.id),
+          reclaimWorker: reclaim.workerId,
+          staleStatus: staleStatus.status,
+          activeCount: activeCount.n,
+        }
+      }).pipe(Effect.provide(shared.layer))
+    )
+
+    // Fix A: the expired-lease task is workable (not hidden by the ready filter)
+    expect(result.readyIds).toContain(result.taskId)
+    // Fix B: a fresh worker can reclaim it instead of being starved
+    expect(result.reclaimWorker).toBe("fresh-worker")
+    // The stale claim is reconciled to 'expired'…
+    expect(result.staleStatus).toBe("expired")
+    // …preserving the single-active-claim-per-task invariant.
+    expect(result.activeCount).toBe(1)
+  })
 })

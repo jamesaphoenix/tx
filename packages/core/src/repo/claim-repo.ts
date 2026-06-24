@@ -113,6 +113,21 @@ export const ClaimRepositoryLive = Layer.effect(
       tryInsertAtomic: (claim) =>
         Effect.try({
           try: () => {
+            // Reconcile any stale claim whose lease has expired but whose status
+            // is still 'active' (the sweeper may not have run yet). Without this,
+            // the INSERT ... WHERE NOT EXISTS (status='active') guard below would
+            // block a fresh worker from reclaiming a task whose lease has expired,
+            // even though ready detection (excludeClaimed) treats expired-lease
+            // tasks as workable — causing worker starvation until the next sweep.
+            // Marking the stale claim 'expired' first lets the reclaim succeed
+            // while preserving the single-active-claim-per-task invariant.
+            // Compare against an ISO bound param (lease_expires_at is stored via
+            // toISOString), never datetime('now') — see read.ts excludeClaimed.
+            db.prepare(
+              `UPDATE task_claims SET status = 'expired'
+               WHERE task_id = ? AND status = 'active' AND lease_expires_at <= ?`
+            ).run(claim.taskId, new Date().toISOString())
+
             // Use INSERT ... WHERE NOT EXISTS to atomically check and insert
             // This prevents the check-then-act race condition
             const result = db.prepare(
