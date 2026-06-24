@@ -2091,10 +2091,16 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     return withWriteTransaction(() => {
                         let imported = 0;
                         let skipped = 0;
-                        // Handle deletes first (tombstones)
+                        // Handle deletes first (tombstones). Only count rows that
+                        // actually existed; a tombstone for an already-absent
+                        // decision is a no-op and must not inflate `imported`.
                         for (const op of deleteOps) {
-                            deleteStmt.run(op.id);
-                            imported++;
+                            const res = deleteStmt.run(op.id);
+                            if (res.changes > 0) {
+                                imported++;
+                            } else {
+                                skipped++;
+                            }
                         }
                         // Handle upserts
                         for (const op of upsertOps) {

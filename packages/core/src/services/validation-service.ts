@@ -312,10 +312,14 @@ export const ValidationServiceLive = Layer.effect(
 
           if (fix && issues.length > 0) {
             // Reset invalid statuses to 'backlog' (safe default)
+            // updated_at must be written as ISO-8601 (matching toISOString
+            // everywhere else); datetime('now') yields SQLite's "YYYY-MM-DD HH:MM:SS"
+            // format, which breaks ISO string comparisons used by optimistic
+            // locking (write.ts) and sync import ordering (op.ts > existing).
             const result = db.prepare(`
-              UPDATE tasks SET status = 'backlog', updated_at = datetime('now')
+              UPDATE tasks SET status = 'backlog', updated_at = ?
               WHERE status NOT IN (${placeholders})
-            `).run(...validStatuses)
+            `).run(new Date().toISOString(), ...validStatuses)
             fixed = result.changes
           }
 
@@ -355,11 +359,12 @@ export const ValidationServiceLive = Layer.effect(
 
           if (fix && issues.length > 0) {
             // Clear orphaned parent references
+            // ISO-8601 timestamp (see note in checkInvalidStatuses above).
             const result = db.prepare(`
-              UPDATE tasks SET parent_id = NULL, updated_at = datetime('now')
+              UPDATE tasks SET parent_id = NULL, updated_at = ?
               WHERE parent_id IS NOT NULL
               AND parent_id NOT IN (SELECT id FROM tasks)
-            `).run()
+            `).run(new Date().toISOString())
             fixed = result.changes
           }
 
