@@ -179,8 +179,17 @@ export const CandidateExtractorServiceLive = Layer.effect(
             }))
           )
 
-          // Structured outputs guarantee valid JSON matching the schema
-          const parsed = JSON.parse(result.text) as { candidates: unknown[] }
+          // Structured outputs from the Anthropic backend guarantee valid JSON,
+          // but the Agent SDK backend can return raw assistant prose when no
+          // structured result is produced. A bare JSON.parse on prose throws a
+          // SyntaxError, which (unwrapped) becomes an Effect defect that crashes
+          // the whole extraction run instead of the handled ExtractionUnavailableError.
+          const parsed = yield* Effect.try({
+            try: () => JSON.parse(result.text) as { candidates: unknown[] },
+            catch: () => new ExtractionUnavailableError({
+              reason: "LLM returned output that was not valid JSON",
+            }),
+          })
 
           // Validate and normalize each candidate (schema guarantees structure, but validate content quality)
           const candidates: ExtractedCandidate[] = parsed.candidates
