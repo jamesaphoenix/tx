@@ -235,12 +235,15 @@ export const OrchestratorServiceLive = Layer.effect(
             let orphanedClaimsReleased = 0
             let staleStatesFixed = 0
 
-            // 1. Detect dead workers (missed 1+ heartbeats)
-          // Changed from 2 to 1 to reduce worst-case detection time from ~90s to ~60s.
-          // With missedHeartbeats: 2, if worker dies at t=1 after heartbeat at t=0,
-          // detection doesn't occur until t=90+ (60s threshold + 30s reconcile delay).
+            // 1. Detect dead workers (must miss 2+ heartbeats).
+          // findDead's cutoff is heartbeatIntervalSeconds * missedHeartbeats. With
+          // missedHeartbeats: 1 that cutoff equals the heartbeat interval exactly,
+          // leaving ZERO margin: a live worker whose heartbeat is even slightly
+          // delayed (event-loop jitter, GC, DB write latency) is misclassified as
+          // dead and has its in-progress claim released, stealing active work.
+          // Require a full extra interval of silence (2x) before declaring death.
           const deadWorkers = yield* workerService.findDead({
-            missedHeartbeats: 1
+            missedHeartbeats: 2
           })
 
           for (const worker of deadWorkers) {

@@ -111,7 +111,10 @@ export const DecisionServiceLive = Layer.effect(
           if (!decision) {
             return yield* Effect.fail(new DecisionNotFoundError({ id }))
           }
-          if (decision.status !== "pending") {
+          // "edited" decisions are still awaiting a review verdict — the edit
+          // flow produces a revised version that must be approvable. Only the
+          // terminal states (approved/rejected/superseded) are locked.
+          if (decision.status !== "pending" && decision.status !== "edited") {
             return yield* Effect.fail(
               new DecisionAlreadyReviewedError({ id, status: decision.status })
             )
@@ -133,7 +136,10 @@ export const DecisionServiceLive = Layer.effect(
           if (!decision) {
             return yield* Effect.fail(new DecisionNotFoundError({ id }))
           }
-          if (decision.status !== "pending") {
+          // "edited" decisions are still awaiting a review verdict — the edit
+          // flow produces a revised version that must be approvable. Only the
+          // terminal states (approved/rejected/superseded) are locked.
+          if (decision.status !== "pending" && decision.status !== "edited") {
             return yield* Effect.fail(
               new DecisionAlreadyReviewedError({ id, status: decision.status })
             )
@@ -155,7 +161,10 @@ export const DecisionServiceLive = Layer.effect(
           if (!decision) {
             return yield* Effect.fail(new DecisionNotFoundError({ id }))
           }
-          if (decision.status !== "pending") {
+          // "edited" decisions are still awaiting a review verdict — the edit
+          // flow produces a revised version that must be approvable. Only the
+          // terminal states (approved/rejected/superseded) are locked.
+          if (decision.status !== "pending" && decision.status !== "edited") {
             return yield* Effect.fail(
               new DecisionAlreadyReviewedError({ id, status: decision.status })
             )
