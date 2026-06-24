@@ -165,6 +165,26 @@ describe("Decision commands (Phase 2)", () => {
     expect(dec.editedContent).toBe("Use JSONL files instead")
   })
 
+  it("approves an edited decision (edited is not a terminal state)", () => {
+    const add = runTx(["decision", "add", "Use JSON files", "--json"], tmpDir)
+    const id = JSON.parse(add.stdout).id
+
+    const edit = runTx(
+      ["decision", "edit", id, "Use JSONL files instead", "--reviewer", "bot"],
+      tmpDir,
+    )
+    expect(edit.status).toBe(0)
+
+    // Previously impossible: approve/reject guarded on status === "pending",
+    // so an edited decision was permanently stuck.
+    const approve = runTx(["decision", "approve", id, "--reviewer", "bot"], tmpDir)
+    expect(approve.status).toBe(0)
+
+    const show = runTx(["decision", "show", id, "--json"], tmpDir)
+    const dec = JSON.parse(show.stdout)
+    expect(dec.status).toBe("approved")
+  })
+
   it("content-hash dedup returns existing decision", () => {
     const add1 = runTx(
       ["decision", "add", "Exact same content", "--json"],
