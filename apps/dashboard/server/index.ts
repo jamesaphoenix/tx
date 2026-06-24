@@ -236,13 +236,24 @@ class DashboardRouter {
         }
       }
 
+      // Cap request bodies so a single connection cannot exhaust server memory
+      // by streaming an unbounded payload before "end" fires.
+      const MAX_BODY_BYTES = 1_048_576 // 1 MB
       let bodyTextPromise: Promise<string> | null = null
       const readBodyText = (): Promise<string> => {
         if (bodyTextPromise) return bodyTextPromise
         bodyTextPromise = new Promise((resolveBody, rejectBody) => {
           const chunks: Buffer[] = []
+          let total = 0
           req.on("data", (chunk) => {
-            chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
+            const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk
+            total += buf.length
+            if (total > MAX_BODY_BYTES) {
+              // Stop buffering; the route's catch maps this to a 413.
+              rejectBody(new Error("Request body too large"))
+              return
+            }
+            chunks.push(buf)
           })
           req.on("end", () => {
             resolveBody(Buffer.concat(chunks).toString("utf8"))
@@ -272,10 +283,14 @@ class DashboardRouter {
         const response = await route.handler(context)
         writeJsonResponse(res, response)
       } catch (error) {
+        // Log the real error server-side; never leak internals (SQL text,
+        // column names, absolute file paths, stack traces) to the HTTP client.
+        console.error("[dashboard] Unhandled route error:", error)
+        const tooLarge = error instanceof Error && error.message === "Request body too large"
         writeJsonResponse(res, {
-          status: 500,
+          status: tooLarge ? 413 : 500,
           headers: { "Content-Type": "application/json; charset=utf-8" },
-          body: JSON.stringify({ error: String(error) }),
+          body: JSON.stringify({ error: tooLarge ? "Request body too large" : "Internal server error" }),
         })
       }
       return
