@@ -1210,3 +1210,60 @@ describe("Migration system", () => {
     })
   })
 })
+
+describe("table-rebuild migrations preserve child rows (FK cascade safety)", () => {
+  // Migration 039 rebuilds the `tasks` table (DROP TABLE tasks). With foreign
+  // keys enforced, that implicit DELETE cascades to task_dependencies. The
+  // runner must disable foreign keys OUTSIDE the transaction so the rebuild
+  // does not wipe the dependency graph on upgrade.
+  const TASKS_REBUILD_VERSION = 39
+
+  const seedTasksWithDependency = (db: Database) => {
+    const now = new Date().toISOString()
+    db.prepare(
+      "INSERT INTO tasks (id, title, status, score, created_at, updated_at) VALUES (?, ?, 'backlog', 0, ?, ?)"
+    ).run("tx-aaaaaa01", "A", now, now)
+    db.prepare(
+      "INSERT INTO tasks (id, title, status, score, created_at, updated_at) VALUES (?, ?, 'backlog', 0, ?, ?)"
+    ).run("tx-bbbbbb02", "B", now, now)
+    db.prepare(
+      "INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES ('tx-aaaaaa01', 'tx-bbbbbb02', ?)"
+    ).run(now)
+  }
+
+  it("upgrading through migration 039 preserves task_dependencies", () => {
+    const db = new Database(":memory:")
+    db.run("PRAGMA foreign_keys = ON")
+    applyMigrationsThroughVersion(db, TASKS_REBUILD_VERSION - 1)
+    seedTasksWithDependency(db)
+
+    // Real upgrade path through the destructive rebuild using the fixed runner.
+    applyMigrations(db)
+
+    const deps = db.query("SELECT COUNT(*) AS n FROM task_dependencies").get() as { n: number }
+    const tasks = db.query("SELECT COUNT(*) AS n FROM tasks").get() as { n: number }
+    expect(tasks.n).toBe(2)
+    // Would be 0 if DROP TABLE tasks cascaded through ON DELETE CASCADE.
+    expect(deps.n).toBe(1)
+    db.close()
+  })
+
+  it("control: applying migration 039 inside a transaction (old runner) cascade-deletes dependencies", () => {
+    const db = new Database(":memory:")
+    db.run("PRAGMA foreign_keys = ON")
+    applyMigrationsThroughVersion(db, TASKS_REBUILD_VERSION - 1)
+    seedTasksWithDependency(db)
+
+    // Reproduce the old behavior: run the rebuild migration's SQL inside an
+    // open transaction, where its foreign-key pragma is a no-op.
+    const migration = MIGRATIONS.find((m) => m.version === TASKS_REBUILD_VERSION)!
+    db.exec("BEGIN IMMEDIATE")
+    db.exec(migration.sql)
+    db.exec("COMMIT")
+
+    const deps = db.query("SELECT COUNT(*) AS n FROM task_dependencies").get() as { n: number }
+    // Demonstrates the data loss the fix prevents.
+    expect(deps.n).toBe(0)
+    db.close()
+  })
+})

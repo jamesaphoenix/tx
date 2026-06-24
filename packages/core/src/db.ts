@@ -65,6 +65,44 @@ const findMissingTables = (db: Database, expectedTables: readonly string[]): str
 }
 
 /**
+ * A table-rebuild migration disables foreign keys so that `DROP TABLE <parent>`
+ * during the rebuild does not cascade-delete child rows (ON DELETE CASCADE).
+ * SQLite ignores `PRAGMA foreign_keys = OFF` INSIDE a transaction (it is a
+ * no-op there), and `defer_foreign_keys` defers violation checks but does NOT
+ * suppress cascade actions — so the disable MUST happen before BEGIN and be
+ * restored after COMMIT, otherwise the implicit DELETE from DROP TABLE wipes
+ * every dependent row (task_dependencies, task_claims, doc_links, invariants…).
+ */
+const FK_DISABLE_INTENT = /PRAGMA\s+foreign_keys\s*=\s*OFF|PRAGMA\s+defer_foreign_keys\s*=\s*ON/i
+
+/**
+ * Apply a single migration atomically. If the migration declares intent to
+ * disable foreign keys (table rebuild), the disable is hoisted OUTSIDE the
+ * transaction — the only place SQLite honors it — and always restored after.
+ */
+export const runMigration = (db: SqliteDatabase, version: number, sql: string): void => {
+  const disableForeignKeys = FK_DISABLE_INTENT.test(sql)
+  // foreign_keys can only be toggled when no transaction is pending.
+  if (disableForeignKeys) db.exec("PRAGMA foreign_keys = OFF")
+  try {
+    db.exec("BEGIN IMMEDIATE")
+    try {
+      db.exec(sql)
+      // Ensure version is recorded even if the SQL file omits the INSERT
+      db.exec(`INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (${version}, datetime('now'))`)
+      db.exec("COMMIT")
+    } catch (e) {
+      db.exec("ROLLBACK")
+      // eslint-disable-next-line tx/no-throw-in-services -- migration bootstrap must surface DB failures to caller
+      throw e
+    }
+  } finally {
+    // Always restore enforcement, even if the migration threw mid-rebuild.
+    if (disableForeignKeys) db.exec("PRAGMA foreign_keys = ON")
+  }
+}
+
+/**
  * Apply all pending migrations to the database.
  * Uses the centralized MIGRATIONS from migration-service.ts.
  * Each migration is wrapped in BEGIN IMMEDIATE/COMMIT/ROLLBACK
@@ -75,17 +113,7 @@ export const applyMigrations = (db: Database): void => {
 
   for (const migration of MIGRATIONS) {
     if (migration.version > currentVersion) {
-      db.exec("BEGIN IMMEDIATE")
-      try {
-        db.exec(migration.sql)
-        // Ensure version is recorded even if the SQL file omits the INSERT
-        db.exec(`INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (${migration.version}, datetime('now'))`)
-        db.exec("COMMIT")
-      } catch (e) {
-        db.exec("ROLLBACK")
-        // eslint-disable-next-line tx/no-throw-in-services -- migration bootstrap must surface DB failures to caller
-        throw e
-      }
+      runMigration(db, migration.version, migration.sql)
     }
   }
 
@@ -95,16 +123,7 @@ export const applyMigrations = (db: Database): void => {
   if (missingAnchorTables.length > 0) {
     const repairMigration = MIGRATIONS.find((migration) => migration.description === ANCHOR_SCHEMA_REPAIR_DESCRIPTION)
     if (repairMigration) {
-      db.exec("BEGIN IMMEDIATE")
-      try {
-        db.exec(repairMigration.sql)
-        db.exec(`INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (${repairMigration.version}, datetime('now'))`)
-        db.exec("COMMIT")
-      } catch (e) {
-        db.exec("ROLLBACK")
-        // eslint-disable-next-line tx/no-throw-in-services -- repair bootstrap must surface DB failures to caller
-        throw e
-      }
+      runMigration(db, repairMigration.version, repairMigration.sql)
     }
   }
 }
