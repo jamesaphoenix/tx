@@ -311,18 +311,27 @@ export const ReflectServiceLive = Layer.effect(
               maxTokens: 2048,
               jsonSchema: REFLECT_ANALYSIS_SCHEMA,
             }).pipe(
-              Effect.map((r) => {
-                const parsed = JSON.parse(r.text) as { summary: string; recommendations: Array<{ action: string; reason: string; priority: string }> }
-                const lines = [parsed.summary]
-                if (parsed.recommendations.length > 0) {
-                  lines.push("")
-                  lines.push("Recommendations:")
-                  for (const rec of parsed.recommendations) {
-                    lines.push(`  [${rec.priority}] ${rec.action}`)
-                    lines.push(`    → ${rec.reason}`)
+              Effect.map((r): string | null => {
+                // A throw inside Effect.map becomes a DEFECT that the catchAll
+                // below cannot catch (catchAll only handles the typed error
+                // channel). Non-JSON LLM output (Agent SDK prose) would crash
+                // `tx auto reflect --analyze` despite the intended graceful
+                // degradation, so parse defensively and return null on failure.
+                try {
+                  const parsed = JSON.parse(r.text) as { summary?: string; recommendations?: Array<{ action: string; reason: string; priority: string }> }
+                  const lines = [parsed.summary ?? ""]
+                  if (parsed.recommendations && parsed.recommendations.length > 0) {
+                    lines.push("")
+                    lines.push("Recommendations:")
+                    for (const rec of parsed.recommendations) {
+                      lines.push(`  [${rec.priority}] ${rec.action}`)
+                      lines.push(`    → ${rec.reason}`)
+                    }
                   }
+                  return lines.join("\n")
+                } catch {
+                  return null
                 }
-                return lines.join("\n")
               }),
               Effect.catchAll(() => Effect.succeed(null as string | null))
             )

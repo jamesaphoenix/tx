@@ -269,9 +269,17 @@ export const CompactionServiceLive = Layer.effect(
           }))
         )
 
-        // Structured outputs guarantee valid JSON matching the schema
-        const parsed = JSON.parse(result.text) as CompactionLlmResponse
-        return parsed
+        // Structured outputs from the Anthropic backend are valid JSON, but the
+        // Agent SDK backend can return prose (or empty text) on partial failure.
+        // A bare JSON.parse there throws a SyntaxError that becomes an Effect
+        // defect, crashing the compaction run AFTER learnings were exported to
+        // file but BEFORE the task-deletion transaction — leaving partial state.
+        return yield* Effect.try({
+          try: () => JSON.parse(result.text) as CompactionLlmResponse,
+          catch: (e) => new ExtractionUnavailableError({
+            reason: `LLM returned output that was not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+          }),
+        })
       })
 
     const exportLearningsToFile = (learnings: string, targetFile: string): Effect.Effect<void, DatabaseError | ValidationError> =>
