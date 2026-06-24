@@ -698,6 +698,26 @@ describe("Learning Repository Pagination", () => {
     expect(result.map(l => l.id)).toEqual([1, 3])
   })
 
+  it("findWithEmbeddings round-trips embedding values exactly (no buffer aliasing)", async () => {
+    const vec = new Float32Array([0.1, -0.25, 0.5, 0.75, -1])
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repo = yield* LearningRepository
+        yield* repo.insert({ content: "Embedded learning" })
+        yield* repo.updateEmbedding(1, vec)
+        return yield* repo.findWithEmbeddings(10)
+      }).pipe(Effect.provide(repoLayer))
+    )
+
+    expect(result).toHaveLength(1)
+    const got = result[0].embedding
+    expect(got).not.toBeNull()
+    expect(Array.from(got!)).toEqual(Array.from(vec))
+    // The returned vector owns an exact-size ArrayBuffer (a defensive copy), not
+    // a view into a shared/pooled buffer that could be reused and corrupt it.
+    expect(got!.buffer.byteLength).toBe(got!.byteLength)
+  })
+
   it("countWithoutEmbeddings returns correct count", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
