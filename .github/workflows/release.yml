@@ -100,7 +100,7 @@ jobs:
         run: find binaries -type f
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             binaries/tx-darwin-arm64/tx-darwin-arm64
