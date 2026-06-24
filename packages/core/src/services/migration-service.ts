@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { SqliteClient } from "../db.js"
+import { SqliteClient, runMigration } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { EMBEDDED_MIGRATIONS } from "../migrations-embedded.js"
 
@@ -225,15 +225,15 @@ export const MigrationServiceLive = Layer.effect(
           const pendingMigrations = MIGRATIONS.filter(m => m.version > currentVersion)
 
           for (const migration of pendingMigrations) {
+            // Delegates to the shared runner so this path gets the same
+            // foreign-key-disable hoisting (preventing DROP TABLE cascade data
+            // loss in rebuild migrations) and schema_version recording.
             const transactionError = yield* Effect.try({
               try: () => {
-                db.exec("BEGIN IMMEDIATE")
                 try {
-                  db.exec(migration.sql)
-                  db.exec("COMMIT")
+                  runMigration(db, migration.version, migration.sql)
                   return null
                 } catch (e) {
-                  db.exec("ROLLBACK")
                   return e
                 }
               },
