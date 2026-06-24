@@ -145,11 +145,21 @@ export const QueryExpansionServiceLive = Layer.effect(
             return { original: query, expanded: [query], wasExpanded: false }
           }
 
-          // Structured outputs guarantee valid JSON matching the schema
-          const parsed = JSON.parse(result.text) as { alternatives: string[] }
+          // The Agent SDK backend can return prose instead of JSON; parse
+          // defensively and degrade to no-expansion rather than crashing the
+          // search (a bare JSON.parse here would throw an Effect defect).
+          let parsed: { alternatives?: string[] } | null = null
+          try {
+            parsed = JSON.parse(result.text) as { alternatives?: string[] }
+          } catch {
+            // non-JSON output — fall through to no-expansion below
+          }
+          if (!parsed) {
+            return { original: query, expanded: [query], wasExpanded: false }
+          }
 
           // Validate and limit expansion results
-          const expanded = validateExpansions(query, parsed.alternatives)
+          const expanded = validateExpansions(query, parsed.alternatives ?? [])
 
           return {
             original: query,

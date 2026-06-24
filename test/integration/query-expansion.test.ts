@@ -5,6 +5,7 @@ import {
   QueryExpansionServiceNoop,
   QueryExpansionServiceLive,
   QueryExpansionServiceAuto,
+  LlmService,
   LlmServiceNoop,
   validateExpansions,
   MAX_EXPANSION_QUERIES,
@@ -245,5 +246,31 @@ describe("validateExpansions", () => {
 
     expect(result.length).toBe(1 + MAX_EXPANSION_QUERIES)
     expect(result[0]).toBe("original")
+  })
+})
+
+describe("QueryExpansionServiceLive non-JSON output", () => {
+  const mockLlmReturning = (text: string) =>
+    Layer.succeed(LlmService, {
+      complete: () => Effect.succeed({ text, model: "mock" }),
+      isAvailable: () => Effect.succeed(true),
+    })
+
+  it("degrades to no-expansion when the LLM returns prose instead of JSON (no defect)", async () => {
+    const layer = QueryExpansionServiceLive.pipe(
+      Layer.provide(mockLlmReturning("Sure! Some related searches you might try are ..."))
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* QueryExpansionService
+        return yield* svc.expand("database transactions")
+      }).pipe(Effect.provide(layer))
+    )
+
+    // Old code: bare JSON.parse on prose throws -> Effect defect -> runPromise rejects.
+    expect(result.original).toBe("database transactions")
+    expect(result.expanded).toEqual(["database transactions"])
+    expect(result.wasExpanded).toBe(false)
   })
 })
