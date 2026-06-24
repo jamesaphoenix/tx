@@ -275,6 +275,44 @@ describe("SpecTraceService Integration", () => {
     expect(result.gaps.map((g) => g.id)).not.toContain("INV-SPEC-PRUNE-002")
   })
 
+  it("does not downgrade a manually-linked test when discovery finds the same mapping", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        yield* createDocWithInvariants("spec-manual-doc", [
+          { id: "INV-MANUAL-001", rule: "manual link is preserved" },
+        ])
+
+        // A test that discovery WILL find via its [INV-MANUAL-001] tag.
+        writeRelative(tempDir, "test/spec/manual.test.ts", [
+          "import { it } from \"vitest\"",
+          "it(\"[INV-MANUAL-001] covered\", () => {})",
+        ].join("\n"))
+
+        const spec = yield* SpecTraceService
+        // Manually link the same (invariant, test) pair (discovery = 'manual').
+        yield* spec.link("INV-MANUAL-001", "test/spec/manual.test.ts", "[INV-MANUAL-001] covered", "vitest")
+        const beforeDiscover = yield* spec.testsForInvariant("INV-MANUAL-001")
+
+        // Discovery finds the same pair via the tag.
+        yield* spec.discover({
+          rootDir: tempDir,
+          patterns: ["test/**/*.test.ts"],
+          doc: "spec-manual-doc",
+        })
+        const afterDiscover = yield* spec.testsForInvariant("INV-MANUAL-001")
+
+        return { beforeDiscover, afterDiscover }
+      })
+    )
+
+    expect(result.beforeDiscover).toHaveLength(1)
+    expect(result.beforeDiscover[0]!.discovery).toBe("manual")
+    // The manual link must NOT be downgraded to 'tag' (which would make it
+    // eligible for auto-pruning later).
+    expect(result.afterDiscover).toHaveLength(1)
+    expect(result.afterDiscover[0]!.discovery).toBe("manual")
+  })
+
   it("transitions phases BUILD -> HARDEN -> COMPLETE and regresses to BUILD on failure", async () => {
     const result = await run(
       Effect.gen(function* () {

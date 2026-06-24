@@ -50,7 +50,11 @@ export const SpecTraceRepositoryLive = Layer.effect(
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
                  framework = excluded.framework,
-                 discovery = excluded.discovery,
+                 -- Never downgrade a manually curated link to an auto-discovered
+                 -- source (auto-discovery would otherwise overwrite 'manual' with
+                 -- 'tag', after which the prune step could delete it). A manual
+                 -- upsert still upgrades an existing auto link to 'manual'.
+                 discovery = CASE WHEN spec_tests.discovery = 'manual' THEN 'manual' ELSE excluded.discovery END,
                  updated_at = datetime('now')`
             ).run(
               input.invariantId,
@@ -178,7 +182,11 @@ export const SpecTraceRepositoryLive = Layer.effect(
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
                  framework = excluded.framework,
-                 discovery = excluded.discovery,
+                 -- Never downgrade a manually curated link to an auto-discovered
+                 -- source (auto-discovery would otherwise overwrite 'manual' with
+                 -- 'tag', after which the prune step could delete it). A manual
+                 -- upsert still upgrades an existing auto link to 'manual'.
+                 discovery = CASE WHEN spec_tests.discovery = 'manual' THEN 'manual' ELSE excluded.discovery END,
                  updated_at = datetime('now')`
             )
 
