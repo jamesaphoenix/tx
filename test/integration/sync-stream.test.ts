@@ -929,4 +929,47 @@ describe("Sync stream event logs", () => {
     }))
     expect(count).toBe(1)
   })
+
+  it("exportLearnings/importLearnings round-trips >1000 learnings without truncation or duplicates", async () => {
+    const N = 1001
+    const path = resolve(".tx", "learnings-roundtrip.jsonl")
+    const result = await run(Effect.gen(function* () {
+      const db = yield* SqliteClient
+      // exportLearnings/importLearnings are internal SyncService methods (invoked
+      // by the public import()/hydrate() paths) and are not on the narrow public
+      // tag type, so cast to reach them directly for a focused round-trip test.
+      const sync = (yield* SyncService) as unknown as {
+        readonly exportLearnings: (path: string) => Effect.Effect<void, unknown, never>
+        readonly importLearnings: (path: string) => Effect.Effect<void, unknown, never>
+      }
+
+      const insert = db.prepare(
+        "INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)"
+      )
+      const base = Date.UTC(2026, 0, 1, 0, 0, 0, 0)
+      db.exec("BEGIN")
+      for (let i = 0; i < N; i++) {
+        // Distinct content (distinct content hash) + strictly increasing
+        // created_at, so the 1001st row is exactly the one the old LIMIT-1000
+        // `findAll()` would exclude from both export and the dedup set.
+        insert.run(`roundtrip learning #${i}`, new Date(base + i * 1000).toISOString())
+      }
+      db.exec("COMMIT")
+
+      const before = (db.prepare("SELECT COUNT(*) AS n FROM learnings").get() as { n: number }).n
+      yield* sync.exportLearnings(path)
+      const exportedLines = readJsonl(path).length
+      // Re-import into the SAME db; dedup must recognize all N -> no new rows.
+      yield* sync.importLearnings(path)
+      const after = (db.prepare("SELECT COUNT(*) AS n FROM learnings").get() as { n: number }).n
+      return { before, exportedLines, after }
+    }))
+
+    expect(result.before).toBe(N)
+    // Export must include every row (old code truncated at DEFAULT_QUERY_LIMIT=1000).
+    expect(result.exportedLines).toBe(N)
+    // Re-import must dedup every row (old code's 1000-capped dedup set re-inserted
+    // the rows beyond 1000, duplicating them on each sync).
+    expect(result.after).toBe(N)
+  })
 })

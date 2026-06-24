@@ -983,7 +983,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
     const cleanupTempDir = (dir) => Effect.promise(() => rm(dir, { recursive: true, force: true }).then(() => undefined).catch(() => undefined));
     const collectCurrentOpsForSync = () => Effect.gen(function* () {
         const tasks = yield* taskService.list();
-        const deps = yield* depRepo.getAll(100_000);
+        const deps = yield* depRepo.getAll(FULL_EXPORT_LIMIT);
         const taskOps = tasks.map(taskToUpsertOp);
         const depOps = deps.map(depToAddOp);
         const learnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
@@ -1088,7 +1088,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
     });
     const collectLegacyTaskOpsForSync = () => Effect.gen(function* () {
         const tasks = yield* taskService.list();
-        const deps = yield* depRepo.getAll(100_000);
+        const deps = yield* depRepo.getAll(FULL_EXPORT_LIMIT);
         const taskOps = tasks.map(taskToUpsertOp);
         const depOps = deps.map(depToAddOp);
         const all = [...taskOps, ...depOps];
@@ -1442,7 +1442,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }),
         exportLearnings: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_LEARNINGS_JSONL_PATH);
-            const learnings = yield* learningRepo.findAll();
+            const learnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
             const ops = learnings.map(learningToUpsertOp);
             ops.sort((a, b) => a.ts.localeCompare(b.ts));
             const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
@@ -1451,7 +1451,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }),
         importLearnings: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_LEARNINGS_JSONL_PATH);
-            const existing = yield* learningRepo.findAll();
+            const existing = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
             const existingHashes = new Set(existing.map(l => contentHash(l.content, l.sourceType)));
             const insertStmt = db.prepare("INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category) VALUES (?, ?, ?, ?, ?, ?)");
             return yield* importEntityJsonl(filePath, LearningUpsertOpSchema, existingHashes, (ops) => {
@@ -1467,7 +1467,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }),
         exportFileLearnings: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_FILE_LEARNINGS_JSONL_PATH);
-            const fileLearnings = yield* fileLearningRepo.findAll();
+            const fileLearnings = yield* fileLearningRepo.findAll(FULL_EXPORT_LIMIT);
             const ops = fileLearnings.map(fileLearningToUpsertOp);
             ops.sort((a, b) => a.ts.localeCompare(b.ts));
             const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
@@ -1476,7 +1476,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }),
         importFileLearnings: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_FILE_LEARNINGS_JSONL_PATH);
-            const existing = yield* fileLearningRepo.findAll();
+            const existing = yield* fileLearningRepo.findAll(FULL_EXPORT_LIMIT);
             const existingHashes = new Set(existing.map(fl => contentHash(fl.filePattern, fl.note)));
             const insertStmt = db.prepare("INSERT INTO file_learnings (file_pattern, note, task_id, created_at) VALUES (?, ?, ?, ?)");
             return yield* importEntityJsonl(filePath, FileLearningUpsertOpSchema, existingHashes, (ops) => {
@@ -1551,9 +1551,9 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }),
         exportAnchors: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_ANCHORS_JSONL_PATH);
-            const anchors = yield* anchorRepo.findAll();
+            const anchors = yield* anchorRepo.findAll(FULL_EXPORT_LIMIT);
             // Build learning ID → content hash map for stable references
-            const learnings = yield* learningRepo.findAll();
+            const learnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
             const learningHashMap = new Map();
             for (const l of learnings) {
                 learningHashMap.set(l.id, contentHash(l.content, l.sourceType));
@@ -1567,8 +1567,8 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         importAnchors: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_ANCHORS_JSONL_PATH);
             // Build existing anchor content hashes
-            const existingAnchors = yield* anchorRepo.findAll();
-            const existingLearnings = yield* learningRepo.findAll();
+            const existingAnchors = yield* anchorRepo.findAll(FULL_EXPORT_LIMIT);
+            const existingLearnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
             const learningHashMap = new Map();
             for (const l of existingLearnings) {
                 learningHashMap.set(l.id, contentHash(l.content, l.sourceType));
@@ -1606,7 +1606,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }),
         exportEdges: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_EDGES_JSONL_PATH);
-            const edges = yield* edgeRepo.findAll();
+            const edges = yield* edgeRepo.findAll(FULL_EXPORT_LIMIT);
             // Only export active (non-invalidated) edges
             const activeEdges = edges.filter(e => e.invalidatedAt === null);
             const ops = activeEdges.map(edgeToUpsertOp);
@@ -1617,7 +1617,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }),
         importEdges: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_EDGES_JSONL_PATH);
-            const existingEdges = yield* edgeRepo.findAll();
+            const existingEdges = yield* edgeRepo.findAll(FULL_EXPORT_LIMIT);
             const existingHashes = new Set(existingEdges.map(e => contentHash(e.edgeType, e.sourceType, e.sourceId, e.targetType, e.targetId)));
             const insertStmt = db.prepare(`INSERT INTO learning_edges
               (edge_type, source_type, source_id, target_type, target_id, weight, metadata, created_at)
