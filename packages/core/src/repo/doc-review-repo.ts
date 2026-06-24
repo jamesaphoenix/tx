@@ -135,11 +135,17 @@ export const DocReviewRepositoryLive = Layer.effect(
               .get()
             if (!row) return null
 
-            db.prepare(
+            const claimResult = db.prepare(
               `UPDATE doc_review_runs
                SET worker_id = ?, status = 'running', started_at = datetime('now')
                WHERE id = ? AND status = 'pending'`
             ).run(workerId, row.id)
+
+            // If the guarded UPDATE changed no rows, another worker claimed this
+            // run between our SELECT and UPDATE. Return null rather than handing
+            // back a row we do not own — otherwise two workers would both believe
+            // they own the run and execute the same review concurrently.
+            if (claimResult.changes === 0) return null
 
             const updated = db
               .prepare<DocReviewRunRow>(

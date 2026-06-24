@@ -8,7 +8,7 @@ import { AlreadyClaimedError, DatabaseError, TaskNotFoundError } from "../errors
 import { ClaimService } from "./claim-service.js"
 import { deriveOrchestrationStatus } from "./task-service/internals.js"
 import type { TaskClaim } from "../schemas/worker.js"
-import type { Task, TaskId, TaskLinkedDocRef, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { OrchestrationStatus, Task, TaskId, TaskLinkedDocRef, TaskWithDeps } from "@jamesaphoenix/tx-types"
 
 /**
  * Result of checking whether a task is ready to be worked on.
@@ -173,7 +173,12 @@ export const ReadyServiceLive = Layer.effect(
         return limited.map((task) => {
           const effective = effectiveContextMap.get(task.id)
           const claim = claimsMap.get(task.id) ?? null
-          const orch = deriveOrchestrationStatus(claim, task.status, now)
+          // When the claims system is unavailable, report null (not "unclaimed")
+          // to match enrichWithDeps / enrichWithDepsBatch behavior so the same
+          // task reports a consistent orchestrationStatus across all surfaces.
+          const orch = claimRepo
+            ? deriveOrchestrationStatus(claim, task.status, now)
+            : { orchestrationStatus: null as OrchestrationStatus | null, claimedBy: null, claimExpiresAt: null }
           return {
             ...task,
             groupContext: directContextMap.get(task.id) ?? null,
