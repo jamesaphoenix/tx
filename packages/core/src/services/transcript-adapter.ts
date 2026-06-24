@@ -144,9 +144,14 @@ export const ClaudeCodeAdapter: TranscriptAdapter = {
             ) {
               const toolResult = block as Record<string, unknown>
               const toolUseId = toolResult.tool_use_id as string | undefined
-              const resultContent = toolResult.content
-              if (toolUseId && typeof resultContent === "string") {
-                toolResults.set(toolUseId, resultContent)
+              // tool_result.content is a string OR an array of
+              // [{type:"text", text:"..."}] blocks (the common multi-line case).
+              // The old `typeof === "string"` check silently dropped the array
+              // form, so every multi-line tool result was lost. extractTextContent
+              // handles both shapes.
+              const resultText = extractTextContent(toolResult.content)
+              if (toolUseId && resultText) {
+                toolResults.set(toolUseId, resultText)
               }
             }
           }

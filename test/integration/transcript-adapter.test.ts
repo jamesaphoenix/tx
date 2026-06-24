@@ -379,3 +379,42 @@ describe("registerAdapter", () => {
     expect(toolCalls[0].name).toBe("custom")
   })
 })
+
+describe("ClaudeCodeAdapter tool_result array content", () => {
+  it("extracts tool_result content given as an array of text blocks", () => {
+    const lines = [
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-01-30T17:38:19.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "toolu_ARR", name: "Read", input: { file_path: "/x" } },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        timestamp: "2026-01-30T17:38:20.000Z",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_ARR",
+              // Array form — the common multi-line case.
+              content: [{ type: "text", text: "line one\nline two" }],
+            },
+          ],
+        },
+      }),
+    ]
+
+    const calls = ClaudeCodeAdapter.parseToolCalls(lines)
+    const read = calls.find((c) => c.id === "toolu_ARR")
+    expect(read).toBeDefined()
+    // Old code only handled string content, so array-form results were dropped
+    // (result would be undefined).
+    expect(read!.result).toBe("line one\nline two")
+  })
+})
