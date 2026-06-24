@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Layer } from "effect"
 import {
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
@@ -395,4 +395,38 @@ Claude also added a connection pool health check endpoint.`,
       expect(result.metadata.durationMs).toBeGreaterThan(0)
     }
   }, 60_000)
+})
+
+describe("CandidateExtractorService JSON parse hardening", () => {
+  // A mock LLM that returns prose instead of JSON (as the Agent SDK backend can
+  // when it produces no structured result).
+  const mockLlmReturning = (text: string) =>
+    Layer.succeed(LlmService, {
+      complete: () => Effect.succeed({ text, model: "mock" }),
+      isAvailable: () => Effect.succeed(true),
+    })
+
+  it("fails with a handled ExtractionUnavailableError (not a defect) on non-JSON output", async () => {
+    const layer = CandidateExtractorServiceLive.pipe(
+      Layer.provide(mockLlmReturning("Sorry, I could not produce JSON for that."))
+    )
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const svc = yield* CandidateExtractorService
+        return yield* svc.extract({ content: "transcript", sourceFile: "x.jsonl" })
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      // A typed failure, NOT a defect (an unwrapped SyntaxError would be a die).
+      const failure = Cause.failureOption(exit.cause)
+      expect(failure._tag).toBe("Some")
+      if (failure._tag === "Some") {
+        expect((failure.value as { _tag: string })._tag).toBe("ExtractionUnavailableError")
+      }
+      expect(Cause.isDie(exit.cause)).toBe(false)
+    }
+  })
 })
