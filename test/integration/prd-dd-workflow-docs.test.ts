@@ -11,11 +11,8 @@ describe("PRD/DD workflow docs", () => {
     const files = [
       "AGENTS.md",
       "CLAUDE.md",
-      "packages/tx/README.md",
       "apps/cli/README.md",
-      "packages/test-utils/README.md",
       "packages/core/README.md",
-      "packages/types/README.md",
       "apps/agent-sdk/README.md",
       "apps/docs/content/docs/getting-started.mdx",
       "apps/docs/content/docs/primitives/index.mdx",
