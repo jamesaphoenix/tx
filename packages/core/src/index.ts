@@ -577,6 +577,7 @@ export {
   type ReviewDesignDocsConfig,
   type ReviewRuntimeType,
   type ReviewTransportType,
+  type SpecDesignDocMissingTaskLinksMode,
 } from "./utils/toml-config.js"
 export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
 export {

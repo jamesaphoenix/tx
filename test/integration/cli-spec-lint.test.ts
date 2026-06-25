@@ -136,6 +136,76 @@ describe("CLI spec lint", () => {
   })
 
   describe("doc drift detection", () => {
+    it("warns by default when a design doc has no linked tasks", { timeout: 120_000 }, () => {
+      const add = runTx(cwd, dbPath, ["doc", "add", "design", "no-task-design", "--title", "No Task Design"])
+      expect(add.status).toBe(0)
+
+      const result = runTx(cwd, dbPath, ["spec", "lint", "--json"])
+      expect(result.status).toBe(0)
+      const json = JSON.parse(result.stdout)
+      const driftIssues = json.issues.filter((i: { section: string }) => i.section === "drift")
+      expect(driftIssues.some((i: { message: string }) => i.message.includes("has no linked tasks"))).toBe(true)
+      expect(json.drift_count).toBeGreaterThanOrEqual(1)
+    })
+
+    it("suppresses design doc task-link warnings when configured", { timeout: 120_000 }, () => {
+      writeFileSync(
+        join(cwd, ".tx", "config.toml"),
+        [
+          "[docs]",
+          'path = "specs"',
+          "",
+          "[spec]",
+          'design_doc_missing_task_links = "never"',
+        ].join("\n"),
+        "utf-8"
+      )
+
+      const add = runTx(cwd, dbPath, ["doc", "add", "design", "quiet-design", "--title", "Quiet Design"])
+      expect(add.status).toBe(0)
+
+      const result = runTx(cwd, dbPath, ["spec", "lint", "--json"])
+      expect(result.status).toBe(0)
+      const json = JSON.parse(result.stdout)
+      const driftIssues = json.issues.filter((i: { section: string }) => i.section === "drift")
+      expect(driftIssues.some((i: { message: string }) => i.message.includes("has no linked tasks"))).toBe(false)
+      expect(json.drift_count).toBe(0)
+    })
+
+    it("reports design doc task-link warnings only for locked docs when configured", { timeout: 120_000 }, () => {
+      writeFileSync(
+        join(cwd, ".tx", "config.toml"),
+        [
+          "[docs]",
+          'path = "specs"',
+          "",
+          "[spec]",
+          'design_doc_missing_task_links = "locked_only"',
+        ].join("\n"),
+        "utf-8"
+      )
+
+      const add = runTx(cwd, dbPath, ["doc", "add", "design", "locked-policy", "--title", "Locked Policy"])
+      expect(add.status).toBe(0)
+
+      const beforeLock = runTx(cwd, dbPath, ["spec", "lint", "--json"])
+      expect(beforeLock.status).toBe(0)
+      const beforeJson = JSON.parse(beforeLock.stdout)
+      const beforeDriftIssues = beforeJson.issues.filter((i: { section: string }) => i.section === "drift")
+      expect(beforeDriftIssues.some((i: { message: string }) => i.message.includes("has no linked tasks"))).toBe(false)
+      expect(beforeJson.drift_count).toBe(0)
+
+      const lock = runTx(cwd, dbPath, ["doc", "lock", "locked-policy"])
+      expect(lock.status).toBe(0)
+
+      const afterLock = runTx(cwd, dbPath, ["spec", "lint", "--json"])
+      expect(afterLock.status).toBe(0)
+      const afterJson = JSON.parse(afterLock.stdout)
+      const afterDriftIssues = afterJson.issues.filter((i: { section: string }) => i.section === "drift")
+      expect(afterDriftIssues.some((i: { message: string }) => i.message.includes("has no linked tasks"))).toBe(true)
+      expect(afterJson.drift_count).toBeGreaterThanOrEqual(1)
+    })
+
     it("detects drift when doc content changes on disk after sync", { timeout: 120_000 }, () => {
       // Create a doc via CLI (syncs hash to DB)
       const add = runTx(cwd, dbPath, ["doc", "add", "prd", "drift-test", "--title", "Drift Test"])

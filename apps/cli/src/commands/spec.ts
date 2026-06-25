@@ -51,6 +51,25 @@ const parseBatchSource = (value: string | undefined): BatchSource => {
   throw new CliExitError(1)
 }
 
+const DESIGN_DOC_MISSING_TASK_LINKS_WARNING = /^Design doc '.+' has no linked tasks$/
+
+const shouldReportDriftWarning = (
+  doc: { status: string },
+  warning: string,
+  config: ReturnType<typeof readTxConfig>
+): boolean => {
+  if (!DESIGN_DOC_MISSING_TASK_LINKS_WARNING.test(warning)) return true
+  switch (config.spec.designDocMissingTaskLinks) {
+    case "always":
+      return true
+    case "locked_only":
+      return doc.status === "locked"
+    case "never":
+      return false
+  }
+  return true
+}
+
 /** Dispatch spec subcommands. */
 export const spec = (pos: string[], flags: Flags) => {
   const sub = pos[0]
@@ -410,9 +429,12 @@ const specLint = (_pos: string[], flags: Flags) =>
       const driftWarnings = yield* docSvc.detectDrift(doc.name).pipe(
         Effect.catchAll(() => Effect.succeed([] as string[]))
       )
-      if (driftWarnings.length > 0) {
+      const reportedDriftWarnings = driftWarnings.filter((warning) =>
+        shouldReportDriftWarning(doc, warning, config)
+      )
+      if (reportedDriftWarnings.length > 0) {
         driftCount++
-        for (const w of driftWarnings) {
+        for (const w of reportedDriftWarnings) {
           addIssue("drift", "warn", `${doc.name}: ${w}`)
         }
       }

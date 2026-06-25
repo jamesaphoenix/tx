@@ -23,6 +23,7 @@ export type DashboardCyclesConfig = {
 export type GuardMode = "advisory" | "enforce"
 export type ReviewRuntimeType = "pi" | "custom"
 export type ReviewTransportType = "rpc" | "sdk"
+export type SpecDesignDocMissingTaskLinksMode = "always" | "locked_only" | "never"
 
 export type ReviewDesignDocsConfig = {
   enabled: boolean
@@ -36,7 +37,10 @@ export type ReviewDesignDocsConfig = {
 
 export type TxConfig = {
   docs: { path: string }
-  spec: { testPatterns: string[] }
+  spec: {
+    testPatterns: string[]
+    designDocMissingTaskLinks: SpecDesignDocMissingTaskLinksMode
+  }
   memory: { defaultDir: string }
   cycles: { scanPrompt: string | null; agents: number; model: string }
   dashboard: {
@@ -77,6 +81,11 @@ const isReviewRuntime = (v: string | null): v is ReviewRuntimeType =>
 const isReviewTransport = (v: string | null): v is ReviewTransportType =>
   v === "rpc" || v === "sdk"
 
+const isSpecDesignDocMissingTaskLinksMode = (
+  v: string | null
+): v is SpecDesignDocMissingTaskLinksMode =>
+  v === "always" || v === "locked_only" || v === "never"
+
 const DEFAULT_CONFIG: TxConfig = {
   docs: { path: "specs" },
   spec: {
@@ -92,7 +101,8 @@ const DEFAULT_CONFIG: TxConfig = {
       "**/*_spec.rb",
       "**/*.test.{c,cpp,cc}",
       "**/*_test.{c,cpp,cc}",
-    ]
+    ],
+    designDocMissingTaskLinks: "always",
   },
   memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
@@ -195,6 +205,11 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
     // Lightweight TOML parsing for our simple config structure.
     const docsPath = extractTomlValue(raw, DOCS_SECTION, "path")
     const specPatterns = extractTomlArray(raw, SPEC_SECTION, "test_patterns")
+    const specDesignDocMissingTaskLinks = extractTomlValue(
+      raw,
+      SPEC_SECTION,
+      "design_doc_missing_task_links"
+    )
     const cyclesScanPrompt = extractTomlValue(raw, CYCLES_SECTION, "scan_prompt")
     const cyclesAgents = extractTomlValue(raw, CYCLES_SECTION, "agents")
     const cyclesModel = extractTomlValue(raw, CYCLES_SECTION, "model")
@@ -258,6 +273,9 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       },
       spec: {
         testPatterns: specPatterns.length > 0 ? specPatterns : DEFAULT_CONFIG.spec.testPatterns,
+        designDocMissingTaskLinks: isSpecDesignDocMissingTaskLinksMode(specDesignDocMissingTaskLinks)
+          ? specDesignDocMissingTaskLinks
+          : DEFAULT_CONFIG.spec.designDocMissingTaskLinks,
       },
       memory: {
         defaultDir: memoryDefaultDir ?? DEFAULT_CONFIG.memory.defaultDir,
@@ -682,6 +700,12 @@ test_patterns = [
   "**/*.test.{c,cpp,cc}",
   "**/*_test.{c,cpp,cc}",
 ]
+
+# Controls tx spec lint warnings for design docs that have no linked tasks.
+# "always" = current/default behavior.
+# "locked_only" = warn only after the design doc has been locked.
+# "never" = suppress this warning entirely.
+design_doc_missing_task_links = "always"
 
 # ─── Memory ─────────────────────────────────────────────────────────
 # Filesystem-backed markdown search over your project's documentation.

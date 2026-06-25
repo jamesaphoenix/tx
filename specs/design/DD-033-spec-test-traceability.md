@@ -32,6 +32,8 @@ primitives are useful but disconnected for spec-level completion scoring.
 - Compute deterministic Feature Completion Index (FCI) and lifecycle phase.
 - Keep the architecture headless and composable with existing tx primitives.
 - Expose equivalent capabilities via CLI, MCP, and REST.
+- Keep `tx spec lint` useful in docs-first repositories by making design-doc
+  task-link warnings configurable from `.tx/config.toml`.
 
 ## Architecture
 
@@ -46,6 +48,27 @@ primitives are useful but disconnected for spec-level completion scoring.
 - tx does not run tests.
 - tx stores links + outcomes and computes completion state.
 - CI or local tooling owns actual test execution.
+
+## Spec Lint Policy
+
+`tx spec lint` reuses doc drift detection for hash and file checks, but applies
+a spec-scoped policy before reporting the design-doc "no linked tasks" warning.
+The TOML key is:
+
+```toml
+[spec]
+design_doc_missing_task_links = "always"
+```
+
+Supported values:
+- `always` preserves the current default and reports design docs with no linked tasks.
+- `locked_only` reports only when the design doc row is locked.
+- `never` suppresses this warning for docs-first workflows that decompose specs
+  into tasks later.
+
+The policy affects only `tx spec lint` presentation and counts. `DocService.detectDrift`
+continues returning the raw drift facts so lower-level doc commands and services keep
+their existing behavior.
 
 ## Data Model
 
@@ -142,6 +165,7 @@ test_id = "{relative_file}::{test_name}"
 | EARS-SPEC-010 | unit | scanner_is_language_agnostic | ts/py/go samples all produce invariant refs | test/unit/spec-discovery.test.ts |
 | EARS-SPEC-011 | integration | framework_batch_adapters | vitest/pytest/go/generic normalize and persist runs | test/integration/spec-trace.test.ts |
 | EARS-SPEC-012 | integration | api_mcp_parity | equivalent fci/gaps/matrix semantics across interfaces | test/integration/api-spec-trace.test.ts, test/integration/mcp-spec-trace.test.ts |
+| EARS-SPEC-013 | unit+integration | spec_lint_design_doc_missing_task_link_policy | TOML parser accepts policy values and spec lint suppresses missing-task warnings when configured | test/unit/toml-config.test.ts, test/integration/cli-spec-lint.test.ts |
 
 ## Unit Tests
 - File: test/unit/spec-discovery.test.ts

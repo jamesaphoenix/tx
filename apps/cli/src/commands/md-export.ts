@@ -153,7 +153,13 @@ export const mdExport = (_pos: string[], flags: Flags) =>
 
         yield* writeMarkdown(markdown)
 
-        return { path: outputPath, readyCount: filteredTasks.length, completedCount: completedTasks.length, counts }
+        return {
+          path: outputPath,
+          filteredCount: filteredTasks.length,
+          readyCount: counts.ready,
+          completedCount: completedTasks.length,
+          counts,
+        }
       })
 
     if (!watch) {
@@ -162,7 +168,7 @@ export const mdExport = (_pos: string[], flags: Flags) =>
       if (jsonOutput) {
         console.log(toJson(result))
       } else {
-        console.log(`Exported ${result.readyCount} ${filterLabel} tasks to ${result.path}`)
+        console.log(`Exported ${result.filteredCount} ${filterLabel} tasks to ${result.path}`)
         console.log(`  Ready: ${result.counts.ready} | Active: ${result.counts.active} | Blocked: ${result.counts.blocked} | Done: ${result.counts.done}`)
       }
     } else {

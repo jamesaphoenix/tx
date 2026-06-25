@@ -42,6 +42,8 @@ headless: tx stores mappings and ingests test results, but does not run tests.
 - Expose tx spec primitives in CLI, MCP, and REST with equivalent behavior.
 - Compute scope-level FCI and lifecycle phase (BUILD|HARDEN|COMPLETE).
 - Reject completion when FCI is below 100.
+- Allow repositories to configure whether `tx spec lint` warns about design
+  docs that do not yet have linked implementation tasks.
 
 ## Structured Requirements (EARS)
 
@@ -59,6 +61,7 @@ headless: tx stores mappings and ingests test results, but does not run tests.
 | EARS-SPEC-010 | ubiquitous | The tx shall keep discovery language-agnostic via shared text scanning conventions. | must |
 | EARS-SPEC-011 | event_driven | When tx spec batch receives framework output, the tx shall normalize records into generic test-result entries. | must |
 | EARS-SPEC-012 | ubiquitous | The tx shall expose equivalent spec-trace operations across CLI, REST, and MCP. | must |
+| EARS-SPEC-013 | optional | Where a repository configures design-doc task-link warnings, the tx shall apply that policy in `tx spec lint` without changing doc drift detection semantics. | should |
 
 ## Acceptance Criteria
 
@@ -68,6 +71,8 @@ headless: tx stores mappings and ingests test results, but does not run tests.
 - tx spec fci returns deterministic counters and phase for global/doc/subsystem scopes.
 - Phase lifecycle is computed as BUILD (<100), HARDEN (100 + unsigned), COMPLETE (100 + signed).
 - tx spec complete succeeds only from HARDEN and persists signer metadata.
+- tx spec lint defaults to warning for design docs with no linked tasks, and
+  `.tx/config.toml` can suppress that warning for docs-first workflows.
 - REST and MCP expose equivalent operations and payload semantics.
 - Integration tests cover CRUD, discovery, scoring, phase transitions, and cascade behavior.
 

@@ -389,6 +389,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
       const json = JSON.parse(result.stdout)
       expect(json).toHaveProperty("path")
+      expect(json).toHaveProperty("filteredCount")
       expect(json).toHaveProperty("readyCount")
       expect(json).toHaveProperty("completedCount")
       expect(json).toHaveProperty("counts")
@@ -398,11 +399,36 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
       expect(json.counts).toHaveProperty("done")
 
       // Validate actual values
+      expect(json.filteredCount).toBeGreaterThanOrEqual(1)
       expect(json.readyCount).toBeGreaterThanOrEqual(1)
+      expect(json.readyCount).toBe(json.counts.ready)
       expect(json.completedCount).toBe(0)
       expect(json.path).toBe(mdPath)
+      expect(typeof json.filteredCount).toBe("number")
       expect(typeof json.counts.ready).toBe("number")
       expect(typeof json.counts.done).toBe("number")
+    })
+
+    it("reports actual ready count separately from exported count for open filter JSON", () => {
+      const blocker = runTxArgs(["add", "JSON Open Blocker", "--json"], dbPath)
+      walCheckpoint(dbPath)
+      const blockerId = JSON.parse(blocker.stdout).id
+
+      const blocked = runTxArgs(["add", "JSON Still Open", "--json"], dbPath)
+      walCheckpoint(dbPath)
+      const blockedId = JSON.parse(blocked.stdout).id
+
+      runTxArgs(["block", blockedId, blockerId], dbPath)
+      walCheckpoint(dbPath)
+
+      const mdPath = join(tmpDir, "tasks.md")
+      const result = runTxArgs(["md-export", "--path", mdPath, "--filter", "open", "--json"], dbPath)
+      expect(result.status).toBe(0)
+
+      const json = JSON.parse(result.stdout)
+      expect(json.filteredCount).toBe(2)
+      expect(json.readyCount).toBe(1)
+      expect(json.counts.ready).toBe(1)
     })
   })
 

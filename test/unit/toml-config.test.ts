@@ -33,6 +33,7 @@ const DEFAULTS = {
       "**/*.test.{c,cpp,cc}",
       "**/*_test.{c,cpp,cc}",
     ],
+    designDocMissingTaskLinks: "always",
   },
   memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
@@ -234,6 +235,29 @@ describe("toml-config", () => {
 
     const parsed = readTxConfig(cwd);
     expect(parsed.spec.testPatterns).toEqual(["tests/**/*.py", "**/*_test.go"]);
+    expect(parsed.spec.designDocMissingTaskLinks).toBe("always");
+  });
+
+  it("parses [spec] design_doc_missing_task_links", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      ["[spec]", 'design_doc_missing_task_links = "never"'].join("\n"),
+    );
+
+    const parsed = readTxConfig(cwd);
+    expect(parsed.spec.designDocMissingTaskLinks).toBe("never");
+  });
+
+  it("falls back to always when design_doc_missing_task_links is invalid", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      ["[spec]", 'design_doc_missing_task_links = "off"'].join("\n"),
+    );
+
+    const parsed = readTxConfig(cwd);
+    expect(parsed.spec.designDocMissingTaskLinks).toBe("always");
   });
 
   it("defaults memory default_dir to docs when section is absent", () => {
@@ -317,6 +341,7 @@ describe("scaffoldConfigToml", () => {
     // Check defaults are set
     expect(raw).toContain('path = "specs"');
     expect(raw).toContain("test_patterns = [");
+    expect(raw).toContain('design_doc_missing_task_links = "always"');
     expect(raw).toContain("agents = 3");
     expect(raw).toContain('model = "claude-opus-4-6"');
     expect(raw).toContain('default_task_assigment_type = "human"');
